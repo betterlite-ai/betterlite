@@ -32,10 +32,10 @@ scope:
     - crates/betterlite-core/src/api/runway.rs
     - crates/betterlite-core/src/api/runway/speech.rs
     - crates/betterlite-core/src/api/runway/speech/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/runway_speech.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/runway_speech.rs
+    - tools/oracle/src/helpers/core_ops/runway_speech/**
     - tools/oracle/helpers/runway_speech.py
+    - tools/oracle/helpers/runway_speech/**
     - tools/oracle/cases/helpers/runway-speech/**
     - tools/oracle/fuzz/corpus/helper_case/runway_speech*
   lint_tables: false
@@ -70,6 +70,7 @@ out_of_scope:
   - B1534 implements speech task records at 35-40 and authentication, endpoint, timeout, status and polling methods at 201-384.
   - B046 owns the Runway branch inside main.py speech dispatch and its HTTP composition cases.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as runway_speech in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/runway_speech.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/runway_speech.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An arbitrary voice string becomes a runway-preset presetId rather than an ElevenLabs voice identifier.
   - A null runwayml_voice chooses Bernard, while an empty mapping remains the selected voice object.
   - A non-string first output fails even if a later output contains a usable audio URL.

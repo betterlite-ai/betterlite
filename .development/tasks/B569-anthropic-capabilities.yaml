@@ -89,11 +89,10 @@ scope:
   - crates/betterlite-anthropic/src/capabilities.rs
   - crates/betterlite-anthropic/src/capabilities/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_capabilities.rs
-  - tools/oracle/src/helpers/anthropic_capabilities/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/capabilities.rs
+  - tools/oracle/src/helpers/anthropic/capabilities/**
   - tools/oracle/helpers/anthropic_capabilities.py
+  - tools/oracle/helpers/anthropic_capabilities/**
   - tools/oracle/cases/helpers/providers/anthropic-capabilities/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_capabilities*
   lint_tables: false
@@ -310,6 +309,7 @@ out_of_scope:
   L726-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model L746-L781; AnthropicModelInfo._legacy_budget_to_effort
   L783-L793; AnthropicModelInfo.is_effort_used L795-L829 belong to B688.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_capabilities in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/capabilities.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_capabilities.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The adaptive branch returns before validating the effort string; invalid values must be rejected by the caller
   that owns validation.
 - Capping a thinking budget reconstructs the mapping and loses display and any extra fields.

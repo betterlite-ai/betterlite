@@ -19,11 +19,10 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/response_chat_result.rs
   - crates/betterlite-core/src/api/response_chat_result/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/response_chat_result.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/response_chat_result.rs
+  - tools/oracle/src/helpers/core_ops/response_chat_result/**
   - tools/oracle/helpers/response_chat_result.py
+  - tools/oracle/helpers/response_chat_result/**
   - tools/oracle/fuzz/corpus/helper_case/response_chat_result-*
   - tools/oracle/cases/helpers/response-chat-result/**
   lint_tables: false
@@ -100,6 +99,7 @@ out_of_scope:
 - B917 history/shared helpers, B918 request mapping and B1136 content conversion own the remaining live methods; _map_responses_status_to_finish_reason has no caller at the pin.
 - B921 owns provider HTTP execution and SDK error mapping around these ValueErrors.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as response_chat_result in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/response_chat_result.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/response_chat_result.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A raw message emits one choice but a typed message emits one per content block.
 - Existing additional_headers beat upstream values even though other upstream hidden fields overwrite existing values.
 - Incomplete details can override finish reasons even when status is completed.

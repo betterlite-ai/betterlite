@@ -91,12 +91,11 @@ scope:
     - crates/betterlite-auth/src/auth_policy_support/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_policy_support.rs
-    - tools/oracle/src/helpers/auth_policy_support/**
+    - tools/oracle/src/helpers/server/auth_policy_support.rs
+    - tools/oracle/src/helpers/server/auth_policy_support/**
     - tools/oracle/helpers/auth_policy_support.py
+    - tools/oracle/helpers/auth_policy_support/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-policy-support/**
     - tools/oracle/fuzz/corpus/helper_case/auth-policy-support-*
     - crates/betterlite-server/src/auth.rs
@@ -364,6 +363,7 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_policy_support in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_policy_support.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_policy_support.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The UI_TEAM_ID sentinel is checked before TeamNotFoundError, while all other deleted teams fail.
   - Any populated organization field suppresses filling all the remaining fields.
   - Empty key allowed_tools inherits the team list rather than imposing an empty grant.

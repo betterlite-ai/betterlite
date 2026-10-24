@@ -75,11 +75,10 @@ scope:
   - crates/betterlite-azure/src/embeddings.rs
   - crates/betterlite-azure/src/embeddings/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_embeddings.rs
-  - tools/oracle/src/helpers/azure_embeddings/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/embeddings.rs
+  - tools/oracle/src/helpers/azure/embeddings/**
   - tools/oracle/helpers/azure_embeddings.py
+  - tools/oracle/helpers/azure_embeddings/**
   - tools/oracle/cases/helpers/providers/azure-embeddings/**
   - tools/oracle/fuzz/corpus/helper_case/azure_embeddings*
   lint_tables: false
@@ -226,6 +225,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
   L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_embeddings in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/embeddings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_embeddings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The separate azure_ad_token/provider/max_retries arguments do not enter get_azure_openai_client; litellm_params
   is the operative source.
 - Only the async parse branch uses the raw-response status for JSONDecodeError, so a single shared catch would erase

@@ -27,11 +27,10 @@ scope:
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/transcription_protocol.rs
   - crates/betterlite-core/fuzz/corpus/transcription_protocol/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/realtime_transcription_protocol.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/transcription_protocol.rs
+  - tools/oracle/src/helpers/core_ops/transcription_protocol/**
   - tools/oracle/helpers/realtime_transcription_protocol.py
+  - tools/oracle/helpers/realtime_transcription_protocol/**
   - tools/oracle/cases/helpers/realtime-transcription-protocol/**
   - tools/oracle/fuzz/corpus/helper_case/realtime-transcription-protocol-*
   lint_tables: false
@@ -105,6 +104,7 @@ deviations: []
 out_of_scope:
 - No functions in transcription_protocol.py remain unowned; provider restrictions and actual streaming backends stay with their provider tasks.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as realtime_transcription_protocol in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/transcription_protocol.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/realtime_transcription_protocol.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Python bool is an int subclass, but json_integer explicitly rejects true and false.
 - Explicit null turn_detection disables VAD; an omitted key does not.
 - Audio backlog validation runs before strict base64 decoding and before complete-sample validation.

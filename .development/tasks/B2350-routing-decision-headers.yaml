@@ -41,10 +41,10 @@ scope:
     - crates/betterlite-router/fuzz/Cargo.toml
     - crates/betterlite-router/fuzz/fuzz_targets/routing_header_value.rs
     - crates/betterlite-router/fuzz/corpus/routing_header_value/**
-    - tools/oracle/src/helpers/routing_decision_headers.rs
+    - tools/oracle/src/helpers/router/routing_decision_headers.rs
+    - tools/oracle/src/helpers/router/routing_decision_headers/**
     - tools/oracle/helpers/routing_decision_headers.py
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
+    - tools/oracle/helpers/routing_decision_headers/**
     - tools/oracle/cases/helpers/routing-decision-headers/**
     - tools/oracle/fuzz/corpus/helper_case/routing-decision-headers-*
   lint_tables: false
@@ -94,6 +94,7 @@ out_of_scope:
   - B398 owns get_fallback_error_info, _coerce_error_dicts, get_fallback_errors_from_headers, _add_headers_to_response and add_fallback_headers_to_response.
   - B338/B366 own decision generation; their header functions are reassigned here, with no classifier dependency.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as routing_decision_headers in the router group. Replace the stub Op in tools/oracle/src/helpers/router/routing_decision_headers.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/routing_decision_headers.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A present null litellm_metadata suppresses valid metadata for complexity, while quality ignores litellm_metadata entirely.
   - Filtering quality values through the complexity ASCII sanitizer changes the pure helper result.
 budget:

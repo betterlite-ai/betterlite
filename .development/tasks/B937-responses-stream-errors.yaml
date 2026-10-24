@@ -24,11 +24,10 @@ scope:
   - crates/betterlite-core/src/api/responses_stream_errors.rs
   - crates/betterlite-core/src/api/responses_stream_errors/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_stream_errors.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_stream_errors.rs
+  - tools/oracle/src/helpers/core_ops/responses_stream_errors/**
   - tools/oracle/helpers/responses_stream_errors.py
+  - tools/oracle/helpers/responses_stream_errors/**
   - tools/oracle/fuzz/corpus/helper_case/responses_stream_errors-*
   - tools/oracle/cases/helpers/responses-stream-errors/**
   lint_tables: false
@@ -89,6 +88,7 @@ out_of_scope:
 - B080 chooses HTTP versus SSE delivery and handles disconnects; there is no disconnect branch in this owned file.
 - B012 owns _logging.redact_internal_details_from_client_message and its redaction setting; B184 owns exception construction. B925 decodes provider events before this state observes them.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_stream_errors in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_stream_errors.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_stream_errors.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Observing response.completed does not make it terminal until mark_emitted runs; a serialization failure must still emit failure.
 - Numeric upstream codes do not survive as response.error.code unless they match the special rate-limit rule.
 - The failure frame carries response.error.code/message, not an OpenAI HTTP error envelope or a separate event:error frame.

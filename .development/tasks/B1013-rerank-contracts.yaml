@@ -39,11 +39,10 @@ scope:
   - crates/betterlite-openai/fuzz/Cargo.toml
   - crates/betterlite-openai/fuzz/fuzz_targets/rerank_contracts.rs
   - crates/betterlite-openai/fuzz/corpus/rerank_contracts/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/rerank_contracts.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/rerank_contracts.rs
+  - tools/oracle/src/helpers/openai/rerank_contracts/**
   - tools/oracle/helpers/rerank_contracts.py
+  - tools/oracle/helpers/rerank_contracts/**
   - tools/oracle/cases/helpers/rerank-contracts/**
   - tools/oracle/fuzz/corpus/helper_case/rerank_contracts-*
   lint_tables: false
@@ -124,6 +123,7 @@ deviations:
 out_of_scope:
 - B2202 owns BaseLLMException; B204 exact decimal parsing; B1079/B1014 SDK dispatch; B085 route registration. Every function in the three covered files is assigned here.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as rerank_contracts in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/rerank_contracts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/rerank_contracts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A nonempty non_default_params mapping is mutated, but an empty one is replaced; tests must observe the caller's map too.
 - rank_fields is not added to non_default_params by this helper.
 - Query cost ignores total_tokens and charges only search_units, including zero or negative supplied counts.

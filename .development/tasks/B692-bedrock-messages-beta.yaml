@@ -108,11 +108,10 @@ scope:
   - crates/betterlite-bedrock/src/bedrock_messages_beta.rs
   - crates/betterlite-bedrock/src/bedrock_messages_beta/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_messages_beta.rs
-  - tools/oracle/src/helpers/bedrock_messages_beta/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/messages_beta.rs
+  - tools/oracle/src/helpers/bedrock/messages_beta/**
   - tools/oracle/helpers/bedrock_messages_beta.py
+  - tools/oracle/helpers/bedrock_messages_beta/**
   - tools/oracle/cases/helpers/providers/bedrock-messages-beta/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_messages_beta*
   lint_tables: false
@@ -293,6 +292,7 @@ out_of_scope:
   AmazonAnthropicClaudeMessagesConfig._is_claude_opus_4_5 L370-L387 have no caller at the pin; do not implement
   or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_messages_beta in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/messages_beta.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_messages_beta.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Messages filters explicit user betas as well as generated betas; chat Invoke B618 intentionally filters only generated
   additions.
 - The allowlist still contains output_config, despite the nearby safety-net comment listing it as an example of

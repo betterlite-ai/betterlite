@@ -63,10 +63,10 @@ scope:
     - crates/betterlite-db/src/daily_activity_contracts.rs
     - crates/betterlite-db/src/daily_activity_contracts/**
     - crates/betterlite-db/src/lib.rs
-    - tools/oracle/src/helpers/daily_activity_contracts.rs
+    - tools/oracle/src/helpers/db/daily_activity_contracts.rs
+    - tools/oracle/src/helpers/db/daily_activity_contracts/**
     - tools/oracle/helpers/daily_activity_contracts.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/helpers/daily_activity_contracts/**
     - tools/oracle/cases/helpers/daily-activity-contracts/**
     - tools/oracle/fuzz/corpus/helper_case/daily-activity-contracts-*
   lint_tables: false
@@ -118,6 +118,7 @@ out_of_scope:
   - B728 owns search, rankings and export functions in daily_activity_sql.py L304-L526.
   - B729 executes queries and validates returned records; B074 implements authorization, request parsing and recover_key_metadata in common_daily_activity.py.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as daily_activity_contracts in the db group. Replace the stub Op in tools/oracle/src/helpers/db/daily_activity_contracts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/daily_activity_contracts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Nullable dataclass fields remain required constructor arguments except ptu_flat_cost; Option alone must not invent omission defaults.
   - CUSTOMER maps to LiteLLM_DailyEndUserSpend and end_user_id, not a guessed customer_id column.
 budget:

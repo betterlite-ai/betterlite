@@ -132,8 +132,10 @@ scope:
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-ws-native-*
   - tools/oracle/src/websocket_driver.rs
   - tools/oracle/src/websocket_driver/responses_ws_native.rs
-  - tools/oracle/helpers/websocket_dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_ws_native.rs
+  - tools/oracle/src/helpers/core_ops/responses_ws_native/**
   - tools/oracle/helpers/responses_ws_native.py
+  - tools/oracle/helpers/responses_ws_native/**
   - tools/oracle/cases/websocket/responses-ws-native/**
   - tools/oracle/fixtures/responses-ws-native/**
   lint_tables: false
@@ -292,6 +294,7 @@ out_of_scope:
 - 'Route decorators, paths and aliases /v1/responses, /responses, /openai/v1/responses and gateway provider aliases, pre-accept auth status, error status/type/param/code and query handling belong to B941 and B1125; this task registers no route.'
 - 'Python package exports, sync wrappers and event-loop facades are B158-B161; no duplicate public export is added here.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_ws_native in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_ws_native.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_ws_native.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - 'The first frame is authorized by B942 before _store_input; RateLimitError("quota full") therefore emits only the exact rate_limit_exceeded error, has no pre_call or storage, and leaves the receive loop open.'
 - '_store_event runs after unmasking, output masking and response wrapping but before send_text, so stored failure and callback messages contain the transformed JSON rather than backend bytes.'
 - 'recv(decode=False) is attempted before recv() without arguments; a scripted peer exposing only recv() must raise TypeError on the first call to reach the fallback.'

@@ -16,8 +16,10 @@ scope:
   - crates/betterlite-prompts/src/bedrock_processor.rs
   - crates/betterlite-prompts/src/bedrock_processor/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/prompts/bedrock_processor.rs
+  - tools/oracle/src/helpers/prompts/bedrock_processor/**
+  - tools/oracle/helpers/bedrock_processor.py
+  - tools/oracle/helpers/bedrock_processor/**
   - tools/oracle/cases/helpers/bedrock-processor/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -74,6 +76,7 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B181 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_processor in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/bedrock_processor.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_processor.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.

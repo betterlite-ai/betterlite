@@ -94,12 +94,11 @@ scope:
     - crates/betterlite-auth/src/session_token_codec/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/session_token_codec.rs
-    - tools/oracle/src/helpers/session_token_codec/**
+    - tools/oracle/src/helpers/auth/session_token_codec.rs
+    - tools/oracle/src/helpers/auth/session_token_codec/**
     - tools/oracle/helpers/session_token_codec.py
+    - tools/oracle/helpers/session_token_codec/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/session-token-codec/**
     - tools/oracle/fuzz/corpus/helper_case/session-token-codec-*
     - crates/betterlite-config/Cargo.toml
@@ -338,6 +337,7 @@ out_of_scope:
   - 'litellm/proxy/auth/auth_checks.py::model_in_access_group: no production caller at the pinned commit;
     repository-wide identifier search finds only this definition.'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as session_token_codec in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/session_token_codec.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/session_token_codec.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The selected legacy expiry value can prevent startup even when LITELLM_CLI_JWT_EXPIRATION_HOURS is valid.
   - Changing the litellm_login_ prefix changes AES-GCM AAD and invalidates authentication, not just parsing.
   - Empty explicit team_id still clears models because the builder checks is not None, not truthiness.

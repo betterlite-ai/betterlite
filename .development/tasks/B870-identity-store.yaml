@@ -78,12 +78,11 @@ scope:
     - crates/betterlite-auth/src/identity_store/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/identity_store.rs
-    - tools/oracle/src/helpers/identity_store/**
+    - tools/oracle/src/helpers/server/identity_store.rs
+    - tools/oracle/src/helpers/server/identity_store/**
     - tools/oracle/helpers/identity_store.py
+    - tools/oracle/helpers/identity_store/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/identity-store/**
     - tools/oracle/fuzz/corpus/helper_case/identity-store-*
     - crates/betterlite-server/src/auth.rs
@@ -148,6 +147,7 @@ out_of_scope:
   - B733 owns cache reads and copy_for_cache. Direct dependencies B734, B735 and B738 implement the writer, permission loader and reconnecting reader respectively; this task composes their production services.
   - B757 owns HTTP auth-error translation, failure hooks and DB-outage recovery. This task does not add its own recovery policy.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as identity_store in the server group. Replace the stub Op in tools/oracle/src/helpers/server/identity_store.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/identity_store.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An object-permission lookup exception is logged at DEBUG and ignored; describing the whole resolver as fail-closed changes this branch.
   - The database-presence check precedes even a cache hit, so cached credentials do not make a database-free store valid.
   - Empty user_id creates a UserIdentity but selects service_account as the principal type.

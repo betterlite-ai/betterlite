@@ -108,11 +108,10 @@ scope:
   - crates/betterlite-context/src/local_ttl_cache.rs
   - crates/betterlite-context/src/local_ttl_cache/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/local_ttl_cache.rs
-  - tools/oracle/src/helpers/local_ttl_cache/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/context/local_ttl_cache.rs
+  - tools/oracle/src/helpers/context/local_ttl_cache/**
   - tools/oracle/helpers/local_ttl_cache.py
+  - tools/oracle/helpers/local_ttl_cache/**
   - tools/oracle/cases/helpers/providers/local-ttl-cache/**
   - tools/oracle/fuzz/corpus/helper_case/local_ttl_cache*
   - crates/betterlite-config/Cargo.toml
@@ -337,6 +336,7 @@ out_of_scope:
   L182-L187; InMemoryCache.async_set_cache_sadd L189-L198; InMemoryCache.batch_get_cache L223-L228; InMemoryCache.increment_cache
   L230-L236 belong to B390.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as local_ttl_cache in the context group. Replace the stub Op in tools/oracle/src/helpers/context/local_ttl_cache.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/local_ttl_cache.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An insertion can evict an existing entry before discovering that the replacement is too large.
 - Read expiry uses > while insertion pruning uses <=.
 budget:

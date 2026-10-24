@@ -15,11 +15,10 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/response_chat_content.rs
   - crates/betterlite-core/src/api/response_chat_content/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/response_chat_content.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/response_chat_content.rs
+  - tools/oracle/src/helpers/core_ops/response_chat_content/**
   - tools/oracle/helpers/response_chat_content.py
+  - tools/oracle/helpers/response_chat_content/**
   - tools/oracle/fuzz/corpus/helper_case/response_chat_content-*
   - tools/oracle/cases/helpers/response-chat-content/**
   lint_tables: false
@@ -94,6 +93,7 @@ out_of_scope:
 - _map_responses_status_to_finish_reason L1313-L1325 has no caller at the pin and receives no implementation or cases.
 - No function here downloads a request URL. B183 owns inline conversion and the current remote-fetch rejection boundary when another caller requires bytes; forwarding image_url here does not invoke it.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as response_chat_content in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/response_chat_content.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/response_chat_content.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The image dictionary spread keeps type=image; changing it to input_image would silently fix upstream behavior.
 - A missing type passes through the original dictionary without inserting the default type key.
 - File URL fields are dropped here, while image URLs are forwarded unchanged without fetching.

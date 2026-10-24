@@ -111,11 +111,10 @@ scope:
   - crates/betterlite-anthropic/src/feature_flags.rs
   - crates/betterlite-anthropic/src/feature_flags/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_feature_flags.rs
-  - tools/oracle/src/helpers/anthropic_feature_flags/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/feature_flags.rs
+  - tools/oracle/src/helpers/anthropic/feature_flags/**
   - tools/oracle/helpers/anthropic_feature_flags.py
+  - tools/oracle/helpers/anthropic_feature_flags/**
   - tools/oracle/cases/helpers/providers/anthropic-feature-flags/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_feature_flags*
   lint_tables: false
@@ -378,6 +377,7 @@ out_of_scope:
   L726-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model L746-L781; AnthropicModelInfo._legacy_budget_to_effort
   L783-L793; AnthropicModelInfo.is_effort_used L795-L829 belong to B688.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_feature_flags in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/feature_flags.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_feature_flags.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The PDF flag fires for any typed non-text content, including tool blocks.
 - Top-level eager_input_streaming=false overrides nested true, and detection short-circuits before later invalid
   tools.

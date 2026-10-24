@@ -98,11 +98,10 @@ scope:
   - crates/betterlite-bedrock/src/bedrock_embedding_io.rs
   - crates/betterlite-bedrock/src/bedrock_embedding_io/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_embedding_io.rs
-  - tools/oracle/src/helpers/bedrock_embedding_io/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/embedding_io.rs
+  - tools/oracle/src/helpers/bedrock/embedding_io/**
   - tools/oracle/helpers/bedrock_embedding_io.py
+  - tools/oracle/helpers/bedrock_embedding_io/**
   - tools/oracle/cases/helpers/providers/bedrock-embedding-io/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_embedding_io*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -266,6 +265,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/embed/embedding.py: BedrockEmbedding._get_async_invoke_status
   L587-L667 belong to B632.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_embedding_io in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/embedding_io.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_embedding_io.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Embedding JSON response normalization differs between family shapes even when the HTTP status is successful.
 budget:
   max_changed_lines: 625

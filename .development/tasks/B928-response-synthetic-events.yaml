@@ -18,11 +18,10 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/response_synthetic_events.rs
   - crates/betterlite-core/src/api/response_synthetic_events/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/response_synthetic_events.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/response_synthetic_events.rs
+  - tools/oracle/src/helpers/core_ops/response_synthetic_events/**
   - tools/oracle/helpers/response_synthetic_events.py
+  - tools/oracle/helpers/response_synthetic_events/**
   - tools/oracle/fuzz/corpus/helper_case/response_synthetic_events-*
   - tools/oracle/cases/helpers/response-synthetic-events/**
   lint_tables: false
@@ -107,6 +106,7 @@ out_of_scope:
 - B942-B945 own websocket code after L1732. _HasModelDumpJson is a structural serialization protocol,not an extra runtime operation.
 - B196 owns tokenization and any Hugging Face loading policy; B068 owns price calculation. This task invokes those seams without downloading or changing their current policy.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as response_synthetic_events in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/response_synthetic_events.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/response_synthetic_events.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Added events expose full stored content before deltas,so replacing their content with an empty shell changes replay behavior.
 - A synthetic failed response still ends with response.completed rather than response.failed.
 - Logging fallback detaches the usage attribute but does not promise a recursive deep copy.

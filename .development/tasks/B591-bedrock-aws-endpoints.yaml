@@ -121,11 +121,10 @@ scope:
   - crates/betterlite-context/src/bedrock_model.rs
   - crates/betterlite-context/src/bedrock_model/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_aws_endpoints.rs
-  - tools/oracle/src/helpers/bedrock_aws_endpoints/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/aws_endpoints.rs
+  - tools/oracle/src/helpers/bedrock/aws_endpoints/**
   - tools/oracle/helpers/bedrock_aws_endpoints.py
+  - tools/oracle/helpers/bedrock_aws_endpoints/**
   - tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_aws_endpoints*
   - crates/betterlite-config/Cargo.toml
@@ -501,6 +500,7 @@ out_of_scope:
   CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
   or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_aws_endpoints in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/aws_endpoints.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_aws_endpoints.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - LLM region lookup gives AWS_REGION_NAME priority, while the non-LLM branch lets AWS_REGION overwrite it.
 - An explicit model_id blocks ARN-region fallback to model even when that override is not an ARN.
 budget:

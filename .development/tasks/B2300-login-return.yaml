@@ -66,11 +66,10 @@ scope:
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/login-return-*
-    - tools/oracle/src/helpers/login_return.rs
-    - tools/oracle/src/helpers/login_return/**
-    - tools/oracle/src/helpers/management/users.rs
-    - tools/oracle/helpers/management/users.py
+    - tools/oracle/src/helpers/server/login_return.rs
+    - tools/oracle/src/helpers/server/login_return/**
     - tools/oracle/helpers/login_return.py
+    - tools/oracle/helpers/login_return/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/login-return/**
     - tools/oracle/fuzz/corpus/helper_case/login-return-*
@@ -127,6 +126,7 @@ out_of_scope:
     and get_redirect_response_from_openid; it consumes these shared helpers.
   - B899 owns the HTTP login/code-exchange routes and their catch-and-fallback behavior.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as login_return in the server group. Replace the stub Op in tools/oracle/src/helpers/server/login_return.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/login_return.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A matching hostname is insufficient when the scheme or effective port differs.
   - The token cookie deliberately lacks HttpOnly because the kept dashboard reads it from JavaScript.
   - The resumer raises on a stale absolute origin; only the password-login caller swallows that failure.

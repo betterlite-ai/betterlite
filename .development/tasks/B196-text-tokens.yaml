@@ -41,8 +41,10 @@ scope:
   - crates/betterlite-tokenizer/fuzz/**
   - crates/betterlite-config/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/tokenizer/token_count.rs
+  - tools/oracle/src/helpers/tokenizer/token_count/**
+  - tools/oracle/helpers/token_count.py
+  - tools/oracle/helpers/token_count/**
   - tools/oracle/cases/helpers/token-count/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -130,6 +132,7 @@ out_of_scope:
 - Tool formatting and catalog-based model-name normalization are B259; engine/backend selection is B195, including
   the undecided HF acquisition policy.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as token_count in the tokenizer group. Replace the stub Op in tools/oracle/src/helpers/tokenizer/token_count.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/token_count.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Rust byte length is not Python string length.
 - A named tool_choice contributes a different overhead from none or auto.
 - Keep default normalization parity separate from whether a future provider offers an exact native token-count endpoint.

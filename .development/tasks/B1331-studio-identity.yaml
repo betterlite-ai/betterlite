@@ -30,8 +30,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/studio_models.rs
     - crates/betterlite-vertex/fuzz/corpus/studio_models/**
-    - tools/oracle/src/helpers/{mod,studio_identity}.rs
-    - tools/oracle/helpers/{dispatch,studio_identity}.py
+    - tools/oracle/src/helpers/vertex/studio_identity.rs
+    - tools/oracle/src/helpers/vertex/studio_identity/**
+    - tools/oracle/helpers/studio_identity.py
+    - tools/oracle/helpers/studio_identity/**
     - tools/oracle/cases/helpers/studio-identity/**
     - tools/oracle/fuzz/corpus/helper_case/studio_identity*
   lint_tables: false
@@ -82,6 +84,7 @@ out_of_scope:
   - Image helpers in common_utils.py are B1334; encode_unserializable_types belongs to B1379; GoogleAIStudioTokenCounter and GeminiModelInfo.get_token_counter belong to B1330.
   - B1368 owns the remaining native GenAI methods, including request and response transformations.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as studio_identity in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/studio_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/studio_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Model discovery does not follow nextPageToken even when Google returns one.
   - GeminiModelInfo.validate_environment does not add x-goog-api-key; its caller does.
   - litellm_params key extraction uses pop on a copied map in validate_environment and must not erase deployment secrets.

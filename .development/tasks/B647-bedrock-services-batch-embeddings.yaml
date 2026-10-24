@@ -96,11 +96,10 @@ scope:
   - crates/betterlite-bedrock/src/batch_embeddings.rs
   - crates/betterlite-bedrock/src/batch_embeddings/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_batch_embeddings.rs
-  - tools/oracle/src/helpers/bedrock_services_batch_embeddings/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_batch_embeddings.rs
+  - tools/oracle/src/helpers/bedrock/services_batch_embeddings/**
   - tools/oracle/helpers/bedrock_services_batch_embeddings.py
+  - tools/oracle/helpers/bedrock_services_batch_embeddings/**
   - tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_embeddings*
   lint_tables: false
@@ -291,6 +290,7 @@ out_of_scope:
   L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_batch_embeddings in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_batch_embeddings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_batch_embeddings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - 'The registry comment overstates authority: an absent or empty schema permits the substring fallback even when
   get_model_info succeeded.'
 - The first marker occurrence controls the name check; a later valid titan-embed-text-v2 cannot rescue an earlier

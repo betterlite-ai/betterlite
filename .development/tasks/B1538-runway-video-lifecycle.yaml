@@ -32,10 +32,10 @@ scope:
     - crates/betterlite-core/src/api/runway.rs
     - crates/betterlite-core/src/api/runway/video_lifecycle.rs
     - crates/betterlite-core/src/api/runway/video_lifecycle/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/runway_video_lifecycle.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/runway_video_lifecycle.rs
+    - tools/oracle/src/helpers/core_ops/runway_video_lifecycle/**
     - tools/oracle/helpers/runway_video_lifecycle.py
+    - tools/oracle/helpers/runway_video_lifecycle/**
     - tools/oracle/cases/helpers/runway-video-lifecycle/**
     - tools/oracle/fuzz/corpus/helper_case/runway_video_lifecycle*
   lint_tables: false
@@ -69,6 +69,7 @@ out_of_scope:
   - B1537 owns module helpers and methods through timestamp parsing at 37-396, plus get_error_class at 709-714.
   - transform_video_remix_response, transform_video_list_response, transform_video_create_character_response, transform_video_get_character_response, transform_video_edit_response and transform_video_extension_response have no caller at the pin because their paired request methods always raise; no response-stub tests are needed.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as runway_video_lifecycle in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/runway_video_lifecycle.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/runway_video_lifecycle.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Cancellation returns cancelled even when the upstream JSON contains another status.
   - A lowercase running status without output follows the generic missing-URL branch.
   - Retrieval deliberately loses the model component when wrapping a provider task ID.

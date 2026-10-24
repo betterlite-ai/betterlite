@@ -148,11 +148,10 @@ scope:
   - crates/betterlite-bedrock/src/transcription.rs
   - crates/betterlite-bedrock/src/transcription/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_other_transcription.rs
-  - tools/oracle/src/helpers/bedrock_other_transcription/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/other_transcription.rs
+  - tools/oracle/src/helpers/bedrock/other_transcription/**
   - tools/oracle/helpers/bedrock_other_transcription.py
+  - tools/oracle/helpers/bedrock_other_transcription/**
   - tools/oracle/cases/helpers/providers/bedrock-other-transcription/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_transcription*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -364,6 +363,7 @@ out_of_scope:
   a typed credential source to that chain. These local policy functions preserve the referenced native contract,
   which differs from the general Python Bedrock path helpers. Do not add another signer or credential cache.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_other_transcription in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/other_transcription.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_other_transcription.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A recognized MIME overrides the filename extension before the format allowlist runs.
 - The native URL builder does not percent-encode its model ID, unlike several Python Bedrock handlers.
 budget:

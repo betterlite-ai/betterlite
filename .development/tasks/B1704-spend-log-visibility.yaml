@@ -36,10 +36,10 @@ scope:
     - crates/betterlite-server/src/spend.rs
     - crates/betterlite-server/src/spend/visibility.rs
     - crates/betterlite-server/src/spend/visibility/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/spend_visibility.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/spend_visibility.py
+    - tools/oracle/src/helpers/server/spend_log_visibility.rs
+    - tools/oracle/src/helpers/server/spend_log_visibility/**
+    - tools/oracle/helpers/spend_log_visibility.py
+    - tools/oracle/helpers/spend_log_visibility/**
     - tools/oracle/cases/helpers/spend-visibility/**
     - tools/oracle/fuzz/corpus/helper_case/spend-visibility-*
   lint_tables: false
@@ -74,6 +74,7 @@ out_of_scope:
   - B069 and its route leaves retain all earlier endpoint/reporting functions, _build_status_filter_condition and _span_type_sql_condition; this leaf registers no HTTP path.
   - B700 supplies typed database row decoding and B800 retains team permission semantics.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_log_visibility in the server group. Replace the stub Op in tools/oracle/src/helpers/server/spend_log_visibility.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_log_visibility.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Client-supplied litellm_call_id is neither unique nor trustworthy as a cold-storage object key.
   - Successful preauthorization does not remove the need to verify owners on the rows actually fetched.
   - Empty string IDs count as strings; null IDs must not become an unrestricted viewer.

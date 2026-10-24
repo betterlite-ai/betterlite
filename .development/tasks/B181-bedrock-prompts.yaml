@@ -20,8 +20,10 @@ scope:
   - crates/betterlite-prompts/src/bedrock/**
   - crates/betterlite-prompts/fuzz/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/prompts/bedrock_prompt.rs
+  - tools/oracle/src/helpers/prompts/bedrock_prompt/**
+  - tools/oracle/helpers/bedrock_prompt.py
+  - tools/oracle/helpers/bedrock_prompt/**
   - tools/oracle/cases/helpers/bedrock-prompt/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -109,6 +111,7 @@ out_of_scope:
   Image/MIME helpers B227, tool results and Bedrock ID sanitizer B228, content/order helpers B229, processor B230,
   tool/cache blocks B231.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_prompt in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/bedrock_prompt.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_prompt.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Keep the first authoritative Bedrock duplicate block; do not reuse Anthropic's last-result repair blindly.
 - A global reverse-name cache leaks state between requests and is forbidden.
 - Cache TTL eligibility is a model capability, not a property of every Bedrock model.

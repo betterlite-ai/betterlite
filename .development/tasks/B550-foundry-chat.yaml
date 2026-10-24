@@ -109,11 +109,10 @@ scope:
   - crates/betterlite-foundry/src/chat.rs
   - crates/betterlite-foundry/src/chat/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_chat.rs
-  - tools/oracle/src/helpers/foundry_chat/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/foundry/chat.rs
+  - tools/oracle/src/helpers/foundry/chat/**
   - tools/oracle/helpers/foundry_chat.py
+  - tools/oracle/helpers/foundry_chat/**
   - tools/oracle/cases/helpers/providers/foundry-chat/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_chat*
   lint_tables: false
@@ -291,6 +290,7 @@ out_of_scope:
   L363-L371; AzureAIStudioConfig._drop_extra_params_from_request_data L373-L379; AzureAIStudioConfig._extract_params_to_drop_from_error_text
   L381-L398 belong to B551.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_chat in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/chat.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_chat.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The response prefix is assigned before parent conversion, so its final value depends on the parent projection.
 - The raw URL substring selector can choose /models/chat/completions even when the hostname predicate would reject
   that base.

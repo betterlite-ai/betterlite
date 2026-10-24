@@ -75,12 +75,11 @@ scope:
     - crates/betterlite-auth/src/end_user_registry/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/end_user_registry.rs
-    - tools/oracle/src/helpers/end_user_registry/**
+    - tools/oracle/src/helpers/auth/end_user_registry.rs
+    - tools/oracle/src/helpers/auth/end_user_registry/**
     - tools/oracle/helpers/end_user_registry.py
+    - tools/oracle/helpers/end_user_registry/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/end-user-registry/**
     - tools/oracle/fuzz/corpus/helper_case/end-user-registry-*
     - crates/betterlite-config/Cargo.toml
@@ -285,6 +284,7 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as end_user_registry in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/end_user_registry.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/end_user_registry.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An unusable registry means perform per-ID lookup; conflating it with an empty set bypasses every end-user restriction.
   - The overflow path is silent and uses the normal management TTL; only a failed fetch uses the 30-second warning path.
 budget:

@@ -90,11 +90,10 @@ scope:
   - Cargo.toml
   - deny.toml
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_assume_role.rs
-  - tools/oracle/src/helpers/bedrock_assume_role/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/assume_role.rs
+  - tools/oracle/src/helpers/bedrock/assume_role/**
   - tools/oracle/helpers/bedrock_assume_role.py
+  - tools/oracle/helpers/bedrock_assume_role/**
   - tools/oracle/cases/helpers/providers/bedrock-assume-role/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_assume_role*
   lint_tables: false
@@ -242,6 +241,7 @@ out_of_scope:
   BaseAWSLLM._sign_request L1657-L1730; sign_aws_json_post L1733-L1749; run_aws_signing L1758-L1767; sign_request_off_loop_if_aws
   L1770-L1779 belong to B595.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_assume_role in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/assume_role.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_assume_role.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The IRSA shortcut compares the entire ARN string and never falls through to the looser role-name comparison.
 - assumed-role/ without a session segment can still parse; validation is deliberately narrower than an AWS ARN validator.
 budget:

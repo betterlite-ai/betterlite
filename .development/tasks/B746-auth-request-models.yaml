@@ -88,12 +88,11 @@ scope:
     - crates/betterlite-auth/src/auth_request_models/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_request_models.rs
-    - tools/oracle/src/helpers/auth_request_models/**
+    - tools/oracle/src/helpers/server/auth_request_models.rs
+    - tools/oracle/src/helpers/server/auth_request_models/**
     - tools/oracle/helpers/auth_request_models.py
+    - tools/oracle/helpers/auth_request_models/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-request-models/**
     - tools/oracle/fuzz/corpus/helper_case/auth-request-models-*
     - crates/betterlite-server/src/auth.rs
@@ -311,6 +310,7 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_request_models in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_request_models.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_request_models.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Provider path models override a body model, unlike the earlier /openai/deployments fallback.
   - A failing legacy decoder can leave a model hint while the independent unified decoder still runs.
 budget:

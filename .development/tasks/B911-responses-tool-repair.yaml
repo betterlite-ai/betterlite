@@ -23,11 +23,10 @@ scope:
   - crates/betterlite-core/src/api/responses_tool_repair.rs
   - crates/betterlite-core/src/api/responses_tool_repair/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_tool_repair.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_tool_repair.rs
+  - tools/oracle/src/helpers/core_ops/responses_tool_repair/**
   - tools/oracle/helpers/responses_tool_repair.py
+  - tools/oracle/helpers/responses_tool_repair/**
   - tools/oracle/fuzz/corpus/helper_case/responses_tool_repair-*
   - tools/oracle/cases/helpers/responses-tool-repair/**
   lint_tables: false
@@ -90,6 +89,7 @@ out_of_scope:
 - _ensure_tool_call_output_has_corresponding_tool_call L988-L995 and _deduplicate_tool_call_output_messages L925-L985 have no caller at the pin.
 - Other transformation.py methods belong to B907 tool helpers, B908 options, B909 input dispatch, B910 merges, B912 results, B913 namespaces, B914 outputs, B915 sessions and B1115 details.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_tool_repair in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_tool_repair.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_tool_repair.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A cache miss uses the first named tool, with no attempt to match its name to the result ID.
 - The dictionary append branch preserves existing tool_calls=null, unlike the object branch that replaces null with an empty list.
 - The nearest assistant search is not limited to the immediately preceding message.

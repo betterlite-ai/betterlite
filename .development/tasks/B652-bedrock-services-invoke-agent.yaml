@@ -103,11 +103,10 @@ scope:
   - crates/betterlite-bedrock/src/invoke_agent.rs
   - crates/betterlite-bedrock/src/invoke_agent/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_invoke_agent.rs
-  - tools/oracle/src/helpers/bedrock_services_invoke_agent/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_invoke_agent.rs
+  - tools/oracle/src/helpers/bedrock/services_invoke_agent/**
   - tools/oracle/helpers/bedrock_services_invoke_agent.py
+  - tools/oracle/helpers/bedrock_services_invoke_agent/**
   - tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_invoke_agent*
   - crates/betterlite-config/Cargo.toml
@@ -250,6 +249,7 @@ out_of_scope:
   L359-L382; AmazonInvokeAgentConfig._extract_orchestration_model L384-L396; AmazonInvokeAgentConfig._build_model_response
   L398-L428; AmazonInvokeAgentConfig.transform_response L430-L473 belong to B2209.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_invoke_agent in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_invoke_agent.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_invoke_agent.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The body overlays optional_params after inputText and enableTrace, so explicit values can replace both computed
   defaults.
 - An agent model must have exactly three segments; percent encoding occurs after splitting and cannot make a literal

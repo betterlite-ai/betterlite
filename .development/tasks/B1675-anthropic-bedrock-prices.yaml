@@ -50,10 +50,10 @@ scope:
     - crates/betterlite-bedrock/src/lib.rs
     - crates/betterlite-bedrock/src/image_pricing.rs
     - crates/betterlite-bedrock/src/image_pricing/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/anthropic_pricing.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/anthropic_pricing.py
+    - tools/oracle/src/helpers/models/anthropic_bedrock_prices.rs
+    - tools/oracle/src/helpers/models/anthropic_bedrock_prices/**
+    - tools/oracle/helpers/anthropic_bedrock_prices.py
+    - tools/oracle/helpers/anthropic_bedrock_prices/**
     - tools/oracle/cases/helpers/anthropic-pricing/**
     - tools/oracle/fuzz/corpus/helper_case/anthropic-pricing-*
   lint_tables: false
@@ -111,6 +111,7 @@ out_of_scope:
   - amazon_nova/cost_calculation.py cost_per_token has no caller at the pin, so its imported generic calculation does not justify a new forwarding API.
   - This task extracts only get_web_search_requests and get_web_search_requests_from_usage from utils.py; B1669-B1674 own off-peak/rate/detail/generic/breakdown/image arithmetic, B1676 owns the character-metric helpers, and B1687 owns image request access and dispatch.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as anthropic_bedrock_prices in the models group. Replace the stub Op in tools/oracle/src/helpers/models/anthropic_bedrock_prices.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_bedrock_prices.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Anthropic calculates geo before speed, so malformed geo data prevents even an otherwise valid fast-speed surcharge.
   - Stability 1 preserves the supplied size spelling in its price key instead of applying the default image calculator's normalization.
 budget:

@@ -24,10 +24,10 @@ scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,gemini_tools}.rs
     - crates/betterlite-vertex/src/gemini_tools/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/gemini_tools.rs
-    - tools/oracle/src/helpers/gemini_tools/**
-    - tools/oracle/helpers/{dispatch,gemini_tools}.py
+    - tools/oracle/src/helpers/vertex/gemini_tool_mapping.rs
+    - tools/oracle/src/helpers/vertex/gemini_tool_mapping/**
+    - tools/oracle/helpers/gemini_tool_mapping.py
+    - tools/oracle/helpers/gemini_tool_mapping/**
     - tools/oracle/cases/helpers/gemini-tools/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_tools*
   lint_tables: false
@@ -71,6 +71,7 @@ out_of_scope:
   - B1313-B1315 own response and stream methods after L1313; B1316 owns network methods and request adapters after L2513.
   - Message conversion comes from B1311-B1312; remaining vertex_ai.py records follow their consuming endpoint, response or cache tasks.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as gemini_tool_mapping in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_tool_mapping.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_tool_mapping.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The maps extractor removes flat languageCode even when incomplete coordinates prevent creating retrievalConfig.
   - code_execution and computerUse are not members of the set dropped for mixed search/function tools.
   - service_tier=auto maps to priority, while other service-tier strings are merely lowercased.

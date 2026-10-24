@@ -51,12 +51,11 @@ scope:
     - crates/betterlite-server/src/model_ptu_pricing/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/model_ptu_pricing.rs
-    - tools/oracle/src/helpers/model_ptu_pricing/**
+    - tools/oracle/src/helpers/server/model_ptu_pricing.rs
+    - tools/oracle/src/helpers/server/model_ptu_pricing/**
     - tools/oracle/helpers/model_ptu_pricing.py
+    - tools/oracle/helpers/model_ptu_pricing/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/model-ptu-pricing/**
     - tools/oracle/fuzz/corpus/helper_case/model-ptu-pricing-*
   lint_tables: false
@@ -169,6 +168,7 @@ out_of_scope:
   - litellm/proxy/management_endpoints/model_management_endpoints.py::update_team (L161-L166) is an uncalled
     legacy test shim; live management uses team_model_add/team_model_delete.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as model_ptu_pricing in the server group. Replace the stub Op in tools/oracle/src/helpers/server/model_ptu_pricing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_ptu_pricing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - PTU fixed-cost pricing conflicts with token pricing even when both fields are supplied in one patch.
 budget:
   max_changed_lines: 400

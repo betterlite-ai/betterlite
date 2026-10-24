@@ -44,10 +44,10 @@ scope:
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/dataforseo_reply.rs
     - crates/betterlite-core/fuzz/corpus/dataforseo_reply/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/dataforseo_search.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/dataforseo_search.rs
+    - tools/oracle/src/helpers/core_ops/dataforseo_search/**
     - tools/oracle/helpers/dataforseo_search.py
+    - tools/oracle/helpers/dataforseo_search/**
     - tools/oracle/cases/helpers/dataforseo-search/**
     - tools/oracle/fuzz/corpus/helper_case/dataforseo_search*
   lint_tables: false
@@ -86,6 +86,7 @@ deviations: []
 out_of_scope:
   - The source package initializer exports DataForSEOSearchConfig without additional runtime callables; B048 owns registration in the executable search registry.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as dataforseo_search in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/dataforseo_search.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/dataforseo_search.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The provider's documented USA example does not change DEFAULT_DATAFORSEO_LOCATION_CODE=2250.
   - An api_key lacking colon does not override DATAFORSEO_LOGIN or DATAFORSEO_PASSWORD.
   - A successful second task is ignored when the first task reports a non-20000 status.

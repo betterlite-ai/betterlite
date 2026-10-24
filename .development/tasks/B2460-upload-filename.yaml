@@ -22,11 +22,10 @@ scope:
   - crates/betterlite-core/src/api/upload_filename.rs
   - crates/betterlite-core/src/api/upload_filename/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/upload_filename.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/upload_filename.rs
+  - tools/oracle/src/helpers/core_ops/upload_filename/**
   - tools/oracle/helpers/upload_filename.py
+  - tools/oracle/helpers/upload_filename/**
   - tools/oracle/fuzz/corpus/helper_case/upload_filename-*
   - tools/oracle/cases/helpers/upload-filename/**
   lint_tables: false
@@ -63,6 +62,7 @@ deviations: []
 out_of_scope:
 - B124 retains safe_join, try_safe_join, is_within and join_within in path_utils.py; none is called by safe_filename.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as upload_filename in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/upload_filename.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/upload_filename.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A NUL in a discarded directory component still raises before the basename is extracted.
 - safe_filename accepts ../b.txt as b.txt; B1022 separately refuses traversal in an upload name.
 review_level: security

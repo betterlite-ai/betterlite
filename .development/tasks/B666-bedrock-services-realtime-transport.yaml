@@ -129,11 +129,10 @@ scope:
   - crates/betterlite-http/src/aws_duplex.rs
   - crates/betterlite-http/src/aws_duplex/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_realtime_transport.rs
-  - tools/oracle/src/helpers/bedrock_services_realtime_transport/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_realtime_transport.rs
+  - tools/oracle/src/helpers/bedrock/services_realtime_transport/**
   - tools/oracle/helpers/bedrock_services_realtime_transport.py
+  - tools/oracle/helpers/bedrock_services_realtime_transport/**
   - tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_transport*
   lint_tables: false
@@ -322,6 +321,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/realtime/handler.py: BedrockRealtime._forward_client_to_bedrock
   L459-L511; BedrockRealtime._forward_bedrock_to_client L513-L589 belong to B667.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_realtime_transport in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_realtime_transport.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_realtime_transport.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Success-handler logging runs before a provider failure is rethrown, so a failed session can still record already-served
   usage.
 - The source timeout argument is unused; adding a provider-local timeout would change the observable session lifetime.

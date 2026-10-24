@@ -80,11 +80,10 @@ scope:
   - crates/betterlite-provider/src/error.rs
   - crates/betterlite-provider/Cargo.toml
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_rejected_fields.rs
-  - tools/oracle/src/helpers/foundry_rejected_fields/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/foundry/rejected_fields.rs
+  - tools/oracle/src/helpers/foundry/rejected_fields/**
   - tools/oracle/helpers/foundry_rejected_fields.py
+  - tools/oracle/helpers/foundry_rejected_fields/**
   - tools/oracle/cases/helpers/providers/foundry-rejected-fields/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_rejected_fields*
   lint_tables: false
@@ -219,6 +218,7 @@ out_of_scope:
   L269-L282; AzureAIStudioConfig.transform_request L284-L296; AzureAIStudioConfig.transform_response L298-L325 belong
   to B550.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_rejected_fields in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/rejected_fields.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_rejected_fields.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The tools[3].field index only detects a tool error; removal applies the field to all tools.
 - Only the first bracket pair is parsed for extra parameters, even if later brackets contain a more plausible list.
 budget:

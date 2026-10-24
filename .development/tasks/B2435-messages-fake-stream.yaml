@@ -23,11 +23,10 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_fake_stream.rs
   - crates/betterlite-core/src/api/messages_fake_stream/**
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/messages_fake_stream.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/messages_fake_stream.rs
+  - tools/oracle/src/helpers/core_ops/messages_fake_stream/**
   - tools/oracle/helpers/messages_fake_stream.py
+  - tools/oracle/helpers/messages_fake_stream/**
   - tools/oracle/cases/helpers/messages-fake-stream/**
   - tools/oracle/fuzz/corpus/helper_case/messages_fake_stream-*
   lint_tables: false
@@ -152,6 +151,7 @@ out_of_scope:
 - B978 owns response_as_sse_events and raw Messages event classification; B979 owns live upstream relaying, cancellation, queueing and billing. The fake iterator has no HTTP client or provider call.
 - B981, B982, B987 and B988 own the agentic, native-handler, advisor and MCP callers that choose when to wrap a response; this task owns only the imported fake iterator class.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as messages_fake_stream in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_fake_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_fake_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A truthy usage map with input_tokens=null yields message_start input_tokens=null but omits delta input_tokens, while output_tokens=null remains in message_delta; normalizing all null counters to zero changes two separate get()/is-not-None paths.
 - redacted_thinking data=cipher is intentionally absent from the start payload, whereas B978's newer renderer retains redacted data; copying that renderer leaks a field LiteLLM drops here.
 - tool_use input=null is serialized as the string partial_json="null", while an absent input is partial_json="{}"; both still emit an input_json_delta after input={}.

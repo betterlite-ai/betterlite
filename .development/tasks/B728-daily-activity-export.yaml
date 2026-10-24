@@ -76,10 +76,10 @@ scope:
     - crates/betterlite-db/src/daily_activity_export.rs
     - crates/betterlite-db/src/daily_activity_export/**
     - crates/betterlite-db/src/lib.rs
-    - tools/oracle/src/helpers/daily_activity_export.rs
+    - tools/oracle/src/helpers/db/daily_activity_export.rs
+    - tools/oracle/src/helpers/db/daily_activity_export/**
     - tools/oracle/helpers/daily_activity_export.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/helpers/daily_activity_export/**
     - tools/oracle/cases/helpers/daily-activity-export/**
     - tools/oracle/fuzz/corpus/helper_case/daily-activity-export-*
   lint_tables: false
@@ -136,6 +136,7 @@ out_of_scope:
   - B727 owns daily_activity_sql.py L14-L15 and L43-L301, including the shared WHERE/key-metric/PTU helpers.
   - B729 owns query execution, repository limit maxima, export iteration and cursor creation from the last row.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as daily_activity_export in the db group. Replace the stub Op in tools/oracle/src/helpers/db/daily_activity_export.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/daily_activity_export.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The lateral deleted-key join is disabled by any active token row, even when its alias and user_id are null.
   - Search can match an old deleted alias although export metadata selects only the latest deleted record.
   - Only DAILY retains PTU sentinel rows; model, key and user exports can therefore sum to different spend.

@@ -29,10 +29,10 @@ scope:
   - crates/betterlite-openai/fuzz/Cargo.toml
   - crates/betterlite-openai/fuzz/fuzz_targets/vector_file_contracts.rs
   - crates/betterlite-openai/fuzz/corpus/vector_file_contracts/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/vector_file_contracts.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/vector_file_contracts.rs
+  - tools/oracle/src/helpers/openai/vector_file_contracts/**
   - tools/oracle/helpers/vector_file_contracts.py
+  - tools/oracle/helpers/vector_file_contracts/**
   - tools/oracle/cases/helpers/vector-file-contracts/**
   - tools/oracle/fuzz/corpus/helper_case/vector_file_contracts-*
   lint_tables: false
@@ -103,6 +103,7 @@ out_of_scope:
 - B527 owns OpenAI attribute cleaning, header defaults, URL encoding and concrete request/response transformations.
 - B204 owns exact-number limits; file SDK wrappers own timeout/provider selection, and routes own HTTP authentication.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as vector_file_contracts in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/vector_file_contracts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_file_contracts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An attributes map can contain false and numeric values here even though OpenAI later removes its non-string entries.
 - The list filter does not reject an unknown status or a negative limit just because its TypedDict annotation is narrower.
 - A missing file_id remains missing in create filtering; the public wrapper inserts its explicit argument afterwards.

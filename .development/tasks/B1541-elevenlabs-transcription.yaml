@@ -37,10 +37,10 @@ scope:
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/eleven_transcript.rs
     - crates/betterlite-core/fuzz/corpus/eleven_transcript/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/elevenlabs_transcription.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/elevenlabs_transcription.rs
+    - tools/oracle/src/helpers/core_ops/elevenlabs_transcription/**
     - tools/oracle/helpers/elevenlabs_transcription.py
+    - tools/oracle/helpers/elevenlabs_transcription/**
     - tools/oracle/cases/helpers/elevenlabs-transcription/**
     - tools/oracle/fuzz/corpus/helper_case/elevenlabs_transcription*
   lint_tables: false
@@ -76,6 +76,7 @@ deviations: []
 out_of_scope:
   - Audio file interpretation stays with B1001; this configuration receives its filename/content/MIME result without adding file acquisition paths.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as elevenlabs_transcription in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/elevenlabs_transcription.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/elevenlabs_transcription.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The transcription adapter does not inherit ElevenLabs speech's litellm.openai_key fallback.
   - words omitted and words present but containing only spacing produce different response shapes.
   - Form booleans use Python True/False spellings rather than Deepgram's lowercase query encoding.

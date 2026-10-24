@@ -22,8 +22,10 @@ scope:
   - crates/betterlite-error/src/status/**
   - crates/betterlite-error/fuzz/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/error/native_error.rs
+  - tools/oracle/src/helpers/error/native_error/**
+  - tools/oracle/helpers/native_error.py
+  - tools/oracle/helpers/native_error/**
   - tools/oracle/cases/helpers/native-errors/**
   - tools/oracle/fuzz/corpus/helper_case/**
   - crates/betterlite-error/src/dispatch.rs
@@ -99,6 +101,7 @@ out_of_scope:
   Preamble and OpenAI/proxy branches 2358-2485 are B185; classifiers 527-729 and 857-1923 are B238-B242; exception_logging/_add_key_name_and_team_to_alert
   B012.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as native_error in the error group. Replace the stub Op in tools/oracle/src/helpers/error/native_error.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/native_error.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Do not instantiate cloud SDK clients in the oracle when a typed synthetic exception is sufficient.
 - The provider-specific predicate ordering is part of compatibility.
 - Unknown exceptions need a defined generic result, not a swallowed mapping failure.

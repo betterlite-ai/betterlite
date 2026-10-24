@@ -43,11 +43,10 @@ scope:
   - crates/betterlite-config/src/api/responses_poll_state.rs
   - crates/betterlite-config/src/api/responses_poll_state/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-poll-state-*
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_poll_state.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_poll_state.rs
+  - tools/oracle/src/helpers/core_ops/responses_poll_state/**
   - tools/oracle/helpers/responses_poll_state.py
+  - tools/oracle/helpers/responses_poll_state/**
   - tools/oracle/cases/helpers/responses-poll-state/**
   - tools/oracle/fuzz/corpus/helper_case/responses_poll_state-*
   - Cargo.lock
@@ -157,6 +156,7 @@ out_of_scope:
 - B080 owns polling admission and queued HTTP response; B936 owns background consumption and B938 read/delete/cancel routes.
 - All other proxy_server.py settings stay with their named config/API owners; only the responses background_mode branch is consumed here.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_poll_state in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_poll_state.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_poll_state.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A nonempty error overrides a requested completed status, but an empty error does not clear a prior error.
 - cancel_polling returns true even without Redis and never cancels upstream work.
 - A model containing slash does not fall back to router deployments after its prefix misses the provider list.

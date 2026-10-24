@@ -65,12 +65,11 @@ scope:
     - crates/betterlite-server/src/model_allowlist_rename/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/model_allowlist_rename.rs
-    - tools/oracle/src/helpers/model_allowlist_rename/**
+    - tools/oracle/src/helpers/server/model_allowlist_rename.rs
+    - tools/oracle/src/helpers/server/model_allowlist_rename/**
     - tools/oracle/helpers/model_allowlist_rename.py
+    - tools/oracle/helpers/model_allowlist_rename/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/model-allowlist-rename/**
     - tools/oracle/fuzz/corpus/helper_case/model-allowlist-rename-*
     - crates/betterlite-server/src/model_allowlist_rename/fixtures/**
@@ -144,6 +143,7 @@ out_of_scope:
   - B820 owns sibling detection and access-group changes; B835 and B840 own the calling rename routes and their write ordering.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as model_allowlist_rename in the server group. Replace the stub Op in tools/oracle/src/helpers/server/model_allowlist_rename.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_allowlist_rename.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Removing new_name before replacing old_name retains duplicate old-name positions as duplicate new-name grants.
   - A cache decoding or eviction error follows a committed CTE statement; rolling back the deployment rename here would invent atomicity.
 budget:

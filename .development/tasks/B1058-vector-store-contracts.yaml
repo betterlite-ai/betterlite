@@ -26,10 +26,10 @@ scope:
   - crates/betterlite-provider/src/api.rs
   - crates/betterlite-provider/src/api/vector_store_contracts.rs
   - crates/betterlite-provider/src/api/vector_store_contracts/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/vector_store_contracts.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/vector_store_contracts.rs
+  - tools/oracle/src/helpers/core_ops/vector_store_contracts/**
   - tools/oracle/helpers/vector_store_contracts.py
+  - tools/oracle/helpers/vector_store_contracts/**
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/vector_store_embedding_executor.rs
   - tools/oracle/sdk_http/dispatch.py
@@ -113,6 +113,7 @@ out_of_scope:
 - BaseVectorStore in integrations/vector_store_integrations/base_vector_store.py has no caller at the pin; its empty inheritance wrapper is not built.
 - Router resolution/catalog/execution implementations remain behind the injected caller seam; B006 supplies direct embedding HTTP execution.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as vector_store_contracts in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_store_contracts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_store_contracts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty litellm_metadata dictionary suppresses a populated metadata dictionary.
 - Search mapping sees the unfiltered params as well as the filtered optional map and always receives drop_params=false.
 - Router embedding removes configured model/input while the direct embedding executor passes them through and can raise duplicate-argument errors.

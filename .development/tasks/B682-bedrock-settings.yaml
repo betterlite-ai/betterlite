@@ -95,11 +95,10 @@ scope:
   - crates/betterlite-bedrock/src/bedrock_settings.rs
   - crates/betterlite-bedrock/src/bedrock_settings/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_settings.rs
-  - tools/oracle/src/helpers/bedrock_settings/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/settings.rs
+  - tools/oracle/src/helpers/bedrock/settings/**
   - tools/oracle/helpers/bedrock_settings.py
+  - tools/oracle/helpers/bedrock_settings/**
   - tools/oracle/cases/helpers/providers/bedrock-settings/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_settings*
   - crates/betterlite-config/Cargo.toml
@@ -419,6 +418,7 @@ out_of_scope:
   CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
   or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_settings in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/settings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_settings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A truthy headers mapping containing only nonstring values still triggers response synthesis, even though the synthesized
   response has none of those headers.
 - An explicit response bypasses synthesis; error_response_text must not consume an unread streaming body.

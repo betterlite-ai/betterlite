@@ -40,10 +40,10 @@ scope:
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/skill_zip.rs
     - crates/betterlite-core/fuzz/corpus/skill_zip/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/skill_content.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/skill_content.rs
+    - tools/oracle/src/helpers/core_ops/skill_content/**
     - tools/oracle/helpers/skill_content.py
+    - tools/oracle/helpers/skill_content/**
     - tools/oracle/cases/helpers/skill-content/**
     - tools/oracle/fuzz/corpus/helper_case/skill_content*
   lint_tables: false
@@ -85,6 +85,7 @@ out_of_scope:
   - code_execution._parse_code_execution_arguments, CodeExecutionHandler.execute_with_code_execution, has_code_execution_tool and add_code_execution_tool have no live caller at the pin; constructor state and their private result/protocol declarations serve only this unused loop and are not implemented.
   - B095 owns the live SkillsInjectionHook loop and B1506 owns SkillsSandboxExecutor, which that hook calls directly.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as skill_content in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/skill_content.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/skill_content.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - endswith(SKILL.md) matches a suffix such as NOT_SKILL.md and does not require the basename to equal SKILL.md.
   - The archive-wide exception returns the extracted prefix of files instead of discarding all earlier entries.
   - Description truncation counts Unicode characters rather than UTF-8 bytes.

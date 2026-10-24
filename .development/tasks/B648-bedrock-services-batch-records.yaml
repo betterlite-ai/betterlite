@@ -137,11 +137,10 @@ scope:
   - crates/betterlite-bedrock/src/batch_records.rs
   - crates/betterlite-bedrock/src/batch_records/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_batch_records.rs
-  - tools/oracle/src/helpers/bedrock_services_batch_records/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_batch_records.rs
+  - tools/oracle/src/helpers/bedrock/services_batch_records/**
   - tools/oracle/helpers/bedrock_services_batch_records.py
+  - tools/oracle/helpers/bedrock_services_batch_records/**
   - tools/oracle/cases/helpers/providers/bedrock-services-batch-records/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_records*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -408,6 +407,7 @@ out_of_scope:
   L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_batch_records in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_batch_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_batch_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The URL/name pass reads the original upload again after conversion; a consumed file-like stream must retain the
   pinned behavior rather than silently rewinding.
 - The upload length is recorded after conversion and signing, so it differs from the uploaded input-file byte length.

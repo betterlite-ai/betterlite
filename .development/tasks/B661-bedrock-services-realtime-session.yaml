@@ -97,11 +97,10 @@ scope:
   - crates/betterlite-bedrock/src/realtime_session.rs
   - crates/betterlite-bedrock/src/realtime_session/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_realtime_session.rs
-  - tools/oracle/src/helpers/bedrock_services_realtime_session/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_realtime_session.rs
+  - tools/oracle/src/helpers/bedrock/services_realtime_session/**
   - tools/oracle/helpers/bedrock_services_realtime_session.py
+  - tools/oracle/helpers/bedrock_services_realtime_session/**
   - tools/oracle/cases/helpers/providers/bedrock-services-realtime-session/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_session*
   lint_tables: false
@@ -280,6 +279,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_realtime_response
   L1275-L1415 belong to B665.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_realtime_session in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_realtime_session.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_realtime_session.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The initial configuration marker does not set prompt_started, whereas session.update does.
 - G.711 changes only the declared sample rate; the provider body still declares audio/lpcm and 16-bit samples.
 budget:

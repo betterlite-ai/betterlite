@@ -99,11 +99,10 @@ scope:
   - crates/betterlite-bedrock/src/converse_content.rs
   - crates/betterlite-bedrock/src/converse_content/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_converse_content.rs
-  - tools/oracle/src/helpers/bedrock_converse_content/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/converse_content.rs
+  - tools/oracle/src/helpers/bedrock/converse_content/**
   - tools/oracle/helpers/bedrock_converse_content.py
+  - tools/oracle/helpers/bedrock_converse_content/**
   - tools/oracle/cases/helpers/providers/bedrock-converse-content/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_converse_content*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -319,6 +318,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta
   L1686-L1827; AmazonConverseConfig._filter_context_management_for_bedrock_converse L1829-L1859 belong to B683.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_converse_content in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/converse_content.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_converse_content.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Only searchResultLocation yields normalized citations; document/page locations are skipped.
 - Mixed synthetic JSON tools append their first payload to existing text; all-synthetic tools replace existing text.
 budget:

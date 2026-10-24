@@ -114,11 +114,10 @@ scope:
   - crates/betterlite-bedrock/src/converse_call.rs
   - crates/betterlite-bedrock/src/converse_call/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_converse_call.rs
-  - tools/oracle/src/helpers/bedrock_converse_call/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/converse_call.rs
+  - tools/oracle/src/helpers/bedrock/converse_call/**
   - tools/oracle/helpers/bedrock_converse_call.py
+  - tools/oracle/helpers/bedrock_converse_call/**
   - tools/oracle/cases/helpers/providers/bedrock-converse-call/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_converse_call*
   lint_tables: false
@@ -328,6 +327,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call
   L274-L360 belong to B691.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_converse_call in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/converse_call.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_converse_call.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Without an embedded full region, completion can retain a bedrock/converse/ wrapper in the encoded URL id; do not
   assume its temporary stripped view is the final id.
 - Async streaming accepts timeout but does not forward it to make_call; sync client construction does use it.

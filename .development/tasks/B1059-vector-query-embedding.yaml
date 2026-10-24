@@ -28,10 +28,10 @@ scope:
   - crates/betterlite-provider/src/api.rs
   - crates/betterlite-provider/src/api/vector_query_embedding.rs
   - crates/betterlite-provider/src/api/vector_query_embedding/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/vector_query_embedding.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/vector_query_embedding.rs
+  - tools/oracle/src/helpers/core_ops/vector_query_embedding/**
   - tools/oracle/helpers/vector_query_embedding.py
+  - tools/oracle/helpers/vector_query_embedding/**
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/vector_query_embedding.rs
   - tools/oracle/sdk_http/dispatch.py
@@ -104,6 +104,7 @@ out_of_scope:
 - B1131/B204 own wire records and exact numeric rejection; this task consumes the decoded embedding vector.
 - Provider-specific direct searches and query-to-provider body construction remain in their provider tasks; no datastore driver is added here.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as vector_query_embedding in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_query_embedding.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_query_embedding.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An explicit executor avoids router selection even when a router is available.
 - Only executor failure is wrapped; missing model and malformed returned vector keep their distinct errors.
 - A sequence query is joined with one literal space, preserving empty elements rather than trimming them.

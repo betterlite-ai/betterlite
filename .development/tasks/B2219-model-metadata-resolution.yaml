@@ -104,11 +104,10 @@ scope:
   - crates/betterlite-models/src/model_metadata_resolution.rs
   - crates/betterlite-models/src/model_metadata_resolution/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/model_metadata_resolution.rs
-  - tools/oracle/src/helpers/model_metadata_resolution/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/models/model_metadata_resolution.rs
+  - tools/oracle/src/helpers/models/model_metadata_resolution/**
   - tools/oracle/helpers/model_metadata_resolution.py
+  - tools/oracle/helpers/model_metadata_resolution/**
   - tools/oracle/cases/helpers/providers/model-metadata-resolution/**
   - tools/oracle/fuzz/corpus/helper_case/model_metadata_resolution*
   - crates/betterlite-models/fuzz/Cargo.toml
@@ -435,6 +434,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/utils.py: _handle_new_key_with_scan L5621-L5637 have no caller at the pin;
   do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as model_metadata_resolution in the models group. Replace the stub Op in tools/oracle/src/helpers/models/model_metadata_resolution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_metadata_resolution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A provider-mismatched exact catalog entry still blocks generalization fallback.
 - Dynamic metadata can return an empty dict and bypass all static defaults.
 budget:

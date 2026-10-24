@@ -36,10 +36,10 @@ scope:
     - crates/betterlite-config/src/microsoft_login/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/microsoft-login-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/microsoft_identity.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/microsoft_identity.py
+    - tools/oracle/src/helpers/server/microsoft_login.rs
+    - tools/oracle/src/helpers/server/microsoft_login/**
+    - tools/oracle/helpers/microsoft_login.py
+    - tools/oracle/helpers/microsoft_login/**
     - tools/oracle/cases/helpers/microsoft-identity/**
     - tools/oracle/fuzz/corpus/helper_case/microsoft-identity-*
   lint_tables: false
@@ -83,6 +83,7 @@ out_of_scope:
   - Graph pagination/team creation is B1621, Google conversion is B1629 and generic OAuth is B1623.
   - B063 owns callback dispatch; its complete inventory assigns the remaining ui_sso.py helpers.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as microsoft_login in the server group. Replace the stub Op in tools/oracle/src/helpers/server/microsoft_login.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/microsoft_login.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - MICROSOFT_USER_EMAIL_ATTRIBUTE falls back to mail on an empty value, whereas the other configured profile fields have no fallback.
   - app_roles is selected before checking that it is a list, so a nonempty scalar suppresses an otherwise valid roles array.
 budget:

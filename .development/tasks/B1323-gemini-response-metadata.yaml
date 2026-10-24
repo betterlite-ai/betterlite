@@ -21,8 +21,10 @@ scope:
   paths:
     - crates/betterlite-vertex/src/{lib,gemini_metadata}.rs
     - crates/betterlite-vertex/src/gemini_metadata/**
-    - tools/oracle/src/helpers/{mod,gemini_metadata}.rs
-    - tools/oracle/helpers/{dispatch,gemini_metadata}.py
+    - tools/oracle/src/helpers/vertex/gemini_response_metadata.rs
+    - tools/oracle/src/helpers/vertex/gemini_response_metadata/**
+    - tools/oracle/helpers/gemini_response_metadata.py
+    - tools/oracle/helpers/gemini_response_metadata/**
     - tools/oracle/cases/helpers/gemini-metadata/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_metadata*
   lint_tables: false
@@ -59,6 +61,7 @@ out_of_scope:
   - B1313 owns part extraction, B1314 candidate construction, B1322 grounding billing and B1326 response decoding in this file.
   - Request options belong to B1305/B1308/B1309/B1310, transport to B1316 and stream framing to B1315.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as gemini_response_metadata in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_response_metadata.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_response_metadata.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty top-level metadata list shadows a populated hidden field because lookup tests None, not truthiness.
   - Only the first groundingChunkIndices entry participates even when a later entry is a usable web citation.
   - Safety metadata is a list of candidate rating lists, not a flattened rating list.

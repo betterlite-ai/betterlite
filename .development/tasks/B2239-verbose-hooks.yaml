@@ -71,11 +71,10 @@ scope:
   - crates/betterlite-logging/src/verbose_hooks.rs
   - crates/betterlite-logging/src/verbose_hooks/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/verbose_hooks.rs
-  - tools/oracle/src/helpers/verbose_hooks/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/logging/verbose_hooks.rs
+  - tools/oracle/src/helpers/logging/verbose_hooks/**
   - tools/oracle/helpers/verbose_hooks.py
+  - tools/oracle/helpers/verbose_hooks/**
   - tools/oracle/cases/helpers/providers/verbose-hooks/**
   - tools/oracle/fuzz/corpus/helper_case/verbose_hooks*
   - crates/betterlite-config/Cargo.toml
@@ -380,6 +379,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/utils.py: _handle_new_key_with_scan L5621-L5637 have no caller at the pin;
   do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as verbose_hooks in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/verbose_hooks.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/verbose_hooks.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - main.print_verbose uses truthiness but utils.print_verbose uses identity with True; a fixture value1 separates
   these paths.
 budget:

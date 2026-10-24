@@ -84,11 +84,10 @@ scope:
   - crates/betterlite-azure/src/azure_message_attachments.rs
   - crates/betterlite-azure/src/azure_message_attachments/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_message_attachments.rs
-  - tools/oracle/src/helpers/azure_message_attachments/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/message_attachments.rs
+  - tools/oracle/src/helpers/azure/message_attachments/**
   - tools/oracle/helpers/azure_message_attachments.py
+  - tools/oracle/helpers/azure_message_attachments/**
   - tools/oracle/cases/helpers/providers/azure-message-attachments/**
   - tools/oracle/fuzz/corpus/helper_case/azure_message_attachments*
   lint_tables: false
@@ -251,6 +250,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.streaming L500-L575; AzureChatCompletion.async_streaming
   L577-L652 belong to B685.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_message_attachments in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/message_attachments.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_message_attachments.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The local file_ids list is never put into optional_params, so successful attachment validation still drops those
   inputs.
 - role uses an independent if before the metadata/content/attachments chain; it is still forwarded.

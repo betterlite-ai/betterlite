@@ -156,11 +156,10 @@ scope:
   - crates/betterlite-bedrock/src/s3_access.rs
   - crates/betterlite-bedrock/src/s3_access/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_s3_access.rs
-  - tools/oracle/src/helpers/bedrock_services_s3_access/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_s3_access.rs
+  - tools/oracle/src/helpers/bedrock/services_s3_access/**
   - tools/oracle/helpers/bedrock_services_s3_access.py
+  - tools/oracle/helpers/bedrock_services_s3_access/**
   - tools/oracle/cases/helpers/providers/bedrock-services-s3-access/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_access*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -597,6 +596,7 @@ out_of_scope:
   L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_s3_access in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_s3_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_s3_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Bucket selection happens before the ValueError-to-BedrockError catch, so missing configuration is not the same
   400 path as a rejected file ID.
 - The plain CommonBatchFilesUtils S3 parser accepts empty bucket/key components and must not substitute for authorization.

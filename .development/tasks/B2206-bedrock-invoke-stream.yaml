@@ -132,6 +132,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
   AmazonInvokeConfig.transform_response L281-L419 belong to B612.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_invoke_stream in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/invoke_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_invoke_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The fake-stream switch examines api_base, so an unrelated ai21 substring in the base also selects it.
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L444-L480
@@ -160,11 +161,10 @@ scope:
   - crates/betterlite-bedrock/src/invoke_stream.rs
   - crates/betterlite-bedrock/src/invoke_stream/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_invoke_stream.rs
-  - tools/oracle/src/helpers/bedrock_invoke_stream/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/invoke_stream.rs
+  - tools/oracle/src/helpers/bedrock/invoke_stream/**
   - tools/oracle/helpers/bedrock_invoke_stream.py
+  - tools/oracle/helpers/bedrock_invoke_stream/**
   - tools/oracle/cases/helpers/providers/bedrock-invoke-stream/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_stream*
 title: Bedrock Invoke custom stream composition

@@ -26,8 +26,10 @@ scope:
   - crates/betterlite-models/src/identity.rs
   - crates/betterlite-models/src/identity/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/models/provider_identity.rs
+  - tools/oracle/src/helpers/models/provider_identity/**
+  - tools/oracle/helpers/provider_identity.py
+  - tools/oracle/helpers/provider_identity/**
   - tools/oracle/cases/helpers/provider-identity/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -80,6 +82,7 @@ out_of_scope:
 - Full inferred_provider/get_llm_provider orchestration and unknown-model errors are B174; default tables B210/B211;
   is_registered_custom_provider is B164.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as provider_identity in the models group. Replace the stub Op in tools/oracle/src/helpers/models/provider_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/provider_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.
 review_level: security

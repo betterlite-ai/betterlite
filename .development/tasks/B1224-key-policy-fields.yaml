@@ -116,12 +116,11 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/key_policy_json_column.rs
     - crates/betterlite-server/fuzz/corpus/key_policy_json_column/**
-    - tools/oracle/src/helpers/key_policy_fields.rs
-    - tools/oracle/src/helpers/key_policy_fields/**
+    - tools/oracle/src/helpers/server/key_policy_fields.rs
+    - tools/oracle/src/helpers/server/key_policy_fields/**
     - tools/oracle/helpers/key_policy_fields.py
+    - tools/oracle/helpers/key_policy_fields/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/keys.rs
-    - tools/oracle/helpers/management/keys.py
     - tools/oracle/cases/helpers/key-policy-fields/**
     - tools/oracle/fuzz/corpus/helper_case/key-policy-fields-*
     - crates/betterlite-config/Cargo.toml
@@ -347,6 +346,7 @@ out_of_scope:
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py::get_member_team_ids: no production
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as key_policy_fields in the server group. Replace the stub Op in tools/oracle/src/helpers/server/key_policy_fields.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/key_policy_fields.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A present organization_id null must not fall back to a populated org_id during effective-key construction.
   - Turning off auto_rotate leaves preexisting rotation fields intact in this helper.
   - The optional alias regex never disables the earlier unsafe secret-name check.

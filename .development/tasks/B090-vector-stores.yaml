@@ -24,10 +24,10 @@ scope:
   - crates/betterlite-core/src/api/vector_stores.rs
   - crates/betterlite-core/src/api/vector_stores/**
   - crates/betterlite-core/src/dispatch.rs
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/vector_stores.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/vector_stores.rs
+  - tools/oracle/src/helpers/core_ops/vector_stores/**
   - tools/oracle/helpers/vector_stores.py
+  - tools/oracle/helpers/vector_stores/**
   - tools/oracle/cases/helpers/vector-stores/**
   - tools/oracle/fuzz/corpus/helper_case/vector_stores-*
   lint_tables: false
@@ -91,6 +91,7 @@ out_of_scope:
 - B1062/B1064 own VectorStoreRegistry/create/search exports; B1072-B1074 own every vector_store_files operation. The proxy vector_store_files_endpoints __init__.py is empty.
 - Gateway routes remain B1067/B1068/B1076/B1081; B158-B161 own Python package exports, so this task adds no route registration.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as vector_stores in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_stores.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_stores.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The successful Responses hook advertises failed retrievals only; adding successful search_results would change its wire format.
 - Streaming reads request_data directly, while non-streaming reads the logging object's model_call_details.
 - A post-hook failure returns null for success but the original chunk for streaming, without atomic rollback.

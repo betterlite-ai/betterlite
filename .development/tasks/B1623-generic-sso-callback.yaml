@@ -36,10 +36,10 @@ scope:
     - crates/betterlite-config/src/generic_sso_callback/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/generic-sso-callback-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/generic_sso_error.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/generic_sso_error.py
+    - tools/oracle/src/helpers/server/generic_sso_callback.rs
+    - tools/oracle/src/helpers/server/generic_sso_callback/**
+    - tools/oracle/helpers/generic_sso_callback.py
+    - tools/oracle/helpers/generic_sso_callback/**
     - tools/oracle/cases/helpers/generic-sso-error/**
     - tools/oracle/fuzz/corpus/helper_case/generic-sso-error-*
   lint_tables: false
@@ -81,6 +81,7 @@ out_of_scope:
   - B1615 registers GET /sso/callback and supplies its HTTP oracle cases; B063 composes it and this generic branch adds no competing route.
   - Other ui_sso.py functions retain the ownership assignments recorded by B063.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as generic_sso_callback in the server group. Replace the stub Op in tools/oracle/src/helpers/server/generic_sso_callback.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/generic_sso_callback.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Setting GENERIC_CLIENT_USE_PKCE=true does not itself select the direct exchange when no verifier survives permissive cache lookup.
   - The verifier is deleted after process_sso_jwt_access_token, so a role/team augmentation exception must leave the cache entry intact.
 budget:

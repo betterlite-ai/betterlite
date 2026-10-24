@@ -48,8 +48,10 @@ scope:
     - crates/betterlite-config/src/providers/xai/oauth.rs
     - crates/betterlite-config/src/tests/xai_oauth.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/xai_oauth*
-    - tools/oracle/src/helpers/{mod,xai_oauth_tokens}.rs
-    - tools/oracle/helpers/{dispatch,xai_oauth_tokens}.py
+    - tools/oracle/src/helpers/openai/xai_oauth_tokens.rs
+    - tools/oracle/src/helpers/openai/xai_oauth_tokens/**
+    - tools/oracle/helpers/xai_oauth_tokens.py
+    - tools/oracle/helpers/xai_oauth_tokens/**
     - tools/oracle/cases/helpers/xai-oauth-tokens/**
     - tools/oracle/fuzz/corpus/helper_case/xai_oauth_tokens*
   lint_tables: false
@@ -101,6 +103,7 @@ out_of_scope:
   - B1401 owns login, _CallbackHandler.do_GET/log_message, _CallbackServer, _pkce_pair, _start_callback_server, _build_authorize_url and _wait_for_callback in oauth.py.
   - B036 turns XAIOAuthError into the chat/Responses authentication envelope; CLI command registration remains B151.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as xai_oauth_tokens in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/xai_oauth_tokens.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/xai_oauth_tokens.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A stored token_endpoint needs the same x.ai suffix validation as a discovered endpoint.
   - expires_in equal to zero falls back to 3600 rather than producing an immediately expired record.
   - The second auth-file read happens under the refresh lock and can avoid the network exchange entirely.

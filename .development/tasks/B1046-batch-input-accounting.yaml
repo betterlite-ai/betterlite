@@ -72,11 +72,8 @@ scope:
   - crates/betterlite-core/fuzz/fuzz_targets/batch_input_accounting.rs
   - crates/betterlite-core/fuzz/corpus/batch_input_accounting/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/batch_input_accounting.rs
-  - tools/oracle/src/helpers/batch_input_accounting/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/batch_input_accounting.rs
+  - tools/oracle/src/helpers/core_ops/batch_input_accounting/**
   - tools/oracle/helpers/batch_input_accounting.py
   - tools/oracle/helpers/batch_input_accounting/**
   - tools/oracle/fuzz/corpus/helper_case/batch_input_accounting-*
@@ -186,6 +183,7 @@ out_of_scope:
 - Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
   never stand in for those HTTP comparisons.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as batch_input_accounting in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/batch_input_accounting.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/batch_input_accounting.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - 'batch_rate_limiter.py:1010 emits the diagnostic ''Batch rejected: caller not authorized for a model named in
   %s: %s''; retain its level and fallback instead of turning it into a hard error.'
 - 'batch_rate_limiter.py:1070 uses status_code=403, detail={''error'': ''Batch input file model access could not

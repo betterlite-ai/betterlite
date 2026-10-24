@@ -96,11 +96,10 @@ scope:
   - crates/betterlite-foundry/src/mai_images.rs
   - crates/betterlite-foundry/src/mai_images/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_mai_images.rs
-  - tools/oracle/src/helpers/foundry_mai_images/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/foundry/mai_images.rs
+  - tools/oracle/src/helpers/foundry/mai_images/**
   - tools/oracle/helpers/foundry_mai_images.py
+  - tools/oracle/helpers/foundry_mai_images/**
   - tools/oracle/cases/helpers/providers/foundry-mai-images/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_mai_images*
   - crates/betterlite-foundry/fuzz/Cargo.toml
@@ -263,6 +262,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_mai_images in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/mai_images.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_mai_images.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Named 512x512 and 1792x1024 are recognized syntactically but still fail the MAI dimension/pixel limits.
 - Explicit width/height bypass _validate_dimensions; enforcing the size-string checks on them would change the pin.
 budget:

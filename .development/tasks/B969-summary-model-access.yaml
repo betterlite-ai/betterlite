@@ -35,11 +35,10 @@ scope:
   - crates/betterlite-config/src/api/summary_model_access.rs
   - crates/betterlite-config/src/api/summary_model_access/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/summary-model-access-*
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/summary_model_access.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/summary_model_access.rs
+  - tools/oracle/src/helpers/core_ops/summary_model_access/**
   - tools/oracle/helpers/summary_model_access.py
+  - tools/oracle/helpers/summary_model_access/**
   - tools/oracle/fuzz/corpus/helper_case/summary_model_access-*
   - tools/oracle/cases/helpers/summary-model-access/**
   lint_tables: false
@@ -117,6 +116,7 @@ out_of_scope:
 - B2432 owns summary calls and apply_compact_20260112 at L1019-L1111 and L1160-L1380; B972 owns the dispatcher.
 - B736/B879 own object retrieval and B747/B886 own the underlying grant policy; this task only sequences those calls for a summary.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as summary_model_access in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/summary_model_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/summary_model_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A failed user or project read skips that scope, but a failed team membership read denies the summary.
 - Whitespace is a nonempty summary-model setting; trimming it changes which model is attempted.
 - No key/team policy is inferred for SDK calls with no principal.

@@ -57,10 +57,10 @@ scope:
     - crates/betterlite-db/src/request_log_index_catalog/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - tools/oracle/src/helpers/request_log_index_catalog.rs
+    - tools/oracle/src/helpers/db/request_log_index_catalog.rs
+    - tools/oracle/src/helpers/db/request_log_index_catalog/**
     - tools/oracle/helpers/request_log_index_catalog.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/helpers/request_log_index_catalog/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/request-log-index-catalog/**
     - tools/oracle/fuzz/corpus/helper_case/request-log-index-catalog-*
@@ -119,6 +119,7 @@ out_of_scope:
   - filter_request_log_index_diff, _creates_one_of and _without_comments belong only to the excluded
     v1 schema-diff path under B717's native-v2 deviation. B701 recognizes deferred indexes structurally.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as request_log_index_catalog in the db group. Replace the stub Op in tools/oracle/src/helpers/db/request_log_index_catalog.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/request_log_index_catalog.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Index state exposes only the indexed table's relname, so it cannot distinguish a same-named table in another schema.
   - Equivalent-index matching excludes attached indexes even when every key column otherwise matches.
   - The child-name digest covers the untruncated UTF-8 name, while only the retained prefix has a 54-byte budget.

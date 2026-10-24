@@ -78,12 +78,11 @@ scope:
     - crates/betterlite-auth/src/jwt_role_claims/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/jwt_role_claims.rs
-    - tools/oracle/src/helpers/jwt_role_claims/**
+    - tools/oracle/src/helpers/auth/jwt_role_claims.rs
+    - tools/oracle/src/helpers/auth/jwt_role_claims/**
     - tools/oracle/helpers/jwt_role_claims.py
+    - tools/oracle/helpers/jwt_role_claims/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/jwt.rs
-    - tools/oracle/helpers/management/jwt.py
     - tools/oracle/cases/helpers/jwt-role-claims/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-role-claims-*
     - crates/betterlite-config/Cargo.toml
@@ -235,6 +234,7 @@ out_of_scope:
     (L2374-L2388).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as jwt_role_claims in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/jwt_role_claims.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/jwt_role_claims.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A roles string iterates characters; only scope strings split into words.
   - role_mappings is exact RBAC selection, while jwt_litellm_role_map uses wildcard matching for sync.
 budget:

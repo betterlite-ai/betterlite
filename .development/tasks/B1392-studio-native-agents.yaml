@@ -36,8 +36,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/studio_agent_payload.rs
     - crates/betterlite-vertex/fuzz/corpus/studio_agent_payload/**
-    - tools/oracle/src/helpers/{mod,studio_agents}.rs
-    - tools/oracle/helpers/{dispatch,studio_agents}.py
+    - tools/oracle/src/helpers/vertex/studio_native_agents.rs
+    - tools/oracle/src/helpers/vertex/studio_native_agents/**
+    - tools/oracle/helpers/studio_native_agents.py
+    - tools/oracle/helpers/studio_native_agents/**
     - tools/oracle/cases/helpers/studio-agents/**
     - tools/oracle/fuzz/corpus/helper_case/studio_agents*
   lint_tables: false
@@ -84,6 +86,7 @@ out_of_scope:
   - B141 owns agent proxy routes, persistence and identity permissions; this task supplies native provider records without registering routes.
   - _LITELLM_INTERNAL_KEYS has no caller at the pin; create uses the explicit three-key allowlist instead.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as studio_native_agents in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/studio_native_agents.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/studio_native_agents.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A valid JSON array does not receive the malformed-JSON fallback used by create/get.
   - Custom api_base rejects a missing explicit key even if a process-wide Gemini key is configured.
   - Deleting with HTTP 204 succeeds despite the source comment describing HTTP 200.

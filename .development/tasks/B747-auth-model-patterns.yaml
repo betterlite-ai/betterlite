@@ -85,12 +85,11 @@ scope:
     - crates/betterlite-auth/src/auth_model_patterns/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_model_patterns.rs
-    - tools/oracle/src/helpers/auth_model_patterns/**
+    - tools/oracle/src/helpers/server/auth_model_patterns.rs
+    - tools/oracle/src/helpers/server/auth_model_patterns/**
     - tools/oracle/helpers/auth_model_patterns.py
+    - tools/oracle/helpers/auth_model_patterns/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-model-patterns/**
     - tools/oracle/fuzz/corpus/helper_case/auth-model-patterns-*
     - crates/betterlite-server/src/auth.rs
@@ -350,6 +349,7 @@ out_of_scope:
     pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_model_patterns in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_model_patterns.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_model_patterns.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - all-team-models is a scoped sentinel, not a global model wildcard.
 budget:
   max_changed_lines: 700

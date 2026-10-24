@@ -62,11 +62,10 @@ scope:
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/custom-auth-*
-    - tools/oracle/src/helpers/custom_auth.rs
-    - tools/oracle/src/helpers/custom_auth/**
+    - tools/oracle/src/helpers/server/custom_auth.rs
+    - tools/oracle/src/helpers/server/custom_auth/**
     - tools/oracle/helpers/custom_auth.py
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
+    - tools/oracle/helpers/custom_auth/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/custom-auth/**
     - tools/oracle/cases/auth/custom-auth/**
@@ -125,6 +124,7 @@ out_of_scope:
   - B052 owns preflight dispatch; B053/B875 JWT/custom backend selection; B165 callable transport/loading.
   - B1221 owns centralized common checks and B1225 budget reservation handoff.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as custom_auth in the server group. Replace the stub Op in tools/oracle/src/helpers/server/custom_auth.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/custom_auth.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Zero-price detection occurs after the immediate end-user hard-budget check on the no-common-checks path.
   - The two custom-check switches are independent and control different stages.
 budget:

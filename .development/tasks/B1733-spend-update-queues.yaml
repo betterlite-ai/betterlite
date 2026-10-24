@@ -39,8 +39,10 @@ scope:
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/spend_queues.rs
     - crates/betterlite-db/src/spend_queues/**
-    - tools/oracle/src/helpers/{mod.rs,spend_queue_merge.rs}
-    - tools/oracle/helpers/{dispatch.py,spend_queue_merge.py}
+    - tools/oracle/src/helpers/db/spend_update_queues.rs
+    - tools/oracle/src/helpers/db/spend_update_queues/**
+    - tools/oracle/helpers/spend_update_queues.py
+    - tools/oracle/helpers/spend_update_queues/**
     - tools/oracle/cases/helpers/spend-queue-merge/**
     - tools/oracle/fuzz/corpus/helper_case/spend-queue-merge-*
   lint_tables: false
@@ -77,6 +79,7 @@ out_of_scope:
   - B1690 owns base capacity/configuration and service delivery; B1697 daily row records/SQL; the Redis buffer leaves own serialization and cross-pod draining.
   - Other _types.py records retain their earlier data/API owners; B1734 owns window and tool-discovery queues.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_update_queues in the db group. Replace the stub Op in tools/oracle/src/helpers/db/spend_update_queues.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_update_queues.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Daily aggregation preserves the first row's metadata even when a later row carries a different model_group.
   - A daily flush waits for interrupted commits before draining, so requeued rows from settlement join that flush.
 budget:

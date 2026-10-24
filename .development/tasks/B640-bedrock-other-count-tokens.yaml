@@ -91,11 +91,10 @@ scope:
   - crates/betterlite-bedrock/src/count_tokens.rs
   - crates/betterlite-bedrock/src/count_tokens/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_other_count_tokens.rs
-  - tools/oracle/src/helpers/bedrock_other_count_tokens/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/other_count_tokens.rs
+  - tools/oracle/src/helpers/bedrock/other_count_tokens/**
   - tools/oracle/helpers/bedrock_other_count_tokens.py
+  - tools/oracle/helpers/bedrock_other_count_tokens/**
   - tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_tokens*
   lint_tables: false
@@ -295,6 +294,7 @@ out_of_scope:
 - 'validate_count_tokens_request L281-L282 (messages must be a list) is unreachable through the real detector: only
   a list can select converse; do not stub the detector to invent an oracle case.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_other_count_tokens in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/other_count_tokens.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_other_count_tokens.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - invokeModel.body is base64 of Python json.dumps with comma-space and colon-space separators and ensure_ascii;
   compare decoded JSON or preserve those bytes explicitly.
 - A content block with a type key selects invokeModel even when type is null; a role/content validation failure

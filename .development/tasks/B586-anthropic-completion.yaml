@@ -114,11 +114,10 @@ scope:
   - crates/betterlite-anthropic/src/completion.rs
   - crates/betterlite-anthropic/src/completion/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_completion.rs
-  - tools/oracle/src/helpers/anthropic_completion/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/completion.rs
+  - tools/oracle/src/helpers/anthropic/completion/**
   - tools/oracle/helpers/anthropic_completion.py
+  - tools/oracle/helpers/anthropic_completion/**
   - tools/oracle/cases/helpers/providers/anthropic-completion/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_completion*
   - crates/betterlite-anthropic/fuzz/Cargo.toml
@@ -332,6 +331,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_completion in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/completion.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_completion.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The legacy stream sets is_finished=true even when stop_reason is absent, because it first substitutes an empty
   string.
 - Legacy user metadata does not apply the chat email/phone filter, and extra_headers is advertised but ignored by

@@ -67,8 +67,10 @@ scope:
     - tools/oracle/src/bin/capture_billing_fixture.rs
     - tools/oracle/fixtures/capture-billing/**
     - tools/oracle/fuzz/corpus/http_case/capture-billing-*
-    - tools/oracle/src/helpers/{mod.rs,batch_cost_status.rs}
-    - tools/oracle/helpers/{dispatch.py,batch_cost_status.py}
+    - tools/oracle/src/helpers/server/spend_callbacks.rs
+    - tools/oracle/src/helpers/server/spend_callbacks/**
+    - tools/oracle/helpers/spend_callbacks.py
+    - tools/oracle/helpers/spend_callbacks/**
     - tools/oracle/fuzz/corpus/helper_case/batch-cost-status-*
     - tools/oracle/cases/helpers/batch-cost-status/**
     - tools/oracle/cases/spend/capture-rate/**
@@ -156,6 +158,7 @@ out_of_scope:
   - B1039/B1040 retain batch output/finalization utilities beyond batch_cost_is_final; B098 retains interaction polling, settlement and response types.
   - B124 owns proxy_server.py outside the explicitly cited callback and capture job sections, including counter/cache implementations and the enterprise hook's debug-only skip.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_callbacks in the server group. Replace the stub Op in tools/oracle/src/helpers/server/spend_callbacks.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_callbacks.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A standard logging object with response_cost=null suppresses a nonnull kwargs response_cost fallback.
   - queued interactions with an id can retain a reservation, but requires_action without usage must raise a tracking alert.
 budget:

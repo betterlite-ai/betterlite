@@ -30,8 +30,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_speech_audio.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_speech_audio/**
-    - tools/oracle/src/helpers/{mod,vertex_speech}.rs
-    - tools/oracle/helpers/{dispatch,vertex_speech}.py
+    - tools/oracle/src/helpers/vertex/speech_synthesis.rs
+    - tools/oracle/src/helpers/vertex/speech_synthesis/**
+    - tools/oracle/helpers/vertex_speech_synthesis.py
+    - tools/oracle/helpers/vertex_speech_synthesis/**
     - tools/oracle/cases/helpers/vertex-speech/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_speech*
   lint_tables: false
@@ -76,6 +78,7 @@ out_of_scope:
   - text_to_speech_handler.py has no caller at the pin; VertexTextToSpeechAPI.__init__, audio_speech, async_audio_speech and validate_vertex_input are retired with its unused request types.
   - B1003 owns audio MIME sniffing and B1135 owns provider-facing speech contracts; B033 injects their projections.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_speech_synthesis in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/speech_synthesis.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_speech_synthesis.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - AAC requests use MP3 encoding at this provider.
   - SSML detection checks a case-sensitive substring rather than parsing XML.
   - Successful synthesis reconstruction resets the response status to 200 and discards upstream headers.

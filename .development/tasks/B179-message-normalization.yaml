@@ -22,8 +22,10 @@ scope:
   - crates/betterlite-prompts/src/system/**
   - crates/betterlite-openai/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/prompts/message_normalization.rs
+  - tools/oracle/src/helpers/prompts/message_normalization/**
+  - tools/oracle/helpers/message_normalization.py
+  - tools/oracle/helpers/message_normalization/**
   - tools/oracle/cases/helpers/messages/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -104,6 +106,7 @@ out_of_scope:
   Tool arguments and schemas B216/B217/B178; file/MIME/ID functions B183; common_utils.py function ownership is
   split at the exact referenced ranges, not omitted.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as message_normalization in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/message_normalization.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/message_normalization.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A mid-conversation system message cannot simply be moved ahead of every earlier message.
 - Do not erase encrypted reasoning signatures when extracting readable reasoning.
 - Provider-specific transforms must be opt-in calls, not mutations performed by serde deserialization.

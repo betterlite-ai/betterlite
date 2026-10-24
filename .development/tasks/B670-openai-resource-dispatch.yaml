@@ -92,11 +92,10 @@ scope:
   - crates/betterlite-provider/src/openai_resource_dispatch.rs
   - crates/betterlite-provider/src/openai_resource_dispatch/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_resource_dispatch.rs
-  - tools/oracle/src/helpers/openai_resource_dispatch/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/openai_resource_dispatch.rs
+  - tools/oracle/src/helpers/provider/openai_resource_dispatch/**
   - tools/oracle/helpers/openai_resource_dispatch.py
+  - tools/oracle/helpers/openai_resource_dispatch/**
   - tools/oracle/cases/helpers/providers/openai-resource-dispatch/**
   - tools/oracle/fuzz/corpus/helper_case/openai_resource_dispatch*
   lint_tables: false
@@ -294,6 +293,7 @@ out_of_scope:
   L93-L115; OpenAIVectorStoreConfig.transform_search_vector_store_response L117-L128; OpenAIVectorStoreConfig.transform_create_vector_store_request
   L130-L148; OpenAIVectorStoreConfig.transform_create_vector_store_response L150-L159 belong to B527.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_resource_dispatch in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/openai_resource_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_resource_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Container and vector-store file operations have different paths and must not collapse into the ordinary Files
   API.
 budget:

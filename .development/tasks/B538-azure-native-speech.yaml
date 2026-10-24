@@ -102,11 +102,10 @@ scope:
   - Cargo.toml
   - deny.toml
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_native_speech.rs
-  - tools/oracle/src/helpers/azure_native_speech/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/native_speech.rs
+  - tools/oracle/src/helpers/azure/native_speech/**
   - tools/oracle/helpers/azure_native_speech.py
+  - tools/oracle/helpers/azure_native_speech/**
   - tools/oracle/cases/helpers/providers/azure-native-speech/**
   - tools/oracle/fuzz/corpus/helper_case/azure_native_speech*
   lint_tables: false
@@ -292,6 +291,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/azure/text_to_speech/transformation.py: AzureAVATextToSpeechConfig.dispatch_text_to_speech
   L62-L134; AzureAVATextToSpeechConfig.get_supported_openai_params L136-L143 belong to B537.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_native_speech in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/native_speech.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_native_speech.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A generic XML serializer would escape source attribute values and normalize whitespace, changing the pinned SSML
   request.
 - The SSML detector accepts a matching substring in arbitrary text and is not an XML validity check.

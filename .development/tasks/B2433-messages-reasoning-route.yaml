@@ -19,11 +19,10 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_reasoning_route.rs
   - crates/betterlite-core/src/api/messages_reasoning_route/**
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/messages_reasoning_route.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/messages_reasoning_route.rs
+  - tools/oracle/src/helpers/core_ops/messages_reasoning_route/**
   - tools/oracle/helpers/messages_reasoning_route.py
+  - tools/oracle/helpers/messages_reasoning_route/**
   - tools/oracle/cases/helpers/messages-reasoning-route/**
   - tools/oracle/fuzz/corpus/helper_case/messages_reasoning_route-*
   lint_tables: false
@@ -88,6 +87,7 @@ out_of_scope:
 - B962 owns actual effort capability fallback and the reasoning_auto_summary setting; B174/B205 own provider/model lookup.
 - B158 owns responses_api_bridge_check in main.py L1083-L1194; this task's injected mode interface does not implement that policy.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as messages_reasoning_route in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_reasoning_route.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_reasoning_route.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A present summary=null prevents auto-summary insertion but still qualifies a dict for plain-chat recovery.
 - Only thinking.type=enabled promotes OpenAI to Responses; adaptive thinking does not.
 - Inferred providers are local decisions here and are not inserted into completion_kwargs.

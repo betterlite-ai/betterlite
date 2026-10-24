@@ -65,11 +65,8 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/request_principal_metadata.rs
-  - tools/oracle/src/helpers/request_principal_metadata/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/request_principal_metadata.rs
+  - tools/oracle/src/helpers/core_ops/request_principal_metadata/**
   - tools/oracle/helpers/request_principal_metadata.py
   - tools/oracle/helpers/request_principal_metadata/**
   - tools/oracle/fuzz/corpus/helper_case/request_principal_metadata-*
@@ -183,6 +180,7 @@ out_of_scope:
 - Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
   never stand in for those HTTP comparisons.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as request_principal_metadata in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/request_principal_metadata.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/request_principal_metadata.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Within LiteLLMProxyRequestSetup.get_logged_api_key\'s user_api_key_dict.is_session_token and user_api_key_dict.key_alias
   branch, preserve return user_api_key_dict.key_alias and its nested guards.
 - LiteLLMProxyRequestSetup.add_user_api_key_auth_to_request_metadata uses data[_metadata_variable_name].get('agent_id');

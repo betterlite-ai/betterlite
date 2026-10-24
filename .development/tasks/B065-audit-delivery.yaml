@@ -55,10 +55,10 @@ scope:
     - crates/betterlite-config/src/audit/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/audit-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/audit_attribution.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/audit_attribution.py
+    - tools/oracle/src/helpers/logging/audit_delivery.rs
+    - tools/oracle/src/helpers/logging/audit_delivery/**
+    - tools/oracle/helpers/audit_delivery.py
+    - tools/oracle/helpers/audit_delivery/**
     - tools/oracle/cases/helpers/audit-attribution/**
     - tools/oracle/fuzz/corpus/helper_case/audit-attribution-*
   lint_tables: false
@@ -121,6 +121,7 @@ out_of_scope:
   - B1645 owns all resource_display_names.py lookups; B115 owns actual S3 transport/batching and B165 owns execution of configured Python callbacks.
   - B124 owns the audit row's public model contract and B244 its reusable masking algorithm; audit query HTTP routes belong to their proxy-server owner.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as audit_delivery in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/audit_delivery.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/audit_delivery.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - store_audit_logs=false must defeat LITELLM_STORE_AUDIT_LOGS=true rather than being treated as an absent setting.
   - A failed named callback resolution is not cached, so later dispatch can retry initialization.
   - The metadata permission for litellm_changed_by accepts only Boolean true in either key or team metadata.

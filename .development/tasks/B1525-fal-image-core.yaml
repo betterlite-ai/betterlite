@@ -45,10 +45,10 @@ scope:
     - crates/betterlite-core/fuzz/corpus/fal_image_reply/**
     - crates/betterlite-config/src/providers.rs
     - crates/betterlite-config/src/providers/fal.rs
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/fal_image_core.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/fal_image_core.rs
+    - tools/oracle/src/helpers/core_ops/fal_image_core/**
     - tools/oracle/helpers/fal_image_core.py
+    - tools/oracle/helpers/fal_image_core/**
     - tools/oracle/cases/helpers/fal-image-core/**
     - tools/oracle/fuzz/corpus/helper_case/fal_image_core*
   lint_tables: false
@@ -86,6 +86,7 @@ deviations: []
 out_of_scope:
   - B046 owns get_fal_ai_image_generation_config and composes the model-specific adapters after their prerequisites exist.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as fal_image_core in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/fal_image_core.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fal_image_core.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The generic configuration has an empty endpoint and does not append the requested model name.
   - GPT response_format is accepted without producing an outgoing output_format value.
   - Supported quality discovery compares the entire endpoint suffix, including edit or flare segments.

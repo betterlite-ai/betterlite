@@ -82,11 +82,10 @@ scope:
   - crates/betterlite-foundry/src/embeddings.rs
   - crates/betterlite-foundry/src/embeddings/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_embeddings.rs
-  - tools/oracle/src/helpers/foundry_embeddings/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/foundry/embeddings.rs
+  - tools/oracle/src/helpers/foundry/embeddings/**
   - tools/oracle/helpers/foundry_embeddings.py
+  - tools/oracle/helpers/foundry_embeddings/**
   - tools/oracle/cases/helpers/providers/foundry-embeddings/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_embeddings*
   - crates/betterlite-foundry/fuzz/Cargo.toml
@@ -221,6 +220,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_embeddings in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/embeddings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_embeddings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The source computes filtered text input but passes the full original input to the text embedding call.
 - The error says /image/embeddings while the actual image URL uses /images/embeddings.
 budget:

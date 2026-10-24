@@ -29,11 +29,10 @@ scope:
     - crates/betterlite-vertex/src/error.rs
     - crates/betterlite-vertex/src/endpoint_target.rs
     - crates/betterlite-vertex/src/endpoint_target/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/vertex_endpoint.rs
-    - tools/oracle/src/helpers/vertex_endpoint/**
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/vertex_endpoint.py
+    - tools/oracle/src/helpers/vertex/custom_endpoints.rs
+    - tools/oracle/src/helpers/vertex/custom_endpoints/**
+    - tools/oracle/helpers/vertex_custom_endpoints.py
+    - tools/oracle/helpers/vertex_custom_endpoints/**
     - tools/oracle/cases/helpers/vertex-endpoint/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_endpoint*
   lint_tables: false
@@ -82,6 +81,7 @@ out_of_scope:
   - The other vertex_llm_base functions are credential loading/settings B1301, cache operations B1302 and asynchronous refresh B1303.
   - common_utils L1-L351 and L388-L408 are model/metadata policy B1306; L352-L387 and L409-L602 are URL primitives B1305; L603-L1066 is schema conversion B1307; L1170 onward is token/model-info adaptation B1319.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_custom_endpoints in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/custom_endpoints.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_custom_endpoints.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A custom base already ending in a model path gets :endpoint rather than a second projects path.
   - Location override emits a warning even when the supplied region is syntactically valid.
   - The cachedContent test is case-sensitive and also matches cachedContents.

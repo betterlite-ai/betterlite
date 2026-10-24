@@ -25,11 +25,10 @@ scope:
   - crates/betterlite-core/src/api/managed_resource_access.rs
   - crates/betterlite-core/src/api/managed_resource_access/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/managed_resource_access.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/managed_resource_access.rs
+  - tools/oracle/src/helpers/core_ops/managed_resource_access/**
   - tools/oracle/helpers/managed_resource_access.py
+  - tools/oracle/helpers/managed_resource_access/**
   - tools/oracle/fuzz/corpus/helper_case/managed_resource_access-*
   - tools/oracle/cases/helpers/managed-resource-access/**
   - Cargo.lock
@@ -101,6 +100,7 @@ out_of_scope:
 - B1018 owns resource_ownership.py's separate legacy and prefixed owner-scope predicates.
 - B087 owns HTTP file-list authentication and conversion to FileListPage; B102 owns managed-id rewriting.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as managed_resource_access in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/managed_resource_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/managed_resource_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty string is a valid identity in isolation.py because it checks None; copying B1018's truthiness tests changes access.
 - Admin view permits mutation here, including proxy_admin_viewer; replacing it with is_proxy_admin denies source-compatible requests.
 - A filter of None means skip the repository query, whereas {} deliberately permits an unscoped admin query.

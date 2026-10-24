@@ -86,11 +86,10 @@ scope:
   - crates/betterlite-azure/src/speech.rs
   - crates/betterlite-azure/src/speech/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_speech.rs
-  - tools/oracle/src/helpers/azure_speech/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/speech.rs
+  - tools/oracle/src/helpers/azure/speech/**
   - tools/oracle/helpers/azure_speech.py
+  - tools/oracle/helpers/azure_speech/**
   - tools/oracle/cases/helpers/providers/azure-speech/**
   - tools/oracle/fuzz/corpus/helper_case/azure_speech*
   lint_tables: false
@@ -250,6 +249,7 @@ out_of_scope:
   AzureAVATextToSpeechConfig.transform_text_to_speech_request L385-L478; AzureAVATextToSpeechConfig.transform_text_to_speech_response
   L480-L495 belong to B538.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_speech in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/speech.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_speech.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - get_headers performs an actual chat probe even for image_generation mode; replacing it with a header-only local
   function changes its observable traffic.
 - AVA dispatch extracts a voice dictionary name but map_openai_params in B538 accepts string voices only.

@@ -80,12 +80,11 @@ scope:
     - crates/betterlite-auth/src/key_context/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/key_context.rs
-    - tools/oracle/src/helpers/key_context/**
+    - tools/oracle/src/helpers/server/key_context.rs
+    - tools/oracle/src/helpers/server/key_context/**
     - tools/oracle/helpers/key_context.py
+    - tools/oracle/helpers/key_context/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/key-context/**
     - tools/oracle/fuzz/corpus/helper_case/key-context-*
     - crates/betterlite-server/src/auth.rs
@@ -244,6 +243,7 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as key_context in the server group. Replace the stub Op in tools/oracle/src/helpers/server/key_context.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/key_context.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - valid_token_dict can override the initially selected role, but a proxy-admin user overrides it again.
   - End-user lookup swallows HTTPException and ProxyException while propagating BudgetExceededError.
   - config != {} bypasses primary and fallback checks after normalization even when model_list is empty.

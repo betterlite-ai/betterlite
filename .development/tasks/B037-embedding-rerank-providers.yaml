@@ -68,8 +68,10 @@ scope:
     - crates/betterlite-config/src/providers/{mod,embedding_providers}.rs
     - crates/betterlite-config/tests/embedding_provider_settings.rs
     - Cargo.lock
-    - tools/oracle/src/helpers/{mod,embedding_family_selection}.rs
-    - tools/oracle/helpers/{dispatch,embedding_family_selection}.py
+    - tools/oracle/src/helpers/core_ops/embedding_rerank_providers.rs
+    - tools/oracle/src/helpers/core_ops/embedding_rerank_providers/**
+    - tools/oracle/helpers/embedding_rerank_providers.py
+    - tools/oracle/helpers/embedding_rerank_providers/**
     - tools/oracle/cases/helpers/embedding-family-selection/**
     - tools/oracle/cases/providers/embedding-rerank/**
     - tools/oracle/fuzz/corpus/helper_case/embedding_family_selection*
@@ -128,6 +130,7 @@ out_of_scope:
   - Other main.py functions retain the owners in B500's callable inventory, and other utils.py functions/branches retain the owners in B2230's inventory; this task extracts only the explicitly listed family selector arms and should_use_cohere_v1_client from B157.
   - B004, B006 and B085 register the routes; B1014 handles generic rerank parameters and lifecycle, and B104 handles general guardrail authorization and execution.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as embedding_rerank_providers in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/embedding_rerank_providers.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/embedding_rerank_providers.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The /v1/rerank client route does not itself select Cohere's v1 upstream client.
   - Cohere's v2 chat default uses api.cohere.com while v1 uses api.cohere.ai.
   - Jina embedding dispatch does not forward the merged headers argument used by Cohere embedding dispatch.

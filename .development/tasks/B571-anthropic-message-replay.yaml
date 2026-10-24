@@ -91,11 +91,10 @@ scope:
   - crates/betterlite-anthropic/src/message_replay.rs
   - crates/betterlite-anthropic/src/message_replay/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_message_replay.rs
-  - tools/oracle/src/helpers/anthropic_message_replay/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/message_replay.rs
+  - tools/oracle/src/helpers/anthropic/message_replay/**
   - tools/oracle/helpers/anthropic_message_replay.py
+  - tools/oracle/helpers/anthropic_message_replay/**
   - tools/oracle/cases/helpers/providers/anthropic-message-replay/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_message_replay*
   lint_tables: false
@@ -294,6 +293,7 @@ out_of_scope:
   L726-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model L746-L781; AnthropicModelInfo._legacy_budget_to_effort
   L783-L793; AnthropicModelInfo.is_effort_used L795-L829 belong to B688.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_message_replay in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/message_replay.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_message_replay.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The empty-block cleaner retains an initially empty list, but the strip-all-thinking helper drops it.
 - Advisor cleanup mutates assistant content and does nothing until it finds a truthy advisor use id.
 budget:

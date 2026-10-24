@@ -66,12 +66,11 @@ scope:
     - crates/betterlite-auth/src/inference_routes/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/inference_routes.rs
-    - tools/oracle/src/helpers/inference_routes/**
+    - tools/oracle/src/helpers/auth/inference_routes.rs
+    - tools/oracle/src/helpers/auth/inference_routes/**
     - tools/oracle/helpers/inference_routes.py
+    - tools/oracle/helpers/inference_routes/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/inference-routes/**
     - tools/oracle/fuzz/corpus/helper_case/inference-routes-*
   lint_tables: false
@@ -172,6 +171,7 @@ out_of_scope:
     (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
     (L5766-L5772).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as inference_routes in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/inference_routes.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/inference_routes.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Batches/files put versioned paths first, while most OpenAI pairs put them second.
   - Realtime's literal ?{model} entries must not be normalized into ordinary query parameters.
   - llm_api_routes includes model-info and native trace paths but excludes MCP and agent CRUD groups.

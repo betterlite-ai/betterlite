@@ -61,12 +61,11 @@ scope:
     - crates/betterlite-server/src/management_admins/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/management_admins.rs
-    - tools/oracle/src/helpers/management_admins/**
+    - tools/oracle/src/helpers/server/management_admins.rs
+    - tools/oracle/src/helpers/server/management_admins/**
     - tools/oracle/helpers/management_admins.py
+    - tools/oracle/helpers/management_admins/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/management-admins/**
     - tools/oracle/fuzz/corpus/helper_case/management-admins-*
   lint_tables: false
@@ -141,6 +140,7 @@ out_of_scope:
     the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as management_admins in the server group. Replace the stub Op in tools/oracle/src/helpers/server/management_admins.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/management_admins.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A proxy admin can invite a nonexistent target without any lookup; ordinary callers cannot.
   - The direct team helper propagates errors, while its two outer policy callers log and return False.
   - Team administration comes from an exact roster user id and role, never a matching email.

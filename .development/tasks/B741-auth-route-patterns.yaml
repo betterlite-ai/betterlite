@@ -94,12 +94,11 @@ scope:
     - crates/betterlite-auth/src/auth_route_patterns/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_route_patterns.rs
-    - tools/oracle/src/helpers/auth_route_patterns/**
+    - tools/oracle/src/helpers/server/auth_route_patterns.rs
+    - tools/oracle/src/helpers/server/auth_route_patterns/**
     - tools/oracle/helpers/auth_route_patterns.py
+    - tools/oracle/helpers/auth_route_patterns/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-route-patterns/**
     - tools/oracle/fuzz/corpus/helper_case/auth-route-patterns-*
     - crates/betterlite-server/src/auth.rs
@@ -414,6 +413,7 @@ out_of_scope:
     (L736-L762).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_route_patterns in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_route_patterns.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_route_patterns.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Root /proxy must not strip the prefix from /proxy-other.
   - Configured public routes are enabled deliberately, so their success cases are native deviation tests
     when LiteLLM lacks premium_user.

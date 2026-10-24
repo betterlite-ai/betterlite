@@ -40,8 +40,10 @@ scope:
     - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/key_digest.rs
     - crates/betterlite-models/src/key_digest/**
-    - tools/oracle/src/helpers/{mod.rs,key_attribution.rs}
-    - tools/oracle/helpers/{dispatch.py,key_attribution.py}
+    - tools/oracle/src/helpers/db/key_attribution_recovery.rs
+    - tools/oracle/src/helpers/db/key_attribution_recovery/**
+    - tools/oracle/helpers/key_attribution_recovery.py
+    - tools/oracle/helpers/key_attribution_recovery/**
     - tools/oracle/cases/helpers/key-attribution/**
     - tools/oracle/fuzz/corpus/helper_case/key-attribution-*
   lint_tables: false
@@ -81,6 +83,7 @@ out_of_scope:
   - B1711 owns edge-probe SQL, _SpendLogDigestRow, digest-window cache keys and all cached spend-log recovery functions at lines 375-480.
   - Other litellm_logging.py functions remain with B247-B254, B1682 and the response-cost integration leaf; this task extracts only the digest predicate.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as key_attribution_recovery in the db group. Replace the stub Op in tools/oracle/src/helpers/db/key_attribution_recovery.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/key_attribution_recovery.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A deleted token's latest tombstone is selected before merging recovered metadata.
   - A unique team can fill CLI attribution but must not be inferred for an ordinary key.
 budget:

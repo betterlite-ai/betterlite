@@ -123,11 +123,10 @@ scope:
   - crates/betterlite-bedrock/src/claude_platform_inputs.rs
   - crates/betterlite-bedrock/src/claude_platform_inputs/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/claude_platform_inputs.rs
-  - tools/oracle/src/helpers/claude_platform_inputs/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/claude_platform_inputs.rs
+  - tools/oracle/src/helpers/bedrock/claude_platform_inputs/**
   - tools/oracle/helpers/claude_platform_inputs.py
+  - tools/oracle/helpers/claude_platform_inputs/**
   - tools/oracle/cases/helpers/providers/claude-platform-inputs/**
   - tools/oracle/fuzz/corpus/helper_case/claude_platform_inputs*
   - crates/betterlite-config/Cargo.toml
@@ -402,6 +401,7 @@ deviations: []
 out_of_scope:
 - Chat and native Messages overrides are B656; all functions in this covered common_utils.py file are owned here.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as claude_platform_inputs in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/claude_platform_inputs.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/claude_platform_inputs.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The workspace fallback checks None after an or-chain, so a falsey final alias can block environment fallback.
 - An explicitly empty unsupported list enables context_management instead of restoring the default drop set.
 budget:

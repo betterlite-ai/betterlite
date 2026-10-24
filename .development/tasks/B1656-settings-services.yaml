@@ -38,10 +38,10 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/settings_services.rs
     - crates/betterlite-server/src/settings_services/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/settings_schema.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/settings_schema.py
+    - tools/oracle/src/helpers/server/settings_services.rs
+    - tools/oracle/src/helpers/server/settings_services/**
+    - tools/oracle/helpers/settings_services.py
+    - tools/oracle/helpers/settings_services/**
     - tools/oracle/cases/helpers/settings-schema/**
     - tools/oracle/fuzz/corpus/helper_case/settings-schema-*
   lint_tables: false
@@ -83,6 +83,7 @@ out_of_scope:
   - "Other proxy_setting_endpoints.py functions belong to B1657 (default-user/team routes and validators L852-L998, L1075-L1127), B1658 (allowed-IP L585-L720), B1659 (UI flags L379-L399, L453-L470, L786-L797, L1671-L1742), B1660 (UI GET/PATCH L1745-L1961), B1661 (SSO L1130-L1322), B1662 (theme helpers L141-L167 and routes L1325-L1463, L1964-L2024), and B1663 (search helpers L548-L582 and routes L1466-L1664)."
   - register_extra_ui_setting L439-L450 has no caller at the pin outside the absent enterprise extension and is not implemented.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as settings_services in the server group. Replace the stub Op in tools/oracle/src/helpers/server/settings_services.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/settings_services.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Saving failure leaves the new runtime setting in place because _update_litellm_setting assigns before save_config.
   - Referenced array definitions contribute enum only; copying their full schema changes the UI response.
 budget:

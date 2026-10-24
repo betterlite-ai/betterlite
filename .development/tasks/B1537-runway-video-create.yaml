@@ -42,10 +42,10 @@ scope:
     - crates/betterlite-core/src/api/runway/tasks/**
     - crates/betterlite-core/fuzz/fuzz_targets/runway_task.rs
     - crates/betterlite-core/fuzz/corpus/runway_task/video_*
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/runway_video_create.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/runway_video_create.rs
+    - tools/oracle/src/helpers/core_ops/runway_video_create/**
     - tools/oracle/helpers/runway_video_create.py
+    - tools/oracle/helpers/runway_video_create/**
     - tools/oracle/cases/helpers/runway-video-create/**
     - tools/oracle/fuzz/corpus/helper_case/runway_video_create*
   lint_tables: false
@@ -83,6 +83,7 @@ deviations: []
 out_of_scope:
   - B1538 owns video content, cancellation, retrieval and unsupported request methods at 397-708; their common parsers and helpers belong here.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as runway_video_create in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/runway_video_create.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/runway_video_create.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty promptVideo still selects video_to_video because selection checks nullness rather than truthiness.
   - Exactly 600000 pixels is 720p under Runway's strict area thresholds.
   - A present empty failureCode creates an error object without forcing a failed status.

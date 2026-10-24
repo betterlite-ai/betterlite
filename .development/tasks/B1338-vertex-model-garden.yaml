@@ -25,8 +25,10 @@ scope:
     - crates/betterlite-provider/src/{lib,model_garden_call}.rs
     - crates/betterlite-provider/src/model_garden_call/**
     - crates/betterlite-provider/Cargo.toml
-    - tools/oracle/src/helpers/{mod,model_garden_target}.rs
-    - tools/oracle/helpers/{dispatch,model_garden_target}.py
+    - tools/oracle/src/helpers/provider/vertex_model_garden.rs
+    - tools/oracle/src/helpers/provider/vertex_model_garden/**
+    - tools/oracle/helpers/vertex_model_garden.py
+    - tools/oracle/helpers/vertex_model_garden/**
     - tools/oracle/cases/helpers/model-garden-target/**
     - tools/oracle/fuzz/corpus/helper_case/model_garden_target*
   lint_tables: false
@@ -66,6 +68,7 @@ deviations: []
 out_of_scope:
   - B038 owns OpenAILikeChatHandler; B032 installs the Model Garden dispatcher branch without duplicating that handler.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_model_garden in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/vertex_model_garden.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_model_garden.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - create_vertex_url accepts api_base and stream arguments but does not use either.
   - A custom dedicated base must not acquire :predict or another colon verb.
   - Empty model in the body is deliberate for a single-segment endpoint id.

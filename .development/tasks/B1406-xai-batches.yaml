@@ -35,8 +35,10 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/xai_batch.rs
     - crates/betterlite-openai/fuzz/corpus/xai_batch/**
-    - tools/oracle/src/helpers/{mod,xai_batches}.rs
-    - tools/oracle/helpers/{dispatch,xai_batches}.py
+    - tools/oracle/src/helpers/openai/xai_batches.rs
+    - tools/oracle/src/helpers/openai/xai_batches/**
+    - tools/oracle/helpers/xai_batches.py
+    - tools/oracle/helpers/xai_batches/**
     - tools/oracle/cases/helpers/xai-batches/**
     - tools/oracle/fuzz/corpus/helper_case/xai_batches*
   lint_tables: false
@@ -80,6 +82,7 @@ deviations: []
 out_of_scope:
   - B036 wires native operations to existing batch/file-content dispatch; managed file and batch hooks are not part of either owned source file.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as xai_batches in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/xai_batches.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/xai_batches.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Retrieve cannot recover the endpoint supplied on create and reports /v1/chat/completions.
   - An error object is ignored when the same result contains a response body.
   - A nonempty pagination_token on an empty results page terminates collection.

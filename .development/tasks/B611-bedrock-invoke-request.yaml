@@ -97,11 +97,10 @@ scope:
   - crates/betterlite-bedrock/src/invoke_request.rs
   - crates/betterlite-bedrock/src/invoke_request/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_invoke_request.rs
-  - tools/oracle/src/helpers/bedrock_invoke_request/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/invoke_request.rs
+  - tools/oracle/src/helpers/bedrock/invoke_request/**
   - tools/oracle/helpers/bedrock_invoke_request.py
+  - tools/oracle/helpers/bedrock_invoke_request/**
   - tools/oracle/cases/helpers/providers/bedrock-invoke-request/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_request*
   - crates/betterlite-config/Cargo.toml
@@ -388,6 +387,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
   AmazonInvokeConfig.transform_response L281-L419 belong to B612.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_invoke_request in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/invoke_request.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_invoke_request.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A region prefix changes the command-r body shape because its test uses the original model string.
 - The unused AmazonCohereChatConfig mapper contains an unconditional seed assignment; the active Cohere mapper is
   the separate B037 implementation.

@@ -72,11 +72,10 @@ scope:
   - crates/betterlite-openai/src/threads.rs
   - crates/betterlite-openai/src/threads/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_threads.rs
-  - tools/oracle/src/helpers/openai_threads/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/threads.rs
+  - tools/oracle/src/helpers/openai/threads/**
   - tools/oracle/helpers/openai_threads.py
+  - tools/oracle/helpers/openai_threads/**
   - tools/oracle/cases/helpers/providers/openai-threads/**
   - tools/oracle/fuzz/corpus/helper_case/openai_threads*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -251,6 +250,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_threads in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/threads.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_threads.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Thread projections deliberately discard SDK extension fields while message projection validates the whole SDK
   record.
 - A missing message status becomes completed, but an empty-string status is not treated as missing.

@@ -91,11 +91,10 @@ scope:
   - crates/betterlite-provider/src/openai_assistant_dispatch.rs
   - crates/betterlite-provider/src/openai_assistant_dispatch/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_assistant_dispatch.rs
-  - tools/oracle/src/helpers/openai_assistant_dispatch/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/openai_assistant_dispatch.rs
+  - tools/oracle/src/helpers/provider/openai_assistant_dispatch/**
   - tools/oracle/helpers/openai_assistant_dispatch.py
+  - tools/oracle/helpers/openai_assistant_dispatch/**
   - tools/oracle/cases/helpers/providers/openai-assistant-dispatch/**
   - tools/oracle/fuzz/corpus/helper_case/openai_assistant_dispatch*
   lint_tables: false
@@ -258,6 +257,7 @@ out_of_scope:
   OpenAIRealtime._get_additional_headers L42-L59; OpenAIRealtime._get_ssl_config L61-L83; OpenAIRealtime._construct_url
   L85-L99; OpenAIRealtime._make_event_normalizer L101-L107; OpenAIRealtime.async_realtime L109-L190 belong to B528.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_assistant_dispatch in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/openai_assistant_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_assistant_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Run streams and realtime sessions retain distinct typed operation variants despite both exposing streaming behavior.
 budget:
   max_changed_lines: 550

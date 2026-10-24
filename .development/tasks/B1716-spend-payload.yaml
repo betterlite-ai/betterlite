@@ -60,8 +60,10 @@ scope:
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/end-user-spend-*
-    - tools/oracle/src/helpers/{mod.rs,spend_payload.rs}
-    - tools/oracle/helpers/{dispatch.py,spend_payload.py}
+    - tools/oracle/src/helpers/logging/spend_payload.rs
+    - tools/oracle/src/helpers/logging/spend_payload/**
+    - tools/oracle/helpers/spend_payload.py
+    - tools/oracle/helpers/spend_payload/**
     - tools/oracle/cases/helpers/spend-payload/**
     - tools/oracle/fuzz/corpus/helper_case/spend-payload-*
   lint_tables: false
@@ -107,6 +109,7 @@ out_of_scope:
   - B1600 owns raw master comparison; B1713 handles sanitizers, B1714 body/session policy, B1715 metadata/identity projections and B1726/B1727 the remaining team/customer queries in spend_tracking_utils.py.
   - B124 and existing API contract owners retain other _types.py records; the remaining utils.py functions retain their earlier owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_payload in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/spend_payload.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_payload.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Cached batch IDs receive their timestamp suffix before batch session extraction, so suffix removal must not be reordered.
   - Existing null cache-count keys prevent detail-field backfill just as existing numeric values do.
 budget:

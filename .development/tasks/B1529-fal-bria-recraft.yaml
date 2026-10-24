@@ -35,10 +35,10 @@ scope:
     - crates/betterlite-core/src/api/fal/bria/**
     - crates/betterlite-core/src/api/fal/recraft/**
     - crates/betterlite-core/fuzz/corpus/fal_image_reply/bria_*
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/fal_single_image_models.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/fal_single_image_models.py
+    - tools/oracle/src/helpers/core_ops/fal_bria_recraft.rs
+    - tools/oracle/src/helpers/core_ops/fal_bria_recraft/**
+    - tools/oracle/helpers/fal_bria_recraft.py
+    - tools/oracle/helpers/fal_bria_recraft/**
     - tools/oracle/cases/helpers/fal-single-image-models/**
     - tools/oracle/fuzz/corpus/helper_case/fal_single_image_models*
   lint_tables: false
@@ -75,6 +75,7 @@ deviations: []
 out_of_scope:
   - Direct recraft/ provider behavior is B1521; these profiles are selected only under Fal by B046.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as fal_bria_recraft in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/fal_bria_recraft.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fal_bria_recraft.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Bria ignores a populated images list if the singular image field is absent.
   - Recraft's 1792x1024 request becomes custom dimensions rather than landscape_16_9.
   - Bria's overlapping inclusive ratio intervals are resolved by source order, not nearest distance.

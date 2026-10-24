@@ -54,8 +54,10 @@ scope:
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,compatible_embeddings}.rs
     - crates/betterlite-config/tests/compatible_embedding_dispatch_settings.rs
-    - tools/oracle/src/helpers/{mod,compatible_api_selection}.rs
-    - tools/oracle/helpers/{dispatch,compatible_api_selection}.py
+    - tools/oracle/src/helpers/models/compatible_api_selection.rs
+    - tools/oracle/src/helpers/models/compatible_api_selection/**
+    - tools/oracle/helpers/compatible_api_selection.py
+    - tools/oracle/helpers/compatible_api_selection/**
     - tools/oracle/cases/helpers/compatible-api-selection/**
     - tools/oracle/fuzz/corpus/helper_case/compatible_api_selection*
   lint_tables: false
@@ -107,6 +109,7 @@ out_of_scope:
   - B038 and B040 bind these selected policies to their existing public routes; this task neither mounts routes nor invokes provider constructors from betterlite-models.
   - B157 and other provider entries retain all utility selector arms not enumerated above, including _get_python_responses_api_config.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as compatible_api_selection in the models group. Replace the stub Op in tools/oracle/src/helpers/models/compatible_api_selection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/compatible_api_selection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An existing native Responses config wins even when the same registry slug declares no Responses endpoint.
   - Empty caller headers leave a preexisting extra_headers option intact in the shared embedding branch.
   - CometAPI embedding deliberately passes an empty litellm_params record and omits caller headers.

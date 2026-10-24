@@ -77,10 +77,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/auth/auth_identity.rs
     - crates/betterlite-server/src/auth/auth_identity/**
-    - tools/oracle/src/helpers/auth_identity.rs
+    - tools/oracle/src/helpers/server/auth_identity.rs
+    - tools/oracle/src/helpers/server/auth_identity/**
     - tools/oracle/helpers/auth_identity.py
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/helpers/auth_identity/**
     - tools/oracle/cases/helpers/auth-identity/**
     - tools/oracle/fuzz/corpus/helper_case/auth-identity-*
   lint_tables: false
@@ -293,6 +293,7 @@ out_of_scope:
   - 'litellm/proxy/auth/team_grants.py: B871 owns _decode_model_aliases (L30-L37), _json_columns (L76-L80),
     team_model_aliases (L83-L87), team_grants (L90-L126).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_identity in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Missing role becomes None, member or internal_user depending on which of the three helpers is called.
   - A source_key accepted by the record constructor is neither serialized nor evidence of authentication.
 budget:

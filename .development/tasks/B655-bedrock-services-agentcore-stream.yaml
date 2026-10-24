@@ -102,11 +102,10 @@ scope:
   - crates/betterlite-bedrock/src/agentcore_stream.rs
   - crates/betterlite-bedrock/src/agentcore_stream/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_agentcore_stream.rs
-  - tools/oracle/src/helpers/bedrock_services_agentcore_stream/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_agentcore_stream.rs
+  - tools/oracle/src/helpers/bedrock/services_agentcore_stream/**
   - tools/oracle/helpers/bedrock_services_agentcore_stream.py
+  - tools/oracle/helpers/bedrock_services_agentcore_stream/**
   - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_stream*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -318,6 +317,7 @@ out_of_scope:
   AmazonAgentCoreConfig._parse_sse_stream L482-L529; AmazonAgentCoreConfig.transform_response L986-L1051 belong
   to B654.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_agentcore_stream in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_agentcore_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_agentcore_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A metadata event with usage={} emits a terminal chunk, but usage=None fails; testing only truthy usage misses
   this distinction.
 - The final-message event emits only a stop marker, so its text never appears unless content deltas already carried

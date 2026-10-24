@@ -41,8 +41,10 @@ scope:
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/reservation_state.rs
     - crates/betterlite-auth/src/reservation_state/**
-    - tools/oracle/src/helpers/{mod.rs,reservation_state.rs}
-    - tools/oracle/helpers/{dispatch.py,reservation_state.py}
+    - tools/oracle/src/helpers/auth/spend_settlement.rs
+    - tools/oracle/src/helpers/auth/spend_settlement/**
+    - tools/oracle/helpers/spend_settlement.py
+    - tools/oracle/helpers/spend_settlement/**
     - tools/oracle/cases/helpers/reservation-state/**
     - tools/oracle/fuzz/corpus/helper_case/reservation-state-*
   lint_tables: false
@@ -79,6 +81,7 @@ out_of_scope:
   - B071 owns reservation estimates, atomic reservation algorithms and its middleware; it implements this lower settlement port when enabling reservations.
   - B070 owns update_database, B124 the proxy counter/cache operations, B069 success callback orchestration and B1720 failure handling; B206 retains unrelated core_helpers functions and B1717 provider cost stamping.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_settlement in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/spend_settlement.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_settlement.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A failed reconciliation finalizes the reservation but still permits the already incurred cost to be persisted.
   - Counter failure follows the database write, so retrying the entire callback would charge the row twice.
 budget:

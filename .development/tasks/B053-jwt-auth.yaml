@@ -79,12 +79,11 @@ scope:
     - crates/betterlite-server/src/jwt_auth/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/jwt_auth.rs
-    - tools/oracle/src/helpers/jwt_auth/**
+    - tools/oracle/src/helpers/server/jwt_auth.rs
+    - tools/oracle/src/helpers/server/jwt_auth/**
     - tools/oracle/helpers/jwt_auth.py
+    - tools/oracle/helpers/jwt_auth/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/jwt.rs
-    - tools/oracle/helpers/management/jwt.py
     - tools/oracle/cases/helpers/jwt-auth/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-auth-*
     - crates/betterlite-server/src/auth.rs
@@ -254,6 +253,7 @@ out_of_scope:
     (L2374-L2388).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as jwt_auth in the server group. Replace the stub Op in tools/oracle/src/helpers/server/jwt_auth.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/jwt_auth.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Managed-agent JWTs do not inherit administrator scope from ordinary role claims.
   - The custom validator is litellm_jwtauth.custom_validate, not general_settings.custom_validate.
 budget:

@@ -80,12 +80,11 @@ scope:
     - crates/betterlite-db/src/database_availability/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - tools/oracle/src/helpers/database_availability.rs
-    - tools/oracle/src/helpers/database_availability/**
+    - tools/oracle/src/helpers/db/database_availability.rs
+    - tools/oracle/src/helpers/db/database_availability/**
     - tools/oracle/helpers/database_availability.py
+    - tools/oracle/helpers/database_availability/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
     - tools/oracle/cases/helpers/database-availability/**
     - tools/oracle/fuzz/corpus/helper_case/database-availability-*
     - crates/betterlite-config/Cargo.toml
@@ -197,6 +196,7 @@ out_of_scope:
     (L54-L62).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as database_availability in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_availability.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_availability.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A permanent inner engine fault outranks the transient outer reconnect failure when selecting the 503 explanation.
   - handle_db_exception uses the direct connection predicate, so enabling outage mode does not swallow every error classified as 503.
 budget:

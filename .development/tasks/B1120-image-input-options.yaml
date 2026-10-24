@@ -28,11 +28,10 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/image_input_options.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/image_input_options.rs
+  - tools/oracle/src/helpers/core_ops/image_input_options/**
   - tools/oracle/helpers/image_input_options.py
+  - tools/oracle/helpers/image_input_options/**
   - tools/oracle/fuzz/corpus/helper_case/image_input_options-*
   - tools/oracle/cases/helpers/image-input-options/**
   lint_tables: false
@@ -90,6 +89,7 @@ out_of_scope:
 - B258 owns get_image_type signature decoding; B175 owns provider mapping implementations; B002 owns the global drop flag loader.
 - B997 owns image interfaces. B999 performs edit provider I/O and B082 registers its routes.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as image_input_options in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/image_input_options.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/image_input_options.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - additional_drop_params removes supported fields too, before the unsupported list is calculated.
 - MIME exceptions return PNG silently and do not guarantee restoration after a failed read.
 - Empty imageConfig and user survive selection; a truthiness filter changes requests.

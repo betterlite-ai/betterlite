@@ -134,12 +134,11 @@ scope:
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/src/managed_resource_rows/fixtures/**
-    - tools/oracle/src/helpers/managed_resource_rows.rs
-    - tools/oracle/src/helpers/managed_resource_rows/**
+    - tools/oracle/src/helpers/db/managed_resource_rows.rs
+    - tools/oracle/src/helpers/db/managed_resource_rows/**
     - tools/oracle/helpers/managed_resource_rows.py
+    - tools/oracle/helpers/managed_resource_rows/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
     - tools/oracle/cases/helpers/managed-resource-rows/**
     - tools/oracle/fuzz/corpus/helper_case/managed-resource-rows-*
     - crates/betterlite-db/fuzz/Cargo.toml
@@ -241,6 +240,7 @@ out_of_scope:
     row support here neither installs the enterprise-only hook nor changes a missing-hook response.
   - B136 owns MCP execution and discovery; URL and credential fields here are data, never network requests.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as managed_resource_rows in the db group. Replace the stub Op in tools/oracle/src/helpers/db/managed_resource_rows.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/managed_resource_rows.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - ErrorLogs evaluates its omitted request_id once at import, not once per object.
   - Null env becomes an empty map while null static_headers remains absent.
   - The two ManagedVectorStore table names identify different schemas, not aliases.

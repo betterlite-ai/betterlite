@@ -41,10 +41,10 @@ scope:
     - crates/betterlite-core/fuzz/corpus/stability_image/**
     - crates/betterlite-config/src/providers.rs
     - crates/betterlite-config/src/providers/stability.rs
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/stability_generation.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/stability_generation.rs
+    - tools/oracle/src/helpers/core_ops/stability_generation/**
     - tools/oracle/helpers/stability_generation.py
+    - tools/oracle/helpers/stability_generation/**
     - tools/oracle/cases/helpers/stability-generation/**
     - tools/oracle/fuzz/corpus/helper_case/stability_generation*
   lint_tables: false
@@ -84,6 +84,7 @@ out_of_scope:
   - B1523 owns STABILITY_EDIT_ENDPOINTS and edit execution policy in the shared types file.
   - StabilityImageEditRequest, StabilityImageGenerationResponse, StabilityUpscaleRequest, StabilityInpaintRequest, StabilityOutpaintRequest, StabilityEraseRequest, StabilitySearchReplaceRequest, StabilityRemoveBackgroundRequest, StabilityControlRequest, StabilityEditResponse and STABILITY_ASPECT_RATIOS have no caller at the pin; do not build their declared validation or cases.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as stability_generation in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/stability_generation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/stability_generation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Storing _n does not make this transformer send n generation requests.
   - The first substring match determines the endpoint even when a later key is more specific.
   - A non-CONTENT_FILTERED finish_reason is not itself an error.

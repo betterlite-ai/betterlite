@@ -46,10 +46,10 @@ scope:
     - crates/betterlite-server/src/router_weight_references/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/src/helpers/router_weight_references.rs
-    - tools/oracle/helpers/management/models.py
+    - tools/oracle/src/helpers/server/router_weight_references.rs
+    - tools/oracle/src/helpers/server/router_weight_references/**
     - tools/oracle/helpers/router_weight_references.py
+    - tools/oracle/helpers/router_weight_references/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/router-weight-references/**
     - tools/oracle/fuzz/corpus/helper_case/router-weight-reference-*
@@ -94,6 +94,7 @@ out_of_scope:
   - B023 owns effective routing-weight application and composition, not this validator.
   - B725 owns model row storage and B302 owns configured deployment lookup.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as router_weight_references in the server group. Replace the stub Op in tools/oracle/src/helpers/server/router_weight_references.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/router_weight_references.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Configured deployments do not let a nonempty weights request bypass the database requirement.
   - Only settings validation is translated to the fixed 400; malformed stored model_info is not.
 budget:

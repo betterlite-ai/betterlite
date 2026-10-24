@@ -69,12 +69,11 @@ scope:
     - crates/betterlite-server/src/model_team_scope/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/model_team_scope.rs
-    - tools/oracle/src/helpers/model_team_scope/**
+    - tools/oracle/src/helpers/server/model_team_scope.rs
+    - tools/oracle/src/helpers/server/model_team_scope/**
     - tools/oracle/helpers/model_team_scope.py
+    - tools/oracle/helpers/model_team_scope/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/teams.rs
-    - tools/oracle/helpers/management/teams.py
     - tools/oracle/cases/helpers/model-team-scope/**
     - tools/oracle/fuzz/corpus/helper_case/model-team-scope-*
   lint_tables: false
@@ -492,6 +491,7 @@ out_of_scope:
     (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
     dynamic_mcp_route (L20308-L20379).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as model_team_scope in the server group. Replace the stub Op in tools/oracle/src/helpers/server/model_team_scope.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_team_scope.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A BYOK search tolerates a failed user lookup by narrowing to the key team, while explicit teamId authorization rejects the same failure with 403.
   - Restricted-name database lookup does not add a team predicate; preserve that query and apply the caller's filtering stages in their source order.
 budget:

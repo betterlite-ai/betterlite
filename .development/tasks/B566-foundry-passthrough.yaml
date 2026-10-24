@@ -105,11 +105,10 @@ scope:
   - crates/betterlite-foundry/src/passthrough.rs
   - crates/betterlite-foundry/src/passthrough/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_passthrough.rs
-  - tools/oracle/src/helpers/foundry_passthrough/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/foundry/passthrough.rs
+  - tools/oracle/src/helpers/foundry/passthrough/**
   - tools/oracle/helpers/foundry_passthrough.py
+  - tools/oracle/helpers/foundry_passthrough/**
   - tools/oracle/cases/helpers/providers/foundry-passthrough/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_passthrough*
   - crates/betterlite-foundry/fuzz/Cargo.toml
@@ -271,6 +270,7 @@ out_of_scope:
 - 'litellm-rust/crates/core/src/ocr/provider_config.rs: resolve_provider_config and OCR response bodies belong to
   B092; this task recognizes the logged_ocr_response seam and invokes an injected OCR projector from that owner.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_passthrough in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/passthrough.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_passthrough.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Only the exact models path segment truncates the Foundry root; Models is retained.
 - Partial path overlap is removed only for an openai-prefixed native endpoint.
 budget:

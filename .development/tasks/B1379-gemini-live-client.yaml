@@ -38,8 +38,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_client.rs
     - crates/betterlite-vertex/fuzz/corpus/gemini_live_client/**
-    - tools/oracle/src/helpers/{mod,gemini_live_client}.rs
-    - tools/oracle/helpers/{dispatch,gemini_live_client}.py
+    - tools/oracle/src/helpers/vertex/gemini_live_client.rs
+    - tools/oracle/src/helpers/vertex/gemini_live_client/**
+    - tools/oracle/helpers/gemini_live_client.py
+    - tools/oracle/helpers/gemini_live_client/**
     - tools/oracle/cases/helpers/gemini-live-client/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_live_client*
   lint_tables: false
@@ -92,6 +94,7 @@ out_of_scope:
   - B1378 owns setup parsing/mapping and session-created events; B1380 owns content lifecycle events; B1381 owns tool-call insertion and usage consumption; B1382 dispatches server frames.
   - The remaining Studio common_utils helpers belong to B1331/B1334/B1330, with provider pricing in B1319/B1350.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as gemini_live_client in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_live_client.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_live_client.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - input_audio_buffer.clear is ignored without clearing accumulated billable audio bytes.
   - A tool reply updates LRU recency but retains its call-id/name entry for retries.
   - Invalid base64 audio still contributes the source's length estimate and is forwarded unchanged.

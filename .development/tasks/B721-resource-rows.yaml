@@ -79,12 +79,11 @@ scope:
     - crates/betterlite-db/src/resource_rows/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - tools/oracle/src/helpers/resource_rows.rs
-    - tools/oracle/src/helpers/resource_rows/**
+    - tools/oracle/src/helpers/db/resource_rows.rs
+    - tools/oracle/src/helpers/db/resource_rows/**
     - tools/oracle/helpers/resource_rows.py
+    - tools/oracle/helpers/resource_rows/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
     - tools/oracle/cases/helpers/resource-rows/**
     - tools/oracle/fuzz/corpus/helper_case/resource-rows-*
     - crates/betterlite-db/fuzz/Cargo.toml
@@ -164,6 +163,7 @@ out_of_scope:
   - models/__init__.py only re-exports classes owned by B720, B721, B858, B859 and B2310; native
     modules expose their own types without recreating a Python import-time umbrella or dependency cycle.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as resource_rows in the db group. Replace the stub Op in tools/oracle/src/helpers/db/resource_rows.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/resource_rows.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - CreateCredentialItem rejects two empty alternatives, while UpdateCredentialItem has no such guard.
   - Model params text 'null' is invalid, but model_info text 'null' is accepted.
   - Config's dict-only model is stricter than the ConfigParam wrapper used by repository reads.

@@ -76,11 +76,10 @@ scope:
   - crates/betterlite-foundry/src/image_generation.rs
   - crates/betterlite-foundry/src/image_generation/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_image_generation.rs
-  - tools/oracle/src/helpers/foundry_image_generation/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/foundry/image_generation.rs
+  - tools/oracle/src/helpers/foundry/image_generation/**
   - tools/oracle/helpers/foundry_image_generation.py
+  - tools/oracle/helpers/foundry_image_generation/**
   - tools/oracle/cases/helpers/providers/foundry-image-generation/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_image_generation*
   lint_tables: false
@@ -204,6 +203,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_image_generation in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/image_generation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_image_generation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - flux2-flex is recognized as Flux2 but its provider-model path defaults to pro because the flex-path matcher requires
   flux-2-flex.
 - Size-derived width/height and explicit width/height overwrite each other in caller iteration order.

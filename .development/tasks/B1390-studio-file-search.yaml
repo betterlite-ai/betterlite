@@ -37,8 +37,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/studio_file_search.rs
     - crates/betterlite-vertex/fuzz/corpus/studio_file_search/**
-    - tools/oracle/src/helpers/{mod,studio_file_search}.rs
-    - tools/oracle/helpers/{dispatch,studio_file_search}.py
+    - tools/oracle/src/helpers/vertex/studio_file_search.rs
+    - tools/oracle/src/helpers/vertex/studio_file_search/**
+    - tools/oracle/helpers/studio_file_search.py
+    - tools/oracle/helpers/studio_file_search/**
     - tools/oracle/cases/helpers/studio-file-search/**
     - tools/oracle/fuzz/corpus/helper_case/studio_file_search*
   lint_tables: false
@@ -82,6 +84,7 @@ out_of_scope:
   - B035 connects the adapter to vector execution; B1067/B1068 retain HTTP route and authorization ownership.
   - Standalone Gemini files are B1367 and are not implicitly attached to a File Search store here.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as studio_file_search in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/studio_file_search.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/studio_file_search.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - max_num_results=100 still requests candidateCount=1 and does not cap the returned grounding records.
   - Support-text deduplication spans previously processed candidates as well as the current candidate.
   - The create result keeps fileSearchStores/ in its id instead of returning only the last path segment.

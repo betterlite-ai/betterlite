@@ -155,11 +155,10 @@ scope:
   - crates/betterlite-azure/src/azure_default_chain.rs
   - crates/betterlite-azure/src/azure_default_chain/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_default_chain.rs
-  - tools/oracle/src/helpers/azure_default_chain/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/default_chain.rs
+  - tools/oracle/src/helpers/azure/default_chain/**
   - tools/oracle/helpers/azure_default_chain.py
+  - tools/oracle/helpers/azure_default_chain/**
   - tools/oracle/cases/helpers/providers/azure-default-chain/**
   - tools/oracle/fuzz/corpus/helper_case/azure_default_chain*
   - crates/betterlite-config/Cargo.toml
@@ -497,6 +496,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/azure/common_utils.py: get_azure_ad_token_from_username_password L160-L196
   belong to B675.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_default_chain in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/default_chain.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_default_chain.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - AZURE_CERTIFICATE_PATH drives explicit LiteLLM inference; DefaultAzureCredential reads the different AZURE_CLIENT_CERTIFICATE_PATH.
 - DeploymentIdentityCredential is a ChainedTokenCredential, whose authentication failure stops before later identities.
 budget:

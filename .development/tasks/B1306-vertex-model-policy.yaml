@@ -46,11 +46,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_timestamp.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_timestamp/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/vertex_model_policy.rs
-    - tools/oracle/src/helpers/vertex_model_policy/**
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/vertex/model_policy.rs
+    - tools/oracle/src/helpers/vertex/model_policy/**
     - tools/oracle/helpers/vertex_model_policy.py
+    - tools/oracle/helpers/vertex_model_policy/**
     - tools/oracle/cases/helpers/vertex-model-policy/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_model_policy*
   lint_tables: false
@@ -109,6 +108,7 @@ out_of_scope:
   - Partner main.py error construction, initialization, completion and count_tokens are composed by B032.
   - Provider response wire records in types/llms/vertex_ai.py belong to B1311-B1315 and the corresponding endpoint tasks; this part owns only metadata field names.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_model_policy in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/model_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_model_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Explicit labels containing only non-string values still permit requester_metadata fallback.
   - An arbitrary model containing bge routes before the Gemma and Model Garden checks.
   - metadata and litellm_metadata can each contain a hidden_params copy that needs removal.

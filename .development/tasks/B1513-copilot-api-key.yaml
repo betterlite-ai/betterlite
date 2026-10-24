@@ -31,10 +31,10 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/copilot_key.rs
     - crates/betterlite-openai/fuzz/corpus/copilot_key/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/copilot_key.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/copilot_key.py
+    - tools/oracle/src/helpers/openai/copilot_api_key.rs
+    - tools/oracle/src/helpers/openai/copilot_api_key/**
+    - tools/oracle/helpers/copilot_api_key.py
+    - tools/oracle/helpers/copilot_api_key/**
     - tools/oracle/cases/helpers/copilot-key/**
     - tools/oracle/fuzz/corpus/helper_case/copilot_key*
   lint_tables: false
@@ -69,6 +69,7 @@ deviations: []
 out_of_scope:
   - B1512 provides the constructor and access-token/device methods in authenticator.py; inference request policy belongs to B1514 through B1516.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as copilot_api_key in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/copilot_api_key.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/copilot_api_key.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A future-dated cache entry can return None and must be rejected only by callers that check it.
   - Refresh retries have no sleep or backoff in this implementation.
   - The refreshed record reaches disk before the missing-token error is raised.

@@ -87,12 +87,11 @@ scope:
     - crates/betterlite-server/src/key_event_sinks/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/key_event_sinks.rs
-    - tools/oracle/src/helpers/key_event_sinks/**
+    - tools/oracle/src/helpers/server/key_event_sinks.rs
+    - tools/oracle/src/helpers/server/key_event_sinks/**
     - tools/oracle/helpers/key_event_sinks.py
+    - tools/oracle/helpers/key_event_sinks/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/keys.rs
-    - tools/oracle/helpers/management/keys.py
     - tools/oracle/cases/helpers/key-event-sinks/**
     - tools/oracle/fuzz/corpus/helper_case/key-event-sinks-*
     - crates/betterlite-config/Cargo.toml
@@ -216,6 +215,7 @@ out_of_scope:
     (L248-L286).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as key_event_sinks in the server group. Replace the stub Op in tools/oracle/src/helpers/server/key_event_sinks.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/key_event_sinks.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty secret returned by read is renamed; only None means missing.
   - Enabling legacy email sends creation notifications but still skips every rotation notification.
 budget:

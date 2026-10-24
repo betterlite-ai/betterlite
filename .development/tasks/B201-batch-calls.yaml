@@ -28,8 +28,10 @@ scope:
   - crates/betterlite-core/src/batch.rs
   - crates/betterlite-core/src/batch/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/core_ops/batch_calls.rs
+  - tools/oracle/src/helpers/core_ops/batch_calls/**
+  - tools/oracle/helpers/batch_calls.py
+  - tools/oracle/helpers/batch_calls/**
   - tools/oracle/cases/helpers/batch-calls/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -110,6 +112,7 @@ out_of_scope:
 - Provider batch-job APIs are B086; this is in-process fan-out.
 - The synchronous Python API surface and executor adaptation are B158/B166.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as batch_calls in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/batch_calls.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/batch_calls.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The models branch waits in input order even though its docstring says first response.
 - Do not replace results with completion-order output in the ordinary batch path.
 - A race winner is not permission to detach the losing requests.

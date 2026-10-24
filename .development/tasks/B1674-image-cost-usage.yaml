@@ -50,10 +50,10 @@ scope:
     - crates/betterlite-models/fuzz/Cargo.toml
     - crates/betterlite-models/fuzz/fuzz_targets/image_dimensions.rs
     - crates/betterlite-models/fuzz/corpus/image_dimensions/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/image_cost.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/image_cost.py
+    - tools/oracle/src/helpers/models/image_cost_usage.rs
+    - tools/oracle/src/helpers/models/image_cost_usage/**
+    - tools/oracle/helpers/image_cost_usage.py
+    - tools/oracle/helpers/image_cost_usage/**
     - tools/oracle/cases/helpers/image-cost/**
     - tools/oracle/fuzz/corpus/helper_case/image-cost-*
   lint_tables: false
@@ -107,6 +107,7 @@ out_of_scope:
   - B1669-B1673 retain utils.py's off-peak, rate, detail, generic and billed-breakdown functions; B1675 owns web-search count accessors, B1676 owns character pricing and metric selection, and B1687 owns requested-image fields, web-search price routing and CostCalculatorUtils.
   - Provider response decoding remains in image API/provider tasks; these calculations inspect usage and counts and do not fetch request or response URLs.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as image_cost_usage in the models group. Replace the stub Op in tools/oracle/src/helpers/models/image_cost_usage.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/image_cost_usage.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - No output-detail object means generated image tokens, while an empty object sends the remaining output tokens to text pricing.
   - Azure's zero output_cost_per_image falls through to pixels, but the default calculator treats that same nonnull zero as a winning price.
   - The default quality fallback is high, regardless of the adjacent comment claiming medium.

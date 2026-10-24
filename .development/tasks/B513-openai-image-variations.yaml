@@ -85,11 +85,10 @@ scope:
   - crates/betterlite-openai/src/image_variations.rs
   - crates/betterlite-openai/src/image_variations/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_image_variations.rs
-  - tools/oracle/src/helpers/openai_image_variations/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/image_variations.rs
+  - tools/oracle/src/helpers/openai/image_variations/**
   - tools/oracle/helpers/openai_image_variations.py
+  - tools/oracle/helpers/openai_image_variations/**
   - tools/oracle/cases/helpers/providers/openai-image-variations/**
   - tools/oracle/fuzz/corpus/helper_case/openai_image_variations*
   lint_tables: false
@@ -209,6 +208,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_image_variations in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/image_variations.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_image_variations.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The method accepts a model but transform_request_image_variation does not include it unless optional_params does.
 - The async handler calls the synchronous transform_response_image_variation; its async-named counterpart is not
   selected by this path.

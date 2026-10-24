@@ -80,12 +80,11 @@ scope:
     - crates/betterlite-db/src/team_rows/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - tools/oracle/src/helpers/team_rows.rs
-    - tools/oracle/src/helpers/team_rows/**
+    - tools/oracle/src/helpers/db/team_rows.rs
+    - tools/oracle/src/helpers/db/team_rows/**
     - tools/oracle/helpers/team_rows.py
+    - tools/oracle/helpers/team_rows/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
     - tools/oracle/cases/helpers/team-rows/**
     - tools/oracle/fuzz/corpus/helper_case/team-rows-*
     - crates/betterlite-db/fuzz/Cargo.toml
@@ -156,6 +155,7 @@ out_of_scope:
   - B2310 owns nested budget/full-budget and object-permission fields. B724 owns repository JSON
     predecoding and the advisory-lock-precondition roster read, rather than these models.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as team_rows in the db group. Replace the stub Op in tools/oracle/src/helpers/db/team_rows.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/team_rows.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty user_id passes the identity validator because it tests None, not truthiness.
   - Malformed aliases/config/permissions/model_aliases text fails before those extra fields can be ignored.
   - A malformed full-only budget field can disappear when the membership union successfully falls back to the base budget.

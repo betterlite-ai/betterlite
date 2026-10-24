@@ -84,12 +84,11 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/model_info_datetime.rs
     - crates/betterlite-server/fuzz/corpus/model_info_datetime/**
-    - tools/oracle/src/helpers/model_info_search.rs
-    - tools/oracle/src/helpers/model_info_search/**
+    - tools/oracle/src/helpers/server/model_info_search.rs
+    - tools/oracle/src/helpers/server/model_info_search/**
     - tools/oracle/helpers/model_info_search.py
+    - tools/oracle/helpers/model_info_search/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/model-info-search/**
     - tools/oracle/fuzz/corpus/helper_case/model-info-search-*
   lint_tables: false
@@ -530,6 +529,7 @@ out_of_scope:
     (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
     dynamic_mcp_route (L20308-L20379).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as model_info_search in the server group. Replace the stub Op in tools/oracle/src/helpers/server/model_info_search.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_info_search.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The raw DB count can exceed scoped rows; B850 later replaces it with the final materialized length.
   - A nonempty unsupported sortBy still triggers the 500-row fetch cap before sorting is skipped.
   - Sorting's comments claim missing values start descending results, but its sentinels put them last.

@@ -68,10 +68,10 @@ scope:
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/ui-session-cleanup-*
-    - tools/oracle/src/helpers/ui_session_cleanup.rs
-    - tools/oracle/helpers/ui_session_cleanup.py
-    - tools/oracle/src/helpers/management/users.rs
-    - tools/oracle/helpers/management/users.py
+    - tools/oracle/src/helpers/server/expired_ui_session_cleanup.rs
+    - tools/oracle/src/helpers/server/expired_ui_session_cleanup/**
+    - tools/oracle/helpers/expired_ui_session_cleanup.py
+    - tools/oracle/helpers/expired_ui_session_cleanup/**
     - tools/oracle/cases/helpers/ui-session-cleanup/**
     - tools/oracle/fuzz/corpus/helper_case/ui-session-cleanup-*
   lint_tables: false
@@ -121,6 +121,7 @@ out_of_scope:
     B722 token queries, B777 deletion/archive, B784 events, B2314 internal-jobs identity and
     B002 configuration decoding. All functions in the covered cleanup module belong here.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as expired_ui_session_cleanup in the server group. Replace the stub Op in tools/oracle/src/helpers/server/expired_ui_session_cleanup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/expired_ui_session_cleanup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Hook failure returns zero even when token deletion already committed.
   - A release_lock exception escapes the finally block despite the worker's otherwise catch-and-return-zero behavior.
 budget:

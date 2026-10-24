@@ -96,12 +96,11 @@ scope:
     - crates/betterlite-auth/src/jwt_db_teams/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/jwt_db_teams.rs
-    - tools/oracle/src/helpers/jwt_db_teams/**
+    - tools/oracle/src/helpers/server/jwt_db_teams.rs
+    - tools/oracle/src/helpers/server/jwt_db_teams/**
     - tools/oracle/helpers/jwt_db_teams.py
+    - tools/oracle/helpers/jwt_db_teams/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/jwt.rs
-    - tools/oracle/helpers/management/jwt.py
     - tools/oracle/cases/helpers/jwt-db-teams/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-db-teams-*
     - crates/betterlite-server/src/auth.rs
@@ -272,6 +271,7 @@ out_of_scope:
     (L642-L654), JWTHandler.get_scopes (L735-L746).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as jwt_db_teams in the server group. Replace the stub Op in tools/oracle/src/helpers/server/jwt_db_teams.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/jwt_db_teams.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Admin attachment catches every lookup exception; single-team fallback catches HTTPException only.
   - A route-denied candidate still counts as a resolved team for the final model-denial message.
 budget:

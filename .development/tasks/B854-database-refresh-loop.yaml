@@ -93,10 +93,10 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/refresh_password.rs
     - crates/betterlite-db/fuzz/corpus/refresh_password/**
-    - tools/oracle/src/helpers/database_refresh_loop.rs
+    - tools/oracle/src/helpers/db/database_refresh_loop.rs
+    - tools/oracle/src/helpers/db/database_refresh_loop/**
     - tools/oracle/helpers/database_refresh_loop.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/helpers/database_refresh_loop/**
     - tools/oracle/cases/helpers/database-refresh-loop/**
     - tools/oracle/fuzz/corpus/helper_case/database-refresh-loop-*
     - crates/betterlite-db/src/database_refresh_loop/fixtures/**
@@ -245,6 +245,7 @@ out_of_scope:
   - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._kill_engine_process: Prisma engine process supervision
     has no equivalent process in native SQLx; owned pool tasks replace it.'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as database_refresh_loop in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_refresh_loop.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_refresh_loop.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Expiry equality is not expired, but exactly 180 seconds of runway is already eligible for refresh.
   - A replacement callback can fail after publication; restoring credentials then does not restore the old pool.
   - There is no random jitter and no warn-level fallback in this loop.

@@ -81,12 +81,11 @@ scope:
     - crates/betterlite-server/src/team_member_budgets/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/team_member_budgets.rs
-    - tools/oracle/src/helpers/team_member_budgets/**
+    - tools/oracle/src/helpers/server/team_member_budgets.rs
+    - tools/oracle/src/helpers/server/team_member_budgets/**
     - tools/oracle/helpers/team_member_budgets.py
+    - tools/oracle/helpers/team_member_budgets/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/teams.rs
-    - tools/oracle/helpers/management/teams.py
     - tools/oracle/cases/helpers/team-member-budgets/**
     - tools/oracle/fuzz/corpus/helper_case/team-member-budgets-*
     - crates/betterlite-server/src/team_member_budgets/fixtures/**
@@ -268,6 +267,7 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as team_member_budgets in the server group. Replace the stub Op in tools/oracle/src/helpers/server/team_member_budgets.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/team_member_budgets.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Backfill heals null budgets for the whole team and never migrates nonnull references to an old default.
   - The bulk service's docstring overstates its transaction scope; the writer roster lookup occurs before it.
 budget:

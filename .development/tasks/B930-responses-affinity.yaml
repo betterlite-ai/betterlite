@@ -25,11 +25,10 @@ scope:
   - crates/betterlite-router/src/lib.rs
   - crates/betterlite-router/src/responses_affinity.rs
   - crates/betterlite-router/src/responses_affinity/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_affinity.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/router/responses_affinity.rs
+  - tools/oracle/src/helpers/router/responses_affinity/**
   - tools/oracle/helpers/responses_affinity.py
+  - tools/oracle/helpers/responses_affinity/**
   - tools/oracle/fuzz/corpus/helper_case/responses_affinity-*
   - tools/oracle/cases/helpers/responses-affinity/**
   lint_tables: false
@@ -115,6 +114,7 @@ out_of_scope:
 - B324 owns callback installation/order and loading optional_pre_call_checks/model_group_affinity_config; B844 catalog lookup and B061 named credential access remain injected dependencies.
 - B903/B904 and B220 own marker parsing/stripping; no new format or decoder is introduced.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_affinity in the router group. Replace the stub Op in tools/oracle/src/helpers/router/responses_affinity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_affinity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Named credential fields override deployment fields by presence,so an explicit null disables boundary matching.
 - Do not create litellm_metadata merely to set the affinity flag; that changes which metadata carries routing tags.
 - Missing origins strip and dispatch instead of returning distinguishable existence errors.

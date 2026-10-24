@@ -83,12 +83,11 @@ scope:
     - crates/betterlite-auth/src/route_match/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/route_match.rs
-    - tools/oracle/src/helpers/route_match/**
+    - tools/oracle/src/helpers/server/route_match.rs
+    - tools/oracle/src/helpers/server/route_match/**
     - tools/oracle/helpers/route_match.py
+    - tools/oracle/helpers/route_match/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/route-match/**
     - tools/oracle/fuzz/corpus/helper_case/route-match-*
     - crates/betterlite-server/src/auth.rs
@@ -324,6 +323,7 @@ out_of_scope:
     (L736-L762).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as route_match in the server group. Replace the stub Op in tools/oracle/src/helpers/server/route_match.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/route_match.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A {name:path} Google model placeholder may span slashes but must stop at the colon before generateContent.
   - Ordinary allowed-route prefix matching requires a slash boundary, while an explicit trailing wildcard deliberately does not.
 budget:

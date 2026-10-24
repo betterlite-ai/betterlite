@@ -146,11 +146,10 @@ scope:
   - crates/betterlite-bedrock/src/mantle_settings.rs
   - crates/betterlite-bedrock/src/mantle_settings/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_mantle_settings.rs
-  - tools/oracle/src/helpers/bedrock_mantle_settings/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/mantle_settings.rs
+  - tools/oracle/src/helpers/bedrock/mantle_settings/**
   - tools/oracle/helpers/bedrock_mantle_settings.py
+  - tools/oracle/helpers/bedrock_mantle_settings/**
   - tools/oracle/cases/helpers/providers/bedrock-mantle-settings/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_settings*
   lint_tables: false
@@ -353,6 +352,7 @@ out_of_scope:
   L70-L72; BedrockMantleAuthMixin._resolve_region L74-L76; mantle_supports_responses L130-L145; mantle_base_segment
   L148-L160 belong to B2207.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_mantle_settings in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/mantle_settings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_mantle_settings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The signing URL's Mantle region overrides a conflicting aws_region_name only on the no-bearer path.
 - Native Messages normalizes recognized Mantle hosts to https and drops their leftover path, while custom hosts
   retain it.

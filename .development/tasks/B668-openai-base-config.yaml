@@ -123,11 +123,10 @@ scope:
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/Cargo.toml
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_base_config.rs
-  - tools/oracle/src/helpers/openai_base_config/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/base_config.rs
+  - tools/oracle/src/helpers/openai/base_config/**
   - tools/oracle/helpers/openai_base_config.py
+  - tools/oracle/helpers/openai_base_config/**
   - tools/oracle/cases/helpers/providers/openai-base-config/**
   - tools/oracle/fuzz/corpus/helper_case/openai_base_config*
   - Cargo.toml
@@ -593,6 +592,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/utils.py: _handle_new_key_with_scan L5621-L5637 have no caller at the pin;
   do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_base_config in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/base_config.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_base_config.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The catalog predicate splits on the first responses/ occurrence anywhere in the name, whereas the o-series predicate
   splits on the last slash.
 - OpenAIUnknownModelConfig selection uses type(self) is OpenAIConfig, so inheritance alone must not grant reasoning_effort.

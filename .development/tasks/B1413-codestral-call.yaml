@@ -32,8 +32,10 @@ scope:
   paths:
     - crates/betterlite-openai/src/{lib,error,codestral_call}.rs
     - crates/betterlite-openai/src/codestral_call/**
-    - tools/oracle/src/helpers/{mod,codestral_plan}.rs
-    - tools/oracle/helpers/{dispatch,codestral_plan}.py
+    - tools/oracle/src/helpers/openai/codestral_call.rs
+    - tools/oracle/src/helpers/openai/codestral_call/**
+    - tools/oracle/helpers/codestral_call.py
+    - tools/oracle/helpers/codestral_call/**
     - tools/oracle/cases/helpers/codestral-plan/**
     - tools/oracle/fuzz/corpus/helper_case/codestral_plan*
   lint_tables: false
@@ -73,6 +75,7 @@ out_of_scope:
   - B1412 owns handler protocols, TextCompletionCodestralError and process_text_completion_response; output_parser and embedding have no caller at the pin.
   - B036 owns main.py _complete_text_completion_codestral and CODESTRAL_API_KEY resolution; B158 exposes the synchronous Python facade.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as codestral_call in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/codestral_call.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/codestral_call.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The sync and async stream wrappers use different provider literals in this handler.
   - Popping stream before constructing the sync request intentionally leaves it out of the JSON body.
   - Caller Authorization wins over the API-key header even though the key is still required to be non-None.

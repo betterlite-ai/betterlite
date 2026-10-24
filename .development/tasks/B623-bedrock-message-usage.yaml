@@ -81,11 +81,10 @@ scope:
   - crates/betterlite-bedrock/src/message_usage.rs
   - crates/betterlite-bedrock/src/message_usage/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_message_usage.rs
-  - tools/oracle/src/helpers/bedrock_message_usage/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/message_usage.rs
+  - tools/oracle/src/helpers/bedrock/message_usage/**
   - tools/oracle/helpers/bedrock_message_usage.py
+  - tools/oracle/helpers/bedrock_message_usage/**
   - tools/oracle/cases/helpers/providers/bedrock-message-usage/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_message_usage*
   lint_tables: false
@@ -239,6 +238,7 @@ out_of_scope:
   AmazonAnthropicClaudeMessagesConfig._is_claude_opus_4_5 L370-L387 have no caller at the pin; do not implement
   or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_message_usage in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/message_usage.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_message_usage.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Consecutive message_delta events overwrite the pending event instead of both being emitted.
 - A new message_start without dictionary usage leaves the prior usage snapshot in place.
 budget:

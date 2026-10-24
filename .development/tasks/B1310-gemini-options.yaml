@@ -31,10 +31,10 @@ scope:
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/options.rs
     - crates/betterlite-config/src/providers/vertex/options/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/gemini_options.rs
-    - tools/oracle/src/helpers/gemini_options/**
-    - tools/oracle/helpers/{dispatch,gemini_options}.py
+    - tools/oracle/src/helpers/vertex/gemini_options.rs
+    - tools/oracle/src/helpers/vertex/gemini_options/**
+    - tools/oracle/helpers/gemini_options.py
+    - tools/oracle/helpers/gemini_options/**
     - tools/oracle/cases/helpers/gemini-options/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_options*
   lint_tables: false
@@ -84,6 +84,7 @@ out_of_scope:
   - B1313 and B1314 implement the output methods from L1313-L2512; B1315 covers ModelResponseIterator; B1316 covers VertexLLM and config request/auth adapters.
   - Dynamic Pydantic introspection runs in B157's Python bridge; this task provides the typed name/schema projection it calls.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as gemini_options in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_options.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_options.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - max_tokens and max_completion_tokens overwrite the same field in input order rather than having a fixed winner.
   - The source has no actual default max_output_tokens=256 even though its class documentation suggests one.
   - The final search conflict pass is necessary when web_search_options and functions were mapped separately.

@@ -34,10 +34,10 @@ scope:
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/budget_window_start.rs
     - crates/betterlite-auth/fuzz/corpus/budget_window_start/**
-    - tools/oracle/src/helpers/budget_window_start.rs
+    - tools/oracle/src/helpers/auth/budget_window_start.rs
+    - tools/oracle/src/helpers/auth/budget_window_start/**
     - tools/oracle/helpers/budget_window_start.py
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/helpers/budget_window_start/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/budget-window-start/**
     - tools/oracle/fuzz/corpus/helper_case/budget-window-start-*
@@ -83,6 +83,7 @@ out_of_scope:
     request estimation and release. B199 owns duration grammar; B887 owns team window admission.
     B751 owns key-window admission and must consume this lower helper when its task is implemented.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as budget_window_start in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/budget_window_start.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/budget_window_start.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Invalid reset_at falls back to now, whereas invalid budget_duration returns None.
   - A failing model_dump is not caught by the string-JSON fallback.
 budget:

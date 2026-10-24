@@ -30,8 +30,10 @@ scope:
   - crates/betterlite-core/src/duration/**
   - crates/betterlite-core/fuzz/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/core_ops/duration.rs
+  - tools/oracle/src/helpers/core_ops/duration/**
+  - tools/oracle/helpers/duration.py
+  - tools/oracle/helpers/duration/**
   - tools/oracle/cases/helpers/duration/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -118,6 +120,7 @@ out_of_scope:
 - Budget persistence, admission and scheduled reset jobs belong to M4; this part supplies pure calculations.
 - Do not add new accepted config keys until their owning feature consumes them.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as duration in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/duration.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/duration.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The monthly word alias is a fixed duration while mo is calendar-dependent.
 - >-
   The source regex accepts a valid prefix, so a library that enforces whole-string matching changes compatibility.

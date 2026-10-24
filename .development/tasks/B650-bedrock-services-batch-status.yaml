@@ -99,11 +99,10 @@ scope:
   - crates/betterlite-bedrock/src/batch_status.rs
   - crates/betterlite-bedrock/src/batch_status/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_batch_status.rs
-  - tools/oracle/src/helpers/bedrock_services_batch_status/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_batch_status.rs
+  - tools/oracle/src/helpers/bedrock/services_batch_status/**
   - tools/oracle/helpers/bedrock_services_batch_status.py
+  - tools/oracle/helpers/bedrock_services_batch_status/**
   - tools/oracle/cases/helpers/providers/bedrock-services-batch-status/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_status*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -373,6 +372,7 @@ out_of_scope:
   CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
   or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_batch_status in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_batch_status.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_batch_status.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Generic retrieval accepts ISO timestamp strings; the native handler helper ignores strings and accepts datetime/numbers
   instead.
 - Generic retrieval returns the raw output prefix, whereas the native handler uses a predicted object URI; do not

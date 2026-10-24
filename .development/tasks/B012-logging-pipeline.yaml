@@ -28,8 +28,10 @@ scope:
   - crates/betterlite/**
   - crates/betterlite-config/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/logging/service_logging.rs
+  - tools/oracle/src/helpers/logging/service_logging/**
+  - tools/oracle/helpers/service_logging.py
+  - tools/oracle/helpers/service_logging/**
   - tools/oracle/cases/helpers/service-logging/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -115,6 +117,7 @@ out_of_scope:
 - Prometheus, OTel, Datadog, Sentry and other exporters remain in M5.
 - Python callbacks/hooks are B164-B165; spend persistence is B069.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as service_logging in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/service_logging.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/service_logging.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A callback failure must not recursively enqueue another callback failure indefinitely.
 - Call identity belongs to a request context, not a mutable global logger field.
 - >-

@@ -93,11 +93,10 @@ scope:
   - crates/betterlite-anthropic/src/params.rs
   - crates/betterlite-anthropic/src/params/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_params.rs
-  - tools/oracle/src/helpers/anthropic_params/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/params.rs
+  - tools/oracle/src/helpers/anthropic/params/**
   - tools/oracle/helpers/anthropic_params.py
+  - tools/oracle/helpers/anthropic_params/**
   - tools/oracle/cases/helpers/providers/anthropic-params/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_params*
   lint_tables: false
@@ -314,6 +313,7 @@ out_of_scope:
   AnthropicConfig._separate_deferred_tools L1167-L1183; AnthropicConfig._expand_tool_references L1185-L1228 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_params in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/params.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_params.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The two max-token spellings overwrite in input order, rather than assigning a fixed preferred spelling.
 - reasoning_effort=none removes the whole output_config, including a structured-output format.
 budget:

@@ -113,11 +113,10 @@ scope:
   - crates/betterlite-bedrock/src/converse_response.rs
   - crates/betterlite-bedrock/src/converse_response/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_converse_response.rs
-  - tools/oracle/src/helpers/bedrock_converse_response/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/converse_response.rs
+  - tools/oracle/src/helpers/bedrock/converse_response/**
   - tools/oracle/helpers/bedrock_converse_response.py
+  - tools/oracle/helpers/bedrock_converse_response/**
   - tools/oracle/cases/helpers/providers/bedrock-converse-response/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_converse_response*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -367,6 +366,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta
   L1686-L1827; AmazonConverseConfig._filter_context_management_for_bedrock_converse L1829-L1859 belong to B683.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_converse_response in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/converse_response.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_converse_response.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - ConverseResponseBlock is a TypedDict constructor, so required-field failures occur after the422 decode catch.
 - Citation annotations are omitted when ordinary text contains any alphanumeric character, even if citations describe
   that same text.

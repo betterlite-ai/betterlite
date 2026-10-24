@@ -150,11 +150,10 @@ scope:
   - crates/betterlite-context/src/owned_parameter_names.rs
   - crates/betterlite-context/src/owned_parameter_names/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/owned_parameter_names.rs
-  - tools/oracle/src/helpers/owned_parameter_names/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/context/owned_parameter_names.rs
+  - tools/oracle/src/helpers/context/owned_parameter_names/**
   - tools/oracle/helpers/owned_parameter_names.py
+  - tools/oracle/helpers/owned_parameter_names/**
   - tools/oracle/cases/helpers/providers/owned-parameter-names/**
   - tools/oracle/fuzz/corpus/helper_case/owned_parameter_names*
   lint_tables: false
@@ -322,6 +321,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/types/utils.py: _generate_id L122-L123; is_custom_tool_call_dict L1329-L1330;
   chat_completion_tool_call_from_dict L1333-L1340 belong to B2214.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as owned_parameter_names in the context group. Replace the stub Op in tools/oracle/src/helpers/context/owned_parameter_names.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/owned_parameter_names.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The source name is no-log, not no_log; testing only Rust field names leaks that parameter upstream.
 budget:
   max_changed_lines: 675

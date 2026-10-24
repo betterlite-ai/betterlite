@@ -79,11 +79,8 @@ scope:
   - crates/betterlite-config/src/api/messages_response_call/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/messages-response-call-*
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/messages_response_call.rs
-  - tools/oracle/src/helpers/messages_response_call/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/messages_response_call.rs
+  - tools/oracle/src/helpers/core_ops/messages_response_call/**
   - tools/oracle/helpers/messages_response_call.py
   - tools/oracle/helpers/messages_response_call/**
   - tools/oracle/fuzz/corpus/helper_case/messages_response_call-*
@@ -179,6 +176,7 @@ out_of_scope:
 - Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
   never stand in for those HTTP comparisons.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as messages_response_call in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_response_call.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_response_call.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - _build_responses_kwargs uses responses_kwargs.get('reasoning'); retain its missing-value behavior and field spelling
   in the typed projection.
 - _build_responses_kwargs uses forwarded_kwargs.get('prompt_cache_key'); retain its missing-value behavior and field

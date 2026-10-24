@@ -82,11 +82,10 @@ scope:
   - crates/betterlite-bedrock/src/realtime_bridge.rs
   - crates/betterlite-bedrock/src/realtime_bridge/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_realtime_bridge.rs
-  - tools/oracle/src/helpers/bedrock_services_realtime_bridge/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_realtime_bridge.rs
+  - tools/oracle/src/helpers/bedrock/services_realtime_bridge/**
   - tools/oracle/helpers/bedrock_services_realtime_bridge.py
+  - tools/oracle/helpers/bedrock_services_realtime_bridge/**
   - tools/oracle/cases/helpers/providers/bedrock-services-realtime-bridge/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_bridge*
   lint_tables: false
@@ -232,6 +231,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/realtime/handler.py: BedrockRealtime.async_realtime L242-L346;
   BedrockRealtime._run_session L348-L411; BedrockRealtime._bridge L413-L457 belong to B666.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_realtime_bridge in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_realtime_bridge.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_realtime_bridge.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Session state is updated before client delivery, but a failed delivery is excluded from the logged event list.
 - Provider failure keeps the client websocket open; only normal provider EOF closes it here.
 budget:

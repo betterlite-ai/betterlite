@@ -94,12 +94,11 @@ scope:
     - crates/betterlite-server/src/key_patch_fields/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/key_patch_fields.rs
-    - tools/oracle/src/helpers/key_patch_fields/**
+    - tools/oracle/src/helpers/server/key_patch_fields.rs
+    - tools/oracle/src/helpers/server/key_patch_fields/**
     - tools/oracle/helpers/key_patch_fields.py
+    - tools/oracle/helpers/key_patch_fields/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/keys.rs
-    - tools/oracle/helpers/management/keys.py
     - tools/oracle/cases/helpers/key-patch-fields/**
     - tools/oracle/fuzz/corpus/helper_case/key-patch-fields-*
     - crates/betterlite-server/src/key_patch_fields/fixtures/**
@@ -289,6 +288,7 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as key_patch_fields in the server group. Replace the stub Op in tools/oracle/src/helpers/server/key_patch_fields.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/key_patch_fields.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Clearing budget_limits stores JSON null, unlike generation's absent SQL column.
   - Empty duration and budget_duration remove the patch field without clearing stored values.
 budget:

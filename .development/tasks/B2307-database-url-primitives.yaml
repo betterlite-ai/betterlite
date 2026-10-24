@@ -75,10 +75,10 @@ scope:
     - crates/betterlite-db/fuzz/.gitignore
     - crates/betterlite-db/fuzz/fuzz_targets/database_urls.rs
     - crates/betterlite-db/fuzz/corpus/database_urls/**
-    - tools/oracle/src/helpers/database_url_policy.rs
-    - tools/oracle/helpers/database_url_policy.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/src/helpers/db/database_url_primitives.rs
+    - tools/oracle/src/helpers/db/database_url_primitives/**
+    - tools/oracle/helpers/database_url_primitives.py
+    - tools/oracle/helpers/database_url_primitives/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/database-url-policy/**
     - tools/oracle/fuzz/corpus/helper_case/database-url-policy-*
@@ -151,6 +151,7 @@ out_of_scope:
     excluded by B717's native-v2 deviation, and _mark_migration_applied and
     _roll_back_migration_best_effort have no caller at the pin.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as database_url_primitives in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_url_primitives.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_url_primitives.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - add_missing_query_params retains blank pinned values, while connection_params_from_url drops them.
   - The three boolean parsers in token_auth, extras utils and secret_managers accept different strings.
   - Token refresh inherits translated sslcert but deliberately discards schema and options.

@@ -31,11 +31,10 @@ scope:
   - crates/betterlite-openai/fuzz/corpus/responses_event_records/**
   - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_event_records.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/responses_event_records.rs
+  - tools/oracle/src/helpers/openai/responses_event_records/**
   - tools/oracle/helpers/responses_event_records.py
+  - tools/oracle/helpers/responses_event_records/**
   - tools/oracle/fuzz/corpus/helper_case/responses_event_records-*
   - tools/oracle/cases/helpers/responses-event-records/**
   lint_tables: false
@@ -118,6 +117,7 @@ out_of_scope:
 - B1138 owns parse_cost, reasoning/usage validators, reasoning-null serialization and output_text in openai.py; B004 owns all remaining methods in that file, outside L1273-L1929.
 - B925 chooses event classes during SSE processing; B937 constructs client-facing stream errors and B927 drives provider streams.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_event_records in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/responses_event_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_event_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - image_generation.partial_image has no response. prefix, unlike most event strings.
 - summary_index defaults to 0, but most output/content indices and MCP sequence numbers are required.
 - Custom-tool and shell enum members have no dedicated record class here and must survive through GenericEvent.

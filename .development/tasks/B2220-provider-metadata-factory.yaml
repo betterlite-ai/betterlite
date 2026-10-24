@@ -77,11 +77,10 @@ scope:
   - crates/betterlite-models/src/provider_metadata_factory.rs
   - crates/betterlite-models/src/provider_metadata_factory/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/provider_metadata_factory.rs
-  - tools/oracle/src/helpers/provider_metadata_factory/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/models/provider_metadata_factory.rs
+  - tools/oracle/src/helpers/models/provider_metadata_factory/**
   - tools/oracle/helpers/provider_metadata_factory.py
+  - tools/oracle/helpers/provider_metadata_factory/**
   - tools/oracle/cases/helpers/providers/provider-metadata-factory/**
   - tools/oracle/fuzz/corpus/helper_case/provider_metadata_factory*
   lint_tables: false
@@ -369,6 +368,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/utils.py: _handle_new_key_with_scan L5621-L5637 have no caller at the pin;
   do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as provider_metadata_factory in the models group. Replace the stub Op in tools/oracle/src/helpers/models/provider_metadata_factory.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/provider_metadata_factory.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Selecting a VLLM metadata adapter does not mean it implements dynamic get_model_info.
 budget:
   max_changed_lines: 575

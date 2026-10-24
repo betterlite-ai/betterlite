@@ -88,11 +88,10 @@ scope:
   - crates/betterlite-openai/src/text_completion_transport.rs
   - crates/betterlite-openai/src/text_completion_transport/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/text_completion_transport.rs
-  - tools/oracle/src/helpers/text_completion_transport/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/text_completion_transport.rs
+  - tools/oracle/src/helpers/openai/text_completion_transport/**
   - tools/oracle/helpers/text_completion_transport.py
+  - tools/oracle/helpers/text_completion_transport/**
   - tools/oracle/cases/helpers/providers/text-completion-transport/**
   - tools/oracle/fuzz/corpus/helper_case/text_completion_transport*
   lint_tables: false
@@ -238,6 +237,7 @@ out_of_scope:
 - B2237 owns transformations and config selection; B202/B203 own route registration and public text/chat bridges.
   B005 owns streaming chunk conversion and B004 owns SDK JSON decoding.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as text_completion_transport in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/text_completion_transport.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/text_completion_transport.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Buffered async resolves its HTTP client through BaseOpenAILLM, while async streaming uses aclient_session directly;
   only the former can select network_mock automatically.
 budget:

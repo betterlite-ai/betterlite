@@ -84,12 +84,11 @@ scope:
     - crates/betterlite-auth/src/auth_pubsub/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_pubsub.rs
-    - tools/oracle/src/helpers/auth_pubsub/**
+    - tools/oracle/src/helpers/auth/pubsub.rs
+    - tools/oracle/src/helpers/auth/pubsub/**
     - tools/oracle/helpers/auth_pubsub.py
+    - tools/oracle/helpers/auth_pubsub/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-pubsub/**
     - tools/oracle/fuzz/corpus/helper_case/auth-pubsub-*
     - crates/betterlite-auth/fuzz/Cargo.toml
@@ -199,6 +198,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L117-L123
 out_of_scope: []
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_pubsub in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/pubsub.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_pubsub.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A spend reset SET received by its publishing worker must not delete the freshly reset counter or floor marker.
   - Subscription success resets backoff before consumption, so repeated consume failures each wait five seconds.
 budget:

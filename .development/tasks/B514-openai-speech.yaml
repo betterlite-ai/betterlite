@@ -71,11 +71,10 @@ scope:
   - crates/betterlite-openai/src/speech.rs
   - crates/betterlite-openai/src/speech/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_speech.rs
-  - tools/oracle/src/helpers/openai_speech/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/speech.rs
+  - tools/oracle/src/helpers/openai/speech/**
   - tools/oracle/helpers/openai_speech.py
+  - tools/oracle/helpers/openai_speech/**
   - tools/oracle/cases/helpers/providers/openai-speech/**
   - tools/oracle/fuzz/corpus/helper_case/openai_speech*
   lint_tables: false
@@ -236,6 +235,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_speech in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/speech.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_speech.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - organization and project appear in both signatures but are absent from _get_openai_client calls.
 - The create call uses explicit model/voice/input keywords, so duplicate entries in optional_params fail instead
   of overriding those fields.

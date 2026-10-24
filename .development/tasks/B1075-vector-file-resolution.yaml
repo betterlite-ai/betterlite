@@ -20,10 +20,10 @@ scope:
   - crates/betterlite-server/src/api/vector_file_resolution.rs
   - crates/betterlite-server/src/api/vector_file_resolution/**
   - crates/betterlite-core/fuzz/corpus/managed_resource_ids/vector-file-*
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/vector_file_resolution.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/server/vector_file_resolution.rs
+  - tools/oracle/src/helpers/server/vector_file_resolution/**
   - tools/oracle/helpers/vector_file_resolution.py
+  - tools/oracle/helpers/vector_file_resolution/**
   - tools/oracle/fuzz/corpus/helper_case/vector-file-resolution-*
   - tools/oracle/cases/helpers/vector-file-resolution/**
   lint_tables: false
@@ -114,6 +114,7 @@ out_of_scope:
 - B2400 owns provider-source accessors; B1020 owns get_credentials_for_model, authorize_model_for_key, prepare_data_with_credentials and handle_model_based_routing.
 - B1016/B1019 own id decoding and B1021 owns managed-id validation and its flag, so no second decoder or ownership policy is introduced here.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as vector_file_resolution in the server group. Replace the stub Op in tools/oracle/src/helpers/server/vector_file_resolution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_file_resolution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A non-null empty api_key suppresses model-hint credential lookup.
 - Two eligible OpenAI team models leave the request unresolved after authorizing both.
 - Unified store decoding bypasses the legacy registry even when the parsed fields are unusable.

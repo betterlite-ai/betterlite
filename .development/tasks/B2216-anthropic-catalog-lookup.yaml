@@ -67,11 +67,10 @@ scope:
   - crates/betterlite-context/src/anthropic_catalog_lookup.rs
   - crates/betterlite-context/src/anthropic_catalog_lookup/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_catalog_lookup.rs
-  - tools/oracle/src/helpers/anthropic_catalog_lookup/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/context/anthropic_catalog_lookup.rs
+  - tools/oracle/src/helpers/context/anthropic_catalog_lookup/**
   - tools/oracle/helpers/anthropic_catalog_lookup.py
+  - tools/oracle/helpers/anthropic_catalog_lookup/**
   - tools/oracle/cases/helpers/providers/anthropic-catalog-lookup/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_catalog_lookup*
   lint_tables: false
@@ -215,6 +214,7 @@ out_of_scope:
   L726-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model L746-L781; AnthropicModelInfo._legacy_budget_to_effort
   L783-L793; AnthropicModelInfo.is_effort_used L795-L829 belong to B688.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_catalog_lookup in the context group. Replace the stub Op in tools/oracle/src/helpers/context/anthropic_catalog_lookup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_catalog_lookup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The runtime map is exhausted before the bundled map, so a runtime alias can beat a bundled exact key.
 budget:
   max_changed_lines: 450

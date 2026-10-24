@@ -43,8 +43,10 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/cohere_line.rs
     - crates/betterlite-openai/fuzz/corpus/cohere_line/**
-    - tools/oracle/src/helpers/{mod,cohere_stream_record}.rs
-    - tools/oracle/helpers/{dispatch,cohere_stream_record}.py
+    - tools/oracle/src/helpers/openai/cohere_streams.rs
+    - tools/oracle/src/helpers/openai/cohere_streams/**
+    - tools/oracle/helpers/cohere_streams.py
+    - tools/oracle/helpers/cohere_streams/**
     - tools/oracle/cases/helpers/cohere-stream-record/**
     - tools/oracle/fuzz/corpus/helper_case/cohere_stream_record*
   lint_tables: false
@@ -87,6 +89,7 @@ out_of_scope:
   - B2230 owns CohereModelInfo.get_cohere_route in this same file; its other metadata methods have no caller at the pin and are not implemented.
   - B1415 and B1416 own complete chat replies; B037 selects and executes the appropriate iterator after dispatch.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as cohere_streams in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/cohere_streams.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cohere_streams.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - 'Bytes containing data: do not become valid JSON merely because they came from an SSE transport.'
   - V2 message-end reads event, while content-delta reads type, so changing them to one discriminator changes accepted input.
   - The first tool delta's name is not nested under a function object.

@@ -106,11 +106,10 @@ scope:
   - crates/betterlite-openai/src/chat_choices.rs
   - crates/betterlite-openai/src/chat_choices/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_chat_choices.rs
-  - tools/oracle/src/helpers/openai_chat_choices/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/chat_choices.rs
+  - tools/oracle/src/helpers/openai/chat_choices/**
   - tools/oracle/helpers/openai_chat_choices.py
+  - tools/oracle/helpers/openai_chat_choices/**
   - tools/oracle/cases/helpers/providers/openai-chat-choices/**
   - tools/oracle/fuzz/corpus/helper_case/openai_chat_choices*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -329,6 +328,7 @@ out_of_scope:
   L187-L193; OpenAIGPTConfig._map_openai_params L195-L217; OpenAIGPTConfig.map_openai_params L219-L231; OpenAIUnknownModelConfig.get_supported_openai_params
   L833-L834 belong to B668.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_chat_choices in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/chat_choices.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_chat_choices.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - _transform_choices is live through the Vertex Llama3 subclass even though this class transform_response calls
   convert_to_model_response_object instead.
 - The final finish-reason assignment overwrites the earlier JSON-mode stop, so test the final value rather than

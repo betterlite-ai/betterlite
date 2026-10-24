@@ -42,10 +42,10 @@ scope:
     - crates/betterlite-tokenizer/src/lib.rs
     - crates/betterlite-tokenizer/src/reservation.rs
     - crates/betterlite-tokenizer/src/reservation/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/reservation_tokens.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/reservation_tokens.py
+    - tools/oracle/src/helpers/tokenizer/reservation_input_counts.rs
+    - tools/oracle/src/helpers/tokenizer/reservation_input_counts/**
+    - tools/oracle/helpers/reservation_input_counts.py
+    - tools/oracle/helpers/reservation_input_counts/**
     - tools/oracle/cases/helpers/reservation-tokens/**
     - tools/oracle/fuzz/corpus/helper_case/reservation-tokens-*
   lint_tables: false
@@ -84,6 +84,7 @@ out_of_scope:
   - The rust_bridge package is excluded by the repository inventory; input_tokens.py's _native_counts and fork-specific runtime machinery are not reachable with the pinned TOKEN_COUNTER=PYTHON_ONLY rule.
   - B195/B196/B197/B259 retain tokenizer algorithms and their existing asset/input policies; this task adds no acquisition path or alternate tokenizer selection.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as reservation_input_counts in the tokenizer group. Replace the stub Op in tools/oracle/src/helpers/tokenizer/reservation_input_counts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/reservation_input_counts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - JSON dictionaries are counted with spaces and escaped non-ASCII characters, so compact serialization changes reservations.
   - A present messages key blocks every later input field even when its value is null.
   - A failed model count is omitted from the result instead of being represented by a free zero-token request.

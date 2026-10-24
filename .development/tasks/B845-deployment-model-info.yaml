@@ -77,12 +77,11 @@ scope:
     - crates/betterlite-router/src/deployment_model_info/**
     - crates/betterlite-router/src/lib.rs
     - crates/betterlite-router/Cargo.toml
-    - tools/oracle/src/helpers/deployment_model_info.rs
-    - tools/oracle/src/helpers/deployment_model_info/**
+    - tools/oracle/src/helpers/router/deployment_model_info.rs
+    - tools/oracle/src/helpers/router/deployment_model_info/**
     - tools/oracle/helpers/deployment_model_info.py
+    - tools/oracle/helpers/deployment_model_info/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/deployment-model-info/**
     - tools/oracle/fuzz/corpus/helper_case/deployment-model-info-*
   lint_tables: false
@@ -566,6 +565,7 @@ out_of_scope:
     (L14097-L14118).'
   - 'litellm/router.py: B021 owns the remaining functions Router.async_pre_routing_hook (L13796-L13980).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as deployment_model_info in the router group. Replace the stub Op in tools/oracle/src/helpers/router/deployment_model_info.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/deployment_model_info.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A malformed non-null configured limit hides a valid discovered limit before numeric coercion drops it.
   - Using the listing's widest group window for get_configured_token_limits can overrun its one selected deployment.
   - Azure's missing base_model error log does not terminate lookup, and a zeroed registration stub is not usable metadata.

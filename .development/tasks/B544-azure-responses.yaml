@@ -108,11 +108,10 @@ scope:
   - crates/betterlite-azure/src/responses.rs
   - crates/betterlite-azure/src/responses/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_responses.rs
-  - tools/oracle/src/helpers/azure_responses/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/responses.rs
+  - tools/oracle/src/helpers/azure/responses/**
   - tools/oracle/helpers/azure_responses.py
+  - tools/oracle/helpers/azure_responses/**
   - tools/oracle/cases/helpers/providers/azure-responses/**
   - tools/oracle/fuzz/corpus/helper_case/azure_responses*
   - crates/betterlite-azure/fuzz/Cargo.toml
@@ -299,6 +298,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_responses in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/responses.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_responses.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Reasoning validation fallback retains a non-null status, while successful validation removes status unconditionally.
 - 'The method name get_stripped_model_name is misleading for azure/: only responses/, o_series/ and azure_ai/ are
   replaced.'

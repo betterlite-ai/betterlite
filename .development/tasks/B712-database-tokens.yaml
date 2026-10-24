@@ -91,11 +91,11 @@ scope:
     - crates/betterlite-db/src/database_tokens/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - tools/oracle/src/helpers/database_tokens.rs
+    - tools/oracle/src/helpers/db/database_tokens.rs
+    - tools/oracle/src/helpers/db/database_tokens/**
     - tools/oracle/helpers/database_tokens.py
+    - tools/oracle/helpers/database_tokens/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
     - tools/oracle/cases/helpers/database-tokens/**
     - tools/oracle/fuzz/corpus/helper_case/database-tokens-*
     - crates/betterlite-config/Cargo.toml
@@ -199,6 +199,7 @@ out_of_scope:
   - All pgbouncer.py functions except database_url_is_pooled remain excluded under B711's recorded
     embedded-process deviation; the marker predicate is retained for externally supplied compatibility state.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as database_tokens in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_tokens.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_tokens.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - RDS expiry expects a decoded password containing a literal question mark, not the quoted token returned by minting.
   - Entra timestamp conversion happens outside the caught validation block, so a huge valid exp is not a None fallback.
   - A pinned reader URL suppresses token resolution before the reader reaches the conflicting-flag check.

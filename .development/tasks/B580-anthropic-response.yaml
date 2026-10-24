@@ -89,11 +89,10 @@ scope:
   - crates/betterlite-anthropic/src/response.rs
   - crates/betterlite-anthropic/src/response/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_response.rs
-  - tools/oracle/src/helpers/anthropic_response/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/response.rs
+  - tools/oracle/src/helpers/anthropic/response/**
   - tools/oracle/helpers/anthropic_response.py
+  - tools/oracle/helpers/anthropic_response/**
   - tools/oracle/cases/helpers/providers/anthropic-response/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_response*
   - crates/betterlite-anthropic/fuzz/Cargo.toml
@@ -308,6 +307,7 @@ out_of_scope:
   AnthropicConfig._separate_deferred_tools L1167-L1183; AnthropicConfig._expand_tool_references L1185-L1228 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_response in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/response.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_response.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The final hidden-params replacement discards original_response and previous hidden metadata.
 - Provider id is never copied in this transform, and a pure JSON-tool message replaces the richer constructed message.
 budget:

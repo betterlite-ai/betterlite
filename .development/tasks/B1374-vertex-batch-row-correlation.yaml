@@ -32,8 +32,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_rows.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_batch_rows/**
-    - tools/oracle/src/helpers/{mod,vertex_batch_rows}.rs
-    - tools/oracle/helpers/{dispatch,vertex_batch_rows}.py
+    - tools/oracle/src/helpers/vertex/batch_row_correlation.rs
+    - tools/oracle/src/helpers/vertex/batch_row_correlation/**
+    - tools/oracle/helpers/vertex_batch_row_correlation.py
+    - tools/oracle/helpers/vertex_batch_row_correlation/**
     - tools/oracle/cases/helpers/vertex-batch-rows/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_batch_rows*
   lint_tables: false
@@ -83,6 +85,7 @@ out_of_scope:
   - B1376 owns file targets and metadata; B1393 owns parse_gcs_bucket_and_object_name and GCS authorization.
   - B1377 owns peeking, stream closure, conversion context and content transforms at L295-L381 and L1239-L1512.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_batch_row_correlation in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/batch_row_correlation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_batch_row_correlation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A numeric chunk suffix is sorted numerically, so _10 follows _2 despite lexical order.
   - An embedding group's declared total is the maximum of its row totals rather than the first row's total.
   - Unknown batch data must remain distinguishable from a malformed recognized embedding group.
