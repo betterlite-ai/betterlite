@@ -29,10 +29,10 @@ pub(crate) enum BaseCall {
     ResponseFormat(FormatCall),
     HiddenParams(HiddenCall),
     History(Vec<HistoryMessage>),
-    DummyTool,
+    DummyTool(()),
     ModifyParams(ModifyCall),
-    ResponsesInit,
-    ImageEditInit,
+    ResponsesInit(()),
+    ImageEditInit(()),
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -121,14 +121,14 @@ pub(crate) fn invoke(call: &BaseCall) -> Outcome {
             assistant_has_thinking(&messages),
             last_tool_call_unthought(&messages),
         ]),
-        BaseCall::DummyTool => serde_json::to_value(DUMMY_TOOLS),
+        BaseCall::DummyTool(()) => serde_json::to_value(DUMMY_TOOLS),
         BaseCall::ModifyParams(input) => return input.run(),
-        BaseCall::ResponsesInit => serde_json::to_value(Vec::from_iter(
+        BaseCall::ResponsesInit(()) => serde_json::to_value(Vec::from_iter(
             provider_config(&ResponsesBase)?
                 .into_iter()
                 .map(|(name, _)| name),
         )),
-        BaseCall::ImageEditInit => serde_json::to_value(Vec::from_iter(
+        BaseCall::ImageEditInit(()) => serde_json::to_value(Vec::from_iter(
             provider_config(&ImageEditBase)?
                 .into_iter()
                 .map(|(name, _)| name),

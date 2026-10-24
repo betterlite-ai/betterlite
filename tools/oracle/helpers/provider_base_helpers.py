@@ -260,8 +260,6 @@ HANDLERS: dict[str, Callable[[Json], Json]] = {
 }
 
 
-def run(input_value: Json) -> Json:
-    if isinstance(input_value, str):
-        return HANDLERS[input_value](None)
-    name, argument = next(iter(as_object(input_value).items()))
+def run(input_value: dict[str, Json]) -> Json:
+    name, argument = next(iter(input_value.items()))
     return HANDLERS[name](argument)

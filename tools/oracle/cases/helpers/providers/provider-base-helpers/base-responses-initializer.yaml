@@ -1,7 +1,7 @@
 kind: helper
 name: base-responses-initializer
 call:
-  provider_base_helpers: responses_init
+  provider_base_helpers: {responses_init: null}
 env: {}
 compare:
   ignore: []
