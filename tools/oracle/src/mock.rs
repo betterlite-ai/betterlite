@@ -196,7 +196,11 @@ pub(crate) fn should_report_timeout(
     answer_count: usize,
     deadline_reached: bool,
 ) -> bool {
-    let should_report = !should_serve(stopped, answer_index, answer_count, !deadline_reached);
+    let has_answers = answer_index < answer_count;
+    let should_report = match (stopped, has_answers, deadline_reached) {
+        (false, true, true) => true,
+        (true, _, _) | (false, false, _) | (false, true, false) => false,
+    };
     should_report
 }
 
