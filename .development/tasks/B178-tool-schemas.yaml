@@ -1,24 +1,21 @@
 id: B178
 title: Tool argument parsing and schema transforms
 description: >-
-  Extend betterlite-prompts with bounded tool-argument parsing and schema transformations from the referenced common_utils.py
-  sections. Preserve tool schemas as the named opaque passthrough field in otherwise typed tool records; perform
-  local-reference expansion, top-level combinator flattening and provider schema sanitization on that field through
-  a small bounded schema adapter. Compare an existing JSON repair implementation with a deliberately limited parser
-  before choosing; implement only the pinned repair cases, without evaluating code, resolving external references
-  or reading URLs. Add helper cases for valid and concatenated JSON arguments, quoted braces/escapes, repair failures,
-  definitions, cycles and schema-combinator behavior. Cap input/output bytes, nesting and expansion work, preserving
-  malformed input as a typed failure rather than silently discarding it. Add tool_arguments and tool_schema cargo-fuzz
-  targets with replay tests. Budget 330 parser/schema lines, 100 wiring lines and 320 tests. Seed B171's shared
-  helper_case corpus with every added operation and replay it through the common typed parser.
+  Complete tool schema normalization with common_utils.py 1166-1436: all _schema_properties/_schema_branches/_schema_required_names,
+  combinator/local-ref helpers, top-level flattening, Python regex filtering, flatten_combinators_and_drop_non_python_regex_patterns
+  and tool_with_sanitized_parameters. Compose B217 definitions and B216 argument/tool helpers without implementing
+  a general schema validator. Preserve bounded schema passthrough and output-work limits; tool_schema fuzzing calls
+  this production normalizer. Budget 250 normalization, 100 adapters, 320 tests/fuzz and 50 wiring (720 total).
+  Write the behavior rstest functions b178_tool_schema_tests_behavior in adjacent tests.rs files, with a named case
+  for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
+  tool_schema in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own
+  Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
   - crates/betterlite-prompts/Cargo.toml
   - crates/betterlite-prompts/src/lib.rs
   - crates/betterlite-prompts/src/error.rs
-  - crates/betterlite-prompts/src/arguments.rs
-  - crates/betterlite-prompts/src/arguments/**
   - crates/betterlite-prompts/src/schema.rs
   - crates/betterlite-prompts/src/schema/**
   - crates/betterlite-prompts/fuzz/**
@@ -42,15 +39,19 @@ dod:
 - text: Tool argument and schema helper cases match the Python helpers without ignoring structural fields.
   proof:
   - oracle
-- text: Cycles, expansion bombs, invalid selectors and external references fail within explicit limits without network
+  - helper-python
+- text: >-
+    Cycles, expansion bombs, invalid selectors and external references fail within explicit limits without network
     or file access.
   proof:
   - tool-schema-tests
-- text: Both external-byte parsers have nonempty replay corpora, including truncated UTF-8 and nested/escaped fragments.
+- text: >-
+    The schema parser has new corpus seeds for combinators and regex filtering, replayed through the production
+    parser.
   proof:
-  - tool-arguments-corpus
   - tool-schema-corpus
-- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
 checks:
@@ -59,47 +60,48 @@ checks:
   commands:
   - id: tool-schema-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/tool_schema|tool_arguments/)'
-  - id: tool-arguments-corpus
-    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-prompts/fuzz/fuzz_targets/tool_arguments.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/tool_arguments)"
-      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_tool_arguments_corpus)'
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b178_tool_schema_tests_behavior($|::)/)
+      - test(/replays_the_/)'
   - id: tool-schema-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-prompts/fuzz/fuzz_targets/tool_schema.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/tool_schema)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/tool_schema)"
+      && test -f crates/betterlite-prompts/fuzz/fuzz_targets/tool_schema.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/tool_schema)"
       && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_tool_schema_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
     run: >-
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
-      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'tool_schema' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/tool-schema/valid-arguments.yaml
-- tools/oracle/cases/helpers/tool-schema/quoted-braces.yaml
-- tools/oracle/cases/helpers/tool-schema/concatenated-objects.yaml
-- tools/oracle/cases/helpers/tool-schema/repairable.yaml
-- tools/oracle/cases/helpers/tool-schema/unrepairable.yaml
-- tools/oracle/cases/helpers/tool-schema/defs-ref.yaml
-- tools/oracle/cases/helpers/tool-schema/legacy-definitions.yaml
-- tools/oracle/cases/helpers/tool-schema/recursive-ref.yaml
 - tools/oracle/cases/helpers/tool-schema/top-level-combinators.yaml
 - tools/oracle/cases/helpers/tool-schema/non-python-regex.yaml
+- tools/oracle/cases/helpers/tool-schema/required-branch-merge.yaml
+- tools/oracle/cases/helpers/tool-schema/unmergeable-branch.yaml
+- tools/oracle/cases/helpers/tool-schema/nested-regex.yaml
 deviations: []
 out_of_scope:
 - Full JSON response validation is B200.
 - Schemas remain provider data; this task does not implement a general-purpose JSON Schema engine.
+- >-
+  Argument repair and common tool shape helpers are B216; definition expansion is B217; get_file_ids_from_messages
+  is B183.
 pitfalls:
-- The repository's untyped-JSON exception applies only to the schema/argument passthrough field, never the surrounding
+- >-
+  The repository's untyped-JSON exception applies only to the schema/argument passthrough field, never the surrounding
   wire record.
 - A naive split at closing braces corrupts strings containing braces.
 - An expansion cap must count expanded output, not just input recursion depth.
+- >-
+  B216 matches only trailing-comma removal plus bracket closing; broader JSON repair changes the accepted language.
 review_level: standard
 budget:
   max_changed_lines: 800
