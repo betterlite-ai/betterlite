@@ -105,9 +105,9 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B190 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 - >-
-  Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B117; MCP hooks 1633-1709 B094;
-  cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B092; native response logging
-  4147-4343 B080/B081/B092.
+  Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B117; MCP hooks 1633-1709 B140;
+  cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B098; native response logging
+  4147-4343 B080/B081/B098.
 - >-
   Enterprise callback controls are excluded by repository licensing rules; no enterprise implementation is read
   or ported.
