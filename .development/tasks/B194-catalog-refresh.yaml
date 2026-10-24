@@ -10,7 +10,8 @@ description: >-
   checks and an owned reload task. Failed reload keeps the current snapshot; startup source failures fall back to
   the packaged asset with visible diagnostics. Add catalog_refresh helper cases with local synthetic HTTP replies
   and deterministic RNG; extend model_catalog and config corpora for all new input. Budget 330 refresh/provenance
-  lines, 100 config wiring and 300 tests.
+  lines, 100 config wiring and 300 tests. Seed B171's shared helper_case corpus with every added operation and replay
+  it through the common typed parser.
 scope:
   paths:
   - Cargo.toml
@@ -30,6 +31,7 @@ scope:
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/catalog-refresh/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L112-L198
@@ -55,6 +57,9 @@ dod:
   proof:
   - model-catalog-corpus
   - config-yaml-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -77,6 +82,11 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/catalog-refresh/local-source.yaml
 - tools/oracle/cases/helpers/catalog-refresh/raw-blob-revision.yaml
