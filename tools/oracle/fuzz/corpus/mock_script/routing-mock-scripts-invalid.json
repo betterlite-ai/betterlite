@@ -1,0 +1,1 @@
+{"deadline_ms":500,"replies":[{"wait":{"barrier":{"name":"solo"}},"then":"close"},{"wait":{"delay":{"millis":10}},"then":{"answer":{"status":200,"headers":{},"body":{}}}}]}

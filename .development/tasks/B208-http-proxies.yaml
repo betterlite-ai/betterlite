@@ -1,23 +1,31 @@
 id: B208
 title: Environment proxy selection and authentication
 description: >-
-  Build ProxyPolicy in betterlite-config/src/proxy.rs and apply it in betterlite-http/src/proxy.rs. Resolve litellm_settings.aiohttp_trust_env
-  (false) and AIOHTTP_TRUST_ENV (false); either true enables environment proxies. Resolve HTTP_PROXY, HTTPS_PROXY,
-  ALL_PROXY, NO_PROXY and lowercase forms from the injected environment, including lowercase precedence and CGI
-  REQUEST_METHOD suppression of uppercase HTTP_PROXY. Match the default aiohttp path: use aiohttp.helpers.get_env_proxy_for_url
-  in the Python adapter for effective per-URL decisions; add separate urllib.request.getproxies_environment and
-  httpx._utils.get_environment_proxies projections to expose CGI/normalization without confusing HTTPX mounts with
-  the default transport. Preserve aiohttp treatment of unsupported proxy schemes and ALL_PROXY, including warnings.
-  Disable reqwest environment discovery; only the resolved policy selects a proxy. Proxy URL passwords are SecretString
-  and local forwarding/CONNECT tests prove authentication and bypass behavior. Add proxy_policy fuzz parsing with
-  bounded proxy URL and NO_PROXY seeds; extend config_yaml.  Write the behavior rstest functions http_proxies_proxy_policy_tests_behavior
-  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
-  separate names. Register helper operations proxy_policy in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
-  each operation has its own Rust and Python adapter file and corpus seed. Budget 230 proxy policy, 110 adapters,
-  250 tests and 110 config/replay wiring (700 total).
+  Build ProxyPolicy in betterlite-config/src/proxy.rs and apply it in betterlite-http/src/proxy.rs, matching LiteLLM's
+  default aiohttp transport. Environment proxies are on by default: LiteLLMAiohttpTransport._get_proxy_settings picks
+  one for every request unless litellm_settings.disable_aiohttp_trust_env or DISABLE_AIOHTTP_TRUST_ENV is true. The
+  pick follows urllib.request.getproxies over the injected environment (lowercase names win over uppercase, CGI
+  REQUEST_METHOD drops uppercase HTTP_PROXY), skips hosts that NO_PROXY bypasses, takes the proxy for the URL's scheme
+  or else ALL_PROXY, and prefixes http:// when the value has no "://". litellm_settings.aiohttp_trust_env and AIOHTTP_TRUST_ENV
+  only matter when the transport picks nothing: then aiohttp's own get_env_proxy_for_url runs, which ignores ALL_PROXY,
+  drops https and wss proxy URLs with a warning and reads credentials from netrc. Only http:// proxies are supported;
+  any other scheme fails the request with an error naming the scheme and never the credentials. Decide per scheme
+  and host. Disable reqwest's own environment discovery so only the resolved policy selects a proxy. Proxy URL passwords
+  are SecretString, percent-escapes in them are decoded, and they travel only in Proxy-Authorization. Prove plain
+  HTTP forwarding with a local proxy listener: the absolute-form request line, the Proxy-Authorization header and
+  the NO_PROXY bypass. HTTPS through a proxy needs TLS, so the CONNECT proof belongs to B172. In the Python adapter,
+  build a fresh LiteLLMAiohttpTransport per case and call _get_proxy_settings for the primary pick, and call aiohttp.helpers.get_env_proxy_for_url
+  for the trust_env fallback. Add proxy_policy fuzz parsing with bounded proxy URL and NO_PROXY seeds and extend config_yaml.
+  Write the behavior rstest functions http_proxies_proxy_policy_tests_behavior in adjacent tests.rs files, with a
+  named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
+  proxy_policy in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own
+  Rust and Python adapter file and corpus seed. Budget 230 proxy policy, 110 adapters, 250 tests and 110 config/replay
+  wiring (700 total).
 scope:
   paths:
+  - Cargo.toml
   - crates/betterlite-config/**
+  - crates/betterlite-http/Cargo.toml
   - crates/betterlite-http/src/{lib,proxy,error}.rs
   - crates/betterlite-http/src/proxy/**
   - crates/betterlite-http/fuzz/**
@@ -29,22 +37,31 @@ scope:
   lint_tables: false
 references:
 - url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/aiohttp_transport.py#L463-L499
+  why: Default proxy pick, its DISABLE_AIOHTTP_TRUST_ENV gate and the host-only cache.
+- url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1283-L1295
-  why: Default transport trust_env gate.
-- url: https://github.com/encode/httpx/blob/0.28.1/httpx/_utils.py#L30-L76
-  why: HTTPX environment normalization used only by the comparison projection.
+  why: aiohttp_trust_env and AIOHTTP_TRUST_ENV only set ClientSession(trust_env).
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L527-L530
+  why: Defaults of aiohttp_trust_env and disable_aiohttp_trust_env.
+- url: https://github.com/aio-libs/aiohttp/blob/v3.14.5/aiohttp/helpers.py#L298-L335
+  why: The trust_env fallback, its scheme filter and netrc lookup.
 - url: https://github.com/python/cpython/blob/v3.13.0/Lib/urllib/request.py#L2480-L2530
   why: getproxies_environment implements lowercase precedence and the CGI rule.
-- url: https://docs.aiohttp.org/en/stable/client_advanced.html#proxy-support
-  why: Default transport proxy selection and authentication.
 dod:
 - text: >-
-    Effective proxy, CGI and bypass decisions match each listed helper case; local HTTP and CONNECT tests confirm
-    routing and credentials without exposing secrets.
+    Proxy picks match each listed helper case: on by default, off through either disable setting, lowercase precedence,
+    the CGI rule, NO_PROXY bypass, ALL_PROXY on the default path, the trust_env fallback and the http:// prefix.
   proof:
   - oracle
   - proxy-policy-tests
   - helper-python
+- text: >-
+    A local proxy listener receives the absolute-form request and the decoded Proxy-Authorization header, a bypassed
+    host is reached directly, a non-http proxy scheme fails by name, and no log line or error carries the password.
+  proof:
+  - proxy-policy-tests
 - text: Configuration and proxy URL parsers replay seeds for the newly supported keys and malformed inputs.
   proof:
   - config-yaml-corpus
@@ -58,7 +75,7 @@ checks:
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
       test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && grep -rlq 'aiohttp_trust_env' crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+      && grep -rlq 'disable_aiohttp_trust_env' crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
       && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)" && cargo nextest run --locked -p betterlite-config
       --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: helper-python
@@ -85,20 +102,31 @@ checks:
       && test -f crates/betterlite-http/fuzz/fuzz_targets/proxy_policy.rs && test -n "$(ls -A crates/betterlite-http/fuzz/corpus/proxy_policy)"
       && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(replays_the_proxy_policy_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/proxy-policy/disabled-default.yaml
-- tools/oracle/cases/helpers/proxy-policy/enabled-setting.yaml
-- tools/oracle/cases/helpers/proxy-policy/enabled-env.yaml
+- tools/oracle/cases/helpers/proxy-policy/enabled-default.yaml
+- tools/oracle/cases/helpers/proxy-policy/disabled-setting.yaml
+- tools/oracle/cases/helpers/proxy-policy/disabled-env.yaml
+- tools/oracle/cases/helpers/proxy-policy/trust-env-fallback.yaml
 - tools/oracle/cases/helpers/proxy-policy/lowercase-precedence.yaml
 - tools/oracle/cases/helpers/proxy-policy/cgi.yaml
 - tools/oracle/cases/helpers/proxy-policy/no-proxy.yaml
 - tools/oracle/cases/helpers/proxy-policy/proxy-auth.yaml
 - tools/oracle/cases/helpers/proxy-policy/all-proxy-default-path.yaml
-- tools/oracle/cases/helpers/proxy-policy/unsupported-proxy-scheme.yaml
-deviations: []
+- tools/oracle/cases/helpers/proxy-policy/missing-scheme-prefix.yaml
+deviations:
+- what: >-
+    A proxy URL whose scheme is not http fails the request with an error naming the scheme. aiohttp sends plain HTTP
+    to it instead, so a socks5:// proxy gets an HTTP proxy request with Basic credentials.
+  why: Sending credentials in plain HTTP to a proxy configured as SOCKS is a silent downgrade, and rule no-silent-drops makes an unhandled input an error that names it.
+- what: >-
+    The pick is made per scheme and host. LiteLLM caches it by host only, so the first request to a host decides
+    the proxy for both its http and https URLs.
+  why: The host-only cache gives https requests the http proxy, or none, depending on which scheme came first.
 out_of_scope:
-- TLS verification, certificates, HTTP/2 and User-Agent are B172; pool lifetime is B173.
+- TLS verification, certificates, HTTP/2, User-Agent and the HTTPS CONNECT tunnel through a proxy are B172; pool lifetime is B173.
+- The HTTPX transport path (disable_aiohttp_transport) is not the default LiteLLM path and is not built here.
 pitfalls:
-- HTTPX proxy mounts are the non-default LiteLLM path; do not enable proxies merely because HTTP_PROXY exists.
+- Proxies are on by default on LiteLLM's aiohttp path; aiohttp_trust_env=false does not turn them off, only disable_aiohttp_trust_env does.
+- Each oracle case needs a fresh LiteLLMAiohttpTransport, since its proxy_cache keeps the first pick per host.
 - Never inherit the host environment or print proxy credentials.
 review_level: security
 budget:

@@ -206,6 +206,7 @@ dependencies = [
  "betterlite-http",
  "betterlite-openai",
  "clap",
+ "futures-util",
  "reqwest",
  "rstest",
  "serde",

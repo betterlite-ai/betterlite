@@ -1,17 +1,18 @@
 use axum::http::StatusCode;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 use std::io::{Error, Write as _};
 use std::net::TcpListener;
+use std::str;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-use std::{mem, str};
 use tokio::{net, runtime, time};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::{Request, State};
 use axum::http::Response;
+use futures_util::stream;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::oneshot;
@@ -19,6 +20,9 @@ use tokio::sync::oneshot;
 use crate::OracleError;
 use crate::case::UpstreamAnswer;
 use crate::http::MAX_BODY;
+use crate::routing_mock_scripts::{
+    CallGuard, CallOutcome, MockScript, Outcome, ProviderCall, Recording, Ticket, redact,
+};
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub(crate) struct ProviderRequest {
@@ -26,12 +30,6 @@ pub(crate) struct ProviderRequest {
     pub(crate) path: String,
     pub(crate) headers: BTreeMap<String, String>,
     pub(crate) body: Value,
-}
-
-struct Recording {
-    answers: VecDeque<UpstreamAnswer>,
-    requests: Vec<ProviderRequest>,
-    failure: Option<Error>,
 }
 
 pub(crate) struct MockProvider {
@@ -42,7 +40,7 @@ pub(crate) struct MockProvider {
 }
 
 impl MockProvider {
-    pub(crate) fn start(answers: &[UpstreamAnswer]) -> Result<Self, OracleError> {
+    pub(crate) fn start(script: MockScript) -> Result<Self, OracleError> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(OracleError::MockIo)?;
         listener
             .set_nonblocking(true)
@@ -53,8 +51,10 @@ impl MockProvider {
             .build()
             .map_err(OracleError::MockIo)?;
         let recording = Arc::new(Mutex::new(Recording {
-            answers: answers.iter().cloned().collect(),
-            requests: Vec::new(),
+            script,
+            run: 0,
+            barriers: BTreeMap::new(),
+            trace: Vec::new(),
             failure: None,
         }));
         let router = Router::new()
@@ -82,16 +82,17 @@ impl MockProvider {
         })
     }
 
-    pub(crate) fn finish(mut self) -> Result<Vec<ProviderRequest>, OracleError> {
-        self.shutdown()?;
+    pub(crate) fn finish_run(&self) -> Result<Vec<ProviderCall>, OracleError> {
         let mut recorded = self
             .recording
             .lock()
             .map_err(|error| OracleError::MockIo(Error::other(error.to_string())))?;
-        if let Some(error) = recorded.failure.take() {
-            return Err(OracleError::MockIo(error));
-        }
-        Ok(mem::take(&mut recorded.requests))
+        recorded.finish_run().map_err(OracleError::MockIo)
+    }
+
+    pub(crate) fn finish(mut self) -> Result<Vec<ProviderCall>, OracleError> {
+        self.shutdown()?;
+        self.finish_run()
     }
 
     fn shutdown(&mut self) -> Result<(), OracleError> {
@@ -127,7 +128,7 @@ async fn handle(
         .map_err(|_source| StatusCode::REQUEST_TIMEOUT)?
         .map_err(|_source| StatusCode::PAYLOAD_TOO_LARGE)?;
     let text = str::from_utf8(&bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
-    let headers = parts
+    let mut headers = parts
         .headers
         .iter()
         .map(|(name, value)| {
@@ -138,29 +139,64 @@ async fn handle(
         })
         .collect::<Result<BTreeMap<_, _>, str::Utf8Error>>()
         .map_err(|_source| StatusCode::BAD_REQUEST)?;
+    redact(&mut headers);
     let captured = ProviderRequest {
         method: parts.method.to_string(),
         path: parts.uri.to_string(),
         headers,
         body: serde_json::from_str(text).unwrap_or_else(|_source| Value::String(text.to_owned())),
     };
-    let mut recorded = state
+    let admitted = state
         .lock()
-        .map_err(|_source| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let result = reply(&mut recorded, captured).map_err(|error| {
-        recorded.failure = Some(error);
-        StatusCode::INTERNAL_SERVER_ERROR
-    });
-    drop(recorded);
-    result
+        .map_err(|_source| StatusCode::INTERNAL_SERVER_ERROR)?
+        .admit(captured);
+    let ticket = admitted.map_err(|error| fail(&state, error))?;
+    play(state, ticket).await
 }
 
-fn reply(recorded: &mut Recording, request: ProviderRequest) -> Result<Response<Body>, Error> {
-    recorded.requests.push(request);
-    let answer = recorded
-        .answers
-        .pop_front()
-        .ok_or_else(|| Error::other("provider answer sequence exhausted"))?;
+async fn play(state: Arc<Mutex<Recording>>, ticket: Ticket) -> Result<Response<Body>, StatusCode> {
+    let mut guard = CallGuard {
+        state,
+        run: ticket.run,
+        index: ticket.index,
+        outcome: CallOutcome::Cancelled,
+    };
+    let scripted = match (ticket.wait().await, ticket.then) {
+        (false, _) => {
+            guard.outcome = CallOutcome::DeadlineExceeded;
+            None
+        }
+        (true, Outcome::Close) => {
+            guard.outcome = CallOutcome::Closed;
+            None
+        }
+        (true, Outcome::Answer(answer)) => {
+            guard.outcome = CallOutcome::Answered {
+                status: answer.status,
+            };
+            Some(answer)
+        }
+    };
+    // a body that fails before its first frame makes hyper drop the connection without a status line
+    let Some(answer) = scripted else {
+        return Ok(Response::new(Body::from_stream(stream::iter([Err::<
+            Vec<u8>,
+            Error,
+        >(
+            Error::other("scripted connection close"),
+        )]))));
+    };
+    reply(answer).map_err(|error| fail(&guard.state, error))
+}
+
+fn fail(state: &Mutex<Recording>, error: Error) -> StatusCode {
+    if let Ok(mut recorded) = state.lock() {
+        recorded.failure = Some(error);
+    }
+    StatusCode::INTERNAL_SERVER_ERROR
+}
+
+fn reply(answer: UpstreamAnswer) -> Result<Response<Body>, Error> {
     let body = if let Some(json) = answer.body {
         serde_json::to_vec(&json).map_err(Error::other)?
     } else {

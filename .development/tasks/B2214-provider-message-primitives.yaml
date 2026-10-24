@@ -311,6 +311,6 @@ pitfalls:
 - Unsupported schema emulation appends json_tool_call to existing tools and overwrites tool_choice by default.
 - Developer-to-system conversion intentionally discards fields other than content.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1100
   max_new_expects: 0
 review_level: standard
