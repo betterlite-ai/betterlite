@@ -1,17 +1,21 @@
 import json
 import os
 import sys
-from typing import TYPE_CHECKING, TypeAlias, cast
+from collections.abc import Callable
+from typing import TypeAlias, cast
 
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
+from catalog_generalizations import run as run_catalog_generalizations
 from dot_paths import run as run_dot_paths
 from url_path import run as run_url_path
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+RUNNERS: dict[str, Callable[[dict[str, Json]], Json]] = {
+    "catalog_generalizations": run_catalog_generalizations,
+    "dot_paths": run_dot_paths,
+    "url_path": run_url_path,
+}
 
 
 def object_value(value: Json, name: str) -> dict[str, Json]:
@@ -41,18 +45,13 @@ def main() -> int:
     except Exception as error:  # noqa: BLE001 - malformed protocol input is reported on stderr
         sys.stderr.write(f"invalid helper request: {error}\n")
         return 2
-    runner: Callable[[dict[str, Json]], object]
-    match operation:
-        case "url_path":
-            runner = run_url_path
-        case "dot_paths":
-            runner = run_dot_paths
-        case _:
-            sys.stderr.write(f"unknown helper operation: {operation}\n")
-            return 2
+    runner = RUNNERS.get(operation)
+    if runner is None:
+        sys.stderr.write(f"unknown helper operation: {operation}\n")
+        return 2
     try:
         value = runner(input_value)
-        output: dict[str, object] = {"ok": True, "value": value}
+        output: dict[str, Json] = {"ok": True, "value": value}
     except Exception as error:  # noqa: BLE001 - the wire contract names every helper exception
         output = {
             "ok": False,

@@ -1,0 +1,20 @@
+kind: helper
+name: compile-classification
+call:
+  catalog_generalizations:
+    rules:
+      - 5
+      - {pattern: "^cap$", model_info: {}}
+      - {pattern: route, model_info: {litellm_provider: openai}}
+      - {pattern: both, model_info: {litellm_provider: azure, mode: chat}, description: ignored}
+      - {pattern: "^fill$", model_info: {mode: chat}, fill_missing_for_providers: []}
+      - {pattern: "^FLAG$", model_info: {mode: x}, fill_missing_for_providers: [openai, openai]}
+      - {pattern: nonstr, model_info: {litellm_provider: 1, mode: chat}}
+    routing: [Route-me, xBOTHx, cap, nonstr]
+    capabilities: [CAP, both, route, nonstr]
+    fill_missing:
+      - {model: flag, provider: openai}
+      - {model: fill, provider: openai}
+env: {}
+compare:
+  ignore: []

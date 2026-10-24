@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Published Singapore privacy, claims and MCP catalog records
 status: todo
 depends_on: []
-file: null
+file: tasks/B3260-policy-catalog-privacy-claims-mcp.yaml
 covers:
   - "policy_templates.json"
 parent: B079

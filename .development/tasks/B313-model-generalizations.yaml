@@ -37,6 +37,7 @@ scope:
   - crates/betterlite-config/src/lib.rs
   - crates/betterlite-config/src/loader.rs
   - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/tests/**
   - crates/betterlite-config/src/resolve.rs
   - crates/betterlite-config/src/types.rs
   - crates/betterlite-config/src/router.rs

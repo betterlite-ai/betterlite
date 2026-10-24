@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Decisions wire records and shared intermediate representation
 status: todo
 depends_on: []
-file: null
+file: tasks/B3510-decisions-records.yaml
 covers:
   - "litellm/types/decisions.py"
   - "litellm/llms/base_llm/decisions/transformation.py"

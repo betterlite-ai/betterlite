@@ -1,0 +1,295 @@
+id: B3262
+title: Local injection, claims and airline topic catalog records
+description: >-
+  Retain the local backup prompt-injection, claims and airline-topic records in their distinct guardrail structures.
+  The backup file `litellm/policy_templates_backup.json` serves as an offline fallback when the published remote catalog is unreachable.
+  This task owns three independently structured templates that have no published counterparts in the root catalog.
+  The airline-off-topic-restriction record (lines 1847-1892) uses a single category-based guardrail with airline_off_topic_restriction.yaml category file reference.
+  The prompt-injection-protection record (lines 2238-2457) defines three guardrail definitions with blocked_words lists: prompt-injection-blocker (15 keywords), sql-injection-blocker (8 keywords), and code-injection-blocker (7 keywords), plus six example_sentences ("Ignore all previous instructions...", "DROP TABLE users; --", etc.).
+  The claims-agent-safety record (lines 2820-2950) defines five guardrail definitions using distinct category file references: claims_fraud_coaching, claims_phi_disclosure, claims_prior_auth_gaming, claims_system_override, and claims_medical_advice.
+  Preserve exact field order, keyword values, category file paths, icon colors, complexity levels (Medium/Medium/High), and tag structure (two tags for airline and injection, three tags for claims) as specified in the pinned LiteLLM commit.
+  All three records include templateData with policy_name, description, guardrails_add arrays, and empty guardrails_remove arrays. All three records carry estimated_latency_ms value 1.
+scope:
+  paths:
+    - litellm/policy_templates_backup.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L1847-L1892
+    why: The complete airline-off-topic-restriction record with its category-based guardrail definition and estimated_latency_ms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L2238-L2457
+    why: The complete prompt-injection-protection record with three guardrail definitions using blocked_words, example_sentences, and all keyword variants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L2820-L2950
+    why: The complete claims-agent-safety record with five category-based guardrail definitions covering fraud, PHI, prior-auth, system override, and medical advice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L610-L624
+    why: The _load_policy_templates_from_local_backup function that loads this backup file and returns these records in its catalog array.
+dod:
+  - text: The backup file contains lines 1847-1892 with the complete airline-off-topic-restriction record including its single category-based guardrailDefinitions entry.
+    proof: [catalog-data]
+  - text: The backup file contains lines 2238-2457 with the complete prompt-injection-protection record including three guardrailDefinitions with blocked_words arrays and example_sentences.
+    proof: [catalog-data]
+  - text: The backup file contains lines 2820-2950 with the complete claims-agent-safety record including five guardrailDefinitions with category file references.
+    proof: [catalog-data]
+  - text: The backup file is valid JSON and can be loaded without errors.
+    proof: [catalog-data]
+  - text: >-
+      The airline-off-topic-restriction record (lines 1847-1892) includes all required fields
+      (id, title, description, icon, iconColor, iconBg, guardrails array with one entry,
+      complexity "Medium", guardrailDefinitions with airline-off-topic-filter, templateData,
+      tags array with "Aviation" and "Topic Restriction", and estimated_latency_ms 1).
+    proof: [catalog-data]
+  - text: >-
+      The airline-off-topic-restriction guardrail definition uses category "airline_off_topic_restriction"
+      with category_file "litellm/proxy/guardrails/content_filter_data/policy_templates/airline_off_topic_restriction.yaml",
+      enabled true, action "BLOCK", and severity_threshold "medium".
+    proof: [catalog-data]
+  - text: >-
+      The prompt-injection-protection record (lines 2238-2457) includes id "prompt-injection-protection",
+      six example_sentences with injection/jailbreak attempts, title "Prompt Injection Protection",
+      three guardrails in guardrails array, complexity "Medium", and tags ["Security", "Injection Protection"].
+    proof: [catalog-data]
+  - text: >-
+      The prompt-injection-blocker guardrail includes exactly 14 keywords in the specified order:
+      "ignore all previous instructions", "ignore previous instructions", "ignore your instructions",
+      "disregard all prior", "forget your instructions", "override your system prompt",
+      "reveal your system prompt", "show me your system prompt", "what is your system prompt",
+      "you are now DAN", "pretend you have no restrictions", "act as if you have no guidelines",
+      "enter developer mode", "jailbreak mode".
+    proof: [catalog-data]
+  - text: >-
+      The sql-injection-blocker guardrail includes exactly 8 keywords in the specified order:
+      "DROP TABLE", "DELETE FROM", "INSERT INTO", "UNION SELECT", "OR 1=1", "'; --", "1=1; --", "SELECT * FROM".
+    proof: [catalog-data]
+  - text: >-
+      The code-injection-blocker guardrail includes exactly 7 keywords in the specified order:
+      "<script>", "javascript:", "eval(", "exec(", "__import__", "os.system(", "subprocess.call(".
+    proof: [catalog-data]
+  - text: >-
+      The airline record icon is ShieldExclamationIcon, iconColor is text-orange-500,
+      iconBg is bg-orange-50, and estimated_latency_ms is 1.
+    proof: [catalog-data]
+  - text: >-
+      The prompt-injection-protection record icon is ShieldExclamationIcon, iconColor is text-red-500,
+      iconBg is bg-red-50, and estimated_latency_ms is 1.
+    proof: [catalog-data]
+  - text: >-
+      The claims-agent-safety record (lines 2820-2950) includes id "claims-agent-safety",
+      title "Claims Agent Chatbot Safety", five guardrails in guardrails array, complexity "High",
+      tags ["Healthcare", "Claims", "Content Safety"], and templateData with policy_name "claims-agent-safety".
+    proof: [catalog-data]
+  - text: >-
+      Each of the five claims guardrails has a distinct category name and category_file path:
+      claims-fraud-coaching-filter uses category "claims_fraud_coaching" and category_file
+      "litellm/proxy/guardrails/content_filter_data/categories/claims_fraud_coaching.yaml";
+      claims-phi-disclosure-filter uses "claims_phi_disclosure" and "claims_phi_disclosure.yaml";
+      claims-prior-auth-gaming-filter uses "claims_prior_auth_gaming" and "claims_prior_auth_gaming.yaml";
+      claims-system-override-filter uses "claims_system_override" and "claims_system_override.yaml";
+      claims-medical-advice-filter uses "claims_medical_advice" and "claims_medical_advice.yaml".
+    proof: [catalog-data]
+  - text: >-
+      The claims record icon is ShieldExclamationIcon, iconColor is text-red-500,
+      iconBg is bg-red-50, and estimated_latency_ms is 1.
+    proof: [catalog-data]
+  - text: >-
+      All three records have templateData with guardrails_add arrays matching their guardrails field
+      (airline 1 entry, prompt-injection 3 entries, claims 5 entries) and empty guardrails_remove arrays.
+    proof: [catalog-data]
+checks:
+  optional: []
+  commands:
+    - id: catalog-data
+      why: the policy_templates_backup.json file is missing required lines, records are reordered, JSON is malformed, or field values differ from the pinned LiteLLM commit
+      run: |
+        python3 << 'CATALOG_CHECK'
+        import json
+
+        with open('litellm/policy_templates_backup.json', 'r') as f:
+            templates = json.load(f)
+
+        # Find the three records by ID
+        airline_rec = next((t for t in templates if t.get('id') == 'airline-off-topic-restriction'), None)
+        injection_rec = next((t for t in templates if t.get('id') == 'prompt-injection-protection'), None)
+        claims_rec = next((t for t in templates if t.get('id') == 'claims-agent-safety'), None)
+
+        assert airline_rec is not None, 'airline-off-topic-restriction record not found'
+        assert injection_rec is not None, 'prompt-injection-protection record not found'
+        assert claims_rec is not None, 'claims-agent-safety record not found'
+
+        # Verify airline record
+        assert airline_rec['title'] == 'Airline Off-Topic Restriction', 'airline title wrong'
+        assert airline_rec['complexity'] == 'Medium', 'airline complexity wrong'
+        assert airline_rec['tags'] == ['Aviation', 'Topic Restriction'], 'airline tags wrong'
+        assert airline_rec['icon'] == 'ShieldExclamationIcon', 'airline icon wrong'
+        assert airline_rec['iconColor'] == 'text-orange-500', 'airline iconColor wrong'
+        assert airline_rec['iconBg'] == 'bg-orange-50', 'airline iconBg wrong'
+        assert airline_rec['estimated_latency_ms'] == 1, 'airline estimated_latency_ms wrong'
+        assert len(airline_rec['guardrails']) == 1, 'airline guardrails count wrong'
+        assert airline_rec['guardrails'][0] == 'airline-off-topic-filter', 'airline guardrail name wrong'
+        assert len(airline_rec['guardrailDefinitions']) == 1, 'airline guardrailDefinitions count wrong'
+
+        airline_guard = airline_rec['guardrailDefinitions'][0]
+        assert airline_guard['guardrail_name'] == 'airline-off-topic-filter', 'airline guardrail name field wrong'
+        assert airline_guard['litellm_params']['guardrail'] == 'litellm_content_filter', 'airline guardrail type wrong'
+        assert airline_guard['litellm_params']['mode'] == 'pre_call', 'airline mode wrong'
+        assert len(airline_guard['litellm_params']['categories']) == 1, 'airline categories count wrong'
+        assert airline_guard['litellm_params']['categories'][0]['category'] == 'airline_off_topic_restriction', 'airline category wrong'
+        assert 'policy_templates/airline_off_topic_restriction.yaml' in airline_guard['litellm_params']['categories'][0]['category_file'], 'airline category_file wrong'
+
+        # Verify injection record
+        assert injection_rec['title'] == 'Prompt Injection Protection', 'injection title wrong'
+        assert injection_rec['complexity'] == 'Medium', 'injection complexity wrong'
+        assert injection_rec['tags'] == ['Security', 'Injection Protection'], 'injection tags wrong'
+        assert injection_rec['icon'] == 'ShieldExclamationIcon', 'injection icon wrong'
+        assert injection_rec['iconColor'] == 'text-red-500', 'injection iconColor wrong'
+        assert injection_rec['iconBg'] == 'bg-red-50', 'injection iconBg wrong'
+        assert injection_rec['estimated_latency_ms'] == 1, 'injection estimated_latency_ms wrong'
+        assert len(injection_rec['example_sentences']) == 6, 'injection example_sentences count wrong'
+        assert 'Ignore all previous instructions' in injection_rec['example_sentences'][0], 'injection examples corrupted'
+        assert len(injection_rec['guardrails']) == 3, 'injection guardrails count wrong'
+        assert injection_rec['guardrails'] == ['prompt-injection-blocker', 'sql-injection-blocker', 'code-injection-blocker'], 'injection guardrails order wrong'
+        assert len(injection_rec['guardrailDefinitions']) == 3, 'injection guardrailDefinitions count wrong'
+
+        # Find each injection guardrail
+        prompt_block = next((g for g in injection_rec['guardrailDefinitions'] if g['guardrail_name'] == 'prompt-injection-blocker'), None)
+        sql_block = next((g for g in injection_rec['guardrailDefinitions'] if g['guardrail_name'] == 'sql-injection-blocker'), None)
+        code_block = next((g for g in injection_rec['guardrailDefinitions'] if g['guardrail_name'] == 'code-injection-blocker'), None)
+
+        assert prompt_block is not None, 'prompt-injection-blocker not found'
+        assert sql_block is not None, 'sql-injection-blocker not found'
+        assert code_block is not None, 'code-injection-blocker not found'
+
+        # Verify full ordered keyword lists for injection guardrails
+        prompt_keywords = [kw['keyword'] for kw in prompt_block['litellm_params']['blocked_words']]
+        prompt_expected = [
+            'ignore all previous instructions',
+            'ignore previous instructions',
+            'ignore your instructions',
+            'disregard all prior',
+            'forget your instructions',
+            'override your system prompt',
+            'reveal your system prompt',
+            'show me your system prompt',
+            'what is your system prompt',
+            'you are now DAN',
+            'pretend you have no restrictions',
+            'act as if you have no guidelines',
+            'enter developer mode',
+            'jailbreak mode'
+        ]
+        assert len(prompt_keywords) == 14, f'prompt-injection keywords count is {len(prompt_keywords)}, expected 14'
+        assert prompt_keywords == prompt_expected, f'prompt-injection keywords corrupted or reordered: {prompt_keywords}'
+
+        sql_keywords = [kw['keyword'] for kw in sql_block['litellm_params']['blocked_words']]
+        sql_expected = [
+            'DROP TABLE',
+            'DELETE FROM',
+            'INSERT INTO',
+            'UNION SELECT',
+            'OR 1=1',
+            "'; --",
+            "1=1; --",
+            'SELECT * FROM'
+        ]
+        assert sql_keywords == sql_expected, f'sql-injection keywords corrupted or reordered: {sql_keywords}'
+
+        code_keywords = [kw['keyword'] for kw in code_block['litellm_params']['blocked_words']]
+        code_expected = [
+            '<script>',
+            'javascript:',
+            'eval(',
+            'exec(',
+            '__import__',
+            'os.system(',
+            'subprocess.call('
+        ]
+        assert code_keywords == code_expected, f'code-injection keywords corrupted or reordered: {code_keywords}'
+
+        # Verify claims record
+        assert claims_rec['title'] == 'Claims Agent Chatbot Safety', 'claims title wrong'
+        assert claims_rec['complexity'] == 'High', 'claims complexity wrong'
+        assert claims_rec['tags'] == ['Healthcare', 'Claims', 'Content Safety'], 'claims tags wrong'
+        assert claims_rec['icon'] == 'ShieldExclamationIcon', 'claims icon wrong'
+        assert claims_rec['iconColor'] == 'text-red-500', 'claims iconColor wrong'
+        assert claims_rec['iconBg'] == 'bg-red-50', 'claims iconBg wrong'
+        assert claims_rec['estimated_latency_ms'] == 1, 'claims estimated_latency_ms wrong'
+        assert len(claims_rec['guardrails']) == 5, 'claims guardrails count wrong'
+        assert len(claims_rec['guardrailDefinitions']) == 5, 'claims guardrailDefinitions count wrong'
+
+        expected_claims_guardrails = [
+            'claims-fraud-coaching-filter',
+            'claims-phi-disclosure-filter',
+            'claims-prior-auth-gaming-filter',
+            'claims-system-override-filter',
+            'claims-medical-advice-filter'
+        ]
+        assert claims_rec['guardrails'] == expected_claims_guardrails, 'claims guardrails order wrong'
+
+        # Verify claims guardrail names
+        claims_guard_names = [g['guardrail_name'] for g in claims_rec['guardrailDefinitions']]
+        assert claims_guard_names == expected_claims_guardrails, 'claims guardrail names wrong'
+
+        # Verify distinct category names and files for each claims guardrail
+        claims_category_mappings = {
+            'claims-fraud-coaching-filter': ('claims_fraud_coaching', 'litellm/proxy/guardrails/content_filter_data/categories/claims_fraud_coaching.yaml'),
+            'claims-phi-disclosure-filter': ('claims_phi_disclosure', 'litellm/proxy/guardrails/content_filter_data/categories/claims_phi_disclosure.yaml'),
+            'claims-prior-auth-gaming-filter': ('claims_prior_auth_gaming', 'litellm/proxy/guardrails/content_filter_data/categories/claims_prior_auth_gaming.yaml'),
+            'claims-system-override-filter': ('claims_system_override', 'litellm/proxy/guardrails/content_filter_data/categories/claims_system_override.yaml'),
+            'claims-medical-advice-filter': ('claims_medical_advice', 'litellm/proxy/guardrails/content_filter_data/categories/claims_medical_advice.yaml')
+        }
+
+        seen_categories = set()
+        seen_files = set()
+
+        for guard in claims_rec['guardrailDefinitions']:
+            name = guard['guardrail_name']
+            assert name in claims_category_mappings, f'unknown claims guardrail: {name}'
+            assert len(guard['litellm_params']['categories']) == 1, f'claims {name} categories count wrong'
+
+            cat = guard['litellm_params']['categories'][0]
+            expected_cat, expected_file = claims_category_mappings[name]
+
+            assert cat['category'] == expected_cat, f'claims {name} category mismatch: {cat["category"]} != {expected_cat}'
+            assert cat['category_file'] == expected_file, f'claims {name} category_file mismatch: {cat["category_file"]} != {expected_file}'
+            assert cat['enabled'] == True, f'claims {name} enabled wrong'
+            assert cat['action'] == 'BLOCK', f'claims {name} action wrong'
+            assert cat['severity_threshold'] == 'medium', f'claims {name} severity wrong'
+
+            seen_categories.add(cat['category'])
+            seen_files.add(cat['category_file'])
+
+        # Verify all five categories are distinct
+        assert len(seen_categories) == 5, f'claims guardrails do not have 5 distinct categories: {seen_categories}'
+        assert len(seen_files) == 5, f'claims guardrails do not have 5 distinct category_files: {seen_files}'
+
+        # Verify templateData for all three
+        assert airline_rec['templateData']['policy_name'] == 'airline-off-topic-restriction', 'airline policy_name wrong'
+        assert len(airline_rec['templateData']['guardrails_add']) == 1, 'airline guardrails_add count wrong'
+        assert airline_rec['templateData']['guardrails_remove'] == [], 'airline guardrails_remove not empty'
+
+        assert injection_rec['templateData']['policy_name'] == 'prompt-injection-protection', 'injection policy_name wrong'
+        assert len(injection_rec['templateData']['guardrails_add']) == 3, 'injection guardrails_add count wrong'
+        assert injection_rec['templateData']['guardrails_remove'] == [], 'injection guardrails_remove not empty'
+
+        assert claims_rec['templateData']['policy_name'] == 'claims-agent-safety', 'claims policy_name wrong'
+        assert len(claims_rec['templateData']['guardrails_add']) == 5, 'claims guardrails_add count wrong'
+        assert claims_rec['templateData']['guardrails_remove'] == [], 'claims guardrails_remove not empty'
+
+        print('All three records valid and complete')
+        CATALOG_CHECK
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Code that loads or uses this catalog file. The loading function _load_policy_templates_from_local_backup is covered by B3252 which depends on this task.
+  - Guardrail implementations or pattern definitions referenced by these templates. The records only define policy patterns and metadata.
+  - Other policy templates in the backup file. Those are owned by other catalog tasks.
+pitfalls:
+  - JSON syntax errors in the backup file prevent loading of all three records, leaving airline topic restriction, injection protection, and claims safety unavailable during policy initialization.
+  - The prompt-injection-blocker must have exactly 14 keywords in the exact order specified (ignore all previous instructions, ignore previous instructions, ignore your instructions, disregard all prior, forget your instructions, override your system prompt, reveal your system prompt, show me your system prompt, what is your system prompt, you are now DAN, pretend you have no restrictions, act as if you have no guidelines, enter developer mode, jailbreak mode); reordering or adding/removing keywords breaks detection of prompt injection attempts.
+  - The sql-injection-blocker must have exactly 8 keywords in order (DROP TABLE, DELETE FROM, INSERT INTO, UNION SELECT, OR 1=1, '; --, 1=1; --, SELECT * FROM); keyword mismatches break SQL injection detection.
+  - The code-injection-blocker must have exactly 7 keywords in order (<script>, javascript:, eval(, exec(, __import__, os.system(, subprocess.call(); keyword mismatches break code injection detection.
+  - The five claims guardrails must each have a distinct category name and unique category_file path (fraud_coaching, phi_disclosure, prior_auth_gaming, system_override, medical_advice); if any two share category or category_file, policy matching and initialization fail.
+  - All three records must carry icon, iconColor, iconBg, and estimated_latency_ms == 1; missing fields prevent template loading and policy enforcement.
+  - The airline-off-topic-restriction category must be airline_off_topic_restriction with category_file pointing to policy_templates/airline_off_topic_restriction.yaml; mismatches prevent off-topic blocking.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

@@ -1,0 +1,182 @@
+id: B3210
+title: Build reproducible installable skill archives
+description: >-
+  Build SkillArchive in betterlite-http::skill_archive, a pure decoder/repacker that accepts
+  a stored ZIP upload and returns archive bytes, SHA-256 digest, and optional manifest fields.
+  The archive is rebuilt with fixed timestamps (1980-01-01), deflate compression, and 0o644 << 16
+  external attributes to ensure reproducible digests. The digest field is the literal string
+  "sha256:" followed by the lowercase hex SHA-256 digest of the archive bytes.
+
+  The parser validates and flattens a single-folder upload where every file sits under one
+  top-level directory: strip that root and rebuild the ZIP so discovery clients read SKILL.md
+  from the archive root. Preserve safe path normalization (reject null bytes, backslashes,
+  leading slashes, drive letters, and . or .. segments), detect one-folder layouts by finding
+  a common root prefix, and tolerate malformed YAML frontmatter as empty metadata. Reject archives
+  with more than 1,000 nondirectory entries, more than 50 MiB unpacked bytes, unsafe paths,
+  or duplicate flattened names. Require the root SKILL.md; return None for any caught ZIP read
+  failure, missing SKILL.md or duplicate/unsafe member names.
+
+  Manifest frontmatter is YAML between --- delimiters at the start of SKILL.md; decode with
+  replacement, strip whitespace from field values and return None for empty strings. Expose
+  SkillArchive::content (bytes), digest (str), declared_name and declared_description (both str | None).
+
+  Add independent helper-oracle comparisons through B171's HelperCall dispatch with build_skill_archive
+  as a pure helper operation. Register the operation in tools/oracle/src/helpers/mod.rs and
+  tools/oracle/helpers/dispatch.py with Rust and Python adapters, a new corpus seed directory,
+  and cases covering ZIP structure validation, frontmatter parsing, path flattening and digest
+  reproducibility. Add a production ZIP/frontmatter fuzz target to crates/betterlite-http/fuzz
+  and replay its corpus through the archive builder.
+
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-http/Cargo.toml
+    - crates/betterlite-http/src/lib.rs
+    - crates/betterlite-http/src/skill_archive.rs
+    - crates/betterlite-http/src/skill_archive/**
+    - crates/betterlite-http/fuzz/fuzz_targets/skill_archive_zip.rs
+    - crates/betterlite-http/fuzz/corpus/skill_archive_zip/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/**
+    - tools/oracle/helpers/**
+    - tools/oracle/fuzz/corpus/helper_case/**
+    - tools/oracle/cases/helpers/skill-archive/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L39-L57"
+    why: build_skill_archive entry point and SkillArchive return type.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L60-L77"
+    why: _flattened_members validation and ZIP member flattening.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L80-L95"
+    why: Root prefix detection and safe path normalization.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L98-L122"
+    why: YAML frontmatter extraction, ZIP entry metadata and repacking.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L1-L36"
+    why: Module constants, timestamps and frozen dataclass definition.
+dod:
+  - text: >-
+      SkillArchive exposes content (bytes), digest (str with "sha256:" prefix and lowercase hex),
+      and optional declared_name and declared_description fields.
+    proof: [archive-structure-tests]
+  - text: >-
+      The builder accepts uploaded ZIP bytes, validates member count (≤ 1000), unpacked size (≤ 50 MiB),
+      detects a common root folder, and flattens paths by stripping that root.
+    proof: [archive-structure-tests]
+  - text: >-
+      Paths are normalized by rejecting null bytes, backslashes, leading slashes, drive letters and . or .. segments;
+      duplicate flattened names are rejected.
+    proof: [archive-structure-tests, archive-path-normalization-oracle]
+  - text: >-
+      The builder requires SKILL.md at the archive root and returns None when it is missing,
+      when a ZIP read fails, or when member validation fails.
+    proof: [archive-structure-tests]
+  - text: >-
+      SKILL.md frontmatter is YAML between --- delimiters; malformed YAML or non-dict results are treated as empty.
+      Field values are stripped of whitespace; empty strings become None.
+    proof: [archive-manifest-parsing-oracle]
+  - text: >-
+      Repacked ZIP entries use 1980-01-01 timestamps, deflate compression, 0o644 << 16 external attributes,
+      and are sorted by flattened name.
+    proof: [archive-digest-reproducibility, archive-zip-corpus]
+  - text: >-
+      The digest is the literal "sha256:" prefix followed by the lowercase hex SHA-256 of the repacked archive bytes.
+    proof: [archive-digest-reproducibility]
+  - text: >-
+      Helper-oracle cases exercise the full archive pipeline and compare SkillArchive output
+      against the pinned Python implementation.
+    proof: [helper-python, helper-case-corpus]
+  - text: >-
+      The ZIP/frontmatter fuzz target has a committed nonempty corpus and replays successfully.
+    proof: [archive-zip-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: archive-structure-tests
+      why: archive structure, validation or flattening tests fail or the filter selects no tests
+      run: >-
+        cargo nextest run --locked -p betterlite-http --no-tests=fail -E
+        'test(/^skill_archive::/) - test(/replays_the_/)'
+    - id: archive-path-normalization-oracle
+      why: path normalization cases are missing, malformed or fail
+      run: >-
+        test -d tools/oracle/cases/helpers/skill-archive &&
+        grep -rlq 'path.*normaliz\|backslash\|drive' tools/oracle/cases/helpers/skill-archive &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/skill-archive
+    - id: archive-manifest-parsing-oracle
+      why: frontmatter parsing cases are missing, malformed or fail
+      run: >-
+        grep -rlq 'frontmatter\|manifest\|yaml' tools/oracle/cases/helpers/skill-archive &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/skill-archive
+    - id: archive-digest-reproducibility
+      why: digest format case is missing, does not assert "sha256:" prefix, or archive bytes diverge from LiteLLM
+      run: >-
+        grep -rlq 'sha256:' tools/oracle/cases/helpers/skill-archive &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/skill-archive
+    - id: archive-zip-corpus
+      why: the ZIP fuzz target or nonempty committed corpus is missing, or corpus replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-http/fuzz/corpus/skill_archive_zip)" &&
+        test -f crates/betterlite-http/fuzz/fuzz_targets/skill_archive_zip.rs &&
+        test -n "$(ls -A crates/betterlite-http/fuzz/corpus/skill_archive_zip)" &&
+        cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(replays_the_skill_archive_zip_corpus)'
+    - id: helper-python
+      why: the oracle adapters are missing, unchanged, or fail strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" &&
+        grep -rlq 'build_skill_archive' tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: helper cases are missing, the shared fuzz corpus is not updated, or corpus replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+        grep -rlq 'skill_archive\|build_skill_archive' tools/oracle/fuzz/corpus/helper_case &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/skill-archive/empty-archive-fails.yaml
+  - tools/oracle/cases/helpers/skill-archive/single-folder-flattening.yaml
+  - tools/oracle/cases/helpers/skill-archive/multi-folder-no-common-root.yaml
+  - tools/oracle/cases/helpers/skill-archive/duplicate-flattened-names.yaml
+  - tools/oracle/cases/helpers/skill-archive/unsafe-path-null-byte.yaml
+  - tools/oracle/cases/helpers/skill-archive/unsafe-path-backslash.yaml
+  - tools/oracle/cases/helpers/skill-archive/unsafe-path-absolute.yaml
+  - tools/oracle/cases/helpers/skill-archive/unsafe-path-dot-segment.yaml
+  - tools/oracle/cases/helpers/skill-archive/windows-drive-letter.yaml
+  - tools/oracle/cases/helpers/skill-archive/missing-skill-manifest.yaml
+  - tools/oracle/cases/helpers/skill-archive/frontmatter-yaml-decode-error.yaml
+  - tools/oracle/cases/helpers/skill-archive/frontmatter-scalar-not-dict.yaml
+  - tools/oracle/cases/helpers/skill-archive/frontmatter-field-whitespace-strip.yaml
+  - tools/oracle/cases/helpers/skill-archive/frontmatter-empty-string-to-none.yaml
+  - tools/oracle/cases/helpers/skill-archive/digest-sha256-prefix-format.yaml
+  - tools/oracle/cases/helpers/skill-archive/digest-lowercase-hex.yaml
+  - tools/oracle/cases/helpers/skill-archive/entry-sorting-reproducibility.yaml
+  - tools/oracle/cases/helpers/skill-archive/entry-timestamp-reproducibility.yaml
+  - tools/oracle/cases/helpers/skill-archive/large-archive-50mib-limit.yaml
+  - tools/oracle/cases/helpers/skill-archive/entry-count-1000-limit.yaml
+  - tools/oracle/cases/helpers/skill-archive/deflate-compression.yaml
+  - tools/oracle/cases/helpers/skill-archive/zip-crc-mismatch.yaml
+deviations: []
+
+out_of_scope:
+  - Archive serving, discovery routes and index composition belong to B078.
+  - URL composition and manifest text joining belong to B3211.
+  - Stored skill reads and database queries belong to B3212.
+
+pitfalls:
+  - "The digest field is the literal string \"sha256:\" (with colon) followed by the lowercase hex SHA-256; neither the prefix nor the hex are optional."
+  - "Path normalization must reject paths with null bytes, backslashes, leading slashes, Windows drive letters, and . or .. segments before checking for duplicates."
+  - "A single-folder upload is detected by finding a common root prefix among all flattened paths; if all paths start with \"folder/\", the prefix is \"folder/\", not \"folder\"."
+  - "YAML frontmatter parsing must tolerate decode errors with replacement and non-dict results; both become empty frontmatter."
+  - "Frontmatter field values are stripped of whitespace after retrieval; a field containing only whitespace becomes None, not an empty string."
+  - "ZIP entries are repacked in sorted order by flattened name; sort stability matters for reproducible digests."
+  - "The 1980-01-01 timestamp is final; any deviation breaks digest reproducibility and the published index."
+  - "Member count includes all nondirectory entries in the uploaded ZIP; directories are never counted."
+  - "Unpacked size is the sum of file_size from ZipInfo, not the sum of actual decompressed bytes read."
+review_level: standard
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0

@@ -1,0 +1,263 @@
+id: B3260
+title: Published Singapore privacy, claims and MCP catalog records
+description: >-
+  Retain the published Singapore privacy, claims safety and MCP security records as remote-response fixtures in the root catalog.
+  The published catalog `policy_templates.json` serves as the remote-response fixture for fetch requests by B3253. This task owns four complete template records: pdpa-singapore (Singapore PDPA—Personal Data Protection with nine guardrails for PII and data transfer), mas-ai-risk-management (Singapore MAS—AI Risk Management for Financial Institutions with five guardrails for fairness, transparency, oversight, governance and security), claims-agent-safety (Claims Agent Chatbot Safety with five guardrails for fraud, PHI disclosure, prior authorization, system override and medical advice), and mcp-security-unregistered-server-block (MCP Security: Block Unregistered Servers with one guardrail for blocking unregistered servers).
+  Preserve the exact field order and values from the pinned LiteLLM commit. All four records include id, title, description, icon, iconColor, iconBg, guardrails array, complexity, guardrailDefinitions array with litellm_params, templateData with policy_name and guardrails_add, tags, and estimated_latency_ms (1 for PDPA and MAS and claims, 200 for MCP). No example_sentences field. The three Singapore and claims records use pattern or category-based detection; the MCP record uses custom fields (default_on, on_violation).
+scope:
+  paths:
+    - policy_templates.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L1295-L1332
+    why: The complete mcp-security-unregistered-server-block record with one guardrailDefinition using custom guardrail type (mcp_security).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L2017-L2247
+    why: The complete pdpa-singapore record with nine guardrailDefinitions (pattern-based and category-based detection).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L2248-L2378
+    why: The complete mas-ai-risk-management record with five guardrailDefinitions (all category-based).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L2379-L2509
+    why: The complete claims-agent-safety record with five guardrailDefinitions (all category-based).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L607-L664
+    why: The get_policy_templates route that fetches the root catalog and uses policy_templates.json as the published remote-response fixture.
+dod:
+  - text: The root catalog contains lines 1295-1332 with the complete mcp-security-unregistered-server-block record including one guardrail definition and no example_sentences.
+    proof: [catalog-data]
+  - text: The root catalog contains lines 2017-2247 with the complete pdpa-singapore record including all nine guardrail definitions and no example_sentences.
+    proof: [catalog-data]
+  - text: The root catalog contains lines 2248-2378 with the complete mas-ai-risk-management record including all five guardrail definitions and no example_sentences.
+    proof: [catalog-data]
+  - text: The root catalog contains lines 2379-2509 with the complete claims-agent-safety record including all five guardrail definitions and no example_sentences.
+    proof: [catalog-data]
+  - text: The root catalog is valid JSON and can be parsed without errors.
+    proof: [catalog-data]
+  - text: >-
+      The mcp-security-unregistered-server-block record includes all required fields
+      (id, title, description, icon, iconColor, iconBg, guardrails array with one entry,
+      complexity, guardrailDefinitions array with one entry, templateData, tags, and
+      estimated_latency_ms) with correct literal values, and no example_sentences.
+    proof: [catalog-data]
+  - text: >-
+      The pdpa-singapore record includes all required fields
+      (id, title, description, icon, iconColor, iconBg, guardrails array with nine entries,
+      complexity, guardrailDefinitions array with nine entries, templateData, tags, and
+      estimated_latency_ms) with correct literal values, and no example_sentences.
+    proof: [catalog-data]
+  - text: >-
+      The mas-ai-risk-management record includes all required fields
+      (id, title, description, icon, iconColor, iconBg, guardrails array with five entries,
+      complexity, guardrailDefinitions array with five entries, templateData, tags, and
+      estimated_latency_ms) with correct literal values, and no example_sentences.
+    proof: [catalog-data]
+  - text: >-
+      The claims-agent-safety record includes all required fields
+      (id, title, description, icon, iconColor, iconBg, guardrails array with five entries,
+      complexity, guardrailDefinitions array with five entries, templateData, tags, and
+      estimated_latency_ms) with correct literal values, and no example_sentences.
+    proof: [catalog-data]
+  - text: >-
+      All mcp-security-unregistered-server-block literal values verified: id "mcp-security-unregistered-server-block",
+      title "MCP Security: Block Unregistered Servers", icon "ShieldCheckIcon", iconColor "text-red-500",
+      iconBg "bg-red-50", complexity "Low", one guardrail [mcp-security-block], tags [Security],
+      estimated_latency_ms 200, policy_name "mcp-security-unregistered-server-block".
+    proof: [catalog-data]
+  - text: >-
+      All pdpa-singapore literal values verified: id "pdpa-singapore", title "Singapore PDPA — Personal Data Protection",
+      icon "ShieldCheckIcon", iconColor "text-red-500", iconBg "bg-red-50", complexity "High",
+      nine guardrails [sg-pdpa-pii-identifiers, sg-pdpa-contact-information, sg-pdpa-financial-data,
+      sg-pdpa-business-identifiers, sg-pdpa-personal-identifiers, sg-pdpa-sensitive-data,
+      sg-pdpa-do-not-call, sg-pdpa-data-transfer, sg-pdpa-profiling-automated-decisions],
+      tags [PII Protection, Regulatory, Singapore], estimated_latency_ms 1, policy_name "pdpa-singapore".
+    proof: [catalog-data]
+  - text: >-
+      All mas-ai-risk-management literal values verified: id "mas-ai-risk-management",
+      title "Singapore MAS — AI Risk Management for Financial Institutions",
+      icon "ShieldCheckIcon", iconColor "text-blue-600", iconBg "bg-blue-50", complexity "High",
+      five guardrails [sg-mas-fairness-bias, sg-mas-transparency-explainability, sg-mas-human-oversight,
+      sg-mas-data-governance, sg-mas-model-security], tags [Financial Services, Regulatory, Singapore],
+      estimated_latency_ms 1, policy_name "mas-ai-risk-management".
+    proof: [catalog-data]
+  - text: >-
+      All claims-agent-safety literal values verified: id "claims-agent-safety",
+      title "Claims Agent Chatbot Safety", icon "ShieldExclamationIcon", iconColor "text-red-500",
+      iconBg "bg-red-50", complexity "High", five guardrails [claims-fraud-coaching-filter,
+      claims-phi-disclosure-filter, claims-prior-auth-gaming-filter, claims-system-override-filter,
+      claims-medical-advice-filter], tags [Healthcare, Claims, Content Safety], estimated_latency_ms 1,
+      policy_name "claims-agent-safety".
+    proof: [catalog-data]
+  - text: >-
+      All pdpa-singapore guardrailDefinitions verified: four pattern-based (sg-pdpa-pii-identifiers with 2 patterns,
+      sg-pdpa-contact-information with 3 patterns, sg-pdpa-financial-data with 2 patterns,
+      sg-pdpa-business-identifiers with 1 pattern) and five category-based (sg-pdpa-personal-identifiers,
+      sg-pdpa-sensitive-data, sg-pdpa-do-not-call, sg-pdpa-data-transfer, sg-pdpa-profiling-automated-decisions),
+      each with litellm_params and either patterns or categories array.
+    proof: [catalog-data]
+  - text: >-
+      All mas-ai-risk-management guardrailDefinitions verified: five category-based (sg-mas-fairness-bias,
+      sg-mas-transparency-explainability, sg-mas-human-oversight, sg-mas-data-governance,
+      sg-mas-model-security), each with litellm_params containing categories array with category_file paths.
+    proof: [catalog-data]
+  - text: >-
+      All claims-agent-safety guardrailDefinitions verified: five category-based (claims-fraud-coaching-filter,
+      claims-phi-disclosure-filter, claims-prior-auth-gaming-filter, claims-system-override-filter,
+      claims-medical-advice-filter), each with litellm_params containing categories array with category_file paths.
+    proof: [catalog-data]
+  - text: >-
+      The mcp-security-unregistered-server-block guardrailDefinition verified: mcp-security-block with
+      litellm_params containing guardrail "mcp_security", mode "pre_call", default_on True, and on_violation "block".
+    proof: [catalog-data]
+checks:
+  optional: []
+  commands:
+    - id: catalog-data
+      why: the policy_templates.json file is missing, has invalid JSON, or the four records (mcp-security-unregistered-server-block, pdpa-singapore, mas-ai-risk-management, claims-agent-safety) are corrupted or missing required fields and literal values
+      run: |
+        python3 << 'CATALOG_CHECK'
+        import json
+        with open('policy_templates.json', 'r') as f:
+            templates = json.load(f)
+
+        assert len(templates) > 0, 'catalog is empty'
+
+        # Find all four records
+        mcp_record = None
+        pdpa_record = None
+        mas_record = None
+        claims_record = None
+
+        for template in templates:
+            if template.get('id') == 'mcp-security-unregistered-server-block':
+                mcp_record = template
+            elif template.get('id') == 'pdpa-singapore':
+                pdpa_record = template
+            elif template.get('id') == 'mas-ai-risk-management':
+                mas_record = template
+            elif template.get('id') == 'claims-agent-safety':
+                claims_record = template
+
+        assert mcp_record is not None, 'mcp-security-unregistered-server-block record not found'
+        assert pdpa_record is not None, 'pdpa-singapore record not found'
+        assert mas_record is not None, 'mas-ai-risk-management record not found'
+        assert claims_record is not None, 'claims-agent-safety record not found'
+
+        # Common required fields for all records
+        common_fields = ['id', 'title', 'description', 'icon', 'iconColor', 'iconBg',
+                         'guardrails', 'complexity', 'guardrailDefinitions', 'templateData', 'tags', 'estimated_latency_ms']
+
+        # Check MCP record
+        for field in common_fields:
+            assert field in mcp_record, f'mcp missing field: {field}'
+        assert 'example_sentences' not in mcp_record, 'mcp should not have example_sentences'
+        assert mcp_record['id'] == 'mcp-security-unregistered-server-block', 'mcp id corrupted'
+        assert mcp_record['title'] == 'MCP Security: Block Unregistered Servers', 'mcp title corrupted'
+        assert mcp_record['icon'] == 'ShieldCheckIcon', 'mcp icon corrupted'
+        assert mcp_record['iconColor'] == 'text-red-500', 'mcp iconColor corrupted'
+        assert mcp_record['iconBg'] == 'bg-red-50', 'mcp iconBg corrupted'
+        assert mcp_record['complexity'] == 'Low', 'mcp complexity corrupted'
+        assert mcp_record['estimated_latency_ms'] == 200, 'mcp estimated_latency_ms not 200'
+        assert mcp_record['tags'] == ['Security'], 'mcp tags corrupted'
+        assert isinstance(mcp_record['guardrails'], list) and len(mcp_record['guardrails']) == 1, 'mcp guardrails count wrong'
+        assert isinstance(mcp_record['guardrailDefinitions'], list) and len(mcp_record['guardrailDefinitions']) == 1, 'mcp guardrailDefinitions count wrong'
+        assert mcp_record['guardrails'] == ['mcp-security-block'], 'mcp guardrails corrupted'
+        assert mcp_record['templateData'].get('policy_name') == 'mcp-security-unregistered-server-block', 'mcp policy_name corrupted'
+        mcp_gd = mcp_record['guardrailDefinitions'][0]
+        assert mcp_gd['guardrail_name'] == 'mcp-security-block', 'mcp guardrail name corrupted'
+        assert mcp_gd['litellm_params'].get('guardrail') == 'mcp_security', 'mcp guardrail type corrupted'
+        assert mcp_gd['litellm_params'].get('mode') == 'pre_call', 'mcp mode corrupted'
+        assert mcp_gd['litellm_params'].get('default_on') is True, 'mcp default_on corrupted'
+        assert mcp_gd['litellm_params'].get('on_violation') == 'block', 'mcp on_violation corrupted'
+
+        # Check PDPA record
+        for field in common_fields:
+            assert field in pdpa_record, f'pdpa missing field: {field}'
+        assert 'example_sentences' not in pdpa_record, 'pdpa should not have example_sentences'
+        assert pdpa_record['id'] == 'pdpa-singapore', 'pdpa id corrupted'
+        assert pdpa_record['title'] == 'Singapore PDPA — Personal Data Protection', 'pdpa title corrupted'
+        assert pdpa_record['icon'] == 'ShieldCheckIcon', 'pdpa icon corrupted'
+        assert pdpa_record['iconColor'] == 'text-red-500', 'pdpa iconColor corrupted'
+        assert pdpa_record['iconBg'] == 'bg-red-50', 'pdpa iconBg corrupted'
+        assert pdpa_record['complexity'] == 'High', 'pdpa complexity corrupted'
+        assert pdpa_record['estimated_latency_ms'] == 1, 'pdpa estimated_latency_ms not 1'
+        assert pdpa_record['tags'] == ['PII Protection', 'Regulatory', 'Singapore'], 'pdpa tags corrupted'
+        assert isinstance(pdpa_record['guardrails'], list) and len(pdpa_record['guardrails']) == 9, 'pdpa guardrails count wrong'
+        assert isinstance(pdpa_record['guardrailDefinitions'], list) and len(pdpa_record['guardrailDefinitions']) == 9, 'pdpa guardrailDefinitions count wrong'
+        expected_pdpa_guardrails = ['sg-pdpa-pii-identifiers', 'sg-pdpa-contact-information', 'sg-pdpa-financial-data',
+                                    'sg-pdpa-business-identifiers', 'sg-pdpa-personal-identifiers', 'sg-pdpa-sensitive-data',
+                                    'sg-pdpa-do-not-call', 'sg-pdpa-data-transfer', 'sg-pdpa-profiling-automated-decisions']
+        assert pdpa_record['guardrails'] == expected_pdpa_guardrails, 'pdpa guardrails corrupted'
+        assert pdpa_record['templateData'].get('policy_name') == 'pdpa-singapore', 'pdpa policy_name corrupted'
+        for gd in pdpa_record['guardrailDefinitions']:
+            assert 'guardrail_name' in gd, 'pdpa guardrail missing name'
+            assert 'litellm_params' in gd, 'pdpa guardrail missing litellm_params'
+            lp = gd['litellm_params']
+            assert 'patterns' in lp or 'categories' in lp, f"pdpa {gd.get('guardrail_name')} missing patterns or categories"
+
+        # Check MAS record
+        for field in common_fields:
+            assert field in mas_record, f'mas missing field: {field}'
+        assert 'example_sentences' not in mas_record, 'mas should not have example_sentences'
+        assert mas_record['id'] == 'mas-ai-risk-management', 'mas id corrupted'
+        assert mas_record['title'] == 'Singapore MAS — AI Risk Management for Financial Institutions', 'mas title corrupted'
+        assert mas_record['icon'] == 'ShieldCheckIcon', 'mas icon corrupted'
+        assert mas_record['iconColor'] == 'text-blue-600', 'mas iconColor corrupted'
+        assert mas_record['iconBg'] == 'bg-blue-50', 'mas iconBg corrupted'
+        assert mas_record['complexity'] == 'High', 'mas complexity corrupted'
+        assert mas_record['estimated_latency_ms'] == 1, 'mas estimated_latency_ms not 1'
+        assert mas_record['tags'] == ['Financial Services', 'Regulatory', 'Singapore'], 'mas tags corrupted'
+        assert isinstance(mas_record['guardrails'], list) and len(mas_record['guardrails']) == 5, 'mas guardrails count wrong'
+        assert isinstance(mas_record['guardrailDefinitions'], list) and len(mas_record['guardrailDefinitions']) == 5, 'mas guardrailDefinitions count wrong'
+        expected_mas_guardrails = ['sg-mas-fairness-bias', 'sg-mas-transparency-explainability',
+                                   'sg-mas-human-oversight', 'sg-mas-data-governance', 'sg-mas-model-security']
+        assert mas_record['guardrails'] == expected_mas_guardrails, 'mas guardrails corrupted'
+        assert mas_record['templateData'].get('policy_name') == 'mas-ai-risk-management', 'mas policy_name corrupted'
+        for gd in mas_record['guardrailDefinitions']:
+            assert 'guardrail_name' in gd, 'mas guardrail missing name'
+            assert 'litellm_params' in gd, 'mas guardrail missing litellm_params'
+            assert 'categories' in gd['litellm_params'], f"mas {gd.get('guardrail_name')} missing categories"
+            for category in gd['litellm_params']['categories']:
+                assert 'category_file' in category, f"mas category in {gd.get('guardrail_name')} missing category_file"
+
+        # Check Claims record
+        for field in common_fields:
+            assert field in claims_record, f'claims missing field: {field}'
+        assert 'example_sentences' not in claims_record, 'claims should not have example_sentences'
+        assert claims_record['id'] == 'claims-agent-safety', 'claims id corrupted'
+        assert claims_record['title'] == 'Claims Agent Chatbot Safety', 'claims title corrupted'
+        assert claims_record['icon'] == 'ShieldExclamationIcon', 'claims icon corrupted'
+        assert claims_record['iconColor'] == 'text-red-500', 'claims iconColor corrupted'
+        assert claims_record['iconBg'] == 'bg-red-50', 'claims iconBg corrupted'
+        assert claims_record['complexity'] == 'High', 'claims complexity corrupted'
+        assert claims_record['estimated_latency_ms'] == 1, 'claims estimated_latency_ms not 1'
+        assert claims_record['tags'] == ['Healthcare', 'Claims', 'Content Safety'], 'claims tags corrupted'
+        assert isinstance(claims_record['guardrails'], list) and len(claims_record['guardrails']) == 5, 'claims guardrails count wrong'
+        assert isinstance(claims_record['guardrailDefinitions'], list) and len(claims_record['guardrailDefinitions']) == 5, 'claims guardrailDefinitions count wrong'
+        expected_claims_guardrails = ['claims-fraud-coaching-filter', 'claims-phi-disclosure-filter',
+                                      'claims-prior-auth-gaming-filter', 'claims-system-override-filter',
+                                      'claims-medical-advice-filter']
+        assert claims_record['guardrails'] == expected_claims_guardrails, 'claims guardrails corrupted'
+        assert claims_record['templateData'].get('policy_name') == 'claims-agent-safety', 'claims policy_name corrupted'
+        for gd in claims_record['guardrailDefinitions']:
+            assert 'guardrail_name' in gd, 'claims guardrail missing name'
+            assert 'litellm_params' in gd, 'claims guardrail missing litellm_params'
+            assert 'categories' in gd['litellm_params'], f"claims {gd.get('guardrail_name')} missing categories"
+            for category in gd['litellm_params']['categories']:
+                assert 'category_file' in category, f"claims category in {gd.get('guardrail_name')} missing category_file"
+
+        print('Singapore privacy, claims and MCP records valid and complete')
+        CATALOG_CHECK
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Code that loads or uses these catalog records. The published root catalog is fetched by B3253 which depends on this task. The route that fetches the root (get_policy_templates) is covered by B3253.
+  - Guardrail implementations or pattern and category definitions referenced by these templates. The records only define policy patterns, categories, metadata and references to category files.
+  - Content filter data files referenced by category_file paths in the PDPA, MAS and claims records. Those files are referenced but not implemented by this task.
+  - The other twelve published policy templates in the root catalog. Each is owned by a different catalog task; the four records in this task compose their portion of the full published fixture.
+pitfalls:
+  - The mcp-security-unregistered-server-block record uses a custom guardrail type (mcp_security) with default_on and on_violation fields (set to True and "block"), differing from the pattern/category-based detection in pdpa-singapore, mas-ai-risk-management and claims-agent-safety. Preserve custom MCP fields exactly.
+  - The pdpa-singapore record mixes pattern-based and category-based guardrailDefinitions. The first four use patterns arrays; the last five use categories. Preserve both detection methods in order.
+  - The mas-ai-risk-management and claims-agent-safety records use category-based detection only. All guardrailDefinitions must reference category_file paths; do not drop any category or file reference.
+  - Unlike the backup catalogs, the published root catalog does not include example_sentences field in any of these four records. Preserve their absence; do not add them.
+  - All four records include a templateData with policy_name and guardrails_add fields. The guardrails_add array must match the top-level guardrails array exactly; do not reorder or omit any.
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
