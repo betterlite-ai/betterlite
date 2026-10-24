@@ -8,9 +8,16 @@ description: >-
   prevent recursive logging of callback failures, and never print raw body/header/exception dumps. Match log-level
   and correlation-field helpers through direct oracle cases, then test the real server with an injected recording
   sink for success, upstream error, streamed cancellation and shutdown. Keep exporter-specific initialization from
-  _service_logger.py in later integration tasks; no callback is advertised as installed until it is. Budget 260
-  service/tracing lines, 180 integration and 300 tests. Seed B171's shared helper_case corpus with every added operation
-  and replay it through the common typed parser.
+  _service_logger.py in later integration tasks; no callback is advertised as installed until it is.  Seed B171's
+  shared helper_case corpus with every added operation and replay it through the common typed parser. Resolve LITELLM_LOG
+  (DEBUG), JSON_LOGS (only case-insensitive true enables its parsed flag), and litellm_settings.service_callback
+  through config. B003 keeps stderr JSON as the gateway format; retain the JSON_LOGS flag for compatible callback/service
+  formatting. B012 also wires LOGGING_WORKER_MAX_QUEUE_SIZE=50000, LOGGING_WORKER_CONCURRENCY=100 and LOGGING_WORKER_MAX_TIME_PER_COROUTINE=20
+  into B191. Request Logging dispatch is supplied by the split B190 lifecycle tasks, not invented in this integration.
+  Write the behavior rstest functions b012_logging_integration_tests_behavior in adjacent tests.rs files, with a
+  named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper
+  operations service_logging in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation
+  has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
@@ -30,32 +37,40 @@ references:
   why: Correlation ID sanitation.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L375-L499
   why: Diagnostic redaction before formatting.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L632-L643
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L632-L655
   why: Log-level configuration.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L154-L275
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L154-L275
   why: Service event dispatch and async success path.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L312-L425
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L312-L425
   why: Service failure and call lifecycle events.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/services.py#L1-L111
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/services.py#L1-L111
   why: Service event shapes.
 dod:
 - text: Correlation, level resolution and service event projection match the listed direct helper cases.
   proof:
   - oracle
-- text: Real server calls emit one pre-call and one terminal event with correct call identity; streams and cancellation
+  - helper-python
+- text: >-
+    Real server calls emit one pre-call and one terminal event with correct call identity; streams and cancellation
     do not double-log.
   proof:
   - logging-integration-tests
-- text: Every stderr record remains JSON and sentinel credentials never appear across success, error, startup and
-    shutdown paths.
+- text: >-
+    Every stderr record remains JSON and sentinel credentials never appear across success, error, startup and shutdown
+    paths.
   proof:
   - logging-integration-tests
-- text: Shutdown drains or reports every accepted event and all callback tasks are joined; parser corpora cover
-    added config.
+- text: >-
+    Shutdown drains or reports every accepted event and all callback tasks are joined; parser corpora cover added
+    config.
   proof:
   - logging-integration-tests
   - config-yaml-corpus
-- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
 checks:
@@ -64,36 +79,45 @@ checks:
   commands:
   - id: logging-integration-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-logging -p betterlite-server -p betterlite --no-tests=fail -E
-      'test(/logging_integration|service_logging/)'
+    run: >-
+      cargo nextest run --locked -p betterlite-logging -p betterlite-server -p betterlite --no-tests=fail -E 'test(/::b012_logging_integration_tests_behavior($|::)/)
+      - test(/replays_the_/)'
   - id: config-yaml-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && grep -rlq 'service_callback' crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+      && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)" && cargo nextest run --locked -p betterlite-config
+      --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
     run: >-
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
-      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'service_logging' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/service-logging/correlation-sanitize.yaml
 - tools/oracle/cases/helpers/service-logging/log-level.yaml
 - tools/oracle/cases/helpers/service-logging/service-success.yaml
 - tools/oracle/cases/helpers/service-logging/service-failure.yaml
-deviations: []
+deviations:
+- what: Gateway stderr stays structured JSON even when JSON_LOGS is false.
+  why: B003 establishes machine-readable stderr; the setting is parsed for compatible service/callback behavior.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L632-L655
 out_of_scope:
 - Prometheus, OTel, Datadog, Sentry and other exporters remain in M5.
 - Python callbacks/hooks are B164-B165; spend persistence is B069.
 pitfalls:
 - A callback failure must not recursively enqueue another callback failure indefinitely.
 - Call identity belongs to a request context, not a mutable global logger field.
-- Service failures and model failures are distinct events and must not be counted twice as a terminal model result.
+- >-
+  Service failures and model failures are distinct events and must not be counted twice as a terminal model result.
 review_level: security
 budget:
   max_changed_lines: 800
