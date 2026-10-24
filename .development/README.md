@@ -78,7 +78,7 @@ The gate reads every format into Rust types that reject unknown fields, missing 
 | `cargo gate list <ID>` | Prints every check the task runs |
 | `cargo gate run <ID>` | Runs them all and prints PASS, FAIL or SKIP per check; logs go to .git/betterlite/<ID>/gate/ |
 | `cargo gate run <ID> --only <check>` | Runs one check (repeat --only for more) |
-| `cargo gate dispatch <ID>` | Runs the task through the worker ladder and the reviewer |
+| `cargo gate dispatch <ID>` | Runs the task through the worker ladder and the reviewer; `--note "..."` (repeatable) hands the first attempt a finding the last run left open |
 | `cargo gate schema` | Regenerates schema/ after a change to the gate's types |
 | `cargo gate hook` | The Stop hook for Claude Code and Codex; reads the hook JSON on stdin |
 | `cargo gate coverage` | Prints how many LiteLLM paths each backlog entry claims, then every unclaimed path and every glob that claims nothing |

@@ -89,5 +89,5 @@ pitfalls:
   - reqwest with rustls pulls in webpki-root-certs under CDLA-Permissive-2.0. Allow it in deny.toml as an exception for that one crate, not as a global license.
 review_level: standard
 budget:
-  max_changed_lines: 1700
+  max_changed_lines: 2100
   max_new_expects: 2

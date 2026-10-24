@@ -93,10 +93,10 @@ rules:
   - id: no-one-line-functions
     title: No one-line functions
     statement: >-
-      A function whose body is a single statement or expression is only a name for it, so the code goes where the function would be called. Trait implementations, main, tests, and a body that is one match, if or loop are exempt.
+      A function whose body is a single statement or expression is only a name for it, so the code goes where the function would be called. Trait implementations, main, tests, and a body that is one match, if or loop are exempt. A constructor that only builds the struct is one too: callers write the struct literal. Wrapping a single expression in a match, if or loop to pass the check is the same defect.
     why: A one-line wrapper makes the reader jump to learn nothing and invites a second name for the same thing.
     enforced_by: [hooks]
-    reviewed: false
+    reviewed: true
     example:
       instead_of: |
         fn is_streaming(request: &ChatRequest) -> bool {
