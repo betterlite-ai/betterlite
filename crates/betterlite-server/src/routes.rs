@@ -1,4 +1,4 @@
-use crate::auth::{AuthState, authenticate};
+use crate::auth::authenticate;
 use axum::Json;
 use axum::Router;
 use axum::extract::State;
@@ -11,8 +11,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 pub(crate) fn router(master_key: Option<SecretString>, shutting_down: Arc<AtomicBool>) -> Router {
-    let state = AuthState { master_key };
-    Router::new()
+    let routes = Router::new()
         .route("/health/liveliness", get(health_liveliness))
         .route("/health/liveness", get(health_liveliness))
         .fallback(|| async {
@@ -23,8 +22,8 @@ pub(crate) fn router(master_key: Option<SecretString>, shutting_down: Arc<Atomic
                 }),
             )
         })
-        .with_state(shutting_down)
-        .layer(middleware::from_fn_with_state(state, authenticate))
+        .with_state(shutting_down);
+    routes.layer(middleware::from_fn_with_state(master_key, authenticate))
 }
 async fn health_liveliness(State(shutting_down): State<Arc<AtomicBool>>) -> Response {
     if shutting_down.load(Ordering::Acquire) {

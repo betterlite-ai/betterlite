@@ -7,12 +7,8 @@ use axum::response::Response;
 use regex::Regex;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
-#[derive(Clone)]
-pub(crate) struct AuthState {
-    pub(crate) master_key: Option<SecretString>,
-}
 pub(crate) async fn authenticate(
-    State(state): State<AuthState>,
+    State(master_key_state): State<Option<SecretString>>,
     request: Request<Body>,
     next: Next,
 ) -> Response {
@@ -22,7 +18,7 @@ pub(crate) async fn authenticate(
     ) {
         return next.run(request).await;
     }
-    let Some(master_key) = state.master_key.as_ref() else {
+    let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
     let presented_key = extract_key(request.headers());
@@ -38,7 +34,7 @@ pub(crate) async fn authenticate(
     }
     let failure = match presented_key.as_ref() {
         None => AuthenticationFailure::Missing,
-        Some(key) if key.expose_secret().is_empty() => AuthenticationFailure::Malformed,
+        Some(key) if key.expose_secret().is_empty() => AuthenticationFailure::Missing,
         Some(_) => AuthenticationFailure::Invalid,
     };
     authentication_error(&failure)
@@ -52,9 +48,10 @@ fn extract_key(headers: &HeaderMap) -> Option<SecretString> {
         "x-goog-api-key",
         "ocp-apim-subscription-key",
     ] {
-        if let Some(value) = headers.get(name)
-            && let Some(key) = parse_key_header(name, value.as_bytes())
-        {
+        let Some(value) = headers.get(name) else {
+            continue;
+        };
+        if let Some(key) = parse_key_header(name, value.as_bytes()) {
             return Some(key);
         }
     }
@@ -76,26 +73,17 @@ pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString>
 }
 fn strip_prefix(value: &str) -> Option<String> {
     for prefix in ["Bearer ", "Basic ", "bearer "] {
-        if value.starts_with(prefix) {
-            return Some(value.replace(prefix, ""));
+        if let Some(token) = value.strip_prefix(prefix) {
+            return Some(token.to_owned());
         }
     }
-    if value.starts_with("AWS4-HMAC-SHA256") {
-        return aws_credential(value);
-    }
-    None
+    value
+        .starts_with("AWS4-HMAC-SHA256")
+        .then(|| aws_credential(value))
+        .flatten()
 }
 fn aws_credential(value: &str) -> Option<String> {
-    let bearer_pattern = Regex::new(r"Credential=Bearer\s+([^/\s,]+)").ok()?;
-    if let Some(token) = bearer_pattern
-        .captures(value)
-        .and_then(|captures| captures.get(1))
-    {
-        return Some(token.as_str().to_owned());
-    }
-    let credential_pattern = Regex::new(r"Credential=([^/\s,]+)").ok()?;
-    credential_pattern
-        .captures(value)?
-        .get(1)
-        .map(|token| token.as_str().to_owned())
+    let pattern = Regex::new(r"Credential=(?:Bearer\s+)?([^/\s,]+)").ok()?;
+    let captures = pattern.captures_iter(value).last()?;
+    captures.get(1).map(|token| token.as_str().to_owned())
 }

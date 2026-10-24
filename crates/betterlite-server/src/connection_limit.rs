@@ -3,24 +3,16 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
 
 pub(crate) const MAX_CONNECTIONS: usize = 1024;
-
 pub(crate) struct BoundedListener {
-    listener: TcpListener,
-    permits: Arc<Semaphore>,
+    pub(crate) listener: TcpListener,
+    pub(crate) permits: Arc<Semaphore>,
 }
-
 impl BoundedListener {
-    pub(crate) fn new(listener: TcpListener) -> Self {
-        let permits = Arc::new(Semaphore::new(MAX_CONNECTIONS));
-        Self { listener, permits }
-    }
-
     pub(crate) async fn accept(&self) -> io::Result<(BoundedStream, SocketAddr)> {
         loop {
             let (stream, address) = self.listener.accept().await?;
@@ -34,9 +26,7 @@ impl BoundedListener {
                         address,
                     ));
                 }
-                Err(TryAcquireError::NoPermits) => {
-                    // Drop excess sockets so an idle connection cannot block shutdown.
-                }
+                Err(TryAcquireError::NoPermits) => {}
                 Err(TryAcquireError::Closed) => {
                     return Err(io::Error::other("connection limit is closed"));
                 }
@@ -44,7 +34,6 @@ impl BoundedListener {
         }
     }
 }
-
 pub(crate) struct BoundedStream {
     stream: TcpStream,
     _permit: OwnedSemaphorePermit,

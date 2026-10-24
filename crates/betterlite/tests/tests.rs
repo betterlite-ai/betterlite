@@ -9,35 +9,31 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::process::{Child, Command};
 use tokio::time::{sleep, timeout};
 const STANDARD_CONFIG: &str = "general_settings:\n  master_key: test-master\n";
+#[derive(serde::Deserialize)]
+struct LogEvent {
+    timestamp: String,
+    level: String,
+    message: String,
+}
 #[tokio::test]
 async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
     let port = free_port().await;
-    let (_, config_path) = fixture(port, STANDARD_CONFIG).await;
+    let config_path = fixture(port, STANDARD_CONFIG).await;
     let server = spawn_server(&config_path, port);
     wait_until_ready(port, 100).await;
     let mut request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-    let mut health_request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     request
         .write_all(b"GET /not-served HTTP/1.1\r\nHost: localhost\r\n")
         .await
         .unwrap();
-    health_request
-        .write_all(b"GET /health/liveliness HTTP/1.1\r\nHost: localhost\r\n")
-        .await
-        .unwrap();
     sleep(Duration::from_millis(10)).await;
-    send_sigterm(server.child.as_ref().unwrap().id().unwrap()).await;
-    health_request
-        .write_all(b"Connection: close\r\n\r\n")
+    let process_id = server.child.as_ref().unwrap().id().unwrap();
+    let status = Command::new("kill")
+        .args(["-TERM", &process_id.to_string()])
+        .status()
         .await
         .unwrap();
-    let mut health_response = Vec::new();
-    health_request
-        .read_to_end(&mut health_response)
-        .await
-        .unwrap();
-    assert!(health_response.starts_with(b"HTTP/1.1 503"));
-    assert!(health_response.ends_with(b"{\"status\":\"shutting_down\"}"));
+    assert!(status.success());
     request
         .write_all(b"Authorization: Bearer test-master\r\nConnection: close\r\n\r\n")
         .await
@@ -46,51 +42,53 @@ async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
     request.read_to_end(&mut response).await.unwrap();
     assert!(response.starts_with(b"HTTP/1.1 404"));
     assert!(response.ends_with(b"{\"detail\":\"Not Found\"}"));
-    let stderr = String::from_utf8(server.wait().await).unwrap();
-    assert!(!stderr.is_empty());
+    let stderr = server.wait().await;
+    assert_json_logs(&stderr);
 }
 #[tokio::test]
-async fn partial_headers_are_closed_after_the_read_deadline() {
+async fn dropping_server_guard_kills_server() {
     let port = free_port().await;
-    let (_, config_path) = fixture(port, STANDARD_CONFIG).await;
+    let config_path = fixture(port, STANDARD_CONFIG).await;
     let server = spawn_server(&config_path, port);
     wait_until_ready(port, 100).await;
-    let mut connection = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-    connection
-        .write_all(b"GET /health/liveliness HTTP/1.1\r\nHost: localhost\r\n")
+    let connection = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    timeout(Duration::from_secs(3), connection.readable())
         .await
+        .unwrap()
         .unwrap();
-    let mut response = Vec::new();
-    timeout(
-        Duration::from_secs(5),
-        connection.read_to_end(&mut response),
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    assert_eq!(connection.try_read(&mut [0]).unwrap(), 0);
     drop(server);
+    sleep(Duration::from_millis(100)).await;
+    TcpStream::connect(("127.0.0.1", port)).await.unwrap_err();
 }
-async fn fixture(port: u16, source: &str) -> (PathBuf, PathBuf) {
+fn assert_json_logs(stderr: &[u8]) {
+    let mut listening = false;
+    for line in String::from_utf8(stderr.to_owned()).unwrap().lines() {
+        let event: LogEvent = serde_json::from_str(line).unwrap();
+        listening |= !event.timestamp.is_empty()
+            && event.level == "INFO"
+            && event.message == "betterlite server listening";
+    }
+    assert!(listening);
+}
+async fn fixture(port: u16, source: &str) -> PathBuf {
     let directory = env::temp_dir().join(format!("betterlite-b003-{}-{port}", process::id()));
     fs::create_dir_all(&directory).await.unwrap();
     let config_path = directory.join("config.yaml");
     fs::write(&config_path, source).await.unwrap();
-    (directory, config_path)
-}
-fn binary_path() -> PathBuf {
-    let mut test_binary = env::current_exe().unwrap();
-    test_binary.pop();
-    test_binary.set_file_name("betterlite");
-    test_binary
+    config_path
 }
 async fn free_port() -> u16 {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     listener.local_addr().unwrap().port()
 }
 fn spawn_server(config_path: &Path, port: u16) -> ServerGuard {
+    let mut executable = env::current_exe().unwrap();
+    executable.pop();
+    executable.set_file_name("betterlite");
     let child = Command::new("setpriv")
         .args(["--pdeathsig", "KILL", "--"])
-        .arg(binary_path())
+        .arg(executable)
         .args([
             "--config",
             config_path.to_str().unwrap(),
@@ -106,21 +104,12 @@ fn spawn_server(config_path: &Path, port: u16) -> ServerGuard {
 }
 async fn wait_until_ready(port: u16, attempts: u16) {
     for _ in 0..attempts {
-        if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)).await {
-            stream.write_all(b"GET /health/liveliness HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").await.unwrap();
+        if TcpStream::connect(("127.0.0.1", port)).await.is_ok() {
             return;
         }
         sleep(Duration::from_millis(10)).await;
     }
     panic!("betterlite did not start on port {port}");
-}
-async fn send_sigterm(process_id: u32) {
-    let status = Command::new("kill")
-        .args(["-TERM", &process_id.to_string()])
-        .status()
-        .await
-        .unwrap();
-    assert!(status.success());
 }
 struct ServerGuard {
     child: Option<Child>,

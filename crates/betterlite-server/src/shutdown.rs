@@ -47,7 +47,7 @@ impl ShutdownSignal {
                 interrupt.recv().await;
             });
             if let Some(Err(error)) = signals.join_next().await {
-                tracing::debug!(error = %error, "shutdown signal task stopped");
+                tracing::debug!(error = ?error, "shutdown signal task stopped");
             }
             signals.shutdown().await;
         };

@@ -16,12 +16,11 @@ struct ErrorObject {
 }
 pub(crate) enum AuthenticationFailure {
     Missing,
-    Malformed,
     Invalid,
 }
 pub(crate) fn authentication_error(failure: &AuthenticationFailure) -> Response {
     match failure {
-        AuthenticationFailure::Missing | AuthenticationFailure::Malformed => {
+        AuthenticationFailure::Missing => {
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
         }
         AuthenticationFailure::Invalid => (

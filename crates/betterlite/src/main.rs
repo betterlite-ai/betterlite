@@ -72,7 +72,6 @@ fn load_config(path: &Path) -> Result<Config, ConfigLoadError> {
         path: path.to_owned(),
         source,
     })?;
-    // The process environment needs a disallowed std::env call, so os.environ/ references fail until the binary may pass it.
     let loader = ConfigLoader {
         lookup: BTreeMap::new(),
     };
