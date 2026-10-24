@@ -6,7 +6,7 @@ description: >-
   5164-5369); preserve default_pt fallback when a selected template is unavailable. Support existing initial_prompt_value,
   roles, final_prompt_value, bos_token and eos_token as typed operator deployment inputs; B036/B037 and provider
   owners wire them from main.py 5373-5377/5544-5557. This task builds text branches and delegates installed structured
-  branches explicitly: Anthropic B180, Azure/Cohere B182, Mistral B034, Watsonx B043 and Perplexity B040. Until
+  branches explicitly: Anthropic B180, Azure/Cohere B182, Mistral B036, Watsonx B042 and Perplexity B041. Until
   each adapter is installed, return the framework typed unsupported-operation outcome rather than a fabricated prompt.
   Do not create remote-template acquisition or new config behavior before the open decision. Budget 230 selector/custom
   transforms, 100 adapters, 300 tests and 60 wiring (690 total). Write the behavior rstest functions b177_prompt_template_tests_behavior
@@ -97,7 +97,7 @@ out_of_scope:
 - Image/media conversion is B183; SDK template registration is B157-B166.
 - Built-in renderers/default_pt/map_system_message_pt/ollama_pt are B214; Jinja and local token extraction B215.
 - >-
-  prompt_injection_detection_default_pt belongs to B100 guardrails; legacy XML and the uncalled Gemini text/image
+  prompt_injection_detection_default_pt belongs to B105 guardrails; legacy XML and the uncalled Gemini text/image
   prompt_factory branches are dead at this pin (B180/B182 document them).
 pitfalls:
 - Whitespace and role delimiters are provider inputs, so do not normalize rendered text in comparisons.
