@@ -288,6 +288,7 @@ tasks:
     - B356
     - B357
     - B358
+    - B359
     file: null
     covers:
     - router_plugins.json
@@ -2617,3 +2618,16 @@ tasks:
     covers:
     - litellm/router_strategy/complexity_router/tier_predictor.py
     - litellm/router_strategy/complexity_router/artifacts/**
+
+  - id: B359
+    milestone: M2 routing
+    title: Keyword, plan-mode and stall overrides
+    status: todo
+    depends_on:
+    - B334
+    - B330
+    - B327
+    file: tasks/B359-complexity-turn-overrides.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
+    - litellm/router_strategy/complexity_router/stall_detector.py
