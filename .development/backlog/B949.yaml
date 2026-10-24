@@ -7,3 +7,9 @@ file: tasks/B949-responses-mcp-discovery.yaml
 covers:
   - "litellm/responses/mcp/litellm_proxy_mcp_handler.py"
   - "litellm/responses/mcp/request_context.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -9,3 +9,9 @@ covers:
   - "litellm/types/agents.py"
   - "litellm/types/proxy/agent_identity.py"
   - "litellm/llms/base_llm/agents/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

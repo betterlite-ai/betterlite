@@ -6,3 +6,9 @@ depends_on: [B090, B171, B902, B1087]
 file: tasks/B946-responses-file-search-tools.yaml
 covers:
   - "litellm/responses/file_search/emulated_handler.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

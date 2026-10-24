@@ -9,3 +9,9 @@ covers:
   - "db_scripts/create_views.py"
   - "db_scripts/update_unassigned_teams.py"
   - "db_scripts/migrate_keys.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/vertex_ai/context_caching/transformation.py"
   - "litellm/llms/vertex_ai/gemini/transformation.py"
   - "litellm/types/llms/vertex_ai.py"
+parent: B031
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

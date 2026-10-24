@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/openai/openai.py"
   - "litellm/llms/openai/decisions/transformation.py"
   - "litellm/llms/openai/realtime/handler.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

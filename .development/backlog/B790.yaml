@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/management/users/__init__.py"
   - "litellm/proxy/management/users/service.py"
   - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
+parent: B056
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

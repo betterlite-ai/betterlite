@@ -7,3 +7,9 @@ file: tasks/B1349-vertex-image-selection-cost.yaml
 covers:
   - "litellm/llms/vertex_ai/image_generation/{__init__,image_generation_handler,cost_calculator}.py"
   - "litellm/llms/vertex_ai/image_edit/{__init__,cost_calculator}.py"
+parent: B033
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

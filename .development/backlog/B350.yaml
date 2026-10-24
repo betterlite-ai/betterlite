@@ -7,3 +7,9 @@ file: tasks/B350-lar1-routing.yaml
 covers:
   - "litellm/router_strategy/lar1_routing.py"
   - "litellm/types/lar1.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B2331-master-rotation-service.yaml
 covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"
   - "litellm/proxy/credential_endpoints/endpoints.py"
+parent: B055
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B002, B013, B171, B1020, B1035, B1087, B732, B1019, B1040]
 file: tasks/B1044-batch-limit-descriptors.yaml
 covers:
   - "litellm/proxy/hooks/batch_rate_limiter.py"
+parent: B086
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B121]
 file: null
 covers:
   - "packaging/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B1345, B1302, B1120, B1128, B997, B171]
 file: tasks/B1347-vertex-gemini-image-edit.yaml
 covers:
   - "litellm/llms/vertex_ai/image_edit/vertex_gemini_transformation.py"
+parent: B033
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

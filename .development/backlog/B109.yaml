@@ -9,3 +9,9 @@ covers:
   - "litellm/proxy/guardrails/guardrail_hooks/{tool_policy,mcp_end_user_permission,mcp_jwt_signer,mcp_security}/**"
   - "litellm/types/proxy/guardrails/guardrail_hooks/{tool_permission,mcp_end_user_permission}.py"
   - "litellm/proxy/_experimental/mcp_server/guardrail_translation/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

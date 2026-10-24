@@ -6,3 +6,9 @@ depends_on: [B1502, B247, B171, B858]
 file: tasks/B1503-hosted-skill-operations.yaml
 covers:
   - "litellm/llms/litellm_proxy/skills/transformation.py"
+parent: B044
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

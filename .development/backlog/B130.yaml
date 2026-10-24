@@ -9,3 +9,9 @@ covers:
   - "litellm/proxy/{health_check_utils,health_endpoints}/**"
   - "litellm/litellm_core_utils/{health_check_helpers,health_check_utils}.py"
   - "litellm/proxy/db/health_check_latest.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

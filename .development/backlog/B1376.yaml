@@ -7,3 +7,9 @@ file: tasks/B1376-vertex-native-files.yaml
 covers:
   - "litellm/llms/vertex_ai/files/transformation.py"
   - "litellm/types/llms/vertex_ai.py"
+parent: B034
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

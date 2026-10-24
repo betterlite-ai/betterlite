@@ -6,3 +6,9 @@ depends_on: [B590, B591, B592, B593, B171, B682]
 file: tasks/B594-bedrock-credentials.yaml
 covers:
   - "litellm/llms/bedrock/base_aws_llm.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

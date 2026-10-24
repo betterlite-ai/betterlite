@@ -7,3 +7,9 @@ file: tasks/B190-logging-payloads.yaml
 covers:
   - "litellm/litellm_core_utils/{litellm_logging,logging_utils,served_output_texts}.py"
   - "litellm/litellm_core_utils/README.md"
+parent: B012
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

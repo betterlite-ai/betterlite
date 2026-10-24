@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/db/db_url_settings.py"
   - "litellm/proxy/db/pgbouncer.py"
   - "litellm-proxy-extras/litellm_proxy_extras/utils.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

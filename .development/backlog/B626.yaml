@@ -6,3 +6,9 @@ depends_on: [B2207, B2202, B590, B506, B507, B907, B682, B598, B171]
 file: tasks/B626-bedrock-mantle-responses.yaml
 covers:
   - "litellm/llms/bedrock_mantle/responses/transformation.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

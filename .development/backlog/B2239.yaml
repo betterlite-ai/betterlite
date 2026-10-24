@@ -7,3 +7,9 @@ file: tasks/B2239-verbose-hooks.yaml
 covers:
   - "litellm/main.py"
   - "litellm/utils.py"
+parent: B014
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

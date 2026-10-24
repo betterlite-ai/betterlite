@@ -6,3 +6,9 @@ depends_on: [B531, B530, B508, B173, B171, B529, B677, B091, B668, B129, B002, B
 file: tasks/B546-azure-search.yaml
 covers:
   - "litellm/llms/azure/search/transformation.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

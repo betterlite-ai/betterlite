@@ -6,3 +6,9 @@ depends_on: [B1020, B1028, B1032, B1033, B1034, B1103, B732, B855, B756, B1021, 
 file: tasks/B087-managed-file-routes.yaml
 covers:
   - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

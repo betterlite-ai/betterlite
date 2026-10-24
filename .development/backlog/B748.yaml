@@ -7,3 +7,9 @@ file: tasks/B748-auth-model-grants.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
   - "litellm/proxy/auth/fallback_model_access.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

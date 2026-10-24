@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/llms/{dashscope,volcengine,minimax,tencent,modelscope,gigachat,ai21,nlp_cloud}/**"
   - "litellm/main.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

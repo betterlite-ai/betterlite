@@ -6,3 +6,9 @@ depends_on: [B171, B1020, B1036, B1041, B1047, B1049, B1087, B1112, B1100, B162,
 file: tasks/B1050-batch-create-route.yaml
 covers:
   - "litellm/proxy/batches_endpoints/endpoints.py"
+parent: B086
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

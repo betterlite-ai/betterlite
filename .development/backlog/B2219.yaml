@@ -6,3 +6,9 @@ depends_on: [B174, B209, B193, B2217, B2218, B2220, B2222, B2223, B2224, B2229, 
 file: tasks/B2219-model-metadata-resolution.yaml
 covers:
   - "litellm/utils.py"
+parent: B014
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

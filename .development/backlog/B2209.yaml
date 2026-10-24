@@ -6,3 +6,9 @@ depends_on: [B599, B682, B004, B171, B159]
 file: tasks/B2209-invoke-agent-reply.yaml
 covers:
   - "litellm/llms/bedrock/chat/invoke_agent/transformation.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

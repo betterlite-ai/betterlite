@@ -6,3 +6,9 @@ depends_on: [B002, B124, B171, B720, B723, B724, B725, B856, B859, B860, B862, B
 file: tasks/B1227-member-row-write.yaml
 covers:
   - "litellm/proxy/management_helpers/utils.py"
+parent: B065
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

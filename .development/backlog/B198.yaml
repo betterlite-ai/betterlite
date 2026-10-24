@@ -8,3 +8,9 @@ covers:
   - "litellm/{_internal_context,_uuid,_version,constants}.py"
   - "litellm/litellm_core_utils/{asyncify,cached_imports,coroutine_checker,env_utils,thread_pool_executor,aws_partition}.py"
   - "litellm/main.py"
+parent: B014
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

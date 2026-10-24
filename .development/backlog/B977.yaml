@@ -6,3 +6,9 @@ depends_on: [B975, B976, B966, B2434, B005, B2401]
 file: tasks/B977-messages-chat-stream.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

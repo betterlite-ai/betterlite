@@ -6,3 +6,9 @@ depends_on: [B531, B005, B171, B505, B529, B530, B2200, B673, B249, B187, B159]
 file: tasks/B685-azure-stream-errors.yaml
 covers:
   - "litellm/llms/azure/azure.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B136, B137, B171, B721, B725, B726, B770, B856, B860]
 file: tasks/B817-mcp-permission-ids.yaml
 covers:
   - "litellm/proxy/management_helpers/object_permission_utils.py"
+parent: B058
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

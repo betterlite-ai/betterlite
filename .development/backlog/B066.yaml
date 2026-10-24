@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/management_endpoints/{callback_management_endpoints,common_utils}.py"
   - "litellm/types/management_endpoints/__init__.py"
   - "litellm/proxy/ui_crud_endpoints/{__init__,proxy_setting_endpoints,user_banner_endpoints}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B184, B198, B171, B1113, B1138, B012]
 file: tasks/B937-responses-stream-errors.yaml
 covers:
   - "litellm/proxy/common_utils/responses_stream_errors.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

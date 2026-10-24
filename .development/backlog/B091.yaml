@@ -10,3 +10,9 @@ covers:
   - "litellm/proxy/search_endpoints/**"
   - "litellm/types/search.py"
   - "litellm/router_utils/search_api_router.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

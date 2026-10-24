@@ -9,3 +9,9 @@ covers:
   - "litellm/integrations/anthropic_cache_control_hook.py"
   - "litellm/types/integrations/{websearch_interception,code_interpreter_interception,anthropic_cache_control_hook}.py"
   - "litellm/litellm_core_utils/{chat_completion_agentic_loop,agentic_followup_kwargs,agentic_loop_settings}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B1057-assistant-messages.yaml
 covers:
   - "litellm/assistants/main.py"
   - "litellm/assistants/utils.py"
+parent: B089
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

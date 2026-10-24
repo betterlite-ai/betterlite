@@ -6,3 +6,9 @@ depends_on: [B1402, B1406, B1015, B235, B171]
 file: tasks/B1407-xai-files-stt.yaml
 covers:
   - "litellm/llms/xai/{files,audio_transcription}/**"
+parent: B036
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

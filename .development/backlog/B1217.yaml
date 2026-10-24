@@ -6,3 +6,9 @@ depends_on: [B002, B129, B171, B732, B856, B872]
 file: tasks/B1217-database-availability.yaml
 covers:
   - "litellm/proxy/db/exception_handler.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

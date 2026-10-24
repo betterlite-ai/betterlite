@@ -6,3 +6,9 @@ depends_on: [B002, B171, B213, B732, B733, B856, B2314]
 file: tasks/B760-jwt-claims.yaml
 covers:
   - "litellm/proxy/auth/handle_jwt.py"
+parent: B053
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

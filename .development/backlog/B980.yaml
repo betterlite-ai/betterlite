@@ -7,3 +7,9 @@ file: tasks/B980-messages-stream-restamp.yaml
 covers:
   - "litellm/proxy/anthropic_endpoints/streaming_model_restamp.py"
   - "litellm/llms/anthropic/pass_through/messages/response_cache.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -9,3 +9,9 @@ covers:
   - "litellm/types/integrations/{datadog,datadog_cost_management,datadog_llm_obs,datadog_metrics,newrelic}.py"
   - "litellm/proxy/dd_span_tagger.py"
   - "litellm/litellm_core_utils/dd_tracing.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B1525, B171]
 file: tasks/B1527-fal-flux-profiles.yaml
 covers:
   - "litellm/llms/fal_ai/image_generation/{flux_dev_transformation,flux_pro_v11_transformation,flux_pro_v11_ultra_transformation,flux_schnell_transformation}.py"
+parent: B046
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B1384-vertex-fine-tuning.yaml
 covers:
   - "litellm/llms/vertex_ai/fine_tuning/**"
   - "litellm/types/llms/vertex_ai.py"
+parent: B034
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

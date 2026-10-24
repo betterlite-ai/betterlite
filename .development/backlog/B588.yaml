@@ -6,3 +6,9 @@ depends_on: [B567, B235, B171, B173]
 file: tasks/B588-anthropic-files.yaml
 covers:
   - "litellm/llms/anthropic/files/transformation.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

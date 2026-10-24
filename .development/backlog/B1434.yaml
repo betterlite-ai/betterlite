@@ -6,3 +6,9 @@ depends_on: [B002, B218, B503, B668, B1425, B2237, B171]
 file: tasks/B1434-agent-and-diffusion-hosts.yaml
 covers:
   - "litellm/llms/{gradient_ai,heroku,hyperbolic,inception,lambda_ai}/**"
+parent: B038
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

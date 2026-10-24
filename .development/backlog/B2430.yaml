@@ -6,3 +6,9 @@ depends_on: [B171, B961, B569, B571, B2201, B567, B688]
 file: tasks/B2430-messages-native-transform.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/messages/transformation.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B1423-jina-infinity-rerank.yaml
 covers:
   - "litellm/llms/jina_ai/rerank/**"
   - "litellm/llms/infinity/rerank/**"
+parent: B037
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

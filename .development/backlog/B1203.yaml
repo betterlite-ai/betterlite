@@ -7,3 +7,9 @@ file: tasks/B1203-user-search-scope.yaml
 covers:
   - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
   - "litellm/proxy/_types.py"
+parent: B056
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

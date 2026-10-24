@@ -10,3 +10,9 @@ covers:
   - "ui/litellm-dashboard/src/components/{add_model,model_add,model_dashboard,ModelSelect,view_model,edit_auto_router,routing_groups,router_settings,chat,chat_ui,AIHub,publicModelHub,claude_code_plugins}/**"
   - "ui/litellm-dashboard/src/components/{model_filters,model_group_alias_settings,ModelInfoEditForm,model_info_view,update_model_credentials_modal,provider_info_helpers,price_data_reload,route_preview,public_model_hub,PublicModelHubTableColumns}.*"
   - "ui/litellm-dashboard/src/components/{model_info_view,update_model_credentials_modal,provider_info_helpers,price_data_reload,route_preview,public_model_hub}.test.*"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

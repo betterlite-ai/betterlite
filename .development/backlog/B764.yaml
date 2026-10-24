@@ -7,3 +7,9 @@ file: tasks/B764-jwt-team-selection.yaml
 covers:
   - "litellm/proxy/auth/handle_jwt.py"
   - "litellm/proxy/agent_endpoints/identity.py"
+parent: B053
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

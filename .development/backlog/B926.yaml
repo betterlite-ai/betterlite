@@ -6,3 +6,9 @@ depends_on: [B012, B125, B171, B2413, B928, B906, B250, B251, B068, B004, B157, 
 file: tasks/B926-responses-stream-hooks.yaml
 covers:
   - "litellm/responses/streaming_iterator.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

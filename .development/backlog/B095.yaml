@@ -10,3 +10,9 @@ covers:
   - "litellm/llms/anthropic/skills/**"
   - "litellm/types/llms/anthropic_skills.py"
   - "litellm/proxy/hooks/litellm_skills/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

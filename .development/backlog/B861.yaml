@@ -6,3 +6,9 @@ depends_on: [B003, B171, B732, B856, B859, B2317]
 file: tasks/B861-management-guards.yaml
 covers:
   - "litellm/proxy/management_endpoints/common_utils.py"
+parent: B066
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

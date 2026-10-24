@@ -6,3 +6,9 @@ depends_on: [B2486, B1062, B726, B858, B732, B003, B864, B192, B1131, B010]
 file: tasks/B1069-vector-management-write.yaml
 covers:
   - "litellm/proxy/vector_store_endpoints/management_endpoints.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

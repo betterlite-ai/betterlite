@@ -7,3 +7,9 @@ file: tasks/B972-messages-compaction.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"
   - "litellm/llms/anthropic/pass_through/context_management/dispatcher.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B1301, B1303, B1304, B1331, B173, B171]
 file: tasks/B1329-google-count-endpoints.yaml
 covers:
   - "litellm/llms/{gemini,vertex_ai}/count_tokens/handler.py"
+parent: B031
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

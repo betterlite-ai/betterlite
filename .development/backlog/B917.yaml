@@ -6,3 +6,9 @@ depends_on: [B004, B171, B902, B1138, B1136, B903, B912, B220]
 file: tasks/B917-response-chat-history.yaml
 covers:
   - "litellm/completion_extras/litellm_responses_transformation/transformation.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

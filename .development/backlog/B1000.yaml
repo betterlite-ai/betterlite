@@ -6,3 +6,9 @@ depends_on: [B010, B174, B176, B2220, B997, B513, B011, B002, B2401]
 file: tasks/B1000-image-variations.yaml
 covers:
   - "litellm/images/main.py"
+parent: B082
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

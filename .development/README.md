@@ -19,7 +19,7 @@ Inside a run, both CLIs call `cargo gate hook` when the agent tries to stop: Cod
 
 ## Files
 
-- backlog/ holds one file per task, <id>.yaml, with its milestone, status, dependencies and the LiteLLM paths it covers. The architect owns it; the planner fills in task files and splits oversized entries on a plan branch.
+- backlog/ holds one file per task, <id>.yaml, with its milestone, status, dependencies and the LiteLLM paths it covers. Each entry also carries ticket fields: parent (the umbrella a part belongs to), split_from (the entry it was split off from), resolution (merged, obsolete, duplicate or superseded, once done), superseded_by (what replaces a duplicate or superseded entry), blocked_reason (one line while blocked) and pr (the pull request that merged it). An entry that ends without code is marked done with its resolution instead of being deleted. The architect owns it; the planner fills in task files and splits oversized entries on a plan branch.
 - tasks/B*.yaml holds one task each: description, scope, references, definition of done, checks, oracle cases, deviations, out-of-scope items, pitfalls, review level and budget.
 - rules.yaml is the code standard: 35 rules, each with its reason, the checks that enforce it, whether reviewers read for it, and an example of code that breaks it next to the same intent written right.
 - checks.yaml pins the CLI tools to exact versions and defines the shared settings, the base checks every task runs, and the optional checks a task can add.
@@ -64,7 +64,7 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 
 ## Writing a task
 
-The gate reads every format into Rust types that reject unknown fields, missing fields, duplicate keys, comments and anchors; only when_exists and link may be left out. Comments are rejected because an unquoted ` #` silently cuts the rest of a YAML value. On top of the types, validate checks what types can't: ids look like B004 or B1234, every DoD item names checks the task actually runs, every rule names real checks or is reviewed, runner arguments use only known placeholders, globs parse, links use https, dependencies exist and don't form a cycle, and every task file is in the backlog.
+The gate reads every format into Rust types that reject unknown fields, missing fields, duplicate keys, comments and anchors; only when_exists, link and the null ticket fields may be left out. Comments are rejected because an unquoted ` #` silently cuts the rest of a YAML value. On top of the types, validate checks what types can't: ids look like B004 or B1234, every DoD item names checks the task actually runs, every rule names real checks or is reviewed, runner arguments use only known placeholders, globs parse, links use https, dependencies exist and don't form a cycle, and every task file is in the backlog.
 
 - Every DoD item names the checks that fail when the outcome is missing. A check is a shell command run from the repository root; exit 0 passes.
 - A test check uses `cargo nextest run ... --no-tests=fail`, so a filter that matches nothing fails instead of passing.
@@ -86,6 +86,8 @@ The gate reads every format into Rust types that reject unknown fields, missing 
 | `cargo gate schema` | Regenerates schema/ after a change to the gate's types |
 | `cargo gate hook` | The Stop hook for Claude Code and Codex; reads the hook JSON on stdin |
 | `cargo gate coverage` | Prints how many LiteLLM paths each backlog entry claims, then every unclaimed path and every glob that claims nothing |
+| `cargo gate coverage --paths` | Prints every LiteLLM path with the backlog entries that cover it |
+| `cargo gate show <ID>` | Shows an entry like a ticket: status and resolution, parent and other links, dependencies, what becomes ready once it is done, components (the crates in its scope), how many paths it covers, its dates from git, its merged size and its local dispatch attempts |
 | `cargo gate inventory <checkout>` | Rewrites litellm-inventory.txt from a LiteLLM clone at the commit litellm.yaml pins |
 | `cargo gate trace <path[:line]>` | Names the task that covers a LiteLLM path (with the pinned lines it ports and the betterlite files it writes) or that writes a betterlite file (with its LiteLLM sources), plus the deviations it logged |
 

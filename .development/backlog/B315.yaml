@@ -6,3 +6,9 @@ depends_on: [B016, B389, B013, B301, B002, B361]
 file: tasks/B315-latency-routing.yaml
 covers:
   - "litellm/router_strategy/lowest_latency.py"
+parent: B019
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

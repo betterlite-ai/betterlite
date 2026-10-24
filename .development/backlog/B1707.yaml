@@ -6,3 +6,9 @@ depends_on: [B171, B174, B188, B204, B247, B1706]
 file: tasks/B1707-spend-event-codec.yaml
 covers:
   - "litellm/proxy/spend_tracking/spend_event.py"
+parent: B069
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

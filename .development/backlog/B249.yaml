@@ -7,3 +7,9 @@ file: tasks/B249-logging-pre-post.yaml
 covers:
   - "litellm/litellm_core_utils/litellm_logging.py"
   - "litellm/main.py"
+parent: B012
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B022-admission-control.yaml
 covers:
   - "litellm/proxy/route_priority.py"
   - "litellm/proxy/middleware/{admission_control_middleware,in_flight_requests_middleware}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/gemini/realtime/transformation.py"
   - "litellm/llms/gemini/common_utils.py"
   - "litellm/types/llms/gemini.py"
+parent: B035
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

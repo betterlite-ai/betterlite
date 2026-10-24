@@ -8,3 +8,9 @@ covers:
   - "litellm/router_strategy/adaptive_router/{__init__,config,classifier,bandit}.py"
   - "litellm/router_strategy/adaptive_router/adaptive_router.py"
   - "litellm/router_strategy/adaptive_router/README.md"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

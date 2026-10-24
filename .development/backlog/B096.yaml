@@ -9,3 +9,9 @@ covers:
   - "litellm/llms/base_llm/evals/**"
   - "litellm/proxy/openai_evals_endpoints/**"
   - "litellm/types/llms/openai_evals.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B587-anthropic-batches.yaml
 covers:
   - "litellm/llms/anthropic/batches/transformation.py"
   - "litellm/llms/anthropic/batches/handler.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

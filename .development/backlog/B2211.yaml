@@ -6,3 +6,9 @@ depends_on: [B591, B595, B682, B129, B002, B171]
 file: tasks/B2211-claude-platform-inputs.yaml
 covers:
   - "litellm/llms/bedrock/claude_platform/common_utils.py"
+parent: B030
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

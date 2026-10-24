@@ -6,3 +6,9 @@ depends_on: [B002, B171, B1131]
 file: tasks/B2483-vector-context-shaping.yaml
 covers:
   - "litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

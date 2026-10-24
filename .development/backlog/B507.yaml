@@ -6,3 +6,9 @@ depends_on: [B506, B178, B171, B907, B219, B192, B902]
 file: tasks/B507-openai-response-input.yaml
 covers:
   - "litellm/llms/openai/responses/transformation.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

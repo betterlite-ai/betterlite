@@ -7,3 +7,9 @@ file: tasks/B962-messages-thinking.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/messages/transformation.py"
   - "litellm/llms/anthropic/pass_through/utils.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

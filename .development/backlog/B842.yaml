@@ -7,3 +7,9 @@ file: tasks/B842-model-visibility.yaml
 covers:
   - "litellm/proxy/common_utils/discoverable_model_filter.py"
   - "litellm/proxy/common_utils/healthy_model_filter.py"
+parent: B060
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

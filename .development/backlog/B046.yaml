@@ -9,3 +9,9 @@ covers:
   - "litellm/llms/fal_ai/__init__.py"
   - "litellm/llms/fal_ai/image_generation/__init__.py"
   - "litellm/main.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

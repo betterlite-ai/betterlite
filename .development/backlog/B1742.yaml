@@ -7,3 +7,9 @@ file: tasks/B1742-spend-entity-attribution.yaml
 covers:
   - "litellm/proxy/db/db_spend_update_writer.py"
   - "litellm/proxy/db/autorouter_session_rollup.py"
+parent: B070
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

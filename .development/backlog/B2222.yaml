@@ -7,3 +7,9 @@ file: tasks/B2222-fireworks-catalog-metadata.yaml
 covers:
   - "litellm/llms/fireworks_ai/common_utils.py"
   - "litellm/llms/fireworks_ai/chat/transformation.py"
+parent: B041
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

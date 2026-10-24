@@ -7,3 +7,9 @@ file: tasks/B572-anthropic-web-replay.yaml
 covers:
   - "litellm/llms/anthropic/common_utils.py"
   - "litellm/llms/anthropic/chat/transformation.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

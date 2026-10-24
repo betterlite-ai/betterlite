@@ -13,3 +13,9 @@ covers:
   - "litellm/llms/azure/search/__init__.py"
   - "litellm/llms/azure/text_to_speech/__init__.py"
   - "litellm/main.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

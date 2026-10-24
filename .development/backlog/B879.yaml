@@ -6,3 +6,9 @@ depends_on: [B001, B002, B003, B723, B732, B733, B734, B735, B856, B860, B1217, 
 file: tasks/B879-auth-org-lookup.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

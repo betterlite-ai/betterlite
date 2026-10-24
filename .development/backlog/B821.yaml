@@ -7,3 +7,9 @@ file: tasks/B821-access-group-read.yaml
 covers:
   - "litellm/types/access_group.py"
   - "litellm/proxy/management_endpoints/access_group_endpoints.py"
+parent: B058
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

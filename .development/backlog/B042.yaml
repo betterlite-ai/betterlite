@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/{sagemaker,databricks,watsonx,oci,snowflake,sap,predibase,replicate,huggingface}/**"
   - "litellm/types/llms/{databricks,watsonx,oci}.py"
   - "litellm/main.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -8,3 +8,9 @@ covers:
   - "litellm/types/responses/main.py"
   - "litellm/types/responses/streaming_websocket.py"
   - "litellm/llms/base_llm/responses/transformation.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

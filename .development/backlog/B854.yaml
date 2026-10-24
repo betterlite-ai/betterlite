@@ -6,3 +6,9 @@ depends_on: [B002, B171, B710, B712, B713, B856, B860, B2307]
 file: tasks/B854-database-refresh-loop.yaml
 covers:
   - "litellm/proxy/db/prisma_client.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

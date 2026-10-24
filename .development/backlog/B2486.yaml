@@ -6,3 +6,9 @@ depends_on: [B726, B858, B1062, B1060, B1131, B244, B171, B1087]
 file: tasks/B2486-vector-management-boundaries.yaml
 covers:
   - "litellm/proxy/vector_store_endpoints/management_endpoints.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

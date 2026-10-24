@@ -30,6 +30,31 @@ pub(crate) struct BacklogEntry {
         description = "Globs over the LiteLLM paths in litellm-inventory.txt whose behavior this entry reimplements. Empty for work betterlite needs that LiteLLM has no file for."
     )]
     pub(crate) covers: Vec<String>,
+    #[schemars(
+        regex(pattern = "^B([0-9]{3}|[1-9][0-9]{3,5})$"),
+        description = "The umbrella entry this part belongs to, or null for an umbrella or a standalone entry."
+    )]
+    pub(crate) parent: Option<String>,
+    #[schemars(
+        regex(pattern = "^B([0-9]{3}|[1-9][0-9]{3,5})$"),
+        description = "The entry this one was split off from when that is known, otherwise null."
+    )]
+    pub(crate) split_from: Option<String>,
+    #[schemars(description = "How a done entry ended. Null until status is done.")]
+    pub(crate) resolution: Option<Resolution>,
+    #[schemars(
+        regex(pattern = "^B([0-9]{3}|[1-9][0-9]{3,5})$"),
+        description = "The entry that replaces a duplicate or superseded one, otherwise null."
+    )]
+    pub(crate) superseded_by: Option<String>,
+    #[schemars(
+        description = "Why the entry is blocked, in one line. Null unless status is blocked."
+    )]
+    pub(crate) blocked_reason: Option<String>,
+    #[schemars(
+        description = "The pull request that merged or is merging the entry's work, otherwise null."
+    )]
+    pub(crate) pr: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
@@ -39,4 +64,13 @@ pub(crate) enum Status {
     InProgress,
     Done,
     Blocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum Resolution {
+    Merged,
+    Obsolete,
+    Duplicate,
+    Superseded,
 }

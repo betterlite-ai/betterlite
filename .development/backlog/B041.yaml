@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/{openrouter,together_ai,fireworks_ai,groq,perplexity,vercel_ai_gateway,cloudflare,nvidia_nim,edenai}/**"
   - "litellm/types/llms/openrouter.py"
   - "litellm/main.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

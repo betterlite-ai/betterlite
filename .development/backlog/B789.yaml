@@ -7,3 +7,9 @@ file: tasks/B789-ui-sessions.yaml
 covers:
   - "litellm/proxy/management_endpoints/password_endpoints.py"
   - "litellm/proxy/management_endpoints/session_endpoints.py"
+parent: B056
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

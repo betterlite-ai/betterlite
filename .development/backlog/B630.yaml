@@ -6,3 +6,9 @@ depends_on: [B171, B183, B682]
 file: tasks/B630-bedrock-other-marengo-three.yaml
 covers:
   - "litellm/llms/bedrock/embed/twelvelabs_marengo_3_transformation.py"
+parent: B029
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

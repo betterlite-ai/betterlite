@@ -9,3 +9,9 @@ covers:
   - "litellm/integrations/email_alerting.py"
   - "litellm/integrations/email_templates/**"
   - "litellm/types/integrations/{slack_alerting,pagerduty}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

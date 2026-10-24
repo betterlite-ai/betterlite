@@ -6,3 +6,9 @@ depends_on: [B002, B003, B111, B204, B722, B724, B726, B732, B860]
 file: tasks/B1724-spend-totals.yaml
 covers:
   - "litellm/proxy/spend_tracking/spend_management_endpoints.py"
+parent: B069
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B340-adaptive-feedback.yaml
 covers:
   - "litellm/router_strategy/adaptive_router/{signals,hooks}.py"
   - "litellm/router_strategy/adaptive_router/adaptive_router.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B016, B304, B301, B002]
 file: tasks/B314-least-busy.yaml
 covers:
   - "litellm/router_strategy/least_busy.py"
+parent: B019
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

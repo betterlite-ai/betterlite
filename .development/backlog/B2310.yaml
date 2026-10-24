@@ -8,3 +8,9 @@ covers:
   - "litellm/models/budget.py"
   - "litellm/models/object_permission.py"
   - "litellm/models/organization_membership.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

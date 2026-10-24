@@ -8,3 +8,9 @@ covers:
   - "litellm/harness/**"
   - "litellm/llms/base_llm/harness/**"
   - "litellm/llms/{deepagents,opencode,claude_code,codex}/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

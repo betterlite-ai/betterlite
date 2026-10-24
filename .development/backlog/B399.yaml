@@ -6,3 +6,9 @@ depends_on: [B011, B013, B301]
 file: tasks/B399-fallback-categories.yaml
 covers:
   - "litellm/router.py"
+parent: B016
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

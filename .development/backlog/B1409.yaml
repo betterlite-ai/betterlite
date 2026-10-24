@@ -7,3 +7,9 @@ file: tasks/B1409-mistral-chat.yaml
 covers:
   - "litellm/llms/mistral/chat/transformation.py"
   - "litellm/types/llms/mistral.py"
+parent: B036
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

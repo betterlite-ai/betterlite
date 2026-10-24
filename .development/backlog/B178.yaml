@@ -7,3 +7,9 @@ file: tasks/B178-tool-schemas.yaml
 covers:
   - "litellm/litellm_core_utils/prompt_templates/common_utils.py"
   - "litellm/utils.py"
+parent: B010
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

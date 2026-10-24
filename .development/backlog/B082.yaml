@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/image_endpoints/endpoints.py"
   - "litellm/images/__init__.py"
   - "litellm/proxy/image_endpoints/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

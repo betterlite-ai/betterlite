@@ -30,3 +30,9 @@ covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260214185341_object_permissions_for_end_users/migration.sql"
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260218231534_add_last_active_to_key_table/migration.sql"
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260219105005_add_project_id_to_deleted_keys/migration.sql"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

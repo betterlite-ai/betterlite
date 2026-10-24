@@ -6,3 +6,9 @@ depends_on: [B217, B171, B2202]
 file: tasks/B574-anthropic-output-schema.yaml
 covers:
   - "litellm/llms/anthropic/chat/transformation.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

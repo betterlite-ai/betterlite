@@ -6,3 +6,9 @@ depends_on: [B171, B932, B950, B951, B953, B1087, B952, B948, B949]
 file: tasks/B954-responses-mcp-stream-loop.yaml
 covers:
   - "litellm/responses/mcp/mcp_streaming_iterator.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

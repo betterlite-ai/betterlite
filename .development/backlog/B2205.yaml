@@ -6,3 +6,9 @@ depends_on: [B590, B591, B595, B596, B682, B177, B182, B214, B2202, B171]
 file: tasks/B2205-bedrock-invoke-primitives.yaml
 covers:
   - "litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

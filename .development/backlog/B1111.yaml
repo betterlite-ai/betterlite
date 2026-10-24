@@ -6,3 +6,9 @@ depends_on: [B1062, B171]
 file: tasks/B1111-vector-file-provider.yaml
 covers:
   - "litellm/vector_store_files/main.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

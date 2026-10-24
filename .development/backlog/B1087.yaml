@@ -5,3 +5,9 @@ status: todo
 depends_on: [B198, B206]
 file: tasks/B1087-api-boundaries.yaml
 covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

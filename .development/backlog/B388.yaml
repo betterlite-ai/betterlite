@@ -7,3 +7,9 @@ file: tasks/B388-adaptive-classification.yaml
 covers:
   - "litellm/router_strategy/adaptive_router/classifier.py"
   - "litellm/router_strategy/adaptive_router/config.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B171, B700, B715, B856, B859, B2313]
 file: tasks/B2315-auth-read-boundaries.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B003, B004, B929, B933, B935, B1087, B1116, B1100, B1139, B732, B85
 file: tasks/B938-responses-read-routes.yaml
 covers:
   - "litellm/proxy/response_api_endpoints/endpoints.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

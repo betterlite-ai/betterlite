@@ -6,3 +6,9 @@ depends_on: [B004, B183, B178, B219, B171, B500, B002]
 file: tasks/B503-openai-chat-content.yaml
 covers:
   - "litellm/llms/openai/chat/gpt_transformation.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

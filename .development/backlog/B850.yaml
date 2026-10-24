@@ -6,3 +6,9 @@ depends_on: [B001, B003, B052, B124, B141, B732, B848, B849, B851, B860, B1216]
 file: tasks/B850-model-info-v2.yaml
 covers:
   - "litellm/proxy/proxy_server.py"
+parent: B124
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

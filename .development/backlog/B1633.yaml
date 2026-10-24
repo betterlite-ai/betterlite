@@ -6,3 +6,9 @@ depends_on: [B003, B171, B722, B723, B724, B860, B1632]
 file: tasks/B1633-scim-projections.yaml
 covers:
   - "litellm/proxy/management_endpoints/scim/{scim_transformations,scim_v2}.py"
+parent: B064
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

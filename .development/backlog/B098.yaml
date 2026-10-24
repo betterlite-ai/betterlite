@@ -9,3 +9,9 @@ covers:
   - "litellm/llms/base_llm/{google_genai,interactions}/**"
   - "litellm/proxy/google_endpoints/**"
   - "litellm/types/{google_genai,interactions}/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

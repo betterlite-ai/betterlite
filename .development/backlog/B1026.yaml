@@ -6,3 +6,9 @@ depends_on: [B002, B173, B115, B171, B1025, B2460, B2401]
 file: tasks/B1026-file-azure-storage.yaml
 covers:
   - "litellm/llms/base_llm/files/azure_blob_storage_backend.py"
+parent: B087
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

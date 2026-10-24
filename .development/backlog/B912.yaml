@@ -6,3 +6,9 @@ depends_on: [B171, B004, B907, B2226]
 file: tasks/B912-responses-tool-results.yaml
 covers:
   - "litellm/responses/litellm_completion_transformation/transformation.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

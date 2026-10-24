@@ -6,3 +6,9 @@ depends_on: [B311, B310, B370, B081, B301]
 file: tasks/B312-native-stream-fallback.yaml
 covers:
   - "litellm/router.py"
+parent: B016
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

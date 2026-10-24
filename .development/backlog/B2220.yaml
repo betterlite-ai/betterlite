@@ -11,3 +11,9 @@ covers:
   - "litellm/llms/fireworks_ai/chat/transformation.py"
   - "litellm/llms/lemonade/chat/transformation.py"
   - "litellm/llms/azure_ai/common_utils.py"
+parent: B040
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

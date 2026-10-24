@@ -6,3 +6,9 @@ depends_on: [B174, B171]
 file: tasks/B212-parameter-projections.yaml
 covers:
   - "litellm/litellm_core_utils/{model_param_helper,reasoning_effort_utils,service_tier_utils}.py"
+parent: B010
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

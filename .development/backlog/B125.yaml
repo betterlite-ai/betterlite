@@ -14,3 +14,9 @@ covers:
   - "litellm/proxy/management_endpoints/cache_settings_endpoints.py"
   - "litellm/types/management_endpoints/cache_settings_endpoints.py"
   - "litellm/proxy/common_utils/{cache_coordinator,cache_pydantic_utils}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

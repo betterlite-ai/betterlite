@@ -6,3 +6,9 @@ depends_on: [B011, B012, B104, B1063, B1064, B1131, B2483, B2401]
 file: tasks/B1077-vector-retrieval-context.yaml
 covers:
   - "litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B004, B171]
 file: tasks/B214-builtin-prompts.yaml
 covers:
   - "litellm/litellm_core_utils/prompt_templates/factory.py"
+parent: B010
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

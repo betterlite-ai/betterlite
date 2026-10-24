@@ -6,3 +6,9 @@ depends_on: [B001, B003, B052, B124, B732, B736, B790, B797, B816, B860, B861, B
 file: tasks/B056-user-management.yaml
 covers:
   - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

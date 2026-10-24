@@ -6,3 +6,9 @@ depends_on: [B700, B856]
 file: tasks/B872-database-faults.yaml
 covers:
   - "litellm/proxy/db/exception_handler.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

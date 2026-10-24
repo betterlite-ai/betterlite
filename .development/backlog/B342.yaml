@@ -7,3 +7,9 @@ file: tasks/B342-routing-baselines.yaml
 covers:
   - "litellm/router_strategy/savings_baseline.py"
   - "litellm/proxy/hooks/autorouter_baseline_cache.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

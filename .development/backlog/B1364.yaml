@@ -7,3 +7,9 @@ file: tasks/B1364-studio-veo-results.yaml
 covers:
   - "litellm/llms/gemini/videos/**"
   - "litellm/types/llms/gemini.py"
+parent: B035
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

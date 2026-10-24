@@ -8,3 +8,9 @@ covers:
   - "litellm/secret_managers/**"
   - "litellm/types/secret_managers/main.py"
   - "litellm/integrations/custom_secret_manager.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

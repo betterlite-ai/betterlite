@@ -6,3 +6,9 @@ depends_on: [B010, B011, B517, B171, B1087, B002]
 file: tasks/B1129-batch-provider-list.yaml
 covers:
   - "litellm/batches/main.py"
+parent: B086
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

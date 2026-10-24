@@ -6,3 +6,9 @@ depends_on: [B001, B003, B116, B171, B721, B732, B733, B740, B757, B856, B860, B
 file: tasks/B752-auth-tenant-budgets.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

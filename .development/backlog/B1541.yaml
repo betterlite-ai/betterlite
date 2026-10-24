@@ -6,3 +6,9 @@ depends_on: [B1540, B1122, B1001, B171]
 file: tasks/B1541-elevenlabs-transcription.yaml
 covers:
   - "litellm/llms/elevenlabs/audio_transcription/**"
+parent: B047
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

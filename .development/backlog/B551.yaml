@@ -6,3 +6,9 @@ depends_on: [B550, B505, B010, B173, B171, B219, B198]
 file: tasks/B551-foundry-rejected-fields.yaml
 covers:
   - "litellm/llms/azure_ai/chat/transformation.py"
+parent: B026
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

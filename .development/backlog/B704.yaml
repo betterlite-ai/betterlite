@@ -34,3 +34,9 @@ covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251210125210_add_storage_backend_to_managed_files/migration.sql"
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251210205007_add_daily_agent_spend_table/migration.sql"
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251211100212_schema_sync/migration.sql"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

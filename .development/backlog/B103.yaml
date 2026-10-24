@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/**"
   - "litellm/proxy/vertex_ai_endpoints/**"
   - "litellm/types/passthrough_endpoints/{assembly_ai,tinyfish,vertex_ai}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

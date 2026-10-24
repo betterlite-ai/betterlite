@@ -6,3 +6,9 @@ depends_on: [B003, B004, B012, B732, B1103, B2489]
 file: tasks/B1085-assistant-object-routes.yaml
 covers:
   - "litellm/proxy/proxy_server.py"
+parent: B124
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
