@@ -69,12 +69,8 @@ where
     seal(Algorithm::XSalsa20Poly1305, signing_key, nonces, bytes, b"")
 }
 
-pub fn open_legacy(sealed: &[u8], signing_key: &SecretString) -> Result<SecretString, SecretError> {
-    open(Algorithm::XSalsa20Poly1305, signing_key, sealed, b"")
-}
-
 // PyNaCl reads an empty legacy buffer as empty plaintext, before it looks for a nonce
-pub(crate) fn open(
+pub fn open(
     algorithm: Algorithm,
     secret: &SecretString,
     sealed: &[u8],

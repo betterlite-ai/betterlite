@@ -17,7 +17,7 @@ use tracing::subscriber::with_default;
 use crate::error::SecretError;
 use crate::secret_codec::bearer::{decrypt_bearer_token, encrypt_bearer_token};
 use crate::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent, TracingDiagnostics};
-use crate::secret_codec::sealing::{open_legacy, seal, seal_legacy};
+use crate::secret_codec::sealing::{open, seal, seal_legacy};
 use crate::secret_codec::secret_map::{StoredMap, decode_secret_map, encrypt_secret_map};
 use crate::secret_codec::{
     Algorithm, CipherSettings, DecryptPolicy, FailureLog, FailureValue, MAX_ENCODED_BYTES,
@@ -172,11 +172,11 @@ fn passthrough(cipher: &Cipher) -> String {
 #[case::bearer_stray_bits(SALT, LEGACY, |cipher: &Cipher| open_bearer(cipher, &BEARER.replace("Vzw8", "Vzw9"), PREFIX), Some("payload"), &[])]
 #[case::empty_legacy_bytes(SALT, LEGACY, |cipher: &Cipher| loud(cipher, "*"), Some(""), &[])]
 #[case::legacy_box_seals_python_bytes(None, LEGACY, |_: &Cipher| seal_legacy(&SecretString::from("hello"), &SecretString::from("salt-one"), &CountingNonces).ok().map(|sealed| URL_SAFE.encode(sealed)), Some(LEGACY_HELLO), &[])]
-#[case::legacy_box_opens_python_bytes(None, LEGACY, |_: &Cipher| exposed(open_legacy(&URL_SAFE.decode(LEGACY_HELLO).unwrap(), &SecretString::from("salt-one")).ok()), Some("hello"), &[])]
-#[case::legacy_box_wrong_key(None, LEGACY, |_: &Cipher| exposed(open_legacy(&URL_SAFE.decode(LEGACY_HELLO).unwrap(), &SecretString::from("other")).ok()), None, &[])]
+#[case::legacy_box_opens_python_bytes(None, LEGACY, |_: &Cipher| exposed(open(Algorithm::XSalsa20Poly1305, &SecretString::from("salt-one"), &URL_SAFE.decode(LEGACY_HELLO).unwrap(), b"").ok()), Some("hello"), &[])]
+#[case::legacy_box_wrong_key(None, LEGACY, |_: &Cipher| exposed(open(Algorithm::XSalsa20Poly1305, &SecretString::from("other"), &URL_SAFE.decode(LEGACY_HELLO).unwrap(), b"").ok()), None, &[])]
 #[case::plaintext_debug_redacted(SALT, LEGACY, |cipher: &Cipher| Some(format!("{:?} {:?}", cipher.decrypt_value(StoredValue::<()>::Text(SecretString::from(LEGACY_HELLO)), "k", DecryptPolicy { log: FailureLog::Debug, value: FailureValue::Original }), decrypt_bearer_token(cipher, BEARER, PREFIX))), Some("Some(Text(SecretBox<str>([REDACTED]))) Some(SecretBox<str>([REDACTED]))"), &[])]
 #[case::explicit_key_probe_debug_redacted(None, LEGACY, |_: &Cipher| Some(format!("{:?}", decrypt_if_encrypted_with(AES_HELLO, &SecretString::from("salt-one")))), Some("Some(SecretBox<str>([REDACTED]))"), &[])]
-#[case::legacy_box_empty_buffer(None, LEGACY, |_: &Cipher| exposed(open_legacy(&[], &SecretString::from("other")).ok()), Some(""), &[])]
+#[case::legacy_box_empty_buffer(None, LEGACY, |_: &Cipher| exposed(open(Algorithm::XSalsa20Poly1305, &SecretString::from("other"), &[], b"").ok()), Some(""), &[])]
 #[case::empty_legacy_bytes_need_a_key(None, LEGACY, |cipher: &Cipher| loud(cipher, ""), None, &[Level::Debug, Level::Error])]
 #[case::algorithm_switch_reads_old(SALT, AES, |cipher: &Cipher| loud(cipher, LEGACY_HELLO), Some("hello"), &[])]
 #[case::algorithm_switch_reads_new(SALT, LEGACY, |cipher: &Cipher| loud(cipher, AES_HELLO), Some("hello"), &[])]

@@ -156,20 +156,23 @@ fn open_stored(text: &str, key: &SecretString) -> Result<SecretString, SecretErr
         let sealed = decode_lenient(encoded, true)?;
         return open(Algorithm::Aes256Gcm, key, &sealed, b"");
     }
-    open(Algorithm::XSalsa20Poly1305, key, &legacy_bytes(text)?, b"")
-}
-
-fn legacy_bytes(text: &str) -> Result<Vec<u8>, SecretError> {
-    decode_lenient(text, true).or_else(|_url| decode_lenient(text, false))
+    let sealed = decode_lenient(text, true).or_else(|_url| decode_lenient(text, false))?;
+    open(Algorithm::XSalsa20Poly1305, key, &sealed, b"")
 }
 
 #[must_use]
 pub fn decrypt_if_encrypted_with(value: &str, key: &SecretString) -> Option<SecretString> {
+    if value.starts_with(AES_PREFIX) {
+        return open_stored(value, key).ok();
+    }
+    let sealed = decode_lenient(value, true)
+        .or_else(|_url| decode_lenient(value, false))
+        .ok()?;
     // "" and "*" decode to no bytes, which the legacy box reads as empty text under any key
-    if !value.starts_with(AES_PREFIX) && legacy_bytes(value).ok()?.is_empty() {
+    if sealed.is_empty() {
         return None;
     }
-    open_stored(value, key).ok()
+    open(Algorithm::XSalsa20Poly1305, key, &sealed, b"").ok()
 }
 
 mod tests;
