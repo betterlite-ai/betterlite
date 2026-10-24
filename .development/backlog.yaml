@@ -135,12 +135,11 @@ tasks:
     milestone: M1 openai data plane
     title: Call dispatch across providers and call types, shared settings and helpers
     status: todo
-    depends_on: [B010, B011, B012, B198, B199, B200, B201, B006]
+    depends_on: [B010, B011, B012, B198, B199, B200, B201, B006, B015, B206, B207]
     file: null
     covers:
       - "litellm/{__init__,main,utils}.py"
       - "litellm/types/{utils,completion,adapter}.py"
-      - "litellm/litellm_core_utils/{api_route_to_call_types,core_helpers}.py"
   - id: B015
     milestone: M1 openai data plane
     title: Text completions and moderations
@@ -2038,7 +2037,7 @@ tasks:
     title: Injected call context and shared settings
     status: todo
     depends_on: [B010, B011, B012]
-    file: null
+    file: tasks/B198-call-context.yaml
     covers:
       - "litellm/{_internal_context,_uuid,_version,constants}.py"
       - "litellm/litellm_core_utils/{asyncify,cached_imports,coroutine_checker,env_utils,thread_pool_executor,aws_partition}.py"
@@ -2098,3 +2097,19 @@ tasks:
     file: tasks/B205-model-metadata-types.yaml
     covers:
       - "model_prices_and_context_window.schema.json"
+  - id: B206
+    milestone: M1 openai data plane
+    title: Common call metadata and response helpers
+    status: todo
+    depends_on: [B198, B175]
+    file: null
+    covers:
+      - "litellm/litellm_core_utils/core_helpers.py"
+  - id: B207
+    milestone: M1 openai data plane
+    title: Route and call-type metadata matching
+    status: todo
+    depends_on: [B198]
+    file: null
+    covers:
+      - "litellm/litellm_core_utils/api_route_to_call_types.py"
