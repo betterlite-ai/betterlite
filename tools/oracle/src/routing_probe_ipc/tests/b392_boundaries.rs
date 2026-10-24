@@ -1,8 +1,7 @@
-use std::fs;
 use std::time::Duration;
 
 use rstest::rstest;
-use tokio::time;
+use tokio::{fs, time};
 
 use super::super::child::run_bounded;
 use super::super::{
@@ -108,5 +107,5 @@ async fn the_child_dies_with_its_probe(
         matches!(&outcome, Ok(Err(OracleError::ProbeTimeout(elapsed))) if *elapsed == deadline);
     assert!(timed_out || (outcome.is_err() && deadline == OPERATION_DEADLINE));
     assert_gone(&read_pid(&pid_path).await).await;
-    fs::remove_file(pid_path).unwrap();
+    fs::remove_file(pid_path).await.unwrap();
 }

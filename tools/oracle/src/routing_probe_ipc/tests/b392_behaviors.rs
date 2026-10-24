@@ -1,6 +1,5 @@
-use std::fs;
-
 use rstest::rstest;
+use tokio::fs;
 
 use super::super::child::run_bounded;
 use super::super::{
@@ -41,11 +40,11 @@ async fn probe_sends_the_request_and_keeps_stderr_apart() {
     let answer = probe(&command, &request(), OPERATION_DEADLINE)
         .await
         .unwrap();
-    assert_eq!(fs::read_to_string(&received).unwrap(), REQUEST);
+    assert_eq!(fs::read_to_string(&received).await.unwrap(), REQUEST);
     assert_eq!(answer.reply, echo_reply());
     assert_eq!(answer.stderr.bytes, b"Selected deployment\n");
     assert!(!answer.stderr.truncated);
-    fs::remove_file(received).unwrap();
+    fs::remove_file(received).await.unwrap();
 }
 
 #[tokio::test]

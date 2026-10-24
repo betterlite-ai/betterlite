@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::{env, fs, process};
 
 use rstest::rstest;
-use tokio::time;
+use tokio::{fs as async_fs, time};
 
 use super::child::ProbeCommand;
 use super::operation::{EchoInput, EchoOutput, ProbeOperation, ProbeOutput};
@@ -67,7 +67,7 @@ fn shell(script: &str, args: &[&str]) -> ProbeCommand {
 
 async fn read_pid(path: &Path) -> String {
     loop {
-        if let Ok(pid) = fs::read_to_string(path)
+        if let Ok(pid) = async_fs::read_to_string(path).await
             && pid.ends_with('\n')
         {
             return pid.trim().to_owned();
@@ -78,7 +78,7 @@ async fn read_pid(path: &Path) -> String {
 
 async fn assert_gone(pid: &str) {
     for _ in 0..200_u32 {
-        match fs::read_to_string(format!("/proc/{pid}/stat")) {
+        match async_fs::read_to_string(format!("/proc/{pid}/stat")).await {
             Err(_) => return,
             Ok(stat) if stat.contains(") Z ") => return,
             Ok(_) => time::sleep(Duration::from_millis(10)).await,
