@@ -1,0 +1,100 @@
+id: B2485
+title: Vector-store HTTP create, retrieve and list
+description: >-
+  Own all six complete create/retrieve/list handlers at llm_http_handler.py:10101-10492 in
+  core::api::vector_store_http_create_read. They use B173 mode-matched clients/pools, B1058 contracts,
+  B527 transforms, B012 logs, B171 path encoding and B2402 _handle_error. Pool ssl_verify defaults null.
+  Header validation precedes overlay of the now-mutated extra_headers. All three accept extra_body but
+  ignore it. Create validates capability before headers/URL, transforms optional params, logs and POSTs
+  JSON; async passes timeout, sync omits it. Retrieve appends one encoded id to the complete base URL,
+  logs and GETs without query/body/timeout. List builds a non-null after/before/limit/order query and GETs
+  without timeout. Retrieve uses the create-response transform; list returns response.json() directly.
+
+  Only HTTP sends enter the shared exception catch; capability checks, header/URL construction, logging
+  and response decoding retain their own errors. Implement VectorStoreCreateReadTransport in B2401 using
+  actual handlers against OpenAI mock config. Native client/capability tests cover execution seams not
+  observable through valid HTTP. These six functions contain 338 nonblank/non-comment lines. Budget 290
+  implementation with shared private preparation, 175 tests, 90 adapters, 120 fixtures and 35 wiring/corpus,
+  710 total under 770. B1131 owns wire decoding; no new parser or route is added.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/vector_store_http_create_read.rs
+  - crates/betterlite-core/src/api/vector_store_http_create_read/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/vector_store_create_read_transport.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/vector_store_create_read_transport.py
+  - tools/oracle/cases/sdk-http/vector-store-create-read-transport/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-create-read-transport-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10101-L10492
+  why: Whole create/read handlers differ in timeout forwarding, response conversion and the query logged for list.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_stores/transformation.py#L130-L163
+  why: OpenAI create explicitly emits null absent fields and cleans metadata; its response converter requires a mapping.
+dod:
+- text: >-
+    create_ignores_extra_body sends optional={name:notes,metadata:{tag:x,count:2}},extra_body={name:override}.
+    POST /v1/vector_stores body is {name:notes,file_ids:null,expires_after:null,chunking_strategy:null,
+    metadata:{tag:x}}. With optional={} all five keys are null. Mock 200 {id:vs_a,object:vector_store}
+    returns that record. Async sends timeout=7 or null; sync has no timeout argument. Native capture
+    proves validate_create_vector_store runs before headers, and a rejection stops before any HTTP.
+  proof: [transport-tests, oracle, python-adapter]
+- text: >-
+    retrieve_encoded_store sends id=vs/a,extra_body={ignored:true},timeout=7. GET
+    /v1/vector_stores/vs%2Fa has no body/query and no timeout argument in either mode. Mock 200
+    {id:vs_a,object:vector_store,name:notes} passes through create-response transformation. Native base
+    /vector_stores?api-version=v1 appends /vs_a literally after the query, preserving the source behavior.
+    B171 rejects invalid ids before logging/sending; no second encoder is introduced.
+  proof: [transport-tests, oracle, python-adapter]
+- text: >-
+    list_nonnull_query sends after="",before=vs_z,limit=0,order=asc and expects GET /v1/vector_stores
+    with all four query fields, including empty after and limit=0. Explicit null fields are omitted.
+    extra_body={limit:99} does nothing. Mock {object:list,data:[],has_more:false} and separately [1,2]
+    are returned as parsed JSON. Malformed JSON fails outside _handle_error. Neither list mode forwards timeout.
+  proof: [transport-tests, oracle, python-adapter]
+- text: >-
+    create_read_header_and_logging supplies provider key sk-p and caller Authorization=caller,
+    Content-Type=text/plain,OpenAI-Beta=assistants=v1,X-Trace=t. Every method sends Bearer sk-p,
+    application/json,assistants=v1,t; absent beta gets assistants=v2. Null/empty headers work. pre_call
+    input="",api_key="" always records api_base/headers; only create adds complete_input_dict and only
+    list adds params. Log before send. Match supplied client mode or select a pool with ssl_verify=null/false.
+  proof: [transport-tests, oracle, python-adapter]
+- text: >-
+    create_read_failures returns HTTP 429 text="slow",Retry-After=3 to each operation. Expect provider
+    error status=429,message=slow,header Retry-After=3 and one send, using B2402 conversion. Header,capability,
+    URL or log failure makes no request and bypasses that converter. A 200 non-mapping create/retrieve
+    response raises the provider response-conversion error at status=200; list does not impose that schema.
+    The new vector_store_create_read_transport inputs have committed SDK corpus seeds.
+  proof: [transport-tests, oracle, python-adapter, sdk-corpus]
+checks:
+  optional: []
+  commands:
+  - id: transport-tests
+    why: create/read transport loses null fields, method-specific timeout or decoding behavior
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_http_create_read::tests::/) - test(/::replays_corpus$/)'
+  - id: python-adapter
+    why: vector-store create/read HTTP has no independent handler execution
+    run: test -f tools/oracle/sdk_http/vector_store_create_read_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: the new create/read transport variant has no case-parser seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-store-create-read-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/sdk-http/vector-store-create-read-transport/create-ignores-extra-body.yaml
+- tools/oracle/cases/sdk-http/vector-store-create-read-transport/retrieve-encoded-store.yaml
+- tools/oracle/cases/sdk-http/vector-store-create-read-transport/list-nonnull-query.yaml
+- tools/oracle/cases/sdk-http/vector-store-create-read-transport/create-read-header-and-logging.yaml
+- tools/oracle/cases/sdk-http/vector-store-create-read-transport/create-read-failures.yaml
+deviations: []
+out_of_scope:
+- B1064 owns create SDK wrappers, B1065 read SDK wrappers and B527 provider transforms. B2402 owns update/delete transport and _handle_error.
+- B2484 owns search execution; B2480-B2482 own attached-file transport. Other llm_http_handler.py endpoint families remain with their respective API tasks.
+pitfalls:
+- extra_body never overrides create fields in these handlers, despite appearing in every public signature.
+- Retrieve reuses the create response converter, but list directly returns parsed JSON without that converter.
+- Only async create supplies timeout; every read and sync create uses its selected client's timeout.
+review_level: security
+budget:
+  max_changed_lines: 770
+  max_new_expects: 0

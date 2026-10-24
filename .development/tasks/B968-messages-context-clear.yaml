@@ -1,183 +1,128 @@
 id: B968
-title: Messages context clear
+title: Clear tool results and carry context-management outcomes
 description: >-
-  Implement typed context-management edits, ordered editor dispatch and clear_tool_uses_20250919. Export EditOutcome
-  containing transformed messages, applied edits and diagnostics; the compact editor is injected as the separate
-  messages-compaction service, with no recursive crate dependency. Keep default input token trigger 100000, keep=3
-  tool uses, and placeholder [Cleared by context management].
+  Implement clear_tool_uses_20250919, its counting/trigger/keep/result helpers, cleared-content placeholders,
+  AnthropicContextManagementError, PolyfillResult and the context constants in betterlite-core::api::messages_context_clear.
+  The dispatcher moves whole to B972 because it calls the compaction implementation that consumes these result types.
+  B013 supplies token counting and B958 the wire records. The clear editor never invokes a provider.
 
+  Count tool_use blocks with string ids chronologically, including duplicates and empty strings. Clearing replaces
+  only matching tool_result.content and never edits tool inputs. Always protect the latest completed tool-result id,
+  even with keep=0. Preserve input messages, copy only changed records and report the number of result blocks
+  actually replaced, which can differ from the number of ids selected. The system argument is accepted but is
+  never included in token counts by this editor.
 
-  Implement crates/betterlite-core/src/api/messages_context_clear.rs. Use MessagesContextClearInput and MessagesContextClearResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions clear_trigger_input_tokens, keep_recent_tool_uses, exclude_last_completed_tool,
-  unknown_edit_warning, applied_edit_response under api::messages_context_clear::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesContextClear in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_context_clear: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/context_management/dispatcher.py: _edits_from (L29-L33);
-  litellm/llms/anthropic/pass_through/context_management/dispatcher.py: _normalize_spec (L36-L46); litellm/llms/anthropic/pass_through/context_management/dispatcher.py:
-  _wrap_editor_return (L49-L69); litellm/llms/anthropic/pass_through/context_management/dispatcher.py: apply_context_management
-  (L72-L151); litellm/llms/anthropic/pass_through/context_management/editors/clear_tool_uses.py: _count_tool_uses
-  (L30-L45); litellm/llms/anthropic/pass_through/context_management/editors/clear_tool_uses.py: _collect_tool_use_ids_in_order
-  (L48-L59); litellm/llms/anthropic/pass_through/context_management/editors/clear_tool_uses.py: _trigger_met (L62-L86);
-  litellm/llms/anthropic/pass_through/context_management/editors/clear_tool_uses.py: _resolve_keep_count (L89-L96);
-  litellm/llms/anthropic/pass_through/context_management/editors/clear_tool_uses.py: _last_completed_tool_use_id
-  (L99-L112); litellm/llms/anthropic/pass_through/context_management/editors/clear_tool_uses.py: _clear_tool_results
-  (L115-L150); litellm/llms/anthropic/pass_through/context_management/editors/clear_tool_uses.py: apply_clear_tool_uses_20250919
-  (L153-L213); litellm/llms/anthropic/pass_through/context_management/errors.py: AnthropicContextManagementError.__init__
-  (L11-L14); litellm/llms/anthropic/pass_through/context_management/placeholders.py: build_cleared_tool_result_content
-  (L8-L14); litellm/llms/anthropic/pass_through/context_management/result.py: PolyfillResult.applied_edits_for_response
-  (L28-L49). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 333 owned nonblank/non-comment/non-docstring Python lines (383 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 353 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 603 total within the 610-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B958 (Messages errors), B1087 (Api
-  boundaries). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids
-  retain ownership on the provider and keys/data branches.
+  Add HelperCall::MessagesContextClear with editor, visible_edits and constants actions. Use a scripted B013
+  token-counter seam on both sides to prove strict thresholds and call ordering independently of tokenizers;
+  include one real token-counter parity fixture. All input is parsed, so no new fuzz decoder belongs here.
+  Own 250 nonblank/non-comment lines in the linked implementation ranges without dispatcher.py. Allow 230 implementation, 150 tests, 145 fixtures,
+  90 adapters and 35 wiring, 650 total.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_context_clear.rs
   - crates/betterlite-core/src/api/messages_context_clear/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/messages_context_clear.rs
-  - tools/oracle/src/helpers/messages_context_clear/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/messages_context_clear.py
-  - tools/oracle/helpers/messages_context_clear/**
   - tools/oracle/fuzz/corpus/helper_case/messages_context_clear-*
   - tools/oracle/cases/helpers/messages-context-clear/**
+  - Cargo.lock
   lint_tables: false
 references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/clear_tool_uses.py#L19-L213
+  why: Own the complete editor and all helper functions, including latest-completed protection and ignored knobs.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/constants.py#L1-L45
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/dispatcher.py#L1-L151
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/clear_tool_uses.py#L1-L213
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/errors.py#L1-L14
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Own shared literal defaults consumed by clear and compaction editors.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/placeholders.py#L1-L14
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Cleared content preserves string-versus-block-list shape only.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/result.py#L1-L49
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: PolyfillResult filters successful no-op compaction edits while retaining errors and warnings.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/errors.py#L1-L14
+  why: The context exception carries only its supplied status and message; the route supplies its envelope.
 dod:
-- text: 'clear trigger input tokens: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-clear-trigger-input-tokens
-  - oracle
-- text: 'keep recent tool uses: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-keep-recent-tool-uses
-  - oracle
-- text: 'exclude last completed tool: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-exclude-last-completed-tool
-  - oracle
-- text: 'unknown edit warning: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-unknown-edit-warning
-  - oracle
-- text: 'applied edit response: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-applied-edit-response
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    clear_trigger_thresholds omits trigger or gives {} and counts tokens against 100000; 100000 does not trigger,
+    100001 does. Unknown trigger.type also uses input-token counting. Noninteger token value falls back to 100000.
+    trigger={type:tool_uses,value:3} counts four string-id tool_use blocks and triggers, while three does not;
+    noninteger tool threshold returns false without counting tokens. Boolean thresholds follow Python integer
+    semantics (false=0,true=1). Missing/nonstring tool ids do not count; empty string ids do.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    keep_and_latest_result uses ids a,b,c,d and completed results a,b,c,d. Default keep=3 clears only a; keep=0
+    clears a,b,c while d is protected. Negative/noninteger keep.value or keep.type=input_tokens uses 3; explicit
+    keep.value=true uses 1. At most keep_count tool-use blocks returns no edit. Unmatched result ids are untouched;
+    duplicate matching results each increment cleared_tool_uses. No actual replacements returns the original list
+    and null edit without an after-token count.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    cleared_content_and_usage replaces scalar/null content with "[Cleared by context management]" and any list
+    with [{type:text,text:"[Cleared by context management]"}], retaining other block/message fields and the input
+    history. Script counts before=120,after=80 to obtain cleared_input_tokens=40; after=130 floors it at 0.
+    Input-token triggers reuse the original count; tool-use triggers count before only after a replacement succeeds.
+    All counts receive model/messages/tools, never system. Result type is clear_tool_uses_20250919.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    ignored_clear_knobs supplies clear_at_least=null,exclude_tools=[lookup],clear_tool_inputs=false and emits
+    one warning for each present key in that exact order even when no trigger fires. When clearing succeeds,
+    applied.warnings=[clear_at_least_ignored,exclude_tools_ignored,clear_tool_inputs_ignored]; the excluded lookup
+    still clears and tool_use.input stays intact. With no applied edit, only diagnostics expose the ignored knobs.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    visible_polyfill_edits defaults applied_edits=[],compaction_block=null,iterations_usage=null. A compact_20260112
+    edit without block/error/warnings is omitted; truthy error or warnings keeps it, and any non-null compaction
+    block keeps all compact edits. Other edit types always remain, including empty dict. No visible edits returns
+    null. AnthropicContextManagementError(status_code=403,message=denied) retains 403/denied and lacks type/param/code.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    context_constant_values asserts clear_tool_uses_20250919,100000,3 and the cleared placeholder, plus
+    compact_20260112,150000,50000,4096,60.0,context_management_summary_max_tokens,context_management_summary_model
+    and "Previous conversation summary: ". The default instructions concatenate exactly "You have written a partial
+    transcript for the initial task above. Please write a summary of the transcript. The purpose of this summary is
+    to provide continuity so you can continue to make progress towards solving the task in a future context, where
+    the raw history above may not be accessible and will be replaced with this summary. Write down anything that
+    would be helpful, including the state, next steps, learnings etc. You must wrap your summary in a <summary></summary>
+    block." The tool suffix is " Do not call any tools while writing this summary; respond with text only.".
+  proof: [behavior-tests, oracle, helper-python]
+- text: New clear-editor fixtures include independent token effects and a parser seed selecting messages_context_clear.
+  proof: [new-cases, helper-corpus, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_context_clear::/)
-      - test(/::replays_corpus$/)'
-  - id: case-clear-trigger-input-tokens
-    why: the clear-trigger-input-tokens behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_context_clear::tests::clear_trigger_input_tokens($|::)/)'
-  - id: case-keep-recent-tool-uses
-    why: the keep-recent-tool-uses behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_context_clear::tests::keep_recent_tool_uses($|::)/)'
-  - id: case-exclude-last-completed-tool
-    why: the exclude-last-completed-tool behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_context_clear::tests::exclude_last_completed_tool($|::)/)'
-  - id: case-unknown-edit-warning
-    why: the unknown-edit-warning behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_context_clear::tests::unknown_edit_warning($|::)/)'
-  - id: case-applied-edit-response
-    why: the applied-edit-response behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_context_clear::tests::applied_edit_response($|::)/)'
+    why: context clearing, trigger edges or result visibility is not covered beside production code
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_context_clear::/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_context_clear.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: clear-editor comparison lacks the pinned independent implementation
+    run: test -f tools/oracle/helpers/messages_context_clear.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_context_clear-*)"
-      && grep -qE "^[[:space:]]+messages_context_clear:" tools/oracle/fuzz/corpus/helper_case/messages_context_clear-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: the clearing operation cannot be decoded by the oracle
+    run: grep -qE '^[[:space:]]+messages_context_clear:' tools/oracle/fuzz/corpus/helper_case/messages_context_clear-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: no new clearing or result-visibility inputs exist
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-context-clear)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-context-clear/clear-trigger-input-tokens.yaml
-- tools/oracle/cases/helpers/messages-context-clear/keep-recent-tool-uses.yaml
-- tools/oracle/cases/helpers/messages-context-clear/exclude-last-completed-tool.yaml
-- tools/oracle/cases/helpers/messages-context-clear/unknown-edit-warning.yaml
-- tools/oracle/cases/helpers/messages-context-clear/applied-edit-response.yaml
+- tools/oracle/cases/helpers/messages-context-clear/clear-trigger-thresholds.yaml
+- tools/oracle/cases/helpers/messages-context-clear/keep-and-latest-result.yaml
+- tools/oracle/cases/helpers/messages-context-clear/cleared-content-and-usage.yaml
+- tools/oracle/cases/helpers/messages-context-clear/ignored-clear-knobs.yaml
+- tools/oracle/cases/helpers/messages-context-clear/visible-polyfill-edits.yaml
+- tools/oracle/cases/helpers/messages-context-clear/context-constant-values.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B972 owns every function in dispatcher.py; its compaction callee consumes this task's types and cannot be a prerequisite of this leaf.
+- B969/B970/B971 own summary policy and history helpers in editors/compact.py; B972 and its execution part own compaction dispatch/provider I/O.
+- B013 owns token_counter and B081 maps context exceptions to HTTP responses.
 pitfalls:
-- 'dispatcher.py:104 emits the diagnostic "context_management polyfill: unknown edit type ''%s'' — skipping"; retain
-  its level and fallback instead of turning it into a hard error.'
-- 'clear_tool_uses.py:84 emits the diagnostic ''context_management polyfill: current_tokens: %s''; retain its level
-  and fallback instead of turning it into a hard error.'
+- The latest completed result stays even when keep=0, so clearing every historical tool result is incorrect.
+- Ignored-knob warnings are emitted before the trigger check and may be the only observable effect.
+- A compaction edit with no visible effect is hidden, whereas a clear edit is always returned when present.
 review_level: standard
 budget:
-  max_changed_lines: 610
-  max_new_expects: 1
+  max_changed_lines: 680
+  max_new_expects: 0

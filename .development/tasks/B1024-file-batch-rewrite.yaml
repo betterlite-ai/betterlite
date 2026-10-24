@@ -1,163 +1,113 @@
 id: B1024
-title: File batch rewrite
+title: Batch guardrail scan windows and rewrite spools
 description: >-
-  Scan batch input in source-sized bounded windows and spool accepted/replaced rows using the guardrail service.
-  Preserve summary counts, worst failure and nothing-to-submit errors; own temporary files and remove them on failure/cancellation
-  before any upstream upload.
+  Build _scan_window, _spool, _worst, scan_batch_input_file (including drain), _read_spooled and
+  rewrite_batch_input_file in betterlite-core::api::file_batch_rewrite. Each remains wholly owned
+  here and calls B1023 row policy through its typed port. Scan at most 32 rows concurrently, wait
+  for every started row, then decide whether another window can begin. Preserve physical row order
+  in reports even when hooks complete out of order. No file or provider upload is started here.
 
+  Both redaction and rewritten-output spools roll from memory to disk after 1048576 bytes. Store
+  redactions by byte offset/length, not one retained string per row. Rust owns each temporary file
+  and joined hook future through success, failure and cancellation; move blocking disk operations
+  behind the existing bounded runtime I/O port. This is temporary spooling, not an atomic published
+  file transaction, so B192's private JSON writer is not used.
 
-  Implement crates/betterlite-core/src/api/file_batch_rewrite.rs. Use FileBatchRewriteInput and FileBatchRewriteResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  Keep source rewind/close ordering: scanning rewinds input in finally, closes redactions on failure
+  and also when no changes exist, and returns an open redaction spool only when there are changes.
+  Rewriting closes its output on error, always rewinds input, and returns output positioned at 0.
+  The caller owns the scan result's spool after rewriting. All-dropped results are valid scan results
+  with submitted_records=0; B1031 decides whether to call B1023.raise_nothing_to_submit.
 
-
-  Write adjacent tests.rs behavior functions batch_scan_window, rewrite_accepted_rows, nothing_to_submit, spool_failure_cleanup,
-  cancel_removes_spool under api::file_batch_rewrite::tests. Each named function drives production code and asserts
-  its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::FileBatchRewrite in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_batch_rewrite: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/proxy/openai_files_endpoints/batch_guardrails.py: _scan_window (L428-L439); litellm/proxy/openai_files_endpoints/batch_guardrails.py:
-  _spool (L442-L453); litellm/proxy/openai_files_endpoints/batch_guardrails.py: _worst (L456-L459); litellm/proxy/openai_files_endpoints/batch_guardrails.py:
-  scan_batch_input_file (L462-L527); litellm/proxy/openai_files_endpoints/batch_guardrails.py: _read_spooled (L530-L532);
-  litellm/proxy/openai_files_endpoints/batch_guardrails.py: rewrite_batch_input_file (L535-L568). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 107 owned nonblank/non-comment/non-docstring Python lines (125 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 127 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 377 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B192 (Private JSON serialization and
-  atomic files), B1023 (File batch guardrails), B1087 (Api boundaries). These are callable/type/config owners, not
-  provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Tests in api::file_batch_rewrite::tests drive real temporary buffers and an injected hook barrier.
+  Only _worst has a B171 helper case (file_batch_rewrite operation); runtime scheduling and filesystem
+  cleanup are native assertions, never comparisons of two runtimes' timings. Reuse B1023 byte records,
+  so no parser is added. The span is 125 nonblank, non-comment source lines; budget 145 implementation,
+  160 tests, 35 pure fixtures, 65 adapters and 35 wiring lines, 440 total.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_batch_rewrite.rs
   - crates/betterlite-core/src/api/file_batch_rewrite/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/file_batch_rewrite.rs
-  - tools/oracle/src/helpers/file_batch_rewrite/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/file_batch_rewrite.py
-  - tools/oracle/helpers/file_batch_rewrite/**
   - tools/oracle/fuzz/corpus/helper_case/file_batch_rewrite-*
   - tools/oracle/cases/helpers/file-batch-rewrite/**
+  - Cargo.lock
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L428-L568
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Owns complete window, spool, error-priority, scan and rewrite functions with their cleanup paths.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L34-L40
+  why: B1023 declares the fixed 32-record window and 1 MiB rollover values used here.
 dod:
-- text: 'batch scan window: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-batch-scan-window
-  - oracle
-- text: 'rewrite accepted rows: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-rewrite-accepted-rows
-  - oracle
-- text: 'nothing to submit: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-nothing-to-submit
-  - oracle
-- text: 'spool failure cleanup: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-spool-failure-cleanup
-  - oracle
-- text: 'cancel removes spool: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cancel-removes-spool
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    window_failure_barrier supplies 65 valid rows and fails line 2 while other rows in the first
+    window wait on a barrier. Exactly 32 hooks start; all 32 are observed before returning; lines
+    33-65 never start. Without failure windows are 32,32,1 and scanned_records=65. Reversed completion
+    order does not reorder change records. No next window is read ahead while the first is running.
+  proof: [behavior-tests]
+- text: >-
+    worst_problem_priority supplies a shape failure at line 1 and exceptions at lines 5 and 3;
+    _worst returns the exception at line 3. With only failures at 5 and 2 it returns line 2.
+    Content-block RecordDropped outcomes are changes, not problems. Exceptions are rethrown with
+    their original class/status/type/param/code; non-exception scan failures are returned unchanged.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    redaction_spool_offsets appends UTF-8 text é then x and expects offsets 0,2 and lengths 2,1.
+    Reading either span returns exactly its bytes. At 1048576 bytes the spool is in memory and
+    at 1048577 it rolls to disk. Both spool types use this threshold and close owned files on drop.
+  proof: [behavior-tests]
+- text: >-
+    rewrite_preserves_unedited supplies an unchanged CRLF record, a blank line, a dropped row and
+    a redacted row. Output keeps the unchanged row's spaces and trailing CR, drops the blank and
+    blocked rows, inserts one LF separator and appends the stored redaction bytes without a final LF.
+    A source without trailing newline also works; all rows dropped gives empty output. Source and
+    output offsets are both 0 on success.
+  proof: [behavior-tests]
+- text: >-
+    scan_and_spool_cleanup verifies no-change scans close their redaction spool and still report
+    all rows, changed scans return it open, and parse/hook/write failures and cancellation close
+    owned spools and attempt to rewind source to 0. Cancellation propagates through gather to
+    already-started hooks; do not add a successful completion callback. A failing final seek can
+    replace an earlier error, and is not a promise of successful rewind. A rewrite
+    failure closes output but leaves the scan result's redaction ownership with its caller.
+  proof: [behavior-tests]
+- text: Failure priority has a new pure oracle fixture and the file_batch_rewrite helper tag is exercised.
+  proof: [new-cases, helper-corpus, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_batch_rewrite::/) -
-      test(/::replays_corpus$/)'
-  - id: case-batch-scan-window
-    why: the batch-scan-window behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_batch_rewrite::tests::batch_scan_window($|::)/)'
-  - id: case-rewrite-accepted-rows
-    why: the rewrite-accepted-rows behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_batch_rewrite::tests::rewrite_accepted_rows($|::)/)'
-  - id: case-nothing-to-submit
-    why: the nothing-to-submit behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_batch_rewrite::tests::nothing_to_submit($|::)/)'
-  - id: case-spool-failure-cleanup
-    why: the spool-failure-cleanup behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_batch_rewrite::tests::spool_failure_cleanup($|::)/)'
-  - id: case-cancel-removes-spool
-    why: the cancel-removes-spool behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_batch_rewrite::tests::cancel_removes_spool($|::)/)'
+    why: concurrent scan or temporary file lifetime assertions are missing
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_batch_rewrite::/) - test(/::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/file_batch_rewrite.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: the pure error-order adapter is absent or invalid
+    run: test -f tools/oracle/helpers/file_batch_rewrite.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_batch_rewrite-*)"
-      && grep -qE "^[[:space:]]+file_batch_rewrite:" tools/oracle/fuzz/corpus/helper_case/file_batch_rewrite-* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: the error-priority helper has no new seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_batch_rewrite-*)" && grep -qE '^[[:space:]]+file_batch_rewrite:' tools/oracle/fuzz/corpus/helper_case/file_batch_rewrite-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: no pure failure-order comparison was added
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-batch-rewrite)"
 oracle_cases:
-- tools/oracle/cases/helpers/file-batch-rewrite/batch-scan-window.yaml
-- tools/oracle/cases/helpers/file-batch-rewrite/rewrite-accepted-rows.yaml
-- tools/oracle/cases/helpers/file-batch-rewrite/nothing-to-submit.yaml
-- tools/oracle/cases/helpers/file-batch-rewrite/spool-failure-cleanup.yaml
-- tools/oracle/cases/helpers/file-batch-rewrite/cancel-removes-spool.yaml
+- tools/oracle/cases/helpers/file-batch-rewrite/worst-problem-priority.yaml
 deviations: []
 out_of_scope:
-- 'litellm/proxy/openai_files_endpoints/batch_guardrails.py: B1023 owns BatchScanResult.submitted_records L155-L156,
-  BatchScanResult.summary L158-L166, BatchScanResult.report L168-L180, _rejected L189-L190, raise_public L193-L213,
-  raise_nothing_to_submit L216-L220, _is_content_block L223-L243, _naming_guardrail L246-L253, _describe L256-L260,
-  _iter_lines L263-L274, _iter_records L277-L280, _call_type_from_url L283-L302, _call_type_from_body L305-L307,
-  _scannable_call_type L310-L319, _custom_id_of L322-L334, _fingerprint L337-L348, build_scan_metadata L351-L358,
-  _scan_record L361-L425.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1023 owns every earlier class/function in batch_guardrails.py, including line iteration, _scan_record, public errors and report generation.
+- B1031 attaches scan reports and submits files; B1032 compares the resulting HTTP upload behavior.
 pitfalls:
-- Within scan_batch_input_file\'s problems branch, preserve return worst and its nested guards.
-- Within scan_batch_input_file\'s isinstance(worst, BaseException) branch, preserve raise worst and its nested guards.
+- An exception at a later line outranks an earlier shape failure; earliest-line ordering applies only within the winning category.
+- rstrip removes LF only, so an untouched CRLF record keeps CR in the rewritten file.
+- A no-change scan returns a result containing a closed redaction spool; consumers must not read it when changes is empty.
 review_level: security
 budget:
-  max_changed_lines: 400
-  max_new_expects: 1
+  max_changed_lines: 440
+  max_new_expects: 0

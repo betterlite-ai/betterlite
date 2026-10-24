@@ -1,0 +1,82 @@
+id: B2411
+title: Responses input content and instruction conversion
+description: >-
+  Move the six complete content/file/image/instruction methods at transformation.py L1740-L1884
+  from B909 into betterlite-core::api::responses_input_content. They transform already parsed
+  Responses blocks into chat blocks. File URLs become file_id values for downstream providers;
+  this layer does not download, resolve managed IDs or validate the remote destination.
+  Use B004's chat content records and B171's responses_input_content helper operation.
+  Preserve explicit cache_control=null and unknown text-block fallbacks. Count 116 nonblank,
+  non-comment lines; budget 140 implementation, 105 tests, 75 fixtures, 65 adapters and 20 wiring,
+  totaling 405 lines. No external-byte parser is introduced.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/responses_input_content.rs
+  - crates/betterlite-core/src/api/responses_input_content/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/responses_input_content.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/responses_input_content.py
+  - tools/oracle/fuzz/corpus/helper_case/responses_input_content-*
+  - tools/oracle/cases/helpers/responses-input-content/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L1740-L1884
+  why: Own complete file/image mapping, content dispatch, content-type normalization and system-instruction construction.
+dod:
+- text: >-
+    file_blocks maps input_file,file_id=file_a,file_url=https://a.test/f,file_data=data,filename=f,
+    cache_control=null to {type:file,file:{file_id:file_a,file_data:data,filename:f},cache_control:null}.
+    Empty file_id falls back to file_url; absent/falsy fields are omitted, yielding file={}.
+    No HTTP request occurs for a URL. Image blocks map image_url="" and detail="" to
+    {type:image_url,image_url:{url:"",detail:auto}}; supplied URL/detail survive. Content-list
+    conversion copies cache_control onto an image block even when null.
+  proof: [content-tests, oracle, content-adapter]
+- text: >-
+    content_blocks returns null -> "", a string unchanged and a list in original order.
+    String list elements survive; non-string/non-dict elements are dropped. encrypted_content
+    blocks with value=7 become {type:text,text:"7"}, null value drops the block. Other dicts
+    need non-null text; empty text remains, with cache_control retained when present. A top-level
+    integer raises ValueError("Invalid content type: <class 'int'>"); a mapping raises the
+    corresponding literal <class 'dict'> error.
+  proof: [content-tests, oracle, content-adapter]
+- text: >-
+    content_types maps input_text/output_text/tool_result/unknown to text, input_audio to
+    input_audio, and input_image_url/input_document/input_guarded_text/input_video_url/input_file
+    to image_url/document/guarded_text/video_url/file respectively. Already valid text,image_url,
+    input_audio,audio_url,document,guarded_text,video_url,file,thinking,redacted_thinking remain.
+    instructions null or "" becomes {role:system,content:""}; instructions=follow becomes
+    {role:system,content:follow}. The higher-level caller decides whether to add that message.
+  proof: [content-tests, oracle, content-adapter]
+checks:
+  optional: []
+  commands:
+  - id: content-tests
+    why: content block defaults, type mapping or passthrough file fields differ
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_input_content::/)'
+  - id: content-adapter
+    why: content conversion lacks checked pinned helper comparisons
+    run: test -f tools/oracle/helpers/responses_input_content.py && grep -qE '^[[:space:]]+responses_input_content:' tools/oracle/fuzz/corpus/helper_case/responses_input_content-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/responses-input-content/file-blocks.yaml
+- tools/oracle/cases/helpers/responses-input-content/content-blocks.yaml
+- tools/oracle/cases/helpers/responses-input-content/content-types.yaml
+deviations: []
+out_of_scope:
+- B909 retains input-item dispatch, reasoning replay and message-list assembly; B907/B908/B910/B911/B912/B913/B914/B915/B1115 own the remaining transformation.py methods by their references.
+- B183 and provider tasks decide whether a forwarded file URL is downloaded; these helpers only copy its string.
+- _deduplicate_tool_call_output_messages and _ensure_tool_call_output_has_corresponding_tool_call have no caller at the pin.
+pitfalls:
+- input_file.file_url is sent onward as file.file_id, not as a separate file_url property.
+- A cache_control key is copied by membership, so null must not be treated as absence.
+- The encrypted_content block path stringifies its value while ordinary text blocks retain the original non-null value.
+review_level: standard
+budget:
+  max_changed_lines: 405
+  max_new_expects: 1

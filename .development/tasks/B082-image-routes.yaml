@@ -1,311 +1,141 @@
 id: B082
-title: Image routes
+title: Image generation and edit HTTP routes
 description: >-
-  Finish image generation/edit route aliases with B052 auth, typed JSON or multipart extraction, B014 operation
-  variants and provider dispatch. Preserve duplicate image fields and source form conversion; compare outbound multipart
-  fields with B900 and x-litellm-* response headers with B001.
+  Register POST /v1/images/generations,/images/generations,/openai/deployments/{model:path}/images/generations
+  and POST /v1/images/edits,/images/edits,/openai/deployments/{model:path}/images/edits exactly once in
+  betterlite-server::api::image_routes. Own every function in image_endpoints/endpoints.py, including the
+  UploadFile-to-named-buffer helpers; the two package initializers add no executable behavior. No variation
+  route exists. Use B756 authentication, B124 proxy hooks, B1103 authenticated request enrichment, B1102 model
+  precedence/destination checks, B014 routing, B1121/B999 SDK calls and B004 common request/error processing.
 
+  Generation creates a call id from x-litellm-call-id before its try; parsed JSON is merged with that id so a
+  body litellm_call_id cannot override it. Enrich before resolving model, reject URL-valued path models, then
+  apply litellm.model_alias_map after model precedence. A non-None prompt becomes one user message for the
+  pre-call hook, call_type=image_generation. If the resulting messages value is a nonempty list, B218's
+  get_str_from_messages supplies prompt; always remove messages before route_type=aimage_generation.
+  Await dispatch, schedule status=success through an owned task tracker, then run post-call-success and custom
+  response-header hooks. Later callback headers overwrite custom headers. Failure invokes failure-hook then
+  log_llm_api_exception and wraps HTTPException/non-HTTPException through B1103's error payload helpers.
 
-  Register generation/edit under /v1/images/..., /images/... and /openai/deployments/{model:path}/images/... (six
-  total paths), with one HTTP case per alias. Reject a URL-valued deployment model via B1102. No variations route
-  exists at this pin. Supplying image and image[] together (or mask and mask[]) is FastAPI 422 detail; a string
-  image is also 422. Edit prompt defaults to None. Generation copies prompt to messages for guardrails and then
-  copies it back.
+  Edit accepts repeated image,image[],mask,mask[] uploads, rejects mixed spellings before processing, and uses
+  B1100/B1101 body decoding and numeric coercion. Strip bracketed file keys, then replace nonempty file lists
+  with named byte buffers preserving upload order and filename. Plain string image or mask is rejected before
+  the common processor. Absent image and prompt are allowed at this route; missing prompt is set to None.
+  B004 base_process_llm_request receives route_type=aimage_edit and the existing user_* settings; it owns
+  their defaults, header policy and exception handling. Shared config loaders own image_generation_model,
+  completion_model,user_model and model_alias_map; route tests verify their loaded values reach these calls.
 
-
-  Implement crates/betterlite-server/src/api/image_routes.rs, crates/betterlite-core/src/api/image_routes.rs. Use
-  ImageRoutesInput and ImageRoutesResult with typed nested records; inject only the clock, repositories, transports
-  and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce ambient
-  environment or duplicate credential resolution.
-
-
-  Register exactly these routes in this task: POST /v1/images/generations; POST /images/generations; POST /openai/deployments/{model:path}/images/generations;
-  POST /v1/images/edits; POST /images/edits; POST /openai/deployments/{model:path}/images/edits. Each alias is exercised
-  through the booted proxy. Every route factory is mounted once; a family composer mounts its child factories without
-  re-registering their methods/paths.
-
-
-  Route input projections: request.headers.x-litellm-call-id (absent None); data.prompt (absent None); data.messages
-  (absent None); data.model (absent None).
-
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): endpoints.py:266 status_code=422, exception_detail=FastAPI detail string; endpoints.py:268
-  status_code=422, exception_detail=FastAPI detail string; endpoints.py:314 status_code=422, exception_detail=FastAPI
-  detail string; endpoints.py:207 type=openai_error_type(e, error_status_code(e, status.HTTP_400_BAD_REQUEST)),
-  param=openai_error_param(e), code=error_status_code(e, status.HTTP_400_BAD_REQUEST); endpoints.py:216 type=openai_error_type(e,
-  error_status_code(e, 500)), param=openai_error_param(e), openai_code=getattr(e, 'code', None), code=error_status_code(e,
-  500). Compare the actual source status, error type, param and code; ignore only error wording except in message-extraction
-  tests.
-
-
-  Write adjacent tests.rs behavior functions images_generations_route, images_edits_route, image_array_form_fields,
-  missing_prompt_or_image, provider_error_envelope, generation_deployment_alias, generation_short_alias, edit_deployment_alias,
-  edit_short_alias, image_and_array_422, mask_and_array_422, string_image_422, edit_prompt_omitted, generation_guardrail_prompt,
-  route_aliases, auth_missing, auth_invalid under api::image_routes::tests. Each named function drives production
-  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
-  replays_corpus.
-
-
-  The production external-byte decoder is betterlite-server::api::image_routes::decode_image_routes(bytes: &[u8],
-  limits: &ApiLimits), for orjson.loads input body at litellm/proxy/image_endpoints/endpoints.py:107. Place its
-  implementation in crates/betterlite-server/src/api/image_routes.rs and call it from the actual boundary. The cargo-fuzz
-  target crates/betterlite-server/fuzz/fuzz_targets/image_routes.rs passes arbitrary bounded bytes to that exact
-  decoder; api::image_routes::tests::replays_corpus replays newly committed seeds through the same function. Transform-only
-  helpers reuse the already decoded records.
-
-
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
-
-
-  Callable ownership: litellm/proxy/image_endpoints/endpoints.py: uploadfile_to_bytesio (L45-L53); litellm/proxy/image_endpoints/endpoints.py:
-  batch_to_bytesio (L56-L64); litellm/proxy/image_endpoints/endpoints.py: image_generation (L85-L223); litellm/proxy/image_endpoints/endpoints.py:
-  image_edit_api (L242-L353). Abstract/protocol declarations map to native types and synchronous/async wrappers
-  share one implementation; a partial function span is the explicit preparation/transition stage described above,
-  with typed values passed to the following stage.
-
-
-  Sizing: 278 owned nonblank/non-comment/non-docstring Python lines (297 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 298 implementation,
-  142 behavior tests, 204 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds
-  and 38 wiring; 742 total within the 750-line cap. The estimate includes tests and adapters, not just production
-  code.
-
-
-  Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
-  (Direct helper oracle and URL path encoding), B900 (Multipart oracle), B998 (Image generation call), B999 (Image
-  edit call), B1000 (Image variations), B1087 (Api boundaries), B001 (Oracle harness against the pinned LiteLLM),
-  B1100 (Shared request body decoding), B1101 (Shared multipart and form extraction), B1102 (Request model and destination
-  policy), B1103 (Authenticated request preparation), B732 (Typed authentication principals and grant resolution),
-  B855 (Authenticated request admission and budget handoff), B756 (Authentication header selection and mode dispatch),
-  B003 (HTTP server, health routes and master key auth), B1139 (Stateful HTTP oracle scenarios), B856 (Management
-  oracle namespaces and Postgres test fixture). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
+  decode_image_routes(bytes,limits) parses generation JSON as an object at the actual server boundary. Fuzz it
+  with bounded bytes and replay newly added malformed/nonobject/UTF-8 seeds. Edit's multipart decoder remains
+  B1101's. Every parity fixture boots both gateways with master_key=sk-test and mock provider credentials;
+  multipart uses B900 capture, never a direct FastAPI helper adapter. Count 261 nonblank/non-comment lines;
+  budget 250 implementation, 180 tests, 210 HTTP fixtures, 65 fuzz/replay and 45 wiring lines, total 750.
 scope:
   paths:
-  - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/lib.rs
-  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/image_routes.rs
   - crates/betterlite-server/src/api/image_routes/**
-  - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/state.rs
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/image_routes.rs
   - crates/betterlite-core/src/api/image_routes/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
+  - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/dispatch.rs
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/image_routes.rs
   - crates/betterlite-server/fuzz/corpus/image_routes/**
   - tools/oracle/cases/api/image-routes/**
   - tools/oracle/fixtures/image-routes/**
-  - crates/betterlite-core/src/operation.rs
-  - crates/betterlite-core/src/dispatch.rs
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L1-L353
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/__init__.py#L1-L3
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L39-L353
+  why: Own upload conversion and both complete handlers, with decorators naming all six paths.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L32-L63
+  why: B1102 defines different generation/edit model precedence; this route must use the right kind.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+  why: ProxyException emits a string status code and nullable param, not its separately stored openai_code.
 dod:
-- text: 'images generations route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-images-generations-route
-  - oracle
-- text: 'images edits route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-images-edits-route
-  - oracle
-- text: 'image array form fields: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-image-array-form-fields
-  - oracle
-- text: 'missing prompt or image: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-missing-prompt-or-image
-  - oracle
-- text: 'provider error envelope: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-provider-error-envelope
-  - oracle
-- text: 'generation deployment alias: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-generation-deployment-alias
-  - oracle
-- text: 'generation short alias: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-generation-short-alias
-  - oracle
-- text: 'edit deployment alias: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-edit-deployment-alias
-  - oracle
-- text: 'edit short alias: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-edit-short-alias
-  - oracle
-- text: 'image and array 422: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-image-and-array-422
-  - oracle
-- text: 'mask and array 422: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-mask-and-array-422
-  - oracle
-- text: 'string image 422: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-string-image-422
-  - oracle
-- text: 'edit prompt omitted: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-edit-prompt-omitted
-  - oracle
-- text: 'generation guardrail prompt: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-generation-guardrail-prompt
-  - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-route-aliases
-  - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-missing
-  - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-invalid
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    image_route_aliases sends prompt=cat,model=image-model and valid Bearer sk-test to each generation path,
+    including deployment path openai/dall-e-2; all return 200 {created:1,data:[{b64_json:YQ==}]} from one mock
+    generation call. Each edit alias receives a.png=abc,prompt=change,model=image-model and returns that same
+    mock shape after one multipart provider call. Deployment paths accept slash-bearing model names. GET on
+    these POST-only paths yields 405; /v1/images/variations remains 404. No duplicate registration is permitted.
+  proof: [route-tests, oracle]
+- text: >-
+    image_generation_hooks sends prompt=old and a header call id=call_image with body litellm_call_id=forged.
+    Pre-call sees messages=[{role:user,content:old}] and call_image; a hook replacing content with new produces
+    upstream prompt=new and no messages. Absent/null prompt creates no synthetic message. Hook messages=[] or
+    a nonlist leaves the original prompt, then removes messages. Post-success mutation reaches the client;
+    callback header x-test=callback overwrites x-test=custom. A failed post-success hook enters failure processing
+    after status=success was scheduled, preserving the source effect order.
+  proof: [route-tests, oracle]
+- text: >-
+    image_model_precedence loads user_model=cli,path=path,image_generation_model=config,body=body: generation
+    chooses cli, then path with cli unset, then config, then body. An alias maps the selected name after this
+    choice. Edit uses B1102's completion_model first, then cli,path,image_generation_model,body. Each selected
+    mock deployment sees its expected model. A URL-valued path is rejected by B1102 before provider traffic.
+  proof: [route-tests, oracle]
+- text: >-
+    image_edit_form sends image[]=a.png:abc then b.png:def,mask[]=m.png:ghi,n="2" and no prompt. B004 receives
+    ordered named buffers, n=2,prompt=None and no image[]/mask[] keys. Empty upload lists become None; single
+    uploads preserve their filename and bytes. A form without any image reaches the configured model's validation
+    rather than an invented route-level 422. B1120/B512 own provider MIME and first-mask selection.
+  proof: [route-tests, oracle]
+- text: >-
+    edit_upload_rejections supplies both image and image[]: HTTP 422 {detail:"Cannot specify both 'image' and
+    'image[]'"}. Both mask spellings yield 422 {detail:"Cannot specify both 'mask' and 'mask[]'"}. Plain string
+    image or mask yields 422 with detail="'<field>' must be provided as a multipart file upload, not a string."
+    All produce zero upstream requests and no OpenAI error object. Test image collision before mask collision
+    when both occur. FastAPI's upload validation owns strings supplied to declared upload fields.
+  proof: [route-tests, oracle]
+- text: >-
+    image_error_envelopes sends malformed generation JSON and a JSON array: expect HTTP 500,error.type=
+    internal_server_error,param=null,code="500",plus x-litellm-call-id. Inject an HTTPException(403) from the
+    hook: expect 403,permission_error,null,"403"; a regular exception without status gives the 500 tuple.
+    A provider failure carrying status=429,type=rate_limit_error,param=null,code=provider_limit yields
+    429,rate_limit_error,null,"429", never provider_limit. Ignore only /error/message for wording, recording
+    the source message in the fixture. Failure-hook effects precede exception logging.
+  proof: [route-tests, oracle]
+- text: >-
+    image_auth_failures keeps valid image requests and master_key=sk-test but omits auth, then sends
+    Authorization="Bearer sk-wrong" on every alias. B756 returns HTTP 401,error.type=auth_error,param="None",
+    code="401",zero provider calls. Valid auth reaches the mock. These tests do not disable authentication.
+  proof: [route-tests, oracle]
+- text: Generation's production decoder replays malformed/nonobject JSON seeds, and the branch adds all image HTTP scenarios.
+  proof: [parser-corpus, new-cases, oracle]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::image_routes::/)
-      - test(/::replays_corpus$/)'
-  - id: case-images-generations-route
-    why: the images-generations-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::images_generations_route($|::)/)'
-  - id: case-images-edits-route
-    why: the images-edits-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::images_edits_route($|::)/)'
-  - id: case-image-array-form-fields
-    why: the image-array-form-fields behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::image_array_form_fields($|::)/)'
-  - id: case-missing-prompt-or-image
-    why: the missing-prompt-or-image behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::missing_prompt_or_image($|::)/)'
-  - id: case-provider-error-envelope
-    why: the provider-error-envelope behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::provider_error_envelope($|::)/)'
-  - id: case-generation-deployment-alias
-    why: the generation-deployment-alias behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::generation_deployment_alias($|::)/)'
-  - id: case-generation-short-alias
-    why: the generation-short-alias behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::generation_short_alias($|::)/)'
-  - id: case-edit-deployment-alias
-    why: the edit-deployment-alias behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::edit_deployment_alias($|::)/)'
-  - id: case-edit-short-alias
-    why: the edit-short-alias behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::edit_short_alias($|::)/)'
-  - id: case-image-and-array-422
-    why: the image-and-array-422 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::image_and_array_422($|::)/)'
-  - id: case-mask-and-array-422
-    why: the mask-and-array-422 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::mask_and_array_422($|::)/)'
-  - id: case-string-image-422
-    why: the string-image-422 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::string_image_422($|::)/)'
-  - id: case-edit-prompt-omitted
-    why: the edit-prompt-omitted behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::edit_prompt_omitted($|::)/)'
-  - id: case-generation-guardrail-prompt
-    why: the generation-guardrail-prompt behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::generation_guardrail_prompt($|::)/)'
-  - id: case-route-aliases
-    why: the route-aliases behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::route_aliases($|::)/)'
-  - id: case-auth-missing
-    why: the auth-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::auth_missing($|::)/)'
-  - id: case-auth-invalid
-    why: the auth-invalid behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::auth_invalid($|::)/)'
+  - id: route-tests
+    why: All six routes, hook order and upload rejection branches need behavior tests in both scoped crates.
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::image_routes::/) - test(/::replays_corpus$/)'
   - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/image_routes)"
-      && test -f crates/betterlite-server/fuzz/fuzz_targets/image_routes.rs && grep -qF "decode_image_routes" crates/betterlite-server/fuzz/fuzz_targets/image_routes.rs
-      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::replays_corpus$/)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: Generation JSON is a public byte boundary and requires a real decoder fuzz/replay target.
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/image_routes.rs && grep -qF decode_image_routes crates/betterlite-server/fuzz/fuzz_targets/image_routes.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/image_routes)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::image_routes::tests::replays_corpus$/)'
+  - id: new-cases
+    why: Route coverage must come from newly added HTTP cases through both proxies.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/image-routes)"
 oracle_cases:
-- tools/oracle/cases/api/image-routes/images-generations-route.yaml
-- tools/oracle/cases/api/image-routes/images-edits-route.yaml
-- tools/oracle/cases/api/image-routes/image-array-form-fields.yaml
-- tools/oracle/cases/api/image-routes/missing-prompt-or-image.yaml
-- tools/oracle/cases/api/image-routes/provider-error-envelope.yaml
-- tools/oracle/cases/api/image-routes/generation-deployment-alias.yaml
-- tools/oracle/cases/api/image-routes/generation-short-alias.yaml
-- tools/oracle/cases/api/image-routes/edit-deployment-alias.yaml
-- tools/oracle/cases/api/image-routes/edit-short-alias.yaml
-- tools/oracle/cases/api/image-routes/image-and-array-422.yaml
-- tools/oracle/cases/api/image-routes/mask-and-array-422.yaml
-- tools/oracle/cases/api/image-routes/string-image-422.yaml
-- tools/oracle/cases/api/image-routes/edit-prompt-omitted.yaml
-- tools/oracle/cases/api/image-routes/generation-guardrail-prompt.yaml
-- tools/oracle/cases/api/image-routes/route-aliases.yaml
-- tools/oracle/cases/api/image-routes/auth-missing.yaml
-- tools/oracle/cases/api/image-routes/auth-invalid.yaml
+- tools/oracle/cases/api/image-routes/image-route-aliases.yaml
+- tools/oracle/cases/api/image-routes/image-generation-hooks.yaml
+- tools/oracle/cases/api/image-routes/image-model-precedence.yaml
+- tools/oracle/cases/api/image-routes/image-edit-form.yaml
+- tools/oracle/cases/api/image-routes/edit-upload-rejections.yaml
+- tools/oracle/cases/api/image-routes/image-error-envelopes.yaml
+- tools/oracle/cases/api/image-routes/image-auth-failures.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- B004 owns ProxyBaseLLMRequestProcessing, resolve_litellm_call_id and log_llm_api_exception; B1103 owns shared OpenAI error-payload helpers and authenticated request enrichment.
+- B1100/B1101 own multipart/body extraction and numeric coercion; B1102 owns model precedence and reject_url_valued_destination; B218 owns get_str_from_messages.
+- B1121/B998 and B999 own SDK image calls, B124 proxy hook/status services and B756 authentication. No other function in image_endpoints/endpoints.py is left unassigned.
 pitfalls:
-- request.headers reads 'x-litellm-call-id' with default None; omission and an explicit value must not collapse
-  into one case.
-- endpoints.py:266 uses status_code=422, detail="Cannot specify both 'image' and 'image[]'"; preserve this envelope
-  rather than a family-wide error default.
+- Generation merges the trusted call id over the body; reversing the union lets a client forge the logging identifier.
+- Upload conflicts and plain-string failures occur outside the edit processor's try block and retain FastAPI detail bodies.
+- A post-success-hook failure can follow a scheduled success status; the source does not make those effects atomic.
 review_level: security
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 780
   max_new_expects: 0

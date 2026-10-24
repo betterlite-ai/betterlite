@@ -1,209 +1,138 @@
 id: B961
-title: Messages native prepare
+title: Native Messages headers, system placement and retry contract
 description: >-
-  Prepare native Messages URLs, environment headers, supported fields, billing-header stripping and system-role
-  placement through B027/B010. Implement base capability/retry contracts as explicit enums and typed records; use
-  configured credentials and preserve mid-turn system ordering around tool results.
+  Add Messages preparation to the B010 provider contract and implement Anthropic preparation in
+  betterlite-core::api::messages_native_prepare. Own messages/transformation.py L59-L284, the complete
+  mid_conversation_system.py and base_llm/anthropic_messages/transformation.py. Express base defaults as provider
+  enum behavior, not an open implementation registry. B567 supplies resolved credentials, OAuth handling and
+  base URLs; B960 injects beta features, B571 supplies invalid-thinking detection/stripping, B2221 answers
+  supports_mid_conversation_system, and B958 supplies response/error records.
 
+  The native request transform deliberately does not call system normalization: subclasses opt into it.
+  Leading system turns are hoisted; on models without supports_mid_conversation_system, later system turns
+  become user reminders and move after a following tool-result turn. Preserve the top-level system prefix and
+  all earlier conversation content. Only content is carried from converted system messages, never their other fields.
 
-  Implement crates/betterlite-core/src/api/messages_native_prepare.rs, crates/betterlite-provider/src/api/messages_native_prepare.rs.
-  Use MessagesNativePrepareInput and MessagesNativePrepareResult with typed nested records; inject only the clock,
-  repositories, transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087;
-  do not introduce ambient environment or duplicate credential resolution.
-
-
-  Write adjacent tests.rs behavior functions system_role_after_tool_results, billing_system_header, cache_control_scope,
-  native_messages_url, native_retry_contract under api::messages_native_prepare::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesNativePrepare in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_native_prepare: <typed input>};
-  operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service
-  and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig.custom_llm_provider
-  (L59-L60); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig._resolved_provider
-  (L63-L64); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig.get_supported_anthropic_messages_params
-  (L66-L89); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig.should_filter_anthropic_beta_headers
-  (L91-L92); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig._remove_scope_from_cache_control
-  (L94-L122); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig.should_strip_billing_metadata
-  (L124-L131); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig._filter_billing_headers_from_system
-  (L134-L165); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig._normalize_system_role_messages
-  (L167-L230); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig.get_complete_url
-  (L232-L244); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig.validate_anthropic_messages_environment
-  (L246-L284); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.validate_anthropic_messages_environment
-  (L23-L42); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.get_complete_url
-  (L45-L61); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.get_supported_anthropic_messages_params
-  (L64-L65); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.transform_anthropic_messages_request
-  (L68-L76); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.transform_anthropic_messages_response
-  (L79-L85); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.sign_request
-  (L87-L105); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.should_filter_anthropic_beta_headers
-  (L107-L116); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.handles_web_search_natively
-  (L118-L129); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.uses_get_llm_provider_api_base
-  (L131-L132); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.get_async_streaming_response_iterator
-  (L134-L141); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.get_error_class
-  (L143-L148); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.max_retry_on_anthropic_messages_http_error
-  (L151-L157); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.should_retry_anthropic_messages_on_http_error
-  (L159-L168); litellm/llms/base_llm/anthropic_messages/transformation.py: BaseAnthropicMessagesConfig.transform_anthropic_messages_request_on_http_error
-  (L170-L181); litellm/llms/anthropic/pass_through/messages/mid_conversation_system.py: as_system_content_blocks
-  (L8-L15); litellm/llms/anthropic/pass_through/messages/mid_conversation_system.py: is_system_role_message (L18-L19);
-  litellm/llms/anthropic/pass_through/messages/mid_conversation_system.py: system_role_message_as_user (L22-L26);
-  litellm/llms/anthropic/pass_through/messages/mid_conversation_system.py: opens_with_tool_results (L29-L38); litellm/llms/anthropic/pass_through/messages/mid_conversation_system.py:
-  system_run_placed_after_tool_results (L41-L46); litellm/llms/anthropic/pass_through/messages/mid_conversation_system.py:
-  system_turns_after_tool_results (L49-L66); litellm/llms/anthropic/pass_through/messages/mid_conversation_system.py:
-  convert_mid_conversation_system_turns (L69-L75). Abstract/protocol declarations map to native types and synchronous/async
-  wrappers share one implementation; a partial function span is the explicit preparation/transition stage described
-  above, with typed values passed to the following stage.
-
-
-  Sizing: 319 owned nonblank/non-comment/non-docstring Python lines (409 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 339 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 597 total within the 600-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
-  oracle and URL path encoding), B176 (Trusted controls, provider headers and affinity), B958 (Messages errors),
-  B1087 (Api boundaries), B960 (Anthropic beta filter), B570 (Anthropic request headers and model discovery). These
-  are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on
-  the provider and keys/data branches.
+  HelperCall::MessagesNativePrepare compares complete URL/header projections, system transformations and retry
+  decisions against the pinned methods. It never sends HTTP; B1118 tests actual attempts. Inputs are decoded
+  records, so there is no new byte parser. Test both core implementation and provider contract defaults.
+  Count 393 nonblank/non-comment source lines in the owned ranges, including docstrings. Allow 310 implementation,
+  180 tests, 135 fixtures, 95 adapters and 45 contract wiring lines, 765 total.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_native_prepare.rs
   - crates/betterlite-core/src/api/messages_native_prepare/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/api.rs
   - crates/betterlite-provider/src/api/messages_native_prepare.rs
   - crates/betterlite-provider/src/api/messages_native_prepare/**
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/provider.rs
   - crates/betterlite-provider/src/operation.rs
   - crates/betterlite-provider/src/prepared.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/messages_native_prepare.rs
-  - tools/oracle/src/helpers/messages_native_prepare/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/messages_native_prepare.py
-  - tools/oracle/helpers/messages_native_prepare/**
   - tools/oracle/fuzz/corpus/helper_case/messages_native_prepare-*
   - tools/oracle/cases/helpers/messages-native-prepare/**
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L55-L284
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/anthropic_messages/transformation.py#L1-L181
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L59-L284
+  why: Own native capability lists, credential/version defaults, URL suffixing, cache scope removal and system normalization.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/anthropic_messages/transformation.py#L21-L181
+  why: Own the base Messages contract, no-op signing and two-attempt invalid-thinking retry policy.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/mid_conversation_system.py#L1-L75
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Own all helpers that convert system content and keep tool results adjacent to tool calls.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/mid_conversation_system.py#L47-L49
+  why: The converted system turn starts with this exact operator-note text; the chat-template implementation remains B221.
 dod:
-- text: 'system role after tool results: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-system-role-after-tool-results
-  - oracle
-- text: 'billing system header: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-billing-system-header
-  - oracle
-- text: 'cache control scope: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cache-control-scope
-  - oracle
-- text: 'native messages url: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-native-messages-url
-  - oracle
-- text: 'native retry contract: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-native-retry-contract
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    native_supported_fields returns messages,model,system,max_tokens,stop_sequences,temperature,top_p,top_k,tools,
+    tool_choice,thinking,context_management,compaction,output_format,inference_geo,speed,output_config,reasoning_effort,
+    safeguards in that order for anthropic. A subclass provider=bedrock omits only compaction; a null provider
+    resolves to anthropic. metadata and stream are absent. Native beta filtering is false, cross-provider true,
+    and should_strip_billing_metadata is false by default.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    native_url_suffix uses no configured base and gets https://api.anthropic.com/v1/messages. Given
+    https://configured.test it appends /v1/messages; a base already ending /v1/messages stays unchanged;
+    https://configured.test/ becomes https://configured.test//v1/messages. B567's ANTHROPIC_API_BASE beats
+    ANTHROPIC_BASE_URL, and an explicit nonempty base beats both; this helper never consults litellm.api_base.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    environment_header_precedence keeps caller X-API-Key=caller or Authorization=Bearer caller, without adding
+    a second credential. With neither, api_key=sk-test yields x-api-key=sk-test; no key/token raises SDK
+    AuthenticationError status=401, type/param/code absent, with source message naming ANTHROPIC_API_KEY and
+    ANTHROPIC_AUTH_TOKEN. Default anthropic-version=2023-06-01 and content-type=application/json are inserted;
+    lowercase explicit values survive, but mixed-case versions coexist with these lowercase defaults. OAuth
+    sk-ant-oat-test runs B567's projection and adds oauth-2025-04-20 and anthropic-dangerous-direct-browser-access=true.
+    The returned api_base equals the supplied value, including null. Ignore only error message wording for failures.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    billing_and_cache_fields removes a string starting exactly x-anthropic-billing-header: and text blocks with
+    that prefix, returning null if none remain. Leading whitespace, non-text blocks and non-dict list members stay.
+    Cache sanitization removes scope=global only from dict cache_control in top-level system list and message
+    content lists; ttl=1h and type=ephemeral stay. Message-level cache_control and tool cache_control remain intact.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    system_turn_placement sends top-level system=base, leading system content=initial, user=question, assistant
+    tool_use id=t, system content=reminder, user tool_result id=t and user=next. On an older model, top-level system
+    becomes text blocks base,initial; the tool_result precedes a new user turn whose content begins "Operator note
+    (not from the user): the following was originally a mid-conversation system-role reminder." then reminder.
+    With supports_mid_conversation_system=true, the middle system turn stays in place. Missing/non-list messages
+    cause no change; empty/all-system messages, trailing system runs, multiple reminders and a tool_result that
+    is not the first content block test the placement boundaries. Billing text is filtered even when nothing hoists.
+    as_system_content_blocks maps null to [], string x to [{type:text,text:x}], lists to copies and other values
+    to one-element lists. Converted message cache_control is not carried.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    base_retry_defaults keeps headers and returns signed_body=null; base URL null resolves to empty string,
+    handles_web_search_natively=true, uses_get_llm_provider_api_base=false and beta filtering=true. Missing stream
+    implementation raises NotImplementedError "Subclasses must implement this method". Error conversion preserves
+    status=418,message=teapot,headers={retry-after:2}. max_retry_on_anthropic_messages_http_error=2; HTTP 400 with
+    "Invalid signature in thinking block" retries and strips thinking/redacted_thinking history, whereas status=500
+    or a 400 "bad tool" neither retries nor mutates the body. Retry execution stays with B1118.
+  proof: [behavior-tests, oracle, helper-python]
+- text: Preparation fixtures and the messages_native_prepare tag are newly present and run both independent implementations.
+  proof: [new-cases, helper-corpus, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-provider --no-tests=fail -E 'test(/^api::messages_native_prepare::/)
-      - test(/::replays_corpus$/)'
-  - id: case-system-role-after-tool-results
-    why: the system-role-after-tool-results behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_prepare::tests::system_role_after_tool_results($|::)/)'
-  - id: case-billing-system-header
-    why: the billing-system-header behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_prepare::tests::billing_system_header($|::)/)'
-  - id: case-cache-control-scope
-    why: the cache-control-scope behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_prepare::tests::cache_control_scope($|::)/)'
-  - id: case-native-messages-url
-    why: the native-messages-url behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_prepare::tests::native_messages_url($|::)/)'
-  - id: case-native-retry-contract
-    why: the native-retry-contract behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_prepare::tests::native_retry_contract($|::)/)'
+    why: native header rules or provider contract defaults have no behavior tests
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-provider --no-tests=fail -E 'test(/^api::messages_native_prepare::/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_native_prepare.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: preparation comparison does not call the pinned implementation
+    run: test -f tools/oracle/helpers/messages_native_prepare.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_native_prepare-*)"
-      && grep -qE "^[[:space:]]+messages_native_prepare:" tools/oracle/fuzz/corpus/helper_case/messages_native_prepare-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: native preparation has no helper dispatch seed
+    run: grep -qE '^[[:space:]]+messages_native_prepare:' tools/oracle/fuzz/corpus/helper_case/messages_native_prepare-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: there are no new native preparation comparisons
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-native-prepare)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-native-prepare/system-role-after-tool-results.yaml
-- tools/oracle/cases/helpers/messages-native-prepare/billing-system-header.yaml
-- tools/oracle/cases/helpers/messages-native-prepare/cache-control-scope.yaml
-- tools/oracle/cases/helpers/messages-native-prepare/native-messages-url.yaml
-- tools/oracle/cases/helpers/messages-native-prepare/native-retry-contract.yaml
+- tools/oracle/cases/helpers/messages-native-prepare/native-supported-fields.yaml
+- tools/oracle/cases/helpers/messages-native-prepare/native-url-suffix.yaml
+- tools/oracle/cases/helpers/messages-native-prepare/environment-header-precedence.yaml
+- tools/oracle/cases/helpers/messages-native-prepare/billing-and-cache-fields.yaml
+- tools/oracle/cases/helpers/messages-native-prepare/system-turn-placement.yaml
+- tools/oracle/cases/helpers/messages-native-prepare/base-retry-defaults.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/messages/transformation.py: B960 owns _messages_carry_output_config L53-L54,
-  AnthropicMessagesConfig._update_headers_with_anthropic_beta L611-L709.'
-- 'litellm/llms/anthropic/pass_through/messages/transformation.py: B962 owns AnthropicMessagesConfig._translate_reasoning_effort_to_anthropic
-  L287-L345, AnthropicMessagesConfig._translate_adaptive_effort_for_non_adaptive_model L348-L447, AnthropicMessagesConfig._drop_incompatible_temperature_for_thinking
-  L450-L477, AnthropicMessagesConfig.transform_anthropic_messages_request L479-L570, AnthropicMessagesConfig.transform_anthropic_messages_response
-  L572-L585, AnthropicMessagesConfig.get_async_streaming_response_iterator L587-L608.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B960 owns _messages_carry_output_config and _update_headers_with_anthropic_beta in messages/transformation.py.
+- B2430 owns thinking mapping and request transformation L287-L570; B962 owns response transformation and the stream factory L572-L608.
+- B567 owns OAuth, key/token and base environment resolution; B571 owns invalid-thinking recognition and history stripping.
+- B982 owns native call dispatch and status handling; B009 owns HTTP attempts. This task supplies the signing contract, not transport execution.
 pitfalls:
-- AnthropicMessagesConfig._remove_scope_from_cache_control uses cache_control.pop('scope', None); retain its missing-value
-  behavior and field spelling in the typed projection.
-- Within AnthropicMessagesConfig._filter_billing_headers_from_system\'s isinstance(system_param, str) branch, preserve
-  return system_param and its nested guards.
+- Authentication header detection ignores case, but anthropic-version and content-type default insertion does not.
+- First-party Anthropic forwards system-role messages unchanged unless a subclass explicitly invokes normalization.
+- Moving a converted reminder before a tool_result makes an otherwise valid tool exchange invalid upstream.
 review_level: security
 budget:
-  max_changed_lines: 600
-  max_new_expects: 1
+  max_changed_lines: 780
+  max_new_expects: 0

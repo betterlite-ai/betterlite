@@ -1,208 +1,101 @@
 id: B1130
-title: Assistant list and delete calls
+title: Assistant list and delete SDK calls
 description: >-
-  Implement native assistant listing/deletion with configured credentials and source pagination/deletion shapes;
-  assistant creation stays in B1055.
+  Implement whole get/aget_assistants and delete/adelete_assistant in core::api::assistant_read_delete.
+  Use B519 OpenAI and B686 Azure operations, B174 provider resolution, B176 controls and B010 GenericLiteLLMParams,
+  B011 async exception mapping and B2487 settings. B2401 AssistantReadDelete compares actual SDK HTTP.
+  Provider is required, delete also needs assistant_id; client/api_key/api_base/api_version are nullable.
+  Getter flags default null; list rejects a nonboolean with Exception and delete with ValueError.
+  Share settings projection with creation but preserve list's different Azure client handling.
 
-
-  Implement crates/betterlite-core/src/api/assistant_read_delete.rs. Use AssistantReadDeleteInput and AssistantReadDeleteResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions assistant_list_page, assistant_delete under api::assistant_read_delete::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.api_base
-  defaults to None; env.OPENAI_BASE_URL defaults to unset (None); env.OPENAI_API_BASE defaults to unset (None);
-  litellm_settings.organization defaults to None; env.OPENAI_ORGANIZATION defaults to None; litellm_settings.api_key
-  defaults to None; litellm_settings.openai_key defaults to None; env.OPENAI_API_KEY defaults to unset (None); env.AZURE_API_BASE
-  defaults to unset (None); litellm_settings.api_version defaults to None; env.AZURE_API_VERSION defaults to unset
-  (None); litellm_settings.azure_key defaults to None; env.AZURE_OPENAI_API_KEY defaults to unset (None); env.AZURE_API_KEY
-  defaults to unset (None); env.AZURE_AD_TOKEN defaults to unset (None). No environment reads occur outside betterlite-config.
-  Test api::assistant_read_delete::tests::loads_settings uses the production Config loader and an injected environment
-  map, with a named rstest case for every key above, explicit override, unset/default and invalid-value/fallback
-  behavior. Keys must be accepted, applied and absent from the unsupported-key report; a grep is not proof of support.
-  Add new config_yaml seeds for these keys and replay B002's existing decoder rather than introducing a second YAML
-  parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::AssistantReadDelete in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {assistant_read_delete: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/assistants/main.py: aget_assistants (L38-L70); litellm/assistants/main.py: get_assistants
-  (L73-L190); litellm/assistants/main.py: adelete_assistant (L374-L407); litellm/assistants/main.py: delete_assistant
-  (L410-L520). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 255 owned nonblank/non-comment/non-docstring Python lines (255 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 275 implementation,
-  52 behavior tests, 24 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 75 config tests/seeds and
-  30 wiring; 546 total within the 550-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B011 (Exception
-  types and provider error mapping), B519 (OpenAI assistant definitions), B171 (Direct helper oracle and URL path
-  encoding), B1087 (Api boundaries), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config
-  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
-  branches.
+  The four complete functions own 255 nonblank/non-comment lines at 38-190 and 374-520. Allocate 205
+  implementation, 165 tests, 85 adapters, 140 fixtures and 40 corpus/wiring, 635 total. B2487 owns the
+  listed credential/env chains and loader tests; B519 owns assistant wire decoding. Extend SDK case
+  corpus only. No helper adapter, route registration or new outside-byte parser belongs here.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/assistant_read_delete.rs
   - crates/betterlite-core/src/api/assistant_read_delete/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/assistant_read_delete.rs
-  - crates/betterlite-config/src/api/assistant_read_delete/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/assistant-read-delete-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/assistant_read_delete.rs
-  - tools/oracle/src/helpers/assistant_read_delete/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/assistant_read_delete.py
-  - tools/oracle/helpers/assistant_read_delete/**
-  - tools/oracle/fuzz/corpus/helper_case/assistant_read_delete-*
-  - tools/oracle/cases/helpers/assistant-read-delete/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/assistant_read_delete.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/assistant_read_delete.py
+  - tools/oracle/cases/sdk-http/assistant-read-delete/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/assistant-read-delete-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L592-L592
-  why: Setting litellm_settings.api_base and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L448-L448
-  why: Setting env.OPENAI_BASE_URL and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L449-L449
-  why: Setting env.OPENAI_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L595-L595
-  why: Setting litellm_settings.organization and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L453-L453
-  why: Setting env.OPENAI_ORGANIZATION and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L276-L276
-  why: Setting litellm_settings.api_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L277-L277
-  why: Setting litellm_settings.openai_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L456-L456
-  why: Setting env.OPENAI_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L469-L469
-  why: Setting env.AZURE_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L594-L594
-  why: Setting litellm_settings.api_version and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L471-L471
-  why: Setting env.AZURE_API_VERSION and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L283-L283
-  why: Setting litellm_settings.azure_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L477-L477
-  why: Setting env.AZURE_OPENAI_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L478-L478
-  why: Setting env.AZURE_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L486-L486
-  why: Setting env.AZURE_AD_TOKEN and its pinned default/precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L38-L190
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: List's full wrappers validate aget_assistants, omit pagination forwarding and retain a supplied Azure client.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L374-L520
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Delete validates its own async flag, drops OpenAI-instance clients on Azure and treats a null response as an internal error.
 dod:
-- text: 'assistant list page: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-assistant-list-page
-  - oracle
-- text: 'assistant delete: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-assistant-delete
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    assistant_list_discards_sdk_pagination supplies after=asst_a,before=asst_z,limit=3,order=asc to both
+    SDK modes; none is passed to B519, whose defaults send GET /v1/assistants?order=desc&limit=20. Return
+    mock {object:list,data:[<asst_b>],has_more:true,first_id:asst_b,last_id:asst_b} unchanged. Both OpenAI
+    and Azure use their provider beta header. No assistant records are synthesized or recursively altered.
+  proof: [read-delete-tests, oracle, python-adapter]
+- text: >-
+    delete_assistant_identifier sends asst_a in both modes and observes DELETE /v1/assistants/asst_a,
+    response {id:asst_a,object:assistant.deleted,deleted:true}. B519 handles id encoding; wrapper does not
+    parse a managed id. Native supplied-client capture proves Azure delete discards isinstance(OpenAI)
+    clients (including AzureOpenAI), whereas Azure list keeps them. Async clients are not discarded by
+    that sync-class check. Both wrappers preserve copied context and await only coroutine results.
+  proof: [read-delete-tests, oracle, python-adapter]
+- text: >-
+    assistant_read_credentials enumerates B2487 precedence with request/global/env keys and bases:
+    OpenAI request then litellm.api_base then OPENAI_BASE_URL then OPENAI_API_BASE then https://api.openai.com/v1;
+    key request then litellm.api_key then litellm.openai_key then OPENAI_API_KEY; organization request then
+    litellm.organization then OPENAI_ORGANIZATION. Azure base/version request then global then AZURE_API_BASE/
+    AZURE_API_VERSION, key request then global api_key then azure_key then AZURE_OPENAI_API_KEY then AZURE_API_KEY.
+    Distinct sentinels and empty-string fallthrough prove each winner in upstream URL/auth/header. Default
+    timeout is 600, timeout=0/request_timeout=8 selects 8, "7.5" converts, structured timeout is retained.
+  proof: [read-delete-tests, oracle, python-adapter]
+- text: >-
+    assistant_read_azure_extra_body sets AZURE_AD_TOKEN=env-token: omitted/{} extra_body gives no token,
+    explicit null uses env-token, {azure_ad_token:body-token} uses and removes body-token from that map.
+    Native calls retain B176 litellm_params and max_retries. Both providers forward client in list; only
+    delete applies the Azure discard rule. Extra query/body pagination does not alter the list URL.
+  proof: [read-delete-tests, oracle, python-adapter]
+- text: >-
+    assistant_read_flags_and_failures sends 1/"true" for aget_assistants and gets Exception
+    "Invalid value passed in for aget_assistants. Only bool or None allowed"; async_delete_assistants gets
+    ValueError with its corresponding flag name. null,false,true are legal. Unsupported anthropic yields
+    BadRequestError,400,type/param/code=null and source "LiteLLM doesn't support anthropic for 'get_assistants'. Only 'openai' is supported."
+    or the delete_assistant variant. Null list provider result repeats the get_assistants BadRequestError;
+    null delete result is InternalServerError,500,type=internal_server_error,param/code=null,message="No response returned from 'delete_assistant'".
+    Mock 404 body {error:{message:missing,type:invalid_request_error,param:assistant_id,code:missing}}
+    stays NotFoundError,404 with those body fields in sync; async maps through B011 with empty model and
+    completion_kwargs={}, yielding null type/param/code. Capture before asserting; never apply a proxy envelope.
+  proof: [read-delete-tests, oracle, python-adapter, sdk-corpus]
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::assistant_read_delete::/)
-      - test(/::replays_corpus$/)'
-  - id: case-assistant-list-page
-    why: the assistant-list-page behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_read_delete::tests::assistant_list_page($|::)/)'
-  - id: case-assistant-delete
-    why: the assistant-delete behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_read_delete::tests::assistant_delete($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::assistant_read_delete::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/assistant-read-delete-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/assistant_read_delete.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/assistant_read_delete-*)"
-      && grep -qE "^[[:space:]]+assistant_read_delete:" tools/oracle/fuzz/corpus/helper_case/assistant_read_delete-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/assistant-read-delete)"
+  - id: read-delete-tests
+    why: assistant read/delete wrappers lose pagination omission, client selection or error distinctions
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_read_delete::tests::/) - test(/::replays_corpus$/)'
+  - id: python-adapter
+    why: assistant list/delete has no independent SDK HTTP comparison
+    run: test -f tools/oracle/sdk_http/assistant_read_delete.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: no new list/delete case exercises the SDK operation decoder
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/assistant-read-delete-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/assistant-read-delete/assistant-list-page.yaml
-- tools/oracle/cases/helpers/assistant-read-delete/assistant-delete.yaml
+- tools/oracle/cases/sdk-http/assistant-read-delete/assistant-list-discards-sdk-pagination.yaml
+- tools/oracle/cases/sdk-http/assistant-read-delete/delete-assistant-identifier.yaml
+- tools/oracle/cases/sdk-http/assistant-read-delete/assistant-read-credentials.yaml
+- tools/oracle/cases/sdk-http/assistant-read-delete/assistant-read-azure-extra-body.yaml
+- tools/oracle/cases/sdk-http/assistant-read-delete/assistant-read-flags-and-failures.yaml
 deviations: []
 out_of_scope:
-- 'litellm/assistants/main.py: B1055 owns acreate_assistants L193-L227, create_assistants L230-L371.'
-- 'litellm/assistants/main.py: B1056 owns acreate_thread L526-L554, create_thread L557-L690, aget_thread L693-L726,
-  get_thread L729-L835.'
-- 'litellm/assistants/main.py: B1057 owns a_add_message L841-L889, add_message L892-L1011, aget_messages L1014-L1054,
-  get_messages L1057-L1161.'
-- 'litellm/assistants/main.py: B089 owns arun_thread_stream L1165-L1171, arun_thread L1174-L1228, run_thread_stream
-  L1231-L1236, run_thread L1239-L1365.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1055 owns assistant creation; B1056 threads; B1057 messages; B089 and its SDK split runs. B1085 owns HTTP aliases.
+- B2487 owns resource settings and finite-timeout deviation; B519/B686 implement provider methods and beta headers.
 pitfalls:
-- Within get_assistants\'s aget_assistants is not None and (not isinstance(aget_assistants, bool)) branch, preserve
-  raise Exception('Invalid value passed in for aget_assistants. Only bool or None allowed') and its nested guards.
-- get_assistants uses kwargs.pop('aget_assistants', None); retain its missing-value behavior and field spelling
-  in the typed projection.
+- SDK list pagination kwargs are accepted but never forwarded to the provider method.
+- List and delete use different exception classes for invalid async flags.
+- A null list result is a bad request, while a null delete result is an internal server error.
 review_level: security
 budget:
-  max_changed_lines: 550
-  max_new_expects: 1
+  max_changed_lines: 720
+  max_new_expects: 0

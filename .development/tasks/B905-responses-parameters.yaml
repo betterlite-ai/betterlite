@@ -1,84 +1,34 @@
 id: B905
-title: Responses parameters
+title: Responses parameters and prompt merging
 description: >-
-  Add Responses parameter projection and prompt-managed input shaping using B175 ParameterMapping, B213 dot paths
-  and B668 add_openai_metadata projection. Inputs include allowed_openai_params, drop_params, additional_drop_params,
-  stream_options, text_format, metadata, previous_response_id and forwarded MCP headers; distinguish omitted values
-  from explicit false and preserve dropped-field diagnostics.
+  Implement responses_parameters in betterlite-core for requested-parameter extraction,
+  provider mapping, prompt-managed inputs and forwarded/MCP header merging. Own the complete
+  functions in utils.py L34-L36,L44-L307,L1035-L1137. Move _output_token_detail L39-L41 to
+  its only consumer B906. Reuse B175 preprocessing/allowed overrides, B213 nested deletion,
+  B668 metadata conversion, B206 flag normalization and B2202 text-format conversion.
+  Provider capabilities come from B1114. B137 supplies MCP header parsing; this task merges
+  its results and does not reimplement OAuth or secret-name lookup.
 
+  Load litellm_settings.drop_params through betterlite-config, initialized from
+  LITELLM_DROP_PARAMS (unset/blank=false). A provided YAML value overrides that initial flag.
+  Environment invalid nonempty strings warn and become true; invalid YAML flags warn and
+  become false. Request drop_params=true combines with the resolved global by OR, so false
+  cannot disable global dropping. Config tests load these values through the production loader.
 
-  Implement crates/betterlite-core/src/api/responses_parameters.rs. Use ResponsesParametersInput and ResponsesParametersResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions drop_unsupported_param, allow_explicit_param, stream_options_include_usage,
-  text_format_json_schema, merge_prompt_input, mcp_header_extraction under api::responses_parameters::tests. Each
-  named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.drop_params
-  defaults to false; LITELLM_DROP_PARAMS uses the source flag parser; invalid nonempty env values warn and enable;
-  env.LITELLM_DROP_PARAMS defaults to false; empty is false, recognized boolean strings use normalize_drop_params;
-  invalid nonempty values warn and enable. No environment reads occur outside betterlite-config. Test api::responses_parameters::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponsesParameters in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_parameters: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/responses/utils.py: _apply_nested_drop_params (L34-L36); litellm/responses/utils.py:
-  _output_token_detail (L39-L41); litellm/responses/utils.py: _is_object_sequence (L44-L45); litellm/responses/utils.py:
-  _is_object_dict (L48-L51); litellm/responses/utils.py: normalize_responses_api_stream_options (L54-L62); litellm/responses/utils.py:
-  _is_chat_text_part (L65-L66); litellm/responses/utils.py: _as_input_text_part (L69-L72); litellm/responses/utils.py:
-  ResponsesAPIRequestUtils.shape_prompt_managed_message_for_responses (L82-L89); litellm/responses/utils.py: ResponsesAPIRequestUtils.responses_input_to_chat_messages
-  (L92-L99); litellm/responses/utils.py: ResponsesAPIRequestUtils.merge_prompt_management_input (L102-L151); litellm/responses/utils.py:
-  ResponsesAPIRequestUtils.merge_client_forwarded_headers (L154-L173); litellm/responses/utils.py: ResponsesAPIRequestUtils._check_valid_arg
-  (L176-L196); litellm/responses/utils.py: ResponsesAPIRequestUtils.get_optional_params_responses_api (L199-L253);
-  litellm/responses/utils.py: ResponsesAPIRequestUtils.get_requested_response_api_optional_param (L256-L307); litellm/responses/utils.py:
-  ResponsesAPIRequestUtils.convert_text_format_to_text_param (L1036-L1067); litellm/responses/utils.py: ResponsesAPIRequestUtils.extract_mcp_headers_from_request
-  (L1070-L1137). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 271 owned nonblank/non-comment/non-docstring Python lines (306 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 291 implementation,
-  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 36 config tests/seeds and
-  30 wiring; 595 total within the 600-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B175 (Provider parameter capabilities
-  and mapping), B206 (Common call metadata and response helpers), B213 (Bounded dot-path lookup and deletion), B902
-  (Responses shapes), B903 (Response id codecs), B1087 (Api boundaries), B002 (Load LiteLLM config.yaml into typed
-  config). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain
-  ownership on the provider and keys/data branches.
+  The responses_parameters helper uses object-identity-aware input fixtures for prompt merges;
+  copying client_input before the call would miss the pinned identity branches. Record the
+  mutations to passed parameter maps and the two warning messages as well as results. These
+  operations consume parsed records; B002 owns YAML decoding. Count 303 nonblank/non-comment
+  lines after moving the three-line token helper. Budget 290 implementation, 215 tests, 120
+  fixtures, 85 adapters, 55 config tests/seeds and 25 wiring: 790 lines.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_parameters.rs
   - crates/betterlite-core/src/api/responses_parameters/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
   - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/responses_parameters.rs
@@ -88,147 +38,106 @@ scope:
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/responses_parameters.rs
-  - tools/oracle/src/helpers/responses_parameters/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/responses_parameters.py
-  - tools/oracle/helpers/responses_parameters/**
   - tools/oracle/fuzz/corpus/helper_case/responses_parameters-*
   - tools/oracle/cases/helpers/responses-parameters/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L249-L249
-  why: Setting litellm_settings.drop_params and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L37-L83
-  why: Setting env.LITELLM_DROP_PARAMS and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L34-L307
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1036-L1137
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L34-L36
+  why: Nested additional_drop_params are applied in caller order through B213.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L44-L307
+  why: Own shape predicates, stream options, prompt merge, forwarded headers and parameter extraction/mapping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1035-L1137
+  why: Text-format flattening and ordered MCP tool-header merging are separate complete methods.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L54-L83
+  why: B206's YAML/environment flag parsers intentionally disagree on invalid values.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6618-L6619
+  why: YAML drop_params uses drop_params_flag after import initializes the environment default.
 dod:
-- text: 'drop unsupported param: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-drop-unsupported-param
-  - oracle
-- text: 'allow explicit param: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-allow-explicit-param
-  - oracle
-- text: 'stream options include usage: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-stream-options-include-usage
-  - oracle
-- text: 'text format json schema: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-text-format-json-schema
-  - oracle
-- text: 'merge prompt input: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-merge-prompt-input
-  - oracle
-- text: 'mcp header extraction: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-mcp-header-extraction
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    unsupported_params supplies provider=openai,model=m,supported=[store],params={foo:1}.
+    With both drop flags false, expect UnsupportedParamsError,status=500,message="openai does
+    not support parameters: {'foo': 1}, for model=m. To drop these, set `litellm.drop_params=True`
+    or for proxy:\n\n`litellm_settings:\n drop_params: true`\n" (literal escapes become newlines),
+    and the SDK exception fields, not a proxy status-string code. supported_params=null skips
+    validation. Either true flag calls the provider mapper with drop_params=true. allowed_openai_params=[foo]
+    admits foo and restores it if the mapper omitted it, but does not overwrite a mapped foo=2
+    or invent an absent allowed field. Restoration pops foo from the non-default map.
+  proof: [parameter-tests, oracle, parameter-adapter]
+- text: >-
+    stream_options retains only include_obfuscation=true/false. {},null,include_usage=true,
+    include_obfuscation=1 and include_obfuscation="true" normalize to null and remove the whole
+    stream_options key. An explicitly allowed stream_options may be restored by the subsequent
+    override step; compare that ordering with the same malformed value allowed and disallowed.
+  proof: [parameter-tests, oracle, parameter-adapter]
+- text: >-
+    requested_params drops null/default fields through B175, preserves explicit store=false,
+    removes additional_drop_params=[reasoning.summary], restores a B903 previous_response_id
+    to resp_a, and converts metadata via B668. Non-dict metadata is removed when conversion
+    returns null. custom_llm_provider,kwargs,additional_drop_params are popped from the caller's
+    map. text_format with {type:json_schema,json_schema:{name:X,schema:{type:object},strict:true}}
+    becomes text={format:{type:json_schema,name:X,schema:{type:object},strict:true}}; existing
+    text={} wins, null conversion returns null, and missing json_schema raises KeyError at this layer.
+  proof: [parameter-tests, oracle, parameter-adapter]
+- text: >-
+    prompt_input maps null to [],"hi" to [{role:user,content:hi}], and list input to dicts
+    containing role only. Non-assistant message content type=text becomes input_text while
+    assistant, non-list content and other block types stay. Corresponding role/id messages
+    replace their original slots without disturbing tool items. If all original message objects
+    survive but new messages are inserted, preserve each original's preceding non-message
+    items and the trailing items. No message slots warns "Prompt management hook returned
+    messages without Responses API input messages; merged messages were ignored" and keeps
+    originals. Replaced messages with changed role/id warn "Prompt management hook replaced
+    Responses API messages; non-message input items were dropped" and return only shaped replacements.
+  proof: [parameter-tests, oracle, parameter-adapter]
+- text: >-
+    forwarded_headers merges client={authorization:old,x-client:yes},extra={Authorization:new}
+    to {x-client:yes,Authorization:new}; null clients return extra unchanged and empty extra
+    copies client. mcp_headers starts raw={x-mcp-auth:legacy,x-mcp-github-authorization:old,
+    Authorization:oauth}; expect auth=legacy,server github.Authorization=old,oauth.Authorization=oauth.
+    A later mcp tool with headers={x-mcp-github-authorization:new,x-custom:v} overwrites that
+    server authorization and raw fields, but does not recompute the legacy/oauth outputs.
+    Empty/non-mcp/non-dict tool headers are ignored; no raw/tools yields four null results.
+    The legacy header warning is B137's; credentials must not enter betterlite diagnostics.
+  proof: [parameter-tests, oracle, parameter-adapter]
+- text: >-
+    loads_drop_params uses env unset,""," false ","0","off" -> false and "true","1","yes" -> true;
+    env="wat" warns "LITELLM_DROP_PARAMS='wat' is not a flag value, treating it as on. Set it
+    to true or false" and enables dropping. YAML drop_params=false overrides env=true; YAML
+    drop_params="wat" warns "litellm_settings.drop_params='wat' is not a flag value, treating
+    it as off" and disables it. The key is absent from unsupported-key errors.
+  proof: [config-tests, oracle, parameter-adapter]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_parameters::/)
-      - test(/::replays_corpus$/)'
-  - id: case-drop-unsupported-param
-    why: the drop-unsupported-param behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_parameters::tests::drop_unsupported_param($|::)/)'
-  - id: case-allow-explicit-param
-    why: the allow-explicit-param behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_parameters::tests::allow_explicit_param($|::)/)'
-  - id: case-stream-options-include-usage
-    why: the stream-options-include-usage behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_parameters::tests::stream_options_include_usage($|::)/)'
-  - id: case-text-format-json-schema
-    why: the text-format-json-schema behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_parameters::tests::text_format_json_schema($|::)/)'
-  - id: case-merge-prompt-input
-    why: the merge-prompt-input behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_parameters::tests::merge_prompt_input($|::)/)'
-  - id: case-mcp-header-extraction
-    why: the mcp-header-extraction behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_parameters::tests::mcp_header_extraction($|::)/)'
+  - id: parameter-tests
+    why: requested options, prompt identity or header precedence changes
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_parameters::/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_parameters::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-parameters-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_parameters.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_parameters-*)"
-      && grep -qE "^[[:space:]]+responses_parameters:" tools/oracle/fuzz/corpus/helper_case/responses_parameters-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-parameters)"
+    why: drop_params is not loaded with the pinned precedence and warning behavior
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_parameters::tests::loads_drop_params($|::)/)'
+  - id: parameter-adapter
+    why: parameter helper cases lack a checked independent implementation
+    run: test -f tools/oracle/helpers/responses_parameters.py && grep -qE '^[[:space:]]+responses_parameters:' tools/oracle/fuzz/corpus/helper_case/responses_parameters-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/responses-parameters/drop-unsupported-param.yaml
-- tools/oracle/cases/helpers/responses-parameters/allow-explicit-param.yaml
-- tools/oracle/cases/helpers/responses-parameters/stream-options-include-usage.yaml
-- tools/oracle/cases/helpers/responses-parameters/text-format-json-schema.yaml
-- tools/oracle/cases/helpers/responses-parameters/merge-prompt-input.yaml
-- tools/oracle/cases/helpers/responses-parameters/mcp-header-extraction.yaml
+- tools/oracle/cases/helpers/responses-parameters/unsupported-params.yaml
+- tools/oracle/cases/helpers/responses-parameters/stream-options.yaml
+- tools/oracle/cases/helpers/responses-parameters/requested-params.yaml
+- tools/oracle/cases/helpers/responses-parameters/prompt-input.yaml
+- tools/oracle/cases/helpers/responses-parameters/forwarded-headers.yaml
+- tools/oracle/cases/helpers/responses-parameters/mcp-headers.yaml
+- tools/oracle/cases/helpers/responses-parameters/drop-flags.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/utils.py: B904 owns ResponsesAPIRequestUtils._update_responses_api_response_id_with_model_id
-  L312-L317, ResponsesAPIRequestUtils._update_responses_api_response_id_with_model_id L321-L326, ResponsesAPIRequestUtils._update_responses_api_response_id_with_model_id
-  L331-L382, ResponsesAPIRequestUtils._update_encrypted_content_item_ids_in_response L467-L523, ResponsesAPIRequestUtils._restore_encrypted_content_item_ids_in_input
-  L526-L556, ResponsesAPIRequestUtils.strip_encrypted_reasoning_from_input L559-L578, ResponsesAPIRequestUtils._without_encrypted_reasoning
-  L581-L595, ResponsesAPIRequestUtils._has_readable_text L598-L608, ResponsesAPIRequestUtils._encode_container_ids_in_annotations
-  L800-L813, ResponsesAPIRequestUtils._encode_container_ids_in_message_content L816-L837, ResponsesAPIRequestUtils._encode_container_id_on_output_item
-  L840-L914, ResponsesAPIRequestUtils._collect_container_ids_from_annotations L917-L924, ResponsesAPIRequestUtils._collect_container_ids_from_message_content
-  L927-L944, ResponsesAPIRequestUtils._collect_container_ids_from_output_item L947-L983, ResponsesAPIRequestUtils.collect_container_ids_from_responses_response
-  L986-L1000, ResponsesAPIRequestUtils._update_container_ids_in_response L1003-L1033.'
-- 'litellm/responses/utils.py: B903 owns ResponsesAPIRequestUtils._build_encrypted_item_id L385-L392, ResponsesAPIRequestUtils._decode_encrypted_item_id
-  L395-L418, ResponsesAPIRequestUtils._wrap_encrypted_content_with_model_id L421-L431, ResponsesAPIRequestUtils._unwrap_encrypted_content_with_model_id
-  L434-L464, ResponsesAPIRequestUtils._build_responses_api_response_id L611-L621, ResponsesAPIRequestUtils._decode_responses_api_response_id
-  L624-L674, ResponsesAPIRequestUtils._is_litellm_encoded_response_id L677-L682, ResponsesAPIRequestUtils.get_model_id_from_response_id
-  L685-L690, ResponsesAPIRequestUtils.decode_previous_response_id_to_original_previous_response_id L693-L710, ResponsesAPIRequestUtils._build_container_id
-  L713-L727, ResponsesAPIRequestUtils._decode_container_id L730-L787.'
-- 'litellm/responses/utils.py: ResponsesAPIRequestUtils.decode_container_id_to_original L790-L797 are out of scope:
-  no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/responses/utils.py: B906 owns ResponseAPILoggingUtils._is_response_api_usage L1142-L1148, ResponseAPILoggingUtils._transform_response_api_usage_to_chat_usage
-  L1151-L1263.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B903 owns ID codecs (unused decode_container_id_to_original has no caller at the pin); B904 owns traversal and B906 owns _output_token_detail plus both usage methods in responses/utils.py.
+- B137 owns MCPRequestHandler's three header extractors and get_mcp_client_side_auth_header_name, including its environment/general_settings precedence.
+- B160's Python facade converts class-valued text_format through the schema bridge; native code consumes B2202's parsed format representation.
 pitfalls:
-- utils.py:148 emits the diagnostic 'Prompt management hook replaced Responses API messages; non-message input items
-  were dropped'; retain its level and fallback instead of turning it into a hard error.
-- utils.py:118 emits the diagnostic 'Prompt management hook returned messages without Responses API input messages;
-  merged messages were ignored'; retain its level and fallback instead of turning it into a hard error.
-review_level: standard
+- include_usage is a chat-stream option; the Responses normalizer recognizes only boolean include_obfuscation.
+- Prompt preservation uses object identity as well as role/id correspondence; equal copies do not exercise the insertion branch.
+- Tool headers merge after OAuth extraction, so adding Authorization to a tool does not change the returned OAuth mapping.
+review_level: security
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 790
   max_new_expects: 1

@@ -1,60 +1,97 @@
 id: B951
 title: Responses mcp followup
 description: >-
-  Build chat and Responses follow-up inputs, tool-execution events and final MCP output composition using responses-mcp-execute
-  results. Respect persistence-disabled history, preserve output order and expose typed pending-followup plans rather
-  than recursively invoking an endpoint.
+  Implement the typed follow-up plan and output composition used after Responses or Chat Completions MCP tool
+  execution. The service must preserve the pinned input order and field names, and must return a pending follow-up
+  call to the consuming Responses dispatcher instead of recursively entering a public endpoint.
 
 
-  Implement crates/betterlite-core/src/api/responses_mcp_followup.rs. Use ResponsesMcpFollowupInput and ResponsesMcpFollowupResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  Implement crates/betterlite-core/src/api/responses_mcp_followup.rs with ResponsesMcpFollowupInput and
+  ResponsesMcpFollowupResult records. Inject the clock/ID source, provider-call seam, event builder, and resolved
+  settings through constructors. No function in this slice reads an environment variable, config key or query
+  parameter, writes a database row, or assigns an HTTP status/type/param/code; provider error fields remain those
+  produced by B932, and route serialization remains with the consuming route task.
 
 
-  Write adjacent tests.rs behavior functions persistence_disabled_history, mcp_output_item_order, followup_tool_results,
-  failure_event_fields, parent_request_tags under api::responses_mcp_followup::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
+  Preserve these exact transformations. Chat follow-up messages deep-copy and convert original_messages first, append
+  the first Choices message only when choices[0] is a Choices with a message, dump it without None fields, and add
+  function.arguments="{}" when a dumped tool call has a function mapping without arguments. Then append one tool
+  message per tool result with role="tool", tool_call_id from get("tool_call_id") (otherwise None), name from
+  get("name") (otherwise None), and content from get("result", "") (otherwise the empty string). A failure while
+  reading or dumping the first choice logs the exception diagnostic "Failed to convert assistant message for MCP
+  flow" and drops only that assistant message; the original messages and tool-result messages still return in order.
 
 
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
+  A Responses follow-up starts with original_input only when it is truthy: a string "hello" becomes
+  {type:"message",role:"user",content:"hello"}, a list is extended item-for-item, and another truthy value is
+  appended unchanged. For each response.output item, model_dump(exclude_none=True) is used for a non-dict model;
+  function_call items use call_id or id, retain only truthy call_id and name, and copy type="function_call", call_id,
+  name and arguments. A reasoning item is retained only when preserve_reasoning=true. A message item contributes its
+  list content item-for-item or contributes its scalar content as one item. The assistant message is omitted when
+  its collected content is empty; unknown item types and function calls missing a truthy call_id or name are ignored.
+  Tool results are then appended as type="function_call_output", call_id=tool_result["tool_call_id"],
+  output=tool_result["result"], in input order; a missing required key raises the same missing-key error rather
+  than silently inventing a value.
 
 
-  Register HelperCall::ResponsesMcpFollowup in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_mcp_followup: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+  Persistence is disabled only when call_params.get("store") is the boolean False (not when the key is absent,
+  None, 0 or the string "false"). The caller passes previous_response_id when persistence is disabled and the
+  prior response id otherwise; this slice makes no persistence write. _make_follow_up_call forwards input, model,
+  tools, previous_response_id and every call parameter to aresponses, preserving provider-returned success or
+  error behavior. Its pending plan must retain tools=None and previous_response_id=None when those values are absent.
 
 
-  Callable ownership: litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat
-  (L975-L1017); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._is_persistence_disabled
-  (L1020-L1022); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._create_follow_up_input
-  (L1025-L1101); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._make_follow_up_call
-  (L1104-L1118); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._create_mcp_streaming_response
-  (L1146-L1188); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._build_request_params
-  (L1191-L1222); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._create_tool_execution_events
-  (L1225-L1272); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._prepare_initial_call_params
-  (L1275-L1288); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._prepare_follow_up_call_params
-  (L1291-L1308); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._add_mcp_output_elements_to_response
-  (L1311-L1357). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
+  Build streaming request parameters in this order: {input, model, tools}; add previous_response_id only when it is
+  not None; overwrite with call_params; then overwrite again with kwargs. The streaming wrapper constructs
+  MCPEnhancedStreamingIterator with base_iterator=None, the supplied discovery events, tool_server_map,
+  mcp_tools_with_litellm_proxy, and user_api_key_auth from kwargs["user_api_key_auth"] or
+  kwargs["litellm_metadata"]["user_api_key_auth"]. An absent metadata mapping uses {}, while a present non-mapping
+  value reaches its .get failure. Initial parameters copy call_params and force stream=false only when
+  should_auto_execute=true. Follow-up parameters copy call_params, set stream to the supplied original boolean, and
+  remove tool_choice whether its old value was "auto", "required", a named tool, None, or absent.
 
 
-  Sizing: 247 owned nonblank/non-comment/non-docstring Python lines (282 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 267 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 517 total within the 520-line cap. The estimate includes tests and adapters, not just production code.
+  For every tool result, find the first tool call with the same tool_call_id. Missing tool_call_id or result uses
+  "unknown" and "" respectively; an explicit null keeps null. A matching falsy name or arguments becomes
+  tool_name="unknown" or tool_arguments="{}". Create MCP call events with base_item_id="mcp_" plus eight
+  hexadecimal ID characters, output_index=0, and sequence_start=len(events)+1. The event builder supplies
+  response.mcp_call.in_progress, response.mcp_call_arguments.delta, response.mcp_call_arguments.done and then
+  response.mcp_call.completed plus response.output_item.done when result is not None; result=None instead ends with
+  response.mcp_call.failed. Preserve result
+  order and the resulting sequence gaps (five events for a non-null result, four for null).
 
 
-  Direct inputs come from B012 (Logging pipeline, callback registry and redaction), B171 (Direct helper oracle and
-  URL path encoding), B902 (Responses shapes), B950 (Responses mcp execute), B1087 (Api boundaries), B932 (Responses
-  create call), B952 (Responses mcp events). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Append two output items to the existing ResponsesAPIResponse.output without reordering existing items. The first
+  has type="mcp_tools_fetched", id beginning "mcp_tools_" and eight hexadecimal ID characters after the prefix,
+  status="completed", role="system", and one OutputText item with type="output_text", annotations=[], and
+  json.dumps(mcp_tools_fetched, indent=2, default=str). The second has type="tool_execution_results", id beginning
+  "tool_results_", status="completed", role="system", annotations=[], and the same OutputText fields with
+  json.dumps(tool_results, indent=2, default=str). The append order is fetched tools, then tool results.
+
+
+  Write tests.rs beside the module under api::responses_mcp_followup::tests. Each named behavior function must call
+  production code and compare the exact typed records, ordered diagnostics and effects: chat_message_defaults,
+  response_input_order, persistence_response_id, request_param_precedence, tool_execution_event_order,
+  call_parameter_streaming, output_element_append_order, assistant_conversion_warning, and provider_call_error.
+  Use rstest cases for falsey/missing values. This slice transforms decoded records and adds no outside-byte parser,
+  so it adds no cargo-fuzz target; replays_corpus is not required.
+
+
+  Register HelperCall::ResponsesMcpFollowup in tools/oracle/src/helpers/mod.rs (and helpers.rs when it owns the
+  re-export) and tools/oracle/helpers/dispatch.py. Each helper fixture uses call:
+  {responses_mcp_followup: <typed input>}; responses_mcp_followup is the Python protocol key, not a fixture tag.
+  The Rust adapter calls this production service and the Python adapter invokes the pinned MIT functions with
+  independently scripted choices, response items, tool results, call params and injected IDs. The provider-call
+  case uses the mock provider seam and compares the exact follow-up request fields plus the returned provider error;
+  it does not compare a fixture with itself. HTTP auth and route response cases remain with the route callers.
+
+
+  The owned ranges contain 247 nonblank, non-comment, non-docstring Python lines (282 nonblank, non-comment
+  physical lines including signatures and docstrings). Estimate 267 implementation lines, 120 behavior-test lines,
+  80 helper fixtures, 90 Rust/Python adapter lines and 30 wiring lines: 587 changed lines, within the 600-line cap.
+  Direct inputs are B012's diagnostic seam, B171's helper oracle, B902's Responses records, B950's typed MCP tool
+  results, B1087's API limits, B932's Responses provider-call seam and B952's MCP event builder. These are callable
+  owners, not umbrella provider dependencies.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -77,38 +114,90 @@ scope:
   - tools/oracle/cases/helpers/responses-mcp-followup/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L975-L1119
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1144-L1357
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L975-L1017
+  why: >-
+    The complete chat projection defines deep-copy conversion, first-choice assistant selection, the missing
+    arguments literal, the warning diagnostic and the role/tool_call_id/name/content fields and order.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1019-L1118
+  why: >-
+    These complete persistence, Responses input, tool-result, previous-response-id and aresponses forwarding
+    branches define falsey handling, omission and the provider-call boundary.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1145-L1188
+  why: >-
+    The complete streaming-wrapper constructor defines the discovery-event, tool-map, auth fallback and request-plan
+    fields passed to the pending iterator.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1190-L1222
+  why: The request dictionary's insertion and overwrite order is observable when core, call and extra values collide.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1224-L1272
+  why: >-
+    The complete event projection defines unknown defaults, first matching call lookup, generated ID format,
+    output_index=0, sequence starts and completed-versus-failed event counts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1274-L1308
+  why: These complete initial and follow-up parameter helpers define stream forcing, restoration and tool_choice removal.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1310-L1357
+  why: >-
+    The complete response mutation defines both output item types, statuses, roles, ID prefixes, JSON indentation,
+    annotations and append order.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L180-L261
+  why: The called MCP event builder supplies the exact event names and completed/failed item fields consumed here.
 dod:
-- text: 'persistence disabled history: the named production behavior test asserts the result and effects described
-    above.'
+- text: >-
+    chat_message_defaults asserts original-message preservation, assistant function.arguments="{}" repair, and
+    tool messages with role="tool", None tool_call_id/name and empty content defaults in their exact append order.
   proof:
-  - case-persistence-disabled-history
+  - case-chat-message-defaults
   - oracle
-- text: 'mcp output item order: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    response_input_order asserts truthy string/list/record input handling, assistant content grouping, function-call
+    call_id-or-id selection, reasoning preservation, ignored incomplete items and ordered function_call_output records.
   proof:
-  - case-mcp-output-item-order
+  - case-response-input-order
   - oracle
-- text: 'followup tool results: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    persistence_response_id asserts that only store=false selects the prior response id, while absent, null, 0 and
+    "false" leave persistence enabled and no repository write is recorded.
   proof:
-  - case-followup-tool-results
+  - case-persistence-response-id
   - oracle
-- text: 'failure event fields: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    request_param_precedence asserts core input/model/tools, conditional previous_response_id, call_params overwrite,
+    kwargs overwrite, and the user_api_key_auth fallback used by the streaming wrapper.
   proof:
-  - case-failure-event-fields
+  - case-request-param-precedence
   - oracle
-- text: 'parent request tags: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    tool_execution_event_order asserts unknown/empty defaults, first matching tool call, output_index=0, mcp_ IDs,
+    five events for a non-null result, four for null, and sequence starts after the prior event count.
   proof:
-  - case-parent-request-tags
+  - case-tool-execution-event-order
   - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+- text: >-
+    call_parameter_streaming asserts initial stream=false for auto execution, follow-up stream restoration for both
+    true and false, and removal of every tool_choice value before the follow-up provider plan.
   proof:
+  - case-call-parameter-streaming
   - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+- text: >-
+    output_element_append_order asserts in-place preservation of existing output followed by completed system
+    mcp_tools_fetched and tool_execution_results items, their ID prefixes, output_text fields, indent=2 JSON and
+    annotations=[] in that order.
+  proof:
+  - case-output-element-append-order
+  - oracle
+- text: >-
+    assistant_conversion_warning asserts a malformed first choice logs the exact exception diagnostic and returns
+    original messages plus tool-result messages without an assistant item.
+  proof:
+  - case-assistant-conversion-warning
+  - oracle
+- text: >-
+    provider_call_error asserts the mock provider receives input, model, tools, previous_response_id and call
+    parameters unchanged, and that the provider error reaches the B932 seam without local status/type/param/code
+    rewriting.
+  proof:
+  - case-provider-call-error
+  - oracle
+- text: The helper adapter, its shared-parser seed and all nine named parity fixtures compare independently scripted Rust and pinned MIT results, including ordered diagnostics and provider-call effects.
   proof:
   - new-oracle-cases
   - oracle
@@ -118,70 +207,75 @@ checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::/)
-      - test(/::replays_corpus$/)'
-  - id: case-persistence-disabled-history
-    why: the persistence-disabled-history behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::persistence_disabled_history($|::)/)'
-  - id: case-mcp-output-item-order
-    why: the mcp-output-item-order behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::mcp_output_item_order($|::)/)'
-  - id: case-followup-tool-results
-    why: the followup-tool-results behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::followup_tool_results($|::)/)'
-  - id: case-failure-event-fields
-    why: the failure-event-fields behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::failure_event_fields($|::)/)'
-  - id: case-parent-request-tags
-    why: the parent-request-tags behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::parent_request_tags($|::)/)'
+    why: The Responses MCP follow-up module or one of its named behavior tests is absent; corpus replay is not a substitute.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::/)'
+  - id: case-chat-message-defaults
+    why: Chat assistant repair or tool-message fallback fields are missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::chat_message_defaults($|::)/)'
+  - id: case-response-input-order
+    why: Responses input omission, grouping or function-call-output order is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::response_input_order($|::)/)'
+  - id: case-persistence-response-id
+    why: store=false identity behavior or the no-write persistence effect is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::persistence_response_id($|::)/)'
+  - id: case-request-param-precedence
+    why: Request parameter insertion and overwrite precedence is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::request_param_precedence($|::)/)'
+  - id: case-tool-execution-event-order
+    why: MCP execution defaults, event counts or sequence order is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::tool_execution_event_order($|::)/)'
+  - id: case-call-parameter-streaming
+    why: Initial/follow-up stream settings or tool_choice removal is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::call_parameter_streaming($|::)/)'
+  - id: case-output-element-append-order
+    why: MCP output item fields, JSON formatting or append order is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::output_element_append_order($|::)/)'
+  - id: case-assistant-conversion-warning
+    why: The assistant conversion warning-and-drop path is missing or becomes an error.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::assistant_conversion_warning($|::)/)'
+  - id: case-provider-call-error
+    why: The follow-up provider request or unchanged provider error fields are missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::provider_call_error($|::)/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_mcp_followup.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The Responses MCP follow-up Python adapter is absent or fails ruff/basedpyright.
+    run: test -f tools/oracle/helpers/responses_mcp_followup.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_mcp_followup-*)"
-      && grep -qE "^[[:space:]]+responses_mcp_followup:" tools/oracle/fuzz/corpus/helper_case/responses_mcp_followup-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    why: The responses_mcp_followup helper tag has no added shared-parser seed or the helper corpus replay fails.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_mcp_followup-*)" && grep -qE '^[[:space:]]+responses_mcp_followup:' tools/oracle/fuzz/corpus/helper_case/responses_mcp_followup-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: No new Responses MCP follow-up parity fixture was added on this branch.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-mcp-followup)"
 oracle_cases:
-- tools/oracle/cases/helpers/responses-mcp-followup/persistence-disabled-history.yaml
-- tools/oracle/cases/helpers/responses-mcp-followup/mcp-output-item-order.yaml
-- tools/oracle/cases/helpers/responses-mcp-followup/followup-tool-results.yaml
-- tools/oracle/cases/helpers/responses-mcp-followup/failure-event-fields.yaml
-- tools/oracle/cases/helpers/responses-mcp-followup/parent-request-tags.yaml
-deviations: []
+- tools/oracle/cases/helpers/responses-mcp-followup/chat-message-defaults.yaml
+- tools/oracle/cases/helpers/responses-mcp-followup/response-input-order.yaml
+- tools/oracle/cases/helpers/responses-mcp-followup/persistence-response-id.yaml
+- tools/oracle/cases/helpers/responses-mcp-followup/request-param-precedence.yaml
+- tools/oracle/cases/helpers/responses-mcp-followup/tool-execution-event-order.yaml
+- tools/oracle/cases/helpers/responses-mcp-followup/call-parameter-streaming.yaml
+- tools/oracle/cases/helpers/responses-mcp-followup/output-element-append-order.yaml
+- tools/oracle/cases/helpers/responses-mcp-followup/assistant-conversion-warning.yaml
+- tools/oracle/cases/helpers/responses-mcp-followup/provider-call-error.yaml
 out_of_scope:
-- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B948 owns _mcp_server_url L66-L70, _names_gateway_explicitly
-  L73-L74, _proxy_path_mcp_name L77-L80, _registered_mcp_servers L83-L88, _registry_serves L91-L97, _toolset_exists
-  L100-L112, _gateway_served_names L115-L121, _served_mcp_path_names L124-L128, LiteLLM_Proxy_MCP_Handler._get_parent_request_tags
-  L139-L150, LiteLLM_Proxy_MCP_Handler._should_use_litellm_mcp_gateway L153-L156, LiteLLM_Proxy_MCP_Handler._parse_mcp_tools
-  L159-L163, LiteLLM_Proxy_MCP_Handler._split_mcp_tools L166-L179, LiteLLM_Proxy_MCP_Handler.routes_through_gateway
-  L182-L188, LiteLLM_Proxy_MCP_Handler._apply_toolset_permissions L191-L232, LiteLLM_Proxy_MCP_Handler._deduplicate_mcp_tools
-  L355-L386, LiteLLM_Proxy_MCP_Handler._filter_mcp_tools_by_allowed_tools L389-L414.'
-- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B949 owns LiteLLM_Proxy_MCP_Handler._get_mcp_tools_from_manager
-  L235-L352, LiteLLM_Proxy_MCP_Handler._process_mcp_tools_to_openai_format L417-L447, LiteLLM_Proxy_MCP_Handler._process_mcp_tools_without_openai_transform
-  L450-L503, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai L507-L510, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai
-  L514-L517, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai L520-L537.'
-- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B950 owns LiteLLM_Proxy_MCP_Handler._should_auto_execute_tools
-  L540-L563, LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_response L566-L577, LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_chat_response
-  L580-L601, LiteLLM_Proxy_MCP_Handler._extract_tool_call_details L604-L635, LiteLLM_Proxy_MCP_Handler._parse_tool_arguments
-  L638-L648, LiteLLM_Proxy_MCP_Handler._parse_mcp_result L651-L684, LiteLLM_Proxy_MCP_Handler._execute_tool_calls
-  L687-L972, LiteLLM_Proxy_MCP_Handler._log_mcp_tool_failure L1121-L1143.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B948 owns _mcp_server_url L66-L70, _names_gateway_explicitly L73-L75, _proxy_path_mcp_name L77-L80, _registered_mcp_servers L83-L88, _registry_serves L91-L97, _toolset_exists L100-L112, _gateway_served_names L115-L122, _served_mcp_path_names L124-L129, LiteLLM_Proxy_MCP_Handler._get_parent_request_tags L138-L150, _should_use_litellm_mcp_gateway L152-L156, _parse_mcp_tools L158-L163, _split_mcp_tools L165-L179, routes_through_gateway L181-L188, and _apply_toolset_permissions L190-L232.'
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B949 owns _get_mcp_tools_from_manager L234-L352, _process_mcp_tools_to_openai_format L417-L447, _process_mcp_tools_without_openai_transform L450-L503, _transform_mcp_tools_to_openai overloads and implementation L505-L537, _deduplicate_mcp_tools L355-L386, and _filter_mcp_tools_by_allowed_tools L389-L414; this task consumes their selected tools and map.'
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B950 owns _should_auto_execute_tools L540-L563, _extract_tool_calls_from_response L566-L577, _extract_tool_calls_from_chat_response L580-L601, _extract_tool_call_details L604-L635, _parse_tool_arguments L638-L648, _parse_mcp_result L651-L684, _execute_tool_calls L687-L972, and _log_mcp_tool_failure L1121-L1143; this task consumes its typed tool results and does not repeat execution or failure-hook behavior.'
+- 'litellm/responses/mcp/mcp_streaming_iterator.py: B952 owns create_mcp_call_events L180-L261; B953 and B954 own MCPEnhancedStreamingIterator construction and iteration, so this task supplies typed events and a pending iterator plan but does not implement stream lifecycle.'
+- 'litellm/responses/main.py and litellm/responses/mcp/chat_completions_handler.py: B932 and the consuming route tasks own public SDK/HTTP entry points, authentication, status/type/param/code serialization and the mock-provider route transcript; this task only forwards the exact follow-up call arguments.'
+- 'No owned function reads an environment variable, config key or query parameter, writes a database row, or emits a warning-and-drop path other than the assistant-conversion diagnostic named in chat_message_defaults and assistant_conversion_warning.'
+- 'Provider-specific aresponses transport, URL construction and credential resolution remain with B932 and provider tasks; Python package exports and sync wrappers remain B158-B161.'
+deviations:
+- link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1104-L1118
+  what: Betterlite returns a typed pending follow-up call plan at this boundary instead of recursively invoking a public Responses endpoint.
+  why: The native API boundary owns one provider dispatch and prevents a follow-up from re-entering route authentication; the consuming B932/provider seam still sends the same input, model, tools, previous_response_id and call parameters to the mock provider.
 pitfalls:
-- LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat uses message_to_append.get('tool_calls'); retain
-  its missing-value behavior and field spelling in the typed projection.
-- LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat uses tool_result.get('tool_call_id'); retain its
-  missing-value behavior and field spelling in the typed projection.
+- '_create_follow_up_messages_for_chat catches every exception raised while reading choices[0] or model_dump, logs "Failed to convert assistant message for MCP flow" with exception severity, and continues; converting that warning into an error loses the tool-result-only response.'
+- '_create_follow_up_input groups all message content before function_call/reasoning turn items, even when response.output interleaves them; preserving source-item order for the whole assistant list changes the provider payload.'
+- '_is_persistence_disabled uses identity with False: integer 0 and string "false" do not disable persistence, while boolean False does.'
+- '_create_tool_execution_events treats a missing result as the empty string and therefore completed, but an explicit null result as failed; both cases have different event counts and sequence starts for the next result.'
+- '_build_request_params lets kwargs overwrite call_params and lets call_params overwrite the core input/model/tools keys; merging in the reverse order changes a caller-supplied input or model.'
+- '_prepare_follow_up_call_params removes tool_choice after restoring stream, including the value "required"; retaining it asks the provider for another tool choice during result submission.'
+- '_add_mcp_output_elements_to_response mutates the supplied response and appends fetched-tools before tool-results; returning a copied response or reversing these two items changes the final output order.'
 review_level: standard
 budget:
-  max_changed_lines: 520
+  max_changed_lines: 600
   max_new_expects: 1

@@ -1,170 +1,123 @@
 id: B1075
-title: Vector file resolution
+title: Attached-file id, credential and provider resolution
 description: >-
-  Resolve managed file/vector-store IDs, model hints and provider credentials for vector-store file requests using
-  managed-resource-access and file-credentials. Restore external file IDs in responses and perform permission checks
-  before using a stored credential or model routing hint.
+  Build the seven complete helpers at vector_store_files_endpoints/endpoints.py:35-452 in
+  server::api::vector_file_resolution. Expose typed RequestFacts and injected B1020 authorization/credential
+  lookup, B1016 unified-id parsing, B1019 legacy file routing, B1021 managed-id requirement, B1062 registry,
+  B1061 endpoint permissions, B174 provider enum conversion and B2400 header/query/body accessors. The source helpers do not perform
+  provider HTTP; HTTP routes in B1076/B1081 call this layer. Keep every ordering decision below visible in
+  native tests; B171 adapters compare pure request/response projections with pre-resolved dependency answers.
+  They must not invoke FastAPI routes or load proxy globals. Managed-id validation itself stays B1021.
 
-
-  Implement crates/betterlite-core/src/api/vector_file_resolution.rs. Use VectorFileResolutionInput and VectorFileResolutionResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions managed_file_provider_id, model_hint_authorized, cross_owner_file_denied,
-  response_unified_file_id, registry_credential_precedence under api::vector_file_resolution::tests. Each named
-  function drives production code and asserts its case result; use named rstest inputs for related values. Corpus
-  replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::VectorFileResolution in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_file_resolution: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/proxy/vector_store_files_endpoints/endpoints.py: _update_request_data_with_managed_file_id
-  (L35-L171); litellm/proxy/vector_store_files_endpoints/endpoints.py: _replace_file_id_in_response (L174-L204);
-  litellm/proxy/vector_store_files_endpoints/endpoints.py: _authorize_model_routing_hint (L207-L215); litellm/proxy/vector_store_files_endpoints/endpoints.py:
-  _update_request_data_with_model_routing_hint (L218-L313); litellm/proxy/vector_store_files_endpoints/endpoints.py:
-  _update_request_data_with_litellm_managed_vector_store_registry (L316-L408); litellm/proxy/vector_store_files_endpoints/endpoints.py:
-  _resolve_provider (L411-L431); litellm/proxy/vector_store_files_endpoints/endpoints.py: _maybe_check_permissions
-  (L434-L452). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 286 owned nonblank/non-comment/non-docstring Python lines (331 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 306 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 556 total within the 560-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1017 (Managed resource access), B1020
-  (File credentials), B1061 (Vector endpoint access), B1062 (Vector store registry), B1087 (Api boundaries), B1016
-  (Managed resource ids), B1021 (File upload options), B002 (Load LiteLLM config.yaml into typed config). These
-  are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on
-  the provider and keys/data branches.
+  Default router/auth/managed store is null and should_lookup_registry=true. Provider fallback is openai.
+  B1021 owns litellm_settings.require_managed_files=false and its loader test. The unified and legacy
+  decoders are B1016/B1019; extend their existing corpora. Helpers use already-decoded JSON and add no
+  parser. The 418-line source span includes long docs and 331 nonblank/non-comment physical lines;
+  budget 280 implementation, 200 tests, 90 adapters, 145 fixtures and 65 wiring/corpus, 780 total.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
-  - crates/betterlite-core/src/api/vector_file_resolution.rs
-  - crates/betterlite-core/src/api/vector_file_resolution/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/vector_file_resolution.rs
+  - crates/betterlite-server/src/api/vector_file_resolution/**
+  - crates/betterlite-core/fuzz/corpus/managed_resource_ids/vector-file-*
   - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/vector_file_resolution.rs
-  - tools/oracle/src/helpers/vector_file_resolution/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/vector_file_resolution.py
-  - tools/oracle/helpers/vector_file_resolution/**
-  - tools/oracle/fuzz/corpus/helper_case/vector_file_resolution-*
+  - tools/oracle/fuzz/corpus/helper_case/vector-file-resolution-*
   - tools/oracle/cases/helpers/vector-file-resolution/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L35-L452
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Complete helper functions specify managed-id decoding, response id restoration and model/provider selection order.
 dod:
-- text: 'managed file provider id: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-managed-file-provider-id
-  - oracle
-- text: 'model hint authorized: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-model-hint-authorized
-  - oracle
-- text: 'cross owner file denied: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cross-owner-file-denied
-  - oracle
-- text: 'response unified file id: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-response-unified-file-id
-  - oracle
-- text: 'registry credential precedence: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-registry-credential-precedence
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    unified_file_routing first validates the original id through B1021. With require_managed_files=true,
+    raw file_a gives 400 detail="Raw provider file ids cannot be used when require_managed_files is enabled in litellm_settings. Use the LiteLLM managed file id returned when the file was created."
+    and unified id without MIT access hook gives 500 detail="Managed resource ownership validation is unavailable.".
+    Otherwise decode a unified file containing target_model_names=[m1,m2],llm_output_file_id=" file_a ":
+    choose m1,trim file_a, apply its credentials and return original id for restoration. Without credentials
+    or router still replace file_id when extraction succeeds. Missing provider id with credentials passes null
+    to prepare_data_with_credentials; malformed parsed payload leaves data unchanged but returns original id.
+    Regex extraction failure is silently ignored. Legacy routing delegates with check_file_id_encoding=true;
+    routed legacy id returns original for restoration, unrecognized raw id returns null restoration.
+  proof: [resolution-tests, oracle, helper-python, id-corpus]
+- text: >-
+    restore_file_identifiers sends dict {id:provider,file_id:provider,other:x} and gets both fields replaced
+    with managed. Dict without either key is unchanged. Object with both attributes changes only id;
+    object with only file_id changes it, and null response stays null. This projection does not recursively
+    replace ids inside list.data or vector_store_id.
+  proof: [resolution-tests, oracle, helper-python]
+- text: >-
+    model_hint_precedence bypasses all hints when data.api_key or api_base is non-null, including "".
+    Otherwise data.model wins truthy query model, which wins x-litellm-model header. Authorize a string
+    only when it equals the user-controlled query/header hint; identical body and query values do authorize.
+    Wildcard "team/*" uses team_id-aware lookup only with router; exact string uses get_credentials_for_model
+    even without router and retains that helper's error. Auth=null makes authorization a no-op. Credentials
+    are applied only when routing succeeds and lookup is non-null; otherwise enter team fallback.
+  proof: [resolution-tests, oracle, helper-python]
+- text: >-
+    team_model_fallback ignores non-list team_models, non-string entries and literals all-team-models,
+    all-proxy-models,no-default-models. For one OpenAI deployment apply its credentials after authorization;
+    provider may be inferred from model=openai/gpt-4o only when custom_llm_provider is null. Two OpenAI
+    matches authorize both then leave data unchanged. Duplicate names count twice. No OpenAI match and exactly
+    one remaining name authorizes it and sets model only; zero or multiple names leave data unchanged.
+    Missing router or identity stops fallback. Never silently select the first of two eligible deployments.
+  proof: [resolution-tests, oracle, helper-python]
+- text: >-
+    unified_store_and_registry_overlay decodes model_id=m1 before target_model_names=[m2],replaces
+    vector_store_id with truthy provider_resource_id and returns without legacy registry lookup, even for
+    invalid parsed unified payload. Legacy pre-resolved store wins lookup; should_lookup_registry=false
+    disables another lookup. Present top-level provider and credential copy even null, then non-null
+    litellm_params overrides them and any request fields. Missing/null params contributes {}. No access
+    check occurs in this helper; routes must have called B1061 first.
+  proof: [resolution-tests, oracle, helper-python]
+- text: >-
+    provider_and_index_permissions picks truthy data.custom_llm_provider, then custom-llm-provider header,
+    then custom_llm_provider query. Only if the result is null and method is POST/PUT/PATCH read body;
+    final null becomes openai. A final empty string or unknown enum returns null and skips permissions;
+    GET never reads a provider body. With known provider, missing/null metadata maps to {} and both
+    allowed_vector_store_indexes values falsey skip checking; either truthy key/team value calls B1061
+    with original path store id, request and identity. Propagate its error unchanged. Add the externally
+    tagged vector_file_resolution helper seed and preserve ordered lookup/authorization traces.
+  proof: [resolution-tests, oracle, helper-python, helper-corpus]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_resolution::/)
-      - test(/::replays_corpus$/)'
-  - id: case-managed-file-provider-id
-    why: the managed-file-provider-id behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_resolution::tests::managed_file_provider_id($|::)/)'
-  - id: case-model-hint-authorized
-    why: the model-hint-authorized behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_resolution::tests::model_hint_authorized($|::)/)'
-  - id: case-cross-owner-file-denied
-    why: the cross-owner-file-denied behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_resolution::tests::cross_owner_file_denied($|::)/)'
-  - id: case-response-unified-file-id
-    why: the response-unified-file-id behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_resolution::tests::response_unified_file_id($|::)/)'
-  - id: case-registry-credential-precedence
-    why: the registry-credential-precedence behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_resolution::tests::registry_credential_precedence($|::)/)'
+  - id: resolution-tests
+    why: attached-file credential precedence or original-id permission ordering is absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_file_resolution::tests::/) - test(/::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/vector_file_resolution.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: projections are not compared independently from resolved request facts
+    run: test -f tools/oracle/helpers/vector_file_resolution.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: id-corpus
+    why: unified attached-file and store ids lack new decoder seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/managed_resource_ids/vector-file-*)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_ids::tests::replays_corpus$/)'
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_file_resolution-*)"
-      && grep -qE "^[[:space:]]+vector_file_resolution:" tools/oracle/fuzz/corpus/helper_case/vector_file_resolution-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-file-resolution)"
+    why: the new projection variant has no case-parser input
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector-file-resolution-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/vector-file-resolution/managed-file-provider-id.yaml
-- tools/oracle/cases/helpers/vector-file-resolution/model-hint-authorized.yaml
-- tools/oracle/cases/helpers/vector-file-resolution/cross-owner-file-denied.yaml
-- tools/oracle/cases/helpers/vector-file-resolution/response-unified-file-id.yaml
-- tools/oracle/cases/helpers/vector-file-resolution/registry-credential-precedence.yaml
-deviations: []
+- tools/oracle/cases/helpers/vector-file-resolution/unified-file-routing.yaml
+- tools/oracle/cases/helpers/vector-file-resolution/restore-file-identifiers.yaml
+- tools/oracle/cases/helpers/vector-file-resolution/model-hint-precedence.yaml
+- tools/oracle/cases/helpers/vector-file-resolution/team-model-fallback.yaml
+- tools/oracle/cases/helpers/vector-file-resolution/unified-store-and-registry-overlay.yaml
+- tools/oracle/cases/helpers/vector-file-resolution/provider-and-index-permissions.yaml
+deviations:
+- what: >-
+    Keep MIT managed-file behavior pending Max's decision: require_managed_files=false permits raw and decoded
+    ids; true rejects raw ids with 400 and managed ids without an ownership hook with 500 as specified above.
+  why: No enterprise managed_files hook is built while the managed-files/batches policy remains open.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1062-L1118
 out_of_scope:
-- 'litellm/proxy/vector_store_files_endpoints/endpoints.py: B1081 owns vector_store_file_create L467-L559, vector_store_file_update
-  L887-L979, vector_store_file_delete L994-L1086.'
-- 'litellm/proxy/vector_store_files_endpoints/endpoints.py: B1076 owns vector_store_file_list L574-L655, vector_store_file_retrieve
-  L670-L762, vector_store_file_content L777-L872.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1081 owns create/update/delete handlers and B1076 list/retrieve/content in this file; those tasks supply every actual route/auth HTTP case.
+- B2400 owns provider-source accessors; B1020 owns get_credentials_for_model, authorize_model_for_key, prepare_data_with_credentials and handle_model_based_routing.
+- B1016/B1019 own id decoding and B1021 owns managed-id validation and its flag, so no second decoder or ownership policy is introduced here.
 pitfalls:
-- 'endpoints.py:88 emits the diagnostic ''Processing unified managed file ID: %s''; retain its level and fallback
-  instead of turning it into a hard error.'
-- 'endpoints.py:355 emits the diagnostic ''Processing managed vector store ID: %s''; retain its level and fallback
-  instead of turning it into a hard error.'
+- A non-null empty api_key suppresses model-hint credential lookup.
+- Two eligible OpenAI team models leave the request unresolved after authorizing both.
+- Unified store decoding bypasses the legacy registry even when the parsed fields are unusable.
 review_level: security
 budget:
-  max_changed_lines: 560
-  max_new_expects: 1
+  max_changed_lines: 800
+  max_new_expects: 0

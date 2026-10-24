@@ -1,0 +1,150 @@
+id: B2419
+title: Responses deployment-hook and agentic policy
+description: >-
+  Build responses_hook_policy in betterlite-core. Own _responses_api_optional_request_param_names,
+  _custom_logger_callbacks, _has_pre_call_deployment_hook, _run_sync_responses_pre_call_deployment_hook,
+  _get_agentic_loop_settings, _has_agentic_completion_hook, _check_agentic_loop_safety,
+  _fingerprint_agentic_tools, _refused_agentic_tool_identifiers, _is_refused_tool_use_block and
+  _can_replace_turn_with_terminal_response as whole functions. Also own the complete shared
+  agentic_followup_kwargs.py and agentic_loop_settings.py helpers below the future B119 interception
+  integration. B189 supplies callback/plan types, B248 string callback resolution, B247 logging
+  records, B010 generic parameters and B902 Responses option names. Inject B157's deployment-hook
+  dispatcher as a typed port; this task owns its invocation and merge, not Python import machinery.
+
+  Detect inherited hook overrides by callable identity, including string callbacks resolved to
+  CustomLogger instances. Preserve global then dynamic order, duplicates and list/tuple dynamic
+  inputs. A missing pre-hook or null result returns the original arguments. Otherwise split
+  modified fields by the complete Responses optional-name set; identity fields are handled
+  separately and every other field updates GenericLiteLLMParams. Presence, not truthiness,
+  determines model/input/provider replacement. Hook call_type is the literal responses.
+
+  Load model_list[].litellm_params.max_agentic_loops with B002 using the shared validator; default
+  3, explicit null means default, integer-like strings/floats are accepted and bool is rejected.
+  B119 retains the websearch_interception_params config integration and uses this validator.
+  No MAX_AGENTIC_LOOPS environment variable is read directly: os.environ references resolve in
+  B002. Preserve trusted internal depth/fingerprint fields and construct follow-up kwargs with
+  request parameters removed from both original and patch kwargs, patch winning other collisions,
+  then depth/max/fingerprint bookkeeping winning last.
+
+  Register HelperCall::ResponsesHookPolicy through B171. Script callback returns, never provider
+  responses; these helpers do no provider I/O. Use production config loader tests and new config
+  seeds, without a second decoder. Count approximately 300 nonblank/non-comment source lines
+  across the explicitly listed ranges; budget 250 implementation, 160 tests, 100 fixtures,
+  95 adapters, 55 config and 30 wiring, 690 total under 730.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/responses_hook_policy.rs
+  - crates/betterlite-core/src/api/responses_hook_policy/**
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/responses_hook_policy.rs
+  - crates/betterlite-config/src/api/responses_hook_policy/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/responses-hook-policy-*
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/responses_hook_policy.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/responses_hook_policy.py
+  - tools/oracle/cases/helpers/responses-hook-policy/**
+  - tools/oracle/fuzz/corpus/helper_case/responses_hook_policy-*
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L315-L351
+  why: Callback collection and inherited pre-hook detection use resolved objects without deduplication.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2414-L2487
+  why: Entire synchronous pre-hook invocation and split of returned fields into options and generic parameters.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5211-L5219
+  why: Trusted depth coercion, default ceiling and fingerprint history.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5230-L5258
+  why: Agentic override detection includes inherited and string-resolved callbacks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5274-L5360
+  why: Safety errors, canonical fingerprints, refused tool identity and surface-specific finalization permission.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/agentic_followup_kwargs.py#L1-L32
+  why: Follow-up collision filtering and trusted bookkeeping precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/agentic_loop_settings.py#L1-L59
+  why: Shared whole-number coercion and exact invalid-ceiling errors.
+dod:
+- text: >-
+    deployment_hook_merge supplies global callback A and dynamic [A,B]; all three occurrences
+    remain. An inherited override and a string resolved to that callback count; unresolved
+    strings/non-CustomLogger values are skipped. Hook input overlays generic params, then
+    optional params, then model/input/provider. Returned {model:null,input:[],custom_llm_provider:null,
+    temperature:0,api_key:new} produces model="None",provider="None",input=[],temperature=0 and
+    generic api_key=new. Missing fields preserve prior values. Null hook result or no override
+    leaves the original tuple unchanged, with no hook invocation in the latter case.
+  proof: [pre-hook, oracle, python-adapter]
+- text: >-
+    agentic_ceiling_and_depth uses unset/null ceiling -> 3; 5,5.0," 5 ","+5","1_000" -> 5,5,5,5,1000.
+    true,1.5,"three","nan","inf" raise TypeError with "litellm_params.max_agentic_loops must be an
+    integer, got " plus the Python literal; 0/-1 raise ValueError "litellm_params.max_agentic_loops
+    must be at least 1, got 0" or "... got -1". Trusted depth absent/null/0 becomes 0, "2" becomes
+    2 and malformed depth fails int conversion; absent/null fingerprint history becomes [].
+    Config tests load equivalent deployment values with full key paths and no unsupported-key entry.
+  proof: [ceiling, config-tests, config-corpus, oracle, python-adapter]
+- text: >-
+    agentic_safety_and_tool_identity serializes [{name:x,id:a}] as sorted-key JSON with Python
+    spaces; reordered object keys yield the same fingerprint. Repeated fingerprint raises
+    AgenticLoopSafetyError "Agentic loop detected repeated tool-call fingerprint; aborting rerun"
+    before the depth check. depth=3,max_loops=3 raises "Exceeded max_agentic_loops=3 for model=gpt-4o".
+    Non-JSON trusted values use string fallback. Refused calls may be a list or {tool_calls:list};
+    collect string id/call_id/name only. A tool_use block with id=b survives refused id=a even
+    if names match; an ID-less block matches by name. Other block types survive. Terminal replacement
+    is allowed only for api_surface=anthropic_messages with stream=false, never responses.
+  proof: [safety, oracle, python-adapter]
+- text: >-
+    agentic_followup_precedence removes model/input/temperature named as explicit request parameters
+    from both original and patch kwargs. Patch api_key=new beats old; patch _agentic_loop_depth=99
+    loses to depth+1=2, max_agentic_loops becomes 3 and fingerprint history [old] becomes [old,new].
+    Inputs remain unmodified. Hook detection resolves string callbacks, but B2415's later execution
+    loop deliberately considers only object callbacks; do not collapse those distinct steps.
+  proof: [followup, oracle, python-adapter]
+- text: A newly tagged responses_hook_policy seed replays with the shared helper decoder.
+  proof: [helper-corpus, oracle, python-adapter]
+checks:
+  optional: [mutants]
+  commands:
+  - id: pre-hook
+    why: inherited callbacks or presence-based model/provider changes are dropped
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_hook_policy::tests::deployment_hook_merge($|::)/)'
+  - id: ceiling
+    why: a zero ceiling silently becomes three or malformed trusted depth is swallowed
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_hook_policy::tests::agentic_ceiling_and_depth($|::)/)'
+  - id: safety
+    why: safety refusals are swallowed or matching names remove unrelated client tool calls
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_hook_policy::tests::agentic_safety_and_tool_identity($|::)/)'
+  - id: followup
+    why: callback patches repeat explicit arguments or overwrite trusted depth bookkeeping
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_hook_policy::tests::agentic_followup_precedence($|::)/)'
+  - id: config-tests
+    why: max_agentic_loops is recognized but not validated by the actual loader
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_hook_policy::tests::loads_agentic_loop_ceiling($|::)/)'
+  - id: config-corpus
+    why: loop-ceiling loader branches lack new seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-hook-policy-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: python-adapter
+    why: callback policy is reimplemented inside the Python comparison adapter
+    run: test -f tools/oracle/helpers/responses_hook_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: no new callback-policy input selects its helper variant
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_hook_policy-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/responses-hook-policy/deployment-hook-merge.yaml
+- tools/oracle/cases/helpers/responses-hook-policy/agentic-ceiling-and-depth.yaml
+- tools/oracle/cases/helpers/responses-hook-policy/agentic-safety-and-tool-identity.yaml
+- tools/oracle/cases/helpers/responses-hook-policy/agentic-followup-precedence.yaml
+deviations: []
+out_of_scope:
+- B2415 owns whole agentic execution/cleanup/finalization functions; B2414 owns create sends and fake-stream preparation.
+- B189 owns AgenticLoopPlan/RequestPatch and interception-prefix helpers; B119 installs websearch/code-interpreter callbacks after API assembly.
+- _agentic_hook_kwargs and _server_fulfilled_tools_in_request serve other HTTP-handler paths and remain with their Anthropic API integration; they are not called by this policy slice.
+- Other llm_http_handler.py families retain their endpoint owners; this task claims only the eleven named functions.
+pitfalls:
+- The pre-hook converts an explicitly present null model/provider to the literal string "None".
+- Fingerprint repetition is checked before max depth and is not an ordinary callback failure.
+- String callback resolution affects capability detection but does not make B2415 execute string entries.
+review_level: security
+budget:
+  max_changed_lines: 730
+  max_new_expects: 0

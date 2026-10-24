@@ -1,187 +1,110 @@
 id: B975
-title: Messages stream split
+title: Split combined chat chunks before Messages event conversion
 description: >-
-  Split chat chunks carrying mixed text, thinking and tool payloads into Anthropic-compatible ordered chunks, normalize
-  reasoning fields and attach usage only once. Export a typed chunk splitter independent of the terminal-event state
-  machine.
+  Own adapters/streaming_iterator.py L43-L293: stream protocol, attribute/error/delta helpers and the entire
+  _CombinedChunkSplitter. Implement api::messages_stream_split over B005's typed chat chunks. B958 supplies
+  Anthropic error frames and B963 refusal extraction. Peel finish/usage from a chunk first, then split reasoning,
+  text and named tool calls in that order. Leave argument continuations and multi-choice payloads unsplit.
+  The downstream event driver is B977 and its sync part; this leaf cannot depend on it or B966.
 
-
-  Implement crates/betterlite-core/src/api/messages_stream_split.rs. Use MessagesStreamSplitInput and MessagesStreamSplitResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions mixed_thinking_text, mixed_tool_text, usage_only_chunk, reasoning_signature_split,
-  error_sse_event under api::messages_stream_split::tests. Each named function drives production code and asserts
-  its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesStreamSplit in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_stream_split: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: _ChunkStream.__iter__
-  (L51-L51); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: _ChunkStream.__aiter__ (L53-L53);
-  litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: _optional_attr (L56-L57); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  _optional_attr_sequence (L60-L62); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: _error_status_and_message
-  (L65-L68); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: _mid_stream_error_sse_event (L71-L77);
-  litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: _delta_payload_field (L80-L91); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  _CombinedChunkSplitter.__init__ (L114-L118); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  _CombinedChunkSplitter.chunks (L121-L124); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  _CombinedChunkSplitter.messages (L127-L130); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  _CombinedChunkSplitter._is_combined (L133-L154); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  _CombinedChunkSplitter._clear_usage (L163-L168); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  _CombinedChunkSplitter._split_by_payload_kind (L171-L214); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  _CombinedChunkSplitter._normalize_reasoning_fields (L217-L238); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  _CombinedChunkSplitter._split (L241-L261); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  _CombinedChunkSplitter.__iter__ (L263-L264); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  _CombinedChunkSplitter.__next__ (L266-L277); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  _CombinedChunkSplitter.__aiter__ (L279-L280); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  _CombinedChunkSplitter.__anext__ (L282-L293). Abstract/protocol declarations map to native types and synchronous/async
-  wrappers share one implementation; a partial function span is the explicit preparation/transition stage described
-  above, with typed values passed to the following stage.
-
-
-  Sizing: 166 owned nonblank/non-comment/non-docstring Python lines (205 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 186 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 436 total within the 440-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B005 (Streaming chat completions), B171 (Direct helper oracle and URL path encoding),
-  B966 (Messages chat output), B1087 (Api boundaries), B958 (Messages errors), B963 (Messages options). These are
-  callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the
-  provider and keys/data branches.
+  HelperCall::MessagesStreamSplit drives parsed finite chunk sequences in sync or async mode, never a live
+  provider stream. Compare every projected field, source-object immutability, upstream pull count and terminal
+  error. HTTP integration is tested by the consuming stream driver. No external-byte decoder is added.
+  Own 209 nonblank/non-comment lines including protocol and delta declarations. Budget 200 implementation, 135 tests,
+  135 fixtures, 90 adapters and 30 wiring, 590 total; tests use api::messages_stream_split.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_stream_split.rs
   - crates/betterlite-core/src/api/messages_stream_split/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/messages_stream_split.rs
-  - tools/oracle/src/helpers/messages_stream_split/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/messages_stream_split.py
-  - tools/oracle/helpers/messages_stream_split/**
-  - tools/oracle/fuzz/corpus/helper_case/messages_stream_split-*
   - tools/oracle/cases/helpers/messages-stream-split/**
+  - tools/oracle/fuzz/corpus/helper_case/messages_stream_split-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L51-L293
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L43-L91
+  why: Closed delta payload mapping, optional attributes and error status/message fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L94-L293
+  why: Own the full splitter, including no-split exceptions and usage placement before payload subdivision.
 dod:
-- text: 'mixed thinking text: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-mixed-thinking-text
-  - oracle
-- text: 'mixed tool text: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-mixed-tool-text
-  - oracle
-- text: 'usage only chunk: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-usage-only-chunk
-  - oracle
-- text: 'reasoning signature split: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-reasoning-signature-split
-  - oracle
-- text: 'error sse event: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-error-sse-event
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    finish_and_content_split sends choice0 delta.content=Hello,finish_reason=stop,usage=5/2 and hidden usage.
+    Produce content copy with finish_reason=null and usage=null, removing only hidden usage; then finish copy
+    with stop and original usage, content/tool_calls/reasoning_content/thinking_blocks cleared to null.
+    Empty payload or null finish stays one chunk. Nonempty refusal also qualifies as combined, but refusal is
+    not cleared on the finish copy at the pin. Other choices are copied unchanged in both finish-split pieces.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    payload_order_and_roles sends one choice with reasoning_content=R,content=T,named tool call lookup and
+    role=assistant. Produce reasoning,text,tool pieces in that order, each with only its group's fields; only
+    the first piece keeps role=assistant. Non-group delta fields including refusal are not copied into rebuilt
+    deltas. Metadata,finish and usage outside the delta survive; if no finish was present, usage is not cleared
+    by payload splitting alone. With finish present it appears only in the peeled finish piece.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    continuation_and_multichoice_passthrough sends zero/two choices, missing delta, or only one truthy payload
+    group and expects one unchanged payload chunk. Tool calls with no truthy function.name prevent payload
+    splitting even alongside text/reasoning. One named tool among several enables splitting. Payload checks use
+    truthiness, so content="" and empty tool arrays are absent; finish_reason="" is still non-null and may split.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    unsigned_thinking_normalization sends two thinking blocks A,B without truthy signatures alongside text T.
+    The reasoning piece becomes reasoning_content=AB, removing thinking_blocks and any prior reasoning_content.
+    Any dict block with a truthy signature preserves the original fields, even if its type is not thinking.
+    No nonempty thinking text leaves fields unchanged; non-dict blocks are ignored. This normalization happens
+    only when payload groups split, not to an otherwise single-group chunk.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    splitter_pull_and_attributes drains all buffered pieces before another upstream pull, in both modes, and
+    forwards chunks/messages attributes or null. Optional_attr gives null if absent; optional_attr_sequence gives
+    an empty tuple for any falsey value. Source chunks remain unmodified and two splitter instances have separate
+    buffers. Exhaustion remains StopIteration/StopAsyncIteration and source exceptions propagate. An instance
+    is used in one iteration mode only, matching the documented contract.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    delta_and_error_literals maps text_delta->text,input_json_delta->partial_json,thinking_delta->thinking,
+    signature_delta->signature. BaseLLMException and MidStreamFallbackError use their own status_code/message,
+    even an empty message; unrelated exception with status_code=429 still maps to 500. Empty str(exception)
+    uses "Upstream stream ended before completion". B958 emits event:error with api_error for500 or
+    rate_limit_error for429 and that message, without proxy param/code fields or a synthetic success terminator.
+  proof: [behavior-tests, oracle, helper-python]
+- text: New parsed-chunk cases and a messages_stream_split seed exercise both iteration forms without network I/O.
+  proof: [new-cases, corpus, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_split::/)
-      - test(/::replays_corpus$/)'
-  - id: case-mixed-thinking-text
-    why: the mixed-thinking-text behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_split::tests::mixed_thinking_text($|::)/)'
-  - id: case-mixed-tool-text
-    why: the mixed-tool-text behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_split::tests::mixed_tool_text($|::)/)'
-  - id: case-usage-only-chunk
-    why: the usage-only-chunk behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_split::tests::usage_only_chunk($|::)/)'
-  - id: case-reasoning-signature-split
-    why: the reasoning-signature-split behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_split::tests::reasoning_signature_split($|::)/)'
-  - id: case-error-sse-event
-    why: the error-sse-event behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_split::tests::error_sse_event($|::)/)'
+    why: payload order, finish placement or error conversion lacks a production assertion
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_split::/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_stream_split.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_stream_split-*)"
-      && grep -qE "^[[:space:]]+messages_stream_split:" tools/oracle/fuzz/corpus/helper_case/messages_stream_split-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: the chunk splitter is not compared with checked pinned code
+    run: test -f tools/oracle/helpers/messages_stream_split.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: corpus
+    why: splitter sequences cannot be selected through the oracle enum
+    run: grep -qE '^[[:space:]]+messages_stream_split:' tools/oracle/fuzz/corpus/helper_case/messages_stream_split-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: no new split/continuation/error scenarios exist
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-stream-split)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-stream-split/mixed-thinking-text.yaml
-- tools/oracle/cases/helpers/messages-stream-split/mixed-tool-text.yaml
-- tools/oracle/cases/helpers/messages-stream-split/usage-only-chunk.yaml
-- tools/oracle/cases/helpers/messages-stream-split/reasoning-signature-split.yaml
-- tools/oracle/cases/helpers/messages-stream-split/error-sse-event.yaml
+- tools/oracle/cases/helpers/messages-stream-split/finish-and-content-split.yaml
+- tools/oracle/cases/helpers/messages-stream-split/payload-order-and-roles.yaml
+- tools/oracle/cases/helpers/messages-stream-split/continuation-and-multichoice-passthrough.yaml
+- tools/oracle/cases/helpers/messages-stream-split/unsigned-thinking-normalization.yaml
+- tools/oracle/cases/helpers/messages-stream-split/splitter-pull-and-attributes.yaml
+- tools/oracle/cases/helpers/messages-stream-split/delta-and-error-literals.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: B976 owns AnthropicStreamWrapper.__init__
-  L320-L366, AnthropicStreamWrapper.chunks L369-L372, AnthropicStreamWrapper.messages L375-L378, AnthropicStreamWrapper._merge_usage_into_held_stop_reason_chunk
-  L380-L403, AnthropicStreamWrapper._handle_choiceless_chunk L405-L423, AnthropicStreamWrapper._ensure_context_management_attached
-  L425-L438, AnthropicStreamWrapper._augment_message_delta_usage L440-L472, AnthropicStreamWrapper._next_compaction_event
-  L474-L525, AnthropicStreamWrapper._create_initial_usage_delta L527-L546, AnthropicStreamWrapper._increment_content_block_index
-  L1046-L1047, AnthropicStreamWrapper._with_refusal_stop_details L1049-L1068, AnthropicStreamWrapper._delta_has_content
-  L1071-L1107, AnthropicStreamWrapper._is_blank_delta L1110-L1137, AnthropicStreamWrapper._should_start_new_content_block
-  L1139-L1201.'
-- 'litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: B977 owns AnthropicStreamWrapper.__next__
-  L548-L781, AnthropicStreamWrapper.__anext__ L783-L1011, AnthropicStreamWrapper.anthropic_sse_wrapper L1013-L1027,
-  AnthropicStreamWrapper.async_anthropic_sse_wrapper L1029-L1044, AnthropicSSEStream.__init__ L1212-L1215, AnthropicSSEStream.chunks
-  L1218-L1219, AnthropicSSEStream.messages L1222-L1223, AnthropicSSEStream.model L1226-L1227, AnthropicSSEStream.__anext__
-  L1229-L1230, AnthropicSSEStream.aclose L1232-L1233.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B976 owns AnthropicStreamWrapper state/usage helpers L310-L546,L1046-L1201; B977 and its sync part own iteration/SSE L548-L1044 and AnthropicSSEStream L1212-L1233.
+- B005 owns chat SSE decoding and provider reads; this task never creates an HTTP client or parses SSE bytes.
 pitfalls:
-- Within _error_status_and_message\'s isinstance(exc, (BaseLLMException, MidStreamFallbackError)) branch, preserve
-  return (exc.status_code, exc.message) and its nested guards.
-- Within _CombinedChunkSplitter._is_combined\'s not choices branch, preserve return False and its nested guards.
+- The finish splitter clears four payload fields but leaves refusal, which must remain visible in the parity projection.
+- Tool-argument continuation chunks cannot be split into separate payload groups without closing the active tool block.
+- Signature-less thinking becomes reasoning_content only during a multi-payload split.
 review_level: standard
 budget:
-  max_changed_lines: 440
-  max_new_expects: 1
+  max_changed_lines: 620
+  max_new_expects: 0

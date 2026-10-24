@@ -1,65 +1,124 @@
 id: B1137
 title: Request intake and safe snapshots
 description: >-
-  Prepare authenticated input headers, strip forged control fields, build redacted request snapshots and return
-  RequestIntake for the remaining key/team/policy stages.
+  Implement add_litellm_data_to_request in litellm/proxy/litellm_pre_call_utils.py:1993-2580 as one callable. It
+  receives decoded data, a Starlette Request, UserAPIKeyAuth, ProxyConfig, general_settings (a dict or None), and
+  version (a string or None), mutates one request record, and returns that record. Install it in B004's existing
+  POST /v1/chat/completions pipeline with a configured mock provider; this task adds no route or alias. The HTTP case
+  must compare the provider request, the response status/type/param/code/message, safe headers, and the order of
+  observable provider calls. The function does not write a database row; its only asynchronous side effect is the
+  PROXY_PRE_CALL success event scheduled after all validation and mutations.
 
 
-  Install this preparation stage in the existing B004 chat HTTP pipeline via server state. Its HTTP oracle cases
-  use POST /v1/chat/completions with configured mock provider and seeded key/team facts; no test-only route is added
-  and no Python adapter invokes add_litellm_data_to_request directly.
+  The first mutation is the root-control strip. With no allow flag, pop each of these exact root keys before adding
+  proxy fields: weights, _router_weights, proxy_server_request, standard_logging_object, secret_fields, mock_response,
+  mock_tool_calls, disable_global_guardrails, disable_global_guardrail, enable_prompt_caching,
+  opted_out_global_guardrails, applied_guardrails, applied_policies, policy_sources, guardrail_scan_ids,
+  guardrail_scan_metadata, routing_decision, litellm_gateway_injected_cache, pillar_response_headers,
+  _guardrail_pipelines, _pipeline_managed_guardrails, callbacks, service_callback, logger_fn,
+  litellm_disabled_callbacks, _agentic_loop_depth, _agentic_loop_fingerprints, _code_interpreter_interception_active,
+  _code_interpreter_interception_converted_stream, _code_interpreter_interception_sandbox_key,
+  _code_interpreter_interception_session_scoped, _headroom_interception_converted_stream, max_agentic_loops, and
+  client_side_timeout. Only a key or team metadata boolean allow_client_mock_response=true preserves mock_response and
+  mock_tool_calls. The B1102 URL-valued model/file_id rejection happens before this function's metadata work.
 
 
-  Implement crates/betterlite-server/src/api/request_intake.rs, crates/betterlite-core/src/api/request_intake.rs.
-  Use RequestIntakeInput and RequestIntakeResult with typed nested records; inject only the clock, repositories,
-  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
-  ambient environment or duplicate credential resolution.
+  Pop metadata and litellm_metadata before validating either value. Keep a dict, or parse a JSON string whose result
+  is an object; for [] the function raises the B1105 ProxyException with status 400, type bad_request_error, param
+  metadata (or litellm_metadata), code 400, and message "Invalid type for '<field>': expected an object, but got an
+  array instead.". Strip every key beginning user_api_key_ from both metadata dictionaries. After parsing, also strip
+  these exact _UNTRUSTED_METADATA_CONTROL_FIELDS members from both dictionaries: disable_global_guardrails,
+  disable_global_guardrail, opted_out_global_guardrails, pillar_response_headers, _pillar_response_headers_trusted,
+  pillar_flagged, pillar_scanners, pillar_evidence, pillar_evidence_truncated, pillar_session_id_response,
+  applied_guardrails, applied_policies, policy_sources, guardrail_scan_ids, guardrail_scan_metadata,
+  routing_decision, litellm_gateway_injected_cache, _session_deployment_affinity_ttl, _consumed_request_tags,
+  _routing_request_tags, internal_call_origin, standard_logging_object, proxy_server_request, secret_fields,
+  _guardrail_pipelines, _pipeline_managed_guardrails, client_disconnected, error_information, and
+  _pre_call_executed_guardrails. The selected metadata slot is metadata for chat; B1105's route selector uses
+  litellm_metadata for thread/assistant and its other named metadata routes.
 
 
-  Write adjacent tests.rs behavior functions forged_auth_metadata, credential_header_redaction, snapshot_after_strip
-  under api::request_intake::tests. Each named function drives production code and asserts its case result; use
-  named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+  Build headers in this order: x-litellm-api-key, authorization, then x-api-key marks the authentication header.
+  general_settings.forward_llm_provider_auth_headers defaults false and is read by truthiness; if it is absent,
+  None, false, or an empty settings dict, fall back to litellm_settings.forward_llm_provider_auth_headers through the
+  module attribute litellm.forward_llm_provider_auth_headers, whose default is false/unset. With the effective value
+  true, preserve a non-auth x-api-key, put its value in data.api_key, and let it override the deployment credential;
+  when x-api-key authenticated the request, remove it. general_settings.litellm_key_header_name defaults None and
+  selects the custom proxy-key header. Remove x-litellm-api-key and proxy credentials from the provider view, redact
+  credential values as "***REDACTED***" in the logging view, remove MCP credential headers before redaction, and
+  retain non-credential x-request-id. The debug records "Request Headers: %s" and "Raw Headers: %s" remain non-fatal.
+  The initial proxy_server_request has url=str(request.url), method=request.method, headers=<safe logging view>,
+  body=None, credential_fields=sorted names among provider_specific_header, headers, and api_key that are in data, and
+  arrival_time=request.state.litellm_received_at.timestamp() or the injected current time when that state is absent.
 
 
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): general_settings.forward_llm_provider_auth_headers
-  defaults to False; litellm_settings.overwrite_user_with_key_hash defaults to False; general_settings.global_max_parallel_requests
-  defaults to None; litellm_settings.turn_off_message_logging defaults to False; general_settings.litellm_key_header_name
-  defaults to None. No environment reads occur outside betterlite-config. Test api::request_intake::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
+  Continue in source order: safe_add_api_version_from_query_params; select and initialize the metadata slot; add
+  backend-call metadata; add request-header metadata; add trace/session propagation; apply missing-session policy;
+  expose the safe headers under metadata.headers; add model-group headers; apply internal-user mapping; read the user
+  header; apply the key-hash override; write SecretFields(raw_headers=_raw_headers) with the actual unredacted header
+  values behind RedactedDict's display-only redaction; read ?api-version again;
+  add provider-specific headers; parse Cache-Control; strip metadata controls; strip pricing, router-reserved, and
+  callback fields; apply message-redaction stripping; refresh proxy_server_request.body; snapshot requester_metadata;
+  merge the secondary metadata; and then project principal data. A query ?api-version=2024-06-01 writes
+  data.api_version="2024-06-01"; a missing query or a query_params KeyError writes nothing. Cache-Control="s-maxage=60,
+  public" writes ttl="60"; no Cache-Control writes no ttl. A false-like turn_off_message_logging is one of false,
+  "false", "0", "no", or "off" after trim/case-fold, and is stripped only when litellm.turn_off_message_logging=true
+  (default false) and no key/team allow_client_message_redaction_opt_out=true; true and other values remain.
+  refresh_proxy_server_request.body excludes secret_fields, proxy_server_request, litellm_logging_obj, provider_specific_header,
+  headers, and api_key, and must not create a self-reference. The SecretFields write is
+  data["secret_fields"] = SecretFields(raw_headers=_raw_headers), where _raw_headers is a RedactedDict containing the
+  actual unredacted request-header values; RedactedDict changes only __str__ and __repr__ to
+  "RedactedDict(REDACTED)". A consumer may read data["secret_fields"]["raw_headers"]["x-api-key"] and must receive the
+  literal header value, not a redaction placeholder.
 
 
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
+  The metadata merge is first-writer-wins for ordinary keys. For a selected litellm_metadata slot, promote missing
+  trace-control fields from requester_metadata; for a selected metadata slot, merge tags request-first and remove the
+  litellm_metadata key. Then write metadata.litellm_api_version=version (null when version is omitted), and, only when
+  general_settings is supplied, metadata.global_max_parallel_requests=general_settings.get("global_max_parallel_requests",
+  None), whose default is null. Apply key controls, team tags/disable_global_guardrails/opted_out_global_guardrails and
+  spend_logs_metadata (request values win on duplicate keys), then project project tags. inherited_tags is the unique,
+  first-seen tuple of key tags, team tags, and project tags. After the team metadata merge, re-apply only non-empty
+  string key values for OTEL_SERVICE_NAME_METADATA_KEYS=("otel_service_name_override", "otel_service_name"), so a key
+  value wins over its team's value. Write the team, key, and user spend/budget fields, carried budget metadata,
+  callback-stripped user_api_key_metadata and user_api_key_team_metadata, object-permission ids (null when absent),
+  safe headers, endpoint=str(request.url), litellm_received_at (or null), llm_api_timing_windows=(), and
+  litellm_parent_otel_span. Copy allowed_model_region only when non-null.
 
 
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
+  requester_ip_address defaults ""; when general_settings.use_x_forwarded_for is exactly true and
+  x-forwarded-for exists use that complete header value, otherwise use request.client.host when available. user_agent
+  defaults "" and uses the request's user-agent header when present. B1109 may set drop_params=true for a Claude Code
+  or Codex user-agent only when the body has no drop_params and litellm_settings.drop_params is not configured; an
+  explicit body drop_params=false or configured litellm_settings.drop_params prevents insertion. Caller tags come from
+  x-litellm-tags split on commas with each item trimmed, plus body tags (or metadata.tags on a litellm_metadata route);
+  body tags are merged after header tags, caller_tags is a de-duplicated tuple of those request values, and inherited_tags
+  never includes caller tags.
 
 
-  Callable ownership: litellm/proxy/litellm_pre_call_utils.py: add_litellm_data_to_request (L1993-L2339). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+  Finish with the exact handoff order: callback variables from B1109, key litellm_disabled_callbacks when it is a
+  non-empty list, await B1108 move_guardrails_to_metadata, save the pre-alias data.model, call B1107 team alias then
+  key alias, emit the existing debug record, call B1107 credential overrides with the pre-alias model, run B1107's
+  enforced-parameter check, and schedule async_service_success_hook(service=PROXY_PRE_CALL, call_type=
+  "add_litellm_data_to_request", duration=end_time-start_time, start_time, end_time, and parent_otel_span). B1107
+  and B1108 retain their own errors and warnings; this task does not translate them. No enterprise hook is loaded.
 
 
-  Sizing: 219 owned nonblank/non-comment/non-docstring Python lines (230 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 239 implementation,
-  58 behavior tests, 36 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 45 config tests/seeds and
-  38 wiring; 416 total within the 420-line cap. The estimate includes tests and adapters, not just production code.
+  Implement crates/betterlite-server/src/api/request_intake.rs and crates/betterlite-core/src/api/request_intake.rs
+  with typed RequestIntakeInput/RequestIntakeResult, an injected clock, and resolved settings; never read ambient
+  environment. Reuse ApiLimits from B1087. B002 loads these settings and its production YAML decoder: general_settings
+  forward_llm_provider_auth_headers=false, general_settings.litellm_key_header_name=null,
+  general_settings.global_max_parallel_requests=null, general_settings.use_x_forwarded_for=null,
+  litellm_settings.forward_llm_provider_auth_headers=false/unset, litellm_settings.overwrite_user_with_key_hash=false,
+  and litellm_settings.turn_off_message_logging=false. Each gets an omitted/default, explicit override, and invalid
+  value case and is absent from unsupported-key diagnostics; no environment variable is read by request_intake.
+  These are already-decoded records, so add no parser or fuzz target.
 
 
-  Direct inputs come from B1100 (Shared request body decoding), B1104 (Request headers and tracing), B1105 (Untrusted
-  request controls), B1109 (Request setup options and session policy), B1102 (Request model and destination policy),
-  B732 (Typed authentication principals and grant resolution), B171 (Direct helper oracle and URL path encoding),
-  B1087 (Api boundaries), B1106 (Principal metadata and tags), B002 (Load LiteLLM config.yaml into typed config),
-  B004 (OpenAI chat completions without streaming), B855 (Authenticated request admission and budget handoff), B1139
-  (Stateful HTTP oracle scenarios). These are callable/type/config owners, not provider-family umbrellas; the external
-  B500-B859 ids retain ownership on the provider and keys/data branches.
+  Add server/core behavior tests named forged_controls, invalid_metadata, provider_auth_forwarding,
+  snapshot_and_metadata_order, query_version_and_cache, principal_budget_projection,
+  turn_off_logging_and_agentic_drop, and final_handoff_order. Add config tests named loads_settings. Corpus replay, if
+  needed by B002, keeps the separate name replays_corpus.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -89,129 +148,188 @@ scope:
   - tools/oracle/fixtures/request-intake/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2047-L2047
-  why: Setting general_settings.forward_llm_provider_auth_headers and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L231-L233
-  why: Setting litellm_settings.overwrite_user_with_key_hash and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2304-L2306
-  why: Setting general_settings.global_max_parallel_requests and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L208-L208
-  why: Setting litellm_settings.turn_off_message_logging and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2066-L2066
-  why: Setting general_settings.litellm_key_header_name and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1993-L2339
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1993-L2580
+  why: The complete callable's mutation order, root writes, metadata projections, handoff sequence, and scheduled event.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L261-L349
+  why: The literal root and metadata control sets, including litellm_gateway_injected_cache and the metadata-only keys.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L443-L465
+  why: Dict/JSON-object acceptance and the status-400 bad_request_error constructor for metadata type failures.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1173-L1247
+  why: Header marker precedence, custom proxy-key removal, forwarding behavior, and redaction inputs used by this callable.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1951-L1990
+  why: The post-strip body snapshot exclusions and the self-reference guard.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2177-L2306
+  why: Query-version overwrite, cache-control ttl, metadata stripping, requester snapshot, merge precedence, and null-valued metadata writes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2308-L2580
+  why: Principal/team/project projections, key-over-team OTel precedence, identity defaults, tags, aliases, credentials, and completion event.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L208-L233
+  why: The false defaults for turn_off_message_logging and overwrite_user_with_key_hash that the callable reads directly.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/settings_rules.py#L43-L54
+  why: forward_llm_provider_auth_headers is an accepted UI/litellm_settings key even though the callable also reads its module fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1708-L1713
+  why: The exact order and names of the two key-level OTel service-name fields reapplied after team metadata.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/anthropic_cache_control_hook.py#L5-L10
+  why: The literal value litellm_gateway_injected_cache used by the root and metadata strips.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/litellm_pre_call_utils.py#L4-L24
+  why: RedactedDict preserves dictionary contents while changing only display, and SecretFields.raw_headers is the internal raw-header field.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/request_context.py#L70-L86
+  why: MCP request context extracts the actual raw_headers from secret_fields for credential forwarding.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L981-L1010
+  why: MCP credential header names removed before the safe logging header is produced.
 dod:
-- text: 'forged auth metadata: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-forged-auth-metadata
-  - oracle
-- text: 'credential header redaction: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-credential-header-redaction
-  - oracle
-- text: 'snapshot after strip: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-snapshot-after-strip
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    forged_controls sends POST /v1/chat/completions with every named root control set to "attacker", and with every
+    _UNTRUSTED_METADATA_CONTROL_FIELDS member set to "attacker" in both metadata and litellm_metadata. The mock
+    provider receives none of those client values and does
+    receive metadata.tenant="kept". With authenticated key metadata allow_client_mock_response=true,
+    mock_response={"ok":true} and mock_tool_calls=[{"id":"t1"}] survive, while disable_global_guardrails and
+    enable_prompt_caching cannot replace key/team values.
+  proof: [case-forged-controls, behavior-tests, oracle]
+- text: >-
+    invalid_metadata sends metadata=[] and litellm_metadata=[] in separate POST /v1/chat/completions requests. Each
+    request stops before the mock provider with HTTP 400, type=bad_request_error, code=400, param equal to the
+    offending field, and message exactly "Invalid type for '<field>': expected an object, but got an array instead.".
+    metadata="{\"tenant\":\"t\"}" reaches the provider as an object and is stripped only of user_api_key_* keys.
+  proof: [case-invalid-metadata, behavior-tests, oracle]
+- text: >-
+    provider_auth_forwarding sends x-litellm-api-key=proxy-key, authorization=Bearer proxy-key, x-api-key=provider-key,
+    x-request-id=req_1, and Cache-Control=s-maxage=60, public. general_settings true forwards provider-key upstream
+    and writes data.api_key=provider-key, while proxy_server_request.headers and metadata.headers show
+    x-api-key=***REDACTED*** and no x-litellm-api-key. SecretFields.raw_headers["x-api-key"] is the literal
+    unredacted string "provider-key", and its display/repr is "RedactedDict(REDACTED)". When only x-api-key=proxy-key
+    authenticates, it is not forwarded. An absent/false general setting with
+    litellm.forward_llm_provider_auth_headers=true forwards provider-key through the module fallback; the
+    absent/default-false module setting removes it. The case also checks marker priority
+    x-litellm-api-key > authorization > x-api-key and that x-request-id=req_1 survives.
+  proof: [case-provider-auth-forwarding, behavior-tests, oracle]
+- text: >-
+    snapshot_and_metadata_order sends metadata={tenant:body,user_api_key_forged:bad,tags:[body]},
+    litellm_metadata={tenant:secondary,trace_id:body-trace,tags:[secondary]}, api_key=secret,
+    headers={x-internal:secret}, provider_specific_header=secret, and a fixed received_at timestamp. It asserts the
+    post-strip proxy_server_request.body excludes secret_fields, proxy_server_request, litellm_logging_obj,
+    provider_specific_header, headers, and api_key; requester_metadata is a deep copy of cleaned metadata; metadata
+    wins tenant="body", tags are [body,secondary], and litellm_metadata is removed for chat. It also asserts
+    endpoint=str(request.url), arrival_time=received_at.timestamp(), metadata.litellm_api_version=null, and
+    llm_api_timing_windows=().
+  proof: [case-snapshot-and-metadata-order, behavior-tests, oracle]
+- text: >-
+    query_version_and_cache posts /v1/chat/completions?api-version=2024-06-01 with Cache-Control="s-maxage=60, public"
+    and observes api_version="2024-06-01" and ttl="60" upstream. A request with no query and no Cache-Control adds
+    neither field; a request whose query_params conversion raises KeyError treats the query as empty and is not an
+    HTTP error.
+  proof: [case-query-version-and-cache, behavior-tests, oracle]
+- text: >-
+    principal_budget_projection seeds key/team/project tags [key,same], [team,same], [project], request tags
+    [request,same], request spend_logs_metadata {request:wins}, team {team:adds}, key {key:adds}, all spend and budget
+    fields, object permission ids, allowed_model_region=eu, and key OTel values
+    {otel_service_name_override:key-override,otel_service_name:key} against team values
+    {otel_service_name_override:team-override,otel_service_name:team}. It asserts inherited_tags=(key,same,team,project),
+    caller_tags=(request,same), request spend_logs_metadata.request="wins" wins duplicate keys, key OTel values
+    survive the team merge, and every seeded user_api_key_* budget/metadata/permission field, endpoint, safe headers,
+    receive time, parent span, allowed_model_region="eu", and empty timing tuple is present. With
+    litellm_settings.overwrite_user_with_key_hash=true and a stampable hash "key_hash", data.user is "key_hash";
+    with the default false it retains the supplied user value.
+  proof: [case-principal-budget-projection, behavior-tests, oracle]
+- text: >-
+    turn_off_logging_and_agentic_drop loads turn_off_message_logging=true and sends root turn_off_message_logging="off"
+    plus metadata.turn_off_message_logging="false" without the opt-out, so both false-like values disappear;
+    allow_client_message_redaction_opt_out=true preserves them. Claude Code and Codex user agents with no body
+    drop_params and no configured litellm_settings.drop_params receive drop_params=true; body drop_params=false and
+    configured drop_params=false each prevent insertion. Missing user-agent and client address yield user_agent=""
+    and requester_ip_address=""; use_x_forwarded_for=true with x-forwarded-for=198.51.100.7 wins over client.host,
+    while false/null use client.host.
+  proof: [case-turn-off-logging-and-agentic-drop, behavior-tests, oracle]
+- text: >-
+    final_handoff_order seeds callback variables, a non-empty key litellm_disabled_callbacks list, guardrails, and a
+    model with team and key aliases. The resulting data contains callback variables and the key list;
+    move_guardrails_to_metadata completes before aliases; the team alias changes data.model before the key alias;
+    credential overrides receive the pre-alias model after the returned-data debug record; _enforced_params_check is
+    last. The scheduled event has service=PROXY_PRE_CALL, call_type="add_litellm_data_to_request", start_time,
+    end_time, duration=end_time-start_time, and parent_otel_span. No database row is written and helper-owned
+    warning/error status, type, param, code, and message are unchanged.
+  proof: [case-final-handoff-order, behavior-tests, oracle]
+- text: >-
+    loads_settings uses B002's production decoder with omitted/default, valid override, and invalid-value inputs for
+    general_settings.forward_llm_provider_auth_headers=false, litellm_settings.forward_llm_provider_auth_headers=false/
+    unset, general_settings.litellm_key_header_name=null, general_settings.global_max_parallel_requests=null,
+    general_settings.use_x_forwarded_for=null, litellm_settings.overwrite_user_with_key_hash=false, and
+    litellm_settings.turn_off_message_logging=false. Each omitted key resolves to the stated default, each valid
+    override changes the typed setting, each invalid value follows B002's named diagnostic/fallback, and each accepted
+    key is absent from unsupported-key diagnostics; no request_intake code reads an environment variable.
+  proof: [config-tests, config-corpus]
 checks:
   optional:
   - mutants
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail
-      -E 'test(/^api::request_intake::/) - test(/::replays_corpus$/)'
-  - id: case-forged-auth-metadata
-    why: the forged-auth-metadata behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_intake::tests::forged_auth_metadata($|::)/)'
-  - id: case-credential-header-redaction
-    why: the credential-header-redaction behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_intake::tests::credential_header_redaction($|::)/)'
-  - id: case-snapshot-after-strip
-    why: the snapshot-after-strip behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_intake::tests::snapshot_after_strip($|::)/)'
+    why: The request-intake production tests or one of their named cases is absent, so a missing mutation can pass an oracle fixture alone.
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::request_intake::/) - test(/::replays_corpus$/)'
+  - id: case-forged-controls
+    why: Root and metadata control stripping, the gateway cache key, and the authenticated mock exception are not all exercised.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_intake::tests::forged_controls($|::)/)'
+  - id: case-invalid-metadata
+    why: The two exact 400 metadata-field cases and JSON-object string acceptance are missing or wrong.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_intake::tests::invalid_metadata($|::)/)'
+  - id: case-provider-auth-forwarding
+    why: Header priority, module-level auth forwarding fallback, provider forwarding, and safe redaction are missing or wrong.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_intake::tests::provider_auth_forwarding($|::)/)'
+  - id: case-snapshot-and-metadata-order
+    why: The post-strip snapshot exclusions, requester copy, and merge order are missing or wrong.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_intake::tests::snapshot_and_metadata_order($|::)/)'
+  - id: case-query-version-and-cache
+    why: Query api-version, cache-control ttl, and the KeyError fallback are absent or wrong.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_intake::tests::query_version_and_cache($|::)/)'
+  - id: case-principal-budget-projection
+    why: Principal budgets, tag provenance, and key-over-team OTel service-name precedence are absent or wrong.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_intake::tests::principal_budget_projection($|::)/)'
+  - id: case-turn-off-logging-and-agentic-drop
+    why: False-like logging strips, the opt-out, identity defaults, forwarded IP choice, and agentic drop policy are absent or wrong.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_intake::tests::turn_off_logging_and_agentic_drop($|::)/)'
+  - id: case-final-handoff-order
+    why: Callback, guardrail, alias, credential, enforced-parameter, and service-event order is absent or wrong.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_intake::tests::final_handoff_order($|::)/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    why: A declared request-intake setting is rejected, has the wrong default, does not override, or lacks its loader test.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::request_intake::tests::loads_settings($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/request-intake-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    why: No new request-intake YAML seed reaches B002's production decoder replay with the declared settings.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/request-intake-*)" && grep -R -E -q 'forward_llm_provider_auth_headers|overwrite_user_with_key_hash|global_max_parallel_requests|turn_off_message_logging|litellm_key_header_name|use_x_forwarded_for' crates/betterlite-config/fuzz/corpus/config_yaml/request-intake-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: The task has no newly added HTTP parity fixture for its provider-reaching request path.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/request-intake)"
 oracle_cases:
-- tools/oracle/cases/api/request-intake/forged-auth-metadata.yaml
-- tools/oracle/cases/api/request-intake/credential-header-redaction.yaml
-- tools/oracle/cases/api/request-intake/snapshot-after-strip.yaml
+- tools/oracle/cases/api/request-intake/forged-controls.yaml
+- tools/oracle/cases/api/request-intake/invalid-metadata.yaml
+- tools/oracle/cases/api/request-intake/provider-auth-forwarding.yaml
+- tools/oracle/cases/api/request-intake/snapshot-and-metadata-order.yaml
+- tools/oracle/cases/api/request-intake/query-version-and-cache.yaml
+- tools/oracle/cases/api/request-intake/principal-budget-projection.yaml
+- tools/oracle/cases/api/request-intake/turn-off-logging-and-agentic-drop.yaml
+- tools/oracle/cases/api/request-intake/final-handoff-order.yaml
 deviations: []
 out_of_scope:
-- 'litellm/proxy/litellm_pre_call_utils.py: B1104 owns _trace_id_from_traceparent L101-L110, _trace_id_from_otel_span
-  L113-L124, add_otel_trace_id_to_request L127-L141, _session_id_from_baggage L144-L151, parse_cache_control L225-L236,
-  clean_headers L1173-L1223, _is_credential_header L1226-L1228, redact_credential_headers L1231-L1247, LiteLLMProxyRequestSetup._get_timeout_from_request
-  L1252-L1274, LiteLLMProxyRequestSetup._get_stream_timeout_from_request L1277-L1284, LiteLLMProxyRequestSetup._get_keepalive_seconds_from_request
-  L1287-L1297, LiteLLMProxyRequestSetup._get_num_retries_from_request L1300-L1307, LiteLLMProxyRequestSetup._get_spend_logs_metadata_from_request_headers
-  L1310-L1319, LiteLLMProxyRequestSetup._get_forwardable_headers L1322-L1341, LiteLLMProxyRequestSetup._get_case_insensitive_header
-  L1344-L1351, LiteLLMProxyRequestSetup.add_internal_user_from_user_mapping L1354-L1371, LiteLLMProxyRequestSetup.get_user_from_headers
-  L1374-L1392, LiteLLMProxyRequestSetup.get_openai_org_id_from_headers L1395-L1405, LiteLLMProxyRequestSetup.add_headers_to_llm_call
-  L1408-L1435, LiteLLMProxyRequestSetup.add_headers_to_llm_call_by_model_group L1438-L1462, LiteLLMProxyRequestSetup.get_internal_user_header_from_mapping
-  L1465-L1478, LiteLLMProxyRequestSetup.add_litellm_data_for_backend_llm_call L1481-L1535, LiteLLMProxyRequestSetup.add_litellm_metadata_from_request_headers
-  L1538-L1612, add_provider_specific_headers_to_request L3489-L3513, _add_otel_traceparent_to_data L3516-L3536.'
-- 'litellm/proxy/litellm_pre_call_utils.py: B1105 owns _stampable_key_hash L154-L165, _sanitize_for_log L171-L184,
-  _invalid_metadata_type_error L443-L450, _normalized_metadata_object L453-L465, _normalized_metadata_slot L468-L482,
-  _strip_untrusted_request_header_controls L485-L497, _is_false_like L500-L505, _key_or_team_metadata_flag_is_true
-  L508-L515, _key_or_team_allows_client_mock_response L518-L524, _key_or_team_allows_client_message_redaction_opt_out
-  L527-L533, _key_or_team_allows_client_pricing_override L536-L542, _strip_client_message_redaction_opt_out L545-L560,
-  _strip_client_callback_credentials L563-L593, _strip_client_pricing_overrides L596-L624, _strip_router_reserved_metadata
-  L627-L638, _get_metadata_variable_name L641-L652, metadata_variable_name_for_route L655-L662, _promoted_trace_control_fields
-  L665-L674, _extract_generic_session_id_from_headers L677-L699, _extract_codex_session_id_from_headers L702-L728,
-  _extract_bare_session_id_from_headers L731-L743, get_chain_id_from_headers L746-L773, _get_anthropic_session_id_from_metadata
-  L776-L797, _is_llm_inference_route L800-L804, apply_missing_session_id_policy L807-L858, refresh_proxy_server_request_body_snapshot
-  L1951-L1990.'
-- 'litellm/proxy/litellm_pre_call_utils.py: B1102 owns _reject_url_valued_destinations L394-L408, reject_url_valued_destination
-  L411-L435.'
-- 'litellm/proxy/litellm_pre_call_utils.py: B1109 owns apply_missing_session_id_policy L807-L858, should_auto_drop_params_for_agentic_cli
-  L861-L875, safe_add_api_version_from_query_params L878-L887, convert_key_logging_metadata_to_callback L890-L940,
-  _get_validated_callback_metadata L943-L952, KeyAndTeamLoggingSettings.get_key_dynamic_logging_settings L961-L964,
-  KeyAndTeamLoggingSettings.get_team_dynamic_logging_settings L967-L970, _get_dynamic_logging_metadata L973-L1031,
-  _tenant_otel_params L1037-L1041, _dynamically_disabled_backends L1047-L1072, resolve_tenant_otel_destinations
-  L1075-L1150, _tenant_service_name L1153-L1170, clean_headers L1173-L1223.'
-- 'litellm/proxy/litellm_pre_call_utils.py: B1106 owns LiteLLMProxyRequestSetup.get_logged_api_key L1615-L1618,
-  LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key L1621-L1650, LiteLLMProxyRequestSetup.add_user_api_key_auth_to_request_metadata
-  L1653-L1703, LiteLLMProxyRequestSetup.add_management_endpoint_metadata_to_request_metadata L1706-L1732, LiteLLMProxyRequestSetup.add_key_level_controls
-  L1735-L1778, LiteLLMProxyRequestSetup._merge_tags L1781-L1802, LiteLLMProxyRequestSetup.add_team_based_callbacks_from_config
-  L1805-L1831, LiteLLMProxyRequestSetup.add_request_tag_to_metadata L1834-L1852, LiteLLMProxyRequestSetup.pre_seed_litellm_metadata_for_route
-  L1855-L1873, LiteLLMProxyRequestSetup.apply_key_tags_pre_auth L1876-L1896, LiteLLMProxyRequestSetup.apply_client_tag_policy_pre_auth
-  L1899-L1948.'
-- 'litellm/proxy/litellm_pre_call_utils.py: B1103 owns add_litellm_data_to_request L2340-L2580 stage.'
-- 'litellm/proxy/litellm_pre_call_utils.py: B1107 owns _warn_stale_team_alias_once L2583-L2589, _update_model_if_team_alias_exists
-  L2592-L2667, _update_model_if_key_alias_exists L2670-L2693, _apply_credential_overrides_from_model_config L2696-L2781,
-  _resolve_provider_from_deployment L2784-L2821, _resolve_credential_from_model_config L2824-L2876, _extract_credential_from_entry
-  L2879-L2905, _get_enforced_params L2908-L2925, check_if_token_is_service_account L2928-L2939, _enforced_params_check
-  L2942-L2978.'
-- 'litellm/proxy/litellm_pre_call_utils.py: B1108 owns _add_guardrails_from_key_or_team_metadata L2981-L3026, _add_guardrails_from_policies_in_metadata
-  L3029-L3134, add_guardrails_from_auth_metadata L3137-L3156, move_guardrails_to_metadata L3159-L3231, _is_policy_version_id
-  L3234-L3238, _extract_policy_id L3241-L3247, _match_and_track_policies L3250-L3311, _apply_resolved_guardrails_to_metadata
-  L3314-L3366, add_guardrails_from_policy_engine L3369-L3475.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- 'litellm/proxy/litellm_pre_call_utils.py: B1102 owns _reject_url_valued_destinations (L394-L408) and reject_url_valued_destination (L411-L435), including their HTTP 400 invalid_request response; this task passes already-validated data.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1104 owns clean_headers (L1173-L1223), redact_credential_headers (L1231-L1247), add_litellm_data_for_backend_llm_call (L1481-L1535), add_litellm_metadata_from_request_headers (L1538-L1612), add_internal_user_from_user_mapping (L1354-L1371), get_user_from_headers (L1374-L1392), add_headers_to_llm_call_by_model_group (L1438-L1462), add_provider_specific_headers_to_request (L3489-L3513), add_otel_trace_id_to_request (L127-L141), _add_otel_traceparent_to_data (L3516-L3536), and the timeout/retry/forwardable-header helpers L1252-L1478.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1105 owns metadata normalization and its status=400/type=bad_request_error/param/code=400 constructor (L443-L465), all root/metadata/header/callback/pricing/router strips L485-L638, route metadata selection and trace promotion L641-L674, session extraction/policy L677-L858, key hash stamping L154-L165, and refresh_proxy_server_request_body_snapshot (L1951-L1990).'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1106 owns principal metadata and tag helpers get_logged_api_key through apply_client_tag_policy_pre_auth (L1615-L1948), including add_key_level_controls, _merge_tags, add_request_tag_to_metadata, carried principal fields, and management metadata merge mechanics.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1109 owns safe_add_api_version_from_query_params (L878-L887), should_auto_drop_params_for_agentic_cli (L861-L875), dynamic callback resolution (L890-L1150), and tenant service metadata (L1153-L1170); B1137 asserts their call order and returned effects only.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1107 owns _update_model_if_team_alias_exists (L2592-L2667), _update_model_if_key_alias_exists (L2670-L2693), _apply_credential_overrides_from_model_config and credential helpers (L2696-L2905), and _enforced_params_check (L2942-L2978), including their warnings and ProxyException contracts.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1108 owns move_guardrails_to_metadata (L3159-L3231) and all guardrail/policy helpers (L2981-L3156, L3234-L3475), including policy-registry warnings and premium checks.'
+- 'litellm/proxy/_experimental/mcp_server/utils.py: B124 owns upstream_credential_headers (L981-L1010); this task calls it before B1104 redaction and tests only the resulting safe view.'
+- 'litellm/proxy/proxy_server.py: B124 owns the llm_router and premium_user globals and the service logger used by this callable; no enterprise hook or database implementation is copied.'
+- 'litellm/proxy/spend_tracking/carried_budget_state.py: B071 owns carried_budget_metadata (L46 onward); this task records its returned fields in the principal projection.'
+- 'litellm/proxy/common_utils/callback_utils.py: B189 owns strip_callback_config (L710 onward); this task uses it for the two user_api_key metadata projections.'
+- 'Provider dispatch and route authentication belong to B004, B732, B855, and their provider/route owners; the one chat HTTP case reaches the configured mock provider and does not create helper-only parity claims.'
+- 'No environment variable or database write is read or performed by add_litellm_data_to_request; B002 owns environment substitution and B071/B855 own persistence and admission.'
 pitfalls:
-- 'litellm_pre_call_utils.py:2083 emits the diagnostic ''Request Headers: %s''; retain its level and fallback instead
-  of turning it into a hard error.'
-- 'litellm_pre_call_utils.py:2084 emits the diagnostic ''Raw Headers: %s''; retain its level and fallback instead
-  of turning it into a hard error.'
+- 'The root tuple contains litellm_gateway_injected_cache between routing_decision and pillar_response_headers, while metadata also strips it under the literal name; omitting either location leaves a forged cache marker.'
+- 'The metadata membership check is separate from the user_api_key_ prefix check and runs on both metadata and litellm_metadata after JSON-string parsing; a sample only in root data does not prove all 29 exact metadata controls are removed.'
+- 'An explicit general_settings.forward_llm_provider_auth_headers=false falls through to litellm.forward_llm_provider_auth_headers because the code tests truthiness twice; a false config test must also set the module fallback true to expose this precedence.'
+- 'The team metadata merge is followed by a second key-only merge for otel_service_name_override and otel_service_name; applying team metadata last reverses the documented key-over-team result.'
+- 'proxy_server_request.body is refreshed only after all strips and excludes proxy_server_request itself; taking an early snapshot leaks user_api_key_forged and recursing through body creates a self-reference.'
+- 'The else branch labels authentication as x-api-key even when no x-api-key header exists, so a request with only another header must not accidentally forward that other credential.'
+- 'The service-success hook is scheduled with asyncio.create_task after _enforced_params_check and is not awaited; treating it as an inline database write changes the return/error timing.'
 review_level: security
 budget:
-  max_changed_lines: 420
+  max_changed_lines: 780
   max_new_expects: 0

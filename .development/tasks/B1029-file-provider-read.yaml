@@ -1,156 +1,110 @@
 id: B1029
-title: File provider read
+title: File SDK metadata and list selection
 description: >-
-  Implement provider file retrieve/list operations and cursor pagination through configured adapters. Return typed
-  FileObject/list records and preserve provider extra fields only in the named bounded passthrough field.
+  Add the whole afile_retrieve/file_retrieve and afile_list/file_list functions to
+  betterlite-core::api::file_provider_read. Their provider-selection order differs: retrieve
+  tests OpenAI-compatible and Azure first, list tests the provider config first. Use B516/B694
+  for compatible/Azure methods and B2462 for generic operations, with B500/B2200 credentials,
+  B176 trusted controls, B010 operation types, B2464 file registry/timeout selection and B012 logging.
 
-
-  Implement crates/betterlite-core/src/api/file_provider_read.rs. Use FileProviderReadInput and FileProviderReadResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions file_retrieve_object, file_list_purpose, file_list_after, file_list_provider_error
-  under api::file_provider_read::tests. Each named function drives production code and asserts its case result;
-  use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::FileProviderRead in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_provider_read: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/files/main.py: afile_retrieve (L299-L336); litellm/files/main.py: file_retrieve (L340-L463);
-  litellm/files/main.py: afile_list (L644-L681); litellm/files/main.py: file_list (L685-L802). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 271 owned nonblank/non-comment/non-docstring Python lines (287 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 291 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 523 total within the 530-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B009 (Outbound HTTP clients, proxies, TLS and connection reuse for every provider), B010
-  (Provider framework, provider resolution and parameter mapping), B171 (Direct helper oracle and URL path encoding),
-  B1015 (File contracts), B1087 (Api boundaries), B516 (OpenAI file lifecycle and streaming content). These are
-  callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the
-  provider and keys/data branches.
+  This task does not implement proxy pagination: the SDK wrapper forwards purpose but drops
+  after/limit/order. Generic provider pagination belongs to B2462, OpenAI SDK pages to B516.
+  Register file_provider_read as a B2401 SDK HTTP operation; record actual requests and SDK
+  results/errors for sync and async calls. Native tests in api::file_provider_read::tests also
+  inspect callback construction and dropped fields. No helper or new decoder is needed.
+  Whole functions with decorators count 289 nonblank, non-comment lines. Allow 210 implementation,
+  150 tests, 120 fixtures, 90 adapters and 30 wiring lines, totaling 600.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_provider_read.rs
   - crates/betterlite-core/src/api/file_provider_read/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/file_provider_read.rs
-  - tools/oracle/src/helpers/file_provider_read/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/file_provider_read.py
-  - tools/oracle/helpers/file_provider_read/**
-  - tools/oracle/fuzz/corpus/helper_case/file_provider_read-*
-  - tools/oracle/cases/helpers/file-provider-read/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/file_provider_read.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/file_provider_read.py
+  - tools/oracle/cases/sdk-http/file-provider-read/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/file-provider-read-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L299-L463
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L644-L802
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L298-L463
+  why: Retrieve dispatch and the asynchronous OpenAIFileObject revalidation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L643-L802
+  why: Config-first listing, purpose forwarding and subtly different fallback logging id handling.
 dod:
-- text: 'file retrieve object: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-file-retrieve-object
-  - oracle
-- text: 'file list purpose: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-file-list-purpose
-  - oracle
-- text: 'file list after: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-file-list-after
-  - oracle
-- text: 'file list provider error: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-file-list-provider-error
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    retrieve_provider_metadata calls both forms without a provider and gets openai; hosted_vllm
+    and litellm_proxy use the same compatible branch, azure its credential/version branch, and
+    anthropic the generic config. file_id=f survives unchanged until the provider path encoder.
+    Async revalidates response.model_dump() as OpenAIFileObject; sync returns the provider object.
+    A mock 404 with type=invalid_request_error,param=file_id,code=file_not_found,message=missing
+    retains those error facts through the selected provider. extra_headers/extra_body are unused
+    by OpenAI/Azure retrieve; generic retrieve uses extra_headers or {} but ignores extra_body.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    list_purpose_without_client_cursor sends purpose absent,null,"",batch and after=f,limit=1,
+    order=asc. OpenAI forwards string purpose only, including "", and sends none of those three
+    pagination kwargs; generic list gets purpose and its own pagination context, not new query
+    parameters invented from the caller's kwargs. Mock pages preserve provider order and duplicates.
+    Returned list/page shapes remain those of the chosen provider; this dispatcher adds no object=list wrapper.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    read_deadline_and_mode covers timeout=2 over request_timeout=3; absent/null/0 values fall
+    back to 600, numeric "2.5" becomes 2.5, invalid text fails before dispatch. HTTP timeout objects
+    pass intact for openai/azure/bedrock and otherwise reduce to read or 600. Only is_async=true
+    activates async mode; both async wrappers force it and preserve context across the executor.
+    B2462's generic retrieve drops the deadline at GET despite receiving it from this dispatcher.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    read_trusted_context passes trusted model credentials to the generic config, then overwrites
+    api_key/api_base with optional values even when null. Only HTTPHandler/AsyncHTTPHandler client
+    objects survive there; OpenAI/Azure read wrappers do not receive the SDK caller's client.
+    Missing logger creates model="",messages=[],stream=false,clock start_time, call_type
+    file_retrieve/afile_retrieve or file_list/afile_list, and litellm_call_id from kwargs.get with
+    a generated UUID default (explicit null remains null). Retrieve function_id=str(id or "");
+    list function_id=str(kwargs.get("id","")), so id=null gives "None" only for list.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    unsupported_file_read passes cohere and expects BadRequestError 400,type=null,param=null,
+    code=null,message="litellm.BadRequestError: LiteLLM doesn't support cohere for 'file_retrieve'.
+    Only 'openai', 'azure', 'manus', and 'anthropic' are supported." List substitutes 'file_list'
+    in that exact message. Both error bodies are "Unsupported provider", model=n/a;
+    request method=create_thread for retrieve and file_list for list, URL=https://github.com/BerriAI/litellm.
+    Unknown provider names fail enum conversion before these branches. No provider request occurs.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: Metadata/list parity uses new mock captures and a typed SDK protocol seed.
+  proof: [new-cases, sdk-seeds, oracle, sdk-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_read::/) -
-      test(/::replays_corpus$/)'
-  - id: case-file-retrieve-object
-    why: the file-retrieve-object behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_read::tests::file_retrieve_object($|::)/)'
-  - id: case-file-list-purpose
-    why: the file-list-purpose behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_read::tests::file_list_purpose($|::)/)'
-  - id: case-file-list-after
-    why: the file-list-after behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_read::tests::file_list_after($|::)/)'
-  - id: case-file-list-provider-error
-    why: the file-list-provider-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_read::tests::file_list_provider_error($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/file_provider_read.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_provider_read-*)"
-      && grep -qE "^[[:space:]]+file_provider_read:" tools/oracle/fuzz/corpus/helper_case/file_provider_read-* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-provider-read)"
+    why: list field dropping and retrieve dispatch have no native assertions
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_read::tests::/) - test(/replays_/)'
+  - id: sdk-python
+    why: file metadata SDK adapter is missing or untyped
+    run: test -f tools/oracle/sdk_http/file_provider_read.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-seeds
+    why: read operation has no added SDK seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-provider-read-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: SDK metadata requests lack independent fixtures
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/file-provider-read)"
 oracle_cases:
-- tools/oracle/cases/helpers/file-provider-read/file-retrieve-object.yaml
-- tools/oracle/cases/helpers/file-provider-read/file-list-purpose.yaml
-- tools/oracle/cases/helpers/file-provider-read/file-list-after.yaml
-- tools/oracle/cases/helpers/file-provider-read/file-list-provider-error.yaml
+- tools/oracle/cases/sdk-http/file-provider-read/retrieve-provider-metadata.yaml
+- tools/oracle/cases/sdk-http/file-provider-read/list-purpose-without-client-cursor.yaml
+- tools/oracle/cases/sdk-http/file-provider-read/read-deadline-and-mode.yaml
+- tools/oracle/cases/sdk-http/file-provider-read/read-trusted-context.yaml
+- tools/oracle/cases/sdk-http/file-provider-read/unsupported-file-read.yaml
 deviations: []
 out_of_scope:
-- 'litellm/files/main.py: B1030 owns _should_sdk_support_streaming L83-L89, _file_content_logging_obj L92-L104,
-  afile_content L806-L849, file_content L853-L1031, file_content_streaming L1034-L1138.'
-- 'litellm/files/main.py: B1028 owns acreate_file L116-L157, create_file L161-L295, afile_delete L468-L507, file_delete
-  L511-L639.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1028 owns upload/delete, B1030 content and content-logging helpers. B2462 owns all generic metadata HTTP and pagination methods.
+- Python executor facades are B159-B161; provider path encoding, authentication and response decoding stay B516/B694 or the concrete config selected by B2464.
 pitfalls:
-- file_retrieve uses kwargs.get('request_timeout', 600); retain its missing-value behavior and field spelling in
-  the typed projection.
-- file_retrieve uses kwargs.pop('is_async', False); retain its missing-value behavior and field spelling in the
-  typed projection.
-review_level: standard
+- The source accepts after/limit in kwargs but these wrappers do not send them to OpenAI.
+- List's null id becomes the string "None" in function_id; retrieve uses an empty string.
+- Async retrieve reconstructs OpenAIFileObject, while async list returns the awaited result directly.
+review_level: security
 budget:
-  max_changed_lines: 530
-  max_new_expects: 1
+  max_changed_lines: 600
+  max_new_expects: 0

@@ -1,162 +1,326 @@
 id: B1119
-title: Responses to Messages event transitions
+title: Translate Responses events into Messages block transitions
 description: >-
-  Convert one parsed Responses event into Anthropic block/usage transitions, preserving stable block indexes and
-  reasoning closure. Stream lifetime/error handling stays with B986.
+  Implement the parsed-event state machine in
+  crates/betterlite-core/src/api/messages_response_events.rs for the complete
+  owned range in
+  litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py.
+  The state starts with current block index -1, empty item-to-index and
+  pending-tool maps, empty refusal text and chunk queue, and false
+  sent-message-start, sent-message-stop and stream-failed flags. Export a
+  typed state record for B986's iterator; do not make transition tests depend
+  on B986's UUID, iterator or upstream stream.
 
+  Own _UpstreamFailure, _FailedResponse and _FailedResponseEvent, including
+  their frozen/from-attributes behavior, _original_failure,
+  _failure_status_and_message, _anthropic_error_chunk, the complete
+  _process_event method, _make_message_start, _next_block_index, _open_block,
+  _field, _close_reasoning_item and _fail_stream. The transition input is
+  already a parsed dict or attribute object supplied by B1113. There is no query
+  parameter, config key, database write or provider HTTP call in this range;
+  preserve its silent returns for unknown events and unusable fields, and
+  preserve the one error log made for response.failed. B986 retains
+  constructor/iteration/SSE lifetime and encoding, so this task has helper
+  cases rather than an HTTP route case.
 
-  Implement crates/betterlite-core/src/api/messages_response_events.rs. Use MessagesResponseEventsInput and MessagesResponseEventsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  The client error chunk must pass its message through the B187-backed
+  internal-detail redactor before B958's Anthropic error mapping. The
+  compatibility gate is LITELLM_DISABLE_REDACT_SECRETS: the pinned default is
+  the empty string, and only case-insensitive literal true disables
+  redaction. B983 supplies usage conversion and the literal two-newline
+  reasoning separator; B220 supplies encrypted reasoning signatures; B925
+  supplies failed-event status/message extraction; B963 supplies refusal
+  text, refusal stop details and the exact incomplete-stream fallback; B958
+  supplies the Anthropic error envelope.
 
-
-  Write adjacent tests.rs behavior functions responses_text_to_message, reasoning_block_close, tool_arguments_input_json
-  under api::messages_response_events::tests. Each named function drives production code and asserts its case result;
-  use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesResponseEvents in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
-  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_response_events: <typed
-  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
-  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
-  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
-  route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py: _UpstreamFailure.http_error_status_or_none
-  (L43-L51); litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py: _UpstreamFailure.str_or_none
-  (L55-L56); litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py: _original_failure (L71-L75);
-  litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py: _failure_status_and_message (L78-L85);
-  litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py: _anthropic_error_chunk (L88-L98);
-  litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py: AnthropicResponsesStreamWrapper._make_message_start
-  (L140-L158); litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py: AnthropicResponsesStreamWrapper._next_block_index
-  (L160-L162); litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py: AnthropicResponsesStreamWrapper._open_block
-  (L164-L175); litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py: AnthropicResponsesStreamWrapper._field
-  (L178-L179); litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py: AnthropicResponsesStreamWrapper._close_reasoning_item
-  (L181-L207); litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py: AnthropicResponsesStreamWrapper._process_event
-  (L209-L431); litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py: AnthropicResponsesStreamWrapper._fail_stream
-  (L433-L435). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 339 owned nonblank/non-comment/non-docstring Python lines (340 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 359 implementation,
-  58 behavior tests, 36 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 573 total within the 580-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B902 (Responses shapes), B983 (Messages responses input), B1113 (Responses streaming event
-  records), B171 (Direct helper oracle and URL path encoding), B1087 (Api boundaries), B925 (Responses stream events),
-  B963 (Messages options), B958 (Messages errors). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Register HelperCall::MessagesResponseEvents for the parsed transitions and
+  failure projection. The Python helper invokes the pinned methods on an
+  inert state object, with separate fixtures for dictionaries and attribute
+  objects because completed events read response.output, response.status and
+  response.usage by attribute only. The Rust helper invokes the production
+  state machine. Add one shared HelperCase seed per operation family and
+  compare ordered chunks, state flags/maps/queue effects, log diagnostics and
+  error fields. Own 313 nonblank, non-comment physical LiteLLM lines; budget
+  300 implementation, 190 behavior tests, 170 fixtures, 100 adapters and 25
+  wiring lines, 785 total.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_response_events.rs
   - crates/betterlite-core/src/api/messages_response_events/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/messages_response_events.rs
-  - tools/oracle/src/helpers/messages_response_events/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/messages_response_events.py
-  - tools/oracle/helpers/messages_response_events/**
-  - tools/oracle/fuzz/corpus/helper_case/messages_response_events-*
   - tools/oracle/cases/helpers/messages-response-events/**
+  - tools/oracle/fuzz/corpus/helper_case/messages_response_events-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L1-L98
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L140-L431
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L433-L435
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L36-L98
+  why: >-
+    _UpstreamFailure accepts only HTTP failure statuses and string messages,
+    walks MidStreamFallbackError.original_exception, chooses the 500/incomplete
+    fallback, and maps a redacted message into the Anthropic error chunk.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L140-L207
+  why: >-
+    Message-start defaults, monotonically allocated block indexes, truthy item
+    ID maps, dict-versus-attribute field access, and reasoning closure produce
+    the first and last chunks for a content block.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L209-L435
+  why: >-
+    _process_event owns all Responses event names, their queue order and
+    missing-field returns, while _fail_stream marks terminal failure and
+    appends the mapped error without a message_stop.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L71-L125
+  why: >-
+    The client-message boundary reads LITELLM_DISABLE_REDACT_SECRETS with an
+    empty default, disables only lower-cased true, and otherwise calls the
+    internal-detail redactor used before a response leaves the process.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exception_mapping_utils.py#L14-L69
+  why: >-
+    B958's mapper turns status 400, 401, 403, 404, 413, 429, 500 and 529
+    into the exact Anthropic error.type values and omits param and code when
+    it creates a new envelope.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exception_mapping_utils.py#L126-L169
+  why: >-
+    B958's transform_to_anthropic_error parses raw_message first and returns an
+    already-shaped {"type":"error","error":{"type":...,"message":...}}
+    dict unchanged, except for an optional missing request_id, so status-code
+    mapping is skipped for that literal input shape.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/transformation.py#L52-L78
+  why: >-
+    B983's REASONING_SUMMARY_PART_SEPARATOR is the literal two-newline string
+    and its usage translator turns Responses token counters into Anthropic
+    usage counters, including the cache-read subtraction.
 dod:
-- text: 'responses text to message: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-responses-text-to-message
-  - oracle
-- text: 'reasoning block close: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-reasoning-block-close
-  - oracle
-- text: 'tool arguments input json: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-tool-arguments-input-json
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    failure_projection validates status_code=429 and status_code="٤٢٩" as
+    429, but bool true, float 429.0, "+429", " 429 ", 399, 600 and a
+    nondecimal string as null; it validates message="busy" as busy and
+    message=429 as null. A nested MidStreamFallbackError chain follows
+    original_exception until the first non-wrapper or wrapper with no link.
+    It chooses that failure's nonempty message, otherwise str(original),
+    otherwise the exact B963 literal "Provider stream ended before emitting a
+    message_stop event; the response is incomplete and any partial content
+    (e.g. tool_use input JSON) may be truncated.", with status 500 when no
+    valid status remains. With message="sk-SECRET" and the redactor enabled,
+    the error mapper receives the scrubbed text rather than the secret; with
+    LITELLM_DISABLE_REDACT_SECRETS="true" it receives the original text.
+    Mapping status 400,401,403,404,413,429,500,529 and 418 yields respectively
+    invalid_request_error, authentication_error, permission_error,
+    not_found_error, request_too_large, rate_limit_error, api_error,
+    overloaded_error and api_error with type=error and no param/code when the
+    redacted message is plain text or a non-Anthropic JSON object. With
+    status_code=500 and message='{"type":"error","error":{"type":"custom_type","message":"from upstream"}}',
+    the expected error chunk is that exact parsed object unchanged and the
+    status-code mapping is skipped.
+  proof: [case-failure-projection, behavior-tests, oracle, helper-python]
+- text: >-
+    message_start_and_item_opening processes response.created twice and emits
+    one message_start whose id is the supplied msg_id, type=message,
+    role=assistant, content=[], model=model_a, stop_reason=null,
+    stop_sequence=null and usage input_tokens=0, output_tokens=0,
+    cache_creation_input_tokens=0 and cache_read_input_tokens=0. Missing or
+    unknown event type and response.output_item.added without item return
+    without chunks or state changes. A message item with id=item_a opens
+    index=0 content_block={type:text,text:""}; a function_call item with
+    id=item_tool, call_id=call_a and name=lookup opens index=1 with
+    {type:tool_use,id:call_a,name:lookup,input:{}} and records call_a.
+    Missing call_id/name become the literal empty string. Reopening item_a
+    allocates index=2 and overwrites its map; empty item IDs are not mapped.
+    reasoning and unknown item types emit nothing.
+  proof: [case-message-start-and-item-opening, behavior-tests, oracle, helper-python]
+- text: >-
+    text_and_refusal_deltas handles response.output_text.delta and
+    response.refusal.delta. A text delta with item_id=item_a uses its mapped
+    index, while a delta before any block opens index=0 as
+    {type:text,text:""}; delta="" is still emitted as text_delta text="".
+    A refusal delta accepts only a nonempty string, appends it to the private
+    refusal text, lazily opens the current text block when the index is -1,
+    and emits content_block_delta with delta {type:text_delta,text:...};
+    empty and nonstring refusal values are dropped. Truthy attribute fields
+    win over dict fallback, falsey attribute fields fall back to dict values,
+    and event.type falls back to a dict only when the attribute is null.
+  proof: [case-text-and-refusal-deltas, behavior-tests, oracle, helper-python]
+- text: >-
+    reasoning_summary_boundaries handles response.reasoning_summary_text.delta
+    and response.reasoning_summary_part.added. A nonempty text delta for
+    item_id=reason_a with no block opens
+    {type:thinking,thinking:"",signature:""} and emits thinking_delta;
+    an empty delta before a block is dropped, while an empty delta for an
+    existing block is emitted even if that block is text. A part-added event
+    never opens a block: only a mapped string item_id and integer
+    summary_index other than zero emit thinking_delta thinking="\n\n".
+    summary_index=-1 and true qualify; false, 0, 1.5 and "1" do not.
+    The existing block type is not rechecked by the summary-text branch.
+  proof: [case-reasoning-summary-boundaries, behavior-tests, oracle, helper-python]
+- text: >-
+    reasoning_item_closure processes response.output_item.done. For a
+    reasoning item with encrypted_content="cipher" and a mapped index=0 it
+    queues signature_delta signature="litellm_encrypted_reasoning:cipher"
+    then content_block_stop index=0. For an unmapped item it opens
+    index=0 with {type:redacted_thinking,data:"litellm_encrypted_reasoning:cipher"}
+    and immediately queues its stop. Missing, null and empty encrypted_content
+    produce no signature; an unmapped item then produces no chunks, while a
+    mapped/current block still gets a stop. A missing item_id uses the current
+    index, including stopping a current text block. B220, not this task,
+    performs cryptographic encoding or trimming.
+  proof: [case-reasoning-item-closure, behavior-tests, oracle, helper-python]
+- text: >-
+    tool_arguments_and_done handles response.function_call_arguments.delta and
+    non-reasoning response.output_item.done. A mapped item_id=tool_a emits
+    input_json_delta with the exact partial_json string, including ""; an
+    absent or empty ID uses the current index, including -1 before any block,
+    and never synthesizes a tool_use start. A done item stops its mapped or
+    current index when that index is at least 0; an unmapped index -1 is
+    silently dropped. Repeated done events repeat content_block_stop because
+    no map entry is cleared.
+  proof: [case-tool-arguments-and-done, behavior-tests, oracle, helper-python]
+- text: >-
+    completed_stop_precedence uses attribute-shaped response objects. For
+    response.completed or response.incomplete, response.status="incomplete"
+    wins with stop_reason=max_tokens; otherwise a nonempty final output
+    refusal wins with stop_reason=refusal, then an accumulated streamed
+    refusal, then any function_call output with tool_use, otherwise end_turn.
+    Refusal adds stop_details={type:refusal,category:null,explanation:text};
+    every stop has stop_sequence=null. Usage input_tokens=10,
+    input_tokens_details.cached_tokens=3 and output_tokens=2 becomes
+    input_tokens=7, cache_read_input_tokens=3 and output_tokens=2 through
+    B983. The queue order is message_delta then message_stop, sent_message_stop
+    becomes true, and open content blocks are not closed.
+  proof: [case-completed-stop-precedence, behavior-tests, oracle, helper-python]
+- text: >-
+    completed_dictionary_shape_is_not_object_shape sends a dict response with
+    status="incomplete", usage={input_tokens:10,output_tokens:2} and one
+    function_call output, then expects end_turn and zero usage because the
+    completed branch reads response.status, response.usage and response.output
+    by attribute. An attribute-shaped response uses those fields. A final
+    output refusal beats an already accumulated refusal; a missing response
+    yields end_turn and input/output usage zero. Calling _process_event twice
+    for response.completed queues two message_delta/message_stop pairs; B986
+    decides whether stream consumption suppresses duplicates.
+  proof: [case-completed-dictionary-shape, behavior-tests, oracle, helper-python]
+- text: >-
+    failed_event_is_terminal processes response.failed from a dict or an
+    attribute object through B925. error={type:rate_limit_error,message:busy}
+    yields status 429 and message busy, logs exactly
+    "AnthropicResponsesStreamWrapper: upstream Responses stream for m failed
+    (429): busy", sets stream_failed=true and appends one redacted error
+    chunk {type:error,error:{type:rate_limit_error,message:busy}} without a
+    message_stop. A missing response or error uses status 500 and the exact
+    B925 message "Response API in-stream error". A scalar response is a
+    validation failure, not a successful event. Existing queued content stays
+    ahead of the error chunk, and each invocation marks failure before
+    appending its chunk.
+  proof: [case-failed-event-terminal, behavior-tests, oracle, helper-python]
+- text: >-
+    The shared helper decoder selects every new messages_response_events case
+    and the native transition tests compare chunk order, queue contents,
+    current index, item maps, refusal text, sent/failed flags, log fields and
+    error type/message fields against independently executed pinned Python.
+  proof: [new-cases, corpus, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::/)
-      - test(/::replays_corpus$/)'
-  - id: case-responses-text-to-message
-    why: the responses-text-to-message behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::tests::responses_text_to_message($|::)/)'
-  - id: case-reasoning-block-close
-    why: the reasoning-block-close behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::tests::reasoning_block_close($|::)/)'
-  - id: case-tool-arguments-input-json
-    why: the tool-arguments-input-json behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::tests::tool_arguments_input_json($|::)/)'
+    why: A transition branch, state mutation or failure projection has no native test outside corpus replay.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::/) - test(/::replays_corpus$/)'
+  - id: case-failure-projection
+    why: Status coercion, fallback traversal or redacted error mapping is absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::tests::failure_projection($|::)/)'
+  - id: case-message-start-and-item-opening
+    why: Message-start defaults, item indexes or tool/message starts are absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::tests::message_start_and_item_opening($|::)/)'
+  - id: case-text-and-refusal-deltas
+    why: Text/refusal fallback and lazy-block behavior is absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::tests::text_and_refusal_deltas($|::)/)'
+  - id: case-reasoning-summary-boundaries
+    why: Reasoning block creation, separators and summary-index filtering are absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::tests::reasoning_summary_boundaries($|::)/)'
+  - id: case-reasoning-item-closure
+    why: Encrypted reasoning closure and redacted-thinking fallback are absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::tests::reasoning_item_closure($|::)/)'
+  - id: case-tool-arguments-and-done
+    why: Tool argument deltas and repeated done stops are absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::tests::tool_arguments_and_done($|::)/)'
+  - id: case-completed-stop-precedence
+    why: Completed stop precedence, usage projection and ordered terminal chunks are absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::tests::completed_stop_precedence($|::)/)'
+  - id: case-completed-dictionary-shape
+    why: Attribute-only completed reads and duplicate terminal events are absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::tests::completed_dictionary_shape($|::)/)'
+  - id: case-failed-event-terminal
+    why: Failed-event validation, logging, redaction and terminal queue behavior are absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_events::tests::failed_event_terminal($|::)/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_response_events.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_response_events-*)"
-      && grep -qE "^[[:space:]]+messages_response_events:" tools/oracle/fuzz/corpus/helper_case/messages_response_events-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: The adapter does not invoke the pinned transition and projection functions under strict Python checks.
+    run: test -f tools/oracle/helpers/messages_response_events.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: corpus
+    why: The shared helper parser has no valid messages_response_events seed or cannot replay it.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_response_events-*)" && grep -qE '^[[:space:]]+messages_response_events:' tools/oracle/fuzz/corpus/helper_case/messages_response_events-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: No independent transition fixture was added for this task.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-response-events)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-response-events/responses-text-to-message.yaml
-- tools/oracle/cases/helpers/messages-response-events/reasoning-block-close.yaml
-- tools/oracle/cases/helpers/messages-response-events/tool-arguments-input-json.yaml
+- tools/oracle/cases/helpers/messages-response-events/failure-projection.yaml
+- tools/oracle/cases/helpers/messages-response-events/message-start-and-item-opening.yaml
+- tools/oracle/cases/helpers/messages-response-events/text-and-refusal-deltas.yaml
+- tools/oracle/cases/helpers/messages-response-events/reasoning-summary-boundaries.yaml
+- tools/oracle/cases/helpers/messages-response-events/reasoning-item-closure.yaml
+- tools/oracle/cases/helpers/messages-response-events/tool-arguments-and-done.yaml
+- tools/oracle/cases/helpers/messages-response-events/completed-stop-precedence.yaml
+- tools/oracle/cases/helpers/messages-response-events/completed-dictionary-shape.yaml
+- tools/oracle/cases/helpers/messages-response-events/failed-event-terminal.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py: B986 owns AnthropicResponsesStreamWrapper.__init__
-  L117-L138, AnthropicResponsesStreamWrapper.__aiter__ L437-L438, AnthropicResponsesStreamWrapper.__anext__ L440-L484,
-  AnthropicResponsesStreamWrapper.async_anthropic_sse_wrapper L486-L494.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- >-
+  B986 owns AnthropicResponsesStreamWrapper.__init__ L117-L138,
+  __aiter__ L437-L438, __anext__ L440-L484 and
+  async_anthropic_sse_wrapper L486-L494, including UUID creation, upstream
+  iteration, cancellation, stream lifetime and SSE bytes. B1119 consumes the
+  typed state and does not open an HTTP route or provider connection.
+- >-
+  B1113 owns the external JSON/SSE event decoder and event-record construction;
+  B1119 accepts its already parsed dict or attribute object and adds no second
+  decoder or fuzz target for bytes.
+- >-
+  B983 owns translate_responses_api_usage_to_anthropic_usage and the literal
+  REASONING_SUMMARY_PART_SEPARATOR="\n\n"; B220 owns
+  encrypted_reasoning_signature; B925 owns stream_error_status_and_message;
+  B963 owns responses_output_refusal_text, refusal_stop_details and
+  INCOMPLETE_STREAM_ERROR_MESSAGE; B958 owns
+  AnthropicExceptionMapping.transform_to_anthropic_error and its error
+  records.
+- >-
+  B187 owns the betterlite-redact internal-detail pattern callable used by the
+  client-error seam. The wrapper compatibility behavior is pinned by
+  _logging.py L71-L125: LITELLM_DISABLE_REDACT_SECRETS defaults to "" and
+  only lower-cased "true" disables it; this task must not move that env read
+  into a second config path.
 pitfalls:
-- Within AnthropicResponsesStreamWrapper._close_reasoning_item\'s block_idx < 0 and signature is None branch, preserve
-  return and its nested guards.
-- Within AnthropicResponsesStreamWrapper._close_reasoning_item\'s block_idx < 0 branch, preserve return and its
-  nested guards.
-review_level: standard
+- >-
+  A dict completed response with status, usage and output is intentionally
+  different from an attribute response: the branch uses getattr for all three
+  fields, so converting every input to a dict changes end_turn, usage and
+  refusal/tool precedence.
+- >-
+  _field is deliberately shape-sensitive while several event fields use
+  truthy attribute-or-dict fallback; an attribute item_id of "" or delta=""
+  can therefore select a dict value in one branch but not in
+  response.reasoning_summary_part.added.
+- >-
+  summary_index uses isinstance(value, int) and value != 0: true and -1 emit
+  the literal "\n\n", while false and 0 do not.
+- >-
+  A function-call argument delta before any content block emits index=-1 and
+  partial_json="" when empty; inventing a tool_use start or dropping that
+  index changes the pinned stream.
+- >-
+  Redaction is applied to the client error chunk after the failure log is
+  formatted; tests must compare the logged busy/secret diagnostic separately
+  from the redacted message visible in {type:error,error:{...}}.
+review_level: security
 budget:
-  max_changed_lines: 580
-  max_new_expects: 1
+  max_changed_lines: 800
+  max_new_expects: 0

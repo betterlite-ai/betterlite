@@ -1,233 +1,139 @@
 id: B1034
-title: File read route
+title: File metadata and listing HTTP routes
 description: >-
-  Install file retrieve/list routes with managed/native selection, owner-scoped database pagination and provider
-  pagination. Keep user-or-team list visibility consistent with individual access and preserve first_id/last_id/has_more.
+  Own complete get_file, list_files and _as_file_list_page, registering GET /files/{file_id:path},
+  /v1/files/{file_id:path}, /{provider}/v1/files/{file_id:path}, and GET /files, /v1/files,
+  /{provider}/v1/files. Put adapters in betterlite-server::api::file_read_route and typed policy
+  in betterlite-core::api::file_read_route. Use B1029 SDK reads, B1020 authorized credentials,
+  B1019 ID/list limits, B1017 list-page construction and B004 common pre-call/custom headers.
 
+  Retrieve validates require_managed_files first, then selects provider and performs pre-call
+  processing. Model-based routing precedes legacy unified-ID handling. List never calls the managed-ID
+  requirement: limit is validated before pre-call and the source route_type is alist_fine_tuning_jobs,
+  despite this being Files. Model routing wins over target_model_names and provider hints. MIT has
+  no managed hook, so list falls back to provider/openai; limit and after are not sent on that path.
 
-  The oracle has no litellm-enterprise. get_proxy_hook(managed_files) is absent: preserve each MIT caller's own
-  early return or exception, not a replacement enterprise hook. Retain MIT id codecs, model-embedded file routing,
-  storage-only operations and pre-existing-row readers. Enterprise-only creation/ownership/output-ID methods are
-  out of scope.
-
-
-  Implement crates/betterlite-server/src/api/file_read_route.rs, crates/betterlite-core/src/api/file_read_route.rs.
-  Use FileReadRouteInput and FileReadRouteResult with typed nested records; inject only the clock, repositories,
-  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
-  ambient environment or duplicate credential resolution.
-
-
-  Register exactly these routes in this task: GET /{provider}/v1/files/{file_id:path}; GET /v1/files/{file_id:path};
-  GET /files/{file_id:path}; GET /{provider}/v1/files; GET /v1/files; GET /files. Each alias is exercised through
-  the booted proxy. Every route factory is mounted once; a family composer mounts its child factories without re-registering
-  their methods/paths.
-
-
-  Route input projections: data.file_id (absent None); data.litellm_call_id (absent '').
-
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): files_endpoints.py:1418 type=openai_error_type(e, error_status_code(e, status.HTTP_400_BAD_REQUEST)),
-  param=openai_error_param(e), code=error_status_code(e, status.HTTP_400_BAD_REQUEST); files_endpoints.py:1426 type=openai_error_type(e,
-  error_status_code(e, 500)), param=openai_error_param(e), code=error_status_code(e, 500); files_endpoints.py:1354
-  type=ProxyErrorTypes.internal_server_error.value, param=None, code=500; files_endpoints.py:1361 type=ProxyErrorTypes.internal_server_error.value,
-  param=None, code=500; files_endpoints.py:1802 status_code=500, exception_detail=FastAPI detail string; files_endpoints.py:1847
-  type=openai_error_type(e, error_status_code(e, status.HTTP_400_BAD_REQUEST)), param=openai_error_param(e), code=error_status_code(e,
-  status.HTTP_400_BAD_REQUEST); files_endpoints.py:1855 type=openai_error_type(e, error_status_code(e, 500)), param=openai_error_param(e),
-  code=error_status_code(e, 500); files_endpoints.py:1749 status_code=400, exception_detail=FastAPI detail string;
-  files_endpoints.py:1754 status_code=500, exception_detail=FastAPI detail string. Compare the actual source status,
-  error type, param and code; ignore only error wording except in message-extraction tests.
-
-
-  Write adjacent tests.rs behavior functions managed_retrieve_no_hook_500, provider_list_team_credentials, native_file_list,
-  identityless_provider_list, list_pagination_not_forwarded, route_aliases, auth_missing, auth_invalid under api::file_read_route::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
-
-
-  Callable ownership: litellm/proxy/openai_files_endpoints/files_endpoints.py: get_file (L1251-L1431); litellm/proxy/openai_files_endpoints/files_endpoints.py:
-  _as_file_list_page (L1652-L1655); litellm/proxy/openai_files_endpoints/files_endpoints.py: list_files (L1673-L1860).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 334 owned nonblank/non-comment/non-docstring Python lines (354 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 354 implementation,
-  88 behavior tests, 96 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 576 total within the 580-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1017 (Managed resource access), B1018
-  (MIT resource owner compatibility), B1019 (File routing ids), B1029 (File provider read), B1087 (Api boundaries),
-  B732 (Typed authentication principals and grant resolution), B855 (Authenticated request admission and budget
-  handoff), B756 (Authentication header selection and mode dispatch), B1021 (File upload options), B1020 (File credentials),
-  B003 (HTTP server, health routes and master key auth), B1139 (Stateful HTTP oracle scenarios), B856 (Management
-  oracle namespaces and Postgres test fixture). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  The OSS unified retrieve branch without model routing returns 500 internal_server_error/null/500 for the missing
-  hook. Listing without an explicit model/provider falls back to openai with team credentials; it does not list
-  managed rows by team or owner. Validate limit, but limit/after are not forwarded to afile_list in these branches
-  (only purpose is). An identity-less principal in an explicitly auth-disabled fixture still follows provider listing,
-  with no managed-row query.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
+  Keep the complete functions together and exercise every alias with B900 HTTP cases, master key
+  sk-test, B1139 seeded ordinary keys/teams and mock provider requests. Pure list-page transformation
+  is covered natively; no B171 adapter is needed. Test modules are api::file_read_route::tests in
+  server/core. Owned source has 354 nonblank/non-comment lines; budget 280 implementation, 190 tests,
+  245 cases and 35 wiring lines, totaling 750. Decoding remains B1100/B1019/provider owned.
 scope:
   paths:
-  - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/lib.rs
-  - crates/betterlite-server/src/error.rs
-  - crates/betterlite-server/src/api/file_read_route.rs
-  - crates/betterlite-server/src/api/file_read_route/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/state.rs
-  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-server/src/api/file_read_route.rs
+  - crates/betterlite-server/src/api/file_read_route/**
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_read_route.rs
   - crates/betterlite-core/src/api/file_read_route/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/cases/api/file-read-route/**
-  - tools/oracle/fixtures/file-read-route/**
+  - tools/oracle/fixtures/http-scenarios/file-read-route/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1236-L1431
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1235-L1431
+  why: All retrieve decorators and whole model/managed/provider routing with response-id restoration.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1652-L1860
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+  why: Whole list page adapter and all listing aliases, including the inherited fine-tuning call type.
 dod:
-- text: 'managed retrieve no hook 500: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-managed-retrieve-no-hook-500
-  - oracle
-- text: 'provider list team credentials: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-provider-list-team-credentials
-  - oracle
-- text: 'native file list: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-native-file-list
-  - oracle
-- text: 'identityless provider list: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-identityless-provider-list
-  - oracle
-- text: 'list pagination not forwarded: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-list-pagination-not-forwarded
-  - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-route-aliases
-  - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-missing
-  - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-invalid
-  - oracle
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    read_route_aliases sends authenticated GET /files/f,/v1/files/f,/openai/v1/files/f and
+    /files,/v1/files,/openai/v1/files; mock metadata returns {id:f,object:file,bytes:3,created_at:1,
+    filename:a.txt,purpose:assistants}, each client gets 200 with that object or the provider list.
+    Slash-containing ids reach the provider path encoder as one id. Missing/invalid Authorization
+    with master key configured returns 401/auth_error/param="None"/code="401" with B756's messages,
+    and makes no provider calls. Register each method/path once alongside B1033's content routes.
+  proof: [read-tests, oracle, new-cases]
+- text: >-
+    retrieve_model_and_provider_order proves truthy path>custom-llm-provider header>
+    custom_llm_provider query>body>openai, but an authorized encoded model m chooses m's credentials
+    before the legacy-id branch. Provider gets decoded f; a truthy returned id is restored to the
+    caller's original id when original_file_id is truthy. Empty returned id remains empty. Plain
+    model hints go through B1020 too. Unrouted native ids use team credentials; file_id is removed
+    from data before the explicit argument is supplied. Common processing route_type=afile_retrieve.
+  proof: [read-tests, oracle, new-cases]
+- text: >-
+    retrieve_managed_requirement sends an unrouted legacy unified id without enterprise: 500,
+    internal_server_error,null,"500",message="Managed files hook not found". With require_managed_files=true,
+    that id fails earlier with "Managed resource ownership validation is unavailable."; a raw f
+    fails 400/invalid_request_error/null/"400" with B1021's exact file requirement message. Missing
+    router for a model hint produces 500 and "{'error': 'Router not initialized. Cannot use model-based
+    routing.'}". Forbidden model credentials return B1020/B886's 403 before any provider request.
+    Unlike content, retrieve has no special raw-cloud-URI rejection; do not add one here.
+  proof: [read-tests, oracle, new-cases]
+- text: >-
+    list_limits_and_ignored_cursor sends limit absent,1,10000 with after=f and receives the same
+    provider list; neither limit nor after is forwarded to the MIT provider path. limit=0 returns
+    400/invalid_request_error/limit/"400",message="Invalid 'limit': integer below minimum value.
+    Expected a value >= 1, but got 0 instead." limit=10001 uses "Invalid 'limit': integer above
+    maximum value. Expected a value <= 10000, but got 10001 instead." openai_code is not serialized.
+    limit=abc is FastAPI422 detail with loc=[query,limit],type=int_parsing, no OpenAI envelope.
+    Invalid bounds fail before the pre-call hook; require_managed_files=true still permits listing.
+  proof: [read-tests, oracle, new-cases]
+- text: >-
+    list_target_selection gives model=m precedence over target_model_names=a,b; without model,
+    target_model_names=a,b or a, fails 400/invalid_request_error/null/"400",message="target_model_names
+    on list files must be a list of one model name. Example: ['gpt-4o']". Exactly one string is not
+    stripped: " m " is authorized/looked up literally. Empty target string falls through. One target
+    without a router fails 500/internal_server_error/null/"500",message="LLM Router not initialized.
+    Ensure models added to proxy." Otherwise credentials use operation_context="file list" and
+    internal snapshot; absent model/target selects path/header/query/body or openai, applying team
+    credentials. purpose absent/null/empty/batch passes unchanged; listing does not validate purpose.
+  proof: [read-tests, oracle, new-cases]
+- text: >-
+    list_page_and_hooks converts a native provider list [f,g] to object=list,data=[f,g],first_id=f,
+    last_id=g,has_more=false after validating every OpenAIFileObject. Empty list has null first_id/
+    last_id; an already constructed page is unchanged. Malformed native list entries fail before
+    success hook/status. A null provider response yields 500/internal_server_error/null/"500",
+    message="Either 'provider' or 'target_model_names' must be provided e.g. `?target_model_names=gpt-4o`".
+    Native hook tests return null, a list page, or OpenAIFileObject: only the file object replaces
+    the response. List success hook runs before enqueueing success; retrieve has no success hook.
+    List common processing uses alist_fine_tuning_jobs; pin its callback call type explicitly.
+  proof: [read-tests, oracle, new-cases]
+- text: >-
+    read_headers_and_errors uses hidden model_id=d,cache_key=c,api_base=https://mock.test/v1?secret=x:
+    response includes x-litellm-model-id=d,x-litellm-cache-key=c,x-litellm-model-api-base=https://mock.test/v1,
+    x-litellm-version and allowed-region header from B004; missing hidden values use "" and omit
+    corresponding optional headers. Status updates use litellm_call_id or default "". Upstream
+    404 type=invalid_request_error,param=file_id,message=missing becomes 404 with code="404";
+    HTTPException403 maps permission_error and absent status maps internal_server_error500.
+    Literal "None" error param normalizes to null in both catches; list rethrows ProxyException
+    unchanged. Failure hook precedes ERROR "litellm.proxy.proxy_server.retrieve_file(): Exception
+    occured - <error>" or "litellm.proxy.proxy_server.list_files(): Exception occured - <error>"
+    and DEBUG traceback. Routed DEBUG messages include selected model and retrieve original id.
+  proof: [read-tests, oracle, new-cases]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::file_read_route::/)
-      - test(/::replays_corpus$/)'
-  - id: case-managed-retrieve-no-hook-500
-    why: the managed-retrieve-no-hook-500 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_read_route::tests::managed_retrieve_no_hook_500($|::)/)'
-  - id: case-provider-list-team-credentials
-    why: the provider-list-team-credentials behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_read_route::tests::provider_list_team_credentials($|::)/)'
-  - id: case-native-file-list
-    why: the native-file-list behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_read_route::tests::native_file_list($|::)/)'
-  - id: case-identityless-provider-list
-    why: the identityless-provider-list behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_read_route::tests::identityless_provider_list($|::)/)'
-  - id: case-list-pagination-not-forwarded
-    why: the list-pagination-not-forwarded behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_read_route::tests::list_pagination_not_forwarded($|::)/)'
-  - id: case-route-aliases
-    why: the route-aliases behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_read_route::tests::route_aliases($|::)/)'
-  - id: case-auth-missing
-    why: the auth-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_read_route::tests::auth_missing($|::)/)'
-  - id: case-auth-invalid
-    why: the auth-invalid behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_read_route::tests::auth_invalid($|::)/)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+  - id: read-tests
+    why: retrieve/list route behavior or page projection has no native test
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::file_read_route::tests::/) - test(/replays_/)'
+  - id: new-cases
+    why: file read aliases and limits have no newly added HTTP scenarios
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/file-read-route)"
 oracle_cases:
-- tools/oracle/cases/api/file-read-route/managed-retrieve-no-hook-500.yaml
-- tools/oracle/cases/api/file-read-route/provider-list-team-credentials.yaml
-- tools/oracle/cases/api/file-read-route/native-file-list.yaml
-- tools/oracle/cases/api/file-read-route/identityless-provider-list.yaml
-- tools/oracle/cases/api/file-read-route/list-pagination-not-forwarded.yaml
-- tools/oracle/cases/api/file-read-route/route-aliases.yaml
-- tools/oracle/cases/api/file-read-route/auth-missing.yaml
-- tools/oracle/cases/api/file-read-route/auth-invalid.yaml
-deviations: []
+- tools/oracle/cases/api/file-read-route/read-route-aliases.yaml
+- tools/oracle/cases/api/file-read-route/retrieve-model-and-provider-order.yaml
+- tools/oracle/cases/api/file-read-route/retrieve-managed-requirement.yaml
+- tools/oracle/cases/api/file-read-route/list-limits-and-ignored-cursor.yaml
+- tools/oracle/cases/api/file-read-route/list-target-selection.yaml
+- tools/oracle/cases/api/file-read-route/list-page-and-hooks.yaml
+- tools/oracle/cases/api/file-read-route/read-headers-and-errors.yaml
+deviations:
+- what: Unrouted managed-file retrieval returns 500 internal_server_error/code="500" without a hook; listing defaults to provider files and ignores limit/after on that MIT path.
+  why: Preserve the current observable behavior while Max decides managed files and batches; this adds no enterprise hook or license gate.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1350-L1370
 out_of_scope:
-- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1031 owns _names_a_litellm_executed_provider L111-L113,
-  _litellm_executed_batch_input_model L116-L165, set_files_config L181-L195, get_files_provider_config L198-L209,
-  _deployment_provider L212-L214, _resolves_to_vertex_deployments_only L217-L224, _validate_passthrough_upload L227-L289,
-  _scan_batch_upload L292-L329, get_first_json_object L332-L351, get_model_from_json_obj L354-L363, _deprecated_loadbalanced_create_file
-  L366-L378, route_create_file L381-L527.'
-- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1032 owns create_file L545-L927.'
-- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1033 owns get_file_content L945-L1233.'
-- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B087 owns delete_file L1449-L1649.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- B1031 owns upload helpers, B1032 create_file, B1033 get_file_content and B087 delete_file. B1017 owns list-page records and B1019 limit/ID codecs.
+- Managed hook retrieval L1361-L1370 and managed listing L1780-L1788 have no reachable MIT caller. They do not justify B1018 ownership filtering or managed repository dependencies here.
+- B1020/B886 own credential grants and their errors; B003/B004 own validation/error serialization and custom headers; B124 owns callback execution/status persistence.
 pitfalls:
-- 'files_endpoints.py:1744 emits the diagnostic ''Listed files using model: %s''; retain its level and fallback
-  instead of turning it into a hard error.'
-- data reads 'file_id' with default None; omission and an explicit value must not collapse into one case.
+- target_model_names list splitting does not trim spaces or remove empty entries.
+- List success hooks replace a page only when they return a single OpenAIFileObject.
+- The wrong-looking alist_fine_tuning_jobs call type is observable and must remain until separately changed.
 review_level: security
 budget:
-  max_changed_lines: 580
+  max_changed_lines: 750
   max_new_expects: 0

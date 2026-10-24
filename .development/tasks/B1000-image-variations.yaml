@@ -1,155 +1,106 @@
 id: B1000
-title: Image variations
+title: Image variation SDK dispatch
 description: >-
-  Implement image variations with the base variation contract, configured B024 provider and B014 dispatch. Preserve
-  supplied image bytes, n/size/response_format/user and provider errors; the pinned proxy registers no image variations
-  route, so expose only the native callable operation used later by SDK bindings.
+  Implement complete image_variation and aimage_variation in betterlite-core::api::image_variations. The sync
+  signature defaults model=dall-e-2,n=1,response_format=url,size=None,user=None, but the provider call receives
+  optional_params={} regardless of those four option values. Resolve model/provider with B174 and use B2220's
+  model-info config for key/base; the dynamic key and resolved base returned by get_llm_provider are not used
+  for that final lookup. Only openai and topaz are variation providers. B513 owns OpenAI execution; Topaz's
+  B046 adapter is injected through B010's prepared operation interface because B046 depends on B082.
 
+  OpenAI gets timeout from litellm_params, default None; Topaz gets that value or REQUEST_TIMEOUT=6000 when
+  unset. The async wrapper forces async_call=true, copies context, infers provider only when both provider is
+  absent and model is present, and converts dict responses to ImageResponse. It awaits a coroutine; for any
+  other unexpected result it calls the sync function a second time and returns that second result unchecked.
+  Exception attribution defaults to openai when unresolved. Keep this SDK behavior separate from B159's
+  event-loop facade. There is no proxy variation route at the pin.
 
-  Implement crates/betterlite-core/src/api/image_variations.rs. Use ImageVariationsInput and ImageVariationsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions variation_upload, variation_size_n, variation_error, variation_response_format
-  under api::image_variations::tests. Each named function drives production code and asserts its case result; use
-  named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ImageVariations in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {image_variations: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/images/main.py: aimage_variation (L565-L612); litellm/images/main.py: image_variation
-  (L616-L708). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 108 owned nonblank/non-comment/non-docstring Python lines (116 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 128 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 360 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
-  (Direct helper oracle and URL path encoding), B997 (Image contracts), B1087 (Api boundaries), B513 (OpenAI image
-  variation requests). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
-  ids retain ownership on the provider and keys/data branches.
+  Use B2401 SDK HTTP captures; OpenAI tests reach the actual multipart provider, while native injected-operation
+  tests cover Topaz selection and timeout without importing its downstream implementation. Count 117 nonblank/
+  non-comment lines, including decorators; budget 125 implementation, 115 tests, 95 cases, 75 adapters and
+  40 config/corpus/wiring lines, 450 total. Existing transport and SDK decoders handle bytes.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/image_variations.rs
   - crates/betterlite-core/src/api/image_variations/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/image_variations.rs
-  - tools/oracle/src/helpers/image_variations/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/image_variations.py
-  - tools/oracle/helpers/image_variations/**
-  - tools/oracle/fuzz/corpus/helper_case/image_variations-*
-  - tools/oracle/cases/helpers/image-variations/**
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/image_variations.rs
+  - crates/betterlite-config/src/api/image_variations/**
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/image-variations-*
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/image_variations.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/image_variations.py
+  - tools/oracle/cases/sdk-http/image-variations/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/image-variations-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L565-L708
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L564-L708
+  why: Both complete variation entry points, including ignored options and the async wrapper's second-call fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4281-L4287
+  why: The variation endpoint admits only OPENAI and TOPAZ.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L568-L577
+  why: Topaz's falsy timeout fallback is 6000 seconds, not the 600-second chat fallback.
 dod:
-- text: 'variation upload: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-variation-upload
-  - oracle
-- text: 'variation size n: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-variation-size-n
-  - oracle
-- text: 'variation error: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-variation-error
-  - oracle
-- text: 'variation response format: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-variation-response-format
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    variation_upload_and_ignored_options sends a.png=abc,model=openai/dall-e-2,n=3,size=1024x1024,
+    response_format=b64_json,user=u. The one OpenAI /v1/images/variations multipart request carries image,
+    with none of n,size,response_format,user added by this wrapper. The mock's {created:1,data:[{url:https://example.test/a.png}]}
+    is returned and its URL is not fetched. Omitting model uses dall-e-2. Async invocation sends the same
+    request with async_call=true and preserves the request context marker.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    variation_provider_errors injects a resolved provider=azure and expects ValueError with source message
+    "Invalid image variation provider: azure. Supported providers are: <enum 'LITELLM_IMAGE_VARIATION_PROVIDERS'>".
+    Missing model-info config for openai raises "image variation provider has no known model info config - required
+    for getting api keys, etc.: openai. Supported providers are: <enum 'LITELLM_IMAGE_VARIATION_PROVIDERS'>".
+    Null resolved key/base yields "API key is required for OpenAI image variations" or "API base is required for
+    OpenAI image variations"; Topaz uses the same sentences with Topaz. All occur before HTTP. A null operation
+    result raises the invalid-provider ValueError. Public SDK projection is B011's, without an invented proxy code.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    variation_timeout_and_async_shapes loads REQUEST_TIMEOUT unset then 7: Topaz receives 6000 then 7 for
+    absent/zero timeout, and 3 for explicit 3; OpenAI receives None,0,3 unchanged. Dict and ImageResponse
+    results normalize once; coroutine results are awaited once. An unexpected integer causes exactly two
+    sync calls and returns the second value without validation. A mock OpenAI 429 is projected with B011's SDK
+    status/class and nullable type,param,code, and no wrapper-level retry is introduced.
+  proof: [behavior-tests, config-tests, oracle, sdk-python]
+- text: Variation SDK cases and config seeds are new and replay through existing SDK/config parsers.
+  proof: [new-cases, corpora, oracle, sdk-python]
 checks:
-  optional: []
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_variations::/) - test(/::replays_corpus$/)'
-  - id: case-variation-upload
-    why: the variation-upload behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_variations::tests::variation_upload($|::)/)'
-  - id: case-variation-size-n
-    why: the variation-size-n behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_variations::tests::variation_size_n($|::)/)'
-  - id: case-variation-error
-    why: the variation-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_variations::tests::variation_error($|::)/)'
-  - id: case-variation-response-format
-    why: the variation-response-format behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_variations::tests::variation_response_format($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/image_variations.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/image_variations-*)"
-      && grep -qE "^[[:space:]]+image_variations:" tools/oracle/fuzz/corpus/helper_case/image_variations-* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/image-variations)"
+    why: Ignored options, timeout asymmetry and the second-call fallback need direct tests.
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::image_variations::/) - test(/::replays_corpus$/)'
+  - id: config-tests
+    why: REQUEST_TIMEOUT must load through config and reach Topaz's dispatch input.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::image_variations::tests::loads_settings($|::)/)'
+  - id: sdk-python
+    why: Variation comparison must call the SDK against mock HTTP.
+    run: test -f tools/oracle/sdk_http/image_variations.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: corpora
+    why: Timeout settings and the variation operation require parser inputs on this branch.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-variations-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/image-variations-*)" && cargo nextest run --locked -p betterlite-oracle -p betterlite-config --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_config_yaml_corpus)'
+  - id: new-cases
+    why: Captured multipart requests must distinguish accepted options from actually forwarded options.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/image-variations)"
 oracle_cases:
-- tools/oracle/cases/helpers/image-variations/variation-upload.yaml
-- tools/oracle/cases/helpers/image-variations/variation-size-n.yaml
-- tools/oracle/cases/helpers/image-variations/variation-error.yaml
-- tools/oracle/cases/helpers/image-variations/variation-response-format.yaml
+- tools/oracle/cases/sdk-http/image-variations/variation-upload-and-ignored-options.yaml
+- tools/oracle/cases/sdk-http/image-variations/variation-provider-errors.yaml
+- tools/oracle/cases/sdk-http/image-variations/variation-timeout-and-async-shapes.yaml
 deviations: []
 out_of_scope:
-- 'litellm/images/main.py: B999 owns _get_ImageEditRequestUtils L67-L75, image_edit L712-L960, aimage_edit L964-L1043,
-  __getattr__ L1046-L1056.'
-- 'litellm/images/main.py: B998 owns aimage_generation L80-L129, image_generation L136-L154, image_generation L160-L178,
-  image_generation L184-L561.'
-- 'litellm/images/main.py: B1121 owns image_generation L136-L154, image_generation L160-L178, image_generation L184-L561.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B998 owns image_generation and overloads; B1121 owns aimage_generation; B999 owns image_edit,aimage_edit and the two lazy helper accessors.
+- B046 owns Topaz transforms and aiohttp image-variation execution, supplied through a B010 operation; B513 owns OpenAI variation transport and B159 the exported Python facade.
 pitfalls:
-- aimage_variation uses kwargs.get('model', None); retain its missing-value behavior and field spelling in the typed
-  projection.
-- aimage_variation uses kwargs.get('custom_llm_provider', None); retain its missing-value behavior and field spelling
-  in the typed projection.
+- n,size,response_format,user are signature-only here; forwarding them would change the pinned SDK request.
+- The async fallback makes a second call for an unrecognized result instead of raising immediately.
+- get_llm_provider's dynamic key is discarded before model-info credential resolution.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 480
   max_new_expects: 1

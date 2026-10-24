@@ -1,0 +1,111 @@
+id: B2416
+title: Responses retrieve and input-items HTTP transport
+description: >-
+  Implement responses_read_http in betterlite-core for BaseLLMHTTPHandler.get_responses,
+  async_get_responses, list_responses_input_items and async_list_responses_input_items, whole
+  functions at 3085-3238 and 3243-3402. Keep sync/async observable options while sharing a native
+  send implementation. B173 supplies the selected client, B1114 the provider contract, B509 the
+  OpenAI request/response transforms, B249 pre-call logging and B2402 transport-error conversion.
+  This closes the missing endpoint-specific layer between B933 and the generic HTTP pool.
+
+  Validate headers with model="None", overlay the caller map after validation (including any
+  mutation validation made to that map), then get the complete URL and transformed query. Log
+  input="",api_key="",complete_input_dict=query,api_base=the base before the resource suffix and
+  headers. GET both resources without a body or per-call timeout; timeout and retrieve extra_body
+  are accepted but unused. Raise HTTP status errors inside the send catch; convert response bytes
+  afterwards through B509. Async client selection uses provider, ssl_verify=null by default and
+  shared_session; a matching injected client wins. Wrong-kind clients select the pool.
+
+  Add SdkHttpCall::ResponsesReadTransport to B2401. Both adapters call production handlers against
+  the mock, with OpenAI config and complete valid Responses fixtures. Adjacent tests live under
+  api::responses_read_http::tests. Decoder and path-encoding tests stay with B509; this task adds
+  SDK-case seeds rather than another byte parser. Count 280 nonblank/non-comment source lines;
+  estimate 240 native, 130 tests, 90 fixtures, 90 adapters and 30 wiring, 580 total under 620.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/responses_read_http.rs
+  - crates/betterlite-core/src/api/responses_read_http/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/responses_read_transport.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/responses_read_transport.py
+  - tools/oracle/cases/sdk-http/responses-read-transport/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/responses-read-transport-*
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3085-L3238
+  why: Retrieve client selection, logging, omitted timeout, explicit status check and conversion boundary.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3243-L3402
+  why: Input-items transport passes each cursor and include option through the provider transformer.
+dod:
+- text: >-
+    retrieve_headers_and_response sends response_id=resp/a,extra_body={ignored:true},timeout=7,
+    api_key=sk-provider,extra_headers={Authorization:Bearer sk-caller,X-Trace:trace-a}. For both modes
+    expect GET /v1/responses/resp%2Fa, no body, Authorization=Bearer sk-provider and X-Trace=trace-a
+    after OpenAI validation. Mock 200 with id=resp_a,status=completed and X-Request-Id=req_a returns
+    those response fields and B509 raw/processed hidden headers. No per-call timeout reaches GET.
+  proof: [retrieve, oracle, python-adapter]
+- text: >-
+    input_items_query sends no pagination options and gets limit=20&order=desc. after="",before=b,
+    include=[message.input_image.image_url,computer_call_output.output.image_url],limit=3,order=asc
+    produces all five query keys with include comma-joined. Empty include omits that key; null
+    limit/order omit both. A mock 200 {object:list,data:[],has_more:false} returns the same object.
+    Explicit timeout=7 still adds no per-call timeout. Log the resulting query before the HTTP send.
+  proof: [pagination, oracle, python-adapter]
+- text: >-
+    read_failure_boundary supplies mock 429 body=slow down,Retry-After=3. Expect B2402's provider
+    error status=429,message=slow down,headers retaining Retry-After=3 with no retry. Retrieve async
+    also emits debug "Error retrieving response: %s" with that error. A 200 malformed body fails
+    in B509 after the catch and never enters the transport converter. Invalid required response
+    fields fail strict validation, whereas an arbitrary valid JSON object on input-items survives.
+  proof: [errors, oracle, python-adapter]
+- text: >-
+    read_client_selection observes matching supplied clients reused; absent/wrong-kind clients use
+    the pool with ssl_verify=false when supplied and null otherwise. Async passes shared_session
+    and emits the respective "Creating HTTP client for get_responses with shared_session: %s" or
+    "Creating HTTP client for list_input_items with shared_session: %s" debug event. Native tests
+    assert base URL rather than suffixed URL in logging and no timeout argument for either mode.
+  proof: [client-selection]
+- text: Added responses-read-transport SDK seeds decode and run through both HTTP adapters.
+  proof: [sdk-corpus, oracle, python-adapter]
+checks:
+  optional: []
+  commands:
+  - id: retrieve
+    why: retrieve sends a body, restores pre-validation credentials or loses response headers
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_read_http::tests::retrieve_headers_and_response($|::)/)'
+  - id: pagination
+    why: cursor omission or include serialization changes the provider query
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_read_http::tests::input_items_query($|::)/)'
+  - id: errors
+    why: response transformation errors are remapped as send errors
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_read_http::tests::read_failure_boundary($|::)/)'
+  - id: client-selection
+    why: a supplied client or the intentional absence of a per-call timeout is lost
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_read_http::tests::read_client_selection($|::)/)'
+  - id: python-adapter
+    why: the read oracle does not invoke the actual HTTP handler
+    run: test -f tools/oracle/sdk_http/responses_read_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: the new transport operation lacks a parser seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-read-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/sdk-http/responses-read-transport/retrieve-headers-and-response.yaml
+- tools/oracle/cases/sdk-http/responses-read-transport/input-items-query.yaml
+- tools/oracle/cases/sdk-http/responses-read-transport/read-failure-boundary.yaml
+deviations: []
+out_of_scope:
+- B933 owns SDK ID decoding and provider selection; B509 owns resource JSON decoding and path construction.
+- B2414 owns create transport, B2417 delete/cancel and B2418 compact. B2402 owns the shared _handle_error function.
+- The other endpoint families in llm_http_handler.py stay with their API tasks; generic clients/sends are B173.
+pitfalls:
+- Both GET implementations ignore timeout, even though their wrappers pass REQUEST_TIMEOUT.
+- Header validation uses the literal model string "None", not a null model.
+- Retrieve logs the base URL and input="", while cancel logs its final URL and response ID.
+review_level: security
+budget:
+  max_changed_lines: 620
+  max_new_expects: 0

@@ -1,82 +1,27 @@
 id: B907
-title: Responses codex tools
+title: Responses custom tools and tool choices
 description: >-
-  Normalize Codex agent_message, context_compaction and local_shell_call items, hoist additional_tools and translate
-  custom/freeform tools using typed records. Keep custom tool grammar and allowed_callers validation separate from
-  provider capability filtering; use a named dropped-tool warning rather than losing unsupported tools invisibly.
+  Implement custom/freeform tool conversion in betterlite-core::api::responses_codex_tools.
+  Own custom_tools.py, the _attribute_fields/_input_item_role helpers and all three complete
+  tool-choice methods in transformation.py. Re-export B2410's Codex history and additional-tools
+  preparation from this family surface; those two files are covered by B2410 alone.
+  Keep provider capability filtering separate from custom-to-function conversion.
 
-
-  Implement crates/betterlite-core/src/api/responses_codex_tools.rs. Use ResponsesCodexToolsInput and ResponsesCodexToolsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions agent_message_text, context_compaction_item, local_shell_call, additional_tools_hoisting,
-  custom_tool_grammar, invalid_allowed_callers under api::responses_codex_tools::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-core::api::responses_codex_tools::decode_responses_codex_tools(bytes:
-  &[u8], limits: &ApiLimits), for json.loads input arguments at litellm/responses/litellm_completion_transformation/custom_tools.py:110.
-  Place its implementation in crates/betterlite-core/src/api/responses_codex_tools.rs and call it from the actual
-  boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/responses_codex_tools.rs passes arbitrary
-  bounded bytes to that exact decoder; api::responses_codex_tools::tests::replays_corpus replays newly committed
-  seeds through the same function. Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::ResponsesCodexTools in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_codex_tools: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/base_llm/responses/codex_compat.py: _agent_message_text (L57-L63); litellm/llms/base_llm/responses/codex_compat.py:
-  _normalize_agent_message_item (L66-L75); litellm/llms/base_llm/responses/codex_compat.py: _normalize_context_compaction_item
-  (L78-L83); litellm/llms/base_llm/responses/codex_compat.py: _normalize_local_shell_call_item (L86-L97); litellm/llms/base_llm/responses/codex_compat.py:
-  _normalize_input_item (L100-L111); litellm/llms/base_llm/responses/codex_compat.py: normalize_codex_input_items
-  (L114-L134); litellm/llms/base_llm/responses/codex_compat.py: drop_unsupported_tools (L137-L154); litellm/responses/additional_tools.py:
-  _is_additional_tools_item (L28-L32); litellm/responses/additional_tools.py: _tools_of_item (L35-L40); litellm/responses/additional_tools.py:
-  hoist_additional_tools (L43-L60); litellm/responses/litellm_completion_transformation/custom_tools.py: openai_shaped_tool_call_item_id
-  (L35-L39); litellm/responses/litellm_completion_transformation/custom_tools.py: _tool_name_fields_of (L48-L52);
-  litellm/responses/litellm_completion_transformation/custom_tools.py: _custom_tool_name_of (L55-L59); litellm/responses/litellm_completion_transformation/custom_tools.py:
-  _nested_tools_of (L62-L66); litellm/responses/litellm_completion_transformation/custom_tools.py: extract_custom_tool_names
-  (L69-L73); litellm/responses/litellm_completion_transformation/custom_tools.py: is_custom_tool_call (L76-L78);
-  litellm/responses/litellm_completion_transformation/custom_tools.py: serialize_tool_call_arguments (L81-L93);
-  litellm/responses/litellm_completion_transformation/custom_tools.py: unwrap_custom_tool_arguments (L96-L115);
-  litellm/responses/litellm_completion_transformation/custom_tools.py: build_tool_call_item_kwargs (L118-L151);
-  litellm/responses/litellm_completion_transformation/custom_tools.py: validated_allowed_callers (L162-L166); litellm/responses/litellm_completion_transformation/custom_tools.py:
-  custom_tool_grammar_suffix (L169-L176); litellm/responses/litellm_completion_transformation/custom_tools.py: convert_custom_tool_to_function_tool
-  (L179-L213); litellm/responses/litellm_completion_transformation/transformation.py: _attribute_fields (L179-L182);
-  litellm/responses/litellm_completion_transformation/transformation.py: _input_item_role (L185-L186); litellm/responses/litellm_completion_transformation/transformation.py:
-  LiteLLMCompletionResponsesConfig._transform_tool_choice (L228-L287); litellm/responses/litellm_completion_transformation/transformation.py:
-  LiteLLMCompletionResponsesConfig._transform_tool_choice_for_responses_api_response (L290-L296); litellm/responses/litellm_completion_transformation/transformation.py:
-  LiteLLMCompletionResponsesConfig._chat_tool_choice_as_responses_api_tool_choice (L299-L308). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 323 owned nonblank/non-comment/non-docstring Python lines (409 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 343 implementation,
-  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 671 total within the 680-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B902 (Responses shapes), B1087 (Api
-  boundaries). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids
-  retain ownership on the provider and keys/data branches.
+  unwrap_custom_tool_arguments parses an untrusted JSON string only through 1,000,000 Python
+  characters. Name the native decoder unwrap_custom_arguments(bytes, limits), preserving
+  the character threshold and B1087's outer byte bound. Fuzz it and replay new corpus through
+  replays_corpus. The responses_codex_tools helper calls the actual pinned methods; its
+  projection preserves JSON string spelling, Python str fallbacks and complete tool schemas.
+  Count 245 nonblank/non-comment owned lines after B2410's split. Budget 255 implementation,
+  190 tests, 105 fixtures, 85 adapters, 65 fuzz/replay and 25 wiring: 725 lines.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_codex_tools.rs
   - crates/betterlite-core/src/api/responses_codex_tools/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/responses_codex_tools.rs
   - crates/betterlite-core/fuzz/corpus/responses_codex_tools/**
@@ -84,184 +29,87 @@ scope:
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/responses_codex_tools.rs
-  - tools/oracle/src/helpers/responses_codex_tools/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/responses_codex_tools.py
-  - tools/oracle/helpers/responses_codex_tools/**
   - tools/oracle/fuzz/corpus/helper_case/responses_codex_tools-*
   - tools/oracle/cases/helpers/responses-codex-tools/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/codex_compat.py#L1-L154
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/additional_tools.py#L1-L60
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/custom_tools.py#L1-L213
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L179-L182
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L185-L186
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L227-L287
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L289-L296
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L298-L308
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Own every custom-tool helper, including strict allowed_callers and bounded JSON unwrapping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L179-L186
+  why: Attribute-to-dict conversion and falsy-role default are shared by input/tool consumers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L227-L308
+  why: Complete request tool-choice normalization and reverse Responses choice conversion, including decorators.
 dod:
-- text: 'agent message text: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-agent-message-text
-  - oracle
-- text: 'context compaction item: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-context-compaction-item
-  - oracle
-- text: 'local shell call: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-local-shell-call
-  - oracle
-- text: 'additional tools hoisting: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-additional-tools-hoisting
-  - oracle
-- text: 'custom tool grammar: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-custom-tool-grammar
-  - oracle
-- text: 'invalid allowed callers: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-invalid-allowed-callers
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    custom_names extracts custom tool name=edit at top level and one namespace level,
+    ignoring empty names, invalid records and deeper namespaces. Membership is exact and
+    case-sensitive. Item IDs function_call/call_a -> fc_call_a and custom_tool_call/call_a ->
+    ctc_call_a; empty IDs, unknown types and strings already starting fc or ctc stay unchanged,
+    even fcabc without an underscore.
+  proof: [tool-tests, oracle, tool-adapter]
+- text: >-
+    custom_schema sends type=custom,name=edit,description=Apply,format={syntax:lark,definition:start},
+    allowed_callers=[direct]. Expect type=function,allowed_callers=[direct],function.name=edit,
+    description="Apply\n\nFormat:\n```lark\nstart\n```",parameters={type:object,
+    properties:{content:{type:string,description:"The edit content following the specified format"}},
+    required:[content]}. Missing/non-string name or description becomes "". Missing/invalid/empty
+    format contributes no suffix. Null allowed_callers omits the key; [] stays []; a string,
+    tuple or [1] raises ValueError("allowed_callers must be a list of strings"). Non-custom returns null.
+  proof: [tool-tests, oracle, tool-adapter]
+- text: >-
+    argument_strings serializes a dict {x:1} to '{"x": 1}', null/empty string to the supplied
+    default (default=""), and other strings unchanged. Custom completed calls unwrap
+    '{"content":"patch"}' to input=patch, '{"content":null}' to input="None", and content=7
+    to "7". Empty input -> ""; malformed JSON, arrays and objects without content stay raw.
+    Exactly 1,000,000 characters are parsed, 1,000,001 are returned untouched, including Unicode.
+    Noncompleted custom calls output input=""; ordinary calls retain arguments at every status.
+    Both keep call_id/name/status and use the item-ID rule above.
+  proof: [tool-tests, oracle, tool-adapter, argument-corpus]
+- text: >-
+    tool_choices maps null->null and every string unchanged for requests. Dict type=auto/none
+    becomes that string; required/tool/any becomes required. A truthy function.name keeps the
+    entire original dict; type=function,name=f becomes {type:function,function:{name:f}}, with
+    absent name falling back to required. type=custom uses top-level name before custom.name
+    and also falls back to required. Unknown dicts/numbers pass through the request helper.
+    Reverse conversion maps null/invalid values to auto, preserves valid Responses choices,
+    flattens a chat function.name=f to {type:function,name:f}, and preserves a custom choice as
+    {type:custom,name:edit} instead of relabeling it as function.
+  proof: [tool-tests, oracle, tool-adapter]
+- text: >-
+    record_helpers gives a no-__dict__ value -> {}, a pair-iterable object -> its dictionary,
+    and a __dict__ object yielding nonpairs -> the original conversion error. Role missing,
+    null or "" defaults user; role=assistant stays assistant and a truthy unusual role is
+    forwarded without validation. B2410's preparation exports remain callable through this module.
+  proof: [tool-tests, oracle, tool-adapter]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_codex_tools::/)
-      - test(/::replays_corpus$/)'
-  - id: case-agent-message-text
-    why: the agent-message-text behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_codex_tools::tests::agent_message_text($|::)/)'
-  - id: case-context-compaction-item
-    why: the context-compaction-item behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_codex_tools::tests::context_compaction_item($|::)/)'
-  - id: case-local-shell-call
-    why: the local-shell-call behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_codex_tools::tests::local_shell_call($|::)/)'
-  - id: case-additional-tools-hoisting
-    why: the additional-tools-hoisting behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_codex_tools::tests::additional_tools_hoisting($|::)/)'
-  - id: case-custom-tool-grammar
-    why: the custom-tool-grammar behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_codex_tools::tests::custom_tool_grammar($|::)/)'
-  - id: case-invalid-allowed-callers
-    why: the invalid-allowed-callers behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_codex_tools::tests::invalid_allowed_callers($|::)/)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/responses_codex_tools)"
-      && test -f crates/betterlite-core/fuzz/fuzz_targets/responses_codex_tools.rs && grep -qF "decode_responses_codex_tools"
-      crates/betterlite-core/fuzz/fuzz_targets/responses_codex_tools.rs && cargo nextest run --locked -p betterlite-core
-      --no-tests=fail -E 'test(/^api::responses_codex_tools::tests::replays_corpus$/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_codex_tools.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_codex_tools-*)"
-      && grep -qE "^[[:space:]]+responses_codex_tools:" tools/oracle/fuzz/corpus/helper_case/responses_codex_tools-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-codex-tools)"
+  - id: tool-tests
+    why: custom tools or choices change names, payloads, schemas or defaults
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_codex_tools::/) - test(/::replays_corpus$/)'
+  - id: tool-adapter
+    why: the custom-tool operation has no checked independent Python projection
+    run: test -f tools/oracle/helpers/responses_codex_tools.py && grep -qE '^[[:space:]]+responses_codex_tools:' tools/oracle/fuzz/corpus/helper_case/responses_codex_tools-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: argument-corpus
+    why: the JSON argument decoder lacks new boundary and malformed-input seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/responses_codex_tools)" && grep -qF unwrap_custom_arguments crates/betterlite-core/fuzz/fuzz_targets/responses_codex_tools.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_codex_tools::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/responses-codex-tools/agent-message-text.yaml
-- tools/oracle/cases/helpers/responses-codex-tools/context-compaction-item.yaml
-- tools/oracle/cases/helpers/responses-codex-tools/local-shell-call.yaml
-- tools/oracle/cases/helpers/responses-codex-tools/additional-tools-hoisting.yaml
-- tools/oracle/cases/helpers/responses-codex-tools/custom-tool-grammar.yaml
-- tools/oracle/cases/helpers/responses-codex-tools/invalid-allowed-callers.yaml
+- tools/oracle/cases/helpers/responses-codex-tools/custom-names.yaml
+- tools/oracle/cases/helpers/responses-codex-tools/custom-schema.yaml
+- tools/oracle/cases/helpers/responses-codex-tools/argument-strings.yaml
+- tools/oracle/cases/helpers/responses-codex-tools/tool-choices.yaml
+- tools/oracle/cases/helpers/responses-codex-tools/record-helpers.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B908 owns _SupportsIter.__iter__ L152-L152,
-  _ResponsesToolCallItem.get L169-L169, LiteLLMCompletionResponsesConfig.get_supported_openai_params L205-L225,
-  LiteLLMCompletionResponsesConfig._should_drop_derived_web_search_options L311-L324, LiteLLMCompletionResponsesConfig._completion_bridges_back_to_responses_api
-  L327-L357, LiteLLMCompletionResponsesConfig._transform_reasoning_for_chat_completion L360-L397, LiteLLMCompletionResponsesConfig.transform_responses_api_request_to_chat_completion_request
-  L400-L484, LiteLLMCompletionResponsesConfig._transform_text_format_to_response_format L2897-L2945.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B909 owns LiteLLMCompletionResponsesConfig.transform_responses_api_input_to_messages
-  L487-L532, LiteLLMCompletionResponsesConfig._transform_response_input_param_to_chat_completion_message L603-L729,
-  LiteLLMCompletionResponsesConfig._transform_responses_api_input_item_to_chat_completion_message L1326-L1423, LiteLLMCompletionResponsesConfig._reasoning_text_from_content
-  L1426-L1448, LiteLLMCompletionResponsesConfig._reasoning_text_from_summary L1451-L1466, LiteLLMCompletionResponsesConfig._extract_reasoning_text_from_input_item
-  L1469-L1478, LiteLLMCompletionResponsesConfig._decode_thinking_blocks_from_input_item L1481-L1515, LiteLLMCompletionResponsesConfig._is_replayable_thinking_block
-  L1518-L1529, LiteLLMCompletionResponsesConfig._is_input_item_tool_call_output L1532-L1541, LiteLLMCompletionResponsesConfig._is_input_item_function_call
-  L1544-L1550, LiteLLMCompletionResponsesConfig._resolve_file_id L1741-L1747, LiteLLMCompletionResponsesConfig._transform_input_file_item_to_file_item
-  L1750-L1772, LiteLLMCompletionResponsesConfig._transform_input_image_item_to_image_item L1775-L1785, LiteLLMCompletionResponsesConfig._transform_responses_api_content_to_chat_completion_content
-  L1788-L1842, LiteLLMCompletionResponsesConfig._get_chat_completion_request_content_type L1845-L1875, LiteLLMCompletionResponsesConfig.transform_instructions_to_system_message
-  L1878-L1884.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B915 owns LiteLLMCompletionResponsesConfig.async_responses_api_session_handler
-  L535-L600.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B910 owns LiteLLMCompletionResponsesConfig._reasoning_only_assistant_message
-  L732-L746, LiteLLMCompletionResponsesConfig._merge_reasoning_only_assistant_messages L749-L872, LiteLLMCompletionResponsesConfig._merged_trailing_assistant_message
-  L875-L922.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._deduplicate_tool_call_output_messages
-  L925-L985, LiteLLMCompletionResponsesConfig._ensure_tool_call_output_has_corresponding_tool_call L988-L997, LiteLLMCompletionResponsesConfig._transform_responses_api_outputs_to_chat_completion_messages
-  L2725-L2752 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B911 owns LiteLLMCompletionResponsesConfig._find_previous_assistant_idx
-  L1000-L1014, LiteLLMCompletionResponsesConfig._recover_tool_call_id_from_assistant L1017-L1043, LiteLLMCompletionResponsesConfig._get_tool_calls_list
-  L1046-L1065, LiteLLMCompletionResponsesConfig._check_tool_call_exists L1068-L1078, LiteLLMCompletionResponsesConfig._reconstruct_tool_call_from_tools
-  L1081-L1097, LiteLLMCompletionResponsesConfig._get_mapping_or_attr_value L1100-L1117, LiteLLMCompletionResponsesConfig._create_tool_call_chunk
-  L1120-L1143, LiteLLMCompletionResponsesConfig._normalize_tool_use_definition L1146-L1184, LiteLLMCompletionResponsesConfig._add_tool_call_to_assistant
-  L1187-L1200, LiteLLMCompletionResponsesConfig._ensure_tool_results_have_corresponding_tool_calls L1203-L1323.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B912 owns LiteLLMCompletionResponsesConfig._transform_responses_api_tool_call_output_to_chat_completion_message
-  L1553-L1686, LiteLLMCompletionResponsesConfig._transform_responses_api_function_call_to_chat_completion_message
-  L1689-L1738, LiteLLMCompletionResponsesConfig._tool_call_id_from_responses_item L2307-L2316, LiteLLMCompletionResponsesConfig.convert_response_function_tool_call_to_chat_completion_tool_call
-  L2319-L2370, LiteLLMCompletionResponsesConfig.convert_apply_patch_tool_call_to_chat_completion_tool_call L2373-L2403.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B913 owns LiteLLMCompletionResponsesConfig._build_ns_chat_tool
-  L1887-L1926, LiteLLMCompletionResponsesConfig._namespace_chat_tools L1929-L1951, LiteLLMCompletionResponsesConfig._validate_namespace_name_collisions
-  L1954-L1972, LiteLLMCompletionResponsesConfig._responses_tool_to_chat_form L1975-L2034, LiteLLMCompletionResponsesConfig.responses_tools_to_chat_forms
-  L2037-L2039, LiteLLMCompletionResponsesConfig.transform_responses_api_tools_to_chat_completion_tools L2042-L2058,
-  LiteLLMCompletionResponsesConfig.transform_chat_completion_tool_params_to_responses_api_tools L2061-L2099, LiteLLMCompletionResponsesConfig.namespace_tool_name_map
-  L2102-L2129, LiteLLMCompletionResponsesConfig._restore_namespace_tool_name L2132-L2137, LiteLLMCompletionResponsesConfig.transform_chat_completion_tools_to_responses_tools
-  L2140-L2235, LiteLLMCompletionResponsesConfig._web_search_calls_by_call_id L2238-L2264.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B914 owns LiteLLMCompletionResponsesConfig._map_chat_completion_finish_reason_to_responses_status
-  L2267-L2292, LiteLLMCompletionResponsesConfig._incomplete_details_for_finish_reason L2295-L2304, LiteLLMCompletionResponsesConfig.transform_chat_completion_response_to_responses_api_response
-  L2406-L2468, LiteLLMCompletionResponsesConfig._transform_chat_completion_choices_to_responses_output L2471-L2526,
-  LiteLLMCompletionResponsesConfig._extract_tool_result_output_items L2529-L2557, LiteLLMCompletionResponsesConfig._encode_thinking_blocks
-  L2560-L2563, LiteLLMCompletionResponsesConfig._extract_reasoning_output_items L2566-L2597, LiteLLMCompletionResponsesConfig._extract_message_output_items
-  L2693-L2722, LiteLLMCompletionResponsesConfig._transform_responses_output_tool_call_to_chat_completion_output_tool_call
-  L2755-L2765, LiteLLMCompletionResponsesConfig._transform_chat_message_to_response_output_text L2768-L2782.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B1115 owns LiteLLMCompletionResponsesConfig._extract_image_generation_output_items
-  L2600-L2646, LiteLLMCompletionResponsesConfig._map_finish_reason_to_image_generation_status L2649-L2666, LiteLLMCompletionResponsesConfig._extract_base64_from_data_url
-  L2669-L2690, LiteLLMCompletionResponsesConfig._transform_chat_completion_annotations_to_response_output_annotations
-  L2785-L2808, LiteLLMCompletionResponsesConfig._transform_chat_completion_usage_to_responses_usage L2811-L2894.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B2410 owns every function in codex_compat.py and additional_tools.py, including their diagnostics; they are dependencies re-exported here.
+- Other methods in transformation.py belong to B908 options, B909 input dispatch, B910 reasoning merging, B911 repair, B912 tool results, B913 namespaces, B914 output assembly, B915 sessions and B1115 details.
 pitfalls:
-- 'additional_tools.py:54 emits the diagnostic "Responses API: hoisting %d tool(s) out of %d ''additional_tools''
-  input item(s) into the top-level tools param."; retain its level and fallback instead of turning it into a hard
-  error.'
-- Within _agent_message_text\'s not isinstance(content, list) branch, preserve return '' and its nested guards.
+- The unwrapping cap counts characters, not UTF-8 bytes, and over-cap input is preserved rather than rejected by this helper.
+- startswith(fc) and startswith(ctc) do not require an underscore, so fcabc must not become fc_fcabc.
+- A custom call emits its unwrapped input only at status=completed; partial statuses intentionally expose an empty input.
 review_level: standard
 budget:
-  max_changed_lines: 680
+  max_changed_lines: 725
   max_new_expects: 1

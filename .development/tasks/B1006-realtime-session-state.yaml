@@ -1,267 +1,127 @@
 id: B1006
-title: Realtime session state
+title: Realtime session state and billing records
 description: >-
-  Own per-connection realtime input/tool/usage capture, authorized transcription-model enforcement and deferred
-  setup buffering. Preserve source caps 200 frames and 10 MiB, input_audio_buffer.clear ordering and setup cache
-  updates; export state transitions consumed by the relay, without logging raw audio.
+  Own RealTimeStreaming.__init__ and the ten complete storage/logging methods at 236-425 in
+  betterlite-core::api::realtime_session_state. B1004 owns shared protocols and JSON decoding,
+  B1005 header detection, B012 logging callbacks and B191 the bounded logging queue. This task
+  supplies per-connection mutable state to the sender, buffer and relays; it must not depend on them.
+  All message/input/tool arrays start empty; current IDs/chunks/delta type and session configuration
+  start None. Sent/setup-content/synthetic-session/guardrail flags are false, violation count and
+  buffered bytes are zero. backend_setup_complete is true with no config or when the config requires
+  session configuration. force_transcription_model=None means no forced transcription; any other
+  value, including "", initially marks a transcription session. An explicit backend beta flag wins
+  over the client's beta-header preference. model defaults "" and request_data defaults {}.
 
+  B002 loads litellm_settings.logged_real_time_event_types=None, a list or "*". None selects
+  session.created,response.create,response.done,conversation.item.added,conversation.item.done;
+  [] logs no ordinary events. Add loads_realtime_logged_events loader tests and YAML seeds.
+  Collect function calls before filtering stored events. Capturing duration/token usage does not
+  copy transcript text into response logs and does not duplicate an event already selected for logging.
+  Only log_messages enqueues success callbacks and sets realtime_session_success_logged=true.
 
-  Reuse B1004 decode_realtime_contract for _decode_json_object call sites; calling a lower decoder does not define
-  another fuzz target.
-
-
-  Implement crates/betterlite-core/src/api/realtime_session_state.rs. Use RealtimeSessionStateInput and RealtimeSessionStateResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions pre_setup_buffer_cap, audio_clear_discards_appends, transcription_model_pinned,
-  usage_only_transcription, setup_cache_refresh under api::realtime_session_state::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.logged_real_time_event_types
-  defaults to None. No environment reads occur outside betterlite-config. Test api::realtime_session_state::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  The production external-byte decoder is betterlite-core::api::realtime_session_state::decode_realtime_session_state(bytes:
-  &[u8], limits: &ApiLimits), for json.loads input cast(str, message) at litellm/litellm_core_utils/realtime_streaming.py:255;
-  json.loads input message at litellm/litellm_core_utils/realtime_streaming.py:276. Place its implementation in
-  crates/betterlite-core/src/api/realtime_session_state.rs and call it from the actual boundary. The cargo-fuzz
-  target crates/betterlite-core/fuzz/fuzz_targets/realtime_session_state.rs passes arbitrary bounded bytes to that
-  exact decoder; api::realtime_session_state::tests::replays_corpus replays newly committed seeds through the same
-  function. Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::RealtimeSessionState in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {realtime_session_state: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/litellm_core_utils/realtime_streaming.py: BackendClose.message (L45-L48); litellm/litellm_core_utils/realtime_streaming.py:
-  backend_close_from (L56-L59); litellm/litellm_core_utils/realtime_streaming.py: ScopedWebSocket.scope (L93-L93);
-  litellm/litellm_core_utils/realtime_streaming.py: _ClientWebSocket.send_text (L97-L97); litellm/litellm_core_utils/realtime_streaming.py:
-  _ClientWebSocket.receive_text (L98-L98); litellm/litellm_core_utils/realtime_streaming.py: _ClientWebSocket.close
-  (L99-L99); litellm/litellm_core_utils/realtime_streaming.py: _LoggingWorker.ensure_initialized_and_enqueue (L103-L103);
-  litellm/litellm_core_utils/realtime_streaming.py: RealtimeEventNormalizer.should_drop (L112-L112); litellm/litellm_core_utils/realtime_streaming.py:
-  RealtimeEventNormalizer.normalize (L113-L113); litellm/litellm_core_utils/realtime_streaming.py: RealtimeEventNormalizer.patch_outgoing_session
-  (L114-L114); litellm/litellm_core_utils/realtime_streaming.py: RealTimeStreaming.__init__ (L127-L200); litellm/litellm_core_utils/realtime_streaming.py:
-  RealTimeStreaming._should_store_message (L236-L245); litellm/litellm_core_utils/realtime_streaming.py: RealTimeStreaming.store_message
-  (L247-L270); litellm/litellm_core_utils/realtime_streaming.py: RealTimeStreaming._collect_user_input_from_client_event
-  (L272-L306); litellm/litellm_core_utils/realtime_streaming.py: RealTimeStreaming._collect_user_input_from_backend_event
-  (L308-L317); litellm/litellm_core_utils/realtime_streaming.py: RealTimeStreaming._detect_transcription_session_from_backend
-  (L319-L333); litellm/litellm_core_utils/realtime_streaming.py: RealTimeStreaming._capture_transcription_usage
-  (L335-L362); litellm/litellm_core_utils/realtime_streaming.py: RealTimeStreaming._flush_unbilled_transcription_usage
-  (L364-L380); litellm/litellm_core_utils/realtime_streaming.py: RealTimeStreaming._collect_tool_calls_from_response_done
-  (L382-L402); litellm/litellm_core_utils/realtime_streaming.py: RealTimeStreaming.store_input (L404-L409); litellm/litellm_core_utils/realtime_streaming.py:
-  RealTimeStreaming.log_messages (L411-L425). Abstract/protocol declarations map to native types and synchronous/async
-  wrappers share one implementation; a partial function span is the explicit preparation/transition stage described
-  above, with typed values passed to the following stage.
-
-
-  Sizing: 256 owned nonblank/non-comment/non-docstring Python lines (275 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 276 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 33 config tests/seeds
-  and 30 wiring; 619 total within the 620-line cap. The estimate includes tests and adapters, not just production
-  code.
-
-
-  Direct inputs come from B012 (Logging pipeline, callback registry and redaction), B171 (Direct helper oracle and
-  URL path encoding), B1004 (Realtime contracts), B1087 (Api boundaries), B1124 (Realtime setup buffering), B1005
-  (Realtime beta protocol), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners,
-  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  B171 helper cases cover pure initialization/storage/collection methods; native queue spies cover
+  store_input.pre_call and log_messages submission. No provider SDK or socket is called here.
+  Reuse B1004 decoders, including their error/nonobject behavior. Source functions contain 226
+  nonblank/non-comment lines, plus eight class/default declarations. Budget 190 state/collection,135 tests,105 fixtures,80 adapters,
+  55 config tests/seeds and 35 wiring, 600 lines.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/realtime_session_state.rs
   - crates/betterlite-core/src/api/realtime_session_state/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/realtime_session_state.rs
   - crates/betterlite-config/src/api/realtime_session_state/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/realtime-session-state-*
-  - crates/betterlite-core/fuzz/Cargo.toml
-  - crates/betterlite-core/fuzz/fuzz_targets/realtime_session_state.rs
-  - crates/betterlite-core/fuzz/corpus/realtime_session_state/**
-  - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/realtime_session_state.rs
-  - tools/oracle/src/helpers/realtime_session_state/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/realtime_session_state.py
-  - tools/oracle/helpers/realtime_session_state/**
-  - tools/oracle/fuzz/corpus/helper_case/realtime_session_state-*
   - tools/oracle/cases/helpers/realtime-session-state/**
+  - tools/oracle/fuzz/corpus/helper_case/realtime-session-state-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L179-L179
-  why: Setting litellm_settings.logged_real_time_event_types and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L45-L105
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L109-L200
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L117-L200
+  why: Default event list and complete constructor establish connection-local state without depending on relay methods.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L236-L425
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L548-L548
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L660-L660
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L666-L666
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L669-L669
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L691-L691
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Logging filters, user/tool collection, usage deduplication and bounded callback submission.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L179-L179
+  why: The module-level logging selection defaults to None, not an empty list.
 dod:
-- text: 'pre setup buffer cap: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-pre-setup-buffer-cap
-  - oracle
-- text: 'audio clear discards appends: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-audio-clear-discards-appends
-  - oracle
-- text: 'transcription model pinned: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-transcription-model-pinned
-  - oracle
-- text: 'usage only transcription: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-usage-only-transcription
-  - oracle
-- text: 'setup cache refresh: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-setup-cache-refresh
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    realtime_initial_state asserts all defaults above and four setup combinations: no config ->complete,
+    requires_session_configuration=true ->complete, false ->incomplete, forced model="" ->transcription.
+    Client beta=true with explicit backend beta=false keeps those preferences separate. Two sessions
+    share no messages, pending frames or violation counts. loads_realtime_logged_events accepts None,[],
+    [response.done],"*" through B002 and rejects other scalar types as startup configuration errors.
+  proof: [behavior-tests, config-tests, oracle, helper-python]
+- text: >-
+    realtime_event_storage stores exactly the five default types and drops other types/missing type;
+    "*" stores all and [] stores none. Bytes decode as UTF-8, strings as JSON, records directly.
+    Unknown event names use the catch-all base object; a typed session validation failure logs debug
+    "Error parsing message for logging: %s" and stores the original record. Invalid UTF-8 or JSON
+    fails before that fallback. response.done output function_call collects id=call_id or "",type=function,
+    function.name=name or "",function.arguments=arguments or default "{}" even when storage is disabled;
+    explicit empty/None values are preserved where dict.get returns them. Nonfunction output is ignored.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    realtime_input_collection extracts each nonempty input_text from user conversation.item.create,
+    session.update instructions as role=system and nonempty list tools as session_tools. Empty tools
+    does not clear the previous list. Backend transcription.completed adds nonempty transcript as user
+    content. Malformed JSON, inappropriate object types and missing fields are ignored by the collection
+    methods. session.type=transcription and transcription_session.created/updated mark the session;
+    a later realtime event never clears that flag. store_input retains a passed dict as input_message,
+    but sets {} for string input, then pre_call receives the original message and api_key="".
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    realtime_usage_and_logging supplies transcription.completed with transcript=hello,usage={type:duration,
+    seconds:2}. Default filtering stores one usage-only event, with no transcript; "*" stores only the
+    ordinary event, not a second usage copy. Missing usage is ignored, even outside transcription mode
+    this helper itself does not gate on the session flag. Closing with provider unbilled usage appends
+    that same event shape; no config or usage=None is a no-op. log_messages copies nonempty input_messages
+    into model_call_details.messages, writes both realtime_tools and realtime_tool_calls if either is
+    nonempty, enqueues dispatch_success_handlers(messages,prefer_async_handlers=true) once and immediately
+    sets realtime_session_success_logged=true. No logger means no callback or flag mutation. A queue
+    submission failure must not falsely set the flag; callback completion is not awaited here.
+  proof: [behavior-tests, oracle, helper-python]
+- text: New config and helper seeds prove loaded event selection and independent record-level parity.
+  proof: [config-corpus, helper-corpus, new-cases, oracle, helper-python]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_session_state::/)
-      - test(/::replays_corpus$/)'
-  - id: case-pre-setup-buffer-cap
-    why: the pre-setup-buffer-cap behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_session_state::tests::pre_setup_buffer_cap($|::)/)'
-  - id: case-audio-clear-discards-appends
-    why: the audio-clear-discards-appends behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_session_state::tests::audio_clear_discards_appends($|::)/)'
-  - id: case-transcription-model-pinned
-    why: the transcription-model-pinned behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_session_state::tests::transcription_model_pinned($|::)/)'
-  - id: case-usage-only-transcription
-    why: the usage-only-transcription behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_session_state::tests::usage_only_transcription($|::)/)'
-  - id: case-setup-cache-refresh
-    why: the setup-cache-refresh behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_session_state::tests::setup_cache_refresh($|::)/)'
+    why: Storage filters must not suppress usage/tool accounting or mark an unqueued success.
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_session_state::tests::/) - test(/::replays_corpus$/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_session_state::tests::loads_settings($|::)/)'
+    why: The event selection setting needs a real loader test for null, lists and wildcard.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_session_state::tests::loads_realtime_logged_events($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/realtime-session-state-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/realtime_session_state)"
-      && test -f crates/betterlite-core/fuzz/fuzz_targets/realtime_session_state.rs && grep -qF "decode_realtime_session_state"
-      crates/betterlite-core/fuzz/fuzz_targets/realtime_session_state.rs && cargo nextest run --locked -p betterlite-core
-      --no-tests=fail -E 'test(/^api::realtime_session_state::tests::replays_corpus$/)'
+    why: New logging-selection YAML must pass the existing config decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/realtime-session-state-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/realtime_session_state.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The state adapter must exercise source collection methods without replacing network I/O.
+    run: test -f tools/oracle/helpers/realtime_session_state.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/realtime_session_state-*)"
-      && grep -qE "^[[:space:]]+realtime_session_state:" tools/oracle/fuzz/corpus/helper_case/realtime_session_state-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: State operation tags require fresh helper input seeds.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/realtime-session-state-*)" && grep -qE '^[[:space:]]+realtime_session_state:' tools/oracle/fuzz/corpus/helper_case/realtime-session-state-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: New session-state fixtures must compare stored records and selected diagnostics.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/realtime-session-state)"
 oracle_cases:
-- tools/oracle/cases/helpers/realtime-session-state/pre-setup-buffer-cap.yaml
-- tools/oracle/cases/helpers/realtime-session-state/audio-clear-discards-appends.yaml
-- tools/oracle/cases/helpers/realtime-session-state/transcription-model-pinned.yaml
-- tools/oracle/cases/helpers/realtime-session-state/usage-only-transcription.yaml
-- tools/oracle/cases/helpers/realtime-session-state/setup-cache-refresh.yaml
+- tools/oracle/cases/helpers/realtime-session-state/realtime-initial-state.yaml
+- tools/oracle/cases/helpers/realtime-session-state/realtime-event-storage.yaml
+- tools/oracle/cases/helpers/realtime-session-state/realtime-input-collection.yaml
+- tools/oracle/cases/helpers/realtime-session-state/realtime-usage-and-logging.yaml
 deviations: []
 out_of_scope:
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1004 owns _decode_json_object L106-L108.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1110 owns RealTimeStreaming._send_to_backend L427-L479, RealTimeStreaming._enforce_transcription_session_model
-  L481-L547, RealTimeStreaming._should_drop_event_from_client L655-L659, RealTimeStreaming._normalize_event_for_ga_client
-  L661-L665, RealTimeStreaming._event_to_client_json L667-L668, RealTimeStreaming._send_event_to_client L670-L690,
-  RealTimeStreaming._cache_session_configuration_request L692-L706, RealTimeStreaming._make_disable_auto_response_message
-  L708-L721, RealTimeStreaming._maybe_inject_guardrail_auto_response_disable L737-L765.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1124 owns RealTimeStreaming._uses_deferred_backend_setup L549-L553,
-  RealTimeStreaming._collapse_buffered_audio_messages L556-L589, RealTimeStreaming._sync_pending_messages_byte_total
-  L591-L594, RealTimeStreaming._should_buffer_client_message_until_setup L596-L605, RealTimeStreaming._buffer_pending_message_until_setup
-  L607-L632, RealTimeStreaming._flush_pending_messages_until_setup L634-L653.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1007 owns RealTimeStreaming._maybe_send_guardrail_turn_detection_update
-  L723-L735, RealTimeStreaming._has_realtime_guardrails_for_event_hooks L767-L784, RealTimeStreaming._has_audio_transcription_guardrails
-  L798-L807, RealTimeStreaming.run_realtime_guardrails L809-L941.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: RealTimeStreaming._has_realtime_guardrails L786-L796 are out
-  of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1008 owns RealTimeStreaming._handle_provider_config_message
-  L943-L1025, RealTimeStreaming._parse_backend_event L1028-L1034, RealTimeStreaming._handle_raw_backend_message
-  L1036-L1074, RealTimeStreaming._relay_backend_messages L1076-L1119, RealTimeStreaming.backend_to_client_send_messages
-  L1121-L1143, RealTimeStreaming._backend_refused_session L1145-L1146, RealTimeStreaming.log_backend_refusal L1148-L1154.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1005 owns RealTimeStreaming._detect_beta_header L1157-L1174,
-  RealTimeStreaming._remap_beta_session_to_ga L1177-L1257, RealTimeStreaming._translate_event_to_beta L1260-L1293,
-  RealTimeStreaming._translate_item_content_types L1296-L1307, client_sent_openai_beta_realtime_header L1592-L1594.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1009 owns RealTimeStreaming._receive_client_message L1309-L1314,
-  RealTimeStreaming.client_ack_messages L1316-L1563, RealTimeStreaming.bidirectional_forward L1565-L1576, RealTimeStreaming._close_client
-  L1578-L1589.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1004 owns BackendClose and socket/normalizer protocols; B1005 beta conversion; B1110 sender/enforcement; B1124 buffer methods and caps; B2455 guardrail predicates/setup policy; B1007 runner; B1008 backend methods; B1009 client methods. _has_realtime_guardrails has no caller at the pin.
+- B191 bounds submitted logging work and owns shutdown; B012 owns success/pre-call callback execution. The setting's module export remains B157.
 pitfalls:
-- 'realtime_streaming.py:267 emits the diagnostic ''Error parsing message for logging: %s''; retain its level and
-  fallback instead of turning it into a hard error.'
-- 'realtime_streaming.py:302 emits the diagnostic ''Realtime session.type: %s''; retain its level and fallback instead
-  of turning it into a hard error.'
-review_level: security
+- Tool-call collection runs before the event filter, so logged_real_time_event_types=[] must not erase tool accounting.
+- An empty tools list leaves earlier session tools intact; it is not a clear operation.
+- A successful queue submission sets realtime_session_success_logged before callbacks finish.
+review_level: standard
 budget:
-  max_changed_lines: 620
-  max_new_expects: 1
+  max_changed_lines: 600
+  max_new_expects: 0

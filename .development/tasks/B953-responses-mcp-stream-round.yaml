@@ -1,68 +1,73 @@
 id: B953
 title: Responses mcp stream round
 description: >-
-  Implement initial MCP Responses streaming phases and output-index remapping over response events, tracking pending
-  followups and round width. Consume discovery results and event constructors as explicit inputs; preserve terminal
-  event deferral until tool execution has finished.
+  Build the round-state half of LiteLLM's MCPEnhancedStreamingIterator for Responses streaming. The implementation
+  owns construction, MCP-header state, the initial response phase, output-index accounting, response-ID repair,
+  terminal-event deferral, and the initial provider-call preparation. Keep B954's iteration/tool-execution loop behind
+  an explicit action seam: when a completed response has auto-executable tool calls, B953 returns an ExecuteTools
+  transition with the collected response and retained round state; it does not call B954 methods directly. A later
+  Advance transition resumes the same round state after B954 has supplied tool results.
 
+  Implement crates/betterlite-core/src/api/responses_mcp_stream_round.rs with typed round input, transition and
+  result records. Inject the already decoded event stream, B949 discovery output, B950 tool-selection decision,
+  B932 provider-call service, logger and ID source at construction; do not read environment variables or credentials
+  from this module. Reuse B925 event/iterator types and B1087 limits. The initial provider call must set
+  stream=True, copy every original request parameter including tools, and expose its provider HTTP transcript through
+  a mock-provider case; B953 does not register a gateway route.
 
-  When the source calls _generate_tool_execution_events or _anext_impl, return RoundAction::ExecuteTools or RoundAction::Advance
-  with retained round state. B954 consumes these actions and drives follow-up execution; B953 never calls its driver.
-  Assert terminal deferral and action order in the round tests.
+  The constructor must preserve these LiteLLM defaults: mcp_tools_with_litellm_proxy=None becomes [],
+  user_api_key_auth=None, original_request_params=None becomes {}, model absent becomes "unknown",
+  custom_llm_provider absent becomes None, phase="initial_response", finished=False, mcp_discovery_generated=True,
+  is_async=True, initial_events_emitted=False, _cached_response_id=None, _initial_creation_error=None,
+  _stream_error=None, _error_event_emitted=False, _last_sequence_number=0, _round_index=0,
+  _output_index_offset=0, _round_max_output_index=-1, and empty composed/pending/event lists. Header extraction
+  preserves raw_headers=None until a header source exists, reads secret_fields.raw_headers, and merges each MCP tool's
+  headers after request headers; the B905 contract supplies default x-mcp-auth and its
+  LITELLM_MCP_CLIENT_SIDE_AUTH_HEADER_NAME / mcp_client_side_auth_header_name overrides.
 
+  Preserve exact round behavior. Emit the base response.output_item.added event before queued discovery events;
+  discovery events retain their input order. A response.completed chunk is a completion only when its type is exactly
+  "response.completed". Integer output_index values update the round maximum and gain the accumulated offset on later
+  rounds. A round width is max(len(response.output), _round_max_output_index + 1); absorbing a round removes function
+  calls whose tool_call_id was answered, appends pending mcp_call items, advances the offset by width plus pending
+  item count, clears pending items and resets the maximum to -1. Follow-up response.created and response.in_progress
+  events are dropped when _round_index > 0. A gateway-executed response.completed is deferred; after tool results,
+  the final completed response contains composed prior items followed by its own output.
 
-  Implement crates/betterlite-core/src/api/responses_mcp_stream_round.rs. Use ResponsesMcpStreamRounInput and ResponsesMcpStreamRounResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  A stream error event has type "response.error", the next sequence number, error.type "mcp_gateway_error",
+  param=None, code=str(status_code) such as "502" when the exception has status_code=502, otherwise code
+  "internal_error", and message=str(exception) or "MCP gateway stream failed" when no exception exists. The initial
+  provider preparation calls B932's aresponses seam with stream=True; an async iterable/iterator response is retained
+  and its model, litellm_metadata (default {}), and custom_llm_provider metadata are copied. A non-stream response
+  logs exactly "Got non-streaming response: %s" at warning level, stores no iterator and finishes. Any exception logs
+  exactly "Error creating initial response iterator: %s" at error level, prints its traceback, stores the exception in
+  _initial_creation_error and _stream_error, and still permits already generated discovery events to be emitted before
+  the error event. The initial call also logs exactly "Making LLM call with %s tools" at debug level, with tools_count=0
+  when tools is absent or empty.
 
+  Add tests.rs under api::responses_mcp_stream_round::tests with the exact behavior functions
+  constructor_defaults_and_headers, list_tools_before_model, initial_response_tool_call, round_output_offset,
+  terminal_deferred, stream_error_frame and initial_provider_http_stream. Use deterministic IDs and event sequences;
+  the first six are pure typed-state tests, while initial_provider_http_stream runs the initial aresponses call through
+  the mock provider. Do not add a decoder fuzz target: this task transforms typed events and streams, and B925/B932
+  own byte decoding.
 
-  Write adjacent tests.rs behavior functions list_tools_before_model, initial_response_tool_call, round_output_offset,
-  terminal_deferred, stream_error_frame under api::responses_mcp_stream_round::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
+  Register HelperCall::ResponsesMcpStreamRound in tools/oracle/src/helpers/mod.rs and helpers.rs when required, add
+  tools/oracle/helpers/responses_mcp_stream_round.py and externally tagged helper seeds under
+  tools/oracle/fuzz/corpus/helper_case/responses_mcp_stream_round-*. Compare ordered events, dropped/retained chunks,
+  action transitions, diagnostics and mutations against independently scripted pinned behavior; do not compare random
+  response IDs. The provider-facing transcript is the HTTP case listed below, not a second route registration.
 
+  Owned LiteLLM callables are MCPEnhancedStreamingIterator.__init__ L276-L352,
+  _extract_mcp_headers_from_params L354-L409, _should_auto_execute_tools L411-L417,
+  _make_stream_error_event L419-L431, __aiter__ L433-L434, _handle_initial_response_phase L517-L577,
+  _is_response_completed L579-L584, _follow_up_pending L586-L588, _round_output_width L590-L592,
+  _absorb_round L594-L606, _compose_round_chunk L608-L653, _process_base_iterator_chunk L655-L685 and
+  _create_initial_response_iterator L687-L729. These are complete methods; no method is split by line range.
 
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponsesMcpStreamRound in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
-  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_mcp_stream_round: <typed
-  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
-  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
-  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
-  route tasks.
-
-
-  Callable ownership: litellm/responses/mcp/mcp_streaming_iterator.py: MCPEnhancedStreamingIterator.__init__ (L276-L352);
-  litellm/responses/mcp/mcp_streaming_iterator.py: MCPEnhancedStreamingIterator._extract_mcp_headers_from_params
-  (L354-L409); litellm/responses/mcp/mcp_streaming_iterator.py: MCPEnhancedStreamingIterator._should_auto_execute_tools
-  (L411-L417); litellm/responses/mcp/mcp_streaming_iterator.py: MCPEnhancedStreamingIterator._make_stream_error_event
-  (L419-L431); litellm/responses/mcp/mcp_streaming_iterator.py: MCPEnhancedStreamingIterator.__aiter__ (L433-L434);
-  litellm/responses/mcp/mcp_streaming_iterator.py: MCPEnhancedStreamingIterator._handle_initial_response_phase (L517-L577);
-  litellm/responses/mcp/mcp_streaming_iterator.py: MCPEnhancedStreamingIterator._is_response_completed (L579-L584);
-  litellm/responses/mcp/mcp_streaming_iterator.py: MCPEnhancedStreamingIterator._follow_up_pending (L586-L588);
-  litellm/responses/mcp/mcp_streaming_iterator.py: MCPEnhancedStreamingIterator._round_output_width (L590-L592);
-  litellm/responses/mcp/mcp_streaming_iterator.py: MCPEnhancedStreamingIterator._absorb_round (L594-L606); litellm/responses/mcp/mcp_streaming_iterator.py:
-  MCPEnhancedStreamingIterator._compose_round_chunk (L608-L653); litellm/responses/mcp/mcp_streaming_iterator.py:
-  MCPEnhancedStreamingIterator._process_base_iterator_chunk (L655-L685); litellm/responses/mcp/mcp_streaming_iterator.py:
-  MCPEnhancedStreamingIterator._create_initial_response_iterator (L687-L727). Abstract/protocol declarations map
-  to native types and synchronous/async wrappers share one implementation; a partial function span is the explicit
-  preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 256 owned nonblank/non-comment/non-docstring Python lines (279 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 276 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 526 total within the 530-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B925 (Responses stream events), B949
-  (Responses mcp discovery), B952 (Responses mcp events), B1087 (Api boundaries), B950 (Responses mcp execute),
-  B932 (Responses create call). These are callable/type/config owners, not provider-family umbrellas; the external
-  B500-B859 ids retain ownership on the provider and keys/data branches.
+  The owned ranges contain 279 nonblank, non-comment physical lines. Budget 300 implementation lines, 150 native
+  behavior lines, 85 helper fixtures/adapters, 35 provider transcript/wiring and 30 tests/oracle plumbing: 600
+  changed lines. Direct inputs are B171, B925, B949, B950, B952, B932 and B1087.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -83,105 +88,148 @@ scope:
   - tools/oracle/helpers/responses_mcp_stream_round/**
   - tools/oracle/fuzz/corpus/helper_case/responses_mcp_stream_round-*
   - tools/oracle/cases/helpers/responses-mcp-stream-round/**
+  - tools/oracle/cases/responses-mcp-stream-round/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L276-L435
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L446-L446
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L516-L727
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L264-L352
+  why: The complete iterator constructor, every initialized field, the "unknown" model fallback, and the initial phase flags.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L354-L431
+  why: Header-source precedence/merge behavior, B950's auto-execution predicate call, and the exact error-event fields and fallback message.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L433-L434
+  why: The async-iterator identity returned by __aiter__.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L517-L606
+  why: Initial stream creation, discovery-event ordering, completion detection, follow-up identity, round width and absorbed-output bookkeeping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L608-L685
+  why: Output-index offset mutation, follow-up lifecycle suppression, terminal completion deferral and response-ID consistency repair.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L687-L729
+  why: The initial B932 aresponses call, forced stream flag, copied parameters, metadata defaults, non-stream warning and exception/error-event state.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L540-L648
+  why: The owned iterator delegates auto-execution selection and response tool-call extraction to B950, including the exact proxy-tool condition.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1070-L1137
+  why: B905's forwarded MCP header defaults, raw-header merge contract and x-mcp-{server_alias}-{header_name} normalization consumed at this call site.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L576-L761
+  why: B932's provider-facing aresponses seam that the initial iterator invokes with the copied request parameters.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L38-L40
+  why: B952's _output_items result shape used by width and absorption; B952 owns the helper and this task only consumes it.
 dod:
-- text: 'list tools before model: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-list-tools-before-model
-  - oracle
-- text: 'initial response tool call: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-initial-response-tool-call
-  - oracle
-- text: 'round output offset: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-round-output-offset
-  - oracle
-- text: 'terminal deferred: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-terminal-deferred
-  - oracle
-- text: 'stream error frame: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-stream-error-frame
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    constructor_defaults_and_headers: constructing with base_iterator=null, mcp_events=[], tool_server_map={} and
+    original_request_params=null yields model="unknown", phase="initial_response", finished=false, is_async=true,
+    _last_sequence_number=0, _round_index=0, _output_index_offset=0, _round_max_output_index=-1, raw_headers=null,
+    empty pending/composed/tool-execution lists and null error/response fields; a second input with
+    secret_fields.raw_headers={"x-mcp-auth":"Bearer old","x-mcp-alpha-authorization":"Bearer scoped",
+    "authorization":"Bearer oauth"} and an MCP tool headers map {"x-mcp-alpha-x-api-key":"tool-key",
+    "x-client":"tool"} retains all request headers and lets tool headers win in raw_headers, while B905 returns
+    mcp_auth_header="Bearer old", mcp_server_auth_headers={"alpha":{"Authorization":"Bearer scoped",
+    "x-api-key":"tool-key"}}, and oauth2_headers={"Authorization":"Bearer oauth"}.
+  proof: [case-constructor-defaults-and-headers, oracle, helper-python]
+- text: >-
+    list_tools_before_model: an initial stream whose first event is response.output_item.added and whose queued
+    discovery records have types response.mcp_list_tools.in_progress then response.mcp_list_tools.completed emits
+    the base output_item.added first, then those two discovery records in order, then the next base event; an empty
+    base iterator still drains discovery records before StopAsyncIteration.
+  proof: [case-list-tools-before-model, oracle, helper-python]
+- text: >-
+    initial_response_tool_call: with should_auto_execute=true and response id="resp_initial" containing one
+    function_call with call_id="call_1" and output_index=0, response.output_item.added is forwarded, the completed
+    response is retained for B954 as ExecuteTools state, and the response.completed event is not emitted before tool
+    execution supplies results; should_auto_execute=false forwards the same response.completed event unchanged.
+  proof: [case-initial-response-tool-call, oracle, helper-python]
+- text: >-
+    round_output_offset: absorbing a round with output indexes 0 and 1 and one answered function call removes that
+    function_call, keeps the other output in order, appends the pending mcp_call item at index 2, advances the offset
+    from 0 to 3, clears pending items and resets _round_max_output_index to -1; a follow-up output_index=0 becomes 3,
+    while follow-up response.created and response.in_progress are dropped when _round_index=1. If the first response
+    event caches id="resp_initial" and a later response event carries id="resp_wrong", the later event is rewritten to
+    id="resp_initial" before composition; a non-integer output_index is left unchanged.
+  proof: [case-round-output-offset, oracle, helper-python]
+- text: >-
+    terminal_deferred: a response.completed event with an auto-executable call returns no client chunk and emits the
+    ExecuteTools transition before any terminal event; after B954 supplies the call result, a final response.completed
+    carries the absorbed prior output followed by the final response output, with no duplicate response.created or
+    response.in_progress from the follow-up round.
+  proof: [case-terminal-deferred, oracle, helper-python]
+- text: >-
+    stream_error_frame: with _last_sequence_number=8 and an exception carrying status_code=502 and text
+    "upstream failed", the next frame is type="response.error", sequence_number=9, error.type="mcp_gateway_error",
+    error.code="502", error.message="upstream failed" and error.param=null; with no exception, code is
+    "internal_error" and message is exactly "MCP gateway stream failed".
+  proof: [case-stream-error-frame, oracle, helper-python]
+- text: >-
+    initial_provider_http_stream: the initial aresponses call copies model="oracle-model", input="hello", tools,
+    custom_llm_provider="openai", and every original parameter, overwrites stream from false to true, sends that
+    request to the mock provider, retains its async stream, and copies provider model="oracle-model",
+    litellm_metadata={} and custom_llm_provider="openai"; a non-stream response logs the warning, stores no iterator
+    and finishes, while a provider exception logs "Error creating initial response iterator: %s", stores both error
+    fields and still drains queued discovery frames first. The debug call log is "Making LLM call with %s tools" and
+    reports 0 when the copied request has no tools.
+  proof: [case-initial-provider-http-stream, oracle, helper-python]
+- text: >-
+    The Rust/Python helper adapter uses the externally tagged responses_mcp_stream_round operation and every added
+    helper seed replays through the shared production parser; the provider transcript is a separate HTTP case and
+    compares the request sent to the mock upstream as well as the client stream.
+  proof: [helper-python, helper-corpus, oracle, new-oracle-cases]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_round::/)
-      - test(/::replays_corpus$/)'
+    why: The round module or one of its named production tests is absent, leaving constructor, offsets, deferral or errors unchecked.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_round::/) - test(/::replays_corpus$/)'
+  - id: case-constructor-defaults-and-headers
+    why: The constructor's literal defaults or request/tool header merge assertions are absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_round::tests::constructor_defaults_and_headers($|::)/)'
   - id: case-list-tools-before-model
-    why: the list-tools-before-model behavior or its assertions are absent
+    why: Discovery records could be emitted before response.output_item.added or in the wrong order.
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_round::tests::list_tools_before_model($|::)/)'
   - id: case-initial-response-tool-call
-    why: the initial-response-tool-call behavior or its assertions are absent
+    why: Auto-executable completion could be emitted before B954 receives retained round state.
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_round::tests::initial_response_tool_call($|::)/)'
   - id: case-round-output-offset
-    why: the round-output-offset behavior or its assertions are absent
+    why: Answered calls, pending MCP items or follow-up indexes could corrupt the accumulated output offset.
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_round::tests::round_output_offset($|::)/)'
   - id: case-terminal-deferred
-    why: the terminal-deferred behavior or its assertions are absent
+    why: A gateway-executed response.completed could leak before tool execution or duplicate follow-up lifecycle frames.
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_round::tests::terminal_deferred($|::)/)'
   - id: case-stream-error-frame
-    why: the stream-error-frame behavior or its assertions are absent
+    why: Status-code conversion or the no-exception fallback message could change the observable error frame.
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_round::tests::stream_error_frame($|::)/)'
+  - id: case-initial-provider-http-stream
+    why: The initial provider call could omit copied parameters, fail to force stream=true, or lose provider metadata.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_round::tests::initial_provider_http_stream($|::)/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_mcp_stream_round.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The independently scripted helper adapter is absent or fails strict Python checks.
+    run: test -f tools/oracle/helpers/responses_mcp_stream_round.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_mcp_stream_round-*)"
-      && grep -qE "^[[:space:]]+responses_mcp_stream_round:" tools/oracle/fuzz/corpus/helper_case/responses_mcp_stream_round-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    why: The new helper operation has no prefixed seed or the shared parser cannot replay it.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_mcp_stream_round-*)" && grep -qE "^[[:space:]]+responses_mcp_stream_round:" tools/oracle/fuzz/corpus/helper_case/responses_mcp_stream_round-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-mcp-stream-round)"
+    why: A named helper or provider transcript was not added on this branch.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-mcp-stream-round tools/oracle/cases/responses-mcp-stream-round)"
 oracle_cases:
+- tools/oracle/cases/helpers/responses-mcp-stream-round/constructor-defaults-and-headers.yaml
 - tools/oracle/cases/helpers/responses-mcp-stream-round/list-tools-before-model.yaml
 - tools/oracle/cases/helpers/responses-mcp-stream-round/initial-response-tool-call.yaml
 - tools/oracle/cases/helpers/responses-mcp-stream-round/round-output-offset.yaml
 - tools/oracle/cases/helpers/responses-mcp-stream-round/terminal-deferred.yaml
 - tools/oracle/cases/helpers/responses-mcp-stream-round/stream-error-frame.yaml
+- tools/oracle/cases/responses-mcp-stream-round/initial-provider-http-stream.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/mcp/mcp_streaming_iterator.py: B952 owns _output_items L38-L40, _function_call_id L43-L53,
-  _set_event_field L56-L58, create_mcp_list_tools_events L61-L177, create_mcp_call_events L180-L261.'
-- 'litellm/responses/mcp/mcp_streaming_iterator.py: B954 owns MCPEnhancedStreamingIterator.__anext__ L436-L445,
-  MCPEnhancedStreamingIterator._anext_impl L447-L515, MCPEnhancedStreamingIterator._generate_tool_execution_events
-  L731-L880, MCPEnhancedStreamingIterator._create_follow_up_iterator L882-L951, MCPEnhancedStreamingIterator.__iter__
-  L953-L954, MCPEnhancedStreamingIterator.__next__ L956-L974.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- 'litellm/responses/mcp/mcp_streaming_iterator.py: B952 owns _output_items L38-L40, _function_call_id L43-L53, _set_event_field L56-L58, create_mcp_list_tools_events L61-L177 and create_mcp_call_events L180-L261; B953 consumes their typed records and does not copy them.'
+- 'litellm/responses/mcp/mcp_streaming_iterator.py: B954 owns MCPEnhancedStreamingIterator.__anext__ L436-L445, _anext_impl L447-L515, _generate_tool_execution_events L731-L880, _create_follow_up_iterator L882-L951, __iter__ L953-L954 and __next__ L956-L974; B953 emits actions instead of calling these methods.'
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B950 owns _should_auto_execute_tools L540-L563, _extract_tool_calls_from_response L566-L577 and _extract_tool_call_details L604-L635; B953 consumes their decision and tool records.'
+- 'litellm/responses/utils.py: B905 owns ResponsesAPIRequestUtils.extract_mcp_headers_from_request L1070-L1137 and the LITELLM_MCP_CLIENT_SIDE_AUTH_HEADER_NAME / mcp_client_side_auth_header_name precedence; B953 preserves the header values returned at its call boundary.'
+- 'litellm/responses/main.py: B932 owns aresponses L576-L761; B953 owns only the initial iterator call-site preparation and uses the injected/mock provider seam.'
+- 'litellm/responses/streaming_iterator.py: B925 owns BaseResponsesAPIStreamingIterator and its byte/event decoding; B953 consumes decoded ResponsesAPIResponse and ResponsesAPIStreamingResponse values.'
+- 'Gateway route registration, authentication envelopes, all response route aliases and HTTP status mapping remain with B955 and the Responses route tasks; this task adds only the provider transcript required for its SDK call.'
+- 'No enterprise-only hook, callback or deployment branch is read or implemented.'
 pitfalls:
-- mcp_streaming_iterator.py:703 emits the diagnostic 'Making LLM call with %s tools'; retain its level and fallback
-  instead of turning it into a hard error.
-- 'mcp_streaming_iterator.py:713 emits the diagnostic ''Created base iterator: %s''; retain its level and fallback
-  instead of turning it into a hard error.'
+- 'The source suppresses response.completed only after _generate_tool_execution_events marks the current collected response as the tool-result source; suppressing every completed event would lose a final text response.'
+- 'A streamed output_index can exceed len(response.output)-1; width must retain max(_round_max_output_index + 1, len(output)) or the next MCP item collides with a prior index.'
+- 'Tool headers update raw_headers after request headers and after server-specific extraction, so x-mcp-alpha-x-api-key="tool-key" wins without replacing x-mcp-alpha-authorization="Bearer scoped".'
+- 'The error event uses code="502" as a string when status_code=502 and uses code="internal_error" only when status_code is absent; param remains null in both cases.'
+- 'Initial-call failure stores the exception and prints its traceback but does not set phase="finished" until queued discovery events have been drained.'
 review_level: standard
 budget:
-  max_changed_lines: 530
+  max_changed_lines: 600
   max_new_expects: 1
