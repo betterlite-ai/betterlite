@@ -2022,7 +2022,7 @@ tasks:
     title: Text, message and tool token counting
     status: todo
     depends_on: [B195]
-    file: null
+    file: tasks/B196-text-tokens.yaml
     covers:
       - "litellm/litellm_core_utils/token_counter.py"
   - id: B197
