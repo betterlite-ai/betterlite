@@ -2147,11 +2147,12 @@ tasks:
     milestone: M1 openai data plane
     title: Offline tokenizer engines and assets
     status: todo
-    depends_on: [B193]
+    depends_on:
+    - B171
     file: tasks/B195-tokenizer-engines.yaml
     covers:
-      - "litellm/litellm_core_utils/{tokenizer,default_encoding}.py"
-      - "litellm/litellm_core_utils/tokenizers/**"
+    - litellm/litellm_core_utils/{tokenizer,default_encoding}.py
+    - litellm/litellm_core_utils/tokenizers/**
   - id: B196
     milestone: M1 openai data plane
     title: Text, message and tool token counting
