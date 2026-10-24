@@ -252,12 +252,9 @@ tasks:
     - B324
     - B325
     - B326
-    file: null
+    file: tasks/B020-routing-budgets.yaml
     covers:
-    - litellm/router_strategy/{tag_based_routing,budget_limiter}.py
-    - litellm/router_utils/{access_windows,routing_groups,prompt_caching_cache,reasoning_effort_capability}.py
-    - litellm/router_utils/pre_call_checks/{deployment_affinity_check,prompt_caching_deployment_check}.py
-    - litellm/caching/affinity_cache.py
+    - litellm/router_strategy/budget_limiter.py
   - id: B021
     milestone: M2 routing
     title: Auto, complexity, adaptive and quality routers
