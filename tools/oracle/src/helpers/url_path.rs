@@ -1,4 +1,3 @@
-use betterlite_http::error::UrlPathError;
 use betterlite_http::url_path::{encode_segment, encode_segments};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -21,24 +20,14 @@ pub(crate) fn invoke(input: &UrlPathInput) -> Result<serde_json::Value, Box<supe
         UrlPathFunction::Segment => encode_segment(&input.value, &input.field_name),
         UrlPathFunction::Segments => encode_segments(&input.value, &input.field_name),
     };
-    result
-        .map(serde_json::Value::String)
-        .map_err(|error| Box::new(helper_error(&error, &input.field_name)))
-}
-
-fn helper_error(error: &UrlPathError, field_name: &str) -> super::HelperError {
-    let message = match error {
-        UrlPathError::Required { .. } => format!("{field_name} is required"),
-        UrlPathError::DotSegment { .. } => {
-            format!("{field_name} cannot be a dot path segment")
-        }
-    };
-    super::HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    }
+    result.map(serde_json::Value::String).map_err(|error| {
+        Box::new(super::HelperError {
+            class: "ValueError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })
 }

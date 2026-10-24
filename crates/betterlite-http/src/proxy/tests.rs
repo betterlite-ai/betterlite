@@ -16,7 +16,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tracing::subscriber::set_default;
 
-use crate::error::ProxyError;
+use crate::error::HttpError;
 use crate::proxy::ProxiedClient;
 
 // nothing listens on port 1, so a request that skips its proxy fails at once
@@ -74,20 +74,21 @@ async fn http_proxies_proxy_policy_tests_behavior(
     let client = ProxiedClient::build(ClientBuilder::new(), &policy).unwrap();
     let url = Url::parse(&target.replace("LISTENER", &address)).unwrap();
     let request = Request::new(Method::GET, url);
-    let mut observed = if expected.starts_with("error|") {
-        format!("error|{}", client.execute(request).await.unwrap_err())
+    let (mut observed, error_debug) = if expected.starts_with("error|") {
+        let error = client.execute(request).await.unwrap_err();
+        (format!("error|{error}"), format!("{error:?}"))
     } else {
-        let proxy_side = async { Ok::<_, ProxyError>(answer(&listener).await) };
+        let proxy_side = async { Ok::<_, HttpError>(answer(&listener).await) };
         let (_response, exchange) = tokio::try_join!(client.execute(request), proxy_side).unwrap();
-        exchange
+        (exchange, String::new())
     };
+    let debug = format!("{client:?}{error_debug}");
     let written = fs::read_to_string(&log_path).unwrap();
     fs::remove_file(&log_path).unwrap();
     if written.contains("proxy setting ignored") {
         observed.push_str(" warned");
     }
     assert_eq!(observed, expected);
-    let debug = format!("{client:?}");
     for leak in LEAKS {
         assert!(
             !written.contains(leak) && !debug.contains(leak),

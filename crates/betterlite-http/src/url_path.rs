@@ -1,6 +1,6 @@
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 
-use crate::error::UrlPathError;
+use crate::error::HttpError;
 
 // Python's quote(value, safe="") keeps only the RFC 3986 unreserved characters.
 const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
@@ -9,14 +9,14 @@ const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'~');
 
-pub fn encode_segment(value: &str, field_name: &str) -> Result<String, UrlPathError> {
+pub fn encode_segment(value: &str, field_name: &str) -> Result<String, HttpError> {
     validate_segment(value, field_name)?;
     Ok(utf8_percent_encode(value, PATH_SEGMENT).to_string())
 }
 
-pub fn encode_segments(value: &str, field_name: &str) -> Result<String, UrlPathError> {
+pub fn encode_segments(value: &str, field_name: &str) -> Result<String, HttpError> {
     if value.is_empty() {
-        return Err(UrlPathError::Required {
+        return Err(HttpError::Required {
             field_name: field_name.to_owned(),
         });
     }
@@ -27,14 +27,14 @@ pub fn encode_segments(value: &str, field_name: &str) -> Result<String, UrlPathE
         .map(|segments| segments.join("/"))
 }
 
-fn validate_segment(value: &str, field_name: &str) -> Result<(), UrlPathError> {
+fn validate_segment(value: &str, field_name: &str) -> Result<(), HttpError> {
     if value.is_empty() {
-        return Err(UrlPathError::Required {
+        return Err(HttpError::Required {
             field_name: field_name.to_owned(),
         });
     }
     if value == "." || value == ".." {
-        return Err(UrlPathError::DotSegment {
+        return Err(HttpError::DotSegment {
             field_name: field_name.to_owned(),
         });
     }

@@ -4,7 +4,7 @@ use betterlite_config::proxy::{ProxyPolicy, ProxyRoute};
 use reqwest::{Client, ClientBuilder, Proxy, Request, Response};
 use secrecy::ExposeSecret as _;
 
-use crate::error::ProxyError;
+use crate::error::HttpError;
 
 #[derive(Debug)]
 pub struct ProxiedClient {
@@ -13,7 +13,7 @@ pub struct ProxiedClient {
 }
 
 impl ProxiedClient {
-    pub fn build(builder: ClientBuilder, policy: &Arc<ProxyPolicy>) -> Result<Self, ProxyError> {
+    pub fn build(builder: ClientBuilder, policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {
         for warning in &policy.warnings {
             tracing::warn!(?warning, "proxy setting ignored");
         }
@@ -43,25 +43,25 @@ impl ProxiedClient {
             }
             configured = configured.proxy(proxy);
         }
-        let client = configured.build().map_err(ProxyError::Client)?;
+        let client = configured.build().map_err(HttpError::Client)?;
         Ok(Self {
             client,
             policy: Arc::clone(policy),
         })
     }
 
-    pub async fn execute(&self, request: Request) -> Result<Response, ProxyError> {
+    pub async fn execute(&self, request: Request) -> Result<Response, HttpError> {
         let rejection = match self.policy.route(request.url()) {
-            Some(ProxyRoute::Unsupported { scheme }) => ProxyError::UnsupportedScheme {
+            Some(ProxyRoute::Unsupported { scheme }) => HttpError::UnsupportedProxyScheme {
                 scheme: scheme.clone(),
             },
-            Some(ProxyRoute::Invalid { name }) => ProxyError::InvalidUrl { name: name.clone() },
+            Some(ProxyRoute::Invalid { name }) => HttpError::InvalidProxyUrl { name: name.clone() },
             Some(ProxyRoute::Forward(_)) | None => {
                 return self
                     .client
                     .execute(request)
                     .await
-                    .map_err(ProxyError::Request);
+                    .map_err(HttpError::Request);
             }
         };
         Err(rejection)
