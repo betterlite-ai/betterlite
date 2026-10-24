@@ -1,13 +1,20 @@
 import json
 import os
 import sys
+from collections.abc import Callable
 from typing import TypeAlias, cast
 
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
+from provider_message_primitives import run as run_provider_message_primitives
 from url_path import run as run_url_path
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+
+OPERATIONS: dict[str, Callable[[dict[str, Json]], Json]] = {
+    "url_path": run_url_path,
+    "provider_message_primitives": run_provider_message_primitives,
+}
 
 
 def object_value(value: Json, name: str) -> dict[str, Json]:
@@ -37,11 +44,12 @@ def main() -> int:
     except Exception as error:  # noqa: BLE001 - malformed protocol input is reported on stderr
         sys.stderr.write(f"invalid helper request: {error}\n")
         return 2
-    if operation != "url_path":
+    run = OPERATIONS.get(operation)
+    if run is None:
         sys.stderr.write(f"unknown helper operation: {operation}\n")
         return 2
     try:
-        value = run_url_path(input_value)
+        value = run(input_value)
         output: dict[str, Json] = {"ok": True, "value": value}
     except Exception as error:  # noqa: BLE001 - the wire contract names every helper exception
         output = {

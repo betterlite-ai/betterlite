@@ -203,6 +203,7 @@ name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "betterlite-context",
  "betterlite-http",
  "clap",
  "reqwest",
@@ -212,6 +213,9 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
