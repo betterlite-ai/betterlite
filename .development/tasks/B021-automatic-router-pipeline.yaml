@@ -1,0 +1,99 @@
+id: B021
+title: Compose automatic routing and its policy boundaries
+description: 'Complete the M2 automatic-routing pipeline by composing the finished classifier, placement,
+  session, compaction, cache-cost, adaptive, registry and plugin services. Keep the main strategy enum
+  in betterlite-router and the authorized provider/auth/callback adapters in betterlite-server. Apply
+  the production hook sequence to Chat Completions, Responses and Messages through the already-implemented
+  B080/B081 integration points; preserve original caller surfaces and one final decision attribution.
+  Add end-to-end cases for interactions the component tasks cannot prove alone. Do not reimplement a classifier
+  or add another fallback engine: this task is the final orchestration and parity pass for the split B021
+  parts. Use the existing Rust crate boundaries from B004 and B008; integrate through the server when
+  the provider dispatcher or callbacks live in another core crate. This task''s source slices are the
+  linked ranges, not a port of their Python classes. Add the listed oracle cases and the matching adapters
+  to B301''s component runner where state is not observable over HTTP; adapters call production logic
+  and never reproduce it. Use deterministic candidate sets or supplied random samples for comparisons,
+  and separate seeded distribution tests for random choices. Extend the existing config_yaml fuzz target
+  and committed corpus for every newly accepted config form; unsupported keys still fail by full path.
+  Keep the implementation, adapters and tests within 800 changed lines; fixtures and oracle cases are
+  budget-excluded by checks.yaml.'
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/automatic-router-pipeline/**
+  - tools/oracle/src/router_probes/automatic-router-pipeline/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/automatic_router_pipeline.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L13796-L13989
+  why: Authorization, compression, hook invocation and attribution.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L4169-L4425
+  why: Session orchestration and final response gates.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L4474-L4811
+  why: Classifier, keyword, floor, plugin and placement composition.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(automatic_router_pipeline)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/automatic-router-pipeline/chat-full-pipeline.yaml
+- tools/oracle/cases/routing/automatic-router-pipeline/responses-full-pipeline.yaml
+- tools/oracle/cases/routing/automatic-router-pipeline/messages-full-pipeline.yaml
+- tools/oracle/cases/routing/automatic-router-pipeline/routing-only-compression-preserves-provider-body.yaml
+- tools/oracle/cases/routing/automatic-router-pipeline/plugin-policy-survives-classifier-fallback.yaml
+- tools/oracle/cases/routing/automatic-router-pipeline/context-floor-then-modality-and-health.yaml
+- tools/oracle/cases/routing/automatic-router-pipeline/adaptive-choice-restamped-after-replacement.yaml
+- tools/oracle/cases/routing/automatic-router-pipeline/authorization-before-internal-provider-call.yaml
+- tools/oracle/cases/routing/automatic-router-pipeline/same-session-concurrent-turns.yaml
+- tools/oracle/cases/routing/automatic-router-pipeline/cancellation-does-not-persist-unserved-choice.yaml
+- tools/oracle/cases/routing/automatic-router-pipeline/original-model-versus-selected-model-headers.yaml
+- tools/oracle/cases/routing/automatic-router-pipeline/one-attribution-per-attempt.yaml
+deviations: []
+out_of_scope:
+- New routing algorithms, schemas, Python runtime implementation or dashboard work.
+- Simple-shuffle load balancing already completed by B008.
+pitfalls:
+- The final task deliberately waits for B165's Python bridge through B363; the architect must accept the
+  later-milestone dependency before scheduling the M2 umbrella complete.
+- The earlier component tasks can run independently in dependency order, so do not defer their tests to
+  this integration pass.
+- Every provider call, including classifiers and compaction, must retain the original caller's authorization
+  and budget context.
+- Do not mistake duplicate covers on shared monolithic source files for permission to rewrite the whole
+  file's behavior in this one task.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

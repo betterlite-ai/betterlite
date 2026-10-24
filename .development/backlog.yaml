@@ -295,23 +295,10 @@ tasks:
     - B351
     - B362
     - B363
-    file: null
+    file: tasks/B021-automatic-router-pipeline.yaml
     covers:
-    - router_plugins.json
-    - litellm/router_strategy/{auto_router,complexity_router,adaptive_router,quality_router}/**
-    - litellm/router_strategy/{lar1_routing,savings_baseline}.py
-    - litellm/types/lar1.py
-    - litellm/router_utils/{auto_router_model_naming,auto_router_tuning_baseline}.py
-    - litellm/proxy/hooks/autorouter_baseline_cache.py
-    - litellm/proxy/auth/auto_router_checks.py
-    - litellm/proxy/management_endpoints/auto_router_endpoints.py
-    - litellm/types/management_endpoints/auto_router_endpoints.py
-    - litellm/proxy/management_helpers/auto_router_*.py
-    - litellm/proxy/db/autorouter_session_rollup.py
-    - litellm/models/autorouter_session.py
-    - litellm/repositories/autorouter_session_repository.py
-    - litellm/proxy/public_endpoints/autorouter_presets.json
-    - docker/install_auto_router.sh
+    - litellm/router.py
+    - litellm/router_strategy/complexity_router/complexity_router.py
   - id: B022
     milestone: M2 routing
     title: Request scheduler, priorities and admission control
