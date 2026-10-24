@@ -1,0 +1,14 @@
+id: B4561
+milestone: M8 platform
+title: Routed session status line and stop-hook output
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/statusline_script.py"
+parent: B134
+split_from: B134
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

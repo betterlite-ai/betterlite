@@ -2,16 +2,16 @@ id: B110
 milestone: M7 observability
 title: OpenTelemetry tracing and OTel-based destinations
 status: todo
-depends_on: [B012]
+depends_on: [B002, B003, B189, B3840, B3841, B3842, B3843, B3844, B3845, B3846, B3847, B3848, B3849, B3850, B3851, B3852, B3853, B3854, B3855, B3856, B3857, B3858, B3859, B3860, B3861, B3862, B3863, B3864, B3865, B3866, B3867, B3868, B3869]
 file: null
 covers:
-  - "litellm/integrations/{opentelemetry,traceloop,langtrace,logfire_logger}.py"
-  - "litellm/integrations/{opentelemetry_utils,otel,arize,agentops,levo,weave}/**"
-  - "litellm/types/integrations/{arize,arize_phoenix,langfuse_otel,weave_otel}.py"
-  - "litellm/tracing/**"
-  - "litellm/proxy/{tracing_endpoints,tracing_runtime}.py"
+  - "litellm/integrations/otel/{__init__.py,README.md,logger.py,langfuse_logger.py,mount.py,runtime.py}"
+  - "litellm/integrations/otel/{model,plumbing}/__init__.py"
+  - "litellm/integrations/{agentops,levo,weave}/__init__.py"
+  - "litellm/integrations/{arize,levo}/README.md"
+  - "litellm/tracing/{__init__.py,AGENTS.md}"
+  - "litellm/proxy/tracing_runtime.py"
   - "docker/{docker-compose.tracing.yml,tracing-config.yaml}"
-  - "litellm/litellm_core_utils/core_helpers.py"
 parent: null
 split_from: null
 resolution: null

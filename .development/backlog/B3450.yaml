@@ -1,0 +1,17 @@
+id: B3450
+milestone: M5 api families
+title: RAG records, provider selection and document chunking
+status: todo
+depends_on: [B002]
+file: null
+covers:
+  - "litellm/types/rag.py"
+  - "litellm/rag/text_splitters/**"
+  - "litellm/rag/ingestion/file_parsers/**"
+  - "litellm/rag/main.py"
+parent: B097
+split_from: B097
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

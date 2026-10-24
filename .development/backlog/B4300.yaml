@@ -1,0 +1,14 @@
+id: B4300
+milestone: M8 platform
+title: Normalize cache requests and retrieve embedding hits
+status: todo
+depends_on: [B2226, B4290, B4293, B4296, B4297, B4299]
+file: null
+covers:
+  - "litellm/caching/caching_handler.py"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,18 @@
+id: B4058
+milestone: M7 observability
+title: Prompt compilation orchestration and completion hooks
+status: todo
+depends_on: [B4050, B4052, B4054, B4056, B4057]
+file: null
+covers:
+  - "litellm/integrations/prompt_management_base.py"
+  - "litellm/integrations/dotprompt/dotprompt_manager.py"
+  - "litellm/integrations/gitlab/gitlab_prompt_manager.py"
+  - "litellm/integrations/bitbucket/bitbucket_prompt_manager.py"
+  - "litellm/integrations/generic_prompt_management/generic_prompt_manager.py"
+parent: B117
+split_from: B117
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

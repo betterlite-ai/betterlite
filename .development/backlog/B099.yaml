@@ -2,15 +2,10 @@ id: B099
 milestone: M5 api families
 title: Decisions, sandboxes and SystemOne
 status: todo
-depends_on: [B010, B014]
+depends_on: [B3510, B3511, B3512, B3513, B3514, B3515, B3516, B3517, B3518, B3519, B014, B052, B184]
 file: null
 covers:
-  - "litellm/{decisions,sandbox,systemone}/**"
-  - "litellm/llms/base_llm/{decisions,sandbox}/**"
-  - "litellm/llms/{e2b,opensandbox,strands_decider,typesafe}/**"
   - "litellm/proxy/decisions_endpoints/**"
-  - "litellm/types/decisions.py"
-  - "litellm/llms/base_llm/decisions/transformation.py"
 parent: null
 split_from: null
 resolution: null

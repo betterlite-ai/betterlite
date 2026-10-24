@@ -1,0 +1,16 @@
+id: B3368
+milestone: M5 api families
+title: Generated container file operations and exports
+status: todo
+depends_on: [B3360, B3361, B3363, B3366, B3367, B3369, B3370, B247, B185]
+file: null
+covers:
+  - "litellm/containers/endpoint_factory.py"
+  - "litellm/containers/__init__.py"
+  - "litellm/containers/main.py"
+parent: B094
+split_from: B094
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

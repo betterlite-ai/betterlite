@@ -1,0 +1,14 @@
+id: B4779
+milestone: M9 agents and mcp
+title: Resolve key and team agent grants
+status: todo
+depends_on: [B4776, B4778, B726, B732, B737, B747]
+file: null
+covers:
+  - "litellm/proxy/agent_endpoints/auth/agent_permission_handler.py"
+parent: B141
+split_from: B141
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

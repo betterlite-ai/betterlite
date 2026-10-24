@@ -2,13 +2,12 @@ id: B094
 milestone: M5 api families
 title: Containers API
 status: todo
-depends_on: [B087]
+depends_on: [B3360, B3361, B3362, B3363, B3364, B3365, B3366, B3367, B3368, B3369, B3370, B3371, B3372, B014, B2400, B1100, B1018, B732, B855, B756, B003]
 file: null
 covers:
-  - "litellm/containers/**"
-  - "litellm/llms/base_llm/containers/**"
-  - "litellm/proxy/container_endpoints/**"
-  - "litellm/types/containers/**"
+  - "litellm/proxy/container_endpoints/endpoints.py"
+  - "litellm/proxy/container_endpoints/__init__.py"
+  - "litellm/containers/README.md"
 parent: null
 split_from: null
 resolution: null

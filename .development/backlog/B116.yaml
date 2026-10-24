@@ -2,13 +2,13 @@ id: B116
 milestone: M7 observability
 title: Slack, email, PagerDuty and Teams alerting
 status: todo
-depends_on: [B012]
+depends_on: [B4020, B4021, B4022, B4023, B4024, B4025, B4026, B4027, B4028, B4029, B4030, B173, B189, B191, B256]
 file: null
 covers:
-  - "litellm/integrations/SlackAlerting/**"
-  - "litellm/integrations/email_alerting.py"
-  - "litellm/integrations/email_templates/**"
-  - "litellm/types/integrations/{slack_alerting,pagerduty}.py"
+  - "litellm/integrations/SlackAlerting/slack_alerting.py"
+  - "litellm/integrations/SlackAlerting/Readme.md"
+  - "litellm/integrations/email_templates/{email_footer,key_created_email,key_rotated_email,user_invitation_email}.py"
+  - "litellm/types/integrations/pagerduty.py"
 parent: null
 split_from: null
 resolution: null

@@ -1,0 +1,15 @@
+id: B3942
+milestone: M7 observability
+title: New Relic agent events and supportability metrics
+status: todo
+depends_on: [B3931, B3941, B002, B198]
+file: null
+covers:
+  - "litellm/integrations/newrelic/newrelic.py"
+  - "litellm/types/integrations/newrelic.py"
+parent: B113
+split_from: B113
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

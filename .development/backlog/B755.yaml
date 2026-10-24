@@ -2,7 +2,7 @@ id: B755
 milestone: M4 keys, spend and management
 title: Validate resolved virtual keys and session expiry
 status: todo
-depends_on: [B001, B002, B003, B116, B171, B726, B732, B733, B735, B736, B738, B750, B751, B753, B757, B856, B860, B879, B881, B882, B889, B2310, B2321]
+depends_on: [B001, B002, B003, B4025, B171, B726, B732, B733, B735, B736, B738, B750, B751, B753, B757, B856, B860, B879, B881, B882, B889, B2310, B2321]
 file: tasks/B755-auth-key-validation.yaml
 covers:
   - "litellm/proxy/auth/user_api_key_auth.py"

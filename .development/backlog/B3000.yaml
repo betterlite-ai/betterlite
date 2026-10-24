@@ -1,0 +1,18 @@
+id: B3000
+milestone: M4 keys, spend and management
+title: Budget snapshots, window values and throttle policy
+status: todo
+depends_on: [B002, B199, B720, B721, B732]
+file: null
+covers:
+  - "litellm/proxy/spend_tracking/budget_reservation.py"
+  - "litellm/proxy/spend_tracking/carried_budget_state.py"
+  - "litellm/types/proxy/carried_budget_state.py"
+  - "litellm/proxy/auth/budget_throttle.py"
+  - "litellm/proxy/common_utils/timezone_utils.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

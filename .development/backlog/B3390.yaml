@@ -1,0 +1,16 @@
+id: B3390
+milestone: M5 api families
+title: Skills wire records and Anthropic request transformations
+status: todo
+depends_on: [B171, B567, B2202]
+file: null
+covers:
+  - "litellm/llms/base_llm/skills/**"
+  - "litellm/llms/anthropic/skills/**"
+  - "litellm/types/llms/anthropic_skills.py"
+parent: B095
+split_from: B095
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

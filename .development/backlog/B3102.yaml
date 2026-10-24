@@ -1,0 +1,16 @@
+id: B3102
+milestone: M4 keys, spend and management
+title: Persist gateway request counts and expose deployment activity
+status: todo
+depends_on: [B052, B700, B732, B1690]
+file: null
+covers:
+  - "litellm/proxy/db/gateway_request_tracking.py"
+  - "litellm/proxy/management_endpoints/gateway_request_endpoints.py"
+  - "litellm/types/proxy/gateway_requests.py"
+parent: B074
+split_from: B074
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

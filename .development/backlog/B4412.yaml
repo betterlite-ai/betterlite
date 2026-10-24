@@ -1,0 +1,15 @@
+id: B4412
+milestone: M8 platform
+title: Initialize KMS clients and decrypt startup environment values
+status: todo
+depends_on: [B002, B4410]
+file: null
+covers:
+  - "litellm/secret_managers/aws_secret_manager.py"
+  - "litellm/secret_managers/google_kms.py"
+parent: B129
+split_from: B129
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

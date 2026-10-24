@@ -1,0 +1,15 @@
+id: B3842
+milestone: M7 observability
+title: OTel V2 settings and destination contracts
+status: todo
+depends_on: [B002, B172, B3840]
+file: null
+covers:
+  - "litellm/integrations/otel/model/{config,destination}.py"
+  - "litellm/integrations/otel/plumbing/otlp_tls.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

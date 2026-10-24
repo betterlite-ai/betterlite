@@ -1,0 +1,14 @@
+id: B3518
+milestone: M5 api families
+title: OpenSandbox create run and delete lifecycle
+status: todo
+depends_on: [B3516, B3517, B173]
+file: null
+covers:
+  - "litellm/llms/opensandbox/**"
+parent: B099
+split_from: B099
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

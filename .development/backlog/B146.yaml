@@ -2,11 +2,14 @@ id: B146
 milestone: M10 admin ui
 title: Admin UI pages for models, routing, playground, chat and the model hub working against betterlite
 status: todo
-depends_on: [B144, B060, B023]
+depends_on: [B4920, B4921]
 file: null
 covers:
   - "ui/litellm-dashboard/src/app/{chat,model_hub,model_hub_table}/**"
-  - "ui/litellm-dashboard/src/app/(dashboard)/{models-and-endpoints,model-hub-table,model-insights,playground,router-settings,transform-request}/**"
+  - "ui/litellm-dashboard/src/app/(dashboard)/{models-and-endpoints,model-hub-table,router-settings,transform-request}/**"
+  - "ui/litellm-dashboard/src/app/(dashboard)/model-insights/{page.tsx,_components/ModelInsightsView*}"
+  - "ui/litellm-dashboard/src/app/(dashboard)/playground/{page*,hooks/**,llm_calls/**,components/compareUI/**,components/complianceUI/**}"
+  - "ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/{[A-Z]*,chatConstants.ts}"
   - "ui/litellm-dashboard/src/components/{add_model,model_add,model_dashboard,ModelSelect,view_model,edit_auto_router,routing_groups,router_settings,chat,chat_ui,AIHub,publicModelHub,claude_code_plugins}/**"
   - "ui/litellm-dashboard/src/components/{model_filters,model_group_alias_settings,ModelInfoEditForm,model_info_view,update_model_credentials_modal,provider_info_helpers,price_data_reload,route_preview,public_model_hub,PublicModelHubTableColumns}.*"
   - "ui/litellm-dashboard/src/components/{model_info_view,update_model_credentials_modal,provider_info_helpers,price_data_reload,route_preview,public_model_hub}.test.*"

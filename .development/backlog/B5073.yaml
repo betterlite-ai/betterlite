@@ -1,0 +1,15 @@
+id: B5073
+milestone: M11 distribution
+title: Arbitrary-user container image and hardened Compose overlay
+status: todo
+depends_on: [B003, B1232, B5070, B5072]
+file: null
+covers:
+  - "docker/Dockerfile.non_root"
+  - "docker-compose.hardened.yml"
+parent: B151
+split_from: B151
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

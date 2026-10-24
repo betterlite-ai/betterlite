@@ -1,0 +1,15 @@
+id: B3516
+milestone: M5 api families
+title: Sandbox result records and E2B execution
+status: todo
+depends_on: [B002, B173]
+file: null
+covers:
+  - "litellm/llms/base_llm/sandbox/**"
+  - "litellm/llms/e2b/**"
+parent: B099
+split_from: B099
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

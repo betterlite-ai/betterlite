@@ -1,0 +1,14 @@
+id: B3489
+milestone: M5 api families
+title: Dispatch GenAI generation and streaming calls
+status: todo
+depends_on: [B3483, B3486, B3488, B174, B185, B186, B198]
+file: null
+covers:
+  - "litellm/google_genai/main.py"
+parent: B098
+split_from: B098
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

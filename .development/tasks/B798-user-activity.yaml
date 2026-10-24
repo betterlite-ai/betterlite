@@ -18,8 +18,8 @@ description: >-
   start_date/end_date/model/api_key/user_id/timezone default None; page=1 (minimum 1), page_size=50
   (1..1000), include_current_utc_day=false. Missing database is HTTP 500 with db_not_connected_error;
   missing either date is HTTP 400 with Please provide start_date and end_date. These precede the try.
-  Forward all filters to B074.get_daily_activity with table litellm_dailyuserspend, entity_id_field
-  user_id, entity_metadata_field=None and timezone_offset_minutes=timezone. B074 owns date parsing,
+  Forward all filters to B3091.get_daily_activity with table litellm_dailyuserspend, entity_id_field
+  user_id, entity_metadata_field=None and timezone_offset_minutes=timezone. B3090 and B3091 own date parsing,
   timezone/current-day extension, query execution and SpendAnalyticsPaginatedResponse, not this route.
   Collect distinct nonempty string user_ids from the returned page, skip the database lookup if none,
   then fetch B723 user rows and attach user_email/user_alias including nulls; absent rows add no entry.
@@ -94,7 +94,7 @@ oracle_cases:
   - tools/oracle/cases/management/user-activity/page-metadata.yaml
 deviations: []
 out_of_scope:
-  - B074 owns common_daily_activity.py, including get_daily_activity and raise_public; B2314 owns
+  - B3091 owns get_daily_activity and B3090 raise_public in common_daily_activity.py; B2314 owns
     user_api_key_has_admin_view, imported here as _user_has_admin_view.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),

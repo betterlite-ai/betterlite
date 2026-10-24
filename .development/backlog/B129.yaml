@@ -2,12 +2,12 @@ id: B129
 milestone: M8 platform
 title: Secret managers
 status: todo
-depends_on: [B002]
+depends_on: [B4410, B4411, B4412, B4413, B4414, B4415, B4416, B4417, B4418, B4419, B4420, B4421, B002, B173, B2226]
 file: null
 covers:
-  - "litellm/secret_managers/**"
-  - "litellm/types/secret_managers/main.py"
-  - "litellm/integrations/custom_secret_manager.py"
+  - "litellm/secret_managers/main.py"
+  - "litellm/secret_managers/get_azure_ad_token_provider.py"
+  - "litellm/secret_managers/Readme.md"
 parent: null
 split_from: null
 resolution: null

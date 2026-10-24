@@ -1,0 +1,14 @@
+id: B3005
+milestone: M4 keys, spend and management
+title: Resolve per-model budget names and report window usage
+status: todo
+depends_on: [B193, B199, B360, B390, B1035, B2203]
+file: null
+covers:
+  - "litellm/proxy/hooks/model_max_budget_limiter.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

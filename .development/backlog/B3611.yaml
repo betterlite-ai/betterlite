@@ -1,0 +1,14 @@
+id: B3611
+milestone: M5 api families
+title: Pass-through HTTP body and WebSocket frame helpers
+status: todo
+depends_on: [B173, B1100, B1101]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
+parent: B102
+split_from: B102
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

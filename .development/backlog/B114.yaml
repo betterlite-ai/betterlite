@@ -2,12 +2,10 @@ id: B114
 milestone: M7 observability
 title: Evaluation and product analytics loggers
 status: todo
-depends_on: [B012]
+depends_on: [B3960, B3961, B3962, B3963, B3964, B3965, B3966, B3967, B3968, B3969, B3970, B3971, B3972, B3973, B3974, B3975, B3976, B3977, B3978, B3979, B002, B173, B189, B192, B256]
 file: null
 covers:
-  - "litellm/integrations/{argilla,athina,braintrust_logging,galileo,greenscale,helicone,humanloop,lunary,literal_ai,mlflow,posthog,prompt_layer,weights_biases,supabase,rubrik}.py"
-  - "litellm/integrations/{deepeval,opik,generic_api}/**"
-  - "litellm/types/integrations/{argilla,posthog}.py"
+  - "litellm/integrations/generic_api/**"
 parent: null
 split_from: null
 resolution: null

@@ -1,0 +1,14 @@
+id: B3978
+milestone: M7 observability
+title: Rubrik prompt and response moderation hooks
+status: todo
+depends_on: [B3975, B3976]
+file: null
+covers:
+  - "litellm/integrations/rubrik.py"
+parent: B114
+split_from: B114
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

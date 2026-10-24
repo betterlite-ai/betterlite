@@ -1,0 +1,14 @@
+id: B3881
+milestone: M7 observability
+title: Prometheus deployment outcomes and fallbacks
+status: todo
+depends_on: [B3870, B3873, B3874, B3876, B3878, B3879, B3880, B253, B206]
+file: null
+covers:
+  - "litellm/integrations/prometheus.py"
+parent: B111
+split_from: B111
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

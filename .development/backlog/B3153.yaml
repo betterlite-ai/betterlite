@@ -1,0 +1,14 @@
+id: B3153
+milestone: M4 keys, spend and management
+title: Collect GitHub pull request evidence for ROI
+status: todo
+depends_on: [B3150, B3152]
+file: null
+covers:
+  - "litellm/proxy/roi_calculator/github.py"
+parent: B076
+split_from: B076
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

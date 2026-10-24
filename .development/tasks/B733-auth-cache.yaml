@@ -1,7 +1,7 @@
 id: B733
 title: Typed key and management-object caches
 description: >-
-  Implement auth_cache in betterlite-auth over B125 DualCache/InMemoryCache/CacheCodec and B126 Redis.
+  Implement auth_cache in betterlite-auth over B4293 DualCache, B2226 InMemoryCache, B4291 CacheCodec and B126 Redis.
   Own user_api_key_cache.py and the shallow cache copy at auth_checks.py L3970-L3978. Reuse B2314's
   resolved-key records; there is no principal resolver, SQL access, key hashing or response-cache
   namespace transformation here. Both in-memory partitions share the same Redis client and literal
@@ -10,18 +10,18 @@ description: >-
   A raw 64-hex management identifier also selects the key partition; do not infer object type instead.
 
   Construct two DualCaches with independent memory stores, the same optional Redis and the same
-  supplied TTLs. Reuse B125's constructor truthiness and defaults, including default capacity 200 and
+  supplied TTLs. Reuse B4293's and B2226's constructor truthiness and defaults, including default capacity 200 and
   max item size 1024 KiB for each fresh memory store. in_memory_cache_for exposes the selected store
   to prefetch and invalidation. Update TTL/capacity and attach Redis on ordinary then key partition;
   None TTL leaves a previous setting unchanged, zero updates it, None capacity resets to 200.
   Redis attachment is a no-op for None or an already attached client, changes the TTL only when a
   new client is attached with a nonnull TTL, and never backfills existing memory. Preserve independent
   eviction; ordinary-object churn cannot evict key objects. Underlying expiry, item-size refusal,
-  Redis failures and request batching remain B125/B126 behavior, not a second implementation.
+  Redis failures and request batching remain B2226/B4293/B4295/B126 behavior, not a second implementation.
 
   Sync and async reads pass local_only=false by default, trace context and extra cache options to
   the selected backend. Without model_type return the raw cached payload, including false/zero/empty
-  values. With model_type, a None miss returns silently; all other payloads pass through B125 CacheCodec.
+  values. With model_type, a None miss returns silently; all other payloads pass through B4291 CacheCodec.
   That codec returns an existing matching model unchanged, validates dictionaries, warns on a model
   ValidationError and returns None, and returns None silently for other payload kinds. If decoding
   returns None after a nonnull hit, this wrapper additionally logs ERROR naming get_cache or
@@ -42,7 +42,7 @@ description: >-
   Python bool). Any other option or nonnumeric TTL uses the ordinary async write. A nonnull pre-call
   BatchResult means queued: return None without a second write or waiting for its eventual result.
   No active batch yields None and falls through to direct writing. Memory visibility and deferred
-  Redis delivery follow B125. Sync writes never select this request-pipeline path.
+  Redis delivery follow B4295. Sync writes never select this request-pipeline path.
 
   Single sync/async/pre-call deletes route to one partition and retain the backend result. Batch
   deletion partitions keys without deduplicating or reordering within each group, invokes BOTH
@@ -86,7 +86,7 @@ description: >-
   Use the auth_cache helper for key/sentinel/TTL/copy/codec projections and deterministic in-memory
   typed-read logging; it does not fake a FastAPI route or a Redis server. Native recording-backend tests prove partition ordering and
   failure behavior against the actual wrapper. decode_cached_auth consumes Redis payload bytes
-  through the B125/B126 JSON boundary and requested typed model, then applies the same miss/logging
+  through the B4291/B126 JSON boundary and requested typed model, then applies the same miss/logging
   policy; cap input at 1048576 bytes and depth 64. Create the auth fuzz workspace here with this
   real decoder target, seed malformed/truncated/scalar/duplicate-field/provenance/limit inputs,
   and replay its corpus separately from behavior tests. Duplicate fields retain the underlying
@@ -202,7 +202,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2847-L2855
     why: Nullable positive integer max-size setting; preserve validation rather than inventing fallback.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_pydantic_utils.py#L39-L91
-    why: B125 owns serialization, matching-model identity and warning-on-validation-failure behavior.
+    why: B4291 owns serialization, matching-model identity and warning-on-validation-failure behavior.
 dod:
   - text: 'Literal cases name bare_lower_hex_only, uppercase_prefix_newline_and_length_not_key,
       hex_management_id_uses_key_partition, permission_link_and_row_keys, tag_keys_and_overflow,
@@ -294,7 +294,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_pydantic_utils.py#L81-L90
 out_of_scope:
   - UserApiKeyCache.flush_cache has no caller at the pin; do not add an auth flush API or cases for it.
-  - B125 owns CacheCodec and all DualCache/InMemoryCache behavior; B126 owns Redis transport and request pipeline execution.
+  - B4291 owns CacheCodec, B4293 and B4295 own DualCache behavior and B2226 owns InMemoryCache; B126 owns Redis transport and request pipeline execution.
   - B124 owns proxy_server startup/DB-setting installation and ConfigGeneralSettings as a whole; this task supplies only the cache settings and operations they consume.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'

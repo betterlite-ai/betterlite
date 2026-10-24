@@ -1,0 +1,14 @@
+id: B3814
+milestone: M6 guardrails
+title: Enforce stored tool policies and conversation trust chains
+status: todo
+depends_on: [B189, B1606]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/tool_policy/**"
+parent: B109
+split_from: B109
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

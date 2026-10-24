@@ -2,7 +2,7 @@ id: B2436
 milestone: M5 API families
 title: Messages stream logging and teardown
 status: todo
-depends_on: [B102, B191, B247, B978, B009, B2401]
+depends_on: [B3605, B3608, B3609, B191, B247, B978, B009, B2401]
 file: tasks/B2436-messages-stream-logging.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/messages/streaming_iterator.py"

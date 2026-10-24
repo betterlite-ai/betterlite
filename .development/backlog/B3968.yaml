@@ -1,0 +1,14 @@
+id: B3968
+milestone: M7 observability
+title: Humanloop prompt fetching caching and compilation
+status: todo
+depends_on: [B002, B173, B2226]
+file: null
+covers:
+  - "litellm/integrations/humanloop.py"
+parent: B114
+split_from: B114
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

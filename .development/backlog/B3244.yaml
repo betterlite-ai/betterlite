@@ -1,0 +1,15 @@
+id: B3244
+milestone: M6 guardrails
+title: Policy version lifecycle and routes
+status: todo
+depends_on: [B003, B732, B855, B756, B3240, B3241, B3242, B726]
+file: null
+covers:
+  - "litellm/proxy/policy_engine/policy_registry.py"
+  - "litellm/proxy/policy_engine/policy_endpoints.py"
+parent: B079
+split_from: B079
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

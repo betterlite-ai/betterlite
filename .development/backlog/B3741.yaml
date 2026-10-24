@@ -1,0 +1,15 @@
+id: B3741
+milestone: M6 guardrails
+title: Agent 365 delegated tokens and evaluation payloads
+status: todo
+depends_on: [B173, B732]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/agent_365.py"
+parent: B106
+split_from: B106
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,15 @@
+id: B3808
+milestone: M6 guardrails
+title: Semantic guard route loading and templates
+status: todo
+depends_on: [B327]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_loader.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_templates/**"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

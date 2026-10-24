@@ -1,0 +1,16 @@
+id: B4020
+milestone: M7 observability
+title: Alert settings, records and trace links
+status: todo
+depends_on: [B002, B189, B253]
+file: null
+covers:
+  - "litellm/types/integrations/slack_alerting.py"
+  - "litellm/integrations/SlackAlerting/utils.py"
+  - "litellm/integrations/SlackAlerting/slack_alerting.py"
+parent: B116
+split_from: B116
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,14 @@
+id: B3912
+milestone: M7 observability
+title: Langfuse prompt links and child observations
+status: todo
+depends_on: [B3901, B3904, B254]
+file: null
+covers:
+  - "litellm/integrations/langfuse/langfuse.py"
+parent: B112
+split_from: B112
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

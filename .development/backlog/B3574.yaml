@@ -1,0 +1,16 @@
+id: B3574
+milestone: M5 api families
+title: Native passthrough guardrail dispatch and registration
+status: todo
+depends_on: [B3573]
+file: null
+covers:
+  - "litellm/llms/pass_through/guardrail_translation/handler.py"
+  - "litellm/llms/pass_through/guardrail_translation/__init__.py"
+  - "litellm/llms/pass_through/guardrail_translation/README.md"
+parent: B101
+split_from: B101
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

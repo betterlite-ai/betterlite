@@ -1,0 +1,15 @@
+id: B3733
+milestone: M6 guardrails
+title: Model Armor transport and document scanning
+status: todo
+depends_on: [B3732, B1303, B173, B206]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/model_armor/file_scanning.py"
+parent: B106
+split_from: B106
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

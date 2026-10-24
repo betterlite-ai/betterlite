@@ -1,0 +1,15 @@
+id: B4381
+milestone: M8 platform
+title: Generate semantic-cache embeddings through routed or direct calls
+status: todo
+depends_on: [B198]
+file: null
+covers:
+  - "litellm/caching/redis_semantic_cache.py"
+  - "litellm/caching/qdrant_semantic_cache.py"
+parent: B128
+split_from: B128
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

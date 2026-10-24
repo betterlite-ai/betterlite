@@ -2,14 +2,10 @@ id: B106
 milestone: M6 guardrails
 title: Cloud provider guardrails
 status: todo
-depends_on: [B104]
+depends_on: [B3720, B3721, B3722, B3723, B3724, B3725, B3726, B3727, B3728, B3729, B3730, B3731, B3732, B3733, B3734, B3735, B3736, B3737, B3738, B3739, B3740, B3741, B3742, B189]
 file: null
 covers:
-  - "litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py"
-  - "litellm/proxy/guardrails/guardrail_hooks/{azure,model_armor,openai,ibm_guardrails,microsoft_purview,agent_365}/**"
-  - "litellm/proxy/hooks/azure_content_safety.py"
-  - "litellm/types/proxy/guardrails/guardrail_hooks/{bedrock_guardrails,model_armor,agent_365}.py"
-  - "litellm/types/proxy/guardrails/guardrail_hooks/{azure,openai,ibm}/**"
+  - "litellm/proxy/guardrails/guardrail_hooks/{azure,model_armor,openai,ibm_guardrails,microsoft_purview,agent_365}/__init__.py"
 parent: null
 split_from: null
 resolution: null

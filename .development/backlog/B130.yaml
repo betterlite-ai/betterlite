@@ -2,13 +2,10 @@ id: B130
 milestone: M8 platform
 title: Model health checks and health routes
 status: todo
-depends_on: [B016, B731]
+depends_on: [B052, B741, B844, B4440, B4441, B4442, B4443, B4444, B4445, B4446, B4447, B4448]
 file: null
 covers:
-  - "litellm/proxy/health_check.py"
-  - "litellm/proxy/{health_check_utils,health_endpoints}/**"
-  - "litellm/litellm_core_utils/{health_check_helpers,health_check_utils}.py"
-  - "litellm/proxy/db/health_check_latest.py"
+  - "litellm/proxy/health_endpoints/**"
 parent: null
 split_from: null
 resolution: null

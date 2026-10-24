@@ -1,0 +1,14 @@
+id: B3612
+milestone: M5 api families
+title: Pass-through WebSocket relay lifecycle
+status: todo
+depends_on: [B3607, B3610, B3611, B009, B191, B198, B247, B249, B1719]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
+parent: B102
+split_from: B102
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

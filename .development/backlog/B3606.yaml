@@ -1,0 +1,14 @@
+id: B3606
+milestone: M5 api families
+title: Pass-through provider response logging dispatch
+status: todo
+depends_on: [B3605]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/success_handler.py"
+parent: B102
+split_from: B102
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,14 @@
+id: B3869
+milestone: M7 observability
+title: OTel V2 GenAI metric recording
+status: todo
+depends_on: [B198, B188, B192, B3840, B3841, B3844, B3857]
+file: null
+covers:
+  - "litellm/integrations/otel/plumbing/metrics.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

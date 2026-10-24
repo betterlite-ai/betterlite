@@ -1,0 +1,14 @@
+id: B3255
+milestone: M6 guardrails
+title: Published advanced Australian PII catalog record
+status: todo
+depends_on: []
+file: null
+covers:
+  - "policy_templates.json"
+parent: B079
+split_from: B079
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

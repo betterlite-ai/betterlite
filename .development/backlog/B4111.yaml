@@ -1,0 +1,15 @@
+id: B4111
+milestone: M7 observability
+title: Web search tool dialects and interception records
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/integrations/websearch_interception/tools.py"
+  - "litellm/types/integrations/websearch_interception.py"
+parent: B119
+split_from: B119
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

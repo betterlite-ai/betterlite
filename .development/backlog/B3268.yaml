@@ -1,0 +1,15 @@
+id: B3268
+milestone: M6 guardrails
+title: Basic safety and local topic filtering catalog records
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/policy_templates_backup.json"
+  - "policy_templates.json"
+parent: B079
+split_from: B079
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

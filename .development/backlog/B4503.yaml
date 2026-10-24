@@ -1,0 +1,14 @@
+id: B4503
+milestone: M8 platform
+title: Lens administration routes and access checks
+status: todo
+depends_on: [B4500, B4501, B4502, B4504, B003, B052, B714, B732, B844]
+file: null
+covers:
+  - "litellm/proxy/lens/endpoints.py"
+parent: B132
+split_from: B132
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

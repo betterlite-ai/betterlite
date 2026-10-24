@@ -1,0 +1,14 @@
+id: B3066
+milestone: M4 keys, spend and management
+title: Schedule FOCUS exports with pod coordination
+status: todo
+depends_on: [B002, B189, B1690, B3061, B3065]
+file: null
+covers:
+  - "litellm/integrations/focus/{__init__,focus_logger}.py"
+parent: B073
+split_from: B073
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

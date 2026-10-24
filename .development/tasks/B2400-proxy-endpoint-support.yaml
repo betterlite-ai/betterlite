@@ -11,7 +11,7 @@ description: >-
   Also own is_known_model (utils.py:8260-8274) and ProxyLogging._arelease_max_parallel_requests_on_disconnect
   (4134-4156). The first returns false for an absent model/router and otherwise tests exact membership in
   B844's get_model_names result; it does not resolve aliases or provider prefixes. The second obtains the
-  parallel_request_limiter hook and awaits B072's v3 disconnect release only when that hook is the v3 limiter.
+  parallel_request_limiter hook and awaits B3046's v3 disconnect release (async_release_max_parallel_requests_on_disconnect) only when that hook is the v3 limiter.
   A missing or older hook is a no-op. Keep this small adapter below B1125 so disconnect cleanup has one owner.
 
   Log the exception before using B872's read-only-transaction classifier. With a database, enqueue
@@ -22,9 +22,9 @@ description: >-
   HTTPException becomes internal_server_error at its original status, with B003's normalized nullable
   param. Existing ProxyException retains its fields and headers; a supplied x-litellm-call-id fills only
   an absent header. Other exceptions use status_code or 500, internal_server_error, normalized param,
-  and B121's strip_bug_report_notice for the message. B121 also owns should_report_bug,
-  build_proxy_bug_report and bug_report_notice, including LITELLM_DISABLE_BUG_REPORT_LINK; inject its
-  diagnostic service. ProxyException serializes code as a string. No request credentials enter logs.
+  and B4170's strip_bug_report_notice for the message. B4170 also owns should_report_bug
+  and bug_report_notice, including LITELLM_DISABLE_BUG_REPORT_LINK, and B4171 owns build_proxy_bug_report;
+  inject their diagnostic service. ProxyException serializes code as a string. No request credentials enter logs.
 
   Register HelperCall::ProxyEndpointSupport and Python proxy_endpoint_support. The helper adapters
   compare pure projections from decoded records and exception values; they never call FastAPI handlers.
@@ -142,8 +142,8 @@ deviations: []
 out_of_scope:
 - remove_sensitive_info_from_deployment in openai_endpoint_utils.py remains B124; these API routes do not call it.
 - Other utils.py functions retain existing owners; B124 owns the remaining proxy lifecycle and PrismaClient.recreate_read_only_writer.
-- B121 owns bug-report rendering and configuration; this task uses its diagnostic interface.
-- B072 owns the limiter's accounting and release implementation; this task owns only ProxyLogging's hook selection and await.
+- B4170 owns bug-report rendering and B4171 the proxy configuration report; this task uses its diagnostic interface.
+- B3046 owns the limiter's disconnect release and B3035 its slot accounting; this task owns only ProxyLogging's hook selection and await.
 - B087, B086, B1032-B1034, B1050-B1051, B1133 and B1075 own their route-specific provider precedence.
 pitfalls:
 - HTTPException(404) becomes internal_server_error here; the Responses request processor uses a different mapper.

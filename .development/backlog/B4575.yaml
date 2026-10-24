@@ -1,0 +1,15 @@
+id: B4575
+milestone: M8 platform
+title: CLI session commands and temporary settings backup
+status: todo
+depends_on: [B192, B4562, B4563, B4573, B4574]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/auth.py"
+  - "litellm/proxy/client/cli/commands/up.py"
+parent: B134
+split_from: B134
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

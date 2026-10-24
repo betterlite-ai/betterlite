@@ -1,0 +1,15 @@
+id: B4053
+milestone: M7 observability
+title: GitLab prompt transport and templates
+status: todo
+depends_on: [B173]
+file: null
+covers:
+  - "litellm/integrations/gitlab/{gitlab_client,gitlab_prompt_manager}.py"
+  - "litellm/integrations/gitlab/README.md"
+parent: B117
+split_from: B117
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

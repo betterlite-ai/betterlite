@@ -22,9 +22,9 @@ description: >-
 
   Team allowed-server resolution defaults prisma_client=null. If direct mcp_servers includes the
   all-proxy-mcpservers literal, immediately return B136 registry KEYS, not the objects' server_id attributes,
-  and do not consult groups/tool grants. Otherwise union direct IDs, B137
+  and do not consult groups/tool grants. Otherwise union direct IDs, B4669
   MCPRequestHandler._get_mcp_servers_from_access_groups results and tool-permission keys; parse a stored
-  JSON tool map before extracting keys. B137 uses requires_fresh_policy=false here, so a group lookup
+  JSON tool map before extracting keys. B4669 uses requires_fresh_policy=false here, so a group lookup
   exception warns and contributes []; malformed JSON or any decoded non-map result raises instead.
   Resolve the union and then add each unresolved ORIGINAL identifier back to the result. This is the
   opposite of stale-key cleanup. Native all_proxy_uses_registry_keys, group_failure_warns_and_drops,
@@ -54,7 +54,7 @@ description: >-
   The B856 helper operation calls only matching, dedupe, stale-field cleanup and flatten functions with
   supplied typed snapshots. Database/registry/group resolver tests are native; real Postgres fixtures
   use POSTGRES_TEST_URL or testcontainers when absent, failing on connection errors. B171 owns the
-  existing helper seed parser. Test log/drop effects of the B137 dependency without invoking FastAPI
+  existing helper seed parser. Test log/drop effects of the B4669 dependency without invoking FastAPI
   handlers from Python helpers.
 
 
@@ -171,7 +171,7 @@ out_of_scope:
     (L641-L651), validate_key_mcp_servers_against_team (L654-L794), _validate_requested_toolsets (L797-L839),
     _extract_requested_vector_stores (L842-L851), validate_key_vector_stores_against_team (L854-L879),
     _extract_requested_search_tools (L882-L891), validate_key_search_tools_against_team (L894-L941).'
-  - B136 owns registry population and allow_all_keys policy; B137 owns MCP access-group lookup and its warning fallback.
+  - B136 owns registry population and allow_all_keys policy; B4669 owns MCP access-group lookup and its warning fallback.
 pitfalls:
   - Stale-field cleanup drops unresolved aliases, but team allowed-server reads deliberately retain them.
   - all-proxy-mcpservers short-circuits to registry keys even when a registry object's server_id differs.

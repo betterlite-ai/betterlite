@@ -1,0 +1,20 @@
+id: B3211
+milestone: M4 keys, spend and management
+title: Serve UI discovery with deployment URL and capability settings
+status: todo
+depends_on: [B001, B002, B003, B171, B799, B881]
+file: null
+covers:
+  - "litellm/proxy/discovery_endpoints/ui_discovery_endpoints.py"
+  - "litellm/proxy/discovery_endpoints/README.md"
+  - "litellm/types/proxy/discovery_endpoints/ui_discovery_endpoints.py"
+  - "litellm/proxy/utils.py"
+  - "litellm/proxy/middleware/per_request_root_path_middleware.py"
+  - "litellm/proxy/_experimental/mcp_server/stdio_gate.py"
+  - "litellm/types/proxy/control_plane_endpoints.py"
+parent: B078
+split_from: B078
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

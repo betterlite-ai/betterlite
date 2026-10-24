@@ -1,0 +1,14 @@
+id: B4323
+milestone: M8 platform
+title: Construct Redis, Sentinel and Cluster clients and pools
+status: todo
+depends_on: [B002, B244, B4320, B4321, B4322]
+file: null
+covers:
+  - "litellm/_redis.py"
+parent: B126
+split_from: B126
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

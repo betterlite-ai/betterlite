@@ -1,0 +1,14 @@
+id: B3870
+milestone: M7 observability
+title: Prometheus label values and metric vocabulary
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/types/integrations/prometheus.py"
+parent: B111
+split_from: B111
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

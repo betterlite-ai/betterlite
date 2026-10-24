@@ -1,0 +1,14 @@
+id: B4593
+milestone: M8 platform
+title: SDK proxy OAuth credentials and bearer headers
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy_auth/**"
+parent: B135
+split_from: B135
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

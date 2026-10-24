@@ -2,10 +2,13 @@ id: B134
 milestone: M8 platform
 title: The litellm-proxy CLI for the management API
 status: todo
-depends_on: [B055, B057, B060]
+depends_on: [B4560, B4561, B4562, B4563, B4564, B4565, B4566, B4567, B4568, B4569, B4570, B4571, B4572, B4573, B4574, B4575, B4576, B4577, B4578, B4579, B4580, B4581, B4582, B4583, B4584, B4585]
 file: null
 covers:
-  - "litellm/proxy/client/cli/**"
+  - "litellm/proxy/client/cli/{__init__,main,interface}.py"
+  - "litellm/proxy/client/cli/README.md"
+  - "litellm/proxy/client/cli/commands/__init__.py"
+  - "litellm/proxy/client/cli/commands/autoroute/__init__.py"
 parent: null
 split_from: null
 resolution: null
