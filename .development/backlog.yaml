@@ -2688,13 +2688,14 @@ tasks:
     status: todo
     depends_on:
     - B328
-    - B329
-    - B331
+    - B388
+    - B301
+    - B361
+    - B002
     file: tasks/B358-tier-artifact-predictor.yaml
     covers:
     - litellm/router_strategy/complexity_router/tier_predictor.py
     - litellm/router_strategy/complexity_router/artifacts/**
-
   - id: B359
     milestone: M2 routing
     title: Keyword, plan-mode and stall overrides

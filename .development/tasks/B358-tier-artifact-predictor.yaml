@@ -1,29 +1,68 @@
 id: B358
 title: Offline learned tier prediction
-description: Implement heuristic_v2 as a pure typed artifact predictor over B328's prompt features. Load
-  the pinned packaged artifact once, validate it before publishing router state, and expose forecasts
-  through B331's common classifier outcome without a network dependency. Use checked Decimal arithmetic
-  for posterior statistics, preserve source-data attribution, and fuzz artifact bytes independently of
-  network classifier JSON. Use the existing Rust crate boundaries from B004 and B008; integrate through
-  the server when the provider dispatcher or callbacks live in another core crate. This task's source
-  slices are the linked ranges, not a port of their Python classes. Add the listed oracle cases and the
-  matching adapters to B301's component runner where state is not observable over HTTP; adapters call
-  production logic and never reproduce it. Use deterministic candidate sets or supplied random samples
-  for comparisons, and separate seeded distribution tests for random choices. Extend the existing config_yaml
-  fuzz target and committed corpus for every newly accepted config form; unsupported keys still fail by
-  full path. Add a cargo-fuzz target tier_data under crates/betterlite-router/fuzz and a normal replays_the_tier_data_corpus
-  test using the production parser. Keep the implementation, adapters and tests within 800 changed lines;
-  fixtures and oracle cases are budget-excluded by checks.yaml.
+description: 'Implement heuristic_v2 as a pure typed artifact predictor over B328''s prompt features.
+  Load the pinned packaged artifact once, validate it before publishing router state, and expose forecasts
+  through B331''s common classifier outcome without a network dependency. Use finite f64 arithmetic for
+  posterior statistics, preserve source-data attribution, and fuzz artifact bytes independently of network
+  classifier JSON. Nonmonetary statistical arithmetic uses f64 only in posterior_math; put one module-level
+  #[expect(clippy::float_arithmetic, reason = "pinned statistical routing arithmetic")] there, counted
+  in this task budget. Money, prices, spend and budgets stay rust_decimal::Decimal, including database
+  and wire boundaries. Reject nonfinite statistical input. Assert selected model/tier exactly; any opt-in
+  tolerance is for diagnostic scores only, never a different selection. Configuration boundary keys introduced
+  or consumed here: heuristic_v2_artifact, heuristic_v2_success_threshold. Pinned declaration defaults:
+  heuristic_v2_artifact=''ultrafeedback''; heuristic_v2_success_threshold=None. Resolve env values once
+  in betterlite-config, never in router code. Implement the owned native service in crates/betterlite-router/src/tier_artifact_predictor.rs.
+  Add ProbeOperation::B358 in tools/oracle/src/router_probes/mod.rs and the corresponding B358 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/tier_predictor.py:
+  TierGlobalStatistic._successes_do_not_exceed_observations (L21-L24), TrainedTierArtifact._statistics_are_unique
+  (L56-L66), resolve_tier_artifact (L82-L89), similarity_cohort (L92-L101), TierSuccessPredictor.__init__
+  (L111-L122), TierSuccessPredictor.routing_threshold (L125-L126), TierSuccessPredictor.predict (L128-L139),
+  TierSuccessPredictor._probability (L141-L147), TierSuccessPredictor._posterior_mean (L150-L157). Implement
+  these behaviors through the typed Rust services above; synchronous facades and structural accessors
+  reuse the same primitive instead of separate ports. Bound the tier_data outside-byte parser to 1048576
+  bytes before decoding; on excess use its typed invalid-input outcome (classifier/observation consumers
+  keep their pinned warning/fallback path). If floating diagnostics differ, a case may use absolute_tolerance=0.000000000001
+  only on its explicitly named score/probability pointer. Selection, tie order, counts, statuses, money
+  and provider requests remain exact. Six-decimal wire signals are compared after the source rounding,
+  without widening tolerance.'
 scope:
   paths:
-  - crates/betterlite-router/**
-  - crates/betterlite-config/**
-  - crates/betterlite-server/**
-  - tools/oracle/cases/routing/tier-artifact-predictor/**
+  - crates/betterlite-router/src/tier_artifact_predictor.rs
+  - crates/betterlite-router/src/tier_artifact_predictor/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/tier_artifact_predictor.rs
+  - crates/betterlite-server/src/routing/tier_artifact_predictor/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/tier_artifact_predictor.rs
   - tools/oracle/src/router_probes/tier_artifact_predictor/**
   - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/tier_artifact_predictor.py
   - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/tier_artifact_predictor.py
+  - tools/oracle/cases/routing/tier-artifact-predictor/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/tier_artifact_predictor.rs
+  - crates/betterlite-config/src/tier_artifact_predictor/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b358-*
+  - crates/betterlite-router/src/posterior_math.rs
+  - crates/betterlite-router/src/posterior_math/**
+  - crates/betterlite-config/fuzz/Cargo.toml
+  - crates/betterlite-router/fuzz/Cargo.toml
+  - crates/betterlite-router/fuzz/fuzz_targets/tier_data.rs
+  - crates/betterlite-router/fuzz/corpus/tier_data/b358-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/tier_predictor.py#L14-L157
@@ -31,47 +70,69 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1931-L1956
   why: Heuristic-v2 classifier output.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Write tests named b358_behaviors and b358_boundaries under tier_artifact_predictor::tests. The
+    first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
+    bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
+    cannot satisfy either check.
+  proof:
+  - b358-behaviors
+  - b358-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests. Name these tests with the tier_artifact_predictor prefix so the
-    required filter runs them.
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
   proof:
-  - routing-tests
-- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
-    fields still fail startup.
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b358-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b358-invalid.yaml;
+    the valid seed contains heuristic_v2_artifact. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - routing-tests
-- text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
-    replays.
+  - b358-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/tier_data/b358-valid.json and crates/betterlite-router/fuzz/corpus/tier_data/b358-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target tier_data and normal replays_the_tier_data_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-- text: All mutants in changed router, config or wire code are caught.
+  - b358-boundaries
+- text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
 checks:
   optional:
   - mutants
   commands:
-  - id: routing-tests
-    why: the focused routing tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
-      -E 'test(tier_artifact_predictor)'
-  - id: config-corpus
-    why: the new configuration forms are absent from the fuzz corpus or their replay fails
-    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: parser-corpus
-    why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-router/fuzz/fuzz_targets/tier_data.rs && test -n "$(ls -A crates/betterlite-router/fuzz/corpus/tier_data)"
-      && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_tier_data_corpus)'
+  - id: b358-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b358_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b358-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b358_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
   - id: probe-python
-    why: the task's Python oracle adapter fails strict typing or linting
-    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
-      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/tier_artifact_predictor.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/tier_artifact_predictor.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b358-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b358-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b358-" && grep -Fq 'heuristic_v2_artifact' crates/betterlite-config/fuzz/corpus/config_yaml/b358-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-router/fuzz/corpus/tier_data/b358-valid.json && test -f crates/betterlite-router/fuzz/corpus/tier_data/b358-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/tier_data
+      | grep -Fq "/b358-" && test -f crates/betterlite-router/fuzz/fuzz_targets/tier_data.rs && cargo
+      nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_tier_data_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/tier-artifact-predictor/artifact-global-domain-cohort.yaml
 - tools/oracle/cases/routing/tier-artifact-predictor/monotonic-tier-probabilities.yaml
@@ -81,14 +142,23 @@ oracle_cases:
 - tools/oracle/cases/routing/tier-artifact-predictor/missing-statistic.yaml
 - tools/oracle/cases/routing/tier-artifact-predictor/invalid-artifact-rejects-startup.yaml
 - tools/oracle/cases/routing/tier-artifact-predictor/threshold-equality.yaml
-deviations: []
+- tools/oracle/cases/routing/tier-artifact-predictor/parser-byte-bound.yaml
+deviations:
+- what: The tier_data byte parser rejects inputs over 1048576 bytes before allocation.
+  why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite
+    limit. Existing structural field limits remain unchanged.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/tier_predictor.py#L14-L157
 out_of_scope:
 - Training new artifacts, JEV transport or Decisions API support.
 pitfalls:
 - A changing download cannot replace the pinned packaged artifact.
 - Reject duplicate and malformed statistics before any live request uses the artifact.
 - The numerical precision chosen for B328 also applies to posterior comparisons.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
 review_level: standard
 budget:
   max_changed_lines: 800
-  max_new_expects: 0
+  max_new_expects: 1
