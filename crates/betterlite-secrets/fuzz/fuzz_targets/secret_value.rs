@@ -28,7 +28,7 @@ fuzz_target!(|bytes: &[u8]| {
         value: FailureValue::Original,
     };
     let stored: Option<StoredMap> = serde_json::from_str(value).ok();
-    let _ = cipher.decrypt_value(StoredValue::<()>::Text(value.to_owned()), "fuzz", policy);
+    let _ = cipher.decrypt_value(StoredValue::<()>::Text(SecretString::from(value)), "fuzz", policy);
     let _ = decrypt_if_encrypted_with(value, &key);
     let _ = decrypt_bearer_token(&cipher, value, "litellm_login_");
     let _ = decode_secret_map(&cipher, stored.as_ref(), "fuzz");

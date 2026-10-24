@@ -12,7 +12,7 @@ use betterlite_secrets::secret_codec::{
     CipherSettings, DecryptPolicy, FailureLog, FailureValue, NonceSource, StoredCipher,
     StoredValue, decrypt_if_encrypted_with,
 };
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use super::{HelperError, HelperOutput};
@@ -55,7 +55,7 @@ pub(crate) enum SecretStep {
         prefix: String,
     },
     EncryptMap {
-        value: SecretMap,
+        value: BTreeMap<String, String>,
         new_key: Option<String>,
     },
     DecodeMap {
@@ -169,6 +169,7 @@ fn run_step(settings: &CipherSettings, nonce: &[u8], step: &SecretStep) -> Value
                 SecretError::BearerSecret
                 | SecretError::TooLarge { .. }
                 | SecretError::Base64
+                | SecretError::Decode { .. }
                 | SecretError::Truncated
                 | SecretError::Seal { .. }
                 | SecretError::LegacySeal { .. }
@@ -201,45 +202,64 @@ fn call(
                 .decrypt_value(stored(value), field, policy)
                 .map_or(Value::Null, plain))
         }
-        SecretStep::DecryptWith { value, signing_key } => Ok(json!(decrypt_if_encrypted_with(
-            value,
-            &SecretString::from(signing_key.as_str())
-        ))),
+        SecretStep::DecryptWith { value, signing_key } => {
+            let key = SecretString::from(signing_key.as_str());
+            Ok(exposed(decrypt_if_encrypted_with(value, &key)))
+        }
         SecretStep::EncryptBearer { value, prefix } => {
-            encrypt_bearer_token(cipher, value, prefix).map(Value::String)
+            encrypt_bearer_token(cipher, &SecretString::from(value.as_str()), prefix)
+                .map(Value::String)
         }
         SecretStep::DecryptBearer { value, prefix } => {
-            Ok(json!(decrypt_bearer_token(cipher, value, prefix)))
+            Ok(exposed(decrypt_bearer_token(cipher, value, prefix)))
         }
         SecretStep::EncryptMap { value, new_key } => {
             let key = new_key.as_deref().map(SecretString::from);
-            encrypt_secret_map(cipher, value, key.as_ref()).map(Value::String)
+            let map: SecretMap = value
+                .iter()
+                .map(|(name, text)| (name.clone(), SecretString::from(text.as_str())))
+                .collect();
+            encrypt_secret_map(cipher, &map, key.as_ref()).map(Value::String)
         }
-        SecretStep::DecodeMap { value, field } => {
-            let Ok(map) = serde_json::from_value::<Option<StoredMap>>(value.clone()) else {
-                return Err(SecretError::MapDecode {
-                    field: field.clone(),
-                });
-            };
-            decode_secret_map(cipher, map.as_ref(), field).map(|decoded| json!(decoded))
-        }
+        SecretStep::DecodeMap { value, field } => decode_map(cipher, value, field),
     }
 }
 
+fn decode_map(
+    cipher: &StoredCipher<FixedNonces, LogRecorder<'_>>,
+    value: &Value,
+    field: &str,
+) -> Result<Value, SecretError> {
+    let Ok(map) = serde_json::from_value::<Option<StoredMap>>(value.clone()) else {
+        return Err(SecretError::MapDecode {
+            field: field.to_owned(),
+        });
+    };
+    let decoded = decode_secret_map(cipher, map.as_ref(), field)?;
+    Ok(decoded.map_or(Value::Null, |entries| {
+        let plain = entries
+            .into_iter()
+            .map(|(name, text)| (name, exposed(Some(text))));
+        Value::Object(plain.collect())
+    }))
+}
+
+fn exposed(text: Option<SecretString>) -> Value {
+    text.map_or(Value::Null, |secret| {
+        Value::String(secret.expose_secret().to_owned())
+    })
+}
+
 fn stored(value: &Value) -> StoredValue<Value> {
-    match value {
-        Value::String(text) => StoredValue::Text(text.clone()),
-        other @ (Value::Null
-        | Value::Bool(_)
-        | Value::Number(_)
-        | Value::Array(_)
-        | Value::Object(_)) => StoredValue::Other(other.clone()),
-    }
+    let other = || StoredValue::Other(value.clone());
+    value
+        .as_str()
+        .map_or_else(other, |text| StoredValue::Text(SecretString::from(text)))
 }
 
 fn plain(value: StoredValue<Value>) -> Value {
     match value {
-        StoredValue::Text(text) => Value::String(text),
+        StoredValue::Text(text) => exposed(Some(text)),
         StoredValue::Other(other) => other,
     }
 }

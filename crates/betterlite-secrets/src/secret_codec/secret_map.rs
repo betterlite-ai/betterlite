@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -11,13 +11,13 @@ use crate::secret_codec::{
     StoredValue,
 };
 
-pub type SecretMap = BTreeMap<String, String>;
+pub type SecretMap = BTreeMap<String, SecretString>;
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum StoredMap {
     Map(SecretMap),
-    Text(String),
+    Text(SecretString),
     Other(IgnoredAny),
 }
 
@@ -33,8 +33,12 @@ where
     if map.is_empty() {
         return Ok("{}".to_owned());
     }
+    let exposed: BTreeMap<&str, &str> = map
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.expose_secret()))
+        .collect();
     let plaintext =
-        serde_json::to_string(map).map_err(|source| SecretError::MapEncode { source })?;
+        serde_json::to_string(&exposed).map_err(|source| SecretError::MapEncode { source })?;
     let ciphertext = cipher.encrypt_text(&plaintext, override_key)?;
     serde_json::to_string(&ciphertext).map_err(|source| SecretError::MapEncode { source })
 }
@@ -54,7 +58,9 @@ where
     let text = match stored {
         None => return Ok(None),
         Some(StoredMap::Map(map)) => return Ok(Some(map.clone())),
-        Some(StoredMap::Text(text)) if text.len() <= MAX_ENCODED_BYTES => text,
+        Some(StoredMap::Text(text)) if text.expose_secret().len() <= MAX_ENCODED_BYTES => {
+            text.expose_secret()
+        }
         Some(StoredMap::Text(_) | StoredMap::Other(_)) => return Err(rejected()),
     };
     // Python's str.lstrip also strips the separators U+001C to U+001F
@@ -62,14 +68,14 @@ where
         symbol.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&symbol)
     });
     // typed parsing fails at the first nested value, so it never recurses past depth one
-    let ciphertext = if trimmed.starts_with('{') {
+    let ciphertext: SecretString = if trimmed.starts_with('{') {
         return serde_json::from_str(text)
             .map(Some)
             .map_err(|_json| rejected());
     } else if trimmed.starts_with('"') {
         serde_json::from_str(text).map_err(|_json| rejected())?
     } else {
-        text.clone()
+        SecretString::from(text)
     };
     let policy = DecryptPolicy {
         log: FailureLog::Debug,
@@ -79,7 +85,7 @@ where
     let Some(StoredValue::Text(plaintext)) = decrypted else {
         return Err(rejected());
     };
-    serde_json::from_str(&plaintext)
+    serde_json::from_str(plaintext.expose_secret())
         .map(Some)
         .map_err(|_json| rejected())
 }

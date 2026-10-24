@@ -6,7 +6,7 @@ use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{NonceSource, StoredCipher, StoredValue};
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::loader::ConfigLoader;
 
@@ -40,8 +40,11 @@ fn encrypt_hello(salt: Option<&str>, yaml: &str, override_key: Option<&str>) -> 
         diagnostics: TracingDiagnostics,
     };
     let key = override_key.map(SecretString::from);
-    match cipher.encrypt_value(StoredValue::<()>::Text("hello".to_owned()), key.as_ref()) {
-        Ok(StoredValue::Text(text)) => text,
+    match cipher.encrypt_value(
+        StoredValue::<()>::Text(SecretString::from("hello")),
+        key.as_ref(),
+    ) {
+        Ok(StoredValue::Text(text)) => text.expose_secret().to_owned(),
         Ok(StoredValue::Other(())) => "passed through".to_owned(),
         Err(error) => error.to_string(),
     }

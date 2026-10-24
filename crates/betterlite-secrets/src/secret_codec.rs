@@ -1,7 +1,7 @@
 pub mod bearer;
 pub mod diagnostics;
 mod python_base64;
-mod sealing;
+pub mod sealing;
 pub mod secret_map;
 
 use std::any::type_name;
@@ -44,9 +44,9 @@ impl NonceSource for OsNonces {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum StoredValue<T> {
-    Text(String),
+    Text(SecretString),
     Other(T),
 }
 
@@ -91,8 +91,8 @@ where
             self.diagnostics.record(Level::Debug, &event);
             return Ok(value);
         };
-        self.encrypt_text(&text, override_key)
-            .map(StoredValue::Text)
+        self.encrypt_text(text.expose_secret(), override_key)
+            .map(|sealed| StoredValue::Text(SecretString::from(sealed)))
     }
 
     pub(crate) fn encrypt_text(
@@ -126,7 +126,7 @@ where
             .signing_key
             .as_ref()
             .ok_or(SecretError::MissingKey)
-            .and_then(|key| open_stored(&text, key));
+            .and_then(|key| open_stored(text.expose_secret(), key));
         let error = match opened {
             Ok(plaintext) => return Some(StoredValue::Text(plaintext)),
             Err(error) => error,
@@ -151,28 +151,22 @@ where
     }
 }
 
-fn open_stored(text: &str, key: &SecretString) -> Result<String, SecretError> {
+fn open_stored(text: &str, key: &SecretString) -> Result<SecretString, SecretError> {
     if let Some(encoded) = text.strip_prefix(AES_PREFIX) {
-        return open(
-            Algorithm::Aes256Gcm,
-            key,
-            &decode_lenient(encoded, true)?,
-            b"",
-        );
+        let sealed = decode_lenient(encoded, true)?;
+        return open(Algorithm::Aes256Gcm, key, &sealed, b"");
     }
-    let sealed = decode_lenient(text, true).or_else(|_url| decode_lenient(text, false))?;
-    open(Algorithm::XSalsa20Poly1305, key, &sealed, b"")
+    open(Algorithm::XSalsa20Poly1305, key, &legacy_bytes(text)?, b"")
+}
+
+fn legacy_bytes(text: &str) -> Result<Vec<u8>, SecretError> {
+    decode_lenient(text, true).or_else(|_url| decode_lenient(text, false))
 }
 
 #[must_use]
-pub fn decrypt_if_encrypted_with(value: &str, key: &SecretString) -> Option<String> {
+pub fn decrypt_if_encrypted_with(value: &str, key: &SecretString) -> Option<SecretString> {
     // "" and "*" decode to no bytes, which the legacy box reads as empty text under any key
-    if !value.starts_with(AES_PREFIX)
-        && decode_lenient(value, true)
-            .or_else(|_url| decode_lenient(value, false))
-            .ok()?
-            .is_empty()
-    {
+    if !value.starts_with(AES_PREFIX) && legacy_bytes(value).ok()?.is_empty() {
         return None;
     }
     open_stored(value, key).ok()

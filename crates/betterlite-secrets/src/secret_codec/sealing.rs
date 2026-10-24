@@ -56,13 +56,30 @@ where
     Ok([prefix, &sealed].concat())
 }
 
+// LiteLLM's encrypt_value: raw SecretBox bytes, nonce then MAC and ciphertext, for callers that pick their own key
+pub fn seal_legacy<N>(
+    plaintext: &SecretString,
+    signing_key: &SecretString,
+    nonces: &N,
+) -> Result<Vec<u8>, SecretError>
+where
+    N: NonceSource,
+{
+    let bytes = plaintext.expose_secret().as_bytes();
+    seal(Algorithm::XSalsa20Poly1305, signing_key, nonces, bytes, b"")
+}
+
+pub fn open_legacy(sealed: &[u8], signing_key: &SecretString) -> Result<SecretString, SecretError> {
+    open(Algorithm::XSalsa20Poly1305, signing_key, sealed, b"")
+}
+
 // PyNaCl reads an empty legacy buffer as empty plaintext, before it looks for a nonce
 pub(crate) fn open(
     algorithm: Algorithm,
     secret: &SecretString,
     sealed: &[u8],
     aad: &[u8],
-) -> Result<String, SecretError> {
+) -> Result<SecretString, SecretError> {
     let digest = Sha256::digest(secret.expose_secret().as_bytes());
     let plaintext = match algorithm {
         Algorithm::XSalsa20Poly1305 if sealed.is_empty() => Vec::new(),
@@ -84,7 +101,9 @@ pub(crate) fn open(
             opened.map_err(|source| SecretError::LegacySeal { source })?
         }
     };
-    String::from_utf8(plaintext).map_err(|error| SecretError::Utf8 {
-        source: error.utf8_error(),
-    })
+    String::from_utf8(plaintext)
+        .map(SecretString::from)
+        .map_err(|error| SecretError::Utf8 {
+            source: error.utf8_error(),
+        })
 }
