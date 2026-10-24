@@ -2551,19 +2551,18 @@ tasks:
     title: Validate and preview automatic-router configurations
     status: todo
     depends_on:
-    - B343
-    - B352
-    - B353
-    - B354
-    - B358
+    - B379
+    - B366
+    - B051
     - B070
     - B071
+    - B301
+    - B361
     file: tasks/B349-auto-router-preview.yaml
     covers:
     - litellm/proxy/management_endpoints/auto_router_endpoints.py
     - litellm/types/management_endpoints/auto_router_endpoints.py
     - litellm/proxy/management_helpers/auto_router_availability.py
-
   - id: B350
     milestone: M2 routing
     title: LAR-1 confidence routing
@@ -2941,6 +2940,23 @@ tasks:
     file: tasks/B378-member-router-writes.yaml
     covers:
     - litellm/proxy/management_helpers/auto_router_permissions.py
+  - id: B379
+    milestone: M2 routing
+    title: Automatic router validation and availability endpoints
+    status: todo
+    depends_on:
+    - B329
+    - B343
+    - B051
+    - B052
+    - B060
+    - B301
+    - B361
+    file: tasks/B379-router-preview-validation.yaml
+    covers:
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/proxy/management_helpers/auto_router_availability.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
   - id: B382
     milestone: M2 routing
     title: Request-scoped routing read batches
