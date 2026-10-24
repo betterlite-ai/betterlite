@@ -1874,10 +1874,9 @@ tasks:
     status: todo
     depends_on:
     - B001
-    - B008
+    - B391
     file: tasks/B300-routing-scenarios.yaml
     covers: []
-
   - id: B301
     milestone: M2 routing
     title: Component probes for deterministic routing oracle cases
@@ -2732,6 +2731,14 @@ tasks:
     file: tasks/B366-complexity-pipeline.yaml
     covers:
     - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B391
+    milestone: M2 routing
+    title: Scripted routing mock replies and trace capture
+    status: todo
+    depends_on:
+    - B001
+    file: tasks/B391-routing-mock-scripts.yaml
+    covers: []
   - id: B395
     milestone: M2 routing
     title: Native routing strategy dispatch
