@@ -2005,15 +2005,18 @@ tasks:
     status: todo
     depends_on:
     - B309
-    - B308
+    - B017
     - B052
     - B071
     - B014
+    - B012
+    - B011
+    - B301
+    - B398
     file: tasks/B310-fallback-attempts.yaml
     covers:
     - litellm/router_utils/fallback_event_handlers.py
     - litellm/litellm_core_utils/fallback_utils.py
-
   - id: B311
     milestone: M2 routing
     title: Fallback before generated chat output commits
@@ -2845,6 +2848,19 @@ tasks:
     file: tasks/B397-router-observations.yaml
     covers:
     - litellm/router.py
+  - id: B398
+    milestone: M2 routing
+    title: Fallback events and response metadata
+    status: todo
+    depends_on:
+    - B012
+    - B011
+    - B301
+    file: tasks/B398-fallback-observations.yaml
+    covers:
+    - litellm/router_utils/common_utils.py
+    - litellm/router_utils/add_retry_fallback_headers.py
+    - litellm/router_utils/fallback_event_handlers.py
   - id: B399
     milestone: M2 routing
     title: Fallback category and successor decisions
