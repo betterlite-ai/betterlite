@@ -2730,7 +2730,6 @@ tasks:
     - B301
     file: tasks/B361-oracle-comparison-contracts.yaml
     covers: []
-
   - id: B362
     milestone: M2 routing
     title: Tagged automatic-router registry and alias bindings
