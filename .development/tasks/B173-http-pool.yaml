@@ -93,7 +93,9 @@ checks:
       - test(/replays_the_/)'
   - id: layering
     why: the required new behavior or its evidence is missing
-    run: grep -qE 'crate = "reqwest", wrappers = \[[^]]*"betterlite-http"' deny.toml
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-http/src)" && grep -qE 'crate = "reqwest",
+      wrappers = \[[^]]*"betterlite-http"' deny.toml
 oracle_cases:
 - tools/oracle/cases/chat/openai-basic.yaml
 - tools/oracle/cases/chat/openai-stream.yaml
