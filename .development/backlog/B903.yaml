@@ -6,3 +6,9 @@ depends_on: [B171, B1087, B902]
 file: tasks/B903-response-id-codecs.yaml
 covers:
   - "litellm/responses/utils.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

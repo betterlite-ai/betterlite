@@ -2,9 +2,15 @@ id: B123
 milestone: M8 platform
 title: OpenAPI schema and Swagger UI
 status: todo
-depends_on: [B124]
+depends_on: [B4230, B4231]
 file: null
 covers:
-  - "litellm/proxy/{openapi,openapi_registry,_lazy_openapi_snapshot}.json"
+  - "litellm/proxy/{openapi,_lazy_openapi_snapshot}.json"
   - "litellm/proxy/common_utils/{custom_openapi_spec,openapi_schema_compat,swagger_utils}.py"
   - "litellm/proxy/swagger/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

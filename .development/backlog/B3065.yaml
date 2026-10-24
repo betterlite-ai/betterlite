@@ -1,0 +1,15 @@
+id: B3065
+milestone: M4 keys, spend and management
+title: Compose FOCUS export destinations and execution
+status: todo
+depends_on: [B002, B3060, B3061, B3062, B3063, B3064]
+file: null
+covers:
+  - "litellm/integrations/focus/export_engine.py"
+  - "litellm/integrations/focus/destinations/{__init__,factory}.py"
+parent: B073
+split_from: B073
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

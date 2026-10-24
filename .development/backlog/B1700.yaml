@@ -2,8 +2,14 @@ id: B1700
 milestone: M4 keys, spend and management
 title: Rotate stored secrets without coupling migration to the HTTP routes
 status: todo
-depends_on: [B124, B137, B139, B171, B725, B732, B734, B860, B1600, B1601, B1646]
+depends_on: [B124, B4663, B4714, B171, B725, B732, B734, B860, B1600, B1601, B1646]
 file: tasks/B1700-credential-rotation-service.yaml
 covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"
   - "litellm/proxy/management_endpoints/model_management_endpoints.py"
+parent: B055
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

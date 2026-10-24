@@ -6,3 +6,9 @@ depends_on: [B003, B855, B1035, B1129, B1112, B171, B1087, B1100, B1020, B1019, 
 file: tasks/B1133-batch-list-route.yaml
 covers:
   - "litellm/proxy/batches_endpoints/endpoints.py"
+parent: B086
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

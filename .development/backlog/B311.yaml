@@ -7,3 +7,9 @@ file: tasks/B311-chat-stream-fallback.yaml
 covers:
   - "litellm/router.py"
   - "litellm/router_utils/add_retry_fallback_headers.py"
+parent: B016
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

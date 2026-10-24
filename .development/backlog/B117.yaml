@@ -2,12 +2,15 @@ id: B117
 milestone: M7 observability
 title: Prompt management and prompt registries
 status: todo
-depends_on: [B012, B052]
+depends_on: [B4050, B4051, B4052, B4053, B4054, B4055, B4056, B4057, B4058, B4059, B4060, B4061, B4062, B002, B884]
 file: null
 covers:
-  - "litellm/integrations/{custom_prompt_management,prompt_management_base}.py"
-  - "litellm/integrations/{dotprompt,generic_prompt_management,gitlab,bitbucket}/**"
+  - "litellm/proxy/prompts/{__init__,init_prompts,prompt_endpoints}.py"
   - "litellm/proxy/custom_prompt_management.py"
-  - "litellm/proxy/{prompts,test_prompts}/**"
-  - "litellm/types/prompts/**"
-  - "litellm/types/proxy/prompt_endpoints.py"
+  - "litellm/proxy/test_prompts/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

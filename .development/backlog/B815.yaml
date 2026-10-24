@@ -2,7 +2,13 @@ id: B815
 milestone: M4 keys, spend and management
 title: Team daily spend and per-user activity
 status: todo
-depends_on: [B001, B003, B052, B074, B724, B732, B736, B800, B801, B860, B1231, B2314]
+depends_on: [B001, B003, B052, B3090, B3091, B724, B732, B736, B800, B801, B860, B1231, B2314]
 file: tasks/B815-team-activity.yaml
 covers:
   - "litellm/proxy/management_endpoints/team_endpoints.py"
+parent: B057
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

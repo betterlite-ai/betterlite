@@ -6,3 +6,9 @@ depends_on: [B001, B002, B003, B171, B732, B757, B856, B860, B866, B867, B868, B
 file: tasks/B883-virtual-key-routes.yaml
 covers:
   - "litellm/proxy/auth/route_checks.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

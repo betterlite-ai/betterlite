@@ -1,0 +1,14 @@
+id: B4143
+milestone: M8 platform
+title: Read bucket configs and download configured Python modules
+status: todo
+depends_on: [B4142, B594]
+file: null
+covers:
+  - "litellm/proxy/common_utils/load_config_utils.py"
+parent: B120
+split_from: B120
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

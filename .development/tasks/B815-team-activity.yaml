@@ -22,15 +22,15 @@ description: >-
 
   /team/daily/activity defaults every optional filter/date to null, page=1 and page_size=10 with no
   handler-level positive/max bounds. No DB produces 500 CommonProxyErrors.db_not_connected_error.
-  After scope resolution call B074 get_daily_activity with table_name="litellm_dailyteamspend",
-  entity_id_field="team_id", alias metadata and the resolved include/exclude/key filters. B074 owns
+  After scope resolution call B3091 get_daily_activity with table_name="litellm_dailyteamspend",
+  entity_id_field="team_id", alias metadata and the resolved include/exclude/key filters. B3091 owns
   daily date validation, pagination and timezone behavior; this route must not add a 400-day cap.
   Cases daily_defaults_and_forwarded_scope and daily_dependency_errors prove the call contract through
   HTTP. Neither route has management_endpoint_wrapper or a local catch/handle_exception_on_proxy call.
 
   /team/spend/by_user defaults team_ids/start_date/end_date to null. Check DB, then date range, then
   require truthy team_ids (400 "Please provide team_ids") before resolving scope. aggregated_date_range_error
-  uses B074 canonical YYYY-MM-DD parsing: missing dates -> "Please provide start_date and end_date",
+  uses B3090 canonical YYYY-MM-DD parsing: missing dates -> "Please provide start_date and end_date",
   malformed -> "start_date and end_date must be valid YYYY-MM-DD dates", reversed -> "end_date must
   be on or after start_date", difference greater than 400 days -> "Date range must be at most 400 days".
   All are 400 detail.error. Exactly 400 days is allowed (401 inclusive calendar dates). Empty resolved
@@ -46,7 +46,7 @@ description: >-
   Retain null joined email/alias, convert null/empty user ID to "", and return a team alias only if its
   metadata value is a string. Cases spend_timestamp_edges, deleted_user_left_join, failure_status_counts,
   user_restriction_not_key_filter and deterministic_spend_order use actual Postgres rows. No new
-  environment/config setting is read; B074's aggregate callers can consume an injected scope/date
+  environment/config setting is read; B3094's team resolver and the B3096-B3098 routes can consume an injected scope/date
   service implemented here rather than importing these HTTP handlers back into their core query layer.
 
 
@@ -97,7 +97,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6824-L6826
     why: Own _team_alias_or_none; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L80-L99
-    why: B074 canonical date parser and exact missing/malformed-date messages.
+    why: B3090 canonical date parser and exact missing/malformed-date messages.
 dod:
   - text: Every named scope/date/SQL case in the description passes, including mixed team permissions,
       empty key restrictions, null status success counting and real timestamp boundaries in Postgres.
@@ -135,7 +135,7 @@ oracle_cases:
   - tools/oracle/cases/management/team-activity/deterministic-spend-order.yaml
 deviations: []
 out_of_scope:
-  - B074 owns daily SQL aggregation and canonical parsing; B800 owns team-admin and explicit permission predicates.
+  - B3091 owns daily aggregation and B3090 canonical parsing; B800 owns team-admin and explicit permission predicates.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),

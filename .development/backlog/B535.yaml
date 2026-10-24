@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/azure/azure.py"
   - "litellm/llms/azure/image_generation/http_utils.py"
   - "litellm/utils.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

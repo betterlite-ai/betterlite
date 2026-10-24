@@ -1,0 +1,15 @@
+id: B3690
+milestone: M6 guardrails
+title: Content filter and built-in guardrail configuration records
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/types/proxy/guardrails/guardrail_hooks/{litellm_content_filter,block_code_execution,hide_secrets}.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py"
+parent: B105
+split_from: B105
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

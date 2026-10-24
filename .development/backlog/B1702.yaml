@@ -6,3 +6,9 @@ depends_on: [B171, B204, B1665, B1701]
 file: tasks/B1702-management-list-execution.yaml
 covers:
   - "litellm/proxy/list_api/{__init__,list_framework,in_memory}.py"
+parent: B007
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

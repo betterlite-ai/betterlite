@@ -6,3 +6,9 @@ depends_on: [B001, B003, B171, B726, B732, B733, B856, B860, B1218, B2315]
 file: tasks/B740-auth-tag-budgets.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

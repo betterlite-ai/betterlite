@@ -7,3 +7,9 @@ file: tasks/B880-end-user-identity.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
   - "litellm/proxy/auth/auth_utils.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

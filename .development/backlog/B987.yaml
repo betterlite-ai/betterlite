@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/anthropic/pass_through/messages/interceptors/advisor.py"
   - "litellm/llms/anthropic/pass_through/messages/interceptors/base.py"
   - "litellm/llms/anthropic/pass_through/messages/interceptors/__init__.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

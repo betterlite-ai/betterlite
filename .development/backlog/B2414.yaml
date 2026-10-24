@@ -6,3 +6,9 @@ depends_on: [B2419, B2415, B1114, B507, B508, B173, B595, B2418, B249, B2402, B9
 file: tasks/B2414-responses-create-transport.yaml
 covers:
   - "litellm/llms/custom_httpx/llm_http_handler.py"
+parent: B009
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

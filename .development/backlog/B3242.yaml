@@ -1,0 +1,15 @@
+id: B3242
+milestone: M6 guardrails
+title: Policy database records and single-version lookup
+status: todo
+depends_on: [B3240, B726]
+file: null
+covers:
+  - "litellm/types/proxy/policy_engine/resolver_types.py"
+  - "litellm/proxy/policy_engine/policy_registry.py"
+parent: B079
+split_from: B079
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

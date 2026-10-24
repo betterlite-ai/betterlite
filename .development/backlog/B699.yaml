@@ -5,3 +5,9 @@ status: todo
 depends_on: [B173, B171, B187, B673, B2213]
 file: tasks/B699-azure-hosted-identity.yaml
 covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

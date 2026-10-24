@@ -6,3 +6,9 @@ depends_on: [B1525, B997, B171]
 file: tasks/B1530-fal-ideogram-diffusion.yaml
 covers:
   - "litellm/llms/fal_ai/image_generation/{ideogram_v3_transformation,stable_diffusion_transformation}.py"
+parent: B046
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

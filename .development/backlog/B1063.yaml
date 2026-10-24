@@ -6,3 +6,9 @@ depends_on: [B171, B206, B1062, B1131, B726, B858]
 file: tasks/B1063-vector-tool-selection.yaml
 covers:
   - "litellm/vector_stores/vector_store_registry.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

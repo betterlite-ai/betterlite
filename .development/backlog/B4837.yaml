@@ -1,0 +1,15 @@
+id: B4837
+milestone: M9 agents and mcp
+title: Adapt Deep Agents messages, tool permissions and usage accounting
+status: todo
+depends_on: [B1686, B4830]
+file: null
+covers:
+  - "litellm/llms/deepagents/{__init__,harness/__init__}.py"
+  - "litellm/llms/deepagents/harness/{transformation,sandbox_backend}.py"
+parent: B143
+split_from: B143
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B1523-stability-edits.yaml
 covers:
   - "litellm/llms/stability/image_edit/**"
   - "litellm/types/llms/stability.py"
+parent: B046
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -9,3 +9,9 @@ covers:
   - "litellm/proxy/custom_sso.py"
   - "litellm/proxy/custom_hooks/**"
   - "litellm/integrations/custom_sso_handler.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

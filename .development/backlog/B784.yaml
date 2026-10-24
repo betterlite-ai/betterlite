@@ -6,3 +6,9 @@ depends_on: [B003, B171, B720, B732, B770, B856, B898, B2330]
 file: tasks/B784-key-events.yaml
 covers:
   - "litellm/proxy/hooks/key_management_event_hooks.py"
+parent: B055
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

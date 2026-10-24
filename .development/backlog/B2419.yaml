@@ -7,3 +7,9 @@ file: tasks/B2419-responses-hook-policy.yaml
 covers:
   - "litellm/llms/custom_httpx/llm_http_handler.py"
   - "litellm/litellm_core_utils/{agentic_followup_kwargs,agentic_loop_settings}.py"
+parent: B119
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

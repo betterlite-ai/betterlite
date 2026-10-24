@@ -1,0 +1,14 @@
+id: B3879
+milestone: M7 observability
+title: Prometheus remaining rate limit gauges
+status: todo
+depends_on: [B3870, B3873, B3874, B3876, B3891, B847, B254]
+file: null
+covers:
+  - "litellm/integrations/prometheus.py"
+parent: B111
+split_from: B111
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B175, B2219, B2220, B2217, B002, B171]
 file: tasks/B2225-full-model-metadata.yaml
 covers:
   - "litellm/utils.py"
+parent: B014
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

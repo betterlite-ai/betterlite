@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/base_llm/rerank/transformation.py"
   - "litellm/rerank_api/rerank_utils.py"
   - "litellm/types/rerank.py"
+parent: B085
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

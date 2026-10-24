@@ -1,0 +1,17 @@
+id: B3863
+milestone: M7 observability
+title: AgentOps Levo Logfire Traceloop and Weave callbacks
+status: todo
+depends_on: [B002, B173, B188, B198, B3847, B3850, B3854, B3856, B3857, B3859, B3868]
+file: null
+covers:
+  - "litellm/integrations/agentops/agentops.py"
+  - "litellm/integrations/levo/levo.py"
+  - "litellm/integrations/{logfire_logger,traceloop}.py"
+  - "litellm/integrations/weave/weave_otel.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,15 @@
+id: B4022
+milestone: M7 observability
+title: User and team budget email delivery
+status: todo
+depends_on: [B4020, B700, B724]
+file: null
+covers:
+  - "litellm/integrations/email_alerting.py"
+  - "litellm/integrations/SlackAlerting/slack_alerting.py"
+parent: B116
+split_from: B116
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

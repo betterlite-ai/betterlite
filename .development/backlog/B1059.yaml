@@ -6,3 +6,9 @@ depends_on: [B171, B1058, B1131, B204, B2401]
 file: tasks/B1059-vector-query-embedding.yaml
 covers:
   - "litellm/llms/base_llm/vector_store/transformation.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

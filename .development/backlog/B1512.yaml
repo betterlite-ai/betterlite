@@ -7,3 +7,9 @@ file: tasks/B1512-copilot-device-auth.yaml
 covers:
   - "litellm/llms/github_copilot/authenticator.py"
   - "litellm/llms/github_copilot/common_utils.py"
+parent: B045
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

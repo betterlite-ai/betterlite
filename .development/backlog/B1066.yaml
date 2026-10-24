@@ -6,3 +6,9 @@ depends_on: [B010, B011, B012, B174, B1058, B527, B002, B2402, B2401]
 file: tasks/B1066-vector-store-write.yaml
 covers:
   - "litellm/vector_stores/main.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

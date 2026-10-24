@@ -7,3 +7,9 @@ file: tasks/B1120-image-input-options.yaml
 covers:
   - "litellm/images/utils.py"
   - "litellm/types/images/main.py"
+parent: B082
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

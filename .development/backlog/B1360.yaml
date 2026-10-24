@@ -6,3 +6,9 @@ depends_on: [B1301, B1302, B1306, B171]
 file: tasks/B1360-vertex-discovery-rerank.yaml
 covers:
   - "litellm/llms/vertex_ai/rerank/**"
+parent: B033
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

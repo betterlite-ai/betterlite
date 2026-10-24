@@ -1,0 +1,15 @@
+id: B3361
+milestone: M5 api families
+title: Container request parameters and provider selection
+status: todo
+depends_on: [B3360, B522, B547, B903]
+file: null
+covers:
+  - "litellm/containers/utils.py"
+  - "litellm/utils.py"
+parent: B094
+split_from: B094
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

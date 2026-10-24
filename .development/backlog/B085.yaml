@@ -6,3 +6,9 @@ depends_on: [B001, B003, B004, B014, B124, B756, B856, B1014, B1087, B1103, B113
 file: tasks/B085-rerank-routes.yaml
 covers:
   - "litellm/proxy/rerank_endpoints/endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

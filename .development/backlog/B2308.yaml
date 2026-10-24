@@ -6,3 +6,9 @@ depends_on: [B002, B129]
 file: tasks/B2308-rds-database-credentials.yaml
 covers:
   - "litellm/proxy/auth/rds_iam_token.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

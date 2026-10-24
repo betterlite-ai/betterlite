@@ -7,3 +7,9 @@ file: tasks/B1047-batch-precall.yaml
 covers:
   - "litellm/proxy/hooks/batch_rate_limiter.py"
   - "litellm/proxy/hooks/batch_redis_get.py"
+parent: B086
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B1400, B171]
 file: tasks/B1401-xai-oauth-login.yaml
 covers:
   - "litellm/llms/xai/oauth.py"
+parent: B036
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

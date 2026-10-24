@@ -6,3 +6,9 @@ depends_on: [B732, B171, B1087, B1102, B002]
 file: tasks/B1105-request-metadata-safety.yaml
 covers:
   - "litellm/proxy/litellm_pre_call_utils.py"
+parent: B124
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

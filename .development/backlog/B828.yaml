@@ -6,3 +6,9 @@ depends_on: [B001, B003, B052, B124, B723, B726, B732, B826, B829, B860, B865, B
 file: tasks/B828-organization-members.yaml
 covers:
   - "litellm/proxy/management_endpoints/organization_endpoints.py"
+parent: B058
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

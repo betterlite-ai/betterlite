@@ -7,3 +7,9 @@ file: tasks/B1408-mistral-options.yaml
 covers:
   - "litellm/llms/mistral/chat/transformation.py"
   - "litellm/utils.py"
+parent: B036
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

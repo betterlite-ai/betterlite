@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/bedrock/claude_platform/__init__.py"
   - "litellm/llms/bedrock/passthrough/guardrail_translation/__init__.py"
   - "litellm/llms/bedrock/search/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

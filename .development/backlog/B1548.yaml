@@ -6,3 +6,9 @@ depends_on: [B002, B1122, B1002, B171]
 file: tasks/B1548-soniox-transcript-records.yaml
 covers:
   - "litellm/llms/soniox/{common_utils.py,audio_transcription/transformation.py}"
+parent: B047
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

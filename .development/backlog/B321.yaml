@@ -6,3 +6,9 @@ depends_on: [B016, B320, B310, B052, B301, B002]
 file: tasks/B321-tag-routing.yaml
 covers:
   - "litellm/router_strategy/tag_based_routing.py"
+parent: B020
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

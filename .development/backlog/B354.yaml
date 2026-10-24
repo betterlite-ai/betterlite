@@ -6,3 +6,9 @@ depends_on: [B339, B340, B334, B335, B301, B361, B002]
 file: tasks/B354-complexity-adaptive-placement.yaml
 covers:
   - "litellm/router_strategy/complexity_router/complexity_router.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

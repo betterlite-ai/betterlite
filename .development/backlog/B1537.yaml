@@ -6,3 +6,9 @@ depends_on: [B002, B1534, B525, B672, B171]
 file: tasks/B1537-runway-video-create.yaml
 covers:
   - "litellm/llms/runwayml/videos/transformation.py"
+parent: B046
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

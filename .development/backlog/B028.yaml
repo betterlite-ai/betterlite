@@ -14,3 +14,9 @@ covers:
   - "litellm/llms/bedrock_mantle/responses/__init__.py"
   - "whitelisted_bedrock_models.txt"
   - "litellm/main.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

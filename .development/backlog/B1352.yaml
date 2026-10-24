@@ -7,3 +7,9 @@ file: tasks/B1352-vertex-speech-synthesis.yaml
 covers:
   - "litellm/llms/vertex_ai/text_to_speech/**"
   - "litellm/types/llms/vertex_ai_text_to_speech.py"
+parent: B033
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

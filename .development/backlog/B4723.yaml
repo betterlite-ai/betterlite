@@ -1,0 +1,14 @@
+id: B4723
+milestone: M9 agents and mcp
+title: MCP user credential management routes
+status: todo
+depends_on: [B4711, B4713, B4717, B865, B732]
+file: null
+covers:
+  - "litellm/proxy/management_endpoints/mcp_management_endpoints.py"
+parent: B139
+split_from: B139
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

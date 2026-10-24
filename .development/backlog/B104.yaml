@@ -2,25 +2,15 @@ id: B104
 milestone: M6 guardrails
 title: Guardrail framework, registry and guardrail API
 status: todo
-depends_on: [B012, B052]
+depends_on: [B3660, B3661, B3662, B3663, B3664, B3665, B3666, B3667, B3668, B3669, B3670, B3671, B3672, B3673, B3674, B3675, B3676, B3677, B3678, B3679, B3680, B3681, B3682, B3683, B3684, B3685, B3686, B3687, B3688, B3689, B726, B732]
 file: null
 covers:
-  - "litellm/proxy/guardrails/*.py"
-  - "litellm/proxy/guardrails/guardrail_hooks/{custom_guardrail,content_text}.py"
-  - "litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/**"
-  - "litellm/integrations/custom_guardrail.py"
-  - "litellm/llms/base_llm/guardrail_translation/**"
-  - "litellm/types/{guardrails,guardrail_base_init}.py"
-  - "litellm/types/proxy/guardrails/guardrail_hooks/base.py"
-  - "litellm/llms/openai/chat/guardrail_translation/handler.py"
-  - "litellm/llms/openai/completion/guardrail_translation/handler.py"
-  - "litellm/llms/openai/embeddings/guardrail_translation/handler.py"
-  - "litellm/llms/openai/image_generation/guardrail_translation/handler.py"
-  - "litellm/llms/openai/responses/guardrail_translation/handler.py"
-  - "litellm/llms/openai/responses/guardrail_translation/tool_merge.py"
-  - "litellm/llms/openai/speech/guardrail_translation/handler.py"
-  - "litellm/llms/openai/transcriptions/guardrail_translation/handler.py"
-  - "litellm/llms/openai/videos/guardrail_translation/handler.py"
-  - "litellm/llms/anthropic/chat/guardrail_translation/handler.py"
-  - "litellm/llms/bedrock/passthrough/guardrail_translation/handler.py"
-  - "litellm/litellm_core_utils/core_helpers.py"
+  - "litellm/proxy/guardrails/usage_endpoints.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/custom_guardrail.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,16 @@
+id: B4410
+milestone: M8 platform
+title: Define secret settings, reader contracts and safe rotation
+status: todo
+depends_on: [B002]
+file: null
+covers:
+  - "litellm/secret_managers/base_secret_manager.py"
+  - "litellm/types/secret_managers/main.py"
+  - "litellm/secret_managers/main.py"
+parent: B129
+split_from: B129
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

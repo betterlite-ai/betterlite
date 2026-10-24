@@ -2,7 +2,7 @@ id: B726
 milestone: M4 keys, spend and management
 title: Typed table adapters and managed-resource repositories
 status: todo
-depends_on: [B120, B171, B700, B714, B856, B858, B860, B1035, B2307, B2311]
+depends_on: [B4144, B171, B700, B714, B856, B858, B860, B1035, B2307, B2311]
 file: tasks/B726-auxiliary-repository.yaml
 covers:
   - "litellm/repositories/table_repositories.py"
@@ -12,3 +12,9 @@ covers:
   - "litellm/repositories/user_banner_repository.py"
   - "litellm/repositories/unit_of_work.py"
   - "litellm/repositories/__init__.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

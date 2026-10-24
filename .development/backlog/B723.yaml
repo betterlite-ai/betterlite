@@ -8,3 +8,9 @@ covers:
   - "litellm/repositories/user_repository.py"
   - "litellm/repositories/organization_repository.py"
   - "litellm/repositories/project_repository.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

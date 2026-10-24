@@ -2,7 +2,13 @@ id: B1228
 milestone: M4 keys, spend and management
 title: Management effect payload sanitization
 status: todo
-depends_on: [B110, B116, B171, B732, B741, B856, B1100]
+depends_on: [B110, B4020, B4030, B171, B732, B741, B856, B1100]
 file: tasks/B1228-management-payload.yaml
 covers:
   - "litellm/proxy/management_helpers/utils.py"
+parent: B065
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

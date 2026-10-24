@@ -1,0 +1,14 @@
+id: B3802
+milestone: M6 guardrails
+title: Custom guardrail compilation and execution deadlines
+status: todo
+depends_on: [B3801]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/custom_code/{sandbox,bounded_execution}.py"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B385, B386, B100, B080, B081, B068, B012, B301, B002]
 file: tasks/B336-router-compaction.yaml
 covers:
   - "litellm/router_strategy/complexity_router/context_compaction.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

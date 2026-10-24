@@ -10,3 +10,9 @@ covers:
   - "litellm/{google_genai,interactions}/main.py"
   - "litellm/types/responses/**"
   - "litellm/llms/base_llm/base_utils.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

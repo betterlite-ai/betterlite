@@ -7,3 +7,9 @@ file: tasks/B2204-request-records.yaml
 covers:
   - "litellm/litellm_core_utils/core_helpers.py"
   - "litellm/integrations/anthropic_cache_control_hook.py"
+parent: B119
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

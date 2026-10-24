@@ -1,0 +1,14 @@
+id: B4260
+milestone: M8 platform
+title: Proxy filesystem paths and local image validation
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/common_utils/{path_utils,static_asset_utils}.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

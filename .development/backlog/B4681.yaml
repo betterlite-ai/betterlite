@@ -1,0 +1,15 @@
+id: B4681
+milestone: M9 agents and mcp
+title: MCP toolset records and persistence
+status: todo
+depends_on: [B726]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/toolset_db.py"
+  - "litellm/types/mcp_server/mcp_toolset.py"
+parent: B138
+split_from: B138
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

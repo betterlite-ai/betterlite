@@ -1,0 +1,14 @@
+id: B4331
+milestone: M8 platform
+title: Share request Redis batches and drain deferred writes
+status: todo
+depends_on: [B4330]
+file: null
+covers:
+  - "litellm/caching/redis_batch.py"
+parent: B126
+split_from: B126
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

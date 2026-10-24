@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/proxy_server.py"
   - "litellm/proxy/auth/auth_utils.py"
   - "litellm/proxy/auth/user_api_key_auth.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

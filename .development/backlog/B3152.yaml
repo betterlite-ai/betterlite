@@ -1,0 +1,14 @@
+id: B3152
+milestone: M4 keys, spend and management
+title: ROI GitHub transport and repository discovery
+status: todo
+depends_on: [B3150, B173]
+file: null
+covers:
+  - "litellm/proxy/roi_calculator/github.py"
+parent: B076
+split_from: B076
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

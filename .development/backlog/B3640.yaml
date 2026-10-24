@@ -1,0 +1,15 @@
+id: B3640
+milestone: M5 api families
+title: Gemini passthrough logging and Vertex stream collection
+status: todo
+depends_on: [B3638, B068, B1304, B1315, B1326, B1364, B581, B582, B2227]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/gemini_passthrough_logging_handler.py"
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py"
+parent: B103
+split_from: B103
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

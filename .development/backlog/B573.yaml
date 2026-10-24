@@ -6,3 +6,9 @@ depends_on: [B171]
 file: tasks/B573-anthropic-tool-names.yaml
 covers:
   - "litellm/llms/anthropic/chat/transformation.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

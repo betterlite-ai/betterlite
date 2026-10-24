@@ -6,3 +6,9 @@ depends_on: [B171, B715, B725, B726, B860, B1605]
 file: tasks/B1606-tool-policy-store.yaml
 covers:
   - "litellm/proxy/db/tool_registry_writer.py"
+parent: B070
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B2203, B598, B504, B038, B206, B171]
 file: tasks/B620-bedrock-reasoning-stream.yaml
 covers:
   - "litellm/llms/bedrock/chat/chat_completions/transformation.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

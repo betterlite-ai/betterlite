@@ -7,3 +7,9 @@ file: tasks/B011-error-normalization.yaml
 covers:
   - "litellm/litellm_core_utils/error_normalization.py"
   - "litellm/proxy/common_utils/error_body_call_id.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

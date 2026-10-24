@@ -6,3 +6,9 @@ depends_on: [B171, B301, B302, B323, B367, B368, B401, B856]
 file: tasks/B844-model-catalog-lookup.yaml
 covers:
   - "litellm/router.py"
+parent: B016
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

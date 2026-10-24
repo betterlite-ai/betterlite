@@ -9,3 +9,9 @@ covers:
   - "litellm/llms/openai_like/chat/transformation.py"
   - "litellm/llms/openai_like/embedding/handler.py"
   - "litellm/llms/openai_like/model_info.py"
+parent: B038
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

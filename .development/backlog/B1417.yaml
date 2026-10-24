@@ -6,3 +6,9 @@ depends_on: [B006, B183, B193, B249, B1414, B171]
 file: tasks/B1417-cohere-embedding-v2.yaml
 covers:
   - "litellm/llms/cohere/embed/transformation.py"
+parent: B037
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

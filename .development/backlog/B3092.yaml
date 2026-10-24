@@ -1,0 +1,14 @@
+id: B3092
+milestone: M4 keys, spend and management
+title: Attach recovered key identities to daily activity reads
+status: todo
+depends_on: [B727, B729, B1710, B1711]
+file: null
+covers:
+  - "litellm/proxy/management_endpoints/common_daily_activity.py"
+parent: B074
+split_from: B074
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

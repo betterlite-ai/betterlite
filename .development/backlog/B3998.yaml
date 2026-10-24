@@ -1,0 +1,14 @@
+id: B3998
+milestone: M7 observability
+title: Group GCS log uploads and retrieve request payloads
+status: todo
+depends_on: [B3997, B002, B2208]
+file: null
+covers:
+  - "litellm/integrations/gcs_bucket/{gcs_bucket.py,Readme.md}"
+parent: B115
+split_from: B115
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

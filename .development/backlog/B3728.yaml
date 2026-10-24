@@ -1,0 +1,16 @@
+id: B3728
+milestone: M6 guardrails
+title: Azure Content Safety transport and legacy hooks
+status: todo
+depends_on: [B173, B219, B905]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/azure/base.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/azure/base.py"
+  - "litellm/proxy/hooks/azure_content_safety.py"
+parent: B106
+split_from: B106
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

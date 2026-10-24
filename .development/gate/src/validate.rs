@@ -1,5 +1,5 @@
 mod agents;
-mod backlog;
+pub(crate) mod backlog;
 pub(crate) mod catalog;
 mod rules;
 mod task;

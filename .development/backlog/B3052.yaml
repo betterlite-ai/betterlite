@@ -1,0 +1,14 @@
+id: B3052
+milestone: M4 keys, spend and management
+title: Dynamic model and priority quota admission
+status: todo
+depends_on: [B732, B846, B3030, B3031, B3034, B3036, B3051, B3055]
+file: null
+covers:
+  - "litellm/proxy/hooks/dynamic_rate_limiter_v3.py"
+parent: B072
+split_from: B072
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

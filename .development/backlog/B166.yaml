@@ -9,3 +9,9 @@ covers:
   - "litellm/caching/{__init__,caching}.py"
   - "litellm/litellm_core_utils/{token_counter,get_llm_provider_logic,get_model_cost_map}.py"
   - "litellm/litellm_core_utils/core_helpers.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

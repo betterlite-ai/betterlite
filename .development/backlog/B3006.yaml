@@ -1,0 +1,14 @@
+id: B3006
+milestone: M4 keys, spend and management
+title: Enforce and charge entity model budgets
+status: todo
+depends_on: [B3005, B3016, B184, B199, B360, B390, B732]
+file: null
+covers:
+  - "litellm/proxy/hooks/model_max_budget_limiter.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

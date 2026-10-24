@@ -8,3 +8,9 @@ covers:
   - "litellm/router_utils/common_utils.py"
   - "litellm/router_utils/add_retry_fallback_headers.py"
   - "litellm/router_utils/fallback_event_handlers.py"
+parent: B016
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

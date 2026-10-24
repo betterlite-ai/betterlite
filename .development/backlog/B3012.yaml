@@ -1,0 +1,14 @@
+id: B3012
+milestone: M4 keys, spend and management
+title: Reset key and user budgets in bounded chunks
+status: todo
+depends_on: [B3009, B700, B720, B722, B723, B726, B1690]
+file: null
+covers:
+  - "litellm/proxy/common_utils/reset_budget_job.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

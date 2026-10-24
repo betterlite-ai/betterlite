@@ -9,3 +9,9 @@ covers:
   - "litellm/llms/litellm_proxy/responses/**"
   - "litellm/llms/litellm_proxy/image_generation/**"
   - "litellm/llms/litellm_proxy/image_edit/**"
+parent: B044
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B544-azure-responses.yaml
 covers:
   - "litellm/llms/azure/responses/transformation.py"
   - "litellm/llms/azure/responses/o_series_transformation.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,15 @@
+id: B3490
+milestone: M5 api families
+title: Select interaction providers and prepare optional fields
+status: todo
+depends_on: [B3481, B1369, B1370, B2202]
+file: null
+covers:
+  - "litellm/llms/base_llm/interactions/**"
+  - "litellm/interactions/utils.py"
+parent: B098
+split_from: B098
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

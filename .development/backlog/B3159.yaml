@@ -1,0 +1,15 @@
+id: B3159
+milestone: M4 keys, spend and management
+title: Create and authorize durable workflow runs
+status: todo
+depends_on: [B003, B700, B726, B732]
+file: null
+covers:
+  - "litellm/proxy/management_endpoints/workflow_management_endpoints.py"
+  - "litellm/proxy/workflows/**"
+parent: B076
+split_from: B076
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

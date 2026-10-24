@@ -2,10 +2,15 @@ id: B113
 milestone: M7 observability
 title: Datadog and New Relic
 status: todo
-depends_on: [B012]
+depends_on: [B3930, B3931, B3932, B3933, B3934, B3935, B3936, B3937, B3938, B3939, B3940, B3941, B3942, B3943, B3944, B3945, B189]
 file: null
 covers:
-  - "litellm/integrations/{datadog,newrelic}/**"
-  - "litellm/types/integrations/{datadog,datadog_cost_management,datadog_llm_obs,datadog_metrics,newrelic}.py"
-  - "litellm/proxy/dd_span_tagger.py"
-  - "litellm/litellm_core_utils/dd_tracing.py"
+  - "litellm/integrations/datadog/datadog_team_handler.py"
+  - "litellm/integrations/newrelic/newrelic_team_handler.py"
+  - "litellm/integrations/newrelic/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

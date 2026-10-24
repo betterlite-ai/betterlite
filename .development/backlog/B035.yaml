@@ -7,3 +7,9 @@ file: tasks/B035-google-ai-studio-provider.yaml
 covers:
   - "litellm/llms/gemini/context_caching/README.md"
   - "litellm/main.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

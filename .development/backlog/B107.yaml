@@ -2,9 +2,28 @@ id: B107
 milestone: M6 guardrails
 title: Third-party guardrails, A to L
 status: todo
-depends_on: [B104]
+depends_on: [B3750, B3751, B3752, B3753, B3754, B3755, B3756, B3757, B3758, B3759, B3760, B3761, B3762, B3763, B3764, B3765, B3766, B3767, B3768, B3769, B3770, B3771, B3772, B3773, B3774, B3775, B3776, B3777, B3778, B3779, B218, B2227]
 file: null
 covers:
-  - "litellm/proxy/guardrails/guardrail_hooks/{aim,akto,alice,aporia_ai,cato_networks,cisco_ai_defense,compresr,conduct,crowdstrike_aidr,deepkeep,dynamoai,enkryptai,generic_guardrail_api,grayswan,guardrails_ai,headroom,hiddenlayer,javelin,lasso}/**"
+  - "litellm/proxy/guardrails/guardrail_hooks/{aim,akto,aporia_ai,cisco_ai_defense,conduct,crowdstrike_aidr,deepkeep,generic_guardrail_api,grayswan,guardrails_ai,headroom,lasso}/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/aim/aim.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/akto/akto.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/conduct/conduct.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/enkryptai/enkryptai.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/{cisco_ai_defense,cisco_ai_defense_mcp}.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/example_config.yaml"
   - "litellm/proxy/guardrails/guardrail_hooks/{lakera_ai,lakera_ai_v2}.py"
-  - "litellm/types/proxy/guardrails/guardrail_hooks/{aim,akto,alice,aporia_ai,cato_networks,cisco_ai_defense,compresr,conduct,crowdstrike_aidr,deepkeep,dynamoai,enkryptai,generic_guardrail_api,grayswan,guardrails_ai,headroom,hiddenlayer,javelin,lakera_ai_v2,lasso}.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/conduct.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

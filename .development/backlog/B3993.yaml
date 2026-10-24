@@ -1,0 +1,14 @@
+id: B3993
+milestone: M7 observability
+title: Sign S3 log uploads and fetch cold-storage objects
+status: todo
+depends_on: [B3990, B173, B192, B198, B591, B594, B595, B347]
+file: null
+covers:
+  - "litellm/integrations/s3_v2.py"
+parent: B115
+split_from: B115
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

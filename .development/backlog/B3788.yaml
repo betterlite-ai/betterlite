@@ -1,0 +1,14 @@
+id: B3788
+milestone: M6 guardrails
+title: Prisma AIRS legacy and streaming hooks
+status: todo
+depends_on: [B3786, B3787, B3789, B2227]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

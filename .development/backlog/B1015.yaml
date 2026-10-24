@@ -7,3 +7,9 @@ file: tasks/B1015-file-contracts.yaml
 covers:
   - "litellm/files/utils.py"
   - "litellm/llms/base_llm/files/transformation.py"
+parent: B087
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

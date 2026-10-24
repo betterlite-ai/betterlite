@@ -7,3 +7,9 @@ file: tasks/B545-azure-realtime.yaml
 covers:
   - "litellm/llms/azure/realtime/handler.py"
   - "litellm/llms/azure/realtime/http_transformation.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

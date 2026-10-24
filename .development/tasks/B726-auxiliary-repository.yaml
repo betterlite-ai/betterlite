@@ -5,14 +5,14 @@ description: >-
   bindings, ManagedBatchRepository, ManagedFileContentRepository, AutoRouterSessionRepository and
   UserBannerRepository. Re-export B2311's split spend-reset unit-of-work types; do not duplicate
   its queued transactions. B700 supplies database/table contracts, B714 read/write handle selection,
-  B858 the auto-router row and B1035 LiteLLMBatch. Add the missing direct dependency on B120's
+  B858 the auto-router row and B1035 LiteLLMBatch. Add the missing direct dependency on B4144's
   wrap_table_actions_for_config_sync, called by the shared table property. No repository imports
   an upper management route or duplicates its row schema.
 
   PrismaTableRepository constructor stores the optional client and use_writer=false. Accessing
   prisma_client with None raises RuntimeError 'No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys'.
   table selects writer_db only when use_writer is true, otherwise db, then wraps the exact static
-  table in B120's config-sync adapter. Keep distinct native typed handles, never a user-facing
+  table in B4144's config-sync adapter. Keep distinct native typed handles, never a user-facing
   arbitrary table-name/SQL API. Record_to_dict and rich object-permission/team repositories live
   in B700/B725/B724; the same-named passthrough classes here remain separate raw-table adapters.
 
@@ -32,14 +32,14 @@ description: >-
   plural Agents/Guardrails/Skills and ManagedVectorStores. Test each binding with the named
   table_binding_<suffix> rstest case and actual pg_catalog-backed table identity.
 
-  B120 wraps writes only for its configured table allowlist and create/create_many/update/update_many/
+  B4144 wraps writes only for its configured table allowlist and create/create_many/update/update_many/
   upsert/delete/delete_many. Reads pass through and a database failure prevents publication. A
   successful write, including a zero-row update_many, precedes publication and its original result
   is returned. The production publisher treats absent Redis as a no-op and catches ordinary Redis
   failures with warning 'config sync publish for <object_type> failed: ...'; the committed database
   write still succeeds. An explicitly injected publisher exception can propagate after the commit,
   and cancellation is not an ordinary caught Redis error. Preserve those distinct paths without
-  promising a database/Redis transaction or duplicating B120's allowlist.
+  promising a database/Redis transaction or duplicating B4144's allowlist.
 
   ManagedBatchRepository binds litellm_managedobjecttable. _find_row uses find_first by
   unified_object_id, with no owner/status/order filter. load_batch returns None for no row or a
@@ -71,7 +71,7 @@ description: >-
   UserBannerRepository binds litellm_uisettings with USER_BANNER_ROW_ID='user_banner'. get_raw_settings
   returns the stored ui_settings value unchanged or None when absent; it does not JSON-decode a
   string. upsert_settings stores the exact payload string: create id/ui_settings, update only
-  ui_settings, discard the returned row. It uses B120's normal publication wrapper, with writes
+  ui_settings, discard the returned row. It uses B4144's normal publication wrapper, with writes
   already committed before best-effort Redis publication. Other UI-setting ids remain untouched.
 
   These standalone MIT repository services do not construct the enterprise-only managed_files hook.
@@ -122,7 +122,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_banner_repository.py#L8-L23
     why: Fixed banner row id and verbatim string upsert/raw read.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L101-L160
-    why: B120's best-effort production publisher differs from an injected raising publisher.
+    why: B4144's best-effort production publisher differs from an injected raising publisher.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L89-L105
     why: Current missing-managed-hook error remains with the batch route owner pending Max's decision.
 dod:
@@ -131,7 +131,7 @@ dod:
       configured_tables_publish_after_write, reads_and_unconfigured_tables_do_not_publish,
       failed_database_write_does_not_publish, zero_row_write_still_publishes,
       redis_missing_is_noop, redis_publish_failure_warns_but_write_succeeds and
-      injected_publish_failure_after_commit. Check B120 behavior through the actual wrapper.'
+      injected_publish_failure_after_commit. Check B4144 behavior through the actual wrapper.'
     proof: [behavior-tests, postgres-tests]
   - text: 'Batch tests name batch_object_and_json_string_validation, batch_required_fields_fail,
       batch_missing_or_falsey_blob_returns_none, truthy_null_json_is_validated,
@@ -181,7 +181,7 @@ out_of_scope:
     this task only re-exports those types for repository consumers.
   - repositories/__init__.py re-exports B700/B722/B723/B724/B725/B726/B2311 implementations;
     expose native modules without importing the higher-level repositories back into this service.
-  - B120 owns config-sync table/write allowlists and publication. B1035 owns LiteLLMBatch fields;
+  - B4144 owns config-sync table/write allowlists and publication. B1035 owns LiteLLMBatch fields;
     B858 owns AutoRouterSession rows, and B086/B087 own managed-file/batch feature and route decisions.
 pitfalls:
   - The caller's unchanged map can override compare_and_set's initial unified_object_id predicate.

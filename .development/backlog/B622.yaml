@@ -6,3 +6,9 @@ depends_on: [B621, B623, B2205, B596, B597, B569, B961, B979, B682, B690, B568, 
 file: tasks/B622-bedrock-messages.yaml
 covers:
   - "litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

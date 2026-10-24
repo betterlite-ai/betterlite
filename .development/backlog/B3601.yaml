@@ -1,0 +1,15 @@
+id: B3601
+milestone: M5 api families
+title: Pass-through guardrail policy and JSONPath extraction
+status: todo
+depends_on: [B1108]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/jsonpath_extractor.py"
+  - "litellm/proxy/pass_through_endpoints/passthrough_guardrails.py"
+parent: B102
+split_from: B102
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

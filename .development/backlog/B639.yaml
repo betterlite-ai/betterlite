@@ -7,3 +7,9 @@ file: tasks/B639-bedrock-other-rerank.yaml
 covers:
   - "litellm/llms/bedrock/rerank/handler.py"
   - "litellm/llms/bedrock/rerank/transformation.py"
+parent: B029
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

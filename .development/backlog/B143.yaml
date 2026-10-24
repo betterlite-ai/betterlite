@@ -2,9 +2,15 @@ id: B143
 milestone: M9 agents and mcp
 title: Agent harnesses and coding agent providers
 status: todo
-depends_on: [B141]
+depends_on: [B4830, B4831, B4832, B4833, B4834, B4835, B4836, B4837, B4838, B4839, B4840, B4841, B4842, B4843, B4844, B4846, B4847, B4848, B4849]
 file: null
 covers:
-  - "litellm/harness/**"
-  - "litellm/llms/base_llm/harness/**"
-  - "litellm/llms/{deepagents,opencode,claude_code,codex}/**"
+  - "litellm/harness/__init__.py"
+  - "litellm/harness/sandbox/__init__.py"
+  - "litellm/harness/sync.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

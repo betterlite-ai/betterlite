@@ -9,3 +9,9 @@ covers:
   - "litellm/llms/anthropic/count_tokens/token_counter.py"
   - "litellm/llms/anthropic/count_tokens/transformation.py"
   - "litellm/llms/anthropic/common_utils.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

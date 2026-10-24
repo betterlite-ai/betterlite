@@ -1,0 +1,14 @@
+id: B4591
+milestone: M8 platform
+title: CLI token records, private files and freshness
+status: todo
+depends_on: [B4590, B192, B002, B1223]
+file: null
+covers:
+  - "litellm/litellm_core_utils/cli_token_utils.py"
+parent: B135
+split_from: B135
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

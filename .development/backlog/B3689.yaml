@@ -1,0 +1,14 @@
+id: B3689
+milestone: M6 guardrails
+title: Guardrail usage windows and dashboard aggregation
+status: todo
+depends_on: [B726]
+file: null
+covers:
+  - "litellm/proxy/guardrails/usage_endpoints.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

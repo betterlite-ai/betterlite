@@ -1,0 +1,14 @@
+id: B3003
+milestone: M4 keys, spend and management
+title: Settle, resize and release budget reservations
+status: todo
+depends_on: [B3000, B3014, B3015, B1718, B732]
+file: null
+covers:
+  - "litellm/proxy/spend_tracking/budget_reservation.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

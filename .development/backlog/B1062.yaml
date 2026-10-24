@@ -6,3 +6,9 @@ depends_on: [B002, B061, B171, B1131, B726, B858]
 file: tasks/B1062-vector-store-registry.yaml
 covers:
   - "litellm/vector_stores/vector_store_registry.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

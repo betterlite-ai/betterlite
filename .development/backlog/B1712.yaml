@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/spend_tracking/spend_capture_rate.py"
   - "litellm/types/proxy/spend_capture_rate.py"
   - "litellm/llms/openai/organization_costs.py"
+parent: B069
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

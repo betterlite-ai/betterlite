@@ -6,3 +6,9 @@ depends_on: [B1545, B1546, B165, B1001, B004, B249, B171]
 file: tasks/B1547-riva-streaming-call.yaml
 covers:
   - "litellm/llms/nvidia_riva/{__init__.py,audio_transcription/{__init__.py,handler.py}}"
+parent: B047
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

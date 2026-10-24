@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/base_llm/managed_resources/base_managed_resource.py"
   - "litellm/llms/base_llm/managed_resources/__init__.py"
   - "litellm/proxy/common_utils/resource_ownership.py"
+parent: B087
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

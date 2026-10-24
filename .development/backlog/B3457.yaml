@@ -1,0 +1,14 @@
+id: B3457
+milestone: M5 api families
+title: Bedrock RAG OpenSearch provisioning and ingestion
+status: todo
+depends_on: [B3456, B594, B198, B595, B173]
+file: null
+covers:
+  - "litellm/rag/ingestion/bedrock_ingestion.py"
+parent: B097
+split_from: B097
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

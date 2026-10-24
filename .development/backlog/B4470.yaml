@@ -1,0 +1,16 @@
+id: B4470
+milestone: M8 platform
+title: Component route allowlists and worker registry records
+status: todo
+depends_on: []
+file: null
+covers:
+  - "gateway/routes/**"
+  - "backend/routes/**"
+  - "litellm/types/proxy/control_plane_endpoints.py"
+parent: B131
+split_from: B131
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

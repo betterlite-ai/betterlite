@@ -1,0 +1,15 @@
+id: B3771
+milestone: M6 guardrails
+title: Generic guardrail evaluation and Gray Swan verdict enforcement
+status: todo
+depends_on: [B3770]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py"
+parent: B107
+split_from: B107
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

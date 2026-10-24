@@ -1,0 +1,14 @@
+id: B3331
+milestone: M5 api families
+title: Video provider operation contract
+status: todo
+depends_on: [B3330, B2202]
+file: null
+covers:
+  - "litellm/llms/base_llm/videos/**"
+parent: B093
+split_from: B093
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

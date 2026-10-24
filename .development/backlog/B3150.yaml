@@ -1,0 +1,15 @@
+id: B3150
+milestone: M4 keys, spend and management
+title: ROI settings validation and shared records
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/types/roi_calculator.py"
+  - "litellm/proxy/roi_calculator/analytics.py"
+parent: B076
+split_from: B076
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

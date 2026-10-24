@@ -6,3 +6,9 @@ depends_on: [B1393, B1377, B1303, B173, B002, B171]
 file: tasks/B1383-vertex-file-content-executor.yaml
 covers:
   - "litellm/llms/vertex_ai/files/handler.py"
+parent: B034
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

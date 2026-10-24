@@ -7,3 +7,9 @@ file: tasks/B205-model-metadata-types.yaml
 covers:
   - "model_prices_and_context_window.schema.json"
   - "litellm/utils.py"
+parent: B013
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

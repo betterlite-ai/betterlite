@@ -7,3 +7,9 @@ file: tasks/B2314-resolved-key-contracts.yaml
 covers:
   - "litellm/proxy/_types.py"
   - "litellm/proxy/auth/handle_jwt.py"
+parent: B053
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

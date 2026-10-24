@@ -7,3 +7,9 @@ file: tasks/B1200-team-admin-fields.yaml
 covers:
   - "litellm/proxy/management_endpoints/team_admin_field_permissions.py"
   - "litellm/proxy/_types.py"
+parent: B057
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

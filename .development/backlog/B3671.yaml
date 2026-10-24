@@ -1,0 +1,14 @@
+id: B3671
+milestone: M6 guardrails
+title: Responses guardrail request and output rewriting
+status: todo
+depends_on: [B3661, B3663, B3664, B3665, B3669, B3670, B909, B913]
+file: null
+covers:
+  - "litellm/llms/openai/responses/guardrail_translation/handler.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B171, B1087]
 file: tasks/B1123-realtime-transcription-protocol.yaml
 covers:
   - "litellm/llms/base_llm/realtime/transcription_protocol.py"
+parent: B084
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

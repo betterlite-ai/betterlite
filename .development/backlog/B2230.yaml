@@ -9,3 +9,9 @@ covers:
   - "litellm/llms/azure/chat/o_series_transformation.py"
   - "litellm/llms/azure_ai/common_utils.py"
   - "litellm/llms/cohere/common_utils.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

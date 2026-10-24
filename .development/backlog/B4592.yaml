@@ -1,0 +1,14 @@
+id: B4592
+milestone: M8 platform
+title: CLI credential migration, save and logout
+status: todo
+depends_on: [B4590, B4591, B192]
+file: null
+covers:
+  - "litellm/litellm_core_utils/cli_token_utils.py"
+parent: B135
+split_from: B135
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

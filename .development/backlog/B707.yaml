@@ -41,3 +41,9 @@ covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260805000000_add_autorouter_session_rollup/migration.sql"
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260807000000_add_autorouter_session_tier_turns/migration.sql"
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260810000000_add_verificationtoken_settings_updated_at/migration.sql"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

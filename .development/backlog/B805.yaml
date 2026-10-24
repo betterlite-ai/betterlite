@@ -6,3 +6,9 @@ depends_on: [B003, B065, B171, B723, B725, B732, B734, B801, B828, B856, B860, B
 file: tasks/B805-team-org-move.yaml
 covers:
   - "litellm/proxy/management_endpoints/team_endpoints.py"
+parent: B057
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

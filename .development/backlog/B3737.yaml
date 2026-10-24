@@ -1,0 +1,16 @@
+id: B3737
+milestone: M6 guardrails
+title: IBM guardrail lifecycle and examples
+status: todo
+depends_on: [B3736]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/README.md"
+  - "litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/example_config.yaml"
+parent: B106
+split_from: B106
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

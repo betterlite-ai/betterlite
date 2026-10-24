@@ -1,0 +1,14 @@
+id: B3786
+milestone: M6 guardrails
+title: Prisma AIRS scan transport and verdicts
+status: todo
+depends_on: [B3787, B173]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

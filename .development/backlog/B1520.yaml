@@ -6,3 +6,9 @@ depends_on: [B1517, B1518, B1519, B173, B249, B171]
 file: tasks/B1520-bfl-edit-execution.yaml
 covers:
   - "litellm/llms/black_forest_labs/image_edit/handler.py"
+parent: B046
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

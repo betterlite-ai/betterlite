@@ -6,3 +6,9 @@ depends_on: [B016, B302, B010, B013, B301, B002]
 file: tasks/B323-routing-groups.yaml
 covers:
   - "litellm/router_utils/{routing_groups,reasoning_effort_capability}.py"
+parent: B020
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

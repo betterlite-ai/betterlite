@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/openai_like/dynamic_config.py"
   - "litellm/llms/openai_like/responses/**"
   - "litellm/llms/openai_like/messages/**"
+parent: B038
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/anthropic/chat/transformation.py"
   - "litellm/types/llms/anthropic.py"
   - "litellm/llms/base_llm/base_utils.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

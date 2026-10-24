@@ -7,3 +7,9 @@ file: tasks/B303-deployment-clients.yaml
 covers:
   - "litellm/router_utils/client_initalization_utils.py"
   - "litellm/router_utils/clientside_credential_handler.py"
+parent: B016
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B004, B171, B902, B1138]
 file: tasks/B1113-responses-event-records.yaml
 covers:
   - "litellm/types/llms/openai.py"
+parent: B004
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B003, B009, B052, B124, B129, B173, B726, B732, B860, B1600, B1630,
 file: tasks/B1647-vault-config-routes.yaml
 covers:
   - "litellm/proxy/management_endpoints/config_override_endpoints.py"
+parent: B066
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

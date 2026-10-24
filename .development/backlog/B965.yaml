@@ -6,3 +6,9 @@ depends_on: [B171, B175, B1117, B962, B2431]
 file: tasks/B965-messages-chat-options.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/adapters/transformation.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

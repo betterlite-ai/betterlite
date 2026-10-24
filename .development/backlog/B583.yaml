@@ -6,3 +6,9 @@ depends_on: [B582, B005, B173, B171, B581, B567]
 file: tasks/B583-anthropic-stream-decode.yaml
 covers:
   - "litellm/llms/anthropic/chat/handler.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

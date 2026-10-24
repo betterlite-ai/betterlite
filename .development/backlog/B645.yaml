@@ -6,3 +6,9 @@ depends_on: [B644, B643, B594, B591, B595, B198, B682, B1015, B173, B171, B2208]
 file: tasks/B645-bedrock-services-s3-listing.yaml
 covers:
   - "litellm/llms/bedrock/files/transformation.py"
+parent: B030
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,16 @@
+id: B3931
+milestone: M7 observability
+title: Native exporter options, truncation and health payloads
+status: todo
+depends_on: [B189, B254]
+file: null
+covers:
+  - "litellm/integrations/custom_logger.py"
+  - "litellm/types/integrations/custom_logger.py"
+  - "litellm/litellm_core_utils/litellm_logging.py"
+parent: B113
+split_from: B113
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

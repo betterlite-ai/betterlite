@@ -10,3 +10,9 @@ covers:
   - "litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py"
   - "litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py"
   - "litellm/llms/bedrock/image_generation/image_handler.py"
+parent: B029
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

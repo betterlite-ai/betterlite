@@ -1,0 +1,14 @@
+id: B4509
+milestone: M8 platform
+title: Group Lens observations and orchestrate sample analysis
+status: todo
+depends_on: [B4500, B4506, B4507, B4508]
+file: null
+covers:
+  - "litellm/proxy/lens/analysis.py"
+parent: B132
+split_from: B132
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

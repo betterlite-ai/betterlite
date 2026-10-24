@@ -6,3 +6,9 @@ depends_on: [B1412, B177, B173, B005, B249, B171]
 file: tasks/B1413-codestral-call.yaml
 covers:
   - "litellm/llms/codestral/completion/handler.py"
+parent: B036
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

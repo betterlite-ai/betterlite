@@ -6,3 +6,9 @@ depends_on: [B129, B173, B187, B002, B171]
 file: tasks/B2224-lemonade-model-metadata.yaml
 covers:
   - "litellm/llms/lemonade/chat/transformation.py"
+parent: B040
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

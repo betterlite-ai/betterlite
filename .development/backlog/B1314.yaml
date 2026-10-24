@@ -6,3 +6,9 @@ depends_on: [B1313, B1323, B171]
 file: tasks/B1314-gemini-candidates.yaml
 covers:
   - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+parent: B031
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
