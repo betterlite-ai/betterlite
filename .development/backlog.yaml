@@ -2400,10 +2400,11 @@ tasks:
     - B328
     - B013
     - B016
+    - B301
+    - B002
     file: tasks/B338-quality-router.yaml
     covers:
     - litellm/router_strategy/quality_router/**
-
   - id: B339
     milestone: M2 routing
     title: Adaptive request classification and bandit selection
