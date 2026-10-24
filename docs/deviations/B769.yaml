@@ -1,0 +1,8 @@
+task: B769
+deviations:
+  - what: The SSO debug page title and logo say betterlite, and the logo drops LiteLLM's train emoji.
+    why: betterlite does not carry the LiteLLM name or brand mark; every other label, style and script line is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/jwt_display_template.py#L9
+  - what: The claims JSON in the page script escapes <, >, &, U+2028 and U+2029 as \u escapes, and keeps other non-ASCII text as UTF-8 instead of Python's \u escapes.
+    why: LiteLLM only rewrites </ to <\/, so <!-- and other markup in a claim still reach the HTML parser; JSON escapes block that and the page shows the same claim text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4849-L4853
