@@ -2231,10 +2231,14 @@ tasks:
     milestone: M1 openai data plane
     title: Streaming text completions and completion bridge
     status: todo
-    depends_on: [B202, B005]
+    depends_on:
+    - B202
+    - B005
+    - B014
+    - B252
     file: tasks/B203-text-streaming.yaml
     covers:
-      - "litellm/llms/base_llm/completion/**"
+    - litellm/llms/base_llm/completion/**
   - id: B204
     milestone: M1 openai data plane
     title: Typed model price fields and exact decimal parsing
