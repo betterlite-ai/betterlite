@@ -2088,10 +2088,11 @@ tasks:
     - B016
     - B013
     - B304
+    - B301
+    - B002
     file: tasks/B316-cost-routing.yaml
     covers:
     - litellm/router_strategy/lowest_cost.py
-
   - id: B317
     milestone: M2 routing
     title: Legacy usage-based routing windows
