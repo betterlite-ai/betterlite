@@ -13,8 +13,8 @@ use super::operation::{EchoInput, EchoOutput, ProbeOperation, ProbeOutput};
 use super::{ProbeClock, ProbeReply, ProbeRequest, ProbeSample, parse_message};
 use crate::OracleError;
 
-mod b392_behaviors;
-mod b392_boundaries;
+mod routing_probe_ipc_behaviors;
+mod routing_probe_ipc_boundaries;
 
 const REQUEST: &str = r#"{"clock":{"unix_millis":1700000000123,"monotonic_millis":42000},"samples":[0,9007199254740991],"operation":{"echo":{"text":"ping","draws":2,"warnings":["stale health snapshot"]}}}"#;
 const REPLY: &str = r#"{"outcome":"ok","output":{"echo":{"text":"ping","clock":{"unix_millis":1700000000123,"monotonic_millis":42000},"samples":[0,9007199254740991]}},"warnings":["stale health snapshot"]}"#;
@@ -48,7 +48,7 @@ fn echo_reply() -> ProbeReply {
 }
 
 fn scratch(name: &str) -> PathBuf {
-    env::temp_dir().join(format!("betterlite-b392-{name}-{}", process::id()))
+    env::temp_dir().join(format!("betterlite-probe-ipc-{name}-{}", process::id()))
 }
 
 fn shell(script: &str, args: &[&str]) -> ProbeCommand {
