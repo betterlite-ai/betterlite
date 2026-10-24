@@ -14,9 +14,9 @@ use axum::extract::{Request, State};
 use axum::http::Response;
 use serde::Serialize;
 use serde_json::Value;
-use thiserror::Error;
 use tokio::sync::oneshot;
 
+use crate::OracleError;
 use crate::case::UpstreamAnswer;
 use crate::http::MAX_BODY;
 
@@ -26,14 +26,6 @@ pub(crate) struct ProviderRequest {
     pub(crate) path: String,
     pub(crate) headers: BTreeMap<String, String>,
     pub(crate) body: Value,
-}
-
-#[derive(Debug, Error)]
-pub enum MockError {
-    #[error("mock provider failed: {0}")]
-    Io(#[from] Error),
-    #[error("mock provider thread panicked")]
-    Join,
 }
 
 struct Recording {
@@ -50,13 +42,16 @@ pub(crate) struct MockProvider {
 }
 
 impl MockProvider {
-    pub(crate) fn start(answers: &[UpstreamAnswer]) -> Result<Self, MockError> {
-        let listener = TcpListener::bind(("127.0.0.1", 0))?;
-        listener.set_nonblocking(true)?;
-        let address = listener.local_addr()?;
+    pub(crate) fn start(answers: &[UpstreamAnswer]) -> Result<Self, OracleError> {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(OracleError::MockIo)?;
+        listener
+            .set_nonblocking(true)
+            .map_err(OracleError::MockIo)?;
+        let address = listener.local_addr().map_err(OracleError::MockIo)?;
         let runtime = runtime::Builder::new_current_thread()
             .enable_all()
-            .build()?;
+            .build()
+            .map_err(OracleError::MockIo)?;
         let recording = Arc::new(Mutex::new(Recording {
             answers: answers.iter().cloned().collect(),
             requests: Vec::new(),
@@ -69,14 +64,16 @@ impl MockProvider {
         let shutdown = async {
             let _stopped = stopped.await;
         };
-        let thread = thread::Builder::new().spawn(move || {
-            runtime.block_on(async move {
-                let socket = net::TcpListener::from_std(listener)?;
-                axum::serve(socket, router)
-                    .with_graceful_shutdown(shutdown)
-                    .await
+        let thread = thread::Builder::new()
+            .spawn(move || {
+                runtime.block_on(async move {
+                    let socket = net::TcpListener::from_std(listener)?;
+                    axum::serve(socket, router)
+                        .with_graceful_shutdown(shutdown)
+                        .await
+                })
             })
-        })?;
+            .map_err(OracleError::MockIo)?;
         Ok(Self {
             base_url: format!("http://{address}"),
             recording,
@@ -85,24 +82,27 @@ impl MockProvider {
         })
     }
 
-    pub(crate) fn finish(mut self) -> Result<Vec<ProviderRequest>, MockError> {
+    pub(crate) fn finish(mut self) -> Result<Vec<ProviderRequest>, OracleError> {
         self.shutdown()?;
         let mut recorded = self
             .recording
             .lock()
-            .map_err(|error| Error::other(error.to_string()))?;
+            .map_err(|error| OracleError::MockIo(Error::other(error.to_string())))?;
         if let Some(error) = recorded.failure.take() {
-            return Err(MockError::Io(error));
+            return Err(OracleError::MockIo(error));
         }
         Ok(mem::take(&mut recorded.requests))
     }
 
-    fn shutdown(&mut self) -> Result<(), MockError> {
+    fn shutdown(&mut self) -> Result<(), OracleError> {
         if let Some(stop) = self.stop.take() {
             let _sent = stop.send(());
         }
         if let Some(thread) = self.thread.take() {
-            thread.join().map_err(|_source| MockError::Join)??;
+            thread
+                .join()
+                .map_err(|_source| OracleError::MockJoin)?
+                .map_err(OracleError::MockIo)?;
         }
         Ok(())
     }

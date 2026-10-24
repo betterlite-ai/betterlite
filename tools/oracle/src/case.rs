@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Error;
 use std::path::{Path, PathBuf};
 
+use crate::OracleError;
 use serde::Deserialize;
 use serde_json::Value;
-use thiserror::Error;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -52,20 +51,7 @@ pub(crate) struct Ignore {
     pub(crate) why: String,
 }
 
-#[derive(Debug, Error)]
-pub enum CaseError {
-    #[error("cannot read case {path}: {source}")]
-    Read { path: PathBuf, source: Error },
-    #[error("cannot parse case {path}: {source}")]
-    Parse {
-        path: PathBuf,
-        source: Box<serde_saphyr::Error>,
-    },
-    #[error("invalid case {path}: {message}")]
-    Invalid { path: PathBuf, message: String },
-}
-
-pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<Case>, CaseError> {
+pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<Case>, OracleError> {
     let mut files = Vec::new();
     for path in paths {
         collect_yaml(path, &mut files)?;
@@ -73,19 +59,20 @@ pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<Case>, CaseError> {
     files.sort();
     let mut cases = Vec::with_capacity(files.len());
     for path in files {
-        let text = fs::read_to_string(&path).map_err(|source| CaseError::Read {
+        let text = fs::read_to_string(&path).map_err(|source| OracleError::CaseRead {
             path: path.clone(),
             source,
         })?;
-        let case: Case = serde_saphyr::from_str(&text).map_err(|source| CaseError::Parse {
-            path: path.clone(),
-            source: Box::new(source),
-        })?;
+        let case: Case =
+            serde_saphyr::from_str(&text).map_err(|source| OracleError::CaseParse {
+                path: path.clone(),
+                source: Box::new(source),
+            })?;
         validate(&path, &case)?;
         cases.push(case);
     }
     if cases.is_empty() {
-        return Err(CaseError::Invalid {
+        return Err(OracleError::CaseInvalid {
             path: PathBuf::from("<arguments>"),
             message: "no YAML cases found".to_owned(),
         });
@@ -93,8 +80,8 @@ pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<Case>, CaseError> {
     Ok(cases)
 }
 
-fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), CaseError> {
-    let read_error = |source| CaseError::Read {
+fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), OracleError> {
+    let read_error = |source| OracleError::CaseRead {
         path: path.to_owned(),
         source,
     };
@@ -116,8 +103,8 @@ fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), CaseError> 
     Ok(())
 }
 
-pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), CaseError> {
-    let invalid = |message: &str| CaseError::Invalid {
+pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
+    let invalid = |message: &str| OracleError::CaseInvalid {
         path: path.to_owned(),
         message: message.to_owned(),
     };

@@ -2,10 +2,11 @@ use std::collections::BTreeMap;
 use std::io::Error;
 use std::path::Path;
 
+use crate::OracleError;
 use crate::cli::Options;
 use crate::http;
 use crate::process::{Gateway, GatewaySpec, sync_litellm};
-use crate::runner::{HarnessError, free_port};
+use crate::runner::free_port;
 
 pub(crate) struct GatewayInput<'input> {
     pub(crate) options: &'input Options,
@@ -14,7 +15,7 @@ pub(crate) struct GatewayInput<'input> {
     pub(crate) case_env: &'input BTreeMap<String, String>,
 }
 
-pub(crate) fn start(input: &GatewayInput<'_>, first: bool) -> Result<Gateway, HarnessError> {
+pub(crate) fn start(input: &GatewayInput<'_>, first: bool) -> Result<Gateway, OracleError> {
     match (first, input.options.self_check) {
         (true, _) | (false, true) => {
             let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -31,11 +32,11 @@ pub(crate) fn spec(
     input: &GatewayInput<'_>,
     first: bool,
     port: u16,
-) -> Result<GatewaySpec, HarnessError> {
+) -> Result<GatewaySpec, OracleError> {
     let config = input
         .config_path
         .to_str()
-        .ok_or_else(|| HarnessError::Filesystem {
+        .ok_or_else(|| OracleError::Filesystem {
             path: input.config_path.to_owned(),
             source: Error::other("configuration path is not UTF-8"),
         })?;

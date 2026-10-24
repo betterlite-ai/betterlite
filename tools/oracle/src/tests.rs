@@ -18,18 +18,19 @@ use std::{env, process, slice};
 #[cfg(unix)]
 use std::os::unix::ffi::OsStringExt as _;
 
+use reqwest::blocking::Client;
 use serde_json::Value;
 
+use crate::OracleError;
 use crate::case::{Case, Compare, UpstreamAnswer, load_cases};
 use crate::cli::Options;
 use crate::compare;
 use crate::gateway::{self, GatewayInput};
-use crate::http::{HttpError, MAX_BODY, Response, client, ready, send};
+use crate::http::{MAX_BODY, Response, client, ready, send};
 use crate::mock::MockProvider;
 use crate::mock::ProviderRequest;
-use crate::process::{Gateway, GatewaySpec, ProcessError, sync_litellm};
+use crate::process::{Gateway, GatewaySpec, sync_litellm};
 use crate::runner::{self, artifacts};
-use crate::{OracleError, case::CaseError, runner::HarnessError};
 
 fn response(body: Value) -> Response {
     Response {
@@ -154,39 +155,48 @@ fn oracle_error_preserves_typed_sources() {
     let cli = OracleError::from(cli_error);
     assert!(matches!(cli, OracleError::Cli(_)));
 
-    let case_error = CaseError::Invalid {
+    let case_error = OracleError::CaseInvalid {
         path: PathBuf::from("case.yaml"),
         message: "invalid".to_owned(),
     };
-    let error = OracleError::from(case_error);
-    assert!(matches!(error, OracleError::Case(_)));
+    assert!(matches!(case_error, OracleError::CaseInvalid { .. }));
 
-    let harness_error = HarnessError::MissingCapture(0);
-    let harness = OracleError::from(harness_error);
-    assert!(matches!(harness, OracleError::Harness(_)));
+    let harness = OracleError::MissingCapture(0);
+    assert!(matches!(harness, OracleError::MissingCapture(0)));
 }
 
-fn wire_response(bytes: Vec<u8>) -> Result<Response, HttpError> {
-    let listener = TcpListener::bind(("127.0.0.1", 0))?;
-    let address = listener.local_addr()?;
+#[test]
+fn oracle_modules_return_the_crate_error() {
+    let _: fn(&[PathBuf]) -> Result<Vec<Case>, OracleError> = load_cases;
+    let _: fn() -> Result<Client, OracleError> = client;
+    let _: fn(&Path) -> Result<(), OracleError> = sync_litellm;
+    let _: fn() -> Result<PathBuf, OracleError> = runner::artifact_root;
+}
+
+fn wire_response(bytes: Vec<u8>) -> Result<Response, OracleError> {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(OracleError::HttpIo)?;
+    let address = listener.local_addr().map_err(OracleError::HttpIo)?;
     let client = client()?;
-    let server = thread::Builder::new().spawn(move || {
-        let (mut stream, _) = listener.accept()?;
-        let mut request = [0; 4096];
-        if stream.read(&mut request)? == 0 {
-            return Err(Error::other("missing request"));
-        }
-        let _written = stream.write_all(&bytes);
-        Ok::<(), Error>(())
-    })?;
+    let server = thread::Builder::new()
+        .spawn(move || {
+            let (mut stream, _) = listener.accept()?;
+            let mut request = [0; 4096];
+            if stream.read(&mut request)? == 0 {
+                return Err(Error::other("missing request"));
+            }
+            let _written = stream.write_all(&bytes);
+            Ok::<(), Error>(())
+        })
+        .map_err(OracleError::MockIo)?;
     let result = send(&client, &format!("http://{address}"), &test_case().request);
     server
         .join()
-        .map_err(|_panic| Error::other("server panicked"))??;
+        .map_err(|_panic| OracleError::MockJoin)?
+        .map_err(OracleError::MockIo)?;
     result
 }
 
-fn mock_response(mock: &MockProvider) -> Result<Response, HttpError> {
+fn mock_response(mock: &MockProvider) -> Result<Response, OracleError> {
     let client = client()?;
     send(&client, &mock.base_url, &test_case().request)
 }
@@ -242,7 +252,7 @@ fn http_ready_rejects_non_success_status_and_chunks_allow_the_limit() {
     );
     assert!(matches!(
         wire_response(oversized.into_bytes()),
-        Err(HttpError::TooLarge)
+        Err(OracleError::HttpTooLarge)
     ));
 }
 
@@ -424,7 +434,7 @@ fn process_starts_waits_and_stops_gateways() {
     gateway.base_url = ":".to_owned();
     assert!(matches!(
         gateway.wait_ready(&client().unwrap()),
-        Err(ProcessError::Ready(_))
+        Err(OracleError::ProcessReady { .. })
     ));
     gateway.stop().unwrap();
     assert!(gateway.child.try_wait().unwrap().is_some());
@@ -432,7 +442,7 @@ fn process_starts_waits_and_stops_gateways() {
     let mut exited = gateway_fixture("exited", "exit 3", 1);
     assert!(matches!(
         exited.wait_ready(&client().unwrap()),
-        Err(ProcessError::Exited(_))
+        Err(OracleError::ProcessExited(_))
     ));
     exited.stop().unwrap();
     fs::remove_file(&exited.log_path).unwrap();
@@ -448,7 +458,7 @@ fn process_starts_waits_and_stops_gateways() {
 fn litellm_sync_reports_a_missing_project() {
     let error =
         sync_litellm(Path::new("/definitely-missing-betterlite-oracle-project")).unwrap_err();
-    assert!(matches!(error, ProcessError::Sync(_)));
+    assert!(matches!(error, OracleError::ProcessSync(_)));
 }
 
 #[test]

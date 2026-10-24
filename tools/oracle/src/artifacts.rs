@@ -7,7 +7,7 @@ use crate::case::Case;
 use crate::compare;
 use crate::mock::ProviderRequest;
 
-use super::HarnessError;
+use crate::OracleError;
 use crate::http::Response;
 
 #[derive(Clone, Copy)]
@@ -23,12 +23,12 @@ pub(crate) struct ArtifactInput<'input> {
     pub(crate) result: Option<&'input compare::Difference>,
 }
 
-pub(crate) fn write(input: ArtifactInput<'_>) -> Result<PathBuf, HarnessError> {
+pub(crate) fn write(input: ArtifactInput<'_>) -> Result<PathBuf, OracleError> {
     let directory = input
         .root
         .join(super::safe_name(&input.case.name))
         .join(super::unique_id()?);
-    fs::create_dir_all(&directory).map_err(|source| HarnessError::Filesystem {
+    fs::create_dir_all(&directory).map_err(|source| OracleError::Filesystem {
         path: directory.clone(),
         source,
     })?;
@@ -54,20 +54,20 @@ pub(crate) fn write(input: ArtifactInput<'_>) -> Result<PathBuf, HarnessError> {
     Ok(directory)
 }
 
-fn copy_file(source: &Path, destination: &Path) -> Result<(), HarnessError> {
-    fs::copy(source, destination).map_err(|error| HarnessError::Filesystem {
+fn copy_file(source: &Path, destination: &Path) -> Result<(), OracleError> {
+    fs::copy(source, destination).map_err(|error| OracleError::Filesystem {
         path: destination.to_owned(),
         source: error,
     })?;
     Ok(())
 }
 
-fn write_json<Data>(path: &Path, value: &Data) -> Result<(), HarnessError>
+fn write_json<Data>(path: &Path, value: &Data) -> Result<(), OracleError>
 where
     Data: Serialize + ?Sized,
 {
-    let text = serde_json::to_string_pretty(value).map_err(HarnessError::Json)?;
-    fs::write(path, text).map_err(|source| HarnessError::Filesystem {
+    let text = serde_json::to_string_pretty(value).map_err(OracleError::Json)?;
+    fs::write(path, text).map_err(|source| OracleError::Filesystem {
         path: path.to_owned(),
         source,
     })
@@ -77,15 +77,15 @@ pub(crate) fn prepare(
     root: &Path,
     case: &Case,
     upstream: &str,
-) -> Result<(PathBuf, PathBuf), HarnessError> {
+) -> Result<(PathBuf, PathBuf), OracleError> {
     let directory = root.join(format!("group-{}", super::unique_id()?));
-    fs::create_dir_all(&directory).map_err(|source| HarnessError::Filesystem {
+    fs::create_dir_all(&directory).map_err(|source| OracleError::Filesystem {
         path: directory.clone(),
         source,
     })?;
     let path = directory.join("config.yaml");
     let config = case.config.replace("{{upstream}}", upstream);
-    fs::write(&path, config).map_err(|source| HarnessError::Filesystem {
+    fs::write(&path, config).map_err(|source| OracleError::Filesystem {
         path: path.clone(),
         source,
     })?;

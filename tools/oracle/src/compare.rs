@@ -1,14 +1,12 @@
 use std::collections::BTreeSet;
 
 use serde_json::Value;
-use thiserror::Error;
 
 use crate::case::Compare;
 use crate::http::Response;
 use crate::mock::ProviderRequest;
 
-#[derive(Debug, Error, serde::Serialize)]
-#[error("first differing JSON pointer {pointer}: {message}")]
+#[derive(Debug, serde::Serialize)]
 pub(crate) struct Difference {
     pub(crate) message: String,
     pub(crate) pointer: String,

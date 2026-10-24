@@ -14,7 +14,11 @@ pub mod runner;
 
 mod tests;
 
-use std::process::ExitCode;
+use std::io;
+use std::path::PathBuf;
+use std::process::{ExitCode, ExitStatus};
+use std::str::Utf8Error;
+use std::time::SystemTimeError;
 
 use thiserror::Error;
 
@@ -22,14 +26,75 @@ use thiserror::Error;
 pub enum OracleError {
     #[error(transparent)]
     Cli(#[from] clap::Error),
-    #[error(transparent)]
-    Case(#[from] case::CaseError),
-    #[error(transparent)]
-    Harness(#[from] runner::HarnessError),
+    #[error("cannot read case {path}: {source}")]
+    CaseRead {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("cannot parse case {path}: {source}")]
+    CaseParse {
+        path: PathBuf,
+        #[source]
+        source: Box<serde_saphyr::Error>,
+    },
+    #[error("invalid case {path}: {message}")]
+    CaseInvalid { path: PathBuf, message: String },
+    #[error("HTTP request failed: {0}")]
+    HttpRequest(#[source] reqwest::Error),
+    #[error("HTTP I/O failed: {0}")]
+    HttpIo(#[source] io::Error),
+    #[error("HTTP response exceeded 16 MiB")]
+    HttpTooLarge,
+    #[error("response body is not valid UTF-8: {0}")]
+    HttpText(#[source] Utf8Error),
+    #[error("response body event is not valid JSON: {0}")]
+    HttpBody(#[source] serde_json::Error),
+    #[error("mock provider failed: {0}")]
+    MockIo(#[source] io::Error),
+    #[error("mock provider thread panicked")]
+    MockJoin,
+    #[error("cannot open gateway log {path}: {source}")]
+    ProcessLog {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("cannot start gateway: {0}")]
+    ProcessSpawn(#[source] io::Error),
+    #[error("cannot synchronize LiteLLM environment: {0}")]
+    ProcessSync(#[source] io::Error),
+    #[error("LiteLLM environment synchronization exited with {0}")]
+    ProcessSyncExited(ExitStatus),
+    #[error("gateway exited before readiness: {0}")]
+    ProcessExited(ExitStatus),
+    #[error("gateway did not become ready within 120 seconds")]
+    ProcessTimeout,
+    #[error("gateway request failed while waiting for readiness: {source}")]
+    ProcessReady {
+        #[source]
+        source: Box<Self>,
+    },
+    #[error("cannot stop gateway: {0}")]
+    ProcessStop(#[source] io::Error),
+    #[error("gateway did not return a response for case {0}")]
+    MissingCapture(usize),
+    #[error("cannot write progress: {0}")]
+    Output(#[source] io::Error),
+    #[error("filesystem error at {path}: {source}")]
+    Filesystem {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("cannot serialize artifact: {0}")]
+    Json(#[source] serde_json::Error),
+    #[error("system clock error: {0}")]
+    Clock(#[source] SystemTimeError),
 }
 
 pub fn run() -> Result<ExitCode, OracleError> {
     let options = <cli::Options as clap::Parser>::try_parse()?;
     let cases = case::load_cases(&options.paths)?;
-    Ok(runner::run_cases(&options, cases)?)
+    runner::run_cases(&options, cases)
 }

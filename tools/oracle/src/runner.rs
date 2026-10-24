@@ -7,45 +7,24 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::process::ExitCode;
-use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use thiserror::Error;
-
+use crate::OracleError;
 use crate::case::Case;
 use crate::cli::Options;
 use crate::compare;
-use crate::http::{self, HttpError, Response};
-use crate::mock::{MockError, MockProvider, ProviderRequest};
-use crate::process::{Gateway, ProcessError};
+use crate::http::{self, Response};
+use crate::mock::{MockProvider, ProviderRequest};
+use crate::process::Gateway;
 
 use super::gateway::{GatewayInput, start as start_gateway};
 
 #[path = "artifacts.rs"]
 pub(crate) mod artifacts;
 
-#[derive(Debug, Error)]
-pub enum HarnessError {
-    #[error("gateway did not return a response for case {0}")]
-    MissingCapture(usize),
-    #[error("cannot write progress: {0}")]
-    Output(#[source] io::Error),
-    #[error("{0}")]
-    Http(#[from] HttpError),
-    #[error("{0}")]
-    Mock(#[from] MockError),
-    #[error("{0}")]
-    Process(#[from] ProcessError),
-    #[error("filesystem error at {path}: {source}")]
-    Filesystem { path: PathBuf, source: io::Error },
-    #[error("cannot serialize artifact: {0}")]
-    Json(#[source] serde_json::Error),
-    #[error("system clock error: {0}")]
-    Clock(#[source] SystemTimeError),
-}
-
-pub(crate) fn run_cases(options: &Options, cases: Vec<Case>) -> Result<ExitCode, HarnessError> {
+pub(crate) fn run_cases(options: &Options, cases: Vec<Case>) -> Result<ExitCode, OracleError> {
     if cases.is_empty() {
-        return Err(HarnessError::MissingCapture(0));
+        return Err(OracleError::MissingCapture(0));
     }
     let mut groups = BTreeMap::<String, Vec<Case>>::new();
     for case in cases {
@@ -72,14 +51,14 @@ pub(crate) fn run_group(
     options: &Options,
     root: &Path,
     cases: &[Case],
-) -> Result<Vec<bool>, HarnessError> {
+) -> Result<Vec<bool>, OracleError> {
     let upstream_answers = cases
         .iter()
         .flat_map(|case| case.upstream.iter())
         .cloned()
         .collect::<Vec<_>>();
     let mock = MockProvider::start(&[upstream_answers.clone(), upstream_answers.clone()].concat())?;
-    let first_case = cases.first().ok_or(HarnessError::MissingCapture(0))?;
+    let first_case = cases.first().ok_or(OracleError::MissingCapture(0))?;
     let (group_dir, config_path) = artifacts::prepare(root, first_case, &mock.base_url)?;
     let client = http::client()?;
     let input = GatewayInput {
@@ -118,7 +97,7 @@ pub(crate) fn compare_group(
     root: &Path,
     cases: &[Case],
     captures: &GroupCapture,
-) -> Result<Vec<bool>, HarnessError> {
+) -> Result<Vec<bool>, OracleError> {
     let (first_requests, second_requests) = captures
         .requests
         .split_at_checked(captures.midpoint)
@@ -130,11 +109,11 @@ pub(crate) fn compare_group(
         let first_capture = captures
             .first
             .get(index)
-            .ok_or(HarnessError::MissingCapture(index))?;
+            .ok_or(OracleError::MissingCapture(index))?;
         let second_capture = captures
             .second
             .get(index)
-            .ok_or(HarnessError::MissingCapture(index))?;
+            .ok_or(OracleError::MissingCapture(index))?;
         let first_slice = request_slice(first_requests, first_offset, request_count);
         let second_slice = request_slice(second_requests, first_offset, request_count);
         first_offset = first_offset.saturating_add(request_count);
@@ -153,7 +132,7 @@ pub(crate) fn compare_group(
     Ok(outcomes)
 }
 
-fn compare_case(input: artifacts::ArtifactInput<'_>) -> Result<bool, HarnessError> {
+fn compare_case(input: artifacts::ArtifactInput<'_>) -> Result<bool, OracleError> {
     let result = compare::compare(
         input.first,
         input.second,
@@ -168,12 +147,12 @@ fn compare_case(input: artifacts::ArtifactInput<'_>) -> Result<bool, HarnessErro
     let name = &input.case.name;
     match result {
         Ok(()) => {
-            writeln!(io::stdout().lock(), "PASS {name}").map_err(HarnessError::Output)?;
+            writeln!(io::stdout().lock(), "PASS {name}").map_err(OracleError::Output)?;
             Ok(false)
         }
         Err(error) => {
             writeln!(io::stdout().lock(), "FAIL {name}: {}", error.pointer)
-                .map_err(HarnessError::Output)?;
+                .map_err(OracleError::Output)?;
             Ok(true)
         }
     }
@@ -192,7 +171,7 @@ pub(crate) fn capture_gateway(
     client: &Client,
     mut gateway: Gateway,
     cases: &[Case],
-) -> Result<Vec<Response>, HarnessError> {
+) -> Result<Vec<Response>, OracleError> {
     let mut captures = Vec::with_capacity(cases.len());
     for case in cases {
         let response = http::send(client, &gateway.base_url, &case.request)?;
@@ -202,33 +181,33 @@ pub(crate) fn capture_gateway(
     Ok(captures)
 }
 
-pub(crate) fn artifact_root() -> Result<PathBuf, HarnessError> {
-    let root = env::current_dir().map_err(|source| HarnessError::Filesystem {
+pub(crate) fn artifact_root() -> Result<PathBuf, OracleError> {
+    let root = env::current_dir().map_err(|source| OracleError::Filesystem {
         path: PathBuf::from("."),
         source,
     })?;
     let path = root.join("target/oracle");
-    fs::create_dir_all(&path).map_err(|source| HarnessError::Filesystem {
+    fs::create_dir_all(&path).map_err(|source| OracleError::Filesystem {
         path: path.clone(),
         source,
     })?;
     Ok(path)
 }
 
-pub(crate) fn free_port() -> Result<u16, HarnessError> {
+pub(crate) fn free_port() -> Result<u16, OracleError> {
     let port = TcpListener::bind(("127.0.0.1", 0))
         .and_then(|listener| listener.local_addr())
-        .map_err(|source| HarnessError::Filesystem {
+        .map_err(|source| OracleError::Filesystem {
             path: PathBuf::from("127.0.0.1:0"),
             source,
         })?;
     Ok(port.port())
 }
 
-pub(crate) fn unique_id() -> Result<String, HarnessError> {
+pub(crate) fn unique_id() -> Result<String, OracleError> {
     let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(HarnessError::Clock)?;
+        .map_err(OracleError::Clock)?;
     Ok(format!("{}-{}", process::id(), elapsed.as_nanos()))
 }
 
