@@ -7,7 +7,7 @@ description: 'Integrate B100 compaction with B385 typed summary inputs and B386 
   public interfaces without editing their implementation crates. Configuration boundary keys introduced
   or consumed here: context_compaction. Pinned declaration defaults: context_compaction=ContextCompactionConfig.
   Resolve env values once in betterlite-config, never in router code. Implement the owned native service
-  in crates/betterlite-router/src/router_compaction.rs. Add ProbeOperation::B336 in tools/oracle/src/router_probes/mod.rs
+  in crates/betterlite-router/src/router_compaction.rs. Add ProbeOperation::RouterCompaction in tools/oracle/src/router_probes/mod.rs
   and the corresponding B336 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
   production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
@@ -47,7 +47,7 @@ scope:
   - crates/betterlite-config/src/router_compaction.rs
   - crates/betterlite-config/src/router_compaction/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b336-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -64,13 +64,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1342-L1343
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b336_behaviors and b336_boundaries under router_compaction::tests. The first
+- text: Write tests named router_compaction_behaviors and router_compaction_boundaries under router_compaction::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b336-behaviors
-  - b336-boundaries
+  - router-compaction-behaviors
+  - router-compaction-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -81,12 +81,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b336-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b336-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-invalid.yaml;
     the valid seed contains context_compaction. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b336-boundaries
+  - router-compaction-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -94,13 +94,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b336-behaviors
+  - id: router-compaction-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b336_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::router_compaction_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b336-boundaries
+  - id: router-compaction-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b336_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::router_compaction_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -110,9 +110,9 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b336-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b336-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b336-" && grep -Fq 'context_compaction' crates/betterlite-config/fuzz/corpus/config_yaml/b336-valid.yaml
+      | grep -Fq "/router-compaction-" && grep -Fq 'context_compaction' crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

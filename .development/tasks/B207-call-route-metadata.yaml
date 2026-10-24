@@ -11,7 +11,7 @@ description: >-
   B171's shared helper_case corpus with every added operation and replay it through the common typed parser. get_call_types_for_route
   gates key/team tool allowlists and batch guardrails; a missing match returns None and can bypass those checks.
   Add adversarial exact/pattern route cases proving every listed tool-capable route maps to the intended call type,
-  while retaining source behavior for unknown routes. Write the behavior rstest functions b207_route_metadata_tests_behavior
+  while retaining source behavior for unknown routes. Write the behavior rstest functions call_route_metadata_route_metadata_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations route_metadata in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed. Budget 250 route tables/matching, 100
@@ -70,7 +70,7 @@ checks:
   - id: route-metadata-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::b207_route_metadata_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::call_route_metadata_route_metadata_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: route-pattern-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

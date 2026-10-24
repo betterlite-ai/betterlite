@@ -3,7 +3,7 @@ title: Wildcard deployment matching
 description: 'Build PatternCatalog with ordered pattern registration/removal, star-only compilation, specificity
   ordering and model substitution. Return immutable candidate identities; do not construct clients, implement
   aliases or authorize callers. Literal regex characters remain escaped. Implement the owned native service
-  in crates/betterlite-router/src/wildcard_catalog.rs. Add ProbeOperation::B367 in tools/oracle/src/router_probes/mod.rs
+  in crates/betterlite-router/src/wildcard_catalog.rs. Add ProbeOperation::WildcardCatalog in tools/oracle/src/router_probes/mod.rs
   and the corresponding B367 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
   production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
@@ -42,13 +42,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pattern_match_deployments.py#L16-L247
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b367_behaviors and b367_boundaries under wildcard_catalog::tests. The first
+- text: Write tests named wildcard_catalog_behaviors and wildcard_catalog_boundaries under wildcard_catalog::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b367-behaviors
-  - b367-boundaries
+  - wildcard-catalog-behaviors
+  - wildcard-catalog-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -66,13 +66,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b367-behaviors
+  - id: wildcard-catalog-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b367_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::wildcard_catalog_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b367-boundaries
+  - id: wildcard-catalog-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b367_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::wildcard_catalog_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

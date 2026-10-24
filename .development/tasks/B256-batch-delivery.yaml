@@ -7,7 +7,7 @@ description: >-
   for the next flush, and overflow drops oldest with warning/count. The caller owns the timer and flush task; this
   part spawns no worker. Compare counts, final status, ordered delivery and delivered set, never elapsed timing.
   Use synthetic callback/event IDs and injected transport in the Python and Rust batch_delivery adapters. Budget
-  270 logic/types, 120 adapters, 300 tests and 60 wiring (750 total). Write the behavior rstest functions b256_behavior_tests_behavior
+  270 logic/types, 120 adapters, 300 tests and 60 wiring (750 total). Write the behavior rstest functions batch_delivery_behavior_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations batch_delivery in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed.
@@ -56,7 +56,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b256_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::batch_delivery_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

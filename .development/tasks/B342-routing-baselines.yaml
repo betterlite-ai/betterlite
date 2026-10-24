@@ -5,7 +5,7 @@ description: 'Compute the canonical counterfactual baseline through B068 cost ca
   prediction, with bounded count cache, caller/session scope and invalidation on retry or incomplete responses.
   Carry typed evidence to B344 session rollups without retaining plaintext keys. Do not invent a substitute
   baseline when no candidate can be priced. Implement the owned native service in crates/betterlite-router/src/routing_baselines.rs.
-  Add ProbeOperation::B342 in tools/oracle/src/router_probes/mod.rs and the corresponding B342 entry in
+  Add ProbeOperation::RoutingBaselines in tools/oracle/src/router_probes/mod.rs and the corresponding B342 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -54,13 +54,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1537-L1553
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b342_behaviors and b342_boundaries under routing_baselines::tests. The first
+- text: Write tests named routing_baselines_behaviors and routing_baselines_boundaries under routing_baselines::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b342-behaviors
-  - b342-boundaries
+  - routing-baselines-behaviors
+  - routing-baselines-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -78,13 +78,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b342-behaviors
+  - id: routing-baselines-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b342_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::routing_baselines_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b342-boundaries
+  - id: routing-baselines-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b342_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::routing_baselines_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

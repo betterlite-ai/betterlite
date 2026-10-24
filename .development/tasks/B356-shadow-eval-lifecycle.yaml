@@ -5,7 +5,7 @@ description: 'Implement shadow evaluation start/stop endpoints using B345 input 
   and stop-state behavior. Authenticate before repository access and never retry an ambiguous write by
   generating a second job ID. Keep the integration adapter in betterlite-server in this task module; consume
   predecessor public interfaces without editing their implementation crates. Implement the owned native
-  service in crates/betterlite-server/src/shadow_eval_lifecycle.rs. Add ProbeOperation::B356 in tools/oracle/src/router_probes/mod.rs
+  service in crates/betterlite-server/src/shadow_eval_lifecycle.rs. Add ProbeOperation::ShadowEvalLifecycle in tools/oracle/src/router_probes/mod.rs
   and the corresponding B356 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
   production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
@@ -36,7 +36,7 @@ scope:
   - tools/oracle/cases/routing/shadow-eval-lifecycle/**
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/shadow_body.rs
-  - crates/betterlite-server/fuzz/corpus/shadow_body/b356-*
+  - crates/betterlite-server/fuzz/corpus/shadow_body/shadow-eval-lifecycle-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1580-L1800
@@ -44,13 +44,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1897-L1933
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b356_behaviors and b356_boundaries under shadow_eval_lifecycle::tests. The first
+- text: Write tests named shadow_eval_lifecycle_behaviors and shadow_eval_lifecycle_boundaries under shadow_eval_lifecycle::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b356-behaviors
-  - b356-boundaries
+  - shadow-eval-lifecycle-behaviors
+  - shadow-eval-lifecycle-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -61,12 +61,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-server/fuzz/corpus/shadow_body/b356-valid.json and crates/betterlite-server/fuzz/corpus/shadow_body/b356-invalid.json;
+- text: Add crates/betterlite-server/fuzz/corpus/shadow_body/shadow-eval-lifecycle-valid.json and crates/betterlite-server/fuzz/corpus/shadow_body/shadow-eval-lifecycle-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target shadow_body and normal replays_the_shadow_body_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b356-boundaries
+  - shadow-eval-lifecycle-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -74,13 +74,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b356-behaviors
+  - id: shadow-eval-lifecycle-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b356_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::shadow_eval_lifecycle_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b356-boundaries
+  - id: shadow-eval-lifecycle-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b356_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::shadow_eval_lifecycle_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -90,9 +90,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-server/fuzz/corpus/shadow_body/b356-valid.json && test -f crates/betterlite-server/fuzz/corpus/shadow_body/b356-invalid.json
+    run: test -f crates/betterlite-server/fuzz/corpus/shadow_body/shadow-eval-lifecycle-valid.json && test -f crates/betterlite-server/fuzz/corpus/shadow_body/shadow-eval-lifecycle-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/shadow_body
-      | grep -Fq "/b356-" && test -f crates/betterlite-server/fuzz/fuzz_targets/shadow_body.rs && cargo
+      | grep -Fq "/shadow-eval-lifecycle-" && test -f crates/betterlite-server/fuzz/fuzz_targets/shadow_body.rs && cargo
       nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_shadow_body_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/shadow-eval-lifecycle/start-admin-only.yaml

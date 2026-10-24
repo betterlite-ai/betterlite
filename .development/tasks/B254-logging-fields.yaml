@@ -7,7 +7,7 @@ description: >-
   serialized as JSON numbers; costs/rates also use Decimal. Implement StandardLoggingPayloadSetup cleanup_timestamps,
   append_system_prompt_messages, get_usage_from_response_obj/get_usage_as_dict and get_final_response_obj plus _get_status_fields/_extract_response_obj_and_hidden_params.
   Other setup helpers are B253 and final assembly B190. Budget 300 fields/normalizers, 100 adapters, 300 tests and
-  60 wiring (760 total). Write the behavior rstest functions b254_behavior_tests_behavior in adjacent tests.rs files,
+  60 wiring (760 total). Write the behavior rstest functions logging_fields_behavior_tests_behavior in adjacent tests.rs files,
   with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
   helper operations logging_fields in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each
   operation has its own Rust and Python adapter file and corpus seed. Also own _provider_response_id, _timestamp_seconds,
@@ -65,7 +65,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b254_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::logging_fields_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

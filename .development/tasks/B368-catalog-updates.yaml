@@ -5,7 +5,7 @@ description: 'Build DeploymentCatalog snapshots and add/upsert/delete mutations 
   snapshots survive failed updates. Use typed configuration and provider metadata already delivered by
   B002/B010; B367 indexes wildcard entries. No selector or provider clients are built here. Configuration
   boundary keys introduced or consumed here: model_list, ignore_invalid_deployments. Implement the owned
-  native service in crates/betterlite-router/src/catalog_updates.rs. Add ProbeOperation::B368 in tools/oracle/src/router_probes/mod.rs
+  native service in crates/betterlite-router/src/catalog_updates.rs. Add ProbeOperation::CatalogUpdates in tools/oracle/src/router_probes/mod.rs
   and the corresponding B368 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
   production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
@@ -44,7 +44,7 @@ scope:
   - crates/betterlite-config/src/catalog_updates.rs
   - crates/betterlite-config/src/catalog_updates/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b368-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/catalog-updates-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -55,13 +55,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10183-L10220
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b368_behaviors and b368_boundaries under catalog_updates::tests. The first asserts
+- text: Write tests named catalog_updates_behaviors and catalog_updates_boundaries under catalog_updates::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b368-behaviors
-  - b368-boundaries
+  - catalog-updates-behaviors
+  - catalog-updates-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -72,12 +72,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b368-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b368-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/catalog-updates-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/catalog-updates-invalid.yaml;
     the valid seed contains model_list. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b368-boundaries
+  - catalog-updates-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -85,13 +85,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b368-behaviors
+  - id: catalog-updates-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b368_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::catalog_updates_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b368-boundaries
+  - id: catalog-updates-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b368_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::catalog_updates_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -101,9 +101,9 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b368-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b368-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/catalog-updates-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/catalog-updates-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b368-" && grep -Fq 'model_list' crates/betterlite-config/fuzz/corpus/config_yaml/b368-valid.yaml
+      | grep -Fq "/catalog-updates-" && grep -Fq 'model_list' crates/betterlite-config/fuzz/corpus/config_yaml/catalog-updates-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

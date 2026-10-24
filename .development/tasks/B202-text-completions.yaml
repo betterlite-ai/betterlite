@@ -12,7 +12,7 @@ description: >-
   list or mixed unmapped shape raises Unmapped prompt format; a non-chat OpenAI model switches to text-completion-openai
   using B193 open_ai_chat_completion_models. Empty string remains distinct from empty list. Add the TextCompletion
   variants to B014 exhaustive request/result dispatch; B203 later supplies both bridge directions. B202 also supplies
-  text-completion privacy projection over its new response types. Write the behavior rstest functions b202_text_completion_tests_behavior
+  text-completion privacy projection over its new response types. Write the behavior rstest functions text_completions_text_completion_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Budget 280 text types/dispatch, 270 tests, 110 fuzz/replay and 90 endpoint wiring (750 total).
 
@@ -60,7 +60,7 @@ checks:
   commands:
   - id: text-completion-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/::b202_text_completion_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/::text_completions_text_completion_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: text-request-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

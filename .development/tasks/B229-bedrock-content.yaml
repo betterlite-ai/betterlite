@@ -4,7 +4,7 @@ description: >-
   Implement All deduplication/document-name, document-text insertion, assistant sort, continuation, empty-block
   and message-block helpers in this range (one implementation for skip_empty_text_blocks overloads). Preserve the
   first authoritative duplicate and stable document naming. Budget 280 transforms/types, 100 adapters, 300 tests/fuzz
-  and 70 wiring (750 total). Write the behavior rstest functions b229_behavior_tests_behavior in adjacent tests.rs
+  and 70 wiring (750 total). Write the behavior rstest functions bedrock_content_behavior_tests_behavior in adjacent tests.rs
   files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
   helper operations bedrock_content in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each
   operation has its own Rust and Python adapter file and corpus seed.
@@ -48,7 +48,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b229_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::bedrock_content_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

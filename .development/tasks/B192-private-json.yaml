@@ -14,7 +14,7 @@ description: >-
   and replay it through the common typed parser. ensure_private_dir creates/tightens its directory to 0700, including
   an existing group/world-readable directory. The Rust loader returns Result with serde_json::Error as source; the
   oracle adapter translates Python safe_json_loads swallow-and-default into the corresponding error outcome rather
-  than making production Rust swallow parse errors. Write the behavior rstest functions b192_private_json_tests_behavior
+  than making production Rust swallow parse errors. Write the behavior rstest functions private_json_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations private_json in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed. Budget 220 filesystem/JSON APIs, 120
@@ -73,7 +73,7 @@ checks:
   - id: private-json-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b192_private_json_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::private_json_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: private-json-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

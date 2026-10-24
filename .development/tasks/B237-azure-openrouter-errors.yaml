@@ -4,7 +4,7 @@ description: >-
   Implement _map_azure_exception and _map_openrouter_exception (1926-2233) over B236 facts and B184 taxonomy. Preserve
   ordered body-code, message and status predicates; each specialized predicate and generic fallback has its own
   helper invocation. No network or SDK clients. Budget 280 classification, 100 adapters, 300 tests and 50 wiring
-  (730 total). Write the behavior rstest functions b237_behavior_tests_behavior in adjacent tests.rs files, with
+  (730 total). Write the behavior rstest functions azure_openrouter_errors_behavior_tests_behavior in adjacent tests.rs files, with
   a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper
   operations azure_openrouter_errors in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each
   operation has its own Rust and Python adapter file and corpus seed.
@@ -48,7 +48,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/::b237_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/::azure_openrouter_errors_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

@@ -5,7 +5,7 @@ description: >-
   content-only projection in this range, plus text_completion_prompt_to_messages at 2564-2582. Reuse B004 provider_specific_fields
   instead of adding a second untyped field. Keep transforms separately callable over typed messages, with bounded
   output and no network or shared mutation. Budget 280 transforms/types, 100 adapters, 300 tests and 60 wiring (740
-  total). Write the behavior rstest functions b218_behavior_tests_behavior in adjacent tests.rs files, with a named
+  total). Write the behavior rstest functions message_content_behavior_tests_behavior in adjacent tests.rs files, with a named
   case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
   message_content in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its
   own Rust and Python adapter file and corpus seed.
@@ -56,7 +56,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b218_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::message_content_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

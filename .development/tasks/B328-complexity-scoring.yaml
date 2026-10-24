@@ -15,7 +15,7 @@ description: 'Introduce the default complexity_router marker and typed baseline 
   declaration defaults: dimension_weights=lambda: DEFAULT_DIMENSION_WEIGHTS.copy(); code_keywords=None;
   reasoning_keywords=None; technical_keywords=None; custom_technical_keywords=None; simple_keywords=None;
   default_model=None. Resolve env values once in betterlite-config, never in router code. Implement the
-  owned native service in crates/betterlite-router/src/complexity_scoring.rs. Add ProbeOperation::B328
+  owned native service in crates/betterlite-router/src/complexity_scoring.rs. Add ProbeOperation::ComplexityScoring
   in tools/oracle/src/router_probes/mod.rs and the corresponding B328 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -64,7 +64,7 @@ scope:
   - crates/betterlite-config/src/complexity_scoring.rs
   - crates/betterlite-config/src/complexity_scoring/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b328-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/complexity-scoring-*
   - crates/betterlite-router/src/complexity_math.rs
   - crates/betterlite-router/src/complexity_math/**
   - crates/betterlite-config/fuzz/Cargo.toml
@@ -91,13 +91,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1805-L1890
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b328_behaviors and b328_boundaries under complexity_scoring::tests. The first
+- text: Write tests named complexity_scoring_behaviors and complexity_scoring_boundaries under complexity_scoring::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b328-behaviors
-  - b328-boundaries
+  - complexity-scoring-behaviors
+  - complexity-scoring-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -108,12 +108,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b328-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b328-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/complexity-scoring-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/complexity-scoring-invalid.yaml;
     the valid seed contains tier_models. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b328-boundaries
+  - complexity-scoring-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -121,13 +121,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b328-behaviors
+  - id: complexity-scoring-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b328_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::complexity_scoring_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b328-boundaries
+  - id: complexity-scoring-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b328_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::complexity_scoring_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -137,9 +137,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b328-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b328-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/complexity-scoring-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/complexity-scoring-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b328-" && grep -Fq 'tier_models' crates/betterlite-config/fuzz/corpus/config_yaml/b328-valid.yaml
+      | grep -Fq "/complexity-scoring-" && grep -Fq 'tier_models' crates/betterlite-config/fuzz/corpus/config_yaml/complexity-scoring-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

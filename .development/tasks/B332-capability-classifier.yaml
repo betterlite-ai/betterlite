@@ -6,7 +6,7 @@ description: 'Compose B394 CapabilityForecast parsing/calibration with B331 call
   diagnostic probabilities have a declared tolerance. Configuration boundary keys introduced or consumed
   here: capability_classifier_config. Pinned declaration defaults: capability_classifier_config=None.
   Resolve env values once in betterlite-config, never in router code. Implement the owned native service
-  in crates/betterlite-router/src/capability_classifier.rs. Add ProbeOperation::B332 in tools/oracle/src/router_probes/mod.rs
+  in crates/betterlite-router/src/capability_classifier.rs. Add ProbeOperation::CapabilityClassifier in tools/oracle/src/router_probes/mod.rs
   and the corresponding B332 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
   production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
@@ -43,7 +43,7 @@ scope:
   - crates/betterlite-config/src/capability_classifier.rs
   - crates/betterlite-config/src/capability_classifier/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b332-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/capability-classifier-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -60,13 +60,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1114-L1148
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b332_behaviors and b332_boundaries under capability_classifier::tests. The first
+- text: Write tests named capability_classifier_behaviors and capability_classifier_boundaries under capability_classifier::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b332-behaviors
-  - b332-boundaries
+  - capability-classifier-behaviors
+  - capability-classifier-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -77,13 +77,13 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b332-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b332-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/capability-classifier-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/capability-classifier-invalid.yaml;
     the valid seed contains capability_classifier_config. The cargo-fuzz target config_yaml and normal
     replays_the_config_yaml_corpus test call the production bounded parser. Both new files must be added
     relative to GATE_BASE.
   proof:
   - config-corpus
-  - b332-boundaries
+  - capability-classifier-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -91,13 +91,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b332-behaviors
+  - id: capability-classifier-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b332_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::capability_classifier_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b332-boundaries
+  - id: capability-classifier-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b332_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::capability_classifier_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -107,9 +107,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b332-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b332-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/capability-classifier-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/capability-classifier-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b332-" && grep -Fq 'capability_classifier_config' crates/betterlite-config/fuzz/corpus/config_yaml/b332-valid.yaml
+      | grep -Fq "/capability-classifier-" && grep -Fq 'capability_classifier_config' crates/betterlite-config/fuzz/corpus/config_yaml/capability-classifier-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

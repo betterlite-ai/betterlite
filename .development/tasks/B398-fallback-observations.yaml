@@ -4,7 +4,7 @@ description: 'Implement redacted fallback error details, success/failure callbac
   headers. Keep errors and hidden stream metadata separate from already-sent HTTP headers, with caller-sensitive
   fields redacted. B310 calls this service; it makes no provider call or authorization decision. ROUTER_FALLBACK_ERROR_DETAIL_MAX_CHARS
   is 2000, with no environment override; retain credential masking before truncation. Implement the owned
-  native service in crates/betterlite-router/src/fallback_observations.rs. Add ProbeOperation::B398 in
+  native service in crates/betterlite-router/src/fallback_observations.rs. Add ProbeOperation::FallbackObservations in
   tools/oracle/src/router_probes/mod.rs and the corresponding B398 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -52,13 +52,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/fallback_event_handlers.py#L722-L775
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b398_behaviors and b398_boundaries under fallback_observations::tests. The first
+- text: Write tests named fallback_observations_behaviors and fallback_observations_boundaries under fallback_observations::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b398-behaviors
-  - b398-boundaries
+  - fallback-observations-behaviors
+  - fallback-observations-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -76,13 +76,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b398-behaviors
+  - id: fallback-observations-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b398_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::fallback_observations_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b398-boundaries
+  - id: fallback-observations-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b398_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::fallback_observations_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

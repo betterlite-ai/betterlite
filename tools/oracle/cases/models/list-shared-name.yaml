@@ -1,0 +1,14 @@
+name: models-list-shared-name
+config: |
+  model_list:
+    - {model_name: oracle-shared, litellm_params: {model: openai/oracle-first}}
+    - {model_name: oracle-other, litellm_params: {model: openai/oracle-other}}
+    - {model_name: oracle-shared, litellm_params: {model: azure/oracle-second}}
+env: {}
+request:
+  method: GET
+  path: /models
+  headers: {authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}

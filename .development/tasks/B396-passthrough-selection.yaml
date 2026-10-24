@@ -3,7 +3,7 @@ title: Pass-through deployment selection
 description: 'Implement pass-through selection over B302 catalog and B364 eligibility using B395 strategy
   dispatch. Preserve call-type/provider compatibility, configured pass-through-only eligibility, selected
   identity and no-candidate errors. No new provider endpoint or URL construction is added. Implement the
-  owned native service in crates/betterlite-router/src/passthrough_selection.rs. Add ProbeOperation::B396
+  owned native service in crates/betterlite-router/src/passthrough_selection.rs. Add ProbeOperation::PassthroughSelection
   in tools/oracle/src/router_probes/mod.rs and the corresponding B396 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -40,13 +40,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L14598-L14620
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b396_behaviors and b396_boundaries under passthrough_selection::tests. The first
+- text: Write tests named passthrough_selection_behaviors and passthrough_selection_boundaries under passthrough_selection::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b396-behaviors
-  - b396-boundaries
+  - passthrough-selection-behaviors
+  - passthrough-selection-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -64,13 +64,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b396-behaviors
+  - id: passthrough-selection-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b396_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::passthrough_selection_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b396-boundaries
+  - id: passthrough-selection-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b396_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::passthrough_selection_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

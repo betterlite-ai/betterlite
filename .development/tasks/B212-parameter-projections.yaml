@@ -7,7 +7,7 @@ description: >-
   from the OpenAI SDK version locked by B001 in tools/oracle/litellm/uv.lock, plus LiteLLM typed rerank/Anthropic
   names; keep a pinned fixture of the projection. logging-projection includes one discriminating key for chat, text
   completion, embedding, transcription, rerank, Responses and Anthropic messages. Budget 190 helpers, 110 adapters,
-  260 tests and 50 wiring (610 total). Write the behavior rstest functions b212_behavior_tests_behavior in adjacent
+  260 tests and 50 wiring (610 total). Write the behavior rstest functions parameter_projections_behavior_tests_behavior in adjacent
   tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate
   names. Register helper operations parameter_projections in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed.
@@ -56,7 +56,7 @@ checks:
   commands:
   - id: behavior-tests
     why: new behavior tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::b212_behavior_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::parameter_projections_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

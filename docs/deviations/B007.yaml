@@ -1,0 +1,11 @@
+task: B007
+deviations:
+  - what: The model routes answer 501 with a detail naming the missing feature for include_metadata=true, an anthropic-version header, a wildcard model_name, and a single-model lookup whose model has no provider prefix; LiteLLM answers 200.
+    why: Fallback metadata (B759, B124), the Anthropic list format (B570), wildcard expansion (B759) and catalog provider inference (B174) aren't built yet, and rule no-silent-drops makes an unhandled input an error that names it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11545-L11800
+  - what: Model entries never carry mode, max_input_tokens or max_output_tokens; LiteLLM adds them from its cost map when the model is in it, as for openai/gpt-4o.
+    why: create_model_info_response and the model catalog belong to B124 and B844, and neither exists yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8761-L8858
+  - what: created is always 1677610602; LiteLLM lets the DEFAULT_MODEL_CREATED_AT_TIME environment variable change it.
+    why: Only the config crate may read the environment, and it is outside this task's scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1880-L1882

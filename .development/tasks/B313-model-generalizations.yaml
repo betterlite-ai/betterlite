@@ -9,7 +9,7 @@ description: >-
   bounds.
 
 
-  Add ProbeOperation::B313 in tools/oracle/src/router_probes/mod.rs and the corresponding B313 entry in tools/oracle/litellm/probes/registry.py;
+  Add ProbeOperation::ModelGeneralizations in tools/oracle/src/router_probes/mod.rs and the corresponding B313 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.  Budget
   from zero owned LiteLLM function-body lines: 110 integration lines, 160 behavior-test lines, 90 Rust/Python adapter
   lines and 40 module/seed wiring lines; 400 planned and maximum changed lines. Integration cases exercise exact_entry_before_rule,
@@ -51,12 +51,12 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L69-L95
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b313_behaviors and b313_boundaries under model_generalizations::tests. The first asserts
+- text: Write tests named model_generalizations_behaviors and model_generalizations_boundaries under model_generalizations::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation and
     the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either check.
   proof:
-  - b313-behaviors
-  - b313-boundaries
+  - model-generalizations-behaviors
+  - model-generalizations-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier, provider
     requests, status, code and state changes; only /error/message may be ignored for betterlite wording. Every declared
     deviation asserts independent exact reference/Rust values through B361.
@@ -66,18 +66,18 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b313-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b313-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/model-generalizations-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/model-generalizations-invalid.yaml;
     the valid seed contains fallback_generalizations. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b313-boundaries
-- text: Add crates/betterlite-router/fuzz/corpus/model_rules/b313-valid.json and crates/betterlite-router/fuzz/corpus/model_rules/b313-invalid.json;
+  - model-generalizations-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/model_rules/model-generalizations-valid.json and crates/betterlite-router/fuzz/corpus/model_rules/model-generalizations-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target model_rules and normal replays_the_model_rules_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b313-boundaries
+  - model-generalizations-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -85,12 +85,12 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b313-behaviors
+  - id: model-generalizations-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b313_behaviors(::|$)/) - test(/replays_the_.*_corpus/)'
-  - id: b313-boundaries
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::model_generalizations_behaviors(::|$)/) - test(/replays_the_.*_corpus/)'
+  - id: model-generalizations-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b313_boundaries(::|$)/) - test(/replays_the_.*_corpus/)'
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::model_generalizations_boundaries(::|$)/) - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
     run: test -f tools/oracle/litellm/probes/model_generalizations.py && test -n "$(git diff --name-only "$GATE_BASE"
@@ -98,9 +98,9 @@ checks:
       ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b313-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b313-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/model-generalizations-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/model-generalizations-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml |
-      grep -Fq "/b313-" && grep -Fq 'fallback_generalizations' crates/betterlite-config/fuzz/corpus/config_yaml/b313-valid.yaml
+      grep -Fq "/model-generalizations-" && grep -Fq 'fallback_generalizations' crates/betterlite-config/fuzz/corpus/config_yaml/model-generalizations-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked -p betterlite-config
       --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus

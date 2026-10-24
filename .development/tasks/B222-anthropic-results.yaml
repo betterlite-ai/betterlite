@@ -5,7 +5,7 @@ description: >-
   convert_to_anthropic_tool_result, convert_function_to_anthropic_tool_invoke and _find_server_tool_result. Also
   own image conversion functions 772-880; _sanitize_bedrock_tool_use_id is B228. All functions are pure and bounded,
   use injected policy and preserve source values. Budget 280 transforms/types, 110 adapters, 300 tests and 60 wiring
-  (750 total). Write the behavior rstest functions b222_behavior_tests_behavior in adjacent tests.rs files, with
+  (750 total). Write the behavior rstest functions anthropic_results_behavior_tests_behavior in adjacent tests.rs files, with
   a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper
   operations anthropic_results in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation
   has its own Rust and Python adapter file and corpus seed.
@@ -52,7 +52,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b222_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::anthropic_results_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

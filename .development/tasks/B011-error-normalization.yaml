@@ -11,7 +11,7 @@ description: >-
   new setting.  Seed B171's shared helper_case corpus with every added operation and replay it through the common
   typed parser. Echo a client-supplied x-litellm-call-id exactly into the error-body setting and response header;
   only generated IDs use presence comparison. Reuse B184 cookie/CORS security exclusions while keeping remaining
-  provider and rate-limit headers. Write the behavior rstest functions b011_error_normalization_tests_behavior in
+  provider and rate-limit headers. Write the behavior rstest functions error_normalization_tests_behavior in
   adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations error_normalization, error_call_id in tools/oracle/src/helpers/mod.rs
   and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
@@ -82,7 +82,7 @@ checks:
   - id: error-normalization-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-error -p betterlite-server --no-tests=fail -E 'test(/::b011_error_normalization_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-error -p betterlite-server --no-tests=fail -E 'test(/::error_normalization_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: config-yaml-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

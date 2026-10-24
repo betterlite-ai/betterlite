@@ -12,7 +12,7 @@ description: 'Implement the Redis adapter for B390 typed routing state using a m
   boundary keys introduced or consumed here: redis_url, redis_host, redis_port, redis_password, redis_kwargs.
   Pinned declaration defaults: redis_url=None; redis_host=None; redis_port=None; redis_password=None.
   Resolve env values once in betterlite-config, never in router code. Implement the owned native service
-  in crates/betterlite-router/src/routing_state_store.rs. Add ProbeOperation::B360 in tools/oracle/src/router_probes/mod.rs
+  in crates/betterlite-router/src/routing_state_store.rs. Add ProbeOperation::RoutingStateStore in tools/oracle/src/router_probes/mod.rs
   and the corresponding B360 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
   production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
@@ -49,7 +49,7 @@ scope:
   - crates/betterlite-config/src/routing_state_store.rs
   - crates/betterlite-config/src/routing_state_store/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b360-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/routing-state-store-*
   - Cargo.toml
   - deny.toml
   - crates/betterlite-router/Cargo.toml
@@ -71,13 +71,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1299-L1311
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b360_behaviors and b360_boundaries under routing_state_store::tests. The first
+- text: Write tests named routing_state_store_behaviors and routing_state_store_boundaries under routing_state_store::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b360-behaviors
-  - b360-boundaries
+  - routing-state-store-behaviors
+  - routing-state-store-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -88,12 +88,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b360-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b360-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/routing-state-store-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/routing-state-store-invalid.yaml;
     the valid seed contains redis_url. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b360-boundaries
+  - routing-state-store-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -101,13 +101,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b360-behaviors
+  - id: routing-state-store-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b360_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::routing_state_store_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b360-boundaries
+  - id: routing-state-store-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b360_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::routing_state_store_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -117,9 +117,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b360-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b360-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/routing-state-store-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/routing-state-store-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b360-" && grep -Fq 'redis_url' crates/betterlite-config/fuzz/corpus/config_yaml/b360-valid.yaml
+      | grep -Fq "/routing-state-store-" && grep -Fq 'redis_url' crates/betterlite-config/fuzz/corpus/config_yaml/routing-state-store-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

@@ -5,7 +5,7 @@ description: >-
   group_tool_exchanges, _iter_tool_exchange_groups, sanitize_messages_for_tool_calling and _drop_unsignable_thinking_blocks.
   modify_params gates structural repairs; empty text normalization is unconditional. Return repair indices without
   content. All functions are pure and bounded, use injected policy and preserve source values. Budget 280 transforms/types,
-  110 adapters, 300 tests and 60 wiring (750 total). Write the behavior rstest functions b224_behavior_tests_behavior
+  110 adapters, 300 tests and 60 wiring (750 total). Write the behavior rstest functions anthropic_history_behavior_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations anthropic_history in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed.
@@ -49,7 +49,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b224_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::anthropic_history_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

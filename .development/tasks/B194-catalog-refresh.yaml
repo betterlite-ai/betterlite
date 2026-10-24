@@ -14,7 +14,7 @@ description: >-
   and replay it through the common typed parser. B171 forces local mode for normal helper imports; startup-fetch
   cases override only inside an injected get_model_cost_map client call, never by allowing import-time network.
   Runtime unknown fields warn with paths and are ignored under B205 policy. Write the behavior rstest functions
-  b194_catalog_refresh_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
+  catalog_refresh_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
   in the DoD; corpus replay tests have separate names. Register helper operations catalog_refresh in tools/oracle/src/helpers/mod.rs
   and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
   Own refetch_model_cost_map 364-412, provenance 415-478, alias expansion/finalization/adoption 481-567 and startup/retry-task
@@ -85,7 +85,7 @@ checks:
   - id: catalog-refresh-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-models -p betterlite-config --no-tests=fail -E 'test(/::b194_catalog_refresh_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-models -p betterlite-config --no-tests=fail -E 'test(/::catalog_refresh_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: model-catalog-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

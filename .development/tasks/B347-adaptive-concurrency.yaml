@@ -8,7 +8,7 @@ description: 'Implement the reusable additive-increase/multiplicative-decrease c
   and ceiling are required constructor arguments, not env defaults; enforce 1 <= floor <= ceiling and
   clamp initial. Cap waiters at 1024 with caller deadline; return typed Overloaded before enqueueing a
   1025th waiter. Implement the owned native service in crates/betterlite-router/src/adaptive_concurrency.rs.
-  Add ProbeOperation::B347 in tools/oracle/src/router_probes/mod.rs and the corresponding B347 entry in
+  Add ProbeOperation::AdaptiveConcurrency in tools/oracle/src/router_probes/mod.rs and the corresponding B347 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -44,13 +44,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L18-L78
   why: Limit transitions, cancellation race and waiter grants.
 dod:
-- text: Write tests named b347_behaviors and b347_boundaries under adaptive_concurrency::tests. The first
+- text: Write tests named adaptive_concurrency_behaviors and adaptive_concurrency_boundaries under adaptive_concurrency::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b347-behaviors
-  - b347-boundaries
+  - adaptive-concurrency-behaviors
+  - adaptive-concurrency-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -68,13 +68,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b347-behaviors
+  - id: adaptive-concurrency-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b347_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::adaptive_concurrency_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b347-boundaries
+  - id: adaptive-concurrency-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b347_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::adaptive_concurrency_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

@@ -11,7 +11,7 @@ description: 'Add a per-model scheduler using B360 state and an injected clock/r
   (None unless configured); enum High=0, Medium=128, Low=255. Keep the inherited routing deadline. Configuration
   boundary keys introduced or consumed here: polling_interval, default_priority, DEFAULT_POLLING_INTERVAL,
   DEFAULT_IN_MEMORY_TTL. Implement the owned native service in crates/betterlite-router/src/request_scheduler.rs.
-  Add ProbeOperation::B346 in tools/oracle/src/router_probes/mod.rs and the corresponding B346 entry in
+  Add ProbeOperation::RequestScheduler in tools/oracle/src/router_probes/mod.rs and the corresponding B346 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -48,12 +48,12 @@ scope:
   - crates/betterlite-config/src/request_scheduler.rs
   - crates/betterlite-config/src/request_scheduler/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b346-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/request-scheduler-*
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/chat.rs
   - crates/betterlite-openai/src/request.rs
   - crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs
-  - crates/betterlite-openai/fuzz/corpus/chat_request/b346-*
+  - crates/betterlite-openai/fuzz/corpus/chat_request/request-scheduler-*
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-openai/fuzz/Cargo.toml
   lint_tables: false
@@ -69,13 +69,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4455-L4516
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b346_behaviors and b346_boundaries under request_scheduler::tests. The first
+- text: Write tests named request_scheduler_behaviors and request_scheduler_boundaries under request_scheduler::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b346-behaviors
-  - b346-boundaries
+  - request-scheduler-behaviors
+  - request-scheduler-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -86,18 +86,18 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b346-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b346-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/request-scheduler-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/request-scheduler-invalid.yaml;
     the valid seed contains polling_interval. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b346-boundaries
-- text: Add crates/betterlite-openai/fuzz/corpus/chat_request/b346-valid.json and crates/betterlite-openai/fuzz/corpus/chat_request/b346-invalid.json;
+  - request-scheduler-boundaries
+- text: Add crates/betterlite-openai/fuzz/corpus/chat_request/request-scheduler-valid.json and crates/betterlite-openai/fuzz/corpus/chat_request/request-scheduler-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target chat_request and normal replays_the_chat_request_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - chat-corpus
-  - b346-boundaries
+  - request-scheduler-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -105,13 +105,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b346-behaviors
+  - id: request-scheduler-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b346_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::request_scheduler_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b346-boundaries
+  - id: request-scheduler-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b346_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::request_scheduler_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -121,16 +121,16 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b346-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b346-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/request-scheduler-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/request-scheduler-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b346-" && grep -Fq 'polling_interval' crates/betterlite-config/fuzz/corpus/config_yaml/b346-valid.yaml
+      | grep -Fq "/request-scheduler-" && grep -Fq 'polling_interval' crates/betterlite-config/fuzz/corpus/config_yaml/request-scheduler-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: chat-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-openai/fuzz/corpus/chat_request/b346-valid.json && test -f crates/betterlite-openai/fuzz/corpus/chat_request/b346-invalid.json
+    run: test -f crates/betterlite-openai/fuzz/corpus/chat_request/request-scheduler-valid.json && test -f crates/betterlite-openai/fuzz/corpus/chat_request/request-scheduler-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request
-      | grep -Fq "/b346-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && cargo
+      | grep -Fq "/request-scheduler-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && cargo
       nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/request-scheduler/lower-priority-number-first.yaml

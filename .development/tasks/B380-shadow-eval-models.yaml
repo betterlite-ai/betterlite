@@ -4,7 +4,7 @@ description: 'Implement typed ShadowJob, ShadowLeg and lifecycle response constr
   job rows. Derive pending/running/exhausted/stopped status, budget spent and immutable arm/target configuration.
   Keep Decimal spend and omit key secrets. Share these types with B356 writes and B357 reads; no endpoint
   or scheduler is added. Implement the owned native service in crates/betterlite-server/src/shadow_eval_models.rs.
-  Add ProbeOperation::B380 in tools/oracle/src/router_probes/mod.rs and the corresponding B380 entry in
+  Add ProbeOperation::ShadowEvalModels in tools/oracle/src/router_probes/mod.rs and the corresponding B380 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -38,13 +38,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L618-L752
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b380_behaviors and b380_boundaries under shadow_eval_models::tests. The first
+- text: Write tests named shadow_eval_models_behaviors and shadow_eval_models_boundaries under shadow_eval_models::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b380-behaviors
-  - b380-boundaries
+  - shadow-eval-models-behaviors
+  - shadow-eval-models-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -62,13 +62,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b380-behaviors
+  - id: shadow-eval-models-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b380_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::shadow_eval_models_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b380-boundaries
+  - id: shadow-eval-models-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b380_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::shadow_eval_models_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
