@@ -1,7 +1,7 @@
 id: B253
 title: Standard logging metadata and payload privacy inputs
 description: >-
-  Implement Own StandardLoggingPayloadSetup merge_litellm_metadata/get_standard_logging_metadata, get_additional_headers/get_hidden_params/strip_trailing_slash,
+  Implement StandardLoggingPayloadSetup merge_litellm_metadata/get_standard_logging_metadata, get_additional_headers/get_hidden_params/strip_trailing_slash,
   get_error_information/get_error_information_for_logging_payload, get_response_time/trace_id/session_id and request-tag
   helpers. Own public get_standard_logging_metadata/scrub_sensitive_keys_in_metadata and logging_utils bounded base64
   truncation. Inject synthetic auth/deployment metadata rather than looking up storage. Pricing and cold-storage
@@ -9,7 +9,9 @@ description: >-
   120 Rust/Python adapters, 300 tests and 60 wiring (760 total). Write the behavior rstest functions b253_behavior_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations logging_metadata in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
-  each operation has its own Rust and Python adapter file and corpus seed.
+  each operation has its own Rust and Python adapter file and corpus seed. Also own provider request-ID extraction
+  297-317, router model-ID projection 871-886/903-908, response header/hidden-metadata projection 2361-2393, trace-ID
+  extraction 3965-3981 and hash-shape check 5599-5601.
 scope:
   paths:
   - Cargo.toml
@@ -58,6 +60,9 @@ references:
 - url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6202-L6223
   why: get_response_time
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6226-L6344
+  why: Trace/session and request tags.
 dod:
 - text: >-
     Each listed helper case compares its named production function with the pinned Python function, including precedence,
@@ -109,7 +114,7 @@ out_of_scope:
 - >-
   Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B117; MCP hooks 1633-1709 B140;
   cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B098; native response logging
-  4147-4343 B080/B081/B098.
+  4147-4320 B080/B081/B098; A2A response conversion 4322-4343 B142.
 - >-
   Enterprise callback controls are excluded by repository licensing rules; no enterprise implementation is read
   or ported.
