@@ -9,6 +9,7 @@ use crate::dispatch::seat::{Seat, invoke};
 use crate::dispatch::{Attempt, Step, prompt, review};
 use crate::error::GateError;
 use crate::facts::resolve_base;
+use crate::git::git;
 use crate::report_check::report_problems;
 use crate::spec::agents::{Rung, Runner};
 use crate::spec::report::{Report, ReportStatus};
@@ -80,10 +81,38 @@ pub(crate) fn attempt_once(
     rung: &Rung,
     feedback: &[String],
 ) -> Result<Step, GateError> {
+    let start = git(attempt.places.worktree, &["rev-parse", "HEAD"])?;
     let report = match worker_report(attempt, runner, rung, feedback)? {
         Ok(report) => report,
         Err(step) => return Ok(step),
     };
+    let committed = git(
+        attempt.places.worktree,
+        &[
+            "diff",
+            "--name-only",
+            start.trim(),
+            "HEAD",
+            "--",
+            ".development",
+        ],
+    )?;
+    let pending = git(
+        attempt.places.worktree,
+        &["status", "--porcelain", "--", ".development"],
+    )?;
+    let touched: Vec<String> = committed
+        .lines()
+        .chain(pending.lines())
+        .map(|path| {
+            format!(
+                "The worker changed {path}; only the architect edits .development/, so revert it."
+            )
+        })
+        .collect();
+    if !touched.is_empty() {
+        return Ok(Step::Retry(touched));
+    }
     let worktree = Development::open(attempt.places.worktree)?;
     let failing = failures(&worktree, &attempt.brief.task.id, &report)?;
     if !failing.is_empty() {
