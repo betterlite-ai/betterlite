@@ -1,5 +1,6 @@
 ---
 source: crates/betterlite-config/tests/config_tests/mod.rs
+assertion_line: 103
 expression: result
 ---
 Ok(
@@ -41,6 +42,7 @@ Ok(
             num_retries: None,
             request_timeout: None,
             drop_params: None,
+            bedrock_metadata_fields: [],
         },
         environment_variables: {},
     },
