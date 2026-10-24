@@ -68,7 +68,9 @@ dod:
     while unknown/uninstalled names fail startup.
   proof:
   - callback-registry-tests
-- text: The callback-config parser and extended YAML loader replay committed malformed and adversarial corpora.
+- text: >-
+    The extended YAML loader replays new callback-list and capacity-setting seeds; standalone callback-config parsing
+    is proven by B246.
   proof:
   - config-yaml-corpus
 - text: >-
