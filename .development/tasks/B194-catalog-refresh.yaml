@@ -7,21 +7,22 @@ description: >-
   Resolve LITELLM_LOCAL_MODEL_COST_MAP and LITELLM_MODEL_COST_MAP_URL through config. Unless local mode is true,
   startup fetches the configured URL (default https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json)
   through B009 policy with a 5 second attempt timeout; failure warns and falls back to the bundled map. The URL
-  is operator configuration, never request input. Implement bounded transient retry/Retry-After behavior with injected
-  clock/randomness, integrity checks and an owned reload task. Failed reload keeps the current snapshot; startup
-  source failures fall back to the packaged asset with visible diagnostics. Add catalog_refresh helper cases with
-  local synthetic HTTP replies and deterministic RNG; extend model_catalog and config corpora for all new input.  Seed
-  B171's shared helper_case corpus with every added operation and replay it through the common typed parser. B171
-  forces local mode for normal helper imports; startup-fetch cases override only inside an injected get_model_cost_map
-  client call, never by allowing import-time network. Runtime unknown fields warn with paths and are retained under
-  B205 policy. Write the behavior rstest functions b194_catalog_refresh_tests_behavior in adjacent tests.rs files,
-  with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
-  helper operations catalog_refresh in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each
-  operation has its own Rust and Python adapter file and corpus seed.
+  is operator configuration, never request input. Use B257's injected fetch/retry/integrity policy and own the reload
+  task. Failed reload keeps the current snapshot; startup source failures fall back to the packaged asset with visible
+  diagnostics. Add catalog_refresh helper cases with local synthetic HTTP replies and deterministic RNG; extend
+  model_catalog and config corpora for all new input.  Seed B171's shared helper_case corpus with every added operation
+  and replay it through the common typed parser. B171 forces local mode for normal helper imports; startup-fetch
+  cases override only inside an injected get_model_cost_map client call, never by allowing import-time network.
+  Runtime unknown fields warn with paths and are ignored under B205 policy. Write the behavior rstest functions
+  b194_catalog_refresh_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
+  in the DoD; corpus replay tests have separate names. Register helper operations catalog_refresh in tools/oracle/src/helpers/mod.rs
+  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  Own refetch_model_cost_map 364-412, provenance 415-478, alias expansion/finalization/adoption 481-567 and startup/retry-task
+  orchestration 570-697; local file reading/snapshot access delegates to B193 and fetch policy to B257. Budget 300
+  state/startup, 110 adapters, 290 tests and 70 config/wiring (770 total).
 scope:
   paths:
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-models/Cargo.toml
   - crates/betterlite-models/src/lib.rs
   - crates/betterlite-models/src/error.rs
@@ -41,12 +42,6 @@ scope:
   lint_tables: false
 references:
 - url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L112-L198
-  why: Integrity and model-count shrink checks.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L232-L412
-  why: Retry classification, Retry-After and reload semantics.
-- url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L415-L478
   why: Catalog provenance fields.
 - url: >-
@@ -54,8 +49,16 @@ references:
   why: Override adoption and startup fallback.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L426-L429
   why: Default source URL.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L364-L412
+  why: Atomic reload entry point.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L481-L567
+  why: Alias expansion and final adoption.
 dod:
-- text: Source/revision/integrity and retry classification match helper cases with deterministic local inputs.
+- text: >-
+    Startup source selection, provenance and successful/failed atomic adoption match helper cases; B257 proves retry
+    and integrity primitives.
   proof:
   - oracle
   - helper-python
@@ -112,13 +115,6 @@ checks:
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/catalog-refresh/local-source.yaml
-- tools/oracle/cases/helpers/catalog-refresh/raw-blob-revision.yaml
-- tools/oracle/cases/helpers/catalog-refresh/valid-remote.yaml
-- tools/oracle/cases/helpers/catalog-refresh/shrunken-map.yaml
-- tools/oracle/cases/helpers/catalog-refresh/invalid-json.yaml
-- tools/oracle/cases/helpers/catalog-refresh/retry-after.yaml
-- tools/oracle/cases/helpers/catalog-refresh/nonretryable.yaml
-- tools/oracle/cases/helpers/catalog-refresh/retry-exhaustion.yaml
 - tools/oracle/cases/helpers/catalog-refresh/failed-reload-keeps-current.yaml
 - tools/oracle/cases/helpers/catalog-refresh/startup-default-url.yaml
 - tools/oracle/cases/helpers/catalog-refresh/startup-local-no-fetch.yaml
@@ -136,6 +132,9 @@ out_of_scope:
 - >-
   Periodic polling is not enabled; startup transient retries are owned and drained as part of the configured source
   lifecycle.
+- >-
+  Fetch response classification, retry calculation, raw revisions and integrity checks are B257; local asset/snapshot
+  access is B193; CLI process-name inspection is not used because startup policy is explicit.
 pitfalls:
 - Revision hashes cover the original bytes, not a reformatted serialized map.
 - A reload failure must not replace a good runtime catalog with the packaged fallback.

@@ -2138,10 +2138,13 @@ tasks:
     milestone: M1 openai data plane
     title: Model catalog loading and atomic refresh
     status: todo
-    depends_on: [B193, B009]
+    depends_on:
+    - B193
+    - B009
+    - B257
     file: tasks/B194-catalog-refresh.yaml
     covers:
-      - "litellm/litellm_core_utils/get_model_cost_map.py"
+    - litellm/litellm_core_utils/get_model_cost_map.py
   - id: B195
     milestone: M1 openai data plane
     title: Offline tokenizer engines and assets
@@ -2807,3 +2810,14 @@ tasks:
     covers:
     - litellm/integrations/custom_batch_logger.py
     - litellm/integrations/batch_utils.py
+  - id: B257
+    milestone: M1 openai data plane
+    title: Catalog integrity and fetch retry policy
+    status: todo
+    depends_on:
+    - B193
+    - B009
+    - B171
+    file: tasks/B257-catalog-fetch-policy.yaml
+    covers:
+    - litellm/litellm_core_utils/get_model_cost_map.py
