@@ -77,13 +77,12 @@ pub async fn run(config: Config, host: &str, port: u16) -> Result<(), ServerErro
 }
 
 fn build_application(config: Config, shutting_down: Arc<AtomicBool>) -> Router {
-    router(config.general_settings.master_key, shutting_down).layer(
-        ServiceBuilder::new()
-            .layer(HandleErrorLayer::new(|_: tower::BoxError| async {
-                request_timeout_error()
-            }))
-            .layer(TimeoutLayer::new(Duration::from_secs(30))),
-    )
+    let timeout_layers = ServiceBuilder::new()
+        .layer(HandleErrorLayer::new(|_: tower::BoxError| async {
+            request_timeout_error()
+        }))
+        .layer(TimeoutLayer::new(Duration::from_secs(30)));
+    router(config.general_settings.master_key, shutting_down).layer(timeout_layers)
 }
 
 fn configure_connection_builder() -> Builder<TokioExecutor> {
@@ -100,17 +99,17 @@ async fn accept_connection(
     host: &str,
     port: u16,
 ) -> Result<Option<(BoundedStream, SocketAddr)>, ServerError> {
-    timeout(ACCEPT_POLL_INTERVAL, listener.accept())
-        .await
-        .map_or_else(
-            |_| Ok(None),
-            |result| {
-                result.map(Some).map_err(|source| ServerError::Bind {
-                    address: format!("{host}:{port}"),
-                    source,
-                })
-            },
-        )
+    let bind_address = format!("{host}:{port}");
+    let accepted = timeout(ACCEPT_POLL_INTERVAL, listener.accept()).await;
+    accepted.map_or_else(
+        |_| Ok(None),
+        |result| {
+            result.map(Some).map_err(|source| ServerError::Bind {
+                address: bind_address,
+                source,
+            })
+        },
+    )
 }
 
 async fn serve_connection(
