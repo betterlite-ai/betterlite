@@ -291,6 +291,7 @@ tasks:
     - B358
     - B359
     - B349
+    - B351
     file: null
     covers:
     - router_plugins.json
@@ -2661,3 +2662,17 @@ tasks:
     - litellm/proxy/management_endpoints/auto_router_endpoints.py
     - litellm/types/management_endpoints/auto_router_endpoints.py
     - litellm/proxy/management_helpers/auto_router_availability.py
+
+  - id: B351
+    milestone: M2 routing
+    title: Pinned complexity evaluation corpus and bundled presets
+    status: todo
+    depends_on:
+    - B328
+    - B329
+    - B353
+    - B358
+    file: tasks/B351-complexity-evaluation.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/evals/**
+    - litellm/proxy/public_endpoints/autorouter_presets.json
