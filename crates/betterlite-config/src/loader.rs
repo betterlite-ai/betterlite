@@ -213,6 +213,8 @@ where
         num_retries,
         request_timeout,
         drop_params: raw.drop_params,
+        aiohttp_trust_env: raw.aiohttp_trust_env,
+        disable_aiohttp_trust_env: raw.disable_aiohttp_trust_env,
     })
 }
 

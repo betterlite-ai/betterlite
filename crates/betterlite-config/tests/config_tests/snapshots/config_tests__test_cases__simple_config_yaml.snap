@@ -41,6 +41,8 @@ Ok(
             num_retries: None,
             request_timeout: None,
             drop_params: None,
+            aiohttp_trust_env: false,
+            disable_aiohttp_trust_env: false,
         },
         environment_variables: {},
     },

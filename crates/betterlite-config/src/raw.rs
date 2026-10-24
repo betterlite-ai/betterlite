@@ -67,6 +67,10 @@ pub(super) struct RawLiteLlm {
     pub(super) num_retries: Option<RawNumber>,
     pub(super) request_timeout: Option<RawNumber>,
     pub(super) drop_params: Option<bool>,
+    #[serde(default)]
+    pub(super) aiohttp_trust_env: bool,
+    #[serde(default)]
+    pub(super) disable_aiohttp_trust_env: bool,
 }
 
 #[derive(Debug, Deserialize)]

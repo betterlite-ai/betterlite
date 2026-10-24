@@ -1,0 +1,269 @@
+use std::collections::BTreeMap;
+use std::fs;
+use std::io::ErrorKind;
+use std::path::PathBuf;
+use std::str;
+use std::sync::Arc;
+
+use netrc_rs::Netrc;
+use percent_encoding::percent_decode_str;
+use secrecy::SecretString;
+use url::Url;
+
+use crate::types::LiteLlmSettings;
+
+#[derive(Debug, Clone)]
+pub struct ProxyPolicy {
+    pub no_proxy: Option<String>,
+    pub primary: BTreeMap<String, ProxyRoute>,
+    pub fallback: BTreeMap<String, ProxyRoute>,
+    pub warnings: Vec<ProxyWarning>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ProxyRoute {
+    Forward(Arc<ProxyServer>),
+    Unsupported { scheme: String },
+    Invalid { name: String },
+}
+
+#[derive(Debug)]
+pub struct ProxyServer {
+    pub host: String,
+    pub port: u16,
+    pub credentials: Option<ProxyCredentials>,
+}
+
+#[derive(Debug)]
+pub struct ProxyCredentials {
+    pub username: String,
+    pub password: SecretString,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProxyWarning {
+    SecureProxyIgnored { name: String, scheme: String },
+    NetrcUnreadable { path: PathBuf },
+    NetrcInvalid { path: PathBuf },
+}
+
+impl ProxyPolicy {
+    #[must_use]
+    pub fn resolve(settings: &LiteLlmSettings, environment: &BTreeMap<String, String>) -> Self {
+        let is_true = |name: &str| {
+            environment
+                .get(name)
+                .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
+        };
+        let mut proxies = environment_proxies(environment);
+        let no_proxy = proxies.remove("no");
+        let primary = if settings.disable_aiohttp_trust_env || is_true("DISABLE_AIOHTTP_TRUST_ENV")
+        {
+            BTreeMap::new()
+        } else {
+            primary_routes(&proxies)
+        };
+        let mut warnings = Vec::new();
+        let fallback = if settings.aiohttp_trust_env || is_true("AIOHTTP_TRUST_ENV") {
+            fallback_routes(&proxies, environment, &mut warnings)
+        } else {
+            BTreeMap::new()
+        };
+        Self {
+            no_proxy,
+            primary,
+            fallback,
+            warnings,
+        }
+    }
+
+    #[must_use]
+    pub fn route(&self, scheme: &str, host: &str) -> Option<&ProxyRoute> {
+        if let Some(no_proxy) = &self.no_proxy
+            && bypasses(no_proxy, host)
+        {
+            return None;
+        }
+        self.primary
+            .get(scheme)
+            .or_else(|| self.primary.get("all"))
+            .or_else(|| self.fallback.get(scheme))
+    }
+}
+
+fn environment_proxies(environment: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let proxy_name = |name: &str| {
+        let split = name.len().checked_sub(6)?;
+        let suffix = name.get(split..)?;
+        let prefix = name.get(..split)?;
+        suffix
+            .eq_ignore_ascii_case("_proxy")
+            .then(|| (prefix.to_lowercase(), suffix == "_proxy"))
+    };
+    let mut proxies = BTreeMap::new();
+    let mut lowercase = Vec::new();
+    for (name, value) in environment {
+        let Some((key, is_lowercase)) = proxy_name(name) else {
+            continue;
+        };
+        if !value.is_empty() {
+            proxies.insert(key.clone(), value.clone());
+        }
+        if is_lowercase {
+            lowercase.push((key, value));
+        }
+    }
+    // CPython drops HTTP_PROXY under CGI, since a client's Proxy: header can set it
+    if environment.contains_key("REQUEST_METHOD") {
+        proxies.remove("http");
+    }
+    for (key, value) in lowercase {
+        if value.is_empty() {
+            proxies.remove(&key);
+        } else {
+            proxies.insert(key, value.clone());
+        }
+    }
+    proxies
+}
+
+fn primary_routes(proxies: &BTreeMap<String, String>) -> BTreeMap<String, ProxyRoute> {
+    proxies
+        .iter()
+        .map(|(name, value)| {
+            let prefix = if value.contains("://") { "" } else { "http://" };
+            (name.clone(), parse_route(name, &format!("{prefix}{value}"), None))
+        })
+        .collect()
+}
+
+fn fallback_routes(
+    proxies: &BTreeMap<String, String>,
+    environment: &BTreeMap<String, String>,
+    warnings: &mut Vec<ProxyWarning>,
+) -> BTreeMap<String, ProxyRoute> {
+    let netrc = read_netrc(environment, warnings);
+    let mut routes = BTreeMap::new();
+    for (name, value) in proxies {
+        if !matches!(name.as_str(), "http" | "https" | "ws" | "wss") {
+            continue;
+        }
+        match parse_route(name, value, netrc.as_ref()) {
+            ProxyRoute::Unsupported { scheme } if scheme == "https" || scheme == "wss" => {
+                let ignored = name.clone();
+                warnings.push(ProxyWarning::SecureProxyIgnored {
+                    name: ignored,
+                    scheme,
+                });
+            }
+            route @ (ProxyRoute::Forward(_)
+            | ProxyRoute::Unsupported { .. }
+            | ProxyRoute::Invalid { .. }) => drop(routes.insert(name.clone(), route)),
+        }
+    }
+    routes
+}
+
+fn bypasses(no_proxy: &str, host: &str) -> bool {
+    if no_proxy == "*" {
+        return true;
+    }
+    let lowered = host.to_lowercase();
+    let host_only = match lowered.rsplit_once(':') {
+        Some((prefix, port)) if !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()) => prefix,
+        Some(_) | None => &lowered,
+    };
+    no_proxy
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .any(|entry| {
+            let name = entry.trim_start_matches('.').to_lowercase();
+            let suffix = format!(".{name}");
+            host_only == name
+                || lowered == name
+                || host_only.ends_with(&suffix)
+                || lowered.ends_with(&suffix)
+        })
+}
+
+fn parse_route(name: &str, value: &str, netrc: Option<&Netrc>) -> ProxyRoute {
+    let invalid = || ProxyRoute::Invalid {
+        name: name.to_owned(),
+    };
+    let Ok(url) = Url::parse(value) else {
+        return invalid();
+    };
+    if url.scheme() != "http" {
+        return ProxyRoute::Unsupported {
+            scheme: url.scheme().to_owned(),
+        };
+    }
+    let (Some(host), Some(port)) = (url.host_str(), url.port_or_known_default()) else {
+        return invalid();
+    };
+    let credentials = if url.username().is_empty() && url.password().is_none() {
+        netrc.and_then(|found| netrc_credentials(found, host))
+    } else {
+        let decoded_username = percent_decode_str(url.username()).decode_utf8();
+        let decoded_password = percent_decode_str(url.password().unwrap_or_default()).decode_utf8();
+        let (Ok(username), Ok(password)) = (decoded_username, decoded_password) else {
+            return invalid();
+        };
+        Some(ProxyCredentials {
+            username: username.into_owned(),
+            password: SecretString::from(password.into_owned()),
+        })
+    };
+    ProxyRoute::Forward(Arc::new(ProxyServer {
+        host: host.to_owned(),
+        port,
+        credentials,
+    }))
+}
+
+fn netrc_credentials(netrc: &Netrc, host: &str) -> Option<ProxyCredentials> {
+    let entries = || netrc.machines.iter().rev();
+    let entry = entries()
+        .find(|machine| machine.name.as_deref() == Some(host))
+        .or_else(|| entries().find(|machine| machine.name.is_none()))?;
+    let username = match (&entry.login, &entry.account) {
+        (Some(login), _) if !login.is_empty() => login.clone(),
+        (_, Some(account)) => account.clone(),
+        (Some(_) | None, None) => String::new(),
+    };
+    let password = entry.password.clone().unwrap_or_default();
+    Some(ProxyCredentials {
+        username,
+        password: SecretString::from(password),
+    })
+}
+
+fn read_netrc(
+    environment: &BTreeMap<String, String>,
+    warnings: &mut Vec<ProxyWarning>,
+) -> Option<Netrc> {
+    let (path, named) = match environment.get("NETRC") {
+        Some(named_path) => (PathBuf::from(named_path), true),
+        None => (PathBuf::from(environment.get("HOME")?).join(".netrc"), false),
+    };
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            // aiohttp stays quiet about a missing ~/.netrc, but not about a missing NETRC file
+            if named || error.kind() != ErrorKind::NotFound {
+                warnings.push(ProxyWarning::NetrcUnreadable { path });
+            }
+            return None;
+        }
+    };
+    let parsed = str::from_utf8(&bytes)
+        .ok()
+        .and_then(|text| Netrc::parse(text, false).ok());
+    if parsed.is_none() {
+        warnings.push(ProxyWarning::NetrcInvalid { path });
+    }
+    parsed
+}
+
+mod tests;
