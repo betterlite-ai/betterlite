@@ -2054,7 +2054,7 @@ tasks:
     title: Mock calls, rules and JSON response validation
     status: todo
     depends_on: [B198, B178]
-    file: null
+    file: tasks/B200-call-rules.yaml
     covers:
       - "litellm/litellm_core_utils/{mock_functions,rules,json_validation_rule}.py"
   - id: B201
