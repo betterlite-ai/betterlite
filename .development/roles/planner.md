@@ -11,6 +11,8 @@ You turn backlog entries into task files that a cheaper model can finish without
 
 ## Write
 
+Write each task file yourself, after reading the LiteLLM code it owns. A script may list functions, count lines or check your files, but it never writes task text. A description, pitfall or case built from a template is rejected, and so is a sentence repeated across tasks. A batch of 300 files written in half an hour was all template and had to be thrown away.
+
 Size and split:
 
 - One task per backlog entry, 400 to 800 changed lines of work. When an entry needs more, split it. Append one entry per extra part with the next free ids (B999 is followed by B1000), give each part the covers globs it reimplements and the dependencies it needs, and add the parts to the original entry's depends_on. The original keeps its id, its dependents and the globs left over, so it becomes the last part. Then write a task file for every part.
@@ -40,6 +42,7 @@ Checks:
 - A behavior-tests check runs every crate the description puts code and tests in.
 - Every check fails on the base branch. A corpus check first requires files this branch added, `test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- <dir>)"`, or greps for the new operation or key. A grep looks for what the parser reads: a helper seed names its operation as the variant tag under call.
 - A config key is supported only when a named betterlite-config test loads it. A grep for its name in a seed doesn't count.
+- Cases use provider names, model names, config keys and env vars that LiteLLM accepts at the pinned commit, and rstest case names are Rust identifiers that start with a letter.
 - A task on the config, router or wire-format crates lists mutants in checks.optional. A task that parses bytes from outside (config, request bodies, SSE) names the decoder function and its input, and adds a cargo-fuzz target in the decoder's crate plus a check that replays its corpus. A task that only transforms parsed records has no fuzz target.
 - Run `cargo gate validate` until it prints valid, then commit.
 
