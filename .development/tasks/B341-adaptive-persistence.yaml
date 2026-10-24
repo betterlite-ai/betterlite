@@ -20,7 +20,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/adaptive-persistence/**
-  - tools/oracle/src/router_probes/adaptive-persistence/**
+  - tools/oracle/src/router_probes/adaptive_persistence/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/adaptive_persistence.py
   - tools/oracle/litellm/probes/registry.py
@@ -30,15 +30,16 @@ references:
   why: Delta aggregation and session upserts.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/adaptive_router.py#L126-L165
   why: Reload adds deltas to priors.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1-L80
-  why: Use B051's pinned schema; locate the two AdaptiveRouter tables by name.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1595-L1635
+  why: The unchanged adaptive-state and adaptive-session compound-key tables.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
+    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the adaptive_persistence prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
