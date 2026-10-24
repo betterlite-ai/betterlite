@@ -1,7 +1,7 @@
 id: B248
 title: Per-request callback selection
 description: >-
-  Implement Own add_dynamic_callback, _with_dynamic_callback, process_dynamic_callbacks, _process_dynamic_callback_list,
+  Implement add_dynamic_callback, _with_dynamic_callback, process_dynamic_callbacks, _process_dynamic_callback_list,
   _resolve_dynamic_callback_string and initialize_standard_callback_dynamic_params; also get_combined_callback_list
   and the callback-name/internal-callback helpers (4037-4106). Resolve only installed B189 enum variants, preserve
   dynamic/global selection and B188 privacy/provenance, and reject unavailable callbacks explicitly. No Python import
@@ -100,7 +100,7 @@ out_of_scope:
 - >-
   Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B117; MCP hooks 1633-1709 B140;
   cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B098; native response logging
-  4147-4343 B080/B081/B098.
+  4147-4320 B080/B081/B098; A2A response conversion 4322-4343 B142.
 - >-
   Enterprise callback controls are excluded by repository licensing rules; no enterprise implementation is read
   or ported.
