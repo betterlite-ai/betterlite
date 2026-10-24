@@ -280,6 +280,7 @@ tasks:
     - B343
     - B344
     - B345
+    - B350
     file: null
     covers:
     - router_plugins.json
@@ -2506,3 +2507,15 @@ tasks:
     covers:
     - litellm/proxy/management_endpoints/router_settings_endpoints.py
     - litellm/types/management_endpoints/router_settings_endpoints.py
+
+  - id: B350
+    milestone: M2 routing
+    title: LAR-1 confidence routing
+    status: todo
+    depends_on:
+    - B016
+    - B301
+    file: tasks/B350-lar1-routing.yaml
+    covers:
+    - litellm/router_strategy/lar1_routing.py
+    - litellm/types/lar1.py
