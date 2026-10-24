@@ -13,8 +13,8 @@ description: Create the injected typed store used by B304 and all routing state 
   over HTTP; adapters call production logic and never reproduce it. Use deterministic candidate sets or
   supplied random samples for comparisons, and separate seeded distribution tests for random choices.
   Extend the existing config_yaml fuzz target and committed corpus for every newly accepted config form;
-  unsupported keys still fail by full path. Add a cargo-fuzz target routing_state_value under crates/betterlite-router/fuzz
-  and a normal replays_the_routing_state_value_corpus test using the production parser. Keep the implementation,
+  unsupported keys still fail by full path. Add a cargo-fuzz target route_value under crates/betterlite-router/fuzz
+  and a normal replays_the_route_value_corpus test using the production parser. Keep the implementation,
   adapters and tests within 800 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
 scope:
   paths:
@@ -22,7 +22,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/routing-state-store/**
-  - tools/oracle/src/router_probes/routing-state-store/**
+  - tools/oracle/src/router_probes/routing_state_store/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/routing_state_store.py
   - tools/oracle/litellm/probes/registry.py
@@ -37,12 +37,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1-L80
   why: Existing Redis transport dependency, owned in full by B126.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
+    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the routing_state_store prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
@@ -71,9 +72,9 @@ checks:
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-router/fuzz/fuzz_targets/routing_state_value.rs && test -n "$(ls -A
-      crates/betterlite-router/fuzz/corpus/routing_state_value)" && cargo nextest run --locked -p betterlite-router
-      --no-tests=fail -E 'test(replays_the_routing_state_value_corpus)'
+    run: test -f crates/betterlite-router/fuzz/fuzz_targets/route_value.rs && test -n "$(ls -A
+      crates/betterlite-router/fuzz/corpus/route_value)" && cargo nextest run --locked -p betterlite-router
+      --no-tests=fail -E 'test(replays_the_route_value_corpus)'
   - id: probe-python
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
