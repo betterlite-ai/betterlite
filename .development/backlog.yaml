@@ -212,6 +212,7 @@ tasks:
     - B308
     - B309
     - B310
+    - B311
     file: null
     covers:
     - litellm/router_utils/{cooldown_cache,cooldown_callbacks,cooldown_handlers,fallback_event_handlers,health_state_cache}.py
@@ -1974,3 +1975,14 @@ tasks:
     covers:
     - litellm/router_utils/fallback_event_handlers.py
     - litellm/litellm_core_utils/fallback_utils.py
+
+  - id: B311
+    milestone: M2 routing
+    title: Fallback before generated chat output commits
+    status: todo
+    depends_on:
+    - B310
+    - B005
+    file: tasks/B311-chat-stream-fallback.yaml
+    covers:
+    - litellm/router.py
