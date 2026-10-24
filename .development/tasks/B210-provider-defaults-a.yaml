@@ -13,8 +13,8 @@ description: >-
   b210_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure in the
   DoD; corpus replay tests have separate names. Register helper operations provider_defaults_a in tools/oracle/src/helpers/mod.rs
   and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
-  The complete branch case list is constructed from this bounded reference range and must include every elif provider
-  literal, with distinct filenames named after the provider.
+  The listed provider-specific files each invoke this operation once; JSON table entries use named rstest rows plus
+  representative registry-precedence cases.
 scope:
   paths:
   - Cargo.toml
@@ -74,11 +74,43 @@ oracle_cases:
 - tools/oracle/cases/helpers/provider-defaults-a/environment-precedence.yaml
 - tools/oracle/cases/helpers/provider-defaults-a/missing-key.yaml
 - tools/oracle/cases/helpers/provider-defaults-a/model-rewrite.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/ai21.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/ai21-chat.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/aiohttp-openai.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/anyscale.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/azure-ai.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/baseten.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/bedrock-mantle.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/cerebras.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/codestral.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/datarobot.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/deepinfra.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/deepseek.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/empower.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/fireworks-ai.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/github.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/groq.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/hosted-vllm.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/json-registry-precedence.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/litellm-proxy.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/llamafile.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/lm-studio.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/meta-llama.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/nadir.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/nebius.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/nvidia-nim.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/nvidia-riva.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/ollama.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/perplexity.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/sambanova.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/soniox.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/tencent.yaml
+- tools/oracle/cases/helpers/provider-defaults-a/volcengine.yaml
 deviations: []
 out_of_scope:
 - >-
   Identity and prefix parsing B209; final get_llm_provider integration B174; github_copilot/chatgpt authentication
-  flows B045/B159, never called by these tests.
+  flows B045, never called by these tests.
 pitfalls:
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
