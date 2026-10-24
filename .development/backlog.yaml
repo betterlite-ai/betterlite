@@ -2259,10 +2259,13 @@ tasks:
     milestone: M1 openai data plane
     title: Common call metadata and response helpers
     status: todo
-    depends_on: [B198, B175]
+    depends_on:
+    - B198
+    - B175
+    - B184
     file: tasks/B206-call-helpers.yaml
     covers:
-      - "litellm/litellm_core_utils/core_helpers.py"
+    - litellm/litellm_core_utils/core_helpers.py
   - id: B207
     milestone: M1 openai data plane
     title: Route and call-type metadata matching
