@@ -1,6 +1,6 @@
 use secrecy::ExposeSecret as _;
 
-use crate::request_policy::{RequestValue, lookup, upsert};
+use crate::request_policy::{Params, RequestValue};
 
 const AUTH_KEYS: [&str; 11] = [
     "aws_access_key_id",
@@ -22,35 +22,26 @@ const STATIC_KEYS: [&str; 3] = [
 ];
 
 #[must_use]
-pub fn merge_aws_request_params(
-    deployment: &[(String, RequestValue)],
-    request: &[(String, RequestValue)],
-) -> Vec<(String, RequestValue)> {
-    let mut merged = request.to_vec();
-    for (name, value) in deployment {
-        upsert(&mut merged, name, value.clone());
-    }
-    let static_credentials = STATIC_KEYS.iter().all(|key| match lookup(deployment, key) {
+pub fn merge_aws_request_params(deployment: &Params, request: &Params) -> Params {
+    let mut merged = request.clone();
+    merged.extend(deployment.clone());
+    let static_credentials = STATIC_KEYS.iter().all(|key| match deployment.get(*key) {
         Some(RequestValue::Text(text)) => !text.is_empty(),
         Some(RequestValue::Secret(secret)) => !secret.expose_secret().is_empty(),
         Some(RequestValue::Mapping(_) | RequestValue::Raw(_)) | None => false,
     });
     // a deployment with static keys must not let the caller pick another identity the server holds
     if static_credentials {
-        merged.retain(|(name, _)| {
-            !AUTH_KEYS.contains(&name.as_str()) || lookup(deployment, name).is_some()
-        });
+        merged
+            .retain(|name, _| !AUTH_KEYS.contains(&name.as_str()) || deployment.contains_key(name));
     }
     merged
 }
 
-pub fn map_auth_aliases(
-    non_default: &[(String, RequestValue)],
-    optional: &mut Vec<(String, RequestValue)>,
-) {
+pub fn map_auth_aliases(non_default: &Params, optional: &mut Params) {
     for (param, value) in non_default {
         if param == "region_name" {
-            upsert(optional, "aws_region_name", value.clone());
+            optional.insert("aws_region_name".to_owned(), value.clone());
         }
     }
 }

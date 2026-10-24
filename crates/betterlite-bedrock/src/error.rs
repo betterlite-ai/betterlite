@@ -1,6 +1,8 @@
+use std::string::FromUtf8Error;
+
 use thiserror::Error;
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum BedrockError {
     #[error("requestMetadata must be an object")]
     MetadataNotObject,
@@ -16,6 +18,16 @@ pub enum BedrockError {
     MetadataKeyCharacters { key: String },
     #[error("requestMetadata value for key {key:?} has characters Bedrock does not allow")]
     MetadataValueCharacters { key: String },
+    #[error("requestMetadata header could not be encoded as JSON")]
+    MetadataEncoding {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("requestMetadata header is not UTF-8")]
+    MetadataNotUtf8 {
+        #[source]
+        source: FromUtf8Error,
+    },
 }
 
 impl BedrockError {
@@ -29,6 +41,7 @@ impl BedrockError {
             | Self::MetadataValueLength { .. }
             | Self::MetadataKeyCharacters { .. }
             | Self::MetadataValueCharacters { .. } => 400,
+            Self::MetadataEncoding { .. } | Self::MetadataNotUtf8 { .. } => 500,
         }
     }
 }

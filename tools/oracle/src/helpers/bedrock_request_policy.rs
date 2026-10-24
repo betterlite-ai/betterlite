@@ -1,9 +1,11 @@
 use std::task::{Context, Poll, Waker};
 
+use betterlite_bedrock::error::BedrockError;
 use betterlite_bedrock::request_policy::aws_params::{map_auth_aliases, merge_aws_request_params};
 use betterlite_bedrock::request_policy::validation::validate_request_metadata;
 use betterlite_bedrock::request_policy::{
-    BedrockRequestPolicy, OneResponse, REQUEST_METADATA_HEADER, RequestValue, merge_invoke_headers,
+    BedrockRequestPolicy, OneResponse, Params, REQUEST_METADATA_HEADER, RequestValue,
+    merge_invoke_headers,
 };
 use futures_util::{StreamExt as _, stream};
 use serde_json::{Value, json};
@@ -54,15 +56,22 @@ pub(crate) enum IteratorCall {
 
 pub(crate) fn invoke(input: &BedrockRequestPolicyInput) -> Result<Value, Box<super::HelperError>> {
     let policy = BedrockRequestPolicy::from_fields(&input.fields);
+    let failure = |class: &str, status: Option<u16>, message: String| {
+        Box::new(super::HelperError {
+            class: class.to_owned(),
+            status,
+            error_type: None,
+            param: None,
+            code: None,
+            message,
+        })
+    };
+    let bedrock_failure =
+        |error: BedrockError| failure("BedrockError", Some(error.status_code()), error.to_string());
+    let value_failure = |error: serde_json::Error| failure("ValueError", None, error.to_string());
     let projected = match &input.step {
         PolicyStep::Resolve { litellm_params, caller } => {
-            let params = entries(litellm_params);
-            let caller_value = request_value(caller);
-            let resolved = policy.as_ref().and_then(|owner| owner.resolve(&params, Some(&caller_value)));
-            let header = policy.as_ref().and_then(|owner| owner.metadata_header(&params));
-            let names: Vec<String> = policy.iter().map(|_| REQUEST_METADATA_HEADER.to_lowercase()).collect();
-            let pairs: Vec<(&str, String)> = header.map(|value| (REQUEST_METADATA_HEADER, value)).into_iter().collect();
-            json!({"owned": policy.is_some(), "resolved": resolved, "header_names": names, "header_pairs": pairs})
+            resolve(policy.as_ref(), litellm_params, caller).map_err(bedrock_failure)?
         }
         PolicyStep::Validate { metadata } => metadata
             .iter()
@@ -72,19 +81,57 @@ pub(crate) fn invoke(input: &BedrockRequestPolicyInput) -> Result<Value, Box<sup
             })
             .collect(),
         PolicyStep::Merge { headers, guardrail, litellm_params } => {
-            json!(merge_invoke_headers(headers, guardrail, policy.as_ref(), &entries(litellm_params)))
+            merge(headers, guardrail, policy.as_ref(), litellm_params).map_err(bedrock_failure)?
         }
         PolicyStep::Aliases { non_default, optional } => {
             let mut params = entries(optional);
             map_auth_aliases(&entries(non_default), &mut params);
-            pairs_json(&params)?
+            pairs_json(&params).map_err(value_failure)?
         }
         PolicyStep::MergeParams { deployment, request } => {
-            pairs_json(&merge_aws_request_params(&entries(deployment), &entries(request)))?
+            pairs_json(&merge_aws_request_params(&entries(deployment), &entries(request))).map_err(value_failure)?
         }
         PolicyStep::Iterate { response, calls } => iterate(response, calls),
     };
     Ok(projected)
+}
+
+fn resolve(
+    policy: Option<&BedrockRequestPolicy>,
+    litellm_params: &Value,
+    caller: &Value,
+) -> Result<Value, BedrockError> {
+    let params = entries(litellm_params);
+    let caller_value = request_value(caller);
+    let resolved = policy.and_then(|owner| owner.resolve(&params, Some(&caller_value)));
+    let resolved_pairs: Option<Vec<(String, String)>> =
+        resolved.map(|pairs| pairs.into_iter().collect());
+    let header = policy
+        .map(|owner| owner.metadata_header(&params))
+        .transpose()?
+        .flatten();
+    let names: Vec<String> = policy
+        .iter()
+        .map(|_| REQUEST_METADATA_HEADER.to_lowercase())
+        .collect();
+    let pairs: Vec<(&str, String)> = header
+        .map(|value| (REQUEST_METADATA_HEADER, value))
+        .into_iter()
+        .collect();
+    Ok(
+        json!({"owned": policy.is_some(), "resolved": resolved_pairs, "header_names": names, "header_pairs": pairs}),
+    )
+}
+
+fn merge(
+    headers: &[(String, String)],
+    guardrail: &[(String, String)],
+    policy: Option<&BedrockRequestPolicy>,
+    litellm_params: &Value,
+) -> Result<Value, BedrockError> {
+    let original = headers.iter().cloned().collect();
+    let merged = merge_invoke_headers(&original, guardrail, policy, &entries(litellm_params))?;
+    Ok(json!(merged.into_iter().collect::<Vec<_>>()))
 }
 
 fn iterate(response: &Value, calls: &[IteratorCall]) -> Value {
@@ -118,27 +165,17 @@ fn request_value(value: &Value) -> RequestValue {
     RequestValue::Mapping(pairs.collect())
 }
 
-fn entries(value: &Value) -> Vec<(String, RequestValue)> {
+fn entries(value: &Value) -> Params {
     match request_value(value) {
         RequestValue::Mapping(pairs) => pairs,
-        RequestValue::Text(_) | RequestValue::Secret(_) | RequestValue::Raw(_) => Vec::new(),
+        RequestValue::Text(_) | RequestValue::Secret(_) | RequestValue::Raw(_) => Params::new(),
     }
 }
 
-fn pairs_json(params: &[(String, RequestValue)]) -> Result<Value, Box<super::HelperError>> {
+fn pairs_json(params: &Params) -> Result<Value, serde_json::Error> {
     let mut pairs = Vec::new();
     for (key, value) in params {
-        let projected = json_value(value).map_err(|error| {
-            Box::new(super::HelperError {
-                class: "ValueError".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })?;
-        pairs.push(json!([key, projected]));
+        pairs.push(json!([key, json_value(value)?]));
     }
     Ok(Value::Array(pairs))
 }

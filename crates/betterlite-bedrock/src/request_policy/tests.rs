@@ -1,15 +1,18 @@
 #![cfg(test)]
 
+use std::fmt::Debug;
 use std::task::{Context, Poll, Waker};
 
 use futures_util::{StreamExt as _, stream};
+use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::aws_params::{map_auth_aliases, merge_aws_request_params};
 use super::validation::validate_request_metadata;
 use super::{
-    BedrockRequestPolicy, OneResponse, REQUEST_METADATA_HEADER, RequestValue, merge_invoke_headers,
+    BedrockRequestPolicy, OneResponse, Params, REQUEST_METADATA_HEADER, RequestValue,
+    merge_invoke_headers,
 };
 use crate::error::BedrockError;
 
@@ -25,7 +28,7 @@ fn secret(value: &str) -> RequestValue {
     RequestValue::Secret(SecretString::from(value))
 }
 
-fn entries(pairs: &[(&str, RequestValue)]) -> Vec<(String, RequestValue)> {
+fn entries(pairs: &[(&str, RequestValue)]) -> Params {
     pairs
         .iter()
         .map(|(key, value)| ((*key).to_owned(), value.clone()))
@@ -36,11 +39,11 @@ fn mapping(pairs: &[(&str, RequestValue)]) -> RequestValue {
     RequestValue::Mapping(entries(pairs))
 }
 
-fn metadata(pairs: &[(&str, RequestValue)]) -> Vec<(String, RequestValue)> {
+fn metadata(pairs: &[(&str, RequestValue)]) -> Params {
     entries(&[("metadata", mapping(pairs))])
 }
 
-fn headers(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+fn headers(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
     pairs
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
@@ -52,8 +55,19 @@ fn policy(fields: &[&str]) -> Option<BedrockRequestPolicy> {
     BedrockRequestPolicy::from_fields(&owned)
 }
 
-fn rendered(params: &[(String, RequestValue)]) -> String {
-    format!("{params:?}")
+// IndexMap equality ignores order, and order is part of every outcome here
+fn rendered(value: &impl Debug) -> String {
+    format!("{value:?}")
+}
+
+fn merged(
+    original: &IndexMap<String, String>,
+    derived: &IndexMap<String, String>,
+    owner: Option<&BedrockRequestPolicy>,
+    params: &Params,
+) -> String {
+    let guardrail: Vec<(String, String)> = derived.clone().into_iter().collect();
+    rendered(&merge_invoke_headers(original, &guardrail, owner, params).unwrap())
 }
 
 #[rstest]
@@ -83,20 +97,21 @@ fn request_metadata_owner() {
     assert_eq!((policy(&[]), repeated), (None, distinct));
     assert_eq!(policy(&["nonsense"]).unwrap().resolve(&params, None), None);
     let owners = [policy(&["nonsense"]), policy(&[""]), None];
-    let merged = owners.map(|owner| merge_invoke_headers(&spoofed, &[], owner.as_ref(), &params));
-    assert_eq!(merged, [Vec::new(), Vec::new(), spoofed]);
+    let outcomes = owners.map(|owner| merged(&spoofed, &headers(&[]), owner.as_ref(), &params));
+    let empty = rendered(&headers(&[]));
+    assert_eq!(outcomes, [empty.clone(), empty, rendered(&spoofed)]);
 }
 
 fn request_metadata_size_characters() {
     let long = "k".repeat(257);
     let longest = "k".repeat(256);
-    let many: Vec<(String, RequestValue)> = (0_u8..17)
+    let many: Params = (0_u8..17)
         .map(|index| (format!("k{index}"), text("v")))
         .collect();
     let inputs = [
         text("a"),
         RequestValue::Mapping(many.clone()),
-        RequestValue::Mapping(many[..16].to_vec()),
+        RequestValue::Mapping(many.into_iter().take(16).collect()),
         mapping(&[("ok", text("v")), ("", raw("1"))]),
         mapping(&[("", text("v"))]),
         mapping(&[(&long, text("v"))]),
@@ -125,7 +140,7 @@ fn request_metadata_size_characters() {
         Err(BedrockError::MetadataKeyCharacters { key: key("bad!") }),
         Err(BedrockError::MetadataValueCharacters { key: key("k") }),
     ];
-    assert_eq!(outcomes, expected);
+    assert_eq!(rendered(&outcomes), rendered(&expected));
     errors_are_bad_requests(&outcomes);
     resolver_drops_invalid_pairs(&long);
 }
@@ -148,7 +163,7 @@ fn resolver_drops_invalid_pairs(long: &str) {
         (long, text("v")),
         ("long", text(long)),
     ]);
-    let resolved = policy(&["x"]).and_then(|owner| owner.resolve(&[], Some(&caller)));
+    let resolved = policy(&["x"]).and_then(|owner| owner.resolve(&Params::new(), Some(&caller)));
     assert_eq!(resolved, Some(headers(&[("ok", "v")])));
 }
 
@@ -163,18 +178,19 @@ fn unowned_user_metadata() {
         ("X-OTHER", ""),
         ("x-amzn-bedrock-guardrailIdentifier", "id"),
     ];
-    assert_eq!(merge_invoke_headers(&original, &[], None, &[]), original);
-    assert_eq!(
-        merge_invoke_headers(&original, &guardrail, None, &[]),
-        headers(&filled)
-    );
+    let none = Params::new();
+    let unchanged = merged(&original, &headers(&[]), None, &none);
+    assert_eq!(unchanged, rendered(&original));
+    let guarded = merged(&original, &guardrail, None, &none);
+    assert_eq!(guarded, rendered(&headers(&filled)));
     let owner = policy(&["user_api_key_hash"]);
     let params = metadata(&[("user_api_key_hash", text("h"))]);
     let json = "{\"user_api_key_hash\":\"h\"}";
-    let spoofed = headers(&[("x-amzn-bedrock-request-metadata", "a"), ("Accept", "json")]);
+    let mut spoofed = headers(&[("x-amzn-bedrock-request-metadata", "a"), ("Accept", "json")]);
     let proxy_named = headers(&[(REQUEST_METADATA_HEADER, "g"), ("X-Extra", "e")]);
-    let evicted = merge_invoke_headers(&spoofed, &proxy_named, owner.as_ref(), &params);
-    let overridden = merge_invoke_headers(&spoofed[1..], &proxy_named, owner.as_ref(), &params);
+    let evicted = merged(&spoofed, &proxy_named, owner.as_ref(), &params);
+    spoofed.shift_remove_index(0);
+    let overridden = merged(&spoofed, &proxy_named, owner.as_ref(), &params);
     let evicted_expected = [
         ("Accept", "json"),
         ("X-Extra", "e"),
@@ -185,8 +201,8 @@ fn unowned_user_metadata() {
         (REQUEST_METADATA_HEADER, json),
         ("X-Extra", "e"),
     ];
-    assert_eq!(evicted, headers(&evicted_expected));
-    assert_eq!(overridden, headers(&overridden_expected));
+    assert_eq!(evicted, rendered(&headers(&evicted_expected)));
+    assert_eq!(overridden, rendered(&headers(&overridden_expected)));
 }
 
 fn auth_alias_mapping() {
@@ -199,7 +215,7 @@ fn auth_alias_mapping() {
     map_auth_aliases(&non_default, &mut optional);
     let expected = entries(&[("aws_region_name", text("eu-west-1")), ("keep", raw("1"))]);
     assert_eq!(rendered(&optional), rendered(&expected));
-    let mut empty = Vec::new();
+    let mut empty = Params::new();
     map_auth_aliases(&entries(&[("region_name", raw("null"))]), &mut empty);
     assert_eq!(
         rendered(&empty),
@@ -225,18 +241,15 @@ fn one_response_iterator() {
 }
 
 fn owned_empty_removes_spoofed_header() {
-    let owner = policy(&["user_api_key_alias", "user_api_key_hash"]);
+    let owner = policy(&["user_api_key_alias", "user_api_key_hash"]).unwrap();
     let spoofed = headers(&[
         (REQUEST_METADATA_HEADER, "spoof"),
         ("x-amzn-bedroc\u{212a}-request-metadata", "kelvin"),
         ("Host", "h"),
     ]);
-    assert_eq!(
-        owner.as_ref().and_then(|owned| owned.metadata_header(&[])),
-        None
-    );
-    let emptied = merge_invoke_headers(&spoofed, &[], owner.as_ref(), &[]);
-    assert_eq!(emptied, headers(&[("Host", "h")]));
+    assert_eq!(owner.metadata_header(&Params::new()).unwrap(), None);
+    let emptied = merged(&spoofed, &headers(&[]), Some(&owner), &Params::new());
+    assert_eq!(emptied, rendered(&headers(&[("Host", "h")])));
     let hash = text("h\u{3000}1\t\u{b}\u{85}");
     let params = metadata(&[
         ("user_api_key_hash", hash),
@@ -244,15 +257,11 @@ fn owned_empty_removes_spoofed_header() {
     ]);
     let json =
         "{\"user_api_key_alias\":\"team/a\",\"user_api_key_hash\":\"h\\u30001\\t\\u000b\\u0085\"}";
-    let header = owner
-        .as_ref()
-        .and_then(|owned| owned.metadata_header(&params));
+    let header = owner.metadata_header(&params).unwrap();
     assert_eq!(header.as_deref(), Some(json));
-    let replaced = merge_invoke_headers(&spoofed, &[], owner.as_ref(), &params);
-    assert_eq!(
-        replaced,
-        headers(&[("Host", "h"), (REQUEST_METADATA_HEADER, json)])
-    );
+    let replaced = merged(&spoofed, &headers(&[]), Some(&owner), &params);
+    let expected = headers(&[("Host", "h"), (REQUEST_METADATA_HEADER, json)]);
+    assert_eq!(replaced, rendered(&expected));
 }
 
 fn identity_before_client_budget() {
@@ -278,14 +287,12 @@ fn identity_before_client_budget() {
         ("User_api_key_y", "ok"),
         ("c", "3"),
     ];
-    assert_eq!(
-        owner.resolve(&params, Some(&caller)),
-        Some(headers(&expected))
-    );
+    let resolved = owner.resolve(&params, Some(&caller));
+    assert_eq!(rendered(&resolved), rendered(&Some(headers(&expected))));
     budget_caps(&owner, &params, &caller);
 }
 
-fn identity_params() -> Vec<(String, RequestValue)> {
+fn identity_params() -> Params {
     let spend = mapping(&[
         ("a", text("spend")),
         ("user_api_key_x", text("spoof")),
@@ -305,24 +312,17 @@ fn identity_params() -> Vec<(String, RequestValue)> {
     entries(&[("metadata", first), ("litellm_metadata", second)])
 }
 
-fn budget_caps(
-    owner: &BedrockRequestPolicy,
-    params: &[(String, RequestValue)],
-    caller: &RequestValue,
-) {
+fn budget_caps(owner: &BedrockRequestPolicy, params: &Params, caller: &RequestValue) {
     let crowded = RequestValue::Mapping(
         (0_u8..20)
             .map(|index| (format!("k{index:02}"), text("v")))
             .collect(),
     );
     let budgeted = owner.resolve(params, Some(&crowded)).unwrap();
+    let key = |index: usize| budgeted.get_index(index).map(|(name, _)| name.as_str());
     assert_eq!(
-        (
-            budgeted.len(),
-            budgeted[2].0.as_str(),
-            budgeted[15].0.as_str()
-        ),
-        (16, "k00", "k13")
+        (budgeted.len(), key(2), key(15)),
+        (16, Some("k00"), Some("k13"))
     );
     let many: Vec<String> = (0_u8..17)
         .map(|index| format!("user_api_key_f{index:02}"))
@@ -334,12 +334,13 @@ fn budget_caps(
     );
     let capped = BedrockRequestPolicy::from_fields(&many)
         .unwrap()
-        .resolve(&[("metadata".to_owned(), identities)], Some(caller))
+        .resolve(
+            &Params::from([("metadata".to_owned(), identities)]),
+            Some(caller),
+        )
         .unwrap();
-    assert_eq!(
-        (capped.len(), capped[15].0.as_str()),
-        (16, "user_api_key_f15")
-    );
+    let last = capped.get_index(15).map(|(name, _)| name.as_str());
+    assert_eq!((capped.len(), last), (16, Some("user_api_key_f15")));
     assert_eq!(
         owner.resolve(&entries(&[("metadata", text("user_api_key_hash"))]), None),
         None
@@ -379,8 +380,8 @@ fn deployment_auth_merge() {
         ("aws_region_name", text("")),
     ]);
     let mut kept = request.clone();
-    kept[2].1 = text("");
-    kept.push(("aws_access_key_id".to_owned(), text("AKIA_DEPLOY")));
+    kept.insert("aws_region_name".to_owned(), text(""));
+    kept.insert("aws_access_key_id".to_owned(), text("AKIA_DEPLOY"));
     assert_eq!(
         rendered(&merge_aws_request_params(&incomplete, &request)),
         rendered(&kept)
@@ -403,18 +404,12 @@ fn bedrock_request_policy_credential_identity_isolation() {
     ]);
     let first = merge_aws_request_params(&deployment("AKIA_FIRST"), &request);
     let second = merge_aws_request_params(&deployment("AKIA_SECOND"), &request);
-    let access_key = |params: &[(String, RequestValue)]| match params.first() {
+    let access_key = |params: &Params| match params.first() {
         Some((_, RequestValue::Secret(key))) => Some(key.expose_secret().to_owned()),
         _ => None,
     };
-    let keys = (access_key(&first), access_key(&second));
-    assert_eq!(
-        keys,
-        (
-            Some("AKIA_FIRST".to_owned()),
-            Some("AKIA_SECOND".to_owned())
-        )
-    );
+    let expected_keys = ["AKIA_FIRST", "AKIA_SECOND"].map(|key| Some(key.to_owned()));
+    assert_eq!([access_key(&first), access_key(&second)], expected_keys);
     assert!(
         !first
             .iter()
@@ -422,8 +417,10 @@ fn bedrock_request_policy_credential_identity_isolation() {
             .any(|(name, _)| name == "aws_profile_name")
     );
     let owner = policy(&["user_api_key_hash"]).unwrap();
-    let header =
-        |hash: &str| owner.metadata_header(&metadata(&[("user_api_key_hash", text(hash))]));
+    let header = |hash: &str| {
+        let params = metadata(&[("user_api_key_hash", text(hash))]);
+        owner.metadata_header(&params).unwrap()
+    };
     let expected = (
         Some(r#"{"user_api_key_hash":"first"}"#.to_owned()),
         Some(r#"{"user_api_key_hash":"second"}"#.to_owned()),
@@ -438,16 +435,11 @@ fn bedrock_request_policy_secret_safe_failure() {
         ("aws_secret_access_key", secret("fixture-secret-value")),
         ("aws_region_name", text("us-east-1")),
     ]);
-    let merged = rendered(&merge_aws_request_params(&deployment, &[]));
+    let merged = rendered(&merge_aws_request_params(&deployment, &Params::new()));
     assert!(merged.contains("aws_secret_access_key"));
     assert!(!merged.contains("fixture-secret-value") && !merged.contains("AKIA_FIXTURE"));
     let invalid = mapping(&[("token", text("fixture-secret-value!"))]);
     let error = validate_request_metadata(&invalid).unwrap_err();
-    assert_eq!(
-        error,
-        BedrockError::MetadataValueCharacters {
-            key: "token".to_owned()
-        }
-    );
+    assert!(matches!(&error, BedrockError::MetadataValueCharacters { key } if key == "token"));
     assert!(!format!("{error} {error:?}").contains("fixture-secret-value"));
 }
