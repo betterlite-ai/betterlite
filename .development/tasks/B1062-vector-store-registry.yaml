@@ -1,245 +1,119 @@
 id: B1062
-title: Vector store registry
+title: Vector-store and index registry state
 description: >-
-  Load/update typed vector store and index registry snapshots from B002 config and B726 typed repositories, recording
-  config-owned versus database-owned entries. Extract recognized tool parameters and return secret-bearing credentials
-  only to trusted execution; use injected immutable snapshots rather than module globals. Load top-level vector_store_registry
-  list and database-backed vector_store_indexes records using their pinned field records and os.environ/ credential
-  references, defaulting to empty lists.
+  Implement registry storage/lookup in core::api::vector_store_registry with ordered records, B726
+  repositories, B858 database rows, B061 credential lookup and B1131 wire types. Own index constructor,
+  list/name lookup/upsert/is-index/database loading; store constructor, _extract_tool_params,
+  get_vector_store_ids_to_run, id lookup with optional database fallback, _get_vector_store_ids_from_tool_calls,
+  config loading, is_config, add/delete/update, database loading and get_credentials_for_vector_store.
+  B1063 owns consuming selection, name lookup and tool removal. There is no callback from this layer into it.
 
-
-  Registry selection traversals live in B1063 above this registry storage API; get_and_pop_recognised_vector_store_tools
-  and get_vector_store_to_run are not callbacks from the registry into its caller.
-
-
-  VectorStoreIndexRegistry.delete_vector_store_index (litellm/vector_stores/vector_store_registry.py:L65-L69) has
-  no MIT runtime caller at the pin (only its declaration; tests are not runtime callers); it is excluded, and no
-  behavior case exercises that unused entry point.
-
-
-  VectorStoreRegistry.list_all_vector_stores (litellm/vector_stores/vector_store_registry.py:L438-L454) has no MIT
-  runtime caller at the pin (only its declaration; tests are not runtime callers); it is excluded, and no behavior
-  case exercises that unused entry point.
-
-
-  Implement crates/betterlite-core/src/api/vector_store_registry.rs. Use VectorStoreRegistryInput and VectorStoreRegistryResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions config_registry_load, database_registry_fallback, config_owned_mark,
-  index_upsert, recognized_vector_tool under api::vector_store_registry::tests. Each named function drives production
-  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
-  replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): vector_store_registry
-  defaults to None or configured vector-store records; environment-backed credentials stay secret. No environment
-  reads occur outside betterlite-config. Test api::vector_store_registry::tests::loads_settings uses the production
-  Config loader and an injected environment map, with a named rstest case for every key above, explicit override,
-  unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent from the unsupported-key
-  report; a grep is not proof of support. Add new config_yaml seeds for these keys and replay B002's existing decoder
-  rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::VectorStoreRegistry in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_store_registry: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/vector_stores/vector_store_registry.py: VectorStoreIndexRegistry.__init__ (L35-L36);
-  litellm/vector_stores/vector_store_registry.py: VectorStoreIndexRegistry.get_vector_store_indexes (L38-L42); litellm/vector_stores/vector_store_registry.py:
-  VectorStoreIndexRegistry.get_vector_store_index_by_name (L44-L51); litellm/vector_stores/vector_store_registry.py:
-  VectorStoreIndexRegistry.upsert_vector_store_index (L53-L63); litellm/vector_stores/vector_store_registry.py:
-  VectorStoreIndexRegistry.is_vector_store_index (L71-L78); litellm/vector_stores/vector_store_registry.py: VectorStoreIndexRegistry._get_vector_store_indexes_from_db
-  (L85-L100); litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry.__init__ (L104-L106); litellm/vector_stores/vector_store_registry.py:
-  VectorStoreRegistry._extract_tool_params (L108-L121); litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry.get_vector_store_ids_to_run
-  (L123-L139); litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry.get_litellm_managed_vector_store_from_registry
-  (L215-L222); litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry.get_litellm_managed_vector_store_from_registry_or_db
-  (L224-L248); litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry._get_vector_store_ids_from_tool_calls
-  (L387-L397); litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry.load_vector_stores_from_config
-  (L399-L436); litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry.is_config_vector_store (L456-L458);
-  litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry.add_vector_store_to_registry (L460-L470);
-  litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry.delete_vector_store_from_registry (L472-L480);
-  litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry.update_vector_store_in_registry (L482-L489);
-  litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry._get_vector_stores_from_db (L496-L511); litellm/vector_stores/vector_store_registry.py:
-  VectorStoreRegistry.get_credentials_for_vector_store (L513-L526). Abstract/protocol declarations map to native
-  types and synchronous/async wrappers share one implementation; a partial function span is the explicit preparation/transition
-  stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 154 owned nonblank/non-comment/non-docstring Python lines (206 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 174 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 457 total within the 460-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B002 (Load LiteLLM config.yaml into typed config), B061 (Stored credentials and their
-  encryption), B171 (Direct helper oracle and URL path encoding), B1058 (Vector store contracts), B1087 (Api boundaries),
-  B726 (Managed resources and transaction repositories), B858 (Typed managed-resource and analytics rows). These
-  are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on
-  the provider and keys/data branches.
+  Load top-level vector_store_registry through Config; omission means no configured registry and an empty
+  list loads no entries. Store records default to empty ordered lists. Inject a clock for the two UTC
+  timestamps and repositories/accessor for deterministic native tests. Helpers compare these state transitions
+  with scripted repository answers, never invoke FastAPI globals or a provider. Add vector_store_registry
+  to B171 and config YAML corpus seeds. No new JSON parser is needed: json.dumps in the source is logging,
+  not input decoding. Excluded unused methods are named below. Owned spans contain 206 nonblank/non-comment
+  lines; budget 210 code, 190 tests, 100 adapters, 110 fixtures and 65 config/corpus/wiring, 675 under 720.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/vector_store_registry.rs
   - crates/betterlite-core/src/api/vector_store_registry/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/vector_store_registry.rs
   - crates/betterlite-config/src/api/vector_store_registry/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-registry-*
-  - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/vector_store_registry.rs
-  - tools/oracle/src/helpers/vector_store_registry/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/vector_store_registry.py
-  - tools/oracle/helpers/vector_store_registry/**
-  - tools/oracle/fuzz/corpus/helper_case/vector_store_registry-*
   - tools/oracle/cases/helpers/vector-store-registry/**
+  - tools/oracle/fuzz/corpus/helper_case/vector_store_registry-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L399-L436
-  why: Setting vector_store_registry and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L35-L64
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L70-L140
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L189-L189
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L214-L248
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L387-L397
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L399-L437
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L455-L526
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1196-L1212
-  why: Shared dependency/call-site context; ownership is only the callable list above.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1416-L1425
-  why: Shared dependency/call-site context; ownership is only the callable list above.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L35-L140
+  why: Index order/upsert, registry initialization, tool parameter extraction and stable id deduplication; exclude the unused index delete method.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L215-L248
+  why: Registry-first lookup caches a database hit and swallows database errors at debug level.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L387-L436
+  why: Tool ids are appended without a tool-type check; config records require non-null ids/providers and are appended without deduplication.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L456-L526
+  why: Config-owned update protection, deletion semantics, descending database reads and named-credential lookup.
 dod:
-- text: 'config registry load: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-config-registry-load
-  - oracle
-- text: 'database registry fallback: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-database-registry-fallback
-  - oracle
-- text: 'config owned mark: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-config-owned-mark
-  - oracle
-- text: 'index upsert: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-index-upsert
-  - oracle
-- text: 'recognized vector tool: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-recognized-vector-tool
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    registry_config_records loads vector_store_registry=[{vector_store_name:notes,litellm_params:{vector_store_id:vs_a,
+    custom_llm_provider:openai,vector_store_description:d,vector_store_metadata:{tag:x}}}]. Expect one record
+    preserving those params, name/description/metadata, is_config=true and two injected UTC timestamps.
+    No name yields null; null litellm_params becomes {} and fails missing id. Missing/null id raises
+    ValueError("vector_store_id is required for initializing vector store, got vector_store_id=None");
+    missing/null provider raises ValueError("custom_llm_provider is required for initializing vector store, got custom_llm_provider=None").
+    Empty strings are accepted. Duplicate config ids append twice; an invalid later entry leaves earlier
+    entries appended. loads_registry_config verifies these inputs with the production config loader.
+  proof: [registry-tests, config-tests, oracle, helper-python, corpora]
+- text: >-
+    ordered_registry_mutations starts [vs_a,vs_b]. add vs_a with changed fields keeps the first record;
+    add vs_c appends. update vs_b replaces its entire record, not a merge; is_config=true prevents that
+    replacement. Updating a missing id appends even if updated_data has a different id. Delete vs_a removes
+    every matching entry, including config-owned entries. is_config returns false for missing ids/default
+    flags. Index upsert matches index_name, replaces the first match in place or appends; lookup returns
+    the first matching name and is-index is false for a miss. Default registries have empty contents.
+  proof: [registry-tests, oracle, helper-python]
+- text: >-
+    registry_database_fallback finds memory vs_a without a repository call. A missing id with no database
+    returns null. With a database it calls find_many(order={created_at:desc}), selects the first matching
+    id, caches it and returns it. A miss returns null; lookup failure logs "Error fetching vector store from database: %s"
+    and returns null. Direct store/index database-load methods return [] without a client, preserve row
+    order and propagate repository/model-conversion errors; only the fallback wrapper catches them.
+  proof: [registry-tests, oracle, helper-python]
+- text: >-
+    registry_id_and_tool_params sends non_default vector_store_ids=[vs_b,vs_a,vs_b] and tools with ids=[vs_c,vs_a].
+    Expect [vs_b,vs_a,vs_c] with no removal or mutation of params/tools. A non-list top-level ids value is
+    ignored; tool type is not checked. Tool params filters={},max_num_results=0,ranking_options={} survive,
+    missing values default null. A tool carrying rewrite_query=false raises TypeError because that recognized
+    name is absent from VectorStoreToolParams's constructor; do not quietly drop it.
+  proof: [registry-tests, oracle, helper-python]
+- text: >-
+    registry_named_credentials uses a matching store with litellm_credential_name=cred and accessor result
+    {api_key:secret}. Return that map; missing id or falsey credential name returns {} and skips the accessor.
+    A missing named credential gives {}. Inline litellm_params.api_key is not returned by this function.
+    Lookup exceptions propagate to B1111, which owns their silent fallback. Native Debug and diagnostics
+    redact credentials; see the explicit diagnostic deviation below.
+  proof: [registry-tests, oracle, helper-python]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::vector_store_registry::/)
-      - test(/::replays_corpus$/)'
-  - id: case-config-registry-load
-    why: the config-registry-load behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_registry::tests::config_registry_load($|::)/)'
-  - id: case-database-registry-fallback
-    why: the database-registry-fallback behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_registry::tests::database_registry_fallback($|::)/)'
-  - id: case-config-owned-mark
-    why: the config-owned-mark behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_registry::tests::config_owned_mark($|::)/)'
-  - id: case-index-upsert
-    why: the index-upsert behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_registry::tests::index_upsert($|::)/)'
-  - id: case-recognized-vector-tool
-    why: the recognized-vector-tool behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_registry::tests::recognized_vector_tool($|::)/)'
+  - id: registry-tests
+    why: registry ordering, database fallback or config ownership changes
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_registry::tests::/) - test(/::replays_corpus$/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_store_registry::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-registry-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    why: registry entries are declared but not loaded through Config
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_store_registry::tests::loads_registry_config($|::)/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/vector_store_registry.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_store_registry-*)"
-      && grep -qE "^[[:space:]]+vector_store_registry:" tools/oracle/fuzz/corpus/helper_case/vector_store_registry-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-store-registry)"
+    why: registry state transitions lack an independent pinned comparison
+    run: test -f tools/oracle/helpers/vector_store_registry.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: corpora
+    why: registry configuration and helper inputs have no added replay seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_store_registry-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-registry-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/vector-store-registry/config-registry-load.yaml
-- tools/oracle/cases/helpers/vector-store-registry/database-registry-fallback.yaml
-- tools/oracle/cases/helpers/vector-store-registry/config-owned-mark.yaml
-- tools/oracle/cases/helpers/vector-store-registry/index-upsert.yaml
-- tools/oracle/cases/helpers/vector-store-registry/recognized-vector-tool.yaml
-deviations: []
+- tools/oracle/cases/helpers/vector-store-registry/registry-config-records.yaml
+- tools/oracle/cases/helpers/vector-store-registry/ordered-registry-mutations.yaml
+- tools/oracle/cases/helpers/vector-store-registry/registry-database-fallback.yaml
+- tools/oracle/cases/helpers/vector-store-registry/registry-id-and-tool-params.yaml
+- tools/oracle/cases/helpers/vector-store-registry/registry-named-credentials.yaml
+deviations:
+- what: The debug diagnostic "all loaded vector stores = %s" redacts credential values rather than serializing raw api_key fields from litellm_params.
+  why: Repository secret-redaction rules forbid exposing credential material in logs; registry selection and returned execution credentials are unchanged.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L433-L436
 out_of_scope:
-- 'litellm/vector_stores/vector_store_registry.py: VectorStoreIndexRegistry.delete_vector_store_index L65-L69, VectorStoreRegistry.pop_vector_stores_to_run
-  L261-L301, VectorStoreRegistry.list_all_vector_stores L438-L454 are out of scope: no MIT runtime caller at the
-  pin; unused entry point is not rebuilt.'
-- 'litellm/vector_stores/vector_store_registry.py: B1063 owns VectorStoreRegistry.get_and_pop_recognised_vector_store_tools
-  L141-L188, VectorStoreRegistry.get_vector_store_to_run L190-L213, VectorStoreRegistry.get_litellm_managed_vector_store_from_registry_by_name
-  L250-L259, VectorStoreRegistry.pop_vector_stores_to_run_with_db_fallback L303-L385.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1063 owns get_and_pop_recognised_vector_store_tools,get_vector_store_to_run,get_litellm_managed_vector_store_from_registry_by_name,pop_vector_stores_to_run_with_db_fallback.
+- delete_vector_store_index,list_all_vector_stores and pop_vector_stores_to_run have no caller at the pin; do not build or test these unused entry points.
+- B061 owns credential resolution; B726/B858 own repository schema/rows. This registry layer performs no store permission check.
 pitfalls:
-- 'vector_store_registry.py:246 emits the diagnostic ''Error fetching vector store from database: %s''; retain its
-  level and fallback instead of turning it into a hard error.'
-- vector_store_registry.py:433 emits the diagnostic 'all loaded vector stores = %s'; retain its level and fallback
-  instead of turning it into a hard error.
+- Config loading appends incrementally and does not roll back earlier records when a later one is invalid.
+- Registry updates preserve config-owned entries, but registry deletion itself does not protect them.
+- rewrite_query is in the advertised search parameter list but is not accepted by VectorStoreToolParams.
 review_level: security
 budget:
-  max_changed_lines: 460
-  max_new_expects: 1
+  max_changed_lines: 720
+  max_new_expects: 0

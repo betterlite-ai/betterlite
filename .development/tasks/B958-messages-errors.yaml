@@ -1,231 +1,129 @@
 id: B958
-title: Messages errors
+title: Messages error envelopes and wire records
 description: >-
-  Define native Anthropic request/response/error records and error conversion over B184/B011. Preserve Anthropic
-  error.type/status, nested error extraction and single-frame SSE formatting; reuse existing betterlite-anthropic
-  content blocks instead of creating incompatible copies.
+  Implement AnthropicExceptionMapping and AnthropicErrorSseFrame in betterlite-anthropic::api::messages_errors.
+  Own the complete live functions in exception_mapping_utils.py, the exported exception records, AnthropicMetadata
+  and anthropic_response.py records. Reuse B184's shared provider taxonomy without depending on core. The wire
+  representation must retain unknown provider fields and distinguish omitted fields from null; TypedDict annotations
+  do not validate incoming Anthropic-shaped dictionaries at runtime.
 
+  decode_messages_errors(bytes, WireDecodeLimits) parses bounded JSON error/response records at the wire boundary;
+  WireDecodeLimits contains max_json_bytes, max_event_bytes and max_items. The transform operation also accepts raw
+  provider message text and uses the same bounded JSON machinery, falling back to the original text on malformed
+  JSON or a non-object. Its fuzz target and replays_corpus test cover both inputs with a leading selector byte.
+  No HTTP response is manufactured by these helpers: callers choose the status, and the error body has no added
+  param or code fields. B081 owns HTTP headers and status integration.
 
-  Put Anthropic wire records in betterlite-anthropic (the existing provider wire crate), retaining open-string passthrough
-  error.type and extra keys. nested-provider-message and anthropic-passthrough compare /error/message because extraction
-  itself is under test; do not ignore it.
+  Register HelperCall::MessagesErrors with actions transform, frame and wire_roundtrip, in both helper dispatchers.
+  Python calls the pinned live methods, including frame.json_body; the native adapter calls the production wire
+  module. Compare extracted messages exactly because extraction is this task's behavior. The status and request-id
+  tables below use rstest names for each input. There are no environment variables or config defaults here.
 
-
-  Provider behavior comes through B010 prepared operation/capability values; no provider umbrella is a scheduling
-  dependency.
-
-
-  AnthropicExceptionMapping.extract_error_message (litellm/anthropic_interface/exceptions/exception_mapping_utils.py:L72-L89)
-  has no MIT runtime caller at the pin (only its declaration; tests are not runtime callers); it is excluded, and
-  no behavior case exercises that unused entry point.
-
-
-  nested-provider-message and anthropic-passthrough call transform_to_anthropic_error, whose live _extract_message_from_dict
-  branch supplies message extraction; the unused extract_error_message wrapper is excluded.
-
-
-  Implement crates/betterlite-anthropic/src/api/messages_errors.rs. Use MessagesErrorsInput and MessagesErrorsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions authentication_error_envelope, rate_limit_error_envelope, nested_provider_message,
-  sse_error_single_frame, response_stop_details, anthropic_passthrough under api::messages_errors::tests. Each named
-  function drives production code and asserts its case result; use named rstest inputs for related values. Corpus
-  replay has the separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-anthropic::api::messages_errors::decode_messages_errors(bytes:
-  &[u8], limits: &WireDecodeLimits), for bounded external JSON bytes into the domain wire records. Place its implementation
-  in crates/betterlite-anthropic/src/api/messages_errors.rs and call it from the actual boundary. The cargo-fuzz
-  target crates/betterlite-anthropic/fuzz/fuzz_targets/messages_errors.rs passes arbitrary bounded bytes to that
-  exact decoder; api::messages_errors::tests::replays_corpus replays newly committed seeds through the same function.
-  Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::MessagesErrors in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_errors: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/anthropic_interface/exceptions/exception_mapping_utils.py: AnthropicExceptionMapping.get_error_type
-  (L36-L38); litellm/anthropic_interface/exceptions/exception_mapping_utils.py: AnthropicExceptionMapping.create_error_response
-  (L41-L69); litellm/anthropic_interface/exceptions/exception_mapping_utils.py: AnthropicExceptionMapping._is_anthropic_error_dict
-  (L92-L107); litellm/anthropic_interface/exceptions/exception_mapping_utils.py: AnthropicExceptionMapping._extract_message_from_dict
-  (L110-L123); litellm/anthropic_interface/exceptions/exception_mapping_utils.py: AnthropicExceptionMapping.transform_to_anthropic_error
-  (L126-L169); litellm/anthropic_interface/exceptions/exception_mapping_utils.py: AnthropicErrorSseFrame.__new__
-  (L184-L188); litellm/anthropic_interface/exceptions/exception_mapping_utils.py: AnthropicErrorSseFrame.json_body
-  (L190-L195); litellm/anthropic_interface/exceptions/exception_mapping_utils.py: anthropic_error_sse_frame (L198-L202).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 200 owned nonblank/non-comment/non-docstring Python lines (285 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 220 implementation,
-  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 548 total within the 550-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B011 (Exception types and provider error mapping), B171 (Direct helper oracle and URL
-  path encoding), B184 (Shared provider error taxonomy), B1087 (Api boundaries). These are callable/type/config
-  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
-  branches.
-
-
-  Place wire DTOs and their decoder in the named wire leaf crate; provider contracts depend only on leaf records,
-  and core composes them above betterlite-provider. Do not add a wire/provider dependency on betterlite-core to
-  share an Input/Result type. Wire decoders accept a local limits value converted by the core boundary from ApiLimits.
-
-
-  WireDecodeLimits is the leaf record { max_json_bytes: usize, max_event_bytes: usize, max_items: usize }; callers
-  convert B1087 limits into it. This record has no dependency on the core crate.
+  The linked owned ranges contain 276 nonblank/non-comment physical lines including type annotations and docstrings.
+  Allow 220 implementation, 150 tests, 110 fixtures, 95 adapters, 65 fuzz/replay and 30 wiring lines, 670 total.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
   - crates/betterlite-anthropic/src/lib.rs
-  - crates/betterlite-anthropic/src/error.rs
+  - crates/betterlite-anthropic/src/api.rs
   - crates/betterlite-anthropic/src/api/messages_errors.rs
   - crates/betterlite-anthropic/src/api/messages_errors/**
-  - crates/betterlite-anthropic/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - crates/betterlite-anthropic/fuzz/Cargo.toml
   - crates/betterlite-anthropic/fuzz/fuzz_targets/messages_errors.rs
   - crates/betterlite-anthropic/fuzz/corpus/messages_errors/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/messages_errors.rs
-  - tools/oracle/src/helpers/messages_errors/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/messages_errors.py
-  - tools/oracle/helpers/messages_errors/**
   - tools/oracle/fuzz/corpus/helper_case/messages_errors-*
   - tools/oracle/cases/helpers/messages-errors/**
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exception_mapping_utils.py#L1-L71
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exception_mapping_utils.py#L90-L202
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exception_mapping_utils.py#L14-L69
+  why: Own the eight status mappings, api_error fallback and truthy request_id insertion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exception_mapping_utils.py#L91-L202
+  why: Own provider-message extraction, Anthropic passthrough and a status-bearing single SSE frame.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exceptions.py#L1-L45
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Error detail includes optional provider_specific_fields and litellm_call_id, without param or code defaults.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/__init__.py#L1-L23
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: These public exports refer to the same error records and frame implementation.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic_messages/anthropic_request.py#L1-L11
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: AnthropicMetadata has one optional user_id field whose default is null.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic_messages/anthropic_response.py#L1-L107
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Own response content variants, optional usage counters, refusal details, compaction and safeguard fields.
 dod:
-- text: 'authentication error envelope: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-authentication-error-envelope
-  - oracle
-- text: 'rate limit error envelope: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-rate-limit-error-envelope
-  - oracle
-- text: 'nested provider message: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-nested-provider-message
-  - oracle
-- text: 'sse error single frame: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-sse-error-single-frame
-  - oracle
-- text: 'response stop details: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-response-stop-details
-  - oracle
-- text: 'anthropic passthrough: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-anthropic-passthrough
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    status_error_types transforms raw_message=broken with statuses 400,401,403,404,413,429,500,529,418 into
+    type=error and error.type respectively invalid_request_error,authentication_error,permission_error,not_found_error,
+    request_too_large,rate_limit_error,api_error,overloaded_error,api_error; error.message=broken and no param/code.
+    request_id=null or empty omits request_id; req_a includes request_id=req_a.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    provider_message_precedence sends detail.message=inner with Message=aws/message=generic and gets inner;
+    detail={} preserves the entire raw JSON string even if Message exists. Without a dict detail, Message=aws wins
+    over message=generic; empty Message falls through to generic; both empty retain the raw string. detail.message=null
+    stays null. Inputs [1], null, "quoted", and malformed { all become their literal raw strings.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    anthropic_error_passthrough sends type=error,error={type:vendor_error,message:bad,code:provider},extra=7 at status=401.
+    The returned dict is unchanged except an absent request_id receives req_new. Existing request_id=null or req_old
+    is never overwritten. Missing inner type, missing message, error=[] and top-level type=other fail passthrough
+    and become authentication_error with the complete raw JSON message; an inner type=null still passes the key test.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    status_bearing_error_frame constructs status=429/raw_message=slow and emits exactly one event named error,
+    data={type:error,error:{type:rate_limit_error,message:slow}} and a blank terminator. The frame retains status=429.
+    json_body(null) preserves it; json_body(call_a) adds error.litellm_call_id=call_a without modifying the original
+    frame or body. An empty string call id is inserted too, because only null disables this operation.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    response_optional_fields roundtrips an assistant message with text/citations, tool_use id/input/name, thinking
+    signature, redacted_thinking data and compaction blocks; stop_reason covers end_turn,max_tokens,stop_sequence,
+    tool_use,refusal,compaction,null. Preserve stop_details, context_management, safeguard_results, usage.iterations,
+    server_tool_use and both cache counters without inventing absent fields. Metadata {} defaults user_id to null;
+    metadata {user_id:alice,extra:7} retains only user_id=alice through the pinned Pydantic model.
+  proof: [behavior-tests, oracle, helper-python]
+- text: Raw-message and wire JSON limits reject oversized input before allocation, and the production decoder replays new malformed UTF-8/JSON seeds.
+  proof: [parser-corpus, behavior-tests]
+- text: Both helper implementations execute the newly registered messages_errors tag and compare real transformation results.
+  proof: [helper-corpus, new-oracle-cases, oracle, helper-python]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^api::messages_errors::/)
-      - test(/::replays_corpus$/)'
-  - id: case-authentication-error-envelope
-    why: the authentication-error-envelope behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^api::messages_errors::tests::authentication_error_envelope($|::)/)'
-  - id: case-rate-limit-error-envelope
-    why: the rate-limit-error-envelope behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^api::messages_errors::tests::rate_limit_error_envelope($|::)/)'
-  - id: case-nested-provider-message
-    why: the nested-provider-message behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^api::messages_errors::tests::nested_provider_message($|::)/)'
-  - id: case-sse-error-single-frame
-    why: the sse-error-single-frame behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^api::messages_errors::tests::sse_error_single_frame($|::)/)'
-  - id: case-response-stop-details
-    why: the response-stop-details behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^api::messages_errors::tests::response_stop_details($|::)/)'
-  - id: case-anthropic-passthrough
-    why: the anthropic-passthrough behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^api::messages_errors::tests::anthropic_passthrough($|::)/)'
+    why: error mapping, passthrough or wire optionality has no production regression coverage
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^api::messages_errors::/) - test(/::replays_corpus$/)'
   - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/messages_errors)"
-      && test -f crates/betterlite-anthropic/fuzz/fuzz_targets/messages_errors.rs && grep -qF "decode_messages_errors"
-      crates/betterlite-anthropic/fuzz/fuzz_targets/messages_errors.rs && cargo nextest run --locked -p betterlite-anthropic
-      --no-tests=fail -E 'test(/^api::messages_errors::tests::replays_corpus$/)'
+    why: raw provider JSON can bypass the fuzzed decoder
+    run: test -f crates/betterlite-anthropic/fuzz/fuzz_targets/messages_errors.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/messages_errors)" && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^api::messages_errors::tests::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_errors.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: the pinned exception mapper is not independently executable
+    run: test -f tools/oracle/helpers/messages_errors.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_errors-*)"
-      && grep -qE "^[[:space:]]+messages_errors:" tools/oracle/fuzz/corpus/helper_case/messages_errors-* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    why: the messages_errors enum tag is absent from parser replay
+    run: grep -qE '^[[:space:]]+messages_errors:' tools/oracle/fuzz/corpus/helper_case/messages_errors-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: no new error-envelope parity inputs were committed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-errors)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-errors/authentication-error-envelope.yaml
-- tools/oracle/cases/helpers/messages-errors/rate-limit-error-envelope.yaml
-- tools/oracle/cases/helpers/messages-errors/nested-provider-message.yaml
-- tools/oracle/cases/helpers/messages-errors/sse-error-single-frame.yaml
-- tools/oracle/cases/helpers/messages-errors/response-stop-details.yaml
-- tools/oracle/cases/helpers/messages-errors/anthropic-passthrough.yaml
+- tools/oracle/cases/helpers/messages-errors/status-error-types.yaml
+- tools/oracle/cases/helpers/messages-errors/provider-message-precedence.yaml
+- tools/oracle/cases/helpers/messages-errors/anthropic-error-passthrough.yaml
+- tools/oracle/cases/helpers/messages-errors/status-bearing-error-frame.yaml
+- tools/oracle/cases/helpers/messages-errors/response-optional-fields.yaml
 deviations: []
 out_of_scope:
-- 'litellm/anthropic_interface/exceptions/exception_mapping_utils.py: AnthropicExceptionMapping.extract_error_message
-  L72-L89 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- AnthropicExceptionMapping.extract_error_message L72-L89 has no caller at the pin; the live transform uses _extract_message_from_dict instead.
+- B081 owns HTTP error status and headers; B978 owns non-error SSE decoding and response-to-event conversion.
+- B184 owns shared provider exception types; this leaf module does not perform provider exception dispatch.
 pitfalls:
-- An Anthropic-shaped error object passes through unchanged, including an unknown error.type and extra fields.
-- AnthropicExceptionMapping._is_anthropic_error_dict uses parsed.get('type'); retain its missing-value behavior
-  and field spelling in the typed projection.
+- An existing request_id key with null blocks insertion just as a nonempty id does.
+- Presence of inner type/message keys, not their value types, determines whether an Anthropic error passes through.
+- A dict detail without message suppresses the otherwise usable top-level Message field.
 review_level: standard
 budget:
-  max_changed_lines: 550
-  max_new_expects: 1
+  max_changed_lines: 680
+  max_new_expects: 0

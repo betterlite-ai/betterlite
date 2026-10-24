@@ -1,183 +1,124 @@
 id: B930
-title: Responses affinity
+title: Route encrypted Responses history within its credential boundary
 description: >-
-  Expose pure Responses candidate filtering over B368 DeploymentCatalog's authorized deployment view and B303 credential-boundary
-  facts, using response-id-codecs to recognize previous-response and encrypted-content affinity. Compare authorized
-  encryption-boundary identities and strip only reasoning the target cannot decrypt. This is the Responses filter
-  consumed later by B324, not the B324 deployment-affinity hook, so do not depend on B324.
+  Implement responses_affinity in betterlite-router for every EncryptedContentAffinityCheck
+  function,including its nested per-call decryptability cache. Consume an already authorized
+  healthy candidate list and B844's deployment lookup; never revive a filtered origin.
+  B061 resolves named credentials,B903 decodes markers,B904 strips Responses reasoning,
+  and B220 handles Anthropic encrypted signatures. Compare boundaries by effective
+  (api_base,api_key) identity without exposing secrets in diagnostics or helper output.
 
+  Constructor defaults are router=None,enable_global_affinity=true,model_group_affinity_config={}.
+  B324 owns loading/registration for optional_pre_call_checks and model_group_affinity_config,
+  including the encrypted_content_affinity flag; this lower filter receives resolved values
+  and does not depend on its registrar. The deprecated ResponsesApiDeploymentCheck has no
+  caller at the pin: its old flag is handled by DeploymentAffinityCheck in B324,so exclude
+  both deprecated methods rather than building an unused previous-response selector.
 
-  Implement crates/betterlite-core/src/api/responses_affinity.rs. Use ResponsesAffinityInput and ResponsesAffinityResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions previous_response_deployment, encrypted_same_boundary, different_key_strips_reasoning,
-  anthropic_thinking_affinity, ineligible_pin_not_revived under api::responses_affinity::tests. Each named function
-  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
-  has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponsesAffinity in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_affinity: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/router_utils/pre_call_checks/responses_api_deployment_check.py: ResponsesApiDeploymentCheck.__init__
-  (L22-L31); litellm/router_utils/pre_call_checks/responses_api_deployment_check.py: ResponsesApiDeploymentCheck.async_filter_deployments
-  (L33-L57); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck.__init__
-  (L71-L80); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck.has_model_group_affinity_enabled
-  (L87-L93); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck._is_enabled_for_model_group
-  (L95-L99); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck._extract_model_id_from_input
-  (L102-L125); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck._model_id_of_input_item
-  (L128-L144); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck._anthropic_content_blocks
-  (L147-L155); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck._model_id_from_wrapped_encrypted_content
-  (L158-L160); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck._model_id_of_anthropic_block
-  (L163-L167); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck._extract_model_id_from_anthropic_messages
-  (L170-L178); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck._find_deployment_by_model_id
-  (L181-L189); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck._encryption_boundary_key
-  (L192-L231); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck._find_deployments_on_same_encryption_boundary
-  (L233-L254); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck._strip_reasoning_the_target_cannot_decrypt
-  (L256-L298); litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py: EncryptedContentAffinityCheck.async_filter_deployments
-  (L304-L392). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 288 owned nonblank/non-comment/non-docstring Python lines (369 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 308 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 558 total within the 560-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B303 (Deployment client reuse and parallel
-  request guards), B368 (Transactional deployment catalog updates), B903 (Response id codecs), B904 (Response id
-  traversal), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas; the
-  external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Register responses_affinity with B171 and compare chosen candidate IDs,input mutations
+  and diagnostics using scripted catalog/credential snapshots. No outside bytes are parsed.
+  Read 45 physical nonblank/non-comment lines in the excluded deprecated file and own 324
+  in the live file,including docstrings. Budget 280 implementation,180 tests,130 cases,
+  95 adapters and 25 wiring lines: 710 total.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
-  - crates/betterlite-core/src/api/responses_affinity.rs
-  - crates/betterlite-core/src/api/responses_affinity/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/responses_affinity.rs
+  - crates/betterlite-router/src/responses_affinity/**
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/responses_affinity.rs
-  - tools/oracle/src/helpers/responses_affinity/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/responses_affinity.py
-  - tools/oracle/helpers/responses_affinity/**
   - tools/oracle/fuzz/corpus/helper_case/responses_affinity-*
   - tools/oracle/cases/helpers/responses-affinity/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/responses_api_deployment_check.py#L1-L57
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L1-L392
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Complete live filter selects origin/credential peers and strips unusable reasoning without disclosing origin existence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/responses_api_deployment_check.py#L1-L57
+  why: Both deprecated methods are inspected but excluded because the pin has no production constructor caller.
 dod:
-- text: 'previous response deployment: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-previous-response-deployment
-  - oracle
-- text: 'encrypted same boundary: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-encrypted-same-boundary
-  - oracle
-- text: 'different key strips reasoning: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-different-key-strips-reasoning
-  - oracle
-- text: 'anthropic thinking affinity: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-anthropic-thinking-affinity
-  - oracle
-- text: 'ineligible pin not revived: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-ineligible-pin-not-revived
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    affinity_enablement returns candidates unchanged when global=false and the model group
+    lacks encrypted_content_affinity. Global=true enables every group; group-only activation
+    works with global=false. has_model_group_affinity_enabled is true when any group's list
+    includes that literal and false for null/{}. Enabled filtering sets
+    litellm_metadata.encrypted_content_affinity_enabled=true only if litellm_metadata already
+    exists; it never creates that key and therefore preserves metadata tag-routing choice.
+    Existing litellm_metadata=null raises TypeError "'NoneType' object does not support item assignment".
+  proof: [affinity-tests, oracle, affinity-adapter]
+- text: >-
+    marker_precedence scans list input in order,ignores nondicts,and tries an encoded item
+    ID before wrapped encrypted_content on each item. A decoded item with model_id=""
+    returns that empty value without trying its cipher and stops the scan before later
+    items; the final filter may then fall back to Anthropic messages. Input string/nonlist
+    has no marker. Anthropic scans dict content blocks using B220 thinking.signature or
+    redacted_thinking.data carrying litellm_encrypted_reasoning: plus a B903 wrapper.
+    Explicit truthy messages wins over request_kwargs.messages; empty messages falls back.
+  proof: [affinity-tests, oracle, affinity-adapter]
+- text: >-
+    healthy_origin_pin matches model_info.id using string conversion,so origin "7" matches
+    numeric id=7,skipping malformed model_info/missing IDs. Return only the first matching
+    healthy deployment,set _encrypted_content_affinity_pinned=true,and strip other-origin
+    reasoning only when this target cannot decrypt it. Same target ID is sufficient without
+    a router lookup. No marker returns the original healthy list with no pin flag. Debug
+    logs are "EncryptedContentAffinityCheck: decoded model_id=%s from the request's encrypted content markers"
+    and "EncryptedContentAffinityCheck: pinning -> deployment=%s" with the selected ID.
+  proof: [affinity-tests, oracle, affinity-adapter]
+- text: >-
+    credential_boundary_peers uses effective api_base and api_key from named credential
+    fields whenever present,including null; missing credential fields fall back to deployment
+    fields. Missing credential yields {} and preserves both deployment values. Falsy base/key
+    yields no boundary; dict and typed get-capable params behave alike,unsupported objects
+    yield none. Origin A absent from healthy but catalogued with base=u,key=k selects all
+    healthy peers with exactly (u,k),in their original order,not an unhealthy A. A different
+    key or base never matches. No router/missing origin returns no peers. Debug names the
+    origin and peer count,never the credential values.
+  proof: [affinity-tests, oracle, affinity-adapter]
+- text: >-
+    selective_history_strip retains reasoning from target IDs or origins sharing any target
+    boundary,using one cached catalog lookup per distinct origin within the call. It strips
+    only undecryptable marked input items through B904 and marked Anthropic blocks through
+    B220,in place so fallback snapshots see the mutation. Unmarked history remains. A
+    request with A and B markers pinned to A retains B only when its catalog boundary matches.
+  proof: [affinity-tests, oracle, affinity-adapter]
+- text: >-
+    unavailable_origin_fallback for unhealthy,removed,cross-group or forged origin with no
+    healthy boundary peer returns the full supplied healthy pool,adds no pin flag and strips
+    encrypted reasoning through B904/B220 while keeping readable Responses history. It does
+    not raise an origin-specific HTTP error. Warning is
+    "EncryptedContentAffinityCheck: model_id=%s cannot serve group %s and no deployment on the same encryption boundary is configured; forwarding without its encrypted reasoning",
+    with origin truncated to its first 64 characters and the requested group. This fallback
+    strips all encoded reasoning,not only the first marker's origin. Existing request flags
+    are not reset merely because this pass did not find a pin.
+  proof: [affinity-tests, oracle, affinity-adapter]
 checks:
-  optional: []
+  optional: [mutants]
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_affinity::/) -
-      test(/::replays_corpus$/)'
-  - id: case-previous-response-deployment
-    why: the previous-response-deployment behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_affinity::tests::previous_response_deployment($|::)/)'
-  - id: case-encrypted-same-boundary
-    why: the encrypted-same-boundary behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_affinity::tests::encrypted_same_boundary($|::)/)'
-  - id: case-different-key-strips-reasoning
-    why: the different-key-strips-reasoning behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_affinity::tests::different_key_strips_reasoning($|::)/)'
-  - id: case-anthropic-thinking-affinity
-    why: the anthropic-thinking-affinity behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_affinity::tests::anthropic_thinking_affinity($|::)/)'
-  - id: case-ineligible-pin-not-revived
-    why: the ineligible-pin-not-revived behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_affinity::tests::ineligible_pin_not_revived($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_affinity.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_affinity-*)"
-      && grep -qE "^[[:space:]]+responses_affinity:" tools/oracle/fuzz/corpus/helper_case/responses_affinity-* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-affinity)"
+  - id: affinity-tests
+    why: routing can leak credential boundaries or replay undecryptable history
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^responses_affinity::/)'
+  - id: affinity-adapter
+    why: selected candidates and in-place stripping are not compared independently
+    run: test -f tools/oracle/helpers/responses_affinity.py && grep -qE '^[[:space:]]+responses_affinity:' tools/oracle/fuzz/corpus/helper_case/responses_affinity-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/responses-affinity/previous-response-deployment.yaml
-- tools/oracle/cases/helpers/responses-affinity/encrypted-same-boundary.yaml
-- tools/oracle/cases/helpers/responses-affinity/different-key-strips-reasoning.yaml
-- tools/oracle/cases/helpers/responses-affinity/anthropic-thinking-affinity.yaml
-- tools/oracle/cases/helpers/responses-affinity/ineligible-pin-not-revived.yaml
+- tools/oracle/cases/helpers/responses-affinity/affinity-enablement.yaml
+- tools/oracle/cases/helpers/responses-affinity/marker-precedence.yaml
+- tools/oracle/cases/helpers/responses-affinity/healthy-origin-pin.yaml
+- tools/oracle/cases/helpers/responses-affinity/credential-boundary-peers.yaml
+- tools/oracle/cases/helpers/responses-affinity/selective-history-strip.yaml
+- tools/oracle/cases/helpers/responses-affinity/unavailable-origin-fallback.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- ResponsesApiDeploymentCheck.__init__ and async_filter_deployments have no caller at the pin; B324's live DeploymentAffinityCheck handles responses_api_deployment_check and previous_response_id.
+- B324 owns callback installation/order and loading optional_pre_call_checks/model_group_affinity_config; B844 catalog lookup and B061 named credential access remain injected dependencies.
+- B903/B904 and B220 own marker parsing/stripping; no new format or decoder is introduced.
 pitfalls:
-- 'encrypted_content_affinity_check.py:345 emits the diagnostic "EncryptedContentAffinityCheck: decoded model_id=%s
-  from the request''s encrypted content markers"; retain its level and fallback instead of turning it into a hard
-  error.'
-- 'encrypted_content_affinity_check.py:384 emits the diagnostic ''EncryptedContentAffinityCheck: model_id=%s cannot
-  serve group %s and no deployment on the same encryption boundary is configured; forwarding without its encrypted
-  reasoning''; retain its level and fallback instead of turning it into a hard error.'
+- Named credential fields override deployment fields by presence,so an explicit null disables boundary matching.
+- Do not create litellm_metadata merely to set the affinity flag; that changes which metadata carries routing tags.
+- Missing origins strip and dispatch instead of returning distinguishable existence errors.
 review_level: security
 budget:
-  max_changed_lines: 560
+  max_changed_lines: 710
   max_new_expects: 1

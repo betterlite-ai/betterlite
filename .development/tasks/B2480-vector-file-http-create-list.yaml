@@ -1,0 +1,94 @@
+id: B2480
+title: Attached-file HTTP create and list execution
+description: >-
+  Own the four complete create/list handlers at llm_http_handler.py:10756-11036, below B1072's public
+  wrappers. Implement core::api::vector_file_http_create_list using B173 pools, B1071 contracts,
+  B527 provider transforms, B012 logging and B2402 _handle_error. Reuse a supplied client only when
+  its sync/async mode matches; otherwise choose the pool with ssl_verify from litellm_params, default null.
+  Async forwarding passes a matching async client or null. Validate extra_headers or {}, then overlay
+  the now-mutated extra_headers, and resolve the provider URL with api_base,vector_store_id,litellm_params.
+
+  Create copies create_request, overlays extra_body, transforms it, logs the transformed body, then POSTs
+  JSON with timeout in both modes. List copies query_params, overlays extra_query, transforms and logs
+  them, then GETs with params and no per-call timeout in either mode. Catch only send failures with the
+  shared error converter; preparation, logging and response transformation are outside that catch.
+  SdkHttpCall::VectorFileCreateListTransport invokes actual handlers against B2401's mock. Native lifecycle
+  tests inspect the client and logger boundaries. There is no new decoder. The functions contain 246
+  nonblank/non-comment lines; budget 245 execution, 150 tests, 90 adapters, 100 fixtures, 35 wiring/corpus,
+  620 total within 660.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/vector_file_http_create_list.rs
+  - crates/betterlite-core/src/api/vector_file_http_create_list/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/vector_file_create_list_transport.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/vector_file_create_list_transport.py
+  - tools/oracle/cases/sdk-http/vector-file-create-list-transport/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-create-list-transport-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10756-L11036
+  why: Whole create/list send paths place overrides before transformation and omit the list timeout argument.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_store_files/transformation.py#L65-L176
+  why: B527 mutates credential headers, strips null create/list fields and cleans create attributes after the extra-body overlay.
+dod:
+- text: >-
+    create_overlay_before_cleaning sends vs/a,create_request={file_id:old,attributes:{old:x}},
+    extra_body={file_id:file_a,attributes:{keep:y,count:2},ignored:null}. Expect POST
+    /v1/vector_stores/vs%2Fa/files with JSON {file_id:file_a,attributes:{keep:y}}. Empty or null extra_body
+    leaves the original request intact. Mock 200 {id:file_a,object:vector_store.file,status:completed}
+    returns those fields. Both execution modes pass timeout=7, or null when omitted, to the selected client.
+  proof: [transport-tests, oracle, python-adapter]
+- text: >-
+    list_query_overlay sends {after:file_a,limit:2,order:asc},extra_query={limit:4,order:null,trace:x}.
+    GET /v1/vector_stores/vs_a/files has after=file_a,limit=4,trace=x and no order. Null/empty extra_query
+    leaves the input query intact; no JSON body is sent. Mock 200 {object:list,data:[],has_more:false}
+    returns unchanged. Native transport capture confirms timeout=7 is not passed by either list mode.
+  proof: [transport-tests, oracle, python-adapter]
+- text: >-
+    create_list_credentials uses api_key=sk-provider and caller Authorization="Bearer sk-caller",
+    Content-Type=text/plain,OpenAI-Beta=assistants=v1,X-Trace=x. Both operations send Authorization="Bearer sk-provider",
+    Content-Type=application/json,OpenAI-Beta=assistants=v1,X-Trace=x; absent beta becomes assistants=v2.
+    Null/empty extra_headers are accepted. pre_call input="",api_key="",additional_args contains headers,
+    api_base and complete_input_dict equal to the transformed body/query, before exactly one send.
+  proof: [transport-tests, oracle, python-adapter]
+- text: >-
+    create_list_failure_boundaries supplies HTTP 429 text="slow down",Retry-After=3; the inherited
+    BaseLLMException retains status=429,message="slow down",headers including Retry-After=3 with no retry.
+    Mock 200 malformed JSON raises the response transform's error at status=200, outside _handle_error.
+    Native preparation/logging failures make zero sends and never call _handle_error. Wrong-mode clients
+    select the pool with ssl_verify=null or configured false; matching clients are reused without pool creation.
+  proof: [transport-tests, oracle, python-adapter]
+- text: The vector_file_create_list_transport SDK tag has new replayable case seeds.
+  proof: [sdk-corpus]
+checks:
+  optional: []
+  commands:
+  - id: transport-tests
+    why: create/list use the wrong overlay order, HTTP method or timeout policy
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_http_create_list::tests::/) - test(/::replays_corpus$/)'
+  - id: python-adapter
+    why: real handler HTTP capture lacks its Python adapter
+    run: test -f tools/oracle/sdk_http/vector_file_create_list_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: create/list transport inputs have no new decoder seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-file-create-list-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/sdk-http/vector-file-create-list-transport/create-overlay-before-cleaning.yaml
+- tools/oracle/cases/sdk-http/vector-file-create-list-transport/list-query-overlay.yaml
+- tools/oracle/cases/sdk-http/vector-file-create-list-transport/create-list-credentials.yaml
+- tools/oracle/cases/sdk-http/vector-file-create-list-transport/create-list-failure-boundaries.yaml
+deviations: []
+out_of_scope:
+- B1072 owns create/acreate/list/alist public argument handling; B527 owns OpenAI transforms and B1071 owns wire decoding.
+- B2402 owns _handle_error; B173 owns pool construction and generic send semantics.
+- B2481 owns attached-file retrieve/content handlers; B2482 owns attached-file update/delete handlers. Other llm_http_handler.py families remain with their API tasks.
+pitfalls:
+- extra_body is applied before OpenAI attribute cleaning, so it cannot restore numeric attributes the way vector-store update extra_body can.
+- List accepts timeout but never supplies it to the HTTP client; create does in both execution modes.
+review_level: security
+budget:
+  max_changed_lines: 660
+  max_new_expects: 0

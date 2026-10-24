@@ -1,161 +1,120 @@
 id: B999
-title: Image edit call
+title: Image edit SDK calls
 description: >-
-  Execute image edits with repeated image parts, optional mask and source edit parameter mapping through prepared
-  provider operations. Preserve async multipart finalization and the nonstreaming ImageResponse; the pinned image_edit
-  does not pass fake_stream.
+  Build image_edit and aimage_edit whole in betterlite-core::api::image_edit_call, plus native equivalents of
+  _get_ImageEditRequestUtils and __getattr__ as typed linkage rather than runtime imports. A missing sync model
+  uses dall-e-2; image=None becomes [], a single image becomes [image], and a list preserves its order. Named
+  prompt,mask,n,quality,response_format,size,user,extra_headers,extra_query,extra_body,timeout default None.
+  Merge dictionary kwargs.headers followed by dictionary extra_headers. _is_async is true only for the boolean
+  async_call=true removed from kwargs, not any truthy value. GenericLiteLLMParams captures the remaining controls.
 
+  Custom providers bypass config lookup and option projection, receive image as a list and optional_params=kwargs,
+  and choose the last matching handler from B044. Otherwise resolve with B174 and select a config with B157, merge kwargs over
+  locals and call B1120 with provider-supported extensions intersected with filtered non-default params. B176
+  owns flatten_form_field_values: multipart OpenAI/Azure/compatible calls merge flattened nondefault fields then
+  extra_body over mapped options. JSON providers do not take that path. Log a copy of the mapped options before
+  Bedrock/Stability/BFL merge their nondefault options. B2451 owns generic edit sending. B638's Bedrock and
+  B046's Stability/BFL adapters are downstream of B082; inject B010 prepared operations for those send paths.
 
-  Here compare the ordered typed multipart parts captured at the native provider seam; B082 compares the serialized
-  upstream multipart with B900 decoded parts, where the real HTTP route exists. Custom providers use B045; bedrock
-  image edits use B638, stability B046 and black_forest_labs B046 prepared contracts; do not build these algorithms
-  here. The runnable provider fixture is OpenAI B512.
+  Bedrock receives timeout unchanged, including None/0; generic/Stability/BFL use timeout or REQUEST_TIMEOUT,
+  whose default is 6000. extra_query is accepted and never forwarded. Async resolution looks for base_url in
+  locals, where no such named argument exists; do not add api_base-based resolution. It forces async_call=true,
+  preserves context, invokes sync preparation once and awaits a coroutine result only when returned. B011 maps
+  failures with the source model/provider and locals. B159 owns public Python import behavior.
 
-
-  Implement crates/betterlite-core/src/api/image_edit_call.rs. Use ImageEditCallInput and ImageEditCallResult with
-  typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses through
-  constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential resolution.
-
-
-  Write adjacent tests.rs behavior functions single_image_edit, multi_image_edit, mask_and_prompt, edit_provider_json_mode
-  under api::image_edit_call::tests. Each named function drives production code and asserts its case result; use
-  named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ImageEditCall in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {image_edit_call: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/images/main.py: _get_ImageEditRequestUtils (L67-L75); litellm/images/main.py: image_edit
-  (L712-L960); litellm/images/main.py: aimage_edit (L964-L1043); litellm/images/main.py: __getattr__ (L1046-L1056).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 291 owned nonblank/non-comment/non-docstring Python lines (304 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 311 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 543 total within the 550-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B009 (Outbound HTTP clients, proxies, TLS and connection reuse for every provider), B010
-  (Provider framework, provider resolution and parameter mapping), B171 (Direct helper oracle and URL path encoding),
-  B997 (Image contracts), B1087 (Api boundaries), B512 (OpenAI image edit multipart mapping). These are callable/type/config
-  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
-  branches.
+  Exercise the SDK through B2401 HTTP, using B512 for OpenAI and injected configured operations for downstream
+  adapters. No route is added and no raw image decoder is duplicated. Test REQUEST_TIMEOUT in the production
+  config loader. Ownership is 305 nonblank/non-comment lines, including lazy accessors; budget 270 implementation,
+  160 tests, 125 fixtures, 80 adapters, 45 config/corpus and 40 wiring lines, 720 total.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/image_edit_call.rs
   - crates/betterlite-core/src/api/image_edit_call/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/image_edit_call.rs
-  - tools/oracle/src/helpers/image_edit_call/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/image_edit_call.py
-  - tools/oracle/helpers/image_edit_call/**
-  - tools/oracle/fuzz/corpus/helper_case/image_edit_call-*
-  - tools/oracle/cases/helpers/image-edit-call/**
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/image_edit_call.rs
+  - crates/betterlite-config/src/api/image_edit_call/**
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/image-edit-call-*
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/image_edit_call.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/image_edit_call.py
+  - tools/oracle/cases/sdk-http/image-edit-call/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/image-edit-call-*
   lint_tables: false
 references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L711-L1056
+  why: Full sync/async edit entry points, including option merge order, dispatch and lazy public attribute lookup.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L67-L75
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L712-L1056
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: The edit helper accessor caches one utility class and introduces no provider behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L574-L577
+  why: REQUEST_TIMEOUT supplies the generic edit timeout fallback.
 dod:
-- text: 'single image edit: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-single-image-edit
-  - oracle
-- text: 'multi image edit: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-multi-image-edit
-  - oracle
-- text: 'mask and prompt: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-mask-and-prompt
-  - oracle
-- text: 'edit provider json mode: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-edit-provider-json-mode
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    edit_openai_upload sends model=openai/gpt-image-1,images=[a.png:abc,b.png:def],mask=m.png:ghi,prompt=change,
+    n=1,quality=high,size=1024x1024,response_format=b64_json,user=u. Expect ordered image[] uploads, the first
+    mask, those supported fields and one POST /v1/images/edits. Mock {created:1,data:[{b64_json:YQ==}]} is returned
+    unchanged. A single image is normalized to a one-element list. model absent resolves dall-e-2; image absent
+    passes [] to the config rather than a new SDK-level required-image error.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    edit_option_merge sends headers={x:old},extra_headers={x:new},extra_body={settings:{strength:2},tags:[a,b]},
+    nondefault settings.strength=1 and extra_query={ignored:yes}. The provider receives x=new; multipart contains
+    settings[strength]=2 and both tags parts, while the URL has no ignored parameter. A JSON config receives
+    only its mapped options and the unchanged extra_body argument to B2451, which does not merge it. No stream
+    or fake_stream execution is introduced. B1120's unsupported field/drop tests supply the same call controls.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    edit_dispatch_and_timeout sets REQUEST_TIMEOUT=7: generic/Stability/BFL timeout=None or 0 uses 7, explicit
+    3 uses 3; Bedrock keeps None,0,3. With the env unset the generic fallback is 6000. Missing config raises
+    ValueError("image edit is not supported for <provider>") before HTTP. Injected Bedrock/BFL model=None raises
+    "Model needs to be set for bedrock"/"Model needs to be set for black_forest_labs". The normal default-model
+    path never fabricates these impossible resolver outputs. Logging occurs before branch-specific option merges.
+  proof: [behavior-tests, config-tests, oracle, sdk-python]
+- text: >-
+    edit_custom_and_async uses two custom map entries and expects the last, with kwargs-only options and list
+    images. async_call=1 is false under the identity test; async wrapper always sets true. Matching client kind
+    survives and the wrong kind becomes None. Missing registered handler raises LiteLLMUnknownProvider. The
+    async OpenAI call makes one real HTTP request, awaits one coroutine, preserves context and returns the mock
+    ImageResponse. A mock 400 error keeps B011 SDK failure class/status/nullable fields with no proxy code coercion.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: New request-timeout config and edit SDK seeds parse through their existing decoders and the adapter passes strict checks.
+  proof: [corpora, sdk-python, new-cases, oracle]
 checks:
-  optional: []
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_edit_call::/) - test(/::replays_corpus$/)'
-  - id: case-single-image-edit
-    why: the single-image-edit behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_edit_call::tests::single_image_edit($|::)/)'
-  - id: case-multi-image-edit
-    why: the multi-image-edit behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_edit_call::tests::multi_image_edit($|::)/)'
-  - id: case-mask-and-prompt
-    why: the mask-and-prompt behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_edit_call::tests::mask_and_prompt($|::)/)'
-  - id: case-edit-provider-json-mode
-    why: the edit-provider-json-mode behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_edit_call::tests::edit_provider_json_mode($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/image_edit_call.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/image_edit_call-*)"
-      && grep -qE "^[[:space:]]+image_edit_call:" tools/oracle/fuzz/corpus/helper_case/image_edit_call-* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/image-edit-call)"
+    why: Edit option ordering and async dispatch must run in production core and config tests.
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::image_edit_call::/) - test(/::replays_corpus$/)'
+  - id: config-tests
+    why: REQUEST_TIMEOUT must be loaded, defaulted and used by edit execution.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::image_edit_call::tests::loads_settings($|::)/)'
+  - id: sdk-python
+    why: Edit parity requires a real SDK HTTP adapter.
+    run: test -f tools/oracle/sdk_http/image_edit_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: corpora
+    why: The edit SDK tag and timeout settings need newly added parser inputs.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-edit-call-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/image-edit-call-*)" && cargo nextest run --locked -p betterlite-oracle -p betterlite-config --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_config_yaml_corpus)'
+  - id: new-cases
+    why: Ordered image parts must be captured from HTTP, not a helper's prepared record.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/image-edit-call)"
 oracle_cases:
-- tools/oracle/cases/helpers/image-edit-call/single-image-edit.yaml
-- tools/oracle/cases/helpers/image-edit-call/multi-image-edit.yaml
-- tools/oracle/cases/helpers/image-edit-call/mask-and-prompt.yaml
-- tools/oracle/cases/helpers/image-edit-call/edit-provider-json-mode.yaml
+- tools/oracle/cases/sdk-http/image-edit-call/edit-openai-upload.yaml
+- tools/oracle/cases/sdk-http/image-edit-call/edit-option-merge.yaml
+- tools/oracle/cases/sdk-http/image-edit-call/edit-dispatch-and-timeout.yaml
+- tools/oracle/cases/sdk-http/image-edit-call/edit-custom-and-async.yaml
 deviations: []
 out_of_scope:
-- 'litellm/images/main.py: B998 owns aimage_generation L80-L129, image_generation L136-L154, image_generation L160-L178,
-  image_generation L184-L561.'
-- 'litellm/images/main.py: B1121 owns image_generation L136-L154, image_generation L160-L178, image_generation L184-L561.'
-- 'litellm/images/main.py: B1000 owns aimage_variation L565-L612, image_variation L616-L708.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B998 owns image_generation/overloads; B1121 owns aimage_generation; B1000 owns image_variation/aimage_variation.
+- B157 owns ProviderConfigManager.get_provider_image_edit_config; B176 owns flatten_form_field_values and its recursive helpers in llm_request_utils.py; B1120 owns all ImageEditRequestUtils methods; B512 owns multipart file naming and image MIME.
+- B638 owns Bedrock sending and B046 Stability/BFL transforms/polling, injected at composition because both depend transitively on B082; B044 owns custom provider execution. B159 owns import/export mechanics and local path opening.
 pitfalls:
-- There is no stream field or fake_stream execution path in image_edit at this pin.
-- Within image_edit\'s custom_llm_provider in litellm._custom_providers branch, preserve raise LiteLLMUnknownProvider(model=model,
-  custom_llm_provider=custom_llm_provider) and its nested guards.
-review_level: standard
+- extra_query is unused; accepting it does not mean it reaches the upstream URL.
+- Only async_call is popped; custom handlers receive remaining kwargs without the named image options merged in.
+- Bedrock's zero timeout is retained while other edit handlers replace zero with REQUEST_TIMEOUT.
+review_level: security
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 750
   max_new_expects: 1

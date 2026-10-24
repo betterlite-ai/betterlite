@@ -1,0 +1,108 @@
+id: B2418
+title: Responses compact HTTP and signed-body selection
+description: >-
+  Implement responses_compact_http for compact_response_api_handler and its async counterpart,
+  plus the complete shared _signed_body_kwargs function. The service validates provider headers,
+  obtains a compact URL/body from B509, normalizes with B1114, signs the final normalized body
+  and sends through B173. B595 offloads AWS signing in async mode; other configs sign inline.
+  B249 logs input, api_key="", complete_input_dict=normalized data, api_base=the compact URL and
+  signed headers. B2402 maps only send failures; B509 converts successful response bytes afterwards.
+
+  An explicitly returned signed_body, including empty bytes, is the entire wire body; null means
+  JSON serialization of normalized data. Export this small typed body-selection operation for
+  create transport rather than duplicating it. extra_body is accepted but never applied here.
+  Matching sync/async clients are reused; otherwise B173 receives ssl_verify (default null) and
+  async shared_session. timeout is forwarded exactly in both modes. No stream or agentic loop
+  is started by compact. B934 owns public SDK preparation above this service.
+
+  Extend B2401 with SdkHttpCall::ResponsesCompactTransport. Run the actual Python handler against
+  the mock; use OpenAI config for HTTP and typed signing-interface tests for empty/signed bytes.
+  Shared resource decoding and fuzzing remain B509. The two handlers and body selector contain
+  175 nonblank/non-comment lines. Estimate 190 implementation, 115 tests, 80 fixtures, 85 adapters
+  and 25 wiring lines, 495 total within 540.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/responses_compact_http.rs
+  - crates/betterlite-core/src/api/responses_compact_http/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/responses_compact_transport.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/responses_compact_transport.py
+  - tools/oracle/cases/sdk-http/responses-compact-transport/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/responses-compact-transport-*
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4360-L4551
+  why: Whole compact handlers sign after normalization and ignore extra_body in both modes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L287-L290
+  why: Non-null signed bytes, even empty, select data rather than JSON.
+dod:
+- text: >-
+    compact_post_and_headers sends model=gpt-4o,input=hello,instructions=short,extra_body={model:ignored},
+    timeout=7,api_key=sk-provider and X-Trace=trace-a. Both modes POST /v1/responses/compact with
+    model=gpt-4o,input=hello,instructions=short, Authorization=Bearer sk-provider and X-Trace=trace-a.
+    A supplied base query api-version=v1 survives on /compact. Mock 200 with complete response
+    id=resp_compact,output=[] returns that response and provider hidden headers; no stream is created.
+  proof: [compact-http, oracle, python-adapter]
+- text: >-
+    compact_signed_body_order gives a provider transform containing nested typed records. Normalize
+    before signing; the signer sees the final compact URL, model, API key and generic params.
+    signed_body=null sends normalized JSON, signed_body=b"signed" sends exactly those six bytes,
+    and signed_body=b"" sends zero bytes rather than JSON. Logging records normalized data and
+    signed headers. AWS signing uses B595's off-loop path only for the AWS signing protocol.
+  proof: [signing]
+- text: >-
+    compact_transport_errors supplies mock 429 text=slow down,Retry-After=3 and expects the provider
+    error at status=429 with message=slow down and that header, without retry. Mock 200 malformed
+    JSON fails in B509 outside the send catch. Native rows assert signing and validation errors
+    also bypass _handle_error and make zero HTTP requests.
+  proof: [transport-errors, oracle, python-adapter]
+- text: >-
+    compact_client_timeout checks supplied matching clients versus wrong-kind/absent clients.
+    The pool sees ssl_verify=false or default null; async carries shared_session and emits debug
+    "Creating HTTP client for compact_response with shared_session: %s". timeout=null,0,7 are
+    passed unchanged here. Provider environment validation receives the real model, unlike
+    lifecycle resources' literal "None". The pre-call log precedes the send and uses the final URL.
+  proof: [client-timeout]
+- text: Compact-transport SDK inputs have new replay seeds selecting the correct production adapter.
+  proof: [sdk-corpus, oracle, python-adapter]
+checks:
+  optional: []
+  commands:
+  - id: compact-http
+    why: compact drops the base query or applies the intentionally ignored extra_body
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_http::tests::compact_post_and_headers($|::)/)'
+  - id: signing
+    why: empty signed bytes fall back to JSON or signing happens before normalization
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_http::tests::compact_signed_body_order($|::)/)'
+  - id: transport-errors
+    why: signing/decoding errors are mistaken for HTTP send failures
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_http::tests::compact_transport_errors($|::)/)'
+  - id: client-timeout
+    why: compact loses supplied client ownership or per-call timeout
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_http::tests::compact_client_timeout($|::)/)'
+  - id: python-adapter
+    why: compact parity omits the actual HTTP handler
+    run: test -f tools/oracle/sdk_http/responses_compact_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: compact transport is absent from the SDK input corpus
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-compact-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/sdk-http/responses-compact-transport/compact-post-and-headers.yaml
+- tools/oracle/cases/sdk-http/responses-compact-transport/compact-transport-errors.yaml
+deviations: []
+out_of_scope:
+- B934 owns compact SDK model resolution, option filtering and public ID rewriting; B509 owns compact provider transforms and decoding.
+- B2414 owns create HTTP, B2416 read HTTP and B2417 writes; B173 owns pooling and generic HTTP execution.
+- Agentic execution and the remaining API-family functions in llm_http_handler.py are not invoked by compact.
+pitfalls:
+- extra_body is present in both signatures but is never merged into compact data.
+- The request is signed for the suffixed compact URL, with normalized typed values.
+- An empty signed byte string is a deliberate body, not an absent signature result.
+review_level: security
+budget:
+  max_changed_lines: 540
+  max_new_expects: 0

@@ -1,226 +1,141 @@
 id: B959
-title: Anthropic beta config
+title: Anthropic beta configuration loading and cache
 description: >-
-  Load and validate the pinned beta-header provider matrix using local JSON with an injected configured refresh
-  fetcher. Preserve local-beta behavior, documented source URL override, validation fallback and reload semantics;
-  remote config destinations are operator configuration, never request fields. Store the source JSON as a fixture
-  with its pin. Resolve LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS (unset/empty means false, case-insensitive true means
-  local-only) and LITELLM_ANTHROPIC_BETA_HEADERS_URL (default https://raw.githubusercontent.com/BerriAI/litellm/main/litellm/anthropic_beta_headers_config.json);
-  a fetch or integrity failure warns and uses the pinned bundled matrix.
+  Build the process-local beta matrix loader in betterlite-core::api::anthropic_beta_config. Own every function
+  in anthropic_beta_headers_manager.py L47-L212, including explicit reload and one-hop provider alias lookup.
+  Bundle the complete pinned anthropic_beta_headers_config.json, including description and all seven provider
+  maps; do not replace it with a smaller supported-header sample. B960 consumes the resulting snapshot.
 
+  B002 resolves LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS, default empty string, by lowercasing and comparing to true
+  without trimming. LITELLM_ANTHROPIC_BETA_HEADERS_URL initializes litellm_settings.anthropic_beta_headers_url,
+  default https://raw.githubusercontent.com/BerriAI/litellm/main/litellm/anthropic_beta_headers_config.json.
+  A configured URL is operator input. Fetch through B009 with GET, a five-second timeout and status checking.
+  Cache the first result even when it is the empty local fallback; reload clears it before attempting another load.
+  Log debug after a cache fill and info on reload; a cache hit performs neither I/O nor another load diagnostic.
 
-  Implement crates/betterlite-core/src/api/anthropic_beta_config.rs. Use AnthropicBetaConfigInput and AnthropicBetaConfigResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  decode_beta_matrix(bytes, ApiLimits) handles bounded UTF-8 JSON from disk or HTTP. Validation only requires a
+  nonempty object containing anthropic, azure_ai, bedrock, bedrock_converse or vertex_ai. It does not validate the
+  provider value shape; retain that distinction in typed dynamic configuration nodes, without unsafe indexing.
+  JSON decode failure is a fetch failure, while a parsed invalid shape causes an integrity warning as well as the
+  shape-specific warning. The bundled-file failure seam returns the exact six empty objects in the case below.
 
+  B171 helper cases cover validation and alias lookup with injected snapshots; B2401 sdk_http cases cover loading,
+  caching and reload against an actual mock configuration endpoint. Add AnthropicBetaConfig to both typed dispatches.
+  SDK capture projects the matrix, diagnostics and GET count; no request can select an arbitrary URL. Fuzz the
+  production JSON decoder and replay it separately from behavior tests. Config tests use B002's real loader.
 
-  Write adjacent tests.rs behavior functions local_beta_matrix, invalid_matrix_fallback, remote_fetch_failure_local,
-  reload_matrix, provider_name_normalization under api::anthropic_beta_config::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.LITELLM_ANTHROPIC_BETA_HEADERS_URL
-  defaults to 'https://raw.githubusercontent.com/BerriAI/litellm/main/litellm/anthropic_beta_headers_config.json';
-  env.LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS defaults to ''. No environment reads occur outside betterlite-config.
-  Test api::anthropic_beta_config::tests::loads_settings uses the production Config loader and an injected environment
-  map, with a named rstest case for every key above, explicit override, unset/default and invalid-value/fallback
-  behavior. Keys must be accepted, applied and absent from the unsupported-key report; a grep is not proof of support.
-  Add new config_yaml seeds for these keys and replay B002's existing decoder rather than introducing a second YAML
-  parser.
-
-
-  The production external-byte decoder is betterlite-core::api::anthropic_beta_config::decode_beta_matrix(bytes:
-  &[u8], limits: &ApiLimits), for bounded bundled or configured remote JSON bytes. Place its implementation in crates/betterlite-core/src/api/anthropic_beta_config.rs
-  and call it from the actual boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/anthropic_beta_config.rs
-  passes arbitrary bounded bytes to that exact decoder; api::anthropic_beta_config::tests::replays_corpus replays
-  newly committed seeds through the same function. Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::AnthropicBetaConfig in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {anthropic_beta_config: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/anthropic_beta_headers_manager.py: GetAnthropicBetaHeadersConfig.load_local_beta_headers_config
-  (L47-L64); litellm/anthropic_beta_headers_manager.py: GetAnthropicBetaHeadersConfig._check_is_valid_dict (L67-L98);
-  litellm/anthropic_beta_headers_manager.py: GetAnthropicBetaHeadersConfig.validate_beta_headers_config (L101-L107);
-  litellm/anthropic_beta_headers_manager.py: GetAnthropicBetaHeadersConfig.fetch_remote_beta_headers_config (L110-L119);
-  litellm/anthropic_beta_headers_manager.py: get_beta_headers_config (L122-L159); litellm/anthropic_beta_headers_manager.py:
-  _load_beta_headers_config (L162-L183); litellm/anthropic_beta_headers_manager.py: reload_beta_headers_config (L186-L197);
-  litellm/anthropic_beta_headers_manager.py: get_provider_name (L200-L212). Abstract/protocol declarations map to
-  native types and synchronous/async wrappers share one implementation; a partial function span is the explicit
-  preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 87 owned nonblank/non-comment/non-docstring Python lines (128 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 107 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 36 config tests/seeds
-  and 30 wiring; 453 total within the 460-line cap. The estimate includes tests and adapters, not just production
-  code.
-
-
-  Direct inputs come from B002 (Load LiteLLM config.yaml into typed config), B009 (Outbound HTTP clients, proxies,
-  TLS and connection reuse for every provider), B171 (Direct helper oracle and URL path encoding), B1087 (Api boundaries).
-  These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership
-  on the provider and keys/data branches.
+  Count 128 nonblank/non-comment Python lines and 253 JSON lines. Budget 140 loader/decoder, 253 bundled data,
+  115 tests, 70 fixtures, 85 adapters, 50 fuzz/replay and 50 config/wiring lines, 763 total.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/anthropic_beta_config.rs
   - crates/betterlite-core/src/api/anthropic_beta_config/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/anthropic_beta_config.rs
+  - crates/betterlite-core/fuzz/corpus/anthropic_beta_config/**
   - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/anthropic_beta_config.rs
   - crates/betterlite-config/src/api/anthropic_beta_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-beta-config-*
-  - crates/betterlite-core/fuzz/Cargo.toml
-  - crates/betterlite-core/fuzz/fuzz_targets/anthropic_beta_config.rs
-  - crates/betterlite-core/fuzz/corpus/anthropic_beta_config/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/anthropic_beta_config.rs
-  - tools/oracle/src/helpers/anthropic_beta_config/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/anthropic_beta_config.py
-  - tools/oracle/helpers/anthropic_beta_config/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_beta_config-*
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/anthropic_beta_config.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/anthropic_beta_config.py
   - tools/oracle/cases/helpers/anthropic-beta-config/**
+  - tools/oracle/cases/sdk-http/anthropic-beta-config/**
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L434-L437
-  why: Shared dependency/call-site context; ownership is only the callable list above.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L137-L137
-  why: Setting env.LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS and its pinned default/precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L47-L212
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Load, validate, fetch, cache, reload and resolve one alias; warnings select local fallback rather than rejecting startup.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_config.json#L1-L253
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: The complete fallback matrix is observable, including null entries and the absence of provider_aliases.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L434-L437
+  why: The environment override initializes the configurable remote URL even when its value is empty.
 dod:
-- text: 'local beta matrix: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-local-beta-matrix
-  - oracle
-- text: 'invalid matrix fallback: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-invalid-matrix-fallback
-  - oracle
-- text: 'remote fetch failure local: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-remote-fetch-failure-local
-  - oracle
-- text: 'reload matrix: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-reload-matrix
-  - oracle
-- text: 'provider name normalization: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-provider-name-normalization
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    local_matrix_snapshot sets local mode=True and compares the entire loaded object to the pinned bundled JSON,
+    including every header spelling/value/null. Its provider keys are anthropic,azure_ai,bedrock_converse,bedrock,
+    bedrock_mantle,vertex_ai,databricks; there is no provider_aliases. In particular bedrock advanced-tool-use-2025-11-20
+    maps to tool-search-tool-2025-10-19, anthropic compact-2026-09-04 maps to itself, azure_ai compact-2026-01-12 is
+    null, and bedrock_mantle claude-code-20250219 maps to itself. No HTTP request is made.
+  proof: [behavior-tests, oracle, adapters]
+- text: >-
+    matrix_validation accepts {anthropic:{}} and {anthropic:null}; rejects [], {}, {provider_aliases:{}},
+    {databricks:{}} and {bedrock_mantle:{}}. Rejections log respectively not-a-dict, empty or missing-provider-key
+    warning, then the integrity-check warning, and return the complete local matrix. A corrupt local file logs
+    error and returns {anthropic:{},azure_ai:{},bedrock:{},bedrock_converse:{},vertex_ai:{},provider_aliases:{}}.
+  proof: [behavior-tests, oracle, adapters]
+- text: >-
+    remote_matrix_cache gets mock 200 {anthropic:{custom:renamed}} once and returns that object on two loads;
+    reload gets a second response {bedrock:{custom:null}}, logs info before GET and debug after loading, and the
+    next load returns the second object without GET. The fetch timeout is 5 seconds. HTTP 503, invalid JSON and
+    timeout each produce one fetch-warning and fall back to the local snapshot, which is also cached.
+  proof: [behavior-tests, oracle, adapters]
+- text: >-
+    provider_alias_resolution injects {anthropic:{},provider_aliases:{first:second,second:anthropic}}. first resolves
+    to second, not anthropic; second resolves to anthropic; unknown remains unknown. The bundled configuration
+    leaves vertex_ai_beta unchanged because it contains no alias table.
+  proof: [behavior-tests, oracle, adapters]
+- text: >-
+    loads_beta_settings checks omitted, empty, false, 1 and " true " local flags all allow remote loading, while
+    true, TRUE and True select local-only. The URL defaults to the literal GitHub URL in the description; a test
+    URL replaces it, an explicitly empty URL stays empty and therefore fetches unsuccessfully with local fallback,
+    and litellm_settings.anthropic_beta_headers_url overrides the environment-initialized value.
+  proof: [config-tests, config-corpus, oracle, adapters]
+- text: The beta JSON decoder rejects oversize and malformed input within limits, and new seeds exercise the production decoder and helper tag.
+  proof: [parser-corpus, helper-corpus, new-cases]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::anthropic_beta_config::/)
-      - test(/::replays_corpus$/)'
-  - id: case-local-beta-matrix
-    why: the local-beta-matrix behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_config::tests::local_beta_matrix($|::)/)'
-  - id: case-invalid-matrix-fallback
-    why: the invalid-matrix-fallback behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_config::tests::invalid_matrix_fallback($|::)/)'
-  - id: case-remote-fetch-failure-local
-    why: the remote-fetch-failure-local behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_config::tests::remote_fetch_failure_local($|::)/)'
-  - id: case-reload-matrix
-    why: the reload-matrix behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_config::tests::reload_matrix($|::)/)'
-  - id: case-provider-name-normalization
-    why: the provider-name-normalization behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_config::tests::provider_name_normalization($|::)/)'
+    why: beta cache and validation behavior is missing in core or config
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::anthropic_beta_config::/) - test(/::replays_corpus$/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::anthropic_beta_config::tests::loads_settings($|::)/)'
+    why: local mode or URL precedence is not supported by the config loader
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::anthropic_beta_config::tests::loads_beta_settings($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-beta-config-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    why: the new beta settings have no config parser seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-beta-config-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/anthropic_beta_config)"
-      && test -f crates/betterlite-core/fuzz/fuzz_targets/anthropic_beta_config.rs && grep -qF "decode_beta_matrix"
-      crates/betterlite-core/fuzz/fuzz_targets/anthropic_beta_config.rs && cargo nextest run --locked -p betterlite-core
-      --no-tests=fail -E 'test(/^api::anthropic_beta_config::tests::replays_corpus$/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/anthropic_beta_config.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: remote matrix JSON does not reach the tested decoder
+    run: test -f crates/betterlite-core/fuzz/fuzz_targets/anthropic_beta_config.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/anthropic_beta_config)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_config::tests::replays_corpus$/)'
+  - id: adapters
+    why: the validation helper or real HTTP loader has no independently checked Python driver
+    run: test -f tools/oracle/helpers/anthropic_beta_config.py && test -f tools/oracle/sdk_http/anthropic_beta_config.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/anthropic_beta_config-*)"
-      && grep -qE "^[[:space:]]+anthropic_beta_config:" tools/oracle/fuzz/corpus/helper_case/anthropic_beta_config-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/anthropic-beta-config)"
+    why: the pure matrix operation is not accepted by the helper protocol
+    run: grep -qE '^[[:space:]]+anthropic_beta_config:' tools/oracle/fuzz/corpus/helper_case/anthropic_beta_config-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: no configuration HTTP captures or validation fixtures were added
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/anthropic-beta-config)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/anthropic-beta-config)"
 oracle_cases:
-- tools/oracle/cases/helpers/anthropic-beta-config/local-beta-matrix.yaml
-- tools/oracle/cases/helpers/anthropic-beta-config/invalid-matrix-fallback.yaml
-- tools/oracle/cases/helpers/anthropic-beta-config/remote-fetch-failure-local.yaml
-- tools/oracle/cases/helpers/anthropic-beta-config/reload-matrix.yaml
-- tools/oracle/cases/helpers/anthropic-beta-config/provider-name-normalization.yaml
+- tools/oracle/cases/sdk-http/anthropic-beta-config/local-matrix-snapshot.yaml
+- tools/oracle/cases/sdk-http/anthropic-beta-config/remote-matrix-cache.yaml
+- tools/oracle/cases/sdk-http/anthropic-beta-config/load-settings.yaml
+- tools/oracle/cases/helpers/anthropic-beta-config/matrix-validation.yaml
+- tools/oracle/cases/helpers/anthropic-beta-config/provider-alias-resolution.yaml
 deviations: []
 out_of_scope:
-- 'litellm/anthropic_beta_headers_manager.py: B960 owns filter_and_transform_beta_headers L215-L266, update_headers_with_filtered_beta
-  L321-L356, update_request_with_filtered_beta L359-L392.'
-- 'litellm/anthropic_beta_headers_manager.py: is_beta_header_supported L269-L288, get_provider_beta_header L291-L318,
-  get_unsupported_headers L395-L410 are out of scope: no MIT runtime caller at the pin; unused entry point is not
-  rebuilt.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B960 owns filter_and_transform_beta_headers, update_headers_with_filtered_beta and update_request_with_filtered_beta.
+- is_beta_header_supported, get_provider_beta_header and get_unsupported_headers have no caller at the pin and are not rebuilt.
+- B124 owns the administrative proxy routes that trigger reload; this task exports the reload operation only.
 pitfalls:
-- anthropic_beta_headers_manager.py:181 emits the diagnostic 'Loaded and cached beta headers config'; retain its
-  level and fallback instead of turning it into a hard error.
-- 'anthropic_beta_headers_manager.py:153 emits the diagnostic ''LiteLLM: Fetched beta headers config failed integrity
-  check. Using local backup instead. url=%s''; retain its level and fallback instead of turning it into a hard error.'
+- A matrix containing only databricks or bedrock_mantle is rejected despite both providers appearing in the bundled JSON.
+- Cache presence is tested against null, so an empty fallback must not trigger repeated fetching.
+- The local-only flag does not trim spaces and is not a general boolean parser.
 review_level: standard
 budget:
-  max_changed_lines: 460
-  max_new_expects: 1
+  max_changed_lines: 780
+  max_new_expects: 0

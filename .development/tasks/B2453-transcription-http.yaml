@@ -1,0 +1,101 @@
+id: B2453
+title: Native transcription HTTP and subtitle replies
+description: >-
+  Own _prepare_audio_transcription_request,_transform_audio_transcription_response,audio_transcriptions and
+  async_audio_transcriptions whole in betterlite-provider::api::transcription_http. B1122 supplies the provider
+  contract, B173 HTTP, B2402 send-error conversion, B206 hidden response headers and B1002 subtitle synthesis.
+  Prepare validates headers, resolves URL, transforms the request and requires AudioTranscriptionRequestData.
+  A non-None transformed content_type overrides Content-Type, including an empty string. Log query or "" as
+  input, the supplied key through redacting B012 logging and data or {} as complete_input_dict.
+
+  Dict data with files=None is JSON; files={} is distinct and selects data/files sending. Byte data goes as
+  raw data. A matching-kind supplied client is reused. Sync fallback uses the default pooled client without
+  explicit ssl_verify; async fallback passes ssl_verify from params and shared_session. max_retries is accepted
+  but unused here. Only post failures are converted; config/prepare/response-transform failures propagate.
+
+  Attach response headers before subtitle work. When supports_subtitle_synthesis=true and response_format
+  is exactly srt/vtt, call B1002 on transformed.words, replace text only if it returns a document, and delete
+  words whenever present even if synthesis returns None. Other formats/capability=false preserve words/text.
+  This is provider response policy over decoded records; its byte decoders belong to the supplied provider.
+  Add B2401 sdk_http transcription_http using finite config transforms and real mock HTTP. Count 228 nonblank/
+  non-comment lines across four complete functions; budget 210 implementation,125 tests,120 fixtures,85 adapters
+  and 35 wiring, 575 lines.
+scope:
+  paths:
+  - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/transcription_http.rs
+  - crates/betterlite-provider/src/api/transcription_http/**
+  - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/error.rs
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/transcription_http.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/transcription_http.py
+  - tools/oracle/cases/sdk-http/transcription-http/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/transcription-http-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1544-L1798
+  why: Own request preparation, JSON/form selection, both send paths and post-transform subtitle cleanup.
+dod:
+- text: >-
+    transcription_http_encoding transforms audio to data={query:hello},files=None,content_type=None: one JSON
+    POST carries {query:hello}. With files={}, use data/files rather than JSON; with files containing a.wav=abc,
+    capture a multipart upload. Byte data abc is sent as raw abc. content_type=audio/custom overrides validated
+    Content-Type; empty string also overrides. Native callback records validation messages=[],URL arguments,
+    log input=optional_params.query or "",and complete_input_dict={} for empty data.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    transcription_http_configuration_errors uses model=m,provider=openai,config=None and expects ValueError
+    "No provider config found for model: m and provider: openai",zero HTTP, for both sync and async. A transform
+    returning a plain dict from config class FixtureConfig raises "Provider FixtureConfig must return
+    AudioTranscriptionRequestData" before sending. at transcription=true as a boolean selects async; integer 1
+    does not satisfy the source's identity test. max_retries=5 still sends once on mock 429. B2402 keeps
+    status=429,body/headers in the provider error; only message wording may differ in SDK projection.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    transcription_subtitle_reply enables synthesis and requests srt with reply {text:old,words:[{word:Hello,
+    start:0,end:1}]}. Expect text="1\n00:00:00,000 --> 00:00:01,000\nHello\n",no words and retained hidden
+    x-request-id=transcribe_1. vtt uses WEBVTT and dot timestamps. Invalid/missing timings retain text=old but
+    remove words if present. capability=false,format=json,format=SRT or nonstring format keep original words
+    and text. Source response transformation executes before header attachment and subtitle conversion.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    transcription_http_client_policy uses matching and wrong-kind clients: only matching ones survive.
+    Async fallback receives shared_session and ssl_verify=false when set; sync fallback receives neither
+    explicit setting from this method. Failures in validate/transform/URL/logging/response transform bypass
+    _handle_error. A send failure prevents response transformation, header attachment and synthesis.
+  proof: [behavior-tests]
+- text: Newly added transcription HTTP fixtures and SDK seeds execute both implementations against separate mock captures.
+  proof: [sdk-corpus, new-cases, oracle, sdk-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: Body encoding and deletion of words after unsuccessful synthesis must be independently asserted.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::transcription_http::tests::/)'
+  - id: sdk-python
+    why: This provider handler performs HTTP and requires a checked SDK adapter.
+    run: test -f tools/oracle/sdk_http/transcription_http.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: The transcription HTTP operation needs a newly added shared-parser seed.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/transcription-http-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: Provider request encoding and subtitle response cleanup require fresh HTTP fixtures.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/transcription-http)"
+oracle_cases:
+- tools/oracle/cases/sdk-http/transcription-http/transcription-http-encoding.yaml
+- tools/oracle/cases/sdk-http/transcription-http/transcription-http-configuration-errors.yaml
+- tools/oracle/cases/sdk-http/transcription-http/transcription-subtitle-reply.yaml
+deviations: []
+out_of_scope:
+- B1082 owns SDK provider selection and duration metadata; B1002 owns subtitle synthesis; B2402 _handle_error; B206 hidden response headers; B173 common HTTP methods.
+- Other llm_http_handler.py methods remain with their endpoint owners; no function body is split with this task.
+pitfalls:
+- files={} takes the form path whereas files=None with dict data takes JSON.
+- Requesting srt/vtt with synthesis enabled deletes words even when no subtitle document can be produced.
+- max_retries is unused by these handlers and must not create an extra HTTP retry layer.
+review_level: security
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

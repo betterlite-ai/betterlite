@@ -1,0 +1,119 @@
+id: B2487
+title: Fine-tuning and assistant SDK settings and timeout policy
+description: >-
+  Provide the leaf configuration/timeout seam used by fine-tuning and assistant SDK wrappers. Own the
+  complete _resolve_fine_tuning_timeout at fine_tuning/main.py:140-150 and supports_httpx_timeout at
+  utils.py:2589-2598. Keep the caller functions whole in B1052/B1053/B1141/B1055/B1056/B1057/B1130/B2488;
+  they supply request options to this reusable native settings view. Load all globals/environment inputs
+  with B002, never os.getenv in core. The two owned functions contain 19 nonblank/non-comment lines;
+  configuration projection and its precedence matrix add 160 implementation, 160 tests, 85 adapters,
+  100 fixtures and 65 corpus/wiring lines, 570 total. Use Config tests for settings and B171 pure helpers
+  for the two owned timeout functions only. No provider/client construction happens here; credential
+  precedence is a native Config contract with SDK HTTP evidence supplied by its caller tasks.
+
+  ResourceSdkSettings contains nullable api_base,api_version,api_key,openai_key,azure_key,organization,
+  vertex_project,vertex_location and the environment values listed below. Absent strings stay null;
+  empty strings load successfully but lose truthy fallback selection. Secret references go through B002's
+  accessor and are never logged. Config YAML uses litellm_settings for litellm globals. Timeout is a request
+  option, not REQUEST_TIMEOUT: choose truthy timeout, then request_timeout, then 600 seconds. The fine-tuning
+  helper normalizes falsey raw value to 600.0 and float-converts strings. Inject structured timeout fields
+  rather than requiring Python's httpx object in Rust. Extend config/helper corpus parsers already owned
+  by B002/B171; no new external decoder.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/resource_sdk_settings.rs
+  - crates/betterlite-core/src/api/resource_sdk_settings/**
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/resource_sdk_settings.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/resource-sdk-*
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/resource_sdk_settings.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/resource_sdk_settings.py
+  - tools/oracle/cases/helpers/resource-sdk-settings/**
+  - tools/oracle/fuzz/corpus/helper_case/resource-sdk-settings-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L140-L150
+  why: This whole helper converts raw timeout while respecting the provider's structured-timeout support.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2589-L2598
+  why: The complete capability predicate accepts exactly openai,azure,bedrock.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L204-L310
+  why: Caller-owned branches specify the settings view's OpenAI/Azure/Vertex fallback chains; their dispatch remains B1052.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L111-L165
+  why: Assistant callers consume the same base/key chains and additionally request AZURE_AD_TOKEN under a null-extra-body guard.
+dod:
+- text: >-
+    openai_resource_precedence uses distinct request/global/env strings and removes the winner in turn.
+    api_base chooses request.api_base,litellm.api_base,OPENAI_BASE_URL,OPENAI_API_BASE,"https://api.openai.com/v1".
+    api_key chooses request.api_key,litellm.api_key,litellm.openai_key,OPENAI_API_KEY,null. organization chooses
+    request.organization,litellm.organization,OPENAI_ORGANIZATION,null. Empty strings fall through at every
+    level. OpenAI api_version is the request value only. Native tests use nonsecret placeholders and check
+    redacted Debug output; B1052/B1130 SDK HTTP cases prove the same chain at provider requests.
+  proof: [settings-tests, config-tests]
+- text: >-
+    azure_resource_precedence chooses base=request.api_base,litellm.api_base,AZURE_API_BASE,null;
+    version=request.api_version,litellm.api_version,AZURE_API_VERSION,null; key=request.api_key,litellm.api_key,
+    litellm.azure_key,AZURE_OPENAI_API_KEY,AZURE_API_KEY,null. AZURE_AD_TOKEN is a nullable setting; callers,
+    not this view, decide whether extra_body permits its use. Azure fine-tuning organization uses the request
+    only, so litellm.organization and OPENAI_ORGANIZATION do not supply it.
+  proof: [settings-tests, config-tests]
+- text: >-
+    vertex_resource_settings selects request.vertex_project,litellm.vertex_project,VERTEXAI_PROJECT,null;
+    location=request.vertex_location,litellm.vertex_location,VERTEXAI_LOCATION,null;
+    credentials=request.vertex_credentials,VERTEXAI_CREDENTIALS,null. Its api_base is request.api_base or "",
+    ignoring litellm.api_base. All falsey strings fall through. Omitted settings do not install fallback
+    project/location names and no credential JSON is parsed at this layer.
+  proof: [settings-tests, config-tests]
+- text: >-
+    timeout_capability_and_conversion returns true only for openai,azure,bedrock; vertex_ai,"OpenAI",""
+    return false. Raw null,0,"" select 600.0; "7.5" becomes 7.5, " 7 " becomes 7, "1_000" becomes 1000,
+    and "bad" raises ValueError. For supported providers preserve all structured connect/read/write/pool
+    values; unsupported provider uses float(read or 600), including read=0/null->600. Caller precedence
+    timeout=0,request_timeout=9 selects 9, both falsey select 600. Preserve finite negative values for the
+    transport to judge. Test the documented non-finite rejection separately from parity fixtures.
+  proof: [settings-tests, oracle, helper-python]
+- text: >-
+    loads_resource_sdk_settings uses the production Config loader to load every listed litellm_settings
+    key and environment variable with unset=null and distinct overrides, including empty strings. Non-string
+    values where a setting requires a string fail configuration; supported keys never appear as unsupported.
+    The config corpus includes secret references and all three provider families, and the new helper variant
+    has committed seeds. This is the loader proof consumed by all resource SDK tasks.
+  proof: [config-tests, config-corpus, helper-corpus]
+checks:
+  optional: [mutants]
+  commands:
+  - id: settings-tests
+    why: resource SDKs cannot reproduce provider-specific credential chains and timeout conversion
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::resource_sdk_settings::tests::/) - test(/::replays_corpus$/)'
+  - id: config-tests
+    why: the SDK settings are not recognized and loaded by production Config
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::resource_sdk_settings::tests::loads_resource_sdk_settings($|::)/)'
+  - id: helper-python
+    why: precedence and timeout cases are not checked against source functions
+    run: test -f tools/oracle/helpers/resource_sdk_settings.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: config-corpus
+    why: the settings loader has no new resource-family input
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/resource-sdk-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-corpus
+    why: the resource settings projection has no new tagged input
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/resource-sdk-settings-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/resource-sdk-settings/timeout-capability-and-conversion.yaml
+deviations:
+- what: SDK timeout strings nan/inf/-inf fail before transport with 400 invalid_request_error,param=timeout,code=invalid_timeout instead of becoming non-finite Python floats.
+  why: Enforce finite duration values at the typed boundary; do not rely on client-specific failures or unbounded waits.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L140-L150
+out_of_scope:
+- B1052 owns every other create helper and create SDK wrapper; B1053 owns reads and B1141 cancellation. No caller function is split by this native settings seam.
+- All other utils.py functions retain their existing provider/core owners; this entry adds only the previously unassigned supports_httpx_timeout predicate.
+- B002 resolves secret references. Provider request formats and response decoding stay in B518/B542/B1384 and assistant provider tasks.
+pitfalls:
+- OpenAI base URL checks OPENAI_BASE_URL before OPENAI_API_BASE.
+- A zero timeout is falsey and chooses a fallback rather than a zero-length deadline.
+- Azure uses AZURE_OPENAI_API_KEY before AZURE_API_KEY; Vertex ignores the global api_base.
+review_level: security
+budget:
+  max_changed_lines: 670
+  max_new_expects: 0

@@ -1,0 +1,124 @@
+id: B2457
+title: Generic realtime backend connection
+description: >-
+  Own _open_realtime_backend_ws and async_realtime in llm_http_handler.py:6128-6295, plus their
+  _RealtimeClientWebSocket,_WebsocketsExceptions,_WebsocketsModule protocols, in
+  betterlite-core::api::realtime_backend_transport. B1004 provides config/error contracts, B173 shared
+  TLS configuration, B1006 session state, B2455 setup guardrail policy and B1009 bidirectional relay.
+  Get URL then validated headers before entering the connection try block. Ask provider_config.open_backend
+  first; a non-None provider backend bypasses the WebSocket dialer. Otherwise dial with open_timeout=8.0,
+  max_attempts=3 and no extra backoff. Retry timeout,OSError,WebSocketException; never retry either
+  InvalidStatus or older InvalidStatusCode handshake rejections. Raise the last failed attempt.
+
+  B002 loads REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES as the shared integer cap. Preserve the existing
+  B528/B545 native default 16777216 and 1009 overflow deviation; the pin's unset value is None/unlimited.
+  Explicit0/-1 admit no nonempty frame, numeric overrides work and malformed text is a startup error.
+  loads_realtime_backend_settings exercises the real loader with new config_yaml seeds. SSL settings
+  themselves belong to B173. For wss with SSL_VERIFY=false construct a TLS client context with hostname
+  checking off and CERT_NONE; do not disable the TLS protocol. The generic source does not strip a
+  non-None SSL argument for ws URLs, so its argument rejection is part of the connection error case.
+
+  query_params is used only to force the authorized model for intent=transcription; it is not appended
+  to the config URL. client and timeout arguments are accepted but unused by this generic connection.
+  Add B901 service realtime_backend_transport with actual upstream handshake/frame capture and native
+  injected dialer barriers for hung/retry/failure cases. Use B1004's frame decoder. Source methods have
+  142 nonblank/non-comment lines plus 18 protocol lines; budget 155 implementation,145 tests,110 transcripts,
+  90 adapters,65 config tests/seeds and 35 wiring =600 lines.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/realtime_backend_transport.rs
+  - crates/betterlite-core/src/api/realtime_backend_transport/**
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/realtime_backend_transport.rs
+  - crates/betterlite-config/src/api/realtime_backend_transport/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/realtime-backend-transport-*
+  - tools/oracle/src/websocket_driver.rs
+  - tools/oracle/src/websocket_driver/realtime_backend_transport.rs
+  - tools/oracle/helpers/websocket_dispatch.py
+  - tools/oracle/helpers/realtime_backend_transport_websocket.py
+  - tools/oracle/cases/websocket/realtime-backend-transport/**
+  - tools/oracle/fuzz/corpus/websocket_oracle/realtime-backend-transport-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L232-L236
+  why: Client sink methods required by the generic connection handler.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L246-L264
+  why: Injectable dialer protocol exposes the actual SSL, timeout and size arguments.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6128-L6295
+  why: Complete retry helper and connection/setup/relay/error lifecycle, previously lacking an endpoint owner.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L336-L342
+  why: Source message-size default and environment parse, distinct from the retained bounded native default.
+dod:
+- text: >-
+    realtime_backend_open_retry makes two timeout attempts then success: exactly three dials with8.0-second
+    open timeout and configured max_size, with no additional sleep. Three OSError/WebSocketException failures
+    raise the final exception. InvalidStatus401 and InvalidStatusCode403 each dial once. A custom provider
+    backend makes zero dials and is entered/exited once. URL or validate_environment errors propagate before
+    the handler's error-close catch. wss SSL_VERIFY=false still uses TLS without certificate/hostname checks;
+    a ws URL with an incompatible SSL argument follows the source failure path instead of a silent fix.
+  proof: [behavior-tests, oracle, service-python]
+- text: >-
+    realtime_initial_setup_sequence constructs the streaming state before provider setup. A required,
+    nonempty setup is patched for transcription guardrails, sent once and cached only after send. Empty/None
+    setup sends nothing. A deferred config may emit a synthetic session.created: store it before client send,
+    set session_created_sent_to_client afterward and log "Sent synthetic session.created to client to unblock
+    connection". No synthetic value means no event. request_data contains litellm_metadata only when truthy;
+    intent=transcription sets forced model=m, other/missing intent sets None. query model/intent are not added
+    to the provider URL. Relay completion exits the backend context even after cancellation.
+  proof: [behavior-tests, oracle, service-python]
+- text: >-
+    realtime_backend_connection_errors maps InvalidStatus 401/403/429 to B1004 server_error plus 1008/1008/1013
+    and its exact HTTP-refusal message. Other failures emit redacted server_error then1011 with redacted
+    "Internal server error: <error>" truncated safely to123 UTF-8 bytes; a failed event send logs debug and
+    still attempts close. Close RuntimeError containing "already completed" or "websocket.close" is ignored;
+    another RuntimeError becomes "Unexpected error while closing WebSocket: <close_error>". Other close
+    exception classes propagate. Older InvalidStatusCode is not caught by the outer InvalidStatus branch
+    and therefore takes the generic1011 path. Count all attempts and ensure secrets are redacted by B012.
+  proof: [behavior-tests, oracle, service-python]
+- text: >-
+    realtime_backend_size_limit uses native default 16777216 and explicit 1024 to close 1009 on cap+1, accepting
+    equality; compare parity with an explicit positive cap only. loads_realtime_backend_settings covers unset,
+    numeric strings,0,-1 and invalid text through B002. New YAML and service seeds prove supported parsing.
+  proof: [behavior-tests, config-tests, config-corpus, service-corpus, new-cases, oracle, service-python]
+checks:
+  optional: [mutants]
+  commands:
+  - id: behavior-tests
+    why: Retry counts, setup ordering and final-close failures need deterministic production tests.
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_backend_transport::tests::/) - test(/::replays_corpus$/)'
+  - id: config-tests
+    why: The shared WebSocket size setting must load rather than merely appear in a fixture.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_backend_transport::tests::loads_realtime_backend_settings($|::)/)'
+  - id: config-corpus
+    why: Newly added size-setting seeds must pass the YAML decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/realtime-backend-transport-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: service-python
+    why: Connection parity requires independent upstream handshakes and source setup execution.
+    run: test -f tools/oracle/helpers/realtime_backend_transport_websocket.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: service-corpus
+    why: The connection service driver needs a new bounded transcript seed.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/websocket_oracle/realtime-backend-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::replays_corpus$/)'
+  - id: new-cases
+    why: Retry, setup and refusal behaviors need fresh mock WebSocket observations.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/websocket/realtime-backend-transport)"
+oracle_cases:
+- tools/oracle/cases/websocket/realtime-backend-transport/realtime-backend-open-retry.yaml
+- tools/oracle/cases/websocket/realtime-backend-transport/realtime-initial-setup-sequence.yaml
+- tools/oracle/cases/websocket/realtime-backend-transport/realtime-backend-connection-errors.yaml
+- tools/oracle/cases/websocket/realtime-backend-transport/realtime-backend-size-limit.yaml
+deviations:
+- what: Unset REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES retains betterlite's 16777216-byte cap; excess messages close 1009 instead of the pin's unlimited default.
+  why: Preserve the existing B528/B545 bounded-input policy across the generic connection path.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L336-L339
+out_of_scope:
+- _append_query_params at6113-6126 has no caller at the pin. _ResponsesClientWebSocket belongs to the Responses transport owners; B2456 owns realtime HTTP methods and B2402 generic _handle_error.
+- B1011 chooses provider branches; B528/B545 own OpenAI/Azure direct connectors. Other llm_http_handler.py endpoint methods remain with their endpoint tasks.
+pitfalls:
+- query_params is not passed to get_complete_url and the unused append helper must not be revived to add it.
+- Handshake rejections bypass retries, but the outer error classification distinguishes InvalidStatus from InvalidStatusCode.
+- client and timeout are accepted but do not override the helper's8-second handshake timeout.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

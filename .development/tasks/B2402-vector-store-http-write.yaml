@@ -38,7 +38,7 @@ description: >-
   errors that cannot be caused by a valid HTTP response. No byte decoder is added; B1058/B1131 own wire records.
 
   The five complete functions contain 273 nonblank/non-comment Python lines. Estimate 250 implementation,
-  155 behavior tests, 110 HTTP fixtures, 95 Rust/Python adapter lines and 35 wiring, 645 total under 660.
+  180 behavior tests, 125 HTTP fixtures, 95 Rust/Python adapter lines and 35 wiring, 685 total under 700.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -98,6 +98,14 @@ dod:
     has complete_input_dict. A prepared base https://mock.test/vector_stores?api-version=v1 appends /vs_a after
     the query exactly; the native transport capture sees path=/vector_stores,query=api-version=v1/vs_a.
   proof: [mode-tests]
+- text: >-
+    write_argument_defaults calls update with optional_params={}, extra_headers=null, extra_body=null,
+    timeout=null and no client. Expect POST /v1/vector_stores/vs_a with JSON {}, pool selection with
+    ssl_verify=null and an async timeout argument of null. metadata=null remains JSON null, whereas an
+    absent metadata key stays absent; an empty metadata map stays {}. A matching supplied client bypasses
+    pool creation. Delete with the same omissions sends no JSON. Empty extra_body and extra_headers behave
+    like their omitted forms. Each response is the mock's 200 object, without an added retry.
+  proof: [defaults-http, oracle, python-adapter]
 - text: Newly added vector-store-transport SDK seeds exercise both adapters and B2401's existing case decoder.
   proof: [sdk-corpus, oracle, python-adapter]
 checks:
@@ -118,6 +126,9 @@ checks:
   - id: mode-tests
     why: sync and async call modes accidentally share a different timeout/client contract
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_http_write::tests::execution_mode($|::)/)'
+  - id: defaults-http
+    why: absent metadata, null metadata and empty metadata are collapsed before the provider receives them
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_http_write::tests::write_argument_defaults($|::)/)'
   - id: python-adapter
     why: the real-handler HTTP adapter is missing or untyped
     run: test -f tools/oracle/sdk_http/vector_store_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
@@ -129,11 +140,13 @@ oracle_cases:
 - tools/oracle/cases/sdk-http/vector-store-transport/write-headers.yaml
 - tools/oracle/cases/sdk-http/vector-store-transport/delete-http-ignores-body.yaml
 - tools/oracle/cases/sdk-http/vector-store-transport/transport-failure.yaml
+- tools/oracle/cases/sdk-http/vector-store-transport/write-argument-defaults.yaml
 deviations: []
 out_of_scope:
 - B1066 owns SDK update/delete argument filtering, provider selection, REQUEST_TIMEOUT and decorator error normalization.
 - B173 owns client pools and generic sends; B1058/B1131 own vector-store contracts and response decoding.
 - B527 and the other provider adapter tasks own validate_environment, get_complete_url and response transformations.
+- B171 owns encode_url_path_segment, including rejection of empty or unsafe path segments; both write methods call that encoder before logging or sending.
 - Other llm_http_handler.py endpoint families retain their respective API owners; this task claims only the five complete functions listed above.
 pitfalls:
 - extra_body.metadata runs after add_openai_metadata and can therefore restore non-string metadata values.
@@ -141,5 +154,5 @@ pitfalls:
 - Header validation can mutate extra_headers before its apparent final overlay, so caller Authorization does not necessarily win.
 review_level: security
 budget:
-  max_changed_lines: 660
+  max_changed_lines: 700
   max_new_expects: 0

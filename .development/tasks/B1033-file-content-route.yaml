@@ -1,232 +1,137 @@
 id: B1033
-title: File content route
+title: File content HTTP route and stream pump
 description: >-
-  Install managed/native file-content routes, authorize ownership before selecting stored credentials or storage
-  URL, then stream through file-content-stream or the configured storage backend. Restore client-visible unified
-  IDs and preserve source content headers.
+  Own get_file_content whole, with GET /{provider}/v1/files/{file_id:path}/content,
+  /v1/files/{file_id:path}/content and /files/{file_id:path}/content. Also own the complete
+  FileContentStreamingHandler.get_streaming_file_content_response and stream_file_content_with_logging
+  moved from B1080. Implement route/pump in betterlite-server::api::file_content_route and
+  lifecycle policy in betterlite-core::api::file_content_route. B1080 stays below B1030 and supplies
+  the pure credential/stream predicate; this route calls B1030 to open content.
 
+  B1021 checks managed-ID requirements before common pre-call processing; B1019 recognizes legacy
+  ids; B1020 authorizes model routing; B2208 classifies raw storage URIs. With no enterprise hook,
+  unified ids fail before database/storage access. Remove the previous dependencies on managed
+  repositories/backends; there is no reachable storage download branch here in the MIT proxy.
+  Provider hints use path, custom-llm-provider header, custom_llm_provider query/body, then openai.
 
-  The oracle has no litellm-enterprise. get_proxy_hook(managed_files) is absent: preserve each MIT caller's own
-  early return or exception, not a replacement enterprise hook. Retain MIT id codecs, model-embedded file routing,
-  storage-only operations and pre-existing-row readers. Enterprise-only creation/ownership/output-ID methods are
-  out of scope.
-
-
-  Reuse B2208 cloud-storage URI/credential authorization directly where the owned native storage path calls cloud_storage_security;
-  B1021 supplies the trusted deployment snapshot.
-
-
-  Implement crates/betterlite-server/src/api/file_content_route.rs, crates/betterlite-core/src/api/file_content_route.rs.
-  Use FileContentRouteInput and FileContentRouteResult with typed nested records; inject only the clock, repositories,
-  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
-  ambient environment or duplicate credential resolution.
-
-
-  Register exactly these routes in this task: GET /{provider}/v1/files/{file_id:path}/content; GET /v1/files/{file_id:path}/content;
-  GET /files/{file_id:path}/content. Each alias is exercised through the booted proxy. Every route factory is mounted
-  once; a family composer mounts its child factories without re-registering their methods/paths.
-
-
-  Route input projections: data.model (absent None); data.litellm_call_id (absent '').
-
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): files_endpoints.py:1010 type=ProxyErrorTypes.internal_server_error.value, param=None, code=500;
-  files_endpoints.py:1017 type=ProxyErrorTypes.internal_server_error.value, param=None, code=500; files_endpoints.py:1024
-  type=ProxyErrorTypes.internal_server_error.value, param=None, code=500; files_endpoints.py:1092 status_code=400,
-  exception_detail=FastAPI detail string; files_endpoints.py:1220 type=openai_error_type(e, error_status_code(e,
-  status.HTTP_400_BAD_REQUEST)), param=openai_error_param(e), code=error_status_code(e, status.HTTP_400_BAD_REQUEST);
-  files_endpoints.py:1228 type=openai_error_type(e, error_status_code(e, 500)), param=openai_error_param(e), code=error_status_code(e,
-  500); files_endpoints.py:1059 type='invalid_request_error', param='file_id', code=400. Compare the actual source
-  status, error type, param and code; ignore only error wording except in message-extraction tests.
-
-
-  Write adjacent tests.rs behavior functions managed_content_no_hook_500, native_file_content, managed_storage_no_hook_500,
-  raw_cloud_content_400, stream_content_disconnect, route_aliases, auth_missing, auth_invalid under api::file_content_route::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
-
-
-  Callable ownership: litellm/proxy/openai_files_endpoints/files_endpoints.py: get_file_content (L945-L1233). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 254 owned nonblank/non-comment/non-docstring Python lines (264 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 274 implementation,
-  88 behavior tests, 96 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 496 total within the 500-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1017 (Managed resource access), B1019
-  (File routing ids), B1027 (File storage service), B1030 (File content stream), B1087 (Api boundaries), B732 (Typed
-  authentication principals and grant resolution), B855 (Authenticated request admission and budget handoff), B756
-  (Authentication header selection and mode dispatch), B1021 (File upload options), B1080 (File stream logging),
-  B1020 (File credentials), B1025 (File storage contracts), B003 (HTTP server, health routes and master key auth),
-  B1139 (Stateful HTTP oracle scenarios), B856 (Management oracle namespaces and Postgres test fixture). These are
-  callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the
-  provider and keys/data branches.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  Unified managed file/content and managed storage IDs stop at absent managed_files with 500 internal_server_error,
-  param null, code 500 before DB-backed storage retrieval. An unwrapped s3:// or gs:// URI returns the route-mapped
-  400 for every role, including proxy admin; this differs from delete. Native content streaming and disconnect handling
-  remain live; do not fabricate a successful managed storage-content fixture.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
+  Provider alone selects streaming, not a stream query parameter. Buffered replies return a new
+  Response with upstream status/headers, losing the custom headers written on fastapi_response.
+  Streaming replies default to 200 and merge provider headers then B004 custom headers, with
+  application/octet-stream only as the fallback media type. Preserve this observable difference.
+  Add HTTP oracle scenarios through B900/B1139 with master key sk-test and ordinary seeded keys;
+  no helper imports a FastAPI function. Tests use api::file_content_route::tests in both crates.
+  The 337 nonblank/non-comment lines including the two moved methods need 285 implementation,
+  185 tests, 220 cases and 40 wiring lines, 730 total. Existing body/ID/transport decoders are reused.
 scope:
   paths:
-  - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/lib.rs
-  - crates/betterlite-server/src/error.rs
-  - crates/betterlite-server/src/api/file_content_route.rs
-  - crates/betterlite-server/src/api/file_content_route/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/state.rs
-  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-server/src/api/file_content_route.rs
+  - crates/betterlite-server/src/api/file_content_route/**
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_content_route.rs
   - crates/betterlite-core/src/api/file_content_route/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/cases/api/file-content-route/**
-  - tools/oracle/fixtures/file-content-route/**
+  - tools/oracle/fixtures/http-scenarios/file-content-route/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L930-L1233
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L928-L1233
+  why: All content aliases, early managed/cloud checks, routing and distinct buffered response handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/file_content_streaming_handler.py#L70-L146
+  why: Whole SDK-opening response constructor and proxy stream pump now owned above the SDK dependency.
 dod:
-- text: 'managed content no hook 500: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-managed-content-no-hook-500
-  - oracle
-- text: 'native file content: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-native-file-content
-  - oracle
-- text: 'managed storage no hook 500: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-managed-storage-no-hook-500
-  - oracle
-- text: 'raw cloud content 400: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-raw-cloud-content-400
-  - oracle
-- text: 'stream content disconnect: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-stream-content-disconnect
-  - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-route-aliases
-  - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-missing
-  - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-invalid
-  - oracle
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    content_route_aliases GETs /files/f/content, /v1/files/f/content and /openai/v1/files/f/content
+    with valid auth. Each makes exactly one upstream request and returns b"\x00abc\xff" unchanged.
+    A slash-bearing id remains one catch-all id and uses the provider's encoder. Missing and invalid
+    auth with master key configured give 401,auth_error,param="None",code="401", zero pre-call/provider
+    effects; compare B756's messages. Mount the content routes ahead of generic file-id paths once.
+  proof: [route-tests, oracle, new-cases]
+- text: >-
+    content_provider_and_model_selection proves path>header>query>body>openai, empty hints falling
+    through. B004 common pre-call route_type=afile_content runs before provider accessors. An encoded
+    model m overrides conflicting provider hints, authorizes m through B1020, decodes file id and
+    carries internal credentials. Stream projection removes model from the copied payload to avoid
+    re-resolution; buffered projection retains it. Unrouted requests use team-provider credentials.
+    GET ?stream=false still streams OpenAI; ?stream=true still buffers Azure. Query/body extras
+    are accepted only through the existing common-processing contract, not a second route parser.
+  proof: [route-tests, oracle, new-cases]
+- text: >-
+    managed_content_failures sends a legacy unified id with require_managed_files=false and gets
+    500/internal_server_error/null/"500",message="Managed files hook not found" before any DB read.
+    With require_managed_files=true, the same id fails earlier with "Managed resource ownership
+    validation is unavailable." at 500; raw f fails 400/invalid_request_error/null/"400" with B1021's
+    exact required-managed-file message. A raw s3://bucket/key or gs://bucket/key at the normal setting
+    fails 400/invalid_request_error/null/"400",message="Raw cloud storage file ids cannot be retrieved
+    directly. Use the LiteLLM managed file id returned when the file was created." even for proxy_admin.
+    Require-managed failure precedes raw-cloud checking; no fetch occurs in any rejection.
+  proof: [route-tests, oracle, new-cases]
+- text: >-
+    buffered_content_response uses Azure mock status=206,content-type=text/plain,x-origin=upstream
+    and content=b"part". Client gets exactly 206 and those upstream fields/bytes; generated
+    x-litellm-version/model-id/cache-key/model-api-base are absent unless the upstream itself sent them.
+    Success status is enqueued with call id default "" before validating response.response; a native
+    missing response object yields 500/internal_server_error/null/"500",message="Invalid response -
+    response.response is None - got <response>" after that enqueue. No post-call success hook runs here.
+  proof: [route-tests, oracle, new-cases]
+- text: >-
+    streaming_content_response uses OpenAI mock chunks [ab,cd], provider content-type=text/plain,
+    x-litellm-version=upstream and content-disposition=attachment. Client receives bytes incrementally,
+    status=200, content-type=text/plain and disposition unchanged; custom version overrides upstream.
+    Absent content-type defaults application/octet-stream. B004 supplies x-litellm-model-id/cache-key/
+    model-api-base from hidden values or "", version and allowed_model_region. Stream constructor
+    calls SDK with provider,file_id,stream=true then data, so native injected data overrides duplicate
+    keys exactly as Python's merge does. Do not drop arbitrary upstream headers in this task.
+  proof: [route-tests, oracle, new-cases]
+- text: >-
+    content_stream_completion updates request status to success only after iterator EOF, with
+    litellm_call_id="" when absent; exceptions trigger post_call_failure_hook with original data,
+    then propagate, and finally await aclose if present. Cancellation closes without inventing a
+    success or failure callback. After response headers are committed a broken stream terminates;
+    it cannot be replaced by a JSON error envelope. No buffered-route status enqueue follows the
+    streaming early return. SDK logging remains B1080's separate callback lifecycle.
+  proof: [route-tests, oracle, new-cases]
+- text: >-
+    content_open_failures makes upstream 429 carry type=rate_limit_error,param=file_id,message=slow:
+    client 429/rate_limit_error/file_id/"429",message=slow, after the failure hook. HTTPException400
+    maps to invalid_request_error; 403 to permission_error; a missing status defaults 500 and
+    internal_server_error. Param absent or literal "None" becomes null. Log EXCEPTION
+    "litellm.proxy.proxy_server.retrieve_file_content(): Exception occured - <error>" then DEBUG
+    traceback. Streaming selection logs DEBUG with provider, original_file_id, resolved file_id and
+    model_used; buffered model routing logs "Retrieved file content using model: m" plus the id mapping.
+  proof: [route-tests, oracle, new-cases]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::file_content_route::/)
-      - test(/::replays_corpus$/)'
-  - id: case-managed-content-no-hook-500
-    why: the managed-content-no-hook-500 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_content_route::tests::managed_content_no_hook_500($|::)/)'
-  - id: case-native-file-content
-    why: the native-file-content behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_content_route::tests::native_file_content($|::)/)'
-  - id: case-managed-storage-no-hook-500
-    why: the managed-storage-no-hook-500 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_content_route::tests::managed_storage_no_hook_500($|::)/)'
-  - id: case-raw-cloud-content-400
-    why: the raw-cloud-content-400 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_content_route::tests::raw_cloud_content_400($|::)/)'
-  - id: case-stream-content-disconnect
-    why: the stream-content-disconnect behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_content_route::tests::stream_content_disconnect($|::)/)'
-  - id: case-route-aliases
-    why: the route-aliases behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_content_route::tests::route_aliases($|::)/)'
-  - id: case-auth-missing
-    why: the auth-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_content_route::tests::auth_missing($|::)/)'
-  - id: case-auth-invalid
-    why: the auth-invalid behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_content_route::tests::auth_invalid($|::)/)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+  - id: route-tests
+    why: content aliases, lifecycle or final byte/header behavior is missing
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::file_content_route::tests::/) - test(/replays_/)'
+  - id: new-cases
+    why: content behavior has no new booted-proxy scenarios
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/file-content-route)"
 oracle_cases:
-- tools/oracle/cases/api/file-content-route/managed-content-no-hook-500.yaml
-- tools/oracle/cases/api/file-content-route/native-file-content.yaml
-- tools/oracle/cases/api/file-content-route/managed-storage-no-hook-500.yaml
-- tools/oracle/cases/api/file-content-route/raw-cloud-content-400.yaml
-- tools/oracle/cases/api/file-content-route/stream-content-disconnect.yaml
-- tools/oracle/cases/api/file-content-route/route-aliases.yaml
-- tools/oracle/cases/api/file-content-route/auth-missing.yaml
-- tools/oracle/cases/api/file-content-route/auth-invalid.yaml
-deviations: []
+- tools/oracle/cases/api/file-content-route/content-route-aliases.yaml
+- tools/oracle/cases/api/file-content-route/content-provider-and-model-selection.yaml
+- tools/oracle/cases/api/file-content-route/managed-content-failures.yaml
+- tools/oracle/cases/api/file-content-route/buffered-content-response.yaml
+- tools/oracle/cases/api/file-content-route/streaming-content-response.yaml
+- tools/oracle/cases/api/file-content-route/content-stream-completion.yaml
+- tools/oracle/cases/api/file-content-route/content-open-failures.yaml
+deviations:
+- what: Legacy managed file content returns 500 internal_server_error/code="500" without fetching stored content; require_managed_files changes the message to ownership validation unavailable.
+  why: Retain the MIT absent-hook behavior until Max decides managed files and batches; no enterprise implementation or license check is introduced.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1004-L1013
 out_of_scope:
-- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1031 owns _names_a_litellm_executed_provider L111-L113,
-  _litellm_executed_batch_input_model L116-L165, set_files_config L181-L195, get_files_provider_config L198-L209,
-  _deployment_provider L212-L214, _resolves_to_vertex_deployments_only L217-L224, _validate_passthrough_upload L227-L289,
-  _scan_batch_upload L292-L329, get_first_json_object L332-L351, get_model_from_json_obj L354-L363, _deprecated_loadbalanced_create_file
-  L366-L378, route_create_file L381-L527.'
-- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1032 owns create_file L545-L927.'
-- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1034 owns get_file L1251-L1431, _as_file_list_page
-  L1652-L1655, list_files L1673-L1860.'
-- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B087 owns delete_file L1449-L1649.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- B1031 owns upload helpers, B1032 create_file, B1034 get_file/list_files/_as_file_list_page, B087 delete_file. B1080 owns the remaining streaming handler methods and SDK stream wrapper.
+- The managed-hook continuation L1014-L1091 has no reachable MIT caller. Its router/type errors, repository lookup, Storage backend error 400 and enterprise downloads are excluded together; do not fake a hook to exercise them.
+- B003 owns error normalization, B004 common pre-call/custom headers, B124 proxy hooks/status, B1021 requirement errors, B1030 SDK content and B2208 cloud URI classification.
 pitfalls:
-- files_endpoints.py:1139 emits the diagnostic 'Using streaming file content helper for custom_llm_provider=%s,
-  original_file_id=%s, file_id=%s, model_used=%s'; retain its level and fallback instead of turning it into a hard
-  error.
-- data reads 'model' with default None; omission and an explicit value must not collapse into one case.
+- Buffered content discards custom headers because it returns a new Response; streaming merges them into its actual response.
+- Content checks unified ids before model routing, unlike retrieve/delete routes.
+- A proxy admin can delete a raw cloud id but cannot use this route to download it.
 review_level: security
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 730
   max_new_expects: 0

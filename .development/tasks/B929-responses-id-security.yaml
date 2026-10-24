@@ -29,7 +29,7 @@ description: >-
   call a FastAPI handler from a helper adapter or add a dependency on the later family composer.
 
 
-  Place the policy in betterlite-core::api::responses_id_security, consuming B732 principals and B902 response
+  Place the policy in betterlite-core::api::responses_id_security, consuming B732 principals and B1138 response
   objects. Inject the config snapshot and B061 encryption service; B1087 limits bound ids before decryption.
 
 
@@ -84,8 +84,8 @@ description: >-
   tests, 125 fixtures, 95 adapters, 55 fuzz/replay, 40 config tests/seeds and 30 wiring, 765 changed lines.
 
 
-  B002 resolves settings, B061 supplies interoperable encryption, B171 runs pure-helper comparisons, B902/B903
-  provide response objects/routing ids, and B732 supplies principals. Do not depend on B080 or B938: they consume this policy.
+  B002 resolves settings, B061 supplies interoperable encryption, B171 runs pure-helper comparisons,
+  B1138/B1113 provide response/event records, and B732 supplies principals. B903 is not called by this hook.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -136,12 +136,21 @@ dod:
   - case-same-user-team
   - oracle
   - helper-python
-- text: cross_user_forbidden sends user_a/team_a ownership with user_b/team_a; authorization raises 403 before returning a routing id.
+- text: >-
+    cross_user_forbidden sends user_a/team_a ownership with user_b/team_a; authorization raises HTTPException
+    status=403,detail="Forbidden. The response id is not associated with the user, who this key belongs to. To
+    disable this security feature, set general_settings::disable_responses_id_security to True in the config.yaml file."
+    before returning a routing id. Both owner mismatches select this user error before the team check.
+    Helper type,param,code are absent; the consuming HTTP route produces permission_error,null,"403".
   proof:
   - case-cross-user-forbidden
   - oracle
   - helper-python
-- text: cross_team_forbidden keeps user_a but changes team_a to team_b; it raises 403 on the team branch.
+- text: >-
+    cross_team_forbidden keeps user_a but changes team_a to team_b; expect HTTPException status=403,
+    detail="Forbidden. The response id is not associated with the team, who this key belongs to. To disable this
+    security feature, set general_settings::disable_responses_id_security to True in the config.yaml file."
+    The helper has no type,param,code attributes.
   proof:
   - case-cross-team-forbidden
   - oracle
@@ -151,7 +160,12 @@ dod:
   - case-proxy-admin-unmanaged
   - oracle
   - helper-python
-- text: no_signing_key_debug_fallback supplies signing_key=None; resp_external is permitted and output resp_test remains plaintext with a debug diagnostic.
+- text: >-
+    no_signing_key_debug_fallback supplies signing_key=None; resp_external is permitted and output resp_test
+    remains plaintext with debug "Response ID encryption is enabled but no signing key is configured. Please
+    set LITELLM_SALT_KEY environment variable or configure a master_key. Skipping response ID encryption. See:
+    https://docs.litellm.ai/docs/proxy/prod#5-set-litellm-salt-key". An explicitly empty signing key does not
+    take this fallback. No database writer is called despite the stale upstream docstring.
   proof:
   - case-no-signing-key-debug-fallback
   - oracle
@@ -172,7 +186,12 @@ dod:
   - case-malformed-owned-id-payload
   - oracle
   - helper-python
-- text: default_unmanaged_denial uses a normal user_a key, signing key=test-master and both flags omitted; resp_external raises HTTPException 403.
+- text: >-
+    default_unmanaged_denial uses a normal user_a key, signing key=test-master and both flags omitted;
+    resp_external raises HTTPException status=403,detail="Forbidden. This response id was not issued by this
+    proxy, so the proxy cannot tell who owns it. To let keys address responses this proxy did not issue, set
+    general_settings::allow_unmanaged_response_ids to True in the config.yaml file." Helper type,param,code
+    are absent. The same default holds without a callbacks entry because startup installs the hook.
   proof: [case-default-denial, oracle, helper-python]
 - text: >-
     setting_overrides separately sets disable_responses_id_security=true and allow_unmanaged_response_ids=true:
@@ -191,7 +210,16 @@ dod:
     /chat/completions and a missing route unchanged. A nonstream ResponsesAPIResponse still encrypts on those routes.
     Test top-level resp_test, nested typed response, nested {id:"resp_test"}, nested {id:7} and nested null; the last
     two remain unchanged. A top-level resp_ id takes precedence over a simultaneous nested response id.
+    A top-level id=other is skipped but nested {id:other} is encrypted. Untyped dict chunks stay unchanged.
+    Trailing-slash /v1/responses/ and /azure/v1/responses are not create routes for this hook.
   proof: [case-rewrite-routes, oracle, helper-python]
+- text: >-
+    encrypted_prefix_split supplies prefixresp_<valid ciphertext> and resp_<valid ciphertext>resp_ignored;
+    both use the first segment after resp_ and recover resp_test. A string with no resp_ returns false from
+    _is_encrypted_response_id and unchanged/null/null from _decrypt_response_id. Decryption returning null
+    has the same fallback; decrypted non-litellm_proxy content is unmanaged. Compare these through the
+    existing malformed_owned_id_payload test with full rstest case names.
+  proof: [case-malformed-owned-id-payload, oracle, helper-python]
 - text: The production owned-id decoder and fuzz replay reject truncated UTF-8 and malformed encrypted payloads without panics.
   proof: [id-corpus]
 - text: loads_settings proves both false defaults, independent true overrides, absent salt fallback and empty-salt precedence using the config loader.
@@ -289,7 +317,10 @@ oracle_cases:
 - tools/oracle/cases/helpers/responses-id-security/no-signing-key-debug-fallback.yaml
 - tools/oracle/cases/helpers/responses-id-security/stream-id-consistency.yaml
 - tools/oracle/cases/helpers/responses-id-security/malformed-owned-id-payload.yaml
-deviations: []
+deviations:
+- what: A decrypted two-field payload returns a typed internal failure in betterlite instead of Python IndexError; consuming routes retain status=500,type=internal_server_error,param=null,code="500".
+  why: The no-panics rule prohibits reproducing the unchecked third-field access; the helper projection records the different diagnostic class explicitly.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L250-L260
 out_of_scope:
 - B061 owns the encryption algorithms and salt-key material; this task owns the identity payload and authorization policy.
 - B080/B938 own creation/lifecycle HTTP registration and its final status, error envelope and header comparisons.

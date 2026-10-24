@@ -1,173 +1,118 @@
 id: B1080
-title: File stream logging
+title: File stream lifecycle and credential projection
 description: >-
-  Own file stream wrapping, hidden metadata, terminal success/failure logs and HTTP streaming parameter resolution.
-  Consume an injected typed byte stream and cancellation handle from B009, reuse file-credentials for model hints,
-  and expose the wrapper to file-content-stream without buffering content for logs.
+  Implement the entire FileContentStreamingResponse class in betterlite-core::api::file_stream_logging,
+  plus FileContentStreamingHandler.resolve_streaming_request_params and should_stream_file_content.
+  Move the whole get_streaming_file_content_response and stream_file_content_with_logging functions
+  to B1033: they call the SDK and belong above B1030, which consumes this lower-level wrapper.
+  Inject B012 callbacks and clock; consume B1020's credential projection without an ambient router.
 
-
-  Implement crates/betterlite-core/src/api/file_stream_logging.rs. Use FileStreamLoggingInput and FileStreamLoggingResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions byte_stream_hidden_metadata, close_success_once, close_failure_once,
-  client_disconnect_log, stream_query_parameters under api::file_stream_logging::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::FileStreamLogging in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_stream_logging: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/files/streaming.py: FileContentStreamingResponse.__init__ (L23-L45); litellm/files/streaming.py:
-  FileContentStreamingResponse.__iter__ (L47-L50); litellm/files/streaming.py: FileContentStreamingResponse.__next__
-  (L52-L63); litellm/files/streaming.py: FileContentStreamingResponse.__aiter__ (L65-L68); litellm/files/streaming.py:
-  FileContentStreamingResponse.__anext__ (L70-L81); litellm/files/streaming.py: FileContentStreamingResponse.aclose
-  (L83-L100); litellm/files/streaming.py: FileContentStreamingResponse.close (L102-L112); litellm/files/streaming.py:
-  FileContentStreamingResponse._build_logging_response (L114-L121); litellm/files/streaming.py: FileContentStreamingResponse._sync_hidden_params
-  (L123-L135); litellm/files/streaming.py: FileContentStreamingResponse._build_standard_logging_object (L137-L180);
-  litellm/files/streaming.py: FileContentStreamingResponse._log_success_async (L182-L199); litellm/files/streaming.py:
-  FileContentStreamingResponse._log_success_sync (L201-L213); litellm/files/streaming.py: FileContentStreamingResponse._log_failure_async
-  (L215-L223); litellm/files/streaming.py: FileContentStreamingResponse._log_failure_sync (L225-L231); litellm/proxy/openai_files_endpoints/file_content_streaming_handler.py:
-  FileContentStreamingHandler.resolve_streaming_request_params (L17-L61); litellm/proxy/openai_files_endpoints/file_content_streaming_handler.py:
-  FileContentStreamingHandler.should_stream_file_content (L64-L68); litellm/proxy/openai_files_endpoints/file_content_streaming_handler.py:
-  FileContentStreamingHandler.stream_file_content_with_logging (L71-L92); litellm/proxy/openai_files_endpoints/file_content_streaming_handler.py:
-  FileContentStreamingHandler.get_streaming_file_content_response (L95-L146). Abstract/protocol declarations map
-  to native types and synchronous/async wrappers share one implementation; a partial function span is the explicit
-  preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 310 owned nonblank/non-comment/non-docstring Python lines (323 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 330 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 580 total within the 580-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B009 (Outbound HTTP clients, proxies, TLS and connection reuse for every provider), B012
-  (Logging pipeline, callback registry and redaction), B171 (Direct helper oracle and URL path encoding), B1020
-  (File credentials), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Preserve separate logging-completed and close-completed flags. EOF emits success but does not
+  itself close the underlying iterator; explicit close suppresses subsequent logging, including
+  early client cancellation. Do not invent a successful completion on disconnect. Stream chunks
+  are never accumulated in the logging response. Native state-machine tests use controlled iterators.
+  B171 file_stream_projection helper cases cover only pure hidden metadata and credential projection.
+  B2401 file_stream_logging HTTP cases wrap a real B173 mock-response stream directly, exercising
+  this class without depending on B1030 or a proxy handler. No new decoder is required.
+  Owned class plus two pure methods have 230 nonblank, non-comment lines; budget 230
+  implementation, 160 tests, 100 fixtures, 110 adapters and 30 wiring lines, totaling 630.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_stream_logging.rs
   - crates/betterlite-core/src/api/file_stream_logging/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/file_stream_logging.rs
-  - tools/oracle/src/helpers/file_stream_logging/**
+  - tools/oracle/src/helpers/file_stream_projection.rs
   - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/file_stream_logging.py
-  - tools/oracle/helpers/file_stream_logging/**
-  - tools/oracle/fuzz/corpus/helper_case/file_stream_logging-*
-  - tools/oracle/cases/helpers/file-stream-logging/**
+  - tools/oracle/helpers/file_stream_projection.py
+  - tools/oracle/fuzz/corpus/helper_case/file_stream_projection-*
+  - tools/oracle/cases/helpers/file-stream-projection/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/file_stream_logging.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/file_stream_logging.py
+  - tools/oracle/fuzz/corpus/sdk_http_case/file-stream-logging-*
+  - tools/oracle/cases/sdk-http/file-stream-logging/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/streaming.py#L1-L231
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/file_content_streaming_handler.py#L1-L146
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/streaming.py#L17-L231
+  why: Full stream wrapper with independent close/log flags and callback payload construction.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/file_content_streaming_handler.py#L15-L68
+  why: Owns only provider/credential projection and supported-provider predicate, avoiding a reverse SDK edge.
 dod:
-- text: 'byte stream hidden metadata: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-byte-stream-hidden-metadata
-  - oracle
-- text: 'close success once: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-close-success-once
-  - oracle
-- text: 'close failure once: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-close-failure-once
-  - oracle
-- text: 'client disconnect log: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-client-disconnect-log
-  - oracle
-- text: 'stream query parameters: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-stream-query-parameters
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    streaming_projection routes data={model:m,file_id:encoded,x:1} with credentials containing
+    custom_llm_provider=openai,api_key=k and original_file_id=f: return provider=openai,id=f,
+    a copied payload with credentials and internal trusted snapshot, no model, and x=1. Original
+    input is unchanged. should_route=false or credentials=None returns the original payload and
+    provider/id without copying or stripping model. Streaming predicate accepts exactly openai,
+    hosted_vllm,litellm_proxy,vertex_ai; azure,bedrock,anthropic,empty and null do not qualify.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    hidden_stream_metadata uses id=f,model=m,provider=openai and truthy api_base=u in logging
+    details: hidden fields are api_base=u,litellm_model_name=m,response_cost=null. Existing api_base
+    and response_cost are preserved even when null; model name is always corrected from file id
+    to model. Response is {id:f,object:file.content,model:m}; empty/null model omits response.model,
+    but a non-null empty model still becomes payload.model="". Wrapper hidden fields override
+    payload hidden fields; truthy hidden api_base wins payload.api_base. Payload status=success,
+    custom_llm_provider is assigned when non-null, and an existing standard payload is cached unchanged.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    stream_success_once drains b"ab",b"cd": chunks remain exact, then one sync success callback,
+    or async_success_handler followed by handle_sync_success_callbacks_for_async_calls. Repeated
+    EOF adds none. A truthy logger.start_time is used; otherwise use injected current time. No
+    logger means no callbacks/payload. Callback errors propagate after setting the completion flag,
+    so no duplicate success/failure follows. Logging payload contains metadata, never file bytes.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    stream_failure_once raises ValueError("broken") after one chunk: sync failure_handler once;
+    async failure_handler then async_failure_handler once, with the original exception/traceback
+    and start/end times, followed by rethrow. No success follows. BaseException cancellation is
+    outside the Exception catch and produces no failure callback. Calling sync iteration on an
+    async-only stream raises TypeError "File content stream does not support sync iteration";
+    the converse says "File content stream does not support async iteration" before any callback.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    explicit_close_suppresses_logging closes early without success or failure, swaps in an empty
+    sync iterator, and calls the underlying close once even if cleanup raises. Async close is
+    cancellation-shielded, prefers aclose, otherwise calls close and awaits a non-null result.
+    Sync close calls only close, never aclose. Repeated close is inert; async iteration after close
+    fails its capability check because the replacement iterator is synchronous.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: Pure projection and real-stream cases each have new independent corpus inputs.
+  proof: [new-cases, case-seeds, oracle, python-adapters]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_stream_logging::/) -
-      test(/::replays_corpus$/)'
-  - id: case-byte-stream-hidden-metadata
-    why: the byte-stream-hidden-metadata behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_stream_logging::tests::byte_stream_hidden_metadata($|::)/)'
-  - id: case-close-success-once
-    why: the close-success-once behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_stream_logging::tests::close_success_once($|::)/)'
-  - id: case-close-failure-once
-    why: the close-failure-once behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_stream_logging::tests::close_failure_once($|::)/)'
-  - id: case-client-disconnect-log
-    why: the client-disconnect-log behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_stream_logging::tests::client_disconnect_log($|::)/)'
-  - id: case-stream-query-parameters
-    why: the stream-query-parameters behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_stream_logging::tests::stream_query_parameters($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/file_stream_logging.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_stream_logging-*)"
-      && grep -qE "^[[:space:]]+file_stream_logging:" tools/oracle/fuzz/corpus/helper_case/file_stream_logging-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-stream-logging)"
+    why: stream state transitions and logging payloads are not independently tested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_stream_logging::tests::/) - test(/replays_/)'
+  - id: python-adapters
+    why: pure projection or real-stream adapter is missing
+    run: test -f tools/oracle/helpers/file_stream_projection.py && test -f tools/oracle/sdk_http/file_stream_logging.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: case-seeds
+    why: one of the two typed operations lacks a new seed or replay
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_stream_projection-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-stream-logging-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: real-stream lifecycle has no new oracle capture
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/file-stream-logging)"
 oracle_cases:
-- tools/oracle/cases/helpers/file-stream-logging/byte-stream-hidden-metadata.yaml
-- tools/oracle/cases/helpers/file-stream-logging/close-success-once.yaml
-- tools/oracle/cases/helpers/file-stream-logging/close-failure-once.yaml
-- tools/oracle/cases/helpers/file-stream-logging/client-disconnect-log.yaml
-- tools/oracle/cases/helpers/file-stream-logging/stream-query-parameters.yaml
+- tools/oracle/cases/helpers/file-stream-projection/streaming-projection.yaml
+- tools/oracle/cases/helpers/file-stream-projection/hidden-stream-metadata.yaml
+- tools/oracle/cases/sdk-http/file-stream-logging/stream-success-once.yaml
+- tools/oracle/cases/sdk-http/file-stream-logging/stream-failure-once.yaml
+- tools/oracle/cases/sdk-http/file-stream-logging/explicit-close-suppresses-logging.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1033 owns whole stream_file_content_with_logging and get_streaming_file_content_response methods, including SDK calls, proxy status updates, custom headers and StreamingResponse construction.
+- B012 owns standard logging payload/callback internals, B1020 credential merging, B173 byte stream cleanup, B1128 the streaming result type.
 pitfalls:
-- data reads 'litellm_call_id' with default ''; omission and an explicit value must not collapse into one case.
-- Within FileContentStreamingResponse.__iter__\'s not hasattr(self.stream_iterator, '__next__') branch, preserve
-  raise TypeError('File content stream does not support sync iteration') and its nested guards.
+- close sets logging_completed before cleanup, so early close intentionally emits no success callback.
+- The source's model correction is required because the generic decorator mistakes positional file_id for model.
+- Async failure callbacks run in sync-then-async order, unlike success callbacks.
 review_level: security
 budget:
-  max_changed_lines: 580
-  max_new_expects: 1
+  max_changed_lines: 630
+  max_new_expects: 0

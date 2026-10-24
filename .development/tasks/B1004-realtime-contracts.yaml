@@ -1,260 +1,135 @@
 id: B1004
-title: Realtime contracts
+title: Realtime contracts and close errors
 description: >-
-  Define typed realtime events, provider HTTP/WebSocket operation contracts, transcription protocol normalization
-  and close/error mapping. Extend B009 with a configured WebSocket transport using maintained protocol libraries,
-  preserving TLS/proxy/deadline policy; no endpoint may open a request-supplied destination.
+  Define realtime records, BaseRealtimeConfig/BaseRealtimeHTTPConfig interfaces and their concrete
+  defaults in betterlite-core::api::realtime_contracts. Own all five referenced small modules, plus
+  realtime_streaming.py's BackendClose, backend_close_from, ClientLoopExit, socket/logging/normalizer
+  protocols and _decode_json_object. Session state and relay methods stay in later tasks. The HTTP
+  interface's credential methods are abstract; their documented precedence is not executable fallback
+  logic here. The WebSocket base error method raises BaseLLMException; the HTTP base method returns it.
 
+  Preserve unknown fields in RealtimeSessionConfig, transcription request/response and raw session
+  records; top-level client-secret request/response and expires_after use Pydantic's default extra-ignore.
+  Optional fields default None except expires_after.anchor="created_at". The required client-secret
+  response value is a string. No protocol conversion happens in these types. B1123 owns the separate
+  transcription protocol parser, which does not depend on these interfaces.
 
-  Implement crates/betterlite-core/src/api/realtime_contracts.rs, crates/betterlite-openai/src/api/realtime_contracts.rs,
-  crates/betterlite-provider/src/api/realtime_contracts.rs. Use RealtimeContractsInput and RealtimeContractsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions transcription_session_schema, backend_close_error, realtime_auth_headers
-  under api::realtime_contracts::tests. Each named function drives production code and asserts its case result;
-  use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-openai::api::realtime_contracts::decode_realtime_contracts(bytes:
-  &[u8], limits: &WireDecodeLimits), for bounded external JSON bytes into the domain wire records. Place its implementation
-  in crates/betterlite-openai/src/api/realtime_contracts.rs and call it from the actual boundary. The cargo-fuzz
-  target crates/betterlite-openai/fuzz/fuzz_targets/realtime_contracts.rs passes arbitrary bounded bytes to that
-  exact decoder; api::realtime_contracts::tests::replays_corpus replays newly committed seeds through the same function.
-  Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::RealtimeContracts in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {realtime_contracts: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/base_llm/realtime/transformation.py: RealtimeBackend.__aenter__ (L27-L27); litellm/llms/base_llm/realtime/transformation.py:
-  RealtimeBackend.__aexit__ (L29-L34); litellm/llms/base_llm/realtime/transformation.py: RealtimeBackend.send (L36-L36);
-  litellm/llms/base_llm/realtime/transformation.py: RealtimeBackend.recv (L38-L38); litellm/llms/base_llm/realtime/transformation.py:
-  RealtimeBackend.close (L40-L40); litellm/llms/base_llm/realtime/transformation.py: BaseRealtimeConfig.validate_environment
-  (L45-L51); litellm/llms/base_llm/realtime/transformation.py: BaseRealtimeConfig.get_complete_url (L54-L62); litellm/llms/base_llm/realtime/transformation.py:
-  BaseRealtimeConfig.get_error_class (L64-L69); litellm/llms/base_llm/realtime/transformation.py: BaseRealtimeConfig.transform_realtime_request
-  (L72-L78); litellm/llms/base_llm/realtime/transformation.py: BaseRealtimeConfig.pace_backend_send (L80-L81); litellm/llms/base_llm/realtime/transformation.py:
-  BaseRealtimeConfig.is_setup_message (L83-L84); litellm/llms/base_llm/realtime/transformation.py: BaseRealtimeConfig.is_content_message
-  (L86-L87); litellm/llms/base_llm/realtime/transformation.py: BaseRealtimeConfig.requires_session_configuration
-  (L89-L92); litellm/llms/base_llm/realtime/transformation.py: BaseRealtimeConfig.session_configuration_request
-  (L94-L95); litellm/llms/base_llm/realtime/transformation.py: BaseRealtimeConfig.unbilled_usage_on_session_close
-  (L97-L98); litellm/llms/base_llm/realtime/transformation.py: BaseRealtimeConfig.open_backend (L100-L101); litellm/llms/base_llm/realtime/transformation.py:
-  BaseRealtimeConfig.transform_session_created_event (L103-L115); litellm/llms/base_llm/realtime/transformation.py:
-  BaseRealtimeConfig.transform_realtime_response (L118-L127); litellm/llms/base_llm/realtime/http_transformation.py:
-  BaseRealtimeHTTPConfig.get_api_base (L27-L37); litellm/llms/base_llm/realtime/http_transformation.py: BaseRealtimeHTTPConfig.get_api_key
-  (L40-L50); litellm/llms/base_llm/realtime/http_transformation.py: BaseRealtimeHTTPConfig.get_complete_url (L57-L58);
-  litellm/llms/base_llm/realtime/http_transformation.py: BaseRealtimeHTTPConfig.get_transcription_session_url (L60-L64);
-  litellm/llms/base_llm/realtime/http_transformation.py: BaseRealtimeHTTPConfig.validate_environment (L67-L78);
-  litellm/llms/base_llm/realtime/http_transformation.py: BaseRealtimeHTTPConfig.get_realtime_calls_url (L84-L87);
-  litellm/llms/base_llm/realtime/http_transformation.py: BaseRealtimeHTTPConfig.get_realtime_calls_headers (L89-L98);
-  litellm/llms/base_llm/realtime/http_transformation.py: BaseRealtimeHTTPConfig.get_error_class (L104-L117); litellm/types/realtime.py:
-  RealtimeTranscriptionSessionRequest.resolved_model (L136-L141); litellm/litellm_core_utils/realtime_errors.py:
-  _ClientWebSocket.send_text (L21-L21); litellm/litellm_core_utils/realtime_errors.py: _ClientWebSocket.close (L23-L23);
-  litellm/litellm_core_utils/realtime_errors.py: realtime_error_event (L26-L29); litellm/litellm_core_utils/realtime_errors.py:
-  websocket_close_reason (L32-L38); litellm/litellm_core_utils/realtime_errors.py: client_close_code (L41-L46);
-  litellm/litellm_core_utils/realtime_errors.py: upstream_handshake_close_code (L49-L59); litellm/litellm_core_utils/realtime_errors.py:
-  close_after_upstream_handshake_refusal (L62-L71); litellm/proxy/common_utils/realtime_utils.py: _realtime_request_body
-  (L7-L12); litellm/litellm_core_utils/realtime_streaming.py: _decode_json_object (L106-L108). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 279 owned nonblank/non-comment/non-docstring Python lines (373 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 299 implementation,
-  58 behavior tests, 36 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  46 wiring; 589 total within the 590-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B009 (Outbound HTTP clients, proxies, TLS and connection reuse for every provider), B010
-  (Provider framework, provider resolution and parameter mapping), B171 (Direct helper oracle and URL path encoding),
-  B1087 (Api boundaries), B1123 (Realtime transcription protocol). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
-
-
-  Place wire DTOs and their decoder in the named wire leaf crate; provider contracts depend only on leaf records,
-  and core composes them above betterlite-provider. Do not add a wire/provider dependency on betterlite-core to
-  share an Input/Result type. Wire decoders accept a local limits value converted by the core boundary from ApiLimits.
-
-
-  WireDecodeLimits is the leaf record { max_json_bytes: usize, max_event_bytes: usize, max_items: usize }; callers
-  convert B1087 limits into it. This record has no dependency on the core crate.
+  decode_realtime_frame(bytes,limits) accepts any bounded JSON value as the source json.loads does;
+  callers decide whether an object is required. decode_realtime_contract(bytes,kind,limits) validates
+  the HTTP records. One realtime_contract fuzz target uses a leading kind byte to reach both decoders.
+  Pure B171 cases cover URL/default/error/value helpers; native injected socket tests cover refusal
+  send/close effects without treating a socket writer as a pure helper. No provider I/O is implemented.
+  Source count is 370 nonblank/non-comment lines across the five modules plus 49 declarations/helpers
+  in realtime_streaming.py; budget 210 types/defaults,150 tests,115 fixtures,90 adapters,70 fuzz/replay
+  and 35 wiring, 670 changed lines.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/realtime_contracts.rs
   - crates/betterlite-core/src/api/realtime_contracts/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
-  - crates/betterlite-openai/src/api/realtime_contracts.rs
-  - crates/betterlite-openai/src/api/realtime_contracts/**
-  - crates/betterlite-openai/src/api.rs
-  - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
-  - crates/betterlite-provider/src/api/realtime_contracts.rs
-  - crates/betterlite-provider/src/api/realtime_contracts/**
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/provider.rs
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/prepared.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-openai/fuzz/Cargo.toml
-  - crates/betterlite-openai/fuzz/fuzz_targets/realtime_contracts.rs
-  - crates/betterlite-openai/fuzz/corpus/realtime_contracts/**
-  - tools/oracle/Cargo.toml
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/realtime_contract.rs
+  - crates/betterlite-core/fuzz/corpus/realtime_contract/**
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/realtime_contracts.rs
-  - tools/oracle/src/helpers/realtime_contracts/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/realtime_contracts.py
-  - tools/oracle/helpers/realtime_contracts/**
-  - tools/oracle/fuzz/corpus/helper_case/realtime_contracts-*
   - tools/oracle/cases/helpers/realtime-contracts/**
+  - tools/oracle/fuzz/corpus/helper_case/realtime-contracts-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L1-L127
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Backend protocol and all optional hook defaults, including no-op pacing and deferred setup.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/http_transformation.py#L1-L117
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: HTTP URL suffix handling and ephemeral Authorization header differ from WebSocket defaults.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/realtime.py#L1-L187
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Session and expiry defaults, extra-field policies, usage variants and resolved_model precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_errors.py#L1-L71
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Error-event keys, byte-limited close reasons, legal close codes and refusal ordering.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/realtime_utils.py#L1-L12
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L106-L108
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Cached authentication body uses raw interpolation rather than JSON escaping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L38-L114
+  why: Close records and transport protocols sit below session state; the frame decoder is shared by every relay.
 dod:
-- text: 'transcription session schema: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-transcription-session-schema
-  - oracle
-- text: 'backend close error: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-backend-close-error
-  - oracle
-- text: 'realtime auth headers: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-realtime-auth-headers
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    realtime_contract_defaults constructs an empty expiry as {anchor:created_at,seconds:null}; explicit
+    anchor=null remains null. Empty session has type,model,instructions,audio,include,max_output_tokens,
+    output_modalities,tool_choice,tools,tracing,truncation,prompt all None; unknown session field future=1
+    survives. Unknown top-level client-secret field is ignored. Missing response value fails validation;
+    empty string is accepted. Transcription resolved_model chooses nonempty top-level model before nested
+    input_audio_transcription.model, then None; an empty top-level string falls through. Unknown transcription
+    fields survive. Usage variants preserve tokens with text_tokens/audio_tokens or duration seconds.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    realtime_base_hooks returns None for session_configuration_request,unbilled_usage_on_session_close,
+    open_backend,transform_session_created_event and pacing; is_setup_message,is_content_message,
+    requires_session_configuration are false. A concrete test subclass calling the base complete URL
+    gets supplied base or "". Error message=bad,status=429,headers={retry-after:2} are retained;
+    WebSocket get_error_class raises, HTTP get_error_class returns the exception. Abstract transforms
+    remain required implementations rather than invented identity transforms.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    realtime_http_url_defaults sends bases None,https://host,https://host/v1/ and expects transcription
+    URLs /v1/realtime/transcription_sessions,https://host/v1/realtime/transcription_sessions,
+    https://host/v1/realtime/transcription_sessions. Calls URLs are /v1/realtime/calls,
+    https://host/v1/realtime/calls,https://host/v1/v1/realtime/calls: this base method does not remove /v1.
+    Model and api_version do not change these defaults. Ephemeral key=ep-test produces only
+    Authorization="Bearer ep-test", including "Bearer " for the empty key.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    realtime_error_and_close_helpers emits {type:error,error:{type:server_error,message:bad}} with no
+    param/code. Close reason lengths 122/123/124 ASCII bytes preserve/preserve/truncate to123; a split
+    multibyte character is removed. Empty message returns fallback unchanged, even over 123 bytes.
+    Codes1000,1001,1002,1003,1007,1008,1009,1010,1011,1012,1013,1014,3000,4999 survive; 1005,1006,1015,
+    2999,5000 become1011. Handshake401/403 ->1008,429 ->1013,other ->1011. Native refusal tests send
+    server_error with "Upstream realtime handshake rejected with HTTP 429" before close 1013; a failed
+    send still attempts close, and a failed close propagates. BackendClose(1006,"") has message
+    "upstream websocket closed with code 1006"; reason=gone appends ": gone". Missing received close
+    uses1006 and str(exception); received close uses its code/reason.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    realtime_cached_body_and_frame_values expects model=None or "" -> bytes {"model": ""}, model=m ->
+    {"model": "m"}; embedded quotes/newlines are interpolated without escaping, preserving even invalid
+    JSON. LRU capacity is1000 and eviction never changes bytes. Frame decoder accepts {},[],null and
+    scalar JSON values; malformed UTF-8/JSON fails without a panic. HTTP record validation remains
+    distinct from this permissive frame decoder.
+  proof: [behavior-tests, oracle, helper-python]
+- text: Contracts have newly added helper cases plus HTTP-record/frame corpus seeds.
+  proof: [decoder-corpus, helper-corpus, new-cases, oracle, helper-python]
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-openai -p betterlite-provider --no-tests=fail
-      -E 'test(/^api::realtime_contracts::/) - test(/::replays_corpus$/)'
-  - id: case-transcription-session-schema
-    why: the transcription-session-schema behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_contracts::tests::transcription_session_schema($|::)/)'
-  - id: case-backend-close-error
-    why: the backend-close-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_contracts::tests::backend_close_error($|::)/)'
-  - id: case-realtime-auth-headers
-    why: the realtime-auth-headers behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_contracts::tests::realtime_auth_headers($|::)/)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/realtime_contracts)"
-      && test -f crates/betterlite-openai/fuzz/fuzz_targets/realtime_contracts.rs && grep -qF "decode_realtime_contracts"
-      crates/betterlite-openai/fuzz/fuzz_targets/realtime_contracts.rs && cargo nextest run --locked -p betterlite-openai
-      --no-tests=fail -E 'test(/^api::realtime_contracts::tests::replays_corpus$/)'
+    why: Default records, error methods and close effects require tests beyond decoder replay.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_contracts::tests::/) - test(/::replays_corpus$/)'
+  - id: decoder-corpus
+    why: Shared frame and HTTP-record decoders must consume newly committed adversarial bytes.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/realtime_contract)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_contracts::tests::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/realtime_contracts.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The pure contract adapter compares base methods and typed records from the pin.
+    run: test -f tools/oracle/helpers/realtime_contracts.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/realtime_contracts-*)"
-      && grep -qE "^[[:space:]]+realtime_contracts:" tools/oracle/fuzz/corpus/helper_case/realtime_contracts-* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: Realtime contract operations require new external helper tags.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/realtime-contracts-*)" && grep -qE '^[[:space:]]+realtime_contracts:' tools/oracle/fuzz/corpus/helper_case/realtime-contracts-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: URL, record and close behavior need independent new source fixtures.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/realtime-contracts)"
 oracle_cases:
-- tools/oracle/cases/helpers/realtime-contracts/transcription-session-schema.yaml
-- tools/oracle/cases/helpers/realtime-contracts/backend-close-error.yaml
-- tools/oracle/cases/helpers/realtime-contracts/realtime-auth-headers.yaml
+- tools/oracle/cases/helpers/realtime-contracts/realtime-contract-defaults.yaml
+- tools/oracle/cases/helpers/realtime-contracts/realtime-base-hooks.yaml
+- tools/oracle/cases/helpers/realtime-contracts/realtime-http-url-defaults.yaml
+- tools/oracle/cases/helpers/realtime-contracts/realtime-error-and-close-helpers.yaml
+- tools/oracle/cases/helpers/realtime-contracts/realtime-cached-body-and-frame-values.yaml
 deviations: []
 out_of_scope:
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1006 owns BackendClose.message L45-L48, backend_close_from
-  L56-L59, ScopedWebSocket.scope L93-L93, _ClientWebSocket.send_text L97-L97, _ClientWebSocket.receive_text L98-L98,
-  _ClientWebSocket.close L99-L99, _LoggingWorker.ensure_initialized_and_enqueue L103-L103, RealtimeEventNormalizer.should_drop
-  L112-L112, RealtimeEventNormalizer.normalize L113-L113, RealtimeEventNormalizer.patch_outgoing_session L114-L114,
-  RealTimeStreaming.__init__ L127-L200, RealTimeStreaming._should_store_message L236-L245, RealTimeStreaming.store_message
-  L247-L270, RealTimeStreaming._collect_user_input_from_client_event L272-L306, RealTimeStreaming._collect_user_input_from_backend_event
-  L308-L317, RealTimeStreaming._detect_transcription_session_from_backend L319-L333, RealTimeStreaming._capture_transcription_usage
-  L335-L362, RealTimeStreaming._flush_unbilled_transcription_usage L364-L380, RealTimeStreaming._collect_tool_calls_from_response_done
-  L382-L402, RealTimeStreaming.store_input L404-L409, RealTimeStreaming.log_messages L411-L425.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1110 owns RealTimeStreaming._send_to_backend L427-L479, RealTimeStreaming._enforce_transcription_session_model
-  L481-L547, RealTimeStreaming._should_drop_event_from_client L655-L659, RealTimeStreaming._normalize_event_for_ga_client
-  L661-L665, RealTimeStreaming._event_to_client_json L667-L668, RealTimeStreaming._send_event_to_client L670-L690,
-  RealTimeStreaming._cache_session_configuration_request L692-L706, RealTimeStreaming._make_disable_auto_response_message
-  L708-L721, RealTimeStreaming._maybe_inject_guardrail_auto_response_disable L737-L765.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1124 owns RealTimeStreaming._uses_deferred_backend_setup L549-L553,
-  RealTimeStreaming._collapse_buffered_audio_messages L556-L589, RealTimeStreaming._sync_pending_messages_byte_total
-  L591-L594, RealTimeStreaming._should_buffer_client_message_until_setup L596-L605, RealTimeStreaming._buffer_pending_message_until_setup
-  L607-L632, RealTimeStreaming._flush_pending_messages_until_setup L634-L653.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1007 owns RealTimeStreaming._maybe_send_guardrail_turn_detection_update
-  L723-L735, RealTimeStreaming._has_realtime_guardrails_for_event_hooks L767-L784, RealTimeStreaming._has_audio_transcription_guardrails
-  L798-L807, RealTimeStreaming.run_realtime_guardrails L809-L941.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: RealTimeStreaming._has_realtime_guardrails L786-L796 are out
-  of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1008 owns RealTimeStreaming._handle_provider_config_message
-  L943-L1025, RealTimeStreaming._parse_backend_event L1028-L1034, RealTimeStreaming._handle_raw_backend_message
-  L1036-L1074, RealTimeStreaming._relay_backend_messages L1076-L1119, RealTimeStreaming.backend_to_client_send_messages
-  L1121-L1143, RealTimeStreaming._backend_refused_session L1145-L1146, RealTimeStreaming.log_backend_refusal L1148-L1154.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1005 owns RealTimeStreaming._detect_beta_header L1157-L1174,
-  RealTimeStreaming._remap_beta_session_to_ga L1177-L1257, RealTimeStreaming._translate_event_to_beta L1260-L1293,
-  RealTimeStreaming._translate_item_content_types L1296-L1307, client_sent_openai_beta_realtime_header L1592-L1594.'
-- 'litellm/litellm_core_utils/realtime_streaming.py: B1009 owns RealTimeStreaming._receive_client_message L1309-L1314,
-  RealTimeStreaming.client_ack_messages L1316-L1563, RealTimeStreaming.bidirectional_forward L1565-L1576, RealTimeStreaming._close_client
-  L1578-L1589.'
-- 'litellm/llms/base_llm/realtime/transcription_protocol.py: B1123 owns TranscriptionAudioFormat.is_pcm16 L43-L44,
-  TranscriptionSessionUpdate.turn_detection_type L58-L59, json_object L65-L72, json_mapping L75-L82, json_string
-  L85-L92, json_integer L95-L102, new_event_id L105-L106, parse_transcription_session_update L109-L141, _parse_audio_format
-  L144-L168, decode_pcm16_append L171-L186, _transcription_settings L189-L194, transcription_session L197-L213,
-  transcription_session_created_event L216-L224, error_event L227-L232, speech_event L235-L243, delta_event L246-L254,
-  completed_event L257-L270, duration_usage L273-L275.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- All callables in the five small referenced modules are owned here. B1123 owns transcription_protocol.py separately.
+- In realtime_streaming.py B1006 owns __init__ and 236-425; B1110 sends/enforcement at 427-547,655-706,723-735; B1124 buffering549-653; B2455 policy708-721,737-784,798-807; B1007 runner809-941; B1008 backend943-1154; B1005 beta1156-1307,1592-1594; B1009 client1309-1589. _has_realtime_guardrails786-796 has no caller at the pin.
 pitfalls:
-- Within RealtimeTranscriptionSessionRequest.resolved_model\'s self.model branch, preserve return self.model and
-  its nested guards.
-- Within RealtimeTranscriptionSessionRequest.resolved_model\'s self.input_audio_transcription branch, preserve return
-  self.input_audio_transcription.get('model') and its nested guards.
+- websocket_close_reason truncates the message but returns an empty-message fallback without truncating it.
+- The cached authentication body does not escape a model string; using a general JSON serializer changes its bytes.
+- BaseRealtimeHTTPConfig appends /v1 twice for calls when the base already ends with /v1.
 review_level: security
 budget:
-  max_changed_lines: 590
-  max_new_expects: 1
+  max_changed_lines: 700
+  max_new_expects: 0

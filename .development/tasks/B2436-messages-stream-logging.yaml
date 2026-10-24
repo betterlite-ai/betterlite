@@ -1,0 +1,110 @@
+id: B2436
+title: Preserve Messages stream logging and teardown callbacks
+description: >-
+  Split complete logging/format/close methods from B979 into api::messages_stream_logging. Own the base
+  constructor,_handle_streaming_logging,get_async_streaming_response_iterator,_convert_chunk_to_sse_format
+  at messages/streaming_iterator.py L388-L466, _dispatch_pending_deferred_logging,_bill_collected_chunks,
+  _abort_upstream at L527-L576 and _fire_detached_failure_hook at L699-L710. B979 owns the pump and calls this
+  leaf. Store request body/start time/optional first-chunk time in per-stream state with an injected clock.
+
+  B102 owns PassThroughStreamingHandler and PassThroughEndpointLogging but has no task file. Define explicit
+  route_streaming_logging,chunk_processor and schedule_stream_failure_logging seams with the source arguments;
+  do not implement its cost/billing policy here. B191 supplies the rooted worker and B247 logging state. B978
+  supplies close support. Add SdkHttpCall::MessagesStreamLogging with B2401 and a B009 mock response; the Python
+  side invokes real wrapper methods while typed recording seams observe B102 calls. Provider bodies are read
+  over HTTP, not replayed as helper fixtures. Scope is 122 nonblank/non-comment physical lines; allow
+  160 implementation, 130 tests, 120 fixtures, 100 adapters and 30 wiring, 540 total. Tests use
+  api::messages_stream_logging; this encoder/teardown code adds no decoder.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/messages_stream_logging.rs
+  - crates/betterlite-core/src/api/messages_stream_logging/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/messages_stream_logging.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/messages_stream_logging.py
+  - tools/oracle/cases/sdk-http/messages-stream-logging/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/messages-stream-logging-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L388-L466
+  why: Own logging arguments, callback parking, direct processor delegation and dict/byte SSE conversion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L527-L576
+  why: Own deferred-callback extraction, best-effort billing and upstream close warnings.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L699-L710
+  why: Detached failure callbacks are awaited, with callback failures logged rather than propagated.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L70-L374
+  why: B102's external seam signatures; this split delegates rather than claiming the pass-through framework.
+dod:
+- text: >-
+    logging_arguments_and_first_chunk_time starts at t0, records first chunk t1 and ends t2. Set both
+    logging_obj.completion_start_time and model_call_details.completion_start_time=t1 when present, leave them
+    unchanged if no first chunk. Route logging receives start/end times,raw_bytes in order,request_body or {},
+    endpoint_type=ANTHROPIC and url_route="/v1/messages", even for a Bedrock-labelled input. With no deferred
+    callback enqueue exactly one coroutine through B191, rather than spawning an unrooted task.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    deferred_billing_and_teardown arms _on_deferred_stream_complete. Normal completion stores
+    _deferred_stream_complete_args=(logging_coroutine,) and does not enqueue; stream_teardown=true bypasses the
+    park and enqueues logging directly. Pending dispatch requires both callback and args, sets both fields to
+    null before calling callback(*args), and enqueues its returned coroutine. A repeated dispatch does nothing;
+    an empty args tuple is still present and invokes the callback. Missing either field leaves state unchanged.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    logging_failures_are_best_effort makes billing raise ValueError("broken") after two collected chunks.
+    Warn "async_sse_wrapper billing failed after 2 chunks: ValueError(broken)" and return normally. Closing an
+    upstream with close error ValueError("closed") warns
+    "async_sse_wrapper failed to abort upstream stream: ValueError(closed)" without masking the caller's result.
+    Unsupported close is a no-op. Detached failure hook receives the original exception once when called; no
+    hook does nothing; hook ValueError("hook") warns "async_sse_wrapper detached failure hook raised: ValueError(hook)".
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    native_chunk_format sends dict {x:1} and obtains "event: message\ndata: {\"x\": 1}\n\n"; type=ping uses
+    event: ping and type=null uses event: None. Preserve Python JSON ASCII escaping/default separators.
+    Byte chunks pass unchanged, including ping frames. The method itself does not parse, aggregate or change
+    terminal detection; B979 applies resource bounds around it.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    direct_chunk_processor_delegation obtains a mock POST /v1/messages stream and passes the live response,
+    supplied request_body/logging object,original start_time,shared success handler,endpoint_type=ANTHROPIC and
+    url_route=/v1/messages to B102's chunk_processor exactly once. Its returned stream is consumed without
+    installing a second relay or scheduling this leaf's success logging again. Captured HTTP and received
+    provider bytes must match, while B102 retains ownership of cost injection and partial-usage accounting.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: Added HTTP logging fixtures and a messages_stream_logging seed compare recorded effects independently on both sides.
+  proof: [new-cases, corpus, oracle, python-adapter]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: stream logging arguments or a teardown callback branch is missing
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_logging::/)'
+  - id: python-adapter
+    why: the logging HTTP comparison is not independently type checked
+    run: test -f tools/oracle/sdk_http/messages_stream_logging.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: corpus
+    why: sdk_http cannot dispatch stream logging scenarios
+    run: grep -qE '^[[:space:]]+messages_stream_logging:' tools/oracle/fuzz/corpus/sdk_http_case/messages-stream-logging-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: no logging/teardown provider fixtures were added
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/messages-stream-logging)"
+oracle_cases:
+- tools/oracle/cases/sdk-http/messages-stream-logging/logging-arguments-and-first-chunk-time.yaml
+- tools/oracle/cases/sdk-http/messages-stream-logging/deferred-billing-and-teardown.yaml
+- tools/oracle/cases/sdk-http/messages-stream-logging/logging-failures-are-best-effort.yaml
+- tools/oracle/cases/sdk-http/messages-stream-logging/native-chunk-format.yaml
+- tools/oracle/cases/sdk-http/messages-stream-logging/direct-chunk-processor-delegation.yaml
+deviations: []
+out_of_scope:
+- B979 owns slot/queue helpers L167-L186 and relay/pump/failure arbitration L468-L525,L579-L697; it supplies completion_start_time.
+- B978 owns L33-L164,L189-L379 parsing/rendering/header wrappers; B2435 owns fake_stream_iterator.py.
+- B102 owns pass-through logging policy and B191 worker lifecycle; the architect must fill B102's task before integrating real billing.
+pitfalls:
+- Bedrock stream logging still uses the literal /v1/messages route and ANTHROPIC endpoint type.
+- Deferred fields are cleared before callback construction, so a failing callback is not retried automatically.
+- 'A missing type on a dict chunk emits event: message; forwarding raw JSON would break Anthropic clients.'
+review_level: security
+budget:
+  max_changed_lines: 580
+  max_new_expects: 0

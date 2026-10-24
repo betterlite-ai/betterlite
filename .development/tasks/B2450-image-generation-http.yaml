@@ -1,0 +1,94 @@
+id: B2450
+title: Image generation HTTP execution
+description: >-
+  Own BaseLLMHTTPHandler.image_generation_handler and async_image_generation_handler as complete methods.
+  Build their request assembly in betterlite-provider::api::image_generation_http over B997's config contract
+  and B173's bounded HTTP client. A supplied client is used only for its matching sync/async kind; otherwise
+  use the shared client with ssl_verify from litellm_params, default None. Native execution stays asynchronous;
+  the public sync facade remains B159. B2402 supplies _handle_error and B206 attaches provider response headers.
+
+  Environment validation receives the explicit api_key, options.extra_headers or {}, messages=[] and a copy
+  of litellm_params. Then truthy explicit extra_headers overwrite validated headers. URL resolution instead
+  receives api_key from litellm_params, api_base default None, options and another params copy. Transform the
+  prompt once, log pre_call with api_key="", then POST JSON or multipart with the sentinel file none="".
+  extra_body, fake_stream and litellm_metadata are accepted but unused in these methods. Transform the response
+  with encoding=None and attach hidden response headers after transformation. Validation, URL construction,
+  request transformation and response transformation failures are outside the send-error conversion try block.
+
+  Add B2401 sdk_http operation image_generation_http. Its finite test configuration injects a trusted mock URL,
+  validated headers and identity request/response transforms, exposing this handler's work without copying a
+  provider adapter. Both implementations issue real HTTP. No new bytes decoder is needed: B173 owns HTTP,
+  B900 multipart capture and B2401 the SDK case parser. The two methods total 203 nonblank/non-comment lines;
+  budget 190 implementation, 110 tests, 110 fixtures, 80 adapters and 30 wiring, 520 changed lines.
+scope:
+  paths:
+  - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/image_generation_http.rs
+  - crates/betterlite-provider/src/api/image_generation_http/**
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/operation.rs
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/image_generation_http.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/image_generation_http.py
+  - tools/oracle/cases/sdk-http/image-generation-http/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/image-generation-http-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6920-L7151
+  why: Both complete generation send methods, including the dummy multipart file and response-header attachment.
+dod:
+- text: >-
+    generation_json_transport sets prompt=cat,model=image-model,timeout=5,explicit api_key=direct,
+    litellm_params.api_key=stored,api_base=the mock base,options.extra_headers={x:option},validated headers={x:validated},
+    extra_headers={x:explicit},extra_body={ignored:true},fake_stream=true,litellm_metadata={tag:t}. Validation
+    receives direct and URL resolution receives stored. One POST carries x=explicit and JSON {model:image-model,
+    prompt:cat}, with no ignored field and no streaming. A mock {created:1,data:[{b64_json:YQ==}]} returns those
+    fields; x-request-id=img_1 appears in hidden provider_response_headers. Native effects record empty log api_key.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    generation_multipart_transport uses the same input with multipart=true: the captured form contains model,
+    prompt and a file named none with empty contents. Sync and async variants produce the same body fields.
+    Missing options.extra_headers and explicit headers yield the config's validated headers unchanged. An
+    incorrect client kind selects the shared transport with ssl_verify=None; ssl_verify=false reaches its policy.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    generation_send_failure makes the mock answer 429 with body="slow" and retry-after=2: B2402's error
+    conversion preserves status=429,source message="slow",headers.retry-after=2 through the config error.
+    Exactly one request is sent. Native failure injection at validate, URL, transform-request and transform-response
+    proves those failures bypass _handle_error; only send exceptions enter it. Response transformation is not
+    attempted after send failure. Returned body decoding belongs to the supplied provider configuration.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: Generation transport fixtures and parser seeds are newly added and the SDK driver records actual HTTP on each side.
+  proof: [new-cases, sdk-corpus, oracle, sdk-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: Request assembly order, transport kind and send-only error conversion must be observable.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::image_generation_http::tests::/)'
+  - id: sdk-python
+    why: The HTTP adapter must invoke the handler and pass strict Python checks.
+    run: test -f tools/oracle/sdk_http/image_generation_http.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: Generation transport must be a recognized SDK variant.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-generation-http-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: Transport comparisons require fresh HTTP fixtures.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/image-generation-http)"
+oracle_cases:
+- tools/oracle/cases/sdk-http/image-generation-http/generation-json-transport.yaml
+- tools/oracle/cases/sdk-http/image-generation-http/generation-multipart-transport.yaml
+- tools/oracle/cases/sdk-http/image-generation-http/generation-send-failure.yaml
+deviations: []
+out_of_scope:
+- B2402 owns _handle_error; B173 owns shared send/client methods; B206 owns set_provider_response_headers_in_hidden_params.
+- B998 owns image_generation SDK routing; B2451 owns the two edit HTTP methods. All remaining endpoint methods in llm_http_handler.py retain their endpoint owners under B173's coverage.
+pitfalls:
+- The API key passed to validate_environment differs from the api_key passed to get_complete_url.
+- Multipart generation deliberately adds files={none:""}; omitting it changes form encoding.
+- extra_body is not merged here, even though it appears in both signatures.
+review_level: security
+budget:
+  max_changed_lines: 540
+  max_new_expects: 0

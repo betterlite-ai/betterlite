@@ -1,227 +1,110 @@
 id: B908
-title: Responses chat options
+title: Responses-to-chat request options
 description: >-
-  Implement the Responses-to-chat option stage: supported parameter vocabulary, tool_choice, reasoning, derived
-  web_search_options and text response formats. Export ChatOptions and a typed bridge direction so native Responses
-  targets cannot recurse back through the chat bridge.
+  Build complete Responses-to-chat request assembly in betterlite-core::api::responses_chat_options.
+  Own get_supported_openai_params, derived-web-search capability checking, bridge-back probing,
+  reasoning splitting, transform_responses_api_request_to_chat_completion_request and text-format
+  conversion. Shared protocol declarations at L150-L178 and ChatCompletionSession at L189-L199
+  are types, not partial functions. B907 owns attribute/role helpers and tool choices; B913
+  maps tools, B909 maps input and B175 supplies supported parameters. Use B158's typed
+  responses_api_bridge_check capability port from main.py L1083-L1194; that SDK binding owns
+  its model/endpoint policy. The helper oracle injects only the capability probe result/failure;
+  it must execute the production mapper and does not call a provider.
 
-
-  Implement crates/betterlite-core/src/api/responses_chat_options.rs. Use ResponsesChatOptionsInput and ResponsesChatOptionsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions required_tool_choice, named_tool_choice, reasoning_budget, native_responses_recursion,
-  json_schema_format under api::responses_chat_options::tests. Each named function drives production code and asserts
-  its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponsesChatOptions in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_chat_options: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/responses/litellm_completion_transformation/transformation.py: _SupportsIter.__iter__
-  (L152-L152); litellm/responses/litellm_completion_transformation/transformation.py: _ResponsesToolCallItem.get
-  (L169-L169); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig.get_supported_openai_params
-  (L205-L225); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._should_drop_derived_web_search_options
-  (L311-L324); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._completion_bridges_back_to_responses_api
-  (L327-L357); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._transform_reasoning_for_chat_completion
-  (L360-L397); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig.transform_responses_api_request_to_chat_completion_request
-  (L400-L484); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._transform_text_format_to_response_format
-  (L2897-L2945). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 200 owned nonblank/non-comment/non-docstring Python lines (249 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 220 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 470 total within the 470-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B175 (Provider parameter capabilities
-  and mapping), B902 (Responses shapes), B1087 (Api boundaries), B913 (Responses tool namespaces), B909 (Responses
-  input messages), B907 (Responses codex tools). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Map max_output_tokens to max_tokens, reasoning.effort to reasoning_effort and conditionally
+  summary to reasoning_summary. No numeric reasoning budget is computed here. The request's
+  stream comes from the separate argument, metadata/service_tier from kwargs, and all other
+  mapped options from responses_api_request. Tests and oracle must show this precedence.
+  Count 249 nonblank/non-comment lines including declarations/docstrings; reserve 230
+  implementation, 155 tests, 95 fixtures, 85 adapters and 25 wiring: 590 changed lines.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_chat_options.rs
   - crates/betterlite-core/src/api/responses_chat_options/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/responses_chat_options.rs
-  - tools/oracle/src/helpers/responses_chat_options/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/responses_chat_options.py
-  - tools/oracle/helpers/responses_chat_options/**
   - tools/oracle/fuzz/corpus/helper_case/responses_chat_options-*
   - tools/oracle/cases/helpers/responses-chat-options/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L152-L178
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L183-L184
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L187-L226
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L288-L288
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L297-L297
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L309-L484
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2897-L2945
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L150-L178
+  why: Structural message/tool protocols used by the bridge; no runtime method is split here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L189-L225
+  why: Session record and exact supported-parameter vocabulary owned here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L310-L484
+  why: Complete capability checks, reasoning splitting and request assembly; no tool-choice decorators are claimed.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2896-L2945
+  why: JSON-schema/json-object conversion and literal response_schema/false defaults.
 dod:
-- text: 'required tool choice: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-required-tool-choice
-  - oracle
-- text: 'named tool choice: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-named-tool-choice
-  - oracle
-- text: 'reasoning budget: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-reasoning-budget
-  - oracle
-- text: 'native responses recursion: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-native-responses-recursion
-  - oracle
-- text: 'json schema format: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-json-schema-format
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    supported_options returns exactly input,model,instructions,max_output_tokens,metadata,
+    parallel_tool_calls,previous_response_id,reasoning,stream,temperature,text,tool_choice,
+    tools,top_p,user, independent of model. Assembly additionally forwards present
+    safety_identifier/context_management and kwargs service_tier rather than filtering by this list.
+  proof: [options-tests, oracle, options-adapter]
+- text: >-
+    option_sources maps model=m,input=hi,max_output_tokens=7,temperature=0,top_p=1,user=u,
+    safety_identifier=s,context_management=[{type:compaction}],kwargs.metadata={k:v},
+    kwargs.service_tier=flex,extra_headers={x-test:yes},provider=openai into those chat fields,
+    messages=[{role:user,content:hi}],max_tokens=7. Request metadata={ignored:1} and request
+    service_tier=default do not win. Null values disappear; false and zero remain. With
+    no mapped tools, tools/tool_choice/parallel_tool_calls all disappear, even if choice=required.
+  proof: [options-tests, oracle, options-adapter]
+- text: >-
+    stream_usage uses stream=true to add stream_options={include_usage:true} and updates
+    the supplied logging object's stream_options to the same value. Request stream_options
+    cannot replace it. stream=false stays false without stream_options; null stream is omitted.
+    Input conversion is invoked with replay_reasoning=true and includes truthy instructions.
+  proof: [options-tests, oracle, options-adapter]
+- text: >-
+    reasoning_options maps null,{} or "" to absent effort/summary; "high" to effort=high;
+    {effort:high} to effort=high. With {effort:high,summary:auto}, summary survives only when
+    bridge_check returns mode=responses. The probe receives mapped tools, retained web search,
+    kwargs.api_base,effort,summary and provider (null becomes ""). A probe exception logs
+    debug "responses bridge: reasoning effort mode check failed: <error>" and drops summary,
+    preserving effort; no request error is raised. Derived web_search_options drops silently
+    when a non-null capability list omits it, and stays when supported or the list is null.
+  proof: [options-tests, oracle, options-adapter]
+- text: >-
+    response_formats maps text.format={type:json_schema} to {type:json_schema,json_schema:
+    {name:response_schema,schema:{},strict:false}}. Explicit name/schema/strict, including
+    null, are retained. type=json_object yields {type:json_object}; type=text,unknown,
+    non-dict format, missing format and falsy text yield no response_format. Tool choice
+    uses B907 only when B913 returns at least one tool.
+  proof: [options-tests, oracle, options-adapter]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_chat_options::/)
-      - test(/::replays_corpus$/)'
-  - id: case-required-tool-choice
-    why: the required-tool-choice behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_chat_options::tests::required_tool_choice($|::)/)'
-  - id: case-named-tool-choice
-    why: the named-tool-choice behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_chat_options::tests::named_tool_choice($|::)/)'
-  - id: case-reasoning-budget
-    why: the reasoning-budget behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_chat_options::tests::reasoning_budget($|::)/)'
-  - id: case-native-responses-recursion
-    why: the native-responses-recursion behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_chat_options::tests::native_responses_recursion($|::)/)'
-  - id: case-json-schema-format
-    why: the json-schema-format behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_chat_options::tests::json_schema_format($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_chat_options.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_chat_options-*)"
-      && grep -qE "^[[:space:]]+responses_chat_options:" tools/oracle/fuzz/corpus/helper_case/responses_chat_options-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-chat-options)"
+  - id: options-tests
+    why: bridge assembly picks the wrong option source or leaks an unsupported derived field
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_chat_options::/)'
+  - id: options-adapter
+    why: options fixtures bypass the real mapper or fail Python checking
+    run: test -f tools/oracle/helpers/responses_chat_options.py && grep -qE '^[[:space:]]+responses_chat_options:' tools/oracle/fuzz/corpus/helper_case/responses_chat_options-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/responses-chat-options/required-tool-choice.yaml
-- tools/oracle/cases/helpers/responses-chat-options/named-tool-choice.yaml
-- tools/oracle/cases/helpers/responses-chat-options/reasoning-budget.yaml
-- tools/oracle/cases/helpers/responses-chat-options/native-responses-recursion.yaml
-- tools/oracle/cases/helpers/responses-chat-options/json-schema-format.yaml
+- tools/oracle/cases/helpers/responses-chat-options/supported-options.yaml
+- tools/oracle/cases/helpers/responses-chat-options/option-sources.yaml
+- tools/oracle/cases/helpers/responses-chat-options/stream-usage.yaml
+- tools/oracle/cases/helpers/responses-chat-options/reasoning-options.yaml
+- tools/oracle/cases/helpers/responses-chat-options/response-formats.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B907 owns _attribute_fields L179-L182,
-  _input_item_role L185-L186, LiteLLMCompletionResponsesConfig._transform_tool_choice L228-L287, LiteLLMCompletionResponsesConfig._transform_tool_choice_for_responses_api_response
-  L290-L296, LiteLLMCompletionResponsesConfig._chat_tool_choice_as_responses_api_tool_choice L299-L308.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B909 owns LiteLLMCompletionResponsesConfig.transform_responses_api_input_to_messages
-  L487-L532, LiteLLMCompletionResponsesConfig._transform_response_input_param_to_chat_completion_message L603-L729,
-  LiteLLMCompletionResponsesConfig._transform_responses_api_input_item_to_chat_completion_message L1326-L1423, LiteLLMCompletionResponsesConfig._reasoning_text_from_content
-  L1426-L1448, LiteLLMCompletionResponsesConfig._reasoning_text_from_summary L1451-L1466, LiteLLMCompletionResponsesConfig._extract_reasoning_text_from_input_item
-  L1469-L1478, LiteLLMCompletionResponsesConfig._decode_thinking_blocks_from_input_item L1481-L1515, LiteLLMCompletionResponsesConfig._is_replayable_thinking_block
-  L1518-L1529, LiteLLMCompletionResponsesConfig._is_input_item_tool_call_output L1532-L1541, LiteLLMCompletionResponsesConfig._is_input_item_function_call
-  L1544-L1550, LiteLLMCompletionResponsesConfig._resolve_file_id L1741-L1747, LiteLLMCompletionResponsesConfig._transform_input_file_item_to_file_item
-  L1750-L1772, LiteLLMCompletionResponsesConfig._transform_input_image_item_to_image_item L1775-L1785, LiteLLMCompletionResponsesConfig._transform_responses_api_content_to_chat_completion_content
-  L1788-L1842, LiteLLMCompletionResponsesConfig._get_chat_completion_request_content_type L1845-L1875, LiteLLMCompletionResponsesConfig.transform_instructions_to_system_message
-  L1878-L1884.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B915 owns LiteLLMCompletionResponsesConfig.async_responses_api_session_handler
-  L535-L600.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B910 owns LiteLLMCompletionResponsesConfig._reasoning_only_assistant_message
-  L732-L746, LiteLLMCompletionResponsesConfig._merge_reasoning_only_assistant_messages L749-L872, LiteLLMCompletionResponsesConfig._merged_trailing_assistant_message
-  L875-L922.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._deduplicate_tool_call_output_messages
-  L925-L985, LiteLLMCompletionResponsesConfig._ensure_tool_call_output_has_corresponding_tool_call L988-L997, LiteLLMCompletionResponsesConfig._transform_responses_api_outputs_to_chat_completion_messages
-  L2725-L2752 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B911 owns LiteLLMCompletionResponsesConfig._find_previous_assistant_idx
-  L1000-L1014, LiteLLMCompletionResponsesConfig._recover_tool_call_id_from_assistant L1017-L1043, LiteLLMCompletionResponsesConfig._get_tool_calls_list
-  L1046-L1065, LiteLLMCompletionResponsesConfig._check_tool_call_exists L1068-L1078, LiteLLMCompletionResponsesConfig._reconstruct_tool_call_from_tools
-  L1081-L1097, LiteLLMCompletionResponsesConfig._get_mapping_or_attr_value L1100-L1117, LiteLLMCompletionResponsesConfig._create_tool_call_chunk
-  L1120-L1143, LiteLLMCompletionResponsesConfig._normalize_tool_use_definition L1146-L1184, LiteLLMCompletionResponsesConfig._add_tool_call_to_assistant
-  L1187-L1200, LiteLLMCompletionResponsesConfig._ensure_tool_results_have_corresponding_tool_calls L1203-L1323.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B912 owns LiteLLMCompletionResponsesConfig._transform_responses_api_tool_call_output_to_chat_completion_message
-  L1553-L1686, LiteLLMCompletionResponsesConfig._transform_responses_api_function_call_to_chat_completion_message
-  L1689-L1738, LiteLLMCompletionResponsesConfig._tool_call_id_from_responses_item L2307-L2316, LiteLLMCompletionResponsesConfig.convert_response_function_tool_call_to_chat_completion_tool_call
-  L2319-L2370, LiteLLMCompletionResponsesConfig.convert_apply_patch_tool_call_to_chat_completion_tool_call L2373-L2403.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B913 owns LiteLLMCompletionResponsesConfig._build_ns_chat_tool
-  L1887-L1926, LiteLLMCompletionResponsesConfig._namespace_chat_tools L1929-L1951, LiteLLMCompletionResponsesConfig._validate_namespace_name_collisions
-  L1954-L1972, LiteLLMCompletionResponsesConfig._responses_tool_to_chat_form L1975-L2034, LiteLLMCompletionResponsesConfig.responses_tools_to_chat_forms
-  L2037-L2039, LiteLLMCompletionResponsesConfig.transform_responses_api_tools_to_chat_completion_tools L2042-L2058,
-  LiteLLMCompletionResponsesConfig.transform_chat_completion_tool_params_to_responses_api_tools L2061-L2099, LiteLLMCompletionResponsesConfig.namespace_tool_name_map
-  L2102-L2129, LiteLLMCompletionResponsesConfig._restore_namespace_tool_name L2132-L2137, LiteLLMCompletionResponsesConfig.transform_chat_completion_tools_to_responses_tools
-  L2140-L2235, LiteLLMCompletionResponsesConfig._web_search_calls_by_call_id L2238-L2264.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B914 owns LiteLLMCompletionResponsesConfig._map_chat_completion_finish_reason_to_responses_status
-  L2267-L2292, LiteLLMCompletionResponsesConfig._incomplete_details_for_finish_reason L2295-L2304, LiteLLMCompletionResponsesConfig.transform_chat_completion_response_to_responses_api_response
-  L2406-L2468, LiteLLMCompletionResponsesConfig._transform_chat_completion_choices_to_responses_output L2471-L2526,
-  LiteLLMCompletionResponsesConfig._extract_tool_result_output_items L2529-L2557, LiteLLMCompletionResponsesConfig._encode_thinking_blocks
-  L2560-L2563, LiteLLMCompletionResponsesConfig._extract_reasoning_output_items L2566-L2597, LiteLLMCompletionResponsesConfig._extract_message_output_items
-  L2693-L2722, LiteLLMCompletionResponsesConfig._transform_responses_output_tool_call_to_chat_completion_output_tool_call
-  L2755-L2765, LiteLLMCompletionResponsesConfig._transform_chat_message_to_response_output_text L2768-L2782.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B1115 owns LiteLLMCompletionResponsesConfig._extract_image_generation_output_items
-  L2600-L2646, LiteLLMCompletionResponsesConfig._map_finish_reason_to_image_generation_status L2649-L2666, LiteLLMCompletionResponsesConfig._extract_base64_from_data_url
-  L2669-L2690, LiteLLMCompletionResponsesConfig._transform_chat_completion_annotations_to_response_output_annotations
-  L2785-L2808, LiteLLMCompletionResponsesConfig._transform_chat_completion_usage_to_responses_usage L2811-L2894.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- The remaining transformation.py methods belong to B907 custom tools, B909 inputs, B910 merges, B911 repair, B912 results, B913 namespaces, B914 outputs, B915 history and B1115 details.
+- _deduplicate_tool_call_output_messages L925-L985 and _ensure_tool_call_output_has_corresponding_tool_call L988-L995 have no caller at the pin.
+- B916 executes chat HTTP; this task only prepares a parsed request and logging option update.
 pitfalls:
-- 'transformation.py:355 emits the diagnostic ''responses bridge: reasoning effort mode check failed: %s''; retain
-  its level and fallback instead of turning it into a hard error.'
-- LiteLLMCompletionResponsesConfig._completion_bridges_back_to_responses_api uses model_info.get('mode'); retain
-  its missing-value behavior and field spelling in the typed projection.
+- A missing tools list removes parallel_tool_calls along with tools and tool_choice, even if explicitly false.
+- Unsupported derived web_search_options is dropped silently here without consulting drop_params.
+- reasoning.summary is forwarded only to a chat request known to bridge back to Responses.
 review_level: standard
 budget:
-  max_changed_lines: 470
+  max_changed_lines: 590
   max_new_expects: 1

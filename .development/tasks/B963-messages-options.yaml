@@ -1,166 +1,121 @@
 id: B963
-title: Messages options
+title: Messages optional parameters, refusals and mock results
 description: >-
-  Project requested Messages parameters and native refusal details, build source mock responses and convert system
-  text for bridges. Use the typed error service for safeguard refusal without treating ordinary stop reasons as
-  errors.
+  Implement every function and the incomplete-stream message constant in messages/utils.py in
+  betterlite-core::api::messages_options. Select the static AnthropicMessagesRequestOptionalParams keys,
+  then call B569's speed gate and B688's sampling gate only when model is non-null. B011 constructs SDK
+  exceptions, B958 supplies Anthropic response records, and B902 supplies typed Responses output objects.
 
+  Refusal helpers distinguish typed Chat message attributes from raw Responses mappings. A refusal is not
+  automatically an exception: get_safeguard_refusal_stop_details returns a dict only for an Anthropic dict
+  with stop_reason=refusal and dict stop_details; the caller separately chooses safeguard_refusal_error.
+  Keep the fixed source mock response, including its model and token counts, even when callers supply another model.
 
-  Implement crates/betterlite-core/src/api/messages_options.rs. Use MessagesOptionsInput and MessagesOptionsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions optional_parameter_selection, safeguard_refusal, openai_refusal_text,
-  responses_refusal_text, mock_tool_response under api::messages_options::tests. Each named function drives production
-  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
-  replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesOptions in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_options: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/messages/utils.py: get_safeguard_refusal_stop_details
-  (L24-L34); litellm/llms/anthropic/pass_through/messages/utils.py: refusal_stop_details (L37-L39); litellm/llms/anthropic/pass_through/messages/utils.py:
-  _mapping_field (L42-L46); litellm/llms/anthropic/pass_through/messages/utils.py: _mapping_str_field (L49-L51);
-  litellm/llms/anthropic/pass_through/messages/utils.py: openai_chat_refusal_text (L54-L63); litellm/llms/anthropic/pass_through/messages/utils.py:
-  _responses_message_refusal_text (L66-L85); litellm/llms/anthropic/pass_through/messages/utils.py: responses_output_refusal_text
-  (L88-L97); litellm/llms/anthropic/pass_through/messages/utils.py: safeguard_refusal_error (L100-L109); litellm/llms/anthropic/pass_through/messages/utils.py:
-  anthropic_system_to_openai_message (L112-L119); litellm/llms/anthropic/pass_through/messages/utils.py: _anthropic_messages_optional_param_keys
-  (L123-L131); litellm/llms/anthropic/pass_through/messages/utils.py: AnthropicMessagesRequestUtils.get_requested_anthropic_messages_optional_param
-  (L136-L177); litellm/llms/anthropic/pass_through/messages/utils.py: mock_response (L180-L223). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 145 owned nonblank/non-comment/non-docstring Python lines (188 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 165 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 415 total within the 420-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B175 (Provider parameter capabilities
-  and mapping), B902 (Responses shapes), B958 (Messages errors), B1087 (Api boundaries). These are callable/type/config
-  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
-  branches.
+  Expose HelperCall::MessagesOptions for option filtering, refusal extraction, system conversion and mock output.
+  Compare SDK exception class/status/type/param/code rather than a proxy envelope. All inputs are typed records;
+  neither provider I/O nor a new byte decoder belongs here. Use adjacent rstest cases for the branches below.
+  Count 175 nonblank/non-comment implementation lines plus 23 option-declaration lines; budget 170 implementation, 145 tests, 130 fixtures, 85 adapters
+  and 30 wiring, 560 lines.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_options.rs
   - crates/betterlite-core/src/api/messages_options/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/messages_options.rs
-  - tools/oracle/src/helpers/messages_options/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/messages_options.py
-  - tools/oracle/helpers/messages_options/**
   - tools/oracle/fuzz/corpus/helper_case/messages_options-*
   - tools/oracle/cases/helpers/messages-options/**
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/utils.py#L1-L223
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/utils.py#L18-L223
+  why: Own optional-key selection, refusal projections, system-message conversion and the fixed mock response/errors.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py#L408-L430
+  why: This TypedDict supplies the complete filter key set, independently of native-provider supported fields.
 dod:
-- text: 'optional parameter selection: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-optional-parameter-selection
-  - oracle
-- text: 'safeguard refusal: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-safeguard-refusal
-  - oracle
-- text: 'openai refusal text: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-openai-refusal-text
-  - oracle
-- text: 'responses refusal text: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-responses-refusal-text
-  - oracle
-- text: 'mock tool response: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-mock-tool-response
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    optional_key_projection sends a non-null value for each of max_tokens,metadata,stop_sequences,stream,system,
+    temperature,thinking,tool_choice,tools,top_k,inference_geo,top_p,mcp_servers,context_management,compaction,
+    container,output_format,speed,output_config,cache_control,reasoning_effort,safeguards and retains them with
+    model=null. Drop messages,model,litellm_metadata,unknown and every null value; preserve false,0,[],{} and empty
+    strings. Repeated calls use the same static key set and do not mutate the caller's original params.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    model_option_gates uses model=claude-sonnet-4-5,speed=fast and an unsupported-speed target: drop_params=false
+    raises UnsupportedParamsError status=400 with absent type/param/code; true warns and removes speed. The global
+    litellm.drop_params=true also removes it. With a target whose sampling capability is false, temperature=0,
+    top_p=0.5 and top_k=2 each fail 400 unless dropping is enabled, in which case they disappear without a warning;
+    temperature=1 survives. Speed is checked before temperature, then top_p, then top_k. B569/B688 own config defaults.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    safeguard_refusal_details sends stop_reason=refusal,stop_details={} and receives {}; missing/null/list details,
+    a non-dict response or stop_reason=end_turn return none. refusal_stop_details("blocked") returns
+    {type:refusal,category:null,explanation:blocked}, and null explanation stays null. safeguard_refusal_error with
+    category=safety yields ContentPolicyViolationError status=400,type=null,param=null,code=null,provider=anthropic
+    and the supplied model; source message contains "Anthropic safeguard refusal (category: safety)." Missing
+    category uses "None". Ignore only generated exception wording, not the details record.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    chat_refusal_precedence uses a typed Message/Delta with refusal=first and provider_specific_fields.refusal=second
+    and returns first. Empty/nonstring first falls back to second; empty/nonstring second returns none. A raw dict
+    {refusal:first} returns none because this function reads attributes. Responses refusal extraction accepts typed
+    or raw message items, skips empty refusals and non-message output, and returns the first nonempty refusal in
+    the first qualifying message. content=null,content="text" and malformed parts do not manufacture a refusal.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    system_message_projection turns "guide" into {role:system,content:guide} and a nonempty block list into the
+    same system record without flattening it. Empty string/list, null, dict and numeric inputs produce none.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    mock_message_literals defaults text to "Hi! My name is Claude." and always returns
+    id=msg_013Zva2CMHLNnXjNJJKqJ2EF,model=claude-sonnet-4-20250514,role=assistant,type=message,stop_reason=end_turn,
+    stop_sequence=null,usage={input_tokens:2095,output_tokens:503}. Explicit text=hello changes only the text block.
+    Caller tools never produce tool_use here. The literal strings litellm.InternalServerError,
+    litellm.ContextWindowExceededError and litellm.RateLimitError raise their named classes with statuses 500,400,429;
+    respective types are internal_server_error,null,throttling_error, codes null,null,"429", and params null.
+    Source messages are "this is a mock internal server error", "this is a mock context window exceeded error"
+    and "this is a mock rate limit error" with SDK prefixes; preserve class and fields while ignoring wording.
+  proof: [behavior-tests, oracle, helper-python]
+- text: New helper fixtures and the messages_options parser seed cover fixed mock output as well as empty/refusal cases.
+  proof: [helper-corpus, new-cases, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_options::/) - test(/::replays_corpus$/)'
-  - id: case-optional-parameter-selection
-    why: the optional-parameter-selection behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_options::tests::optional_parameter_selection($|::)/)'
-  - id: case-safeguard-refusal
-    why: the safeguard-refusal behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_options::tests::safeguard_refusal($|::)/)'
-  - id: case-openai-refusal-text
-    why: the openai-refusal-text behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_options::tests::openai_refusal_text($|::)/)'
-  - id: case-responses-refusal-text
-    why: the responses-refusal-text behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_options::tests::responses_refusal_text($|::)/)'
-  - id: case-mock-tool-response
-    why: the mock-tool-response behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_options::tests::mock_tool_response($|::)/)'
+    why: optional-field selection or refusal handling has no independently failing test
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_options::/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_options.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: the options adapter cannot execute pinned helpers under strict Python checks
+    run: test -f tools/oracle/helpers/messages_options.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_options-*)"
-      && grep -qE "^[[:space:]]+messages_options:" tools/oracle/fuzz/corpus/helper_case/messages_options-* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: the options operation is absent from the helper input format
+    run: grep -qE '^[[:space:]]+messages_options:' tools/oracle/fuzz/corpus/helper_case/messages_options-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: the task adds no option/refusal fixtures
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-options)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-options/optional-parameter-selection.yaml
-- tools/oracle/cases/helpers/messages-options/safeguard-refusal.yaml
-- tools/oracle/cases/helpers/messages-options/openai-refusal-text.yaml
-- tools/oracle/cases/helpers/messages-options/responses-refusal-text.yaml
-- tools/oracle/cases/helpers/messages-options/mock-tool-response.yaml
+- tools/oracle/cases/helpers/messages-options/optional-key-projection.yaml
+- tools/oracle/cases/helpers/messages-options/model-option-gates.yaml
+- tools/oracle/cases/helpers/messages-options/safeguard-refusal-details.yaml
+- tools/oracle/cases/helpers/messages-options/chat-refusal-precedence.yaml
+- tools/oracle/cases/helpers/messages-options/system-message-projection.yaml
+- tools/oracle/cases/helpers/messages-options/mock-message-literals.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B569 owns speed support and its warning; B688 owns sampling support, and B011 owns SDK exception constructors.
+- B958 owns Anthropic wire types and B902 owns Responses types; this task owns all callable behavior in messages/utils.py.
+- B978/B979 consume INCOMPLETE_STREAM_ERROR_MESSAGE and own its SSE/error emission.
 pitfalls:
-- Within get_safeguard_refusal_stop_details\'s not isinstance(response, dict) or response.get('stop_reason') !=
-  'refusal' branch, preserve return None and its nested guards.
-- get_safeguard_refusal_stop_details uses response.get('stop_details'); retain its missing-value behavior and field
-  spelling in the typed projection.
+- A raw Chat dict with refusal is not equivalent to the typed Message object accepted by openai_chat_refusal_text.
+- The fixed mock model is claude-sonnet-4-20250514 regardless of the requested model or max_tokens.
+- Empty stop_details is a valid safeguard result, so truthiness would lose a refusal branch.
 review_level: standard
 budget:
-  max_changed_lines: 420
-  max_new_expects: 1
+  max_changed_lines: 580
+  max_new_expects: 0

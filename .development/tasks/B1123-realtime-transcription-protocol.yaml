@@ -1,161 +1,114 @@
 id: B1123
 title: Realtime transcription protocol
 description: >-
-  Decode typed transcription session updates and PCM16 append payloads, normalize beta/GA audio formats and construct
-  transcription events.
+  Build the complete base realtime transcription_protocol.py in
+  betterlite-core::api::realtime_transcription_protocol. It parses beta/GA session updates, validates
+  PCM16 append payloads and constructs OpenAI-compatible transcription events. Keep parsing separate
+  from provider-specific model, sample-rate, language and VAD support checks. Supported transcription
+  keys here are model and language; return every other key sorted, without dropping or rejecting it.
+  The caller selects an error type; preserve RealtimeTranscriptionProtocolError messages verbatim.
 
+  parse_transcription_session_update(bytes,limits) and decode_pcm16_append(value,max_encoded_bytes)
+  are the production decoders. A single transcription_protocol fuzz input selects JSON with byte 0
+  or a bounded base64 string with byte 1; replay both through those functions. B1087 supplies general
+  allocation limits, while max_encoded_bytes=None means no additional four-second cap in this helper.
+  Event IDs use event_ plus 32 lowercase UUID hex digits; inject a UUID source for deterministic native
+  tests and compare ID shape/relationships in oracle fixtures. There is no provider transport here.
 
-  Implement crates/betterlite-core/src/api/realtime_transcription_protocol.rs. Use RealtimeTranscriptionPInput and
-  RealtimeTranscriptionPResult with typed nested records; inject only the clock, repositories, transports and resolved
-  settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment
-  or duplicate credential resolution.
-
-
-  Write adjacent tests.rs behavior functions ga_transcription_update, beta_transcription_update under api::realtime_transcription_protocol::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-core::api::realtime_transcription_protocol::decode_realtime_transcription(bytes:
-  &[u8], limits: &ApiLimits), for base64.b64decode input audio at litellm/llms/base_llm/realtime/transcription_protocol.py:181.
-  Place its implementation in crates/betterlite-core/src/api/realtime_transcription_protocol.rs and call it from
-  the actual boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/realtime_transcription_protocol.rs
-  passes arbitrary bounded bytes to that exact decoder; api::realtime_transcription_protocol::tests::replays_corpus
-  replays newly committed seeds through the same function. Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::RealtimeTranscriptionProtocol in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns
-  the re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {realtime_transcription_protocol:
-  <typed input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this
-  production service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare
-  values and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
-  route tasks.
-
-
-  Callable ownership: litellm/llms/base_llm/realtime/transcription_protocol.py: TranscriptionAudioFormat.is_pcm16
-  (L43-L44); litellm/llms/base_llm/realtime/transcription_protocol.py: TranscriptionSessionUpdate.turn_detection_type
-  (L58-L59); litellm/llms/base_llm/realtime/transcription_protocol.py: json_object (L65-L72); litellm/llms/base_llm/realtime/transcription_protocol.py:
-  json_mapping (L75-L82); litellm/llms/base_llm/realtime/transcription_protocol.py: json_string (L85-L92); litellm/llms/base_llm/realtime/transcription_protocol.py:
-  json_integer (L95-L102); litellm/llms/base_llm/realtime/transcription_protocol.py: new_event_id (L105-L106); litellm/llms/base_llm/realtime/transcription_protocol.py:
-  parse_transcription_session_update (L109-L141); litellm/llms/base_llm/realtime/transcription_protocol.py: _parse_audio_format
-  (L144-L168); litellm/llms/base_llm/realtime/transcription_protocol.py: decode_pcm16_append (L171-L186); litellm/llms/base_llm/realtime/transcription_protocol.py:
-  _transcription_settings (L189-L194); litellm/llms/base_llm/realtime/transcription_protocol.py: transcription_session
-  (L197-L213); litellm/llms/base_llm/realtime/transcription_protocol.py: transcription_session_created_event (L216-L224);
-  litellm/llms/base_llm/realtime/transcription_protocol.py: error_event (L227-L232); litellm/llms/base_llm/realtime/transcription_protocol.py:
-  speech_event (L235-L243); litellm/llms/base_llm/realtime/transcription_protocol.py: delta_event (L246-L254); litellm/llms/base_llm/realtime/transcription_protocol.py:
-  completed_event (L257-L270); litellm/llms/base_llm/realtime/transcription_protocol.py: duration_usage (L273-L275).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 230 owned nonblank/non-comment/non-docstring Python lines (230 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 250 implementation,
-  52 behavior tests, 24 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 506 total within the 510-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1087 (Api boundaries). These are callable/type/config
-  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
-  branches.
+  Register HelperCall::RealtimeTranscriptionProtocol in B171 and a typed operation for parse, audio
+  decode or event construction. Tests use api::realtime_transcription_protocol::tests. Source has
+  230 nonblank/non-comment lines including imports; budget 190 implementation,130 tests,105 fixtures,
+  85 adapters,65 fuzz/replay and 25 wiring, 600 lines.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/realtime_transcription_protocol.rs
   - crates/betterlite-core/src/api/realtime_transcription_protocol/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - crates/betterlite-core/fuzz/Cargo.toml
-  - crates/betterlite-core/fuzz/fuzz_targets/realtime_transcription_protocol.rs
-  - crates/betterlite-core/fuzz/corpus/realtime_transcription_protocol/**
-  - tools/oracle/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/transcription_protocol.rs
+  - crates/betterlite-core/fuzz/corpus/transcription_protocol/**
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/realtime_transcription_protocol.rs
-  - tools/oracle/src/helpers/realtime_transcription_protocol/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/realtime_transcription_protocol.py
-  - tools/oracle/helpers/realtime_transcription_protocol/**
-  - tools/oracle/fuzz/corpus/helper_case/realtime_transcription_protocol-*
   - tools/oracle/cases/helpers/realtime-transcription-protocol/**
+  - tools/oracle/fuzz/corpus/helper_case/realtime-transcription-protocol-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transcription_protocol.py#L1-L275
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Entire protocol module, including strict integer validation, layout conflicts, PCM sample alignment and event constructors.
 dod:
-- text: 'ga transcription update: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-ga-transcription-update
-  - oracle
-- text: 'beta transcription update: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-beta-transcription-update
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    transcription_session_layouts accepts session.update and transcription_session.update. Flat
+    input_audio_format=pcm16 gives layout=beta,encoding=pcm16,rate=null,channels=null; GA audio.input.format
+    {type:audio/pcm,rate:24000,channels:1} gives those values with layout=ga. GA string format=custom stays
+    custom. Only pcm16/audio/pcm make is_pcm16 true. Missing audio format returns None; model/language
+    default None. Keys prompt and temperature return unsupported_transcription_keys=[prompt,temperature].
+    Missing turn_detection gives disabled=false; explicit null gives disabled=true; flat turn_detection
+    wins over nested, including null. {type:server_vad} gives turn_detection_type=server_vad.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    transcription_protocol_errors checks malformed JSON -> "invalid JSON object"; [] -> "message must
+    be a JSON object"; type=other -> "expected session.update"; missing/empty session -> "session.update
+    requires a session object". Nonobjects at session,session.audio,session.audio.input,input audio
+    transcription,turn_detection,session.audio.input.format give "<name> must be an object". Nonstring
+    session.type,transcription model,language,session.input_audio_format,session.audio.input.format.type
+    give "<name> must be a string". Boolean, float or string rate/channels give "<name> must be an integer";
+    integers including zero/negative pass this layer. Simultaneously nonnull beta/GA transcription or
+    format gives "input transcription must use either beta or GA layout" or "input audio format must
+    use either beta or GA layout". Null optional values pass. Repeat with a caller-supplied error type.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    pcm16_append_validation decodes AAAA to three bytes then rejects "PCM16 audio must contain complete
+    samples"; AAA= decodes two zero bytes; empty string decodes empty bytes. Nonstrings fail "Audio must
+    be a base64 string"; whitespace, bad alphabet, invalid padding and non-ASCII fail "Audio must be
+    valid base64". At max_encoded_bytes=4, AAA= passes, AAAAAAAA fails "Audio append exceeds the
+    four-second backlog limit" before decoding. The limit counts encoded characters, not decoded samples.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    transcription_event_shapes builds session id=s,model=m,sample_rate=16000,language=en,server_vad=true:
+    object=realtime.transcription_session,type=transcription,audio.input.format={type:audio/pcm,rate:16000},
+    transcription={model:m,language:en},turn_detection={type:server_vad}. language=None omits language;
+    server_vad=false emits null turn_detection. Created event type=session.created wraps that session.
+    Speech started/stopped keep item_id=i; delta and completed use their full conversation.item.input_audio_transcription
+    event names, content_index=0 and event IDs. Completed usage=None omits usage, duration_usage(1.25)
+    is {type:duration,seconds:1.25}; token usage is retained unchanged. error_event(denied) emits
+    {type:error,error:{type:server_error,message:denied}} with no code or event_id.
+  proof: [behavior-tests, oracle, helper-python]
+- text: Newly committed JSON/base64 and helper seeds reach the exact production decoders and independent source adapter.
+  proof: [decoder-corpus, helper-corpus, new-cases, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_transcription_protocol::/)
-      - test(/::replays_corpus$/)'
-  - id: case-ga-transcription-update
-    why: the ga-transcription-update behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_transcription_protocol::tests::ga_transcription_update($|::)/)'
-  - id: case-beta-transcription-update
-    why: the beta-transcription-update behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_transcription_protocol::tests::beta_transcription_update($|::)/)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/realtime_transcription_protocol)"
-      && test -f crates/betterlite-core/fuzz/fuzz_targets/realtime_transcription_protocol.rs && grep -qF "decode_realtime_transcription"
-      crates/betterlite-core/fuzz/fuzz_targets/realtime_transcription_protocol.rs && cargo nextest run --locked
-      -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_transcription_protocol::tests::replays_corpus$/)'
+    why: Layout precedence, exact failure messages and event omissions must each be asserted.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_transcription_protocol::tests::/) - test(/::replays_corpus$/)'
+  - id: decoder-corpus
+    why: Both untrusted JSON and encoded audio need bounded panic-free parsing.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/transcription_protocol)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_transcription_protocol::tests::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/realtime_transcription_protocol.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: Protocol helpers need checked independent Python calls for their strict failure contract.
+    run: test -f tools/oracle/helpers/realtime_transcription_protocol.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/realtime_transcription_protocol-*)"
-      && grep -qE "^[[:space:]]+realtime_transcription_protocol:" tools/oracle/fuzz/corpus/helper_case/realtime_transcription_protocol-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: The protocol operation tag must have a fresh helper parser seed.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/realtime-transcription-protocol-*)" && grep -qE '^[[:space:]]+realtime_transcription_protocol:' tools/oracle/fuzz/corpus/helper_case/realtime-transcription-protocol-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: Each protocol operation needs a newly added parity fixture.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/realtime-transcription-protocol)"
 oracle_cases:
-- tools/oracle/cases/helpers/realtime-transcription-protocol/ga-transcription-update.yaml
-- tools/oracle/cases/helpers/realtime-transcription-protocol/beta-transcription-update.yaml
+- tools/oracle/cases/helpers/realtime-transcription-protocol/transcription-session-layouts.yaml
+- tools/oracle/cases/helpers/realtime-transcription-protocol/transcription-protocol-errors.yaml
+- tools/oracle/cases/helpers/realtime-transcription-protocol/pcm16-append-validation.yaml
+- tools/oracle/cases/helpers/realtime-transcription-protocol/transcription-event-shapes.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- No functions in transcription_protocol.py remain unowned; provider restrictions and actual streaming backends stay with their provider tasks.
 pitfalls:
-- TranscriptionSessionUpdate.turn_detection_type uses self.turn_detection.get('type'); retain its missing-value
-  behavior and field spelling in the typed projection.
-- Within json_object\'s not isinstance(value, dict) branch, preserve raise error('message must be a JSON object')
-  and its nested guards.
+- Python bool is an int subclass, but json_integer explicitly rejects true and false.
+- Explicit null turn_detection disables VAD; an omitted key does not.
+- Audio backlog validation runs before strict base64 decoding and before complete-sample validation.
 review_level: standard
 budget:
-  max_changed_lines: 510
-  max_new_expects: 1
+  max_changed_lines: 600
+  max_new_expects: 0

@@ -1,220 +1,184 @@
 id: B931
 title: Responses provider selection
 description: >-
-  Resolve Responses model prefixes and provider capability into a typed NativeOrChat target using B010/B174 and
-  prompt-manager results. Preserve provisional prompt messages, provider re-resolution after prompt swaps and managed
-  file/tool IDs from B234; do not construct transport URLs from client fields.
+  Build responses_provider_selection in betterlite-core. Own all complete helpers at main.py 427-572
+  and 764-964, including _AsyncPromptManagementOutcome. These helpers select native versus chat
+  execution, preserve prompt mutations and prevent already resolved credentials crossing providers.
+  They do not send provider requests. B174 supplies model resolution; B157 supplies a typed provider
+  config lookup and B1114 the capability contract. Also own the complete OpenAILikeResponsesConfig
+  class in betterlite-openai::response_compatible: its three overrides supply identity, headers
+  and URL; inherited operations reuse B506/B507/B508/B509. B117 supplies
+  synchronous prompt hooks through an injected PromptManager port; return merged messages, model and
+  optional parameters without implementing its remote stores here. B905 converts and merges prompt
+  input. B234 owns supplied file/vector ID mapping, B184 exception records, B185/B186 exception_type and B010 generic
+  request parameters. B171 runs pure helper comparisons with scripted resolver and prompt outcomes.
 
+  Native support is the actual config lookup, with model_info.supported_endpoints containing the
+  exact /v1/responses string as a fallback opt-in. Missing config or use_chat_completions_api=true
+  selects chat. Resolve provisional prompt behavior with that same predicate. Carry
+  _litellm_carry_unmatched_cache_control_points=true only during a bridged hook and remove it in
+  finally, even if it existed beforehand. Async merged outcomes are consumed once and bypass the
+  sync hook. The fallback config resolves OPENAI_LIKE_API_KEY and OPENAI_LIKE_API_BASE through
+  B129's get_secret_str port, both default unset; B002 supplies the environment snapshot and
+  its production loader tests. No global OpenAI key/base fallback is added. DEFAULT_MAX_TOKENS
+  is not read by these functions. The provider leaf takes typed values, never imports core.
 
-  Implement crates/betterlite-core/src/api/responses_provider_selection.rs. Use ResponsesProviderSelecInput and
-  ResponsesProviderSelecResult with typed nested records; inject only the clock, repositories, transports and resolved
-  settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment
-  or duplicate credential resolution.
-
-
-  Write adjacent tests.rs behavior functions openai_chat_completions_prefix, prompt_swapped_provider, encrypted_task_incompatible,
-  managed_file_tool_mapping, explicit_use_chat_completions under api::responses_provider_selection::tests. Each
-  named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.DEFAULT_MAX_TOKENS
-  defaults to 4096. No environment reads occur outside betterlite-config. Test api::responses_provider_selection::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponsesProviderSelection in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns
-  the re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_provider_selection:
-  <typed input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this
-  production service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare
-  values and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
-  route tasks.
-
-
-  Callable ownership: litellm/responses/main.py: _bridges_to_chat_completions (L427-L431); litellm/responses/main.py:
-  _bridge_kwargs (L437-L455); litellm/responses/main.py: _encrypted_task_support_failure (L461-L470); litellm/responses/main.py:
-  _raise_responses_compatibility_failure (L473-L486); litellm/responses/main.py: _deployment_passes_through_responses
-  (L489-L494); litellm/responses/main.py: _deployment_model_info_after_prompt_swap (L497-L501); litellm/responses/main.py:
-  _resolve_responses_api_provider_config (L510-L518); litellm/responses/main.py: _api_base_kwarg (L521-L523); litellm/responses/main.py:
-  _will_bridge_to_chat_completions (L526-L547); litellm/responses/main.py: _prompt_management_sees_a_provisional_message_list
-  (L551-L572); litellm/responses/main.py: _resolve_prompt_swapped_provider (L764-L790); litellm/responses/main.py:
-  _apply_prompt_management_to_responses_call (L793-L874); litellm/responses/main.py: _normalize_openai_chat_completions_responses_model
-  (L881-L891); litellm/responses/main.py: _pop_use_chat_completions_api_kw (L894-L897); litellm/responses/main.py:
-  _strip_responses_routing_prefix (L903-L906); litellm/responses/main.py: _resolve_model_provider_for_responses
-  (L909-L931); litellm/responses/main.py: _apply_managed_file_id_mapping (L934-L964). Abstract/protocol declarations
-  map to native types and synchronous/async wrappers share one implementation; a partial function span is the explicit
-  preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 271 owned nonblank/non-comment/non-docstring Python lines (296 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 291 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 574 total within the 580-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
-  oracle and URL path encoding), B174 (Provider identity and model resolution), B234 (Supplied model-file and vector-ID
-  mappings), B905 (Responses parameters), B909 (Responses input messages), B1087 (Api boundaries), B002 (Load LiteLLM
-  config.yaml into typed config). These are callable/type/config owners, not provider-family umbrellas; the external
-  B500-B859 ids retain ownership on the provider and keys/data branches.
+  Register HelperCall::ResponsesProviderSelection with a tagged responses_provider_selection seed,
+  independent Rust/Python adapters and effect traces for local_vars, kwargs, resolver calls and
+  prompt calls. Python executes the actual helpers. Use named rstest rows under
+  api::responses_provider_selection::tests for the cases below. Inputs are typed; decoding belongs
+  to B171. Selection owns 296 nonblank/non-comment lines and the compatible class 31. Allow
+  310 implementation, 160 tests, 110 fixtures, 95 adapters, 45 settings/seeds and 30 wiring
+  lines, 750 total under 780.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_provider_selection.rs
   - crates/betterlite-core/src/api/responses_provider_selection/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/response_compatible.rs
+  - crates/betterlite-openai/src/response_compatible/**
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/responses_provider_selection.rs
   - crates/betterlite-config/src/api/responses_provider_selection/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/responses-provider-selection-*
-  - tools/oracle/Cargo.toml
+  - crates/betterlite-config/fuzz/corpus/config_yaml/responses-compatible-*
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/responses_provider_selection.rs
-  - tools/oracle/src/helpers/responses_provider_selection/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/responses_provider_selection.py
-  - tools/oracle/helpers/responses_provider_selection/**
-  - tools/oracle/fuzz/corpus/helper_case/responses_provider_selection-*
   - tools/oracle/cases/helpers/responses-provider-selection/**
+  - tools/oracle/fuzz/corpus/helper_case/responses_provider_selection-*
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L868-L914
-  why: Setting env.DEFAULT_MAX_TOKENS and its pinned default/precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L427-L572
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Config fallback, bridge filtering, encrypted-task refusal and temporary cache-control signal.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L764-L964
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Credential boundary on prompt swaps, one-shot async results, prefix normalization and ID mapping calls.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L146-L146
+  why: Literal name of the temporary prompt-management signal.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L17-L51
+  why: Whole fallback class; a nonempty explicit key replaces Authorization, while URL construction always appends /responses.
 dod:
-- text: 'openai chat completions prefix: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-openai-chat-completions-prefix
-  - oracle
-- text: 'prompt swapped provider: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-prompt-swapped-provider
-  - oracle
-- text: 'encrypted task incompatible: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-encrypted-task-incompatible
-  - oracle
-- text: 'managed file tool mapping: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-managed-file-tool-mapping
-  - oracle
-- text: 'explicit use chat completions: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-explicit-use-chat-completions
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    provider_capability_selection compares config=null, compatible config and encrypted-unsupported config.
+    Missing config bridges; a config with use_chat_completions_api=false stays native. supported_endpoints
+    as ["/v1/responses"] or a tuple supplies the fallback config only if the lookup returned null;
+    ["/responses"], the string "/v1/responses" and non-object model_info do not. api_base="" is passed
+    through, but api_base=7 becomes null. Unknown provider in the provisional check returns bridged=true.
+    Encrypted classification returns encrypted_task_unsupported for missing config, an explicit bridge
+    or unsupported native config, and null for a capable native config. Raising it normalizes ValueError
+    with message "Encrypted task classification requires a compatible native Responses deployment" via B185/B186.
+    For provider=openai expect APIConnectionError,status=500,type/param/code null; the exact
+    local cause is retained and the public message follows the existing bounded diagnostic policy.
+  proof: [capabilities, oracle, python-adapter]
+- text: >-
+    compatible_provider_environment and loads_compatible_provider_settings resolve absent env to
+    no key/base. Explicit api_key=sk-explicit beats OPENAI_LIKE_API_KEY=sk-env and overwrites
+    Authorization="Bearer caller" with "Bearer sk-explicit"; api_key="" uses sk-env. With neither
+    key, preserve the caller header and add none if absent. Identity is openai_like; inherited
+    native_file_search=true but encrypted_agent_messages=false because the identity is not openai/azure.
+    Explicit base=https://provider.test/v1/// beats OPENAI_LIKE_API_BASE and yields
+    https://provider.test/v1/responses; empty explicit base uses the environment. Missing both
+    raises ValueError "api_base is required for openai_like provider", with no status/type/param/code.
+    Whitespace is not trimmed: key=" " becomes "Bearer  " and base=" " becomes " /responses".
+    base=https://provider.test/responses becomes https://provider.test/responses/responses;
+    base=https://provider.test/v1?x=1 becomes https://provider.test/v1?x=1/responses. These are
+    pure config results; URL validity and provider I/O remain transport concerns.
+  proof: [compatible-config, compatible-settings, compatible-corpus, oracle, python-adapter]
+- text: >-
+    model_prefix_and_bridge_parameters sends openai/chat_completions/gpt-4o and gets openai/gpt-4o,true;
+    openai/chat_completions/ remains unchanged,false. responses/responses/gpt-4o loses only the first
+    responses/; responses/ becomes empty. Pop use_chat_completions_api for absent,false,0,"",true,"false":
+    expect false,false,false,false,true,true and removal in every case. Config-less bridge kwargs drop
+    client_metadata alone, retaining an unknown vendor_option; with a config vendor_option is dropped
+    unless explicitly allowed. client_metadata stays dropped even if allowed; temperature and api_key survive.
+    Dynamic resolver key/base="" replace existing values, null does not; resolved provider updates local_vars.
+  proof: [prefixes, oracle, python-adapter]
+- text: >-
+    prompt_swap_credential_boundary uses prompt_id=p, original openai/gpt-4o and swapped anthropic/claude-3-5-sonnet.
+    With api_key and api_base both null the swap succeeds and model_info becomes null. Either present,
+    including an empty string, rejects before any provider send with BadRequestError/status=400 and message
+    "prompt_id 'p' swaps model 'openai/gpt-4o' -> 'anthropic/claude-3-5-sonnet', which changes the provider from
+    'openai' to 'anthropic' after credentials for 'openai' were already resolved. Refusing to send them to
+    'anthropic'. Point the request at a model whose provider matches the prompt's metadata.model, or set
+    ignore_prompt_manager_model on the prompt to keep the requested model." A same-provider swap keeps
+    model_info. An unresolvable original provider caught as BadRequestError allows the resolved new provider.
+  proof: [credential-boundary, oracle, python-adapter]
+- text: >-
+    prompt_hook_mutation_order feeds input=hello and a hook adding a system message, model=openai/gpt-4o-mini,
+    optional temperature=0.2. Expect B905's merged input and updated input/model/provider/temperature locals;
+    prompt_label=production,prompt_version=2,prompt_variables={name:Ada} reach the hook unchanged. No eligible
+    logging object returns original input/model/provider/model_info. An _async_prompt_merged_params outcome
+    applies temperature=0.2, returns its deployment metadata, removes the outcome and makes zero hook calls.
+    The bridged hook observes the temporary signal=true; successful and throwing hooks both remove it.
+    A native hook neither adds nor removes an existing signal. Resolver calls occur only for a changed model.
+  proof: [prompt-order, oracle, python-adapter]
+- text: >-
+    supplied_file_mapping passes input_file file_id=file_global, model_info.id=deployment_a and the B234 mapping
+    to file_provider_a; expect only the mapped ID changed in returned input and local_vars.input. Absent or
+    non-object model_info supplies model_id=null. Nonempty file_search tools pass through B234's vector-ID
+    mapper and update local_vars.tools; null and [] skip that call and leave the tools local untouched.
+    Unmapped IDs stay unchanged; these helpers do not fetch, persist, authorize or create managed files.
+  proof: [file-mapping, oracle, python-adapter]
+- text: The new responses_provider_selection tag is accepted by the shared helper-case decoder and replayed.
+  proof: [helper-corpus, oracle, python-adapter]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_provider_selection::/)
-      - test(/::replays_corpus$/)'
-  - id: case-openai-chat-completions-prefix
-    why: the openai-chat-completions-prefix behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_provider_selection::tests::openai_chat_completions_prefix($|::)/)'
-  - id: case-prompt-swapped-provider
-    why: the prompt-swapped-provider behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_provider_selection::tests::prompt_swapped_provider($|::)/)'
-  - id: case-encrypted-task-incompatible
-    why: the encrypted-task-incompatible behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_provider_selection::tests::encrypted_task_incompatible($|::)/)'
-  - id: case-managed-file-tool-mapping
-    why: the managed-file-tool-mapping behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_provider_selection::tests::managed_file_tool_mapping($|::)/)'
-  - id: case-explicit-use-chat-completions
-    why: the explicit-use-chat-completions behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_provider_selection::tests::explicit_use_chat_completions($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_provider_selection::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-provider-selection-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_provider_selection.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: compatible-config
+    why: the fallback loses its actual provider identity or silently normalizes credentials and URL
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^response_compatible::tests::compatible_provider_environment($|::)/)'
+  - id: compatible-settings
+    why: the production config loader ignores either OpenAI-like environment variable
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_provider_selection::tests::loads_compatible_provider_settings($|::)/)'
+  - id: compatible-corpus
+    why: compatible-provider environment settings lack new shared-loader seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-compatible-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: capabilities
+    why: fallback config or encrypted-task capability changes the selected API
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_provider_selection::tests::provider_capability_selection($|::)/)'
+  - id: prefixes
+    why: routing prefixes or bridge kwargs leak Responses-only parameters
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_provider_selection::tests::model_prefix_and_bridge_parameters($|::)/)'
+  - id: credential-boundary
+    why: prompt replacement can send credentials to another provider
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_provider_selection::tests::prompt_swap_credential_boundary($|::)/)'
+  - id: prompt-order
+    why: prompt hooks run twice or retain the temporary cache-control signal
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_provider_selection::tests::prompt_hook_mutation_order($|::)/)'
+  - id: file-mapping
+    why: supplied deployment mappings are ignored or falsy tools are unexpectedly rewritten
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_provider_selection::tests::supplied_file_mapping($|::)/)'
+  - id: python-adapter
+    why: provider-selection parity does not execute the pinned helpers
+    run: test -f tools/oracle/helpers/responses_provider_selection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_provider_selection-*)"
-      && grep -qE "^[[:space:]]+responses_provider_selection:" tools/oracle/fuzz/corpus/helper_case/responses_provider_selection-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-provider-selection)"
+    why: no new selection input exercises the common decoder
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_provider_selection-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/responses-provider-selection/openai-chat-completions-prefix.yaml
-- tools/oracle/cases/helpers/responses-provider-selection/prompt-swapped-provider.yaml
-- tools/oracle/cases/helpers/responses-provider-selection/encrypted-task-incompatible.yaml
-- tools/oracle/cases/helpers/responses-provider-selection/managed-file-tool-mapping.yaml
-- tools/oracle/cases/helpers/responses-provider-selection/explicit-use-chat-completions.yaml
-deviations: []
+- tools/oracle/cases/helpers/responses-provider-selection/compatible-provider-environment.yaml
+- tools/oracle/cases/helpers/responses-provider-selection/provider-capability-selection.yaml
+- tools/oracle/cases/helpers/responses-provider-selection/model-prefix-and-bridge-parameters.yaml
+- tools/oracle/cases/helpers/responses-provider-selection/prompt-swap-credential-boundary.yaml
+- tools/oracle/cases/helpers/responses-provider-selection/prompt-hook-mutation-order.yaml
+- tools/oracle/cases/helpers/responses-provider-selection/supplied-file-mapping.yaml
+deviations:
+- what: Encrypted-task compatibility failure retains APIConnectionError/status=500 and null SDK type/param/code, with bounded public wording instead of Python traceback text.
+  why: Reuse the established B184/B187 diagnostic policy and assert the original literal cause separately.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L473-L487
 out_of_scope:
-- 'litellm/responses/main.py: B1078 owns _has_file_search_tool L98-L102, mock_responses_api_response L105-L154,
-  responses L1128-L1458.'
-- 'litellm/responses/main.py: B955 owns aresponses_api_with_mcp L157-L424, _responses_try_dispatch_mcp_gateway L967-L1035,
-  _responses_try_dispatch_emulated_file_search L1038-L1124.'
-- 'litellm/responses/main.py: B932 owns aresponses L576-L761, responses L1128-L1458.'
-- 'litellm/responses/main.py: B1116 owns adelete_responses L1462-L1519, delete_responses L1523-L1610, acancel_responses
-  L1929-L1986, cancel_responses L1990-L2077.'
-- 'litellm/responses/main.py: B933 owns aget_responses L1614-L1685, get_responses L1689-L1790, alist_input_items
-  L1794-L1846, list_input_items L1850-L1925.'
-- 'litellm/responses/main.py: B934 owns acompact_responses L2081-L2155, compact_responses L2159-L2279.'
-- 'litellm/responses/main.py: B943 owns _build_litellm_metadata_for_ws L2287-L2292, _deployment_reasoning_default
-  L2298-L2306, _first_ws_frame_with_routed_input L2312-L2327, _build_responses_websocket_request_defaults L2330-L2340,
-  _aresponses_websocket L2344-L2445.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B038 owns dynamic JSON-provider class generation; it reuses this lower OpenAILikeResponsesConfig contract. B129 owns secret-store retrieval, exposed here through get_secret_str without remote I/O in the helper adapter.
+- B1078 owns the whole responses function and mock response builder; B932 owns aresponses.
+- B955 owns MCP/file-search dispatch functions; B1116 owns delete/cancel, B933 retrieve/input-items, B934 compact and B943 websocket functions in main.py.
+- B117 owns prompt-store access; B234 owns the mapping algorithms. This task invokes their typed interfaces only.
 pitfalls:
-- 'Within _bridge_kwargs\''s responses_api_provider_config is None branch, preserve return MappingProxyType({key:
-  value for key, value in kwargs.items() if key not in _RESPONSES_ONLY_REQUEST_FIELDS_NEVER_BRIDGED}) and its nested
-  guards.'
-- Within _deployment_passes_through_responses\'s not isinstance(model_info, dict) branch, preserve return False
-  and its nested guards.
-review_level: standard
+- An empty api_key or api_base still prevents a prompt from crossing the credential boundary.
+- The bridged prompt context removes an existing _litellm_carry_unmatched_cache_control_points value instead of restoring it.
+- A string use_chat_completions_api="false" is truthy, while the bridge predicate itself uses identity with true.
+review_level: security
 budget:
-  max_changed_lines: 580
-  max_new_expects: 1
+  max_changed_lines: 780
+  max_new_expects: 0

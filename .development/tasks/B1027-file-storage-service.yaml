@@ -1,169 +1,126 @@
 id: B1027
-title: File storage service
+title: Storage backend selection and file upload service
 description: >-
-  Upload storage-only files and construct their MIT OpenAIFileObject/hidden storage metadata. A nonempty target_model_names
-  with no BaseFileEndpoints hook returns 400 invalid_request_error, param target_model_names, code 400 before upload.
-  With no targets, return after the storage write: no managed ID, managed row or hook is created. Unknown target_storage
-  returns 400 invalid_request_error/target_storage/400. Preserve the generated file-<24 hex> ID, uploaded status
-  and storage metadata.
+  Implement the whole get_storage_backend factory above B1025/B1026, and the complete
+  StorageBackendFileService.upload_file_to_storage_backend and _create_file_object_with_storage_metadata
+  functions in betterlite-core::api::file_storage_service. The factory recognizes exactly azure_storage
+  and litellm_db. Instantiate the backend before checking target_model_names, so configuration errors
+  take precedence over unavailable managed-file registration. A factory ValueError becomes
+  ProxyException invalid_request_error/target_storage/400; upload-time errors propagate normally.
 
+  Without the enterprise hook, nonempty target_model_names fails before any storage write. With no
+  targets, write bytes and return a normal uploaded file; do not create managed metadata rows or
+  ownership mappings. Inject clock and UUID for native projection tests. Hidden storage_backend and
+  storage_url values are retained internally but not exposed as new public fields. Neither a
+  successful write nor object construction implies a transaction with later metadata registration.
 
-  _store_in_managed_files, _create_unified_file_id and orphan cleanup are unreachable from the OSS upload path:
-  targets fail before the upload, and no targets returns before registration. Their warning/cleanup cases are removed
-  rather than activating that hook-only branch.
-
-
-  Implement crates/betterlite-core/src/api/file_storage_service.rs. Use FileStorageServiceInput and FileStorageServiceResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): storage_backend_service.py:67 type='invalid_request_error', param='target_storage', code=400;
-  storage_backend_service.py:77 type='invalid_request_error', param='target_model_names', code=400. Compare the
-  actual source status, error type, param and code; ignore only error wording except in message-extraction tests.
-
-
-  Write adjacent tests.rs functions storage_file_object, storage_only_upload, storage_targets_400_befor_a0fe, unknown_storage_backend_400
-  under api::file_storage_service::tests; each independently drives the production result and effects described
-  here. HelperCase replay remains in B171.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::FileStorageService in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_storage_service: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership in litellm/proxy/openai_files_endpoints/storage_backend_service.py: upload_file_to_storage_backend
-  L36-L110; _create_file_object_with_storage_metadata L141-L182. These ranges stop at the absent-hook guards; excluded
-  continuations are listed below.
-
-
-  Sizing: 75 owned nonblank/non-comment/non-docstring Python lines (101 nonblank/non-comment physical lines including
-  docstrings), counted over the disjoint ranges above. Estimate 95 implementation, 64 behavior tests, 48 oracle
-  fixtures, 90 Rust/Python adapters, 0 config tests/seeds and 30 wiring: 327 total within the 400-line cap. No owned
-  decoder/fuzz work is required.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1018 (MIT resource owner compatibility),
-  B1021 (File upload options), B1025 (File storage contracts), B1026 (File azure storage), B1087 (Api boundaries).
-  These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership
-  on the provider and keys/data branches.
+  Use B2401's file_storage_service SDK HTTP operation for actual Azure service calls against the
+  mock and native B726-backed repository tests for database storage. The B171 helper of the same
+  name tests only pure file-object projection with fixed clock/UUID. Route registration and multipart
+  decoding stay in B1032; do not depend on it. Tests use api::file_storage_service::tests.
+  Owned factory/service spans contain 141 nonblank, non-comment lines. Allow 150 implementation,
+  125 tests, 105 cases, 115 adapters and 35 wiring lines: 530 total.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_storage_service.rs
   - crates/betterlite-core/src/api/file_storage_service/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/file_storage_service.rs
-  - tools/oracle/src/helpers/file_storage_service/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/file_storage_service.py
-  - tools/oracle/helpers/file_storage_service/**
   - tools/oracle/fuzz/corpus/helper_case/file_storage_service-*
   - tools/oracle/cases/helpers/file-storage-service/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/file_storage_service.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/file_storage_service.py
+  - tools/oracle/cases/sdk-http/file-storage-service/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/file-storage-service-*
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/storage_backend_service.py#L1-L269
-  why: Full source context; the explicit callable list owns only MIT-reachable branches.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/storage_backend_service.py#L35-L110
-  why: Owned MIT-reachable slice without the enterprise hook.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/storage_backend_factory.py#L21-L51
+  why: Owns whole backend selection moved above both concrete implementations, fixing the former reverse call edge.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/storage_backend_service.py#L35-L124
+  why: Owns the entire upload function; the absent-hook guard makes its registration continuation unreachable in MIT.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/storage_backend_service.py#L140-L182
-  why: Owned MIT-reachable slice without the enterprise hook.
+  why: Owns the generated file id, timestamp, byte count, uploaded status and hidden storage metadata.
 dod:
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: 'storage file object: assert the source result and ordered effects specified above.'
-  proof:
-  - case-storage-file-object
-  - oracle
-- text: 'storage only upload: assert the source result and ordered effects specified above.'
-  proof:
-  - case-storage-only-upload
-  - oracle
-- text: 'storage targets 400 before write: assert the source result and ordered effects specified above.'
-  proof:
-  - case-storage-targets-400-before-write
-  - oracle
-- text: 'unknown storage backend 400: assert the source result and ordered effects specified above.'
-  proof:
-  - case-unknown-storage-backend-400
-  - oracle
+- text: >-
+    storage_factory_errors passes target_storage=other and expects ValueError "Unsupported storage
+    backend type: other. Supported types: azure_storage, litellm_db" directly, and ProxyException
+    code="400", type=invalid_request_error, param=target_storage through the service. litellm_db
+    without a repository gives "Storage backend litellm_db requires a database-connected proxy"
+    with the same service error fields. Both fail before hook lookup or writes; factory logs DEBUG
+    "Creating storage backend: type=<value>". Azure initialization errors retain their source cause.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    storage_targets_before_write sends azure_storage and targets=[m] with valid backend settings
+    but no managed_files hook, and gets ProxyException 400/invalid_request_error/target_model_names/"400",
+    source message "Uploading with target_model_names requires a database-connected proxy, and this
+    proxy has no database configured". Zero upload requests and zero rows are produced even when a
+    database is connected. An invalid backend plus targets still fails on target_storage first.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    storage_only_upload sends content=b"abc", purpose=user_data, target_storage=azure_storage and
+    targets=[]. Backend arguments are filename=file and content_type=application/octet-stream when
+    omitted, path_prefix="" and file_naming_strategy=uuid. Explicit values pass unchanged. Provider
+    capture shows B1026's upload, and success returns object=file, bytes=3, filename=file,
+    purpose=user_data, status=uploaded, integer created_at and file- plus 24 lowercase hex digits.
+    No managed hook or metadata repository write follows. A storage error returns no file object.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    storage_file_projection fixes time=1234.9 and UUID=12345678-1234-5678-1234-567812345678,
+    content=b"abc", filename=a.bin, purpose=batch, backend=litellm_db,url=litellm_db://r. Result is
+    id=file-123456781234567812345678, created_at=1234, bytes=3, object=file, status=uploaded,
+    filename=a.bin,purpose=batch, with hidden {storage_backend:litellm_db,storage_url:litellm_db://r}.
+    Those hidden fields do not appear in the public serialization. Empty content reports bytes=0.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    database_storage_only uses B1025/B726 with targets=[] and persists exactly one content row,
+    returns a file id rather than a unified id, and leaves managed-file tables untouched.
+    managed_storage_unavailable pins the pending product choice's target_model_names error.
+  proof: [behavior-tests]
+- text: Native, pure-projection and SDK HTTP cases use newly added typed operation seeds.
+  proof: [new-cases, case-seeds, oracle, python-adapters]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_service::/)
-      - test(/::replays_corpus$/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/file_storage_service.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_storage_service-*)"
-      && grep -qE "^[[:space:]]+file_storage_service:" tools/oracle/fuzz/corpus/helper_case/file_storage_service-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-storage-service)"
-  - id: case-storage-file-object
-    why: the storage-file-object source behavior is not independently tested
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_service::tests::storage_file_object($|::)/)'
-  - id: case-storage-only-upload
-    why: the storage-only-upload source behavior is not independently tested
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_service::tests::storage_only_upload($|::)/)'
-  - id: case-storage-targets-400-before-write
-    why: the storage-targets-400-before-write source behavior is not independently tested
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_service::tests::storage_targets_400_befor_a0fe($|::)/)'
-  - id: case-unknown-storage-backend-400
-    why: the unknown-storage-backend-400 source behavior is not independently tested
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_service::tests::unknown_storage_backend_400($|::)/)'
+    why: storage selection, no-hook ordering or public projection is untested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_service::/) - test(/::replays_corpus$/)'
+  - id: python-adapters
+    why: storage projection or provider HTTP adapter is missing
+    run: test -f tools/oracle/helpers/file_storage_service.py && test -f tools/oracle/sdk_http/file_storage_service.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: case-seeds
+    why: storage operations are not present in both decoder corpora
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_storage_service-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-storage-service-*)" && grep -qE '^[[:space:]]+file_storage_service:' tools/oracle/fuzz/corpus/helper_case/file_storage_service-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: storage uploads have no new HTTP captures
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/file-storage-service)"
 oracle_cases:
-- tools/oracle/cases/helpers/file-storage-service/storage-file-object.yaml
-- tools/oracle/cases/helpers/file-storage-service/storage-only-upload.yaml
-- tools/oracle/cases/helpers/file-storage-service/storage-targets-400-before-write.yaml
-- tools/oracle/cases/helpers/file-storage-service/unknown-storage-backend-400.yaml
-deviations: []
+- tools/oracle/cases/helpers/file-storage-service/storage-file-projection.yaml
+- tools/oracle/cases/sdk-http/file-storage-service/storage-factory-errors.yaml
+- tools/oracle/cases/sdk-http/file-storage-service/storage-targets-before-write.yaml
+- tools/oracle/cases/sdk-http/file-storage-service/storage-only-upload.yaml
+deviations:
+- what: Storage-only uploads work, but target_model_names returns 400 invalid_request_error with param=target_model_names and code="400" before a write, even with a database.
+  why: Max has not decided managed files and batches; preserve the absent MIT managed_files hook until then, without a license gate.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/storage_backend_service.py#L74-L82
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
-- StorageBackendFileService upload continuation L111-L124, _discard_orphaned_content, _create_unified_file_id and
-  _store_in_managed_files have no reachable OSS caller without the enterprise hook; retain storage-only upload and
-  object construction, not managed registration/cleanup.
+- _discard_orphaned_content, _create_unified_file_id and _store_in_managed_files have no reachable MIT caller without the enterprise hook. The owned upload function's L111-L124 continuation stays inactive; no replacement hook or warning case fabricates that branch.
+- B1025 owns byte storage and default deletion, B1026 Azure operations, B1015 the file endpoint capability, and B726 repository effects.
 pitfalls:
-- target_model_names fails before upload when the managed hook is absent, so an OSS failure creates no orphan to
-  clean up.
-- The storage-only result uses file- plus 24 UUID hex characters and stores the backend URL in hidden metadata;
-  it is not a unified managed-file ID.
+- Factory initialization runs before target-model rejection, so missing Azure settings can fail before the managed-hook message.
+- The target-model error says no database even when one exists; hook availability is the actual condition.
+- A storage-only response has no persisted managed ownership record, despite carrying storage metadata internally.
 review_level: security
 budget:
-  max_changed_lines: 400
-  max_new_expects: 1
+  max_changed_lines: 530
+  max_new_expects: 0

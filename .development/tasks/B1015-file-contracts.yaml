@@ -1,218 +1,172 @@
 id: B1015
-title: File contracts
+title: File provider contracts and batch detection
 description: >-
-  Define typed file upload/list/object/content operation records and base provider preparation, plus MIME/file-extension
-  tables and batch-file detection. Reuse B010/B004 wire types, preserve typed binary content streams and list pagination,
-  and expose configured transport plans to later file calls.
+  Add the file-provider contract types in betterlite-provider::api::file_contracts and the
+  FilesAPIUtils predicates in betterlite-core::api::file_contracts. Keep the public inputs as
+  the existing OpenAI file DTOs, TwoStepFileUploadConfig, FileContentStreamingResult,
+  UserAPIKeyAuth, LlmProviders and provider operation types from B010; do not add a JSON record
+  type, a second decoder, a route, or a network client. B1128 remains the owner of the upload
+  plans and streaming records consumed by these contracts.
 
+  Implement BaseFileUploadStream.iter_bytes as a replayable capability: every call returns a
+  fresh Iterator[bytes]. Implement BaseFilesConfig.custom_llm_provider,
+  get_supported_openai_params, transform_create_file_request/response,
+  transform_retrieve_file_request/response, transform_delete_file_request/response,
+  transform_list_files_request/response and transform_file_content_request/response as typed
+  provider hooks. Its executable defaults are file_upload_http_method -> "POST",
+  transform_list_files_next_request -> None for every response, and
+  transform_file_content_stream -> FileContentStreamingResult containing the supplied
+  stream_iterator and headers unchanged. get_complete_file_url passes api_base, api_key, model,
+  optional_params and litellm_params to B2202's BaseConfig.get_complete_url exactly once and
+  does not pass its data argument. BaseFileEndpoints exposes typed abstract hooks for create,
+  retrieve, list, delete and content; it does not instantiate an enterprise hook.
 
-  Implement crates/betterlite-core/src/api/file_contracts.rs, crates/betterlite-openai/src/api/file_contracts.rs,
-  crates/betterlite-provider/src/api/file_contracts.rs. Use FileContractsInput and FileContractsResult with typed
-  nested records; inject only the clock, repositories, transports and resolved settings this slice uses through
-  constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential resolution.
-
-
-  Write adjacent tests.rs behavior functions batch_jsonl_purpose, list_next_page, file_content_stream_contract,
-  upload_method_capability under api::file_contracts::tests. Each named function drives production code and asserts
-  its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-openai::api::file_contracts::decode_file_contracts(bytes: &[u8],
-  limits: &WireDecodeLimits), for bounded external JSON bytes into the domain wire records. Place its implementation
-  in crates/betterlite-openai/src/api/file_contracts.rs and call it from the actual boundary. The cargo-fuzz target
-  crates/betterlite-openai/fuzz/fuzz_targets/file_contracts.rs passes arbitrary bounded bytes to that exact decoder;
-  api::file_contracts::tests::replays_corpus replays newly committed seeds through the same function. Transform-only
-  helpers reuse the already decoded records.
-
-
-  Register HelperCall::FileContracts in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_contracts: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/files/utils.py: FilesAPIUtils.is_batch_jsonl_file (L29-L37); litellm/files/utils.py:
-  FilesAPIUtils.is_batch_jsonl_request (L40-L49); litellm/files/utils.py: FilesAPIUtils.valid_content_type (L52-L57);
-  litellm/llms/base_llm/files/transformation.py: BaseFileUploadStream.iter_bytes (L51-L51); litellm/llms/base_llm/files/transformation.py:
-  BaseFilesConfig.custom_llm_provider (L57-L58); litellm/llms/base_llm/files/transformation.py: BaseFilesConfig.file_upload_http_method
-  (L61-L68); litellm/llms/base_llm/files/transformation.py: BaseFilesConfig.get_supported_openai_params (L71-L72);
-  litellm/llms/base_llm/files/transformation.py: BaseFilesConfig.get_complete_file_url (L74-L89); litellm/llms/base_llm/files/transformation.py:
-  BaseFilesConfig.transform_create_file_request (L92-L106); litellm/llms/base_llm/files/transformation.py: BaseFilesConfig.transform_create_file_response
-  (L109-L116); litellm/llms/base_llm/files/transformation.py: BaseFilesConfig.transform_retrieve_file_request (L119-L125);
-  litellm/llms/base_llm/files/transformation.py: BaseFilesConfig.transform_retrieve_file_response (L128-L134); litellm/llms/base_llm/files/transformation.py:
-  BaseFilesConfig.transform_delete_file_request (L137-L143); litellm/llms/base_llm/files/transformation.py: BaseFilesConfig.transform_delete_file_response
-  (L146-L152); litellm/llms/base_llm/files/transformation.py: BaseFilesConfig.transform_list_files_request (L155-L161);
-  litellm/llms/base_llm/files/transformation.py: BaseFilesConfig.transform_list_files_next_request (L163-L170);
-  litellm/llms/base_llm/files/transformation.py: BaseFilesConfig.transform_list_files_response (L173-L179); litellm/llms/base_llm/files/transformation.py:
-  BaseFilesConfig.transform_file_content_request (L182-L188); litellm/llms/base_llm/files/transformation.py: BaseFilesConfig.transform_file_content_response
-  (L191-L197); litellm/llms/base_llm/files/transformation.py: BaseFilesConfig.transform_file_content_stream (L199-L209);
-  litellm/llms/base_llm/files/transformation.py: BaseFilesConfig.transform_request (L211-L221); litellm/llms/base_llm/files/transformation.py:
-  BaseFilesConfig.transform_response (L223-L239); litellm/llms/base_llm/files/transformation.py: BaseFileEndpoints.acreate_file
-  (L244-L252); litellm/llms/base_llm/files/transformation.py: BaseFileEndpoints.afile_retrieve (L255-L261); litellm/llms/base_llm/files/transformation.py:
-  BaseFileEndpoints.afile_list (L264-L273); litellm/llms/base_llm/files/transformation.py: BaseFileEndpoints.afile_delete
-  (L276-L283); litellm/llms/base_llm/files/transformation.py: BaseFileEndpoints.afile_content (L286-L293). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 257 owned nonblank/non-comment/non-docstring Python lines (302 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 277 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  46 wiring; 585 total within the 590-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B004 (OpenAI chat completions without streaming), B010 (Provider framework, provider resolution
-  and parameter mapping), B171 (Direct helper oracle and URL path encoding), B1087 (Api boundaries), B1128 (File
-  type and MIME records). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
-  ids retain ownership on the provider and keys/data branches.
-
-
-  Place wire DTOs and their decoder in the named wire leaf crate; provider contracts depend only on leaf records,
-  and core composes them above betterlite-provider. Do not add a wire/provider dependency on betterlite-core to
-  share an Input/Result type. Wire decoders accept a local limits value converted by the core boundary from ApiLimits.
-
-
-  WireDecodeLimits is the leaf record { max_json_bytes: usize, max_event_bytes: usize, max_items: usize }; callers
-  convert B1087 limits into it. This record has no dependency on the core crate.
+  Port FilesAPIUtils.valid_content_type, is_batch_jsonl_file and is_batch_jsonl_request with the
+  exact six accepted MIME strings: application/jsonl, application/json, application/octet-stream,
+  application/x-ndjson, application/x-jsonlines and text/plain. Matching is exact and
+  case-sensitive. The extracted predicate requires purpose == "batch", an accepted content_type,
+  and content is not None; the metadata-only predicate requires purpose == "batch", an accepted
+  content_type, and file is not None, without reading the file. The owned code has no environment
+  variable, config key, query parameter, status/type/message/param/code error, database write or
+  warn-and-drop branch. Register only pure helper cases; no byte decoder, HTTP case or provider
+  call is needed. Count the 193 nonblank, non-comment source lines in the two pinned ranges and
+  allow 190 implementation, 110 tests, 80 cases, 80 adapters and 40 operation-wiring lines.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_contracts.rs
   - crates/betterlite-core/src/api/file_contracts/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
-  - crates/betterlite-openai/src/api/file_contracts.rs
-  - crates/betterlite-openai/src/api/file_contracts/**
-  - crates/betterlite-openai/src/api.rs
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/lib.rs
   - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/api.rs
   - crates/betterlite-provider/src/api/file_contracts.rs
   - crates/betterlite-provider/src/api/file_contracts/**
-  - crates/betterlite-provider/src/api.rs
   - crates/betterlite-provider/src/provider.rs
   - crates/betterlite-provider/src/operation.rs
   - crates/betterlite-provider/src/prepared.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-openai/fuzz/Cargo.toml
-  - crates/betterlite-openai/fuzz/fuzz_targets/file_contracts.rs
-  - crates/betterlite-openai/fuzz/corpus/file_contracts/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/file_contracts.rs
-  - tools/oracle/src/helpers/file_contracts/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/file_contracts.py
-  - tools/oracle/helpers/file_contracts/**
   - tools/oracle/fuzz/corpus/helper_case/file_contracts-*
   - tools/oracle/cases/helpers/file-contracts/**
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/utils.py#L1-L57
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/transformation.py#L1-L293
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/utils.py#L11-L20
+  why: The six accepted MIME literals are defined here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/utils.py#L23-L57
+  why: These three predicates define the purpose, MIME and non-None presence checks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/transformation.py#L38-L209
+  why: BaseFileUploadStream and BaseFilesConfig contain the file hook signatures and the POST, no-next-page and stream/header pass-through defaults.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/transformation.py#L242-L293
+  why: BaseFileEndpoints contains the five abstract endpoint capabilities whose callers supply route behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L292-L310
+  why: B2202 owns the BaseConfig.get_complete_url primitive forwarded by get_complete_file_url, including ValueError("api_base is required") when api_base is None.
 dod:
-- text: 'batch jsonl purpose: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-batch-jsonl-purpose
-  - oracle
-- text: 'list next page: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-list-next-page
-  - oracle
-- text: 'file content stream contract: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-file-content-stream-contract
-  - oracle
-- text: 'upload method capability: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-upload-method-capability
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    batch_extracted_predicate sends purpose="batch" with each accepted MIME literal and
+    content=b"": is_batch_jsonl_file returns true for all six. The same six inputs with
+    content=None return false. purpose="assistants", purpose="Batch", purpose=None, or an
+    absent purpose returns false even with content_type="text/plain" and content=b"". MIME
+    values None, "text/csv", "TEXT/PLAIN" and "application/json;charset=utf-8" return false.
+  proof: [case-batch-extracted, oracle, behavior-tests, helper-python]
+- text: >-
+    batch_metadata_predicate sends purpose="batch" and content_type="text/plain": file=b""
+    and file="upload.bin" each return true, while file=None and an absent file return false.
+    A lazy file sentinel whose read method would fail is accepted without calling read. Any
+    absent or non-batch purpose or the MIME values "text/csv", "TEXT/PLAIN" and
+    "application/json;charset=utf-8" returns false.
+  proof: [case-batch-metadata, oracle, behavior-tests, helper-python]
+- text: >-
+    base_defaults constructs a concrete BaseFilesConfig with its abstract hooks implemented:
+    file_upload_http_method is exactly "POST". Calling transform_list_files_next_request with
+    a response whose JSON contains {"has_more": true}, optional_params={"after": "f"} and
+    litellm_params={"cursor": "c"} returns None and performs no second request.
+  proof: [case-base-defaults, oracle, behavior-tests]
+- text: >-
+    file_url_forwarding calls get_complete_file_url with api_base="https://mock.invalid/v1",
+    api_key="sk-test", model="file-model", optional_params={"purpose": "batch"},
+    litellm_params={"custom_llm_provider": "openai"} and data={"filename": "ignored"}.
+    The B2202 URL spy receives the first five values exactly once, receives no data argument,
+    and its return value "https://mock.invalid/v1/files" is returned unchanged. With
+    api_base=None, B2202's ValueError message is exactly "api_base is required".
+  proof: [case-file-url-forwarding, oracle, behavior-tests]
+- text: >-
+    stream_passthrough_and_replay supplies an async stream yielding b"a" then b"\x00\xff",
+    headers={"content-type": "text/plain", "x-provider": "test"}, request_url="u",
+    logging_obj="log" and litellm_params={"k": "v"}; transform_file_content_stream returns
+    FileContentStreamingResult with the same stream sequence and header values and does not
+    eagerly consume the stream. A concrete BaseFileUploadStream yielding b"abc" returns a new
+    iterator on each iter_bytes call; consuming the first iterator does not move the second.
+  proof: [case-stream-passthrough, oracle, behavior-tests]
+- text: >-
+    contract_surface compiles the BaseFilesConfig and BaseFileEndpoints abstract surfaces with
+    the exact file request/response argument and return types, including FileDeleted,
+    FileListPage, OpenAIFileObject and FileContentStreamingResult. The concrete fixture cannot
+    omit any abstract hook, while the abstract endpoint fixture creates no hook instance.
+  proof: [case-contract-surface, behavior-tests]
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-openai -p betterlite-provider --no-tests=fail
-      -E 'test(/^api::file_contracts::/) - test(/::replays_corpus$/)'
-  - id: case-batch-jsonl-purpose
-    why: the batch-jsonl-purpose behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_contracts::tests::batch_jsonl_purpose($|::)/)'
-  - id: case-list-next-page
-    why: the list-next-page behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_contracts::tests::list_next_page($|::)/)'
-  - id: case-file-content-stream-contract
-    why: the file-content-stream-contract behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_contracts::tests::file_content_stream_contract($|::)/)'
-  - id: case-upload-method-capability
-    why: the upload-method-capability behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_contracts::tests::upload_method_capability($|::)/)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/file_contracts)"
-      && test -f crates/betterlite-openai/fuzz/fuzz_targets/file_contracts.rs && grep -qF "decode_file_contracts"
-      crates/betterlite-openai/fuzz/fuzz_targets/file_contracts.rs && cargo nextest run --locked -p betterlite-openai
-      --no-tests=fail -E 'test(/^api::file_contracts::tests::replays_corpus$/)'
+    why: A file-contract production behavior test or its typed contract assertions are absent.
+    run: cargo nextest run --locked -p betterlite-provider -p betterlite-core --no-tests=fail -E 'test(/^api::file_contracts::/) - test(/::replays_corpus$/)'
+  - id: case-batch-extracted
+    why: The extracted-content purpose, MIME and non-None behavior is absent or changed.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_contracts::tests::batch_extracted_predicate($|::)/)'
+  - id: case-batch-metadata
+    why: The metadata-only file presence behavior is absent or reads the lazy file.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_contracts::tests::batch_metadata_predicate($|::)/)'
+  - id: case-base-defaults
+    why: POST or the no-next-page default is absent or changed.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::file_contracts::tests::base_defaults($|::)/)'
+  - id: case-file-url-forwarding
+    why: The file URL forwarder drops an argument, forwards data, or changes the B2202 error.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::file_contracts::tests::file_url_forwarding($|::)/)'
+  - id: case-stream-passthrough
+    why: The stream/header pass-through or fresh upload iterator behavior is absent or changed.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::file_contracts::tests::stream_passthrough_and_replay($|::)/)'
+  - id: case-contract-surface
+    why: A required abstract file hook or return type is missing.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::file_contracts::tests::contract_surface($|::)/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/file_contracts.py && uv run --locked --project tools/oracle/litellm ruff check
-      tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The independent pinned helper adapter is missing or fails its strict Python checks.
+    run: test -f tools/oracle/helpers/file_contracts.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_contracts-*)"
-      && grep -qE "^[[:space:]]+file_contracts:" tools/oracle/fuzz/corpus/helper_case/file_contracts-* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: No added file-contract helper seed reaches the shared helper-case replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_contracts-*)" && grep -qE '^[[:space:]]+file_contracts:' tools/oracle/fuzz/corpus/helper_case/file_contracts-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: The named batch and base-contract parity fixtures were not added.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-contracts)"
 oracle_cases:
-- tools/oracle/cases/helpers/file-contracts/batch-jsonl-purpose.yaml
-- tools/oracle/cases/helpers/file-contracts/list-next-page.yaml
-- tools/oracle/cases/helpers/file-contracts/file-content-stream-contract.yaml
-- tools/oracle/cases/helpers/file-contracts/upload-method-capability.yaml
+- tools/oracle/cases/helpers/file-contracts/batch-extracted-predicate.yaml
+- tools/oracle/cases/helpers/file-contracts/batch-metadata-predicate.yaml
+- tools/oracle/cases/helpers/file-contracts/base-defaults.yaml
+- tools/oracle/cases/helpers/file-contracts/file-url-forwarding.yaml
+- tools/oracle/cases/helpers/file-contracts/stream-passthrough-and-replay.yaml
 deviations: []
 out_of_scope:
-- 'litellm/types/files.py: B1128 owns get_file_extension_from_mime_type L157-L161, get_file_type_from_extension
-  L164-L169, get_file_mime_type_for_file_type L176-L177, get_file_mime_type_from_extension L180-L182, is_gemini_1_5_accepted_file_type
-  L287-L288.'
-- 'litellm/types/files.py: get_file_extension_for_file_type L172-L173, is_image_file_type L200-L201, is_video_file_type
-  L219-L220, is_audio_file_type L236-L237, is_text_file_type L244-L245 are out of scope: no MIT runtime caller at
-  the pin; unused entry point is not rebuilt.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1128 owns the imported files/types.py and types/files.py DTO declarations, upload plans and streaming records; B1015 only consumes those typed values.
+- B2202 owns BaseConfig.get_complete_url at chat/transformation.py:292-310. B1015 forwards api_base, api_key, model, optional_params and litellm_params and preserves its ValueError("api_base is required") for api_base=None; it does not reimplement URL construction.
+- BaseFilesConfig.transform_request and transform_response are inherited chat-interface stubs with no file-operation caller at the pin; they are out of scope because there is no caller at the pin, including their literal AudioTranscriptionConfig NotImplementedError messages.
+- BaseFileEndpoints.acreate_file's absent-hook call site belongs to B1032, afile_content's call site belongs to B1033, and afile_retrieve and afile_list call sites belong to B1034; the B087 task composes those route factories. No B1031 or B1027 task owns these specific BaseFileEndpoints calls.
+- Provider-specific implementations of the abstract file transforms and OpenAI wire decoding belong to the provider leaves and file route tasks; this task defines only the shared method surface and executable base defaults.
+- The abstract BaseFileEndpoints methods have no MIT implementation and therefore have no base error response, database write or warning to reproduce here; caller-specific behavior stays with B1032, B1033, B1034 and B087.
 pitfalls:
-- FilesAPIUtils.is_batch_jsonl_file uses create_file_data.get('purpose'); retain its missing-value behavior and
-  field spelling in the typed projection.
-- FilesAPIUtils.is_batch_jsonl_file uses extracted_file_data.get('content_type'); retain its missing-value behavior
-  and field spelling in the typed projection.
+- MIME comparison uses the six literal strings without lowercasing or stripping parameters, so "TEXT/PLAIN" and "application/json;charset=utf-8" are rejected.
+- Both batch predicates test is not None rather than truthiness, so b"" counts as present content and an empty file value counts as present metadata.
+- is_batch_jsonl_request only inspects the file field and never reads a lazy handle; consuming it in the predicate changes the contract.
+- get_complete_file_url accepts data but deliberately omits it from B2202's get_complete_url call; forwarding data changes the spy-visible argument set.
+- transform_file_content_stream also accepts request_url, logging_obj and litellm_params but returns only the original stream_iterator and headers, without eager reads or transformation.
+- transform_list_files_next_request returns None even when the response advertises has_more=true; pagination is an override supplied by a provider.
+- iter_bytes must create an independent iterator on each call because retrying an exhausted iterator yields no upload bytes.
 review_level: standard
 budget:
-  max_changed_lines: 590
-  max_new_expects: 1
+  max_changed_lines: 500
+  max_new_expects: 0

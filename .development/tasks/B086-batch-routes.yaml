@@ -1,274 +1,153 @@
 id: B086
-title: Batch routes
+title: Batch cancellation and route composition
 description: >-
-  Finish batch cancel routes and end-to-end lifecycle composition, preserving owner checks, provider/locally-executed
-  cancellation and one-time refunds. Add native and executed create/retrieve/cancel sequences with injected repository/clock
-  fixtures and verify source status/error/ID fields.
+  Own complete cancel_batch with POST /batches/{batch_id:path}/cancel,
+  /v1/batches/{batch_id:path}/cancel and /{provider}/v1/batches/{batch_id:path}/cancel.
+  Implement betterlite-server::api::batch_routes and betterlite-core::api::batch_routes, then
+  mount B1050 create, B1051 retrieve and B1133 list factories once. Do not re-register their paths.
+  B1019 owns both ID formats, B1021 managed requirements, B1020 grants/credentials, B844 model-id
+  name lookup, B1038 SDK cancellation, B162 router cancellation and B1112 fallback/runner selection.
 
+  Correct the previous plan's executed-cancel expectations: the MIT factory requires a
+  ManagedBatchStore hook, so without enterprise it returns 400 before the runner loads a row.
+  Even a connected database and seeded executed batch do not make cancel reachable. Do not claim
+  owner enforcement, refunds, terminal-status changes or race handling in this route. Those runner
+  behaviors remain B1049; B1041's update_batch_in_database returns immediately without a hook.
 
-  Register cancel only under /{provider}/v1/batches/{batch_id:path}/cancel, /v1/batches/{batch_id:path}/cancel and
-  /batches/{batch_id:path}/cancel. Router missing is 500; a managed batch id missing model_id is 400; no batch is
-  404. Executed cancel returns 404 for no row and 400 for terminal status, with no owner check. require_managed_files
-  triggers validate_managed_id_requirement; the absent OSS hook makes ownership validation unavailable (500). Do
-  not claim unconditional executed-batch owner enforcement.
+  Validate the managed requirement before decoding/pre-call processing. Initialize data.batch_id,
+  perform common route_type=acancel_batch, then B1103 authenticated preparation. Authorize any
+  unified model id (resolved name when available) before dispatch. Preserve cancellation provider
+  precedence path, body data.custom_llm_provider, custom-llm-provider header, query, then openai;
+  this deliberately differs from file-route precedence. B2400 supplies final exception handling,
+  B004 request call ids/logging/custom headers and B124 hooks/status updates.
 
-
-  In the actual OSS oracle, require_managed_files with a syntactically managed ID returns HTTP 500 with error.type
-  internal_server_error, error.param null, error.code "500" and message Managed resource ownership validation is
-  unavailable before any 403 predicate result; raw provider IDs return 400. The review's 403 requires a ManagedResourceAccessChecker
-  supplied by the missing hook, so test that predicate purely in B1017 and preserve the OSS HTTP 500 here.
-
-
-  Implement crates/betterlite-server/src/api/batch_routes.rs, crates/betterlite-core/src/api/batch_routes.rs. Use
-  BatchRoutesInput and BatchRoutesResult with typed nested records; inject only the clock, repositories, transports
-  and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce ambient
-  environment or duplicate credential resolution.
-
-
-  Register exactly these routes in this task: POST /{provider}/v1/batches/{batch_id:path}/cancel; POST /v1/batches/{batch_id:path}/cancel;
-  POST /batches/{batch_id:path}/cancel. Each alias is exercised through the booted proxy. Every route factory is
-  mounted once; a family composer mounts its child factories without re-registering their methods/paths.
-
-
-  Route input projections: data.file_id (absent original_batch_id); data.custom_llm_provider (absent None); data.batch_id
-  (absent None); data.litellm_call_id (absent ''); data.model (absent None).
-
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): endpoints.py:1157 status_code=500, exception_detail=FastAPI detail object; endpoints.py:1164
-  status_code=400, exception_detail=FastAPI detail object. Compare the actual source status, error type, param and
-  code; ignore only error wording except in message-extraction tests.
-
-
-  Write adjacent tests.rs behavior functions cancel_provider_batch, cancel_executed_batch, cancel_refund_once, cancel_race_completion,
-  cancel_no_router_500, cancel_missing_model_id_400, cancel_missing_batch_404, executed_terminal_400, required_managed_hook_500,
-  required_managed_raw_400, route_aliases, auth_missing, auth_invalid under api::batch_routes::tests. Each named
-  function drives production code and asserts its case result; use named rstest inputs for related values. Corpus
-  replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
-
-
-  Callable ownership: litellm/proxy/batches_endpoints/endpoints.py: cancel_batch (L1032-L1256). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 188 owned nonblank/non-comment/non-docstring Python lines (200 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 208 implementation,
-  118 behavior tests, 156 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 520 total within the 520-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1017 (Managed resource access), B1038
-  (Batch provider cancel), B1041 (Batch managed records), B1043 (Batch enqueued refund), B1049 (Executed batch runner),
-  B1050 (Batch create route), B1051 (Batch read routes), B1087 (Api boundaries), B1112 (Batch route support), B1103
-  (Authenticated request preparation), B1133 (Batch list route), B162 (Python Router class), B1019 (File routing
-  ids), B1020 (File credentials), B1021 (File upload options), B1139 (Stateful HTTP oracle scenarios), B732 (Typed
-  authentication principals and grant resolution), B855 (Authenticated request admission and budget handoff), B756
-  (Authentication header selection and mode dispatch), B1048 (Executed batch input), B003 (HTTP server, health routes
-  and master key auth), B856 (Management oracle namespaces and Postgres test fixture). These are callable/type/config
-  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
-  branches.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
-
-
-  The final handle_exception_on_proxy mapper converts HTTPException to ProxyException with type internal_server_error
-  and the original HTTP status/code, including the raw-managed-ID 400. This is the final OpenAI error envelope,
-  not a FastAPI detail response.
+  HTTP scenarios use B900/B1139, a configured sk-test master key, seeded virtual keys and the mock;
+  no helper calls FastAPI and no enterprise hook is installed. Native callback-order tests live in
+  api::batch_routes::tests in both crates. Source handler/decorators contain 200 nonblank,
+  non-comment lines; budget 215 implementation, 170 tests, 210 fixtures and 45 composition lines,
+  totaling 640. Existing request/ID decoders handle external input.
 scope:
   paths:
-  - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/lib.rs
-  - crates/betterlite-server/src/error.rs
-  - crates/betterlite-server/src/api/batch_routes.rs
-  - crates/betterlite-server/src/api/batch_routes/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/state.rs
-  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-server/src/api/batch_routes.rs
+  - crates/betterlite-server/src/api/batch_routes/**
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/batch_routes.rs
   - crates/betterlite-core/src/api/batch_routes/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/cases/api/batch-routes/**
-  - tools/oracle/fixtures/batch-routes/**
-  - crates/betterlite-core/src/operation.rs
-  - crates/betterlite-core/src/dispatch.rs
+  - tools/oracle/fixtures/http-scenarios/batch-routes/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L1017-L1263
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8237
-  why: Final batch HTTPException conversion and error.type/code/header behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L1017-L1256
+  why: All cancel decorators and the complete routing, persistence, hook and error sequence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L89-L105
+  why: B1112's mandatory ManagedBatchStore hook prevents executed cancellation in the MIT route even with a database.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1444-L1479
+  why: B1041's update helper returns before repository lookup when managed_files is absent.
 dod:
-- text: 'cancel provider batch: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cancel-provider-batch
-  - oracle
-- text: 'cancel executed batch: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cancel-executed-batch
-  - oracle
-- text: 'cancel refund once: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cancel-refund-once
-  - oracle
-- text: 'cancel race completion: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cancel-race-completion
-  - oracle
-- text: 'cancel no router 500: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cancel-no-router-500
-  - oracle
-- text: 'cancel missing model id 400: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-cancel-missing-model-id-400
-  - oracle
-- text: 'cancel missing batch 404: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cancel-missing-batch-404
-  - oracle
-- text: 'executed terminal 400: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-executed-terminal-400
-  - oracle
-- text: 'required managed hook 500: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-required-managed-hook-500
-  - oracle
-- text: 'required managed raw 400: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-required-managed-raw-400
-  - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-route-aliases
-  - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-missing
-  - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-invalid
-  - oracle
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    cancel_aliases_and_composition POSTs /batches/batch_a/cancel,/v1/batches/batch_a/cancel,
+    /openai/v1/batches/batch_a/cancel with valid auth. Each makes one upstream cancel and returns
+    200 with its batch object/status=cancelling. Native create/retrieve/list/cancel integration uses
+    the composed child routes with no duplicate mount; slash-bearing ids stay one catch-all value.
+    Missing/invalid auth gives 401/auth_error/param="None"/code="401" and B756's exact message
+    before pre-call or provider requests with the master key configured.
+  proof: [cancel-tests, oracle, new-cases]
+- text: >-
+    cancellation_provider_precedence configures openai and azure mocks; prove path=openai beats
+    body/header/query=azure, body=openai beats header/query=azure, header=openai beats query=azure,
+    query=openai selects alone, and empty values fall through. data.custom_llm_provider is popped
+    before dispatch, then data.batch_id is removed before building CancelBatchRequest once. Team
+    credentials are applied before fallback checking. No requested provider plus absent/empty
+    data.api_key,litellm.api_key,litellm.openai_key,OPENAI_API_KEY gives 404/invalid_request_error/
+    null/"404",message="No batch found with id 'batch_a'." An explicit provider bypasses that
+    preliminary 404 and reaches its own credential/provider outcome. B1112 owns those setting defaults.
+  proof: [cancel-tests, oracle, new-cases]
+- text: >-
+    encoded_cancel_credentials authorizes model m from a model-embedded batch id using context
+    "batch cancellation (batch created with model)", decodes batch_a, merges credentials, moves
+    the helper's file_id to batch_id, then calls B1038. Response id and truthy input/output/error
+    file ids are encoded through B1019; absent/empty fields remain unchanged. DEBUG says
+    "Cancelled batch using model: m, original_id: batch_a". Forbidden grants fail before HTTP.
+    Native unified ids containing deployment id d resolve through B844; authorization receives its
+    name or d when unresolved, before executed/router dispatch. Encoding never substitutes for grants.
+  proof: [cancel-tests, oracle, new-cases]
+- text: >-
+    unified_cancel_router_errors sends a non-executed unified id to an admin fixture: missing
+    router gives 500/internal_server_error/null/"500",message="{'error': 'LLM Router not initialized.
+    Ensure models added to proxy.'}". With a router but no model_id it gives 400/internal_server_error/
+    null/"400",message="{'error': 'Invalid LiteLLM managed batch ID. Missing model_id.'}" because
+    B2400 maps HTTPException to internal_server_error even at 400. A valid model/id calls router
+    acancel_batch with decoded batch_id and model; response hidden unified_batch_id stores the decoded
+    legacy text, and missing/falsey hidden model_id is filled from data.model. Missing batch-id field
+    retains B1019's extraction error instead of fabricating a not-found response.
+  proof: [cancel-tests, oracle, new-cases]
+- text: >-
+    executed_cancel_without_hook sends an executed unified id with an authorized model and router:
+    400/invalid_request_error/null/"400",message="LiteLLM-executed batches need a database: set
+    DATABASE_URL so LiteLLM can keep the batch and its files". Repeat with database absent and present
+    plus a seeded row: same error, no row lookup/update/refund. Without router, source batch_error is
+    500/internal_server_error/null/"500",message="LLM Router not initialized. Ensure models added to proxy."
+    Do not replace these cases with runner-level terminal-status or ownership tests.
+  proof: [cancel-tests, oracle, new-cases]
+- text: >-
+    cancel_managed_requirement sets require_managed_files=true: raw batch_a returns
+    400/internal_server_error/null/"400" with B1021's exact batch requirement message, while a
+    syntactically unified id returns 500/internal_server_error/null/"500",message="Managed resource
+    ownership validation is unavailable." Both occur before common pre-call, model grants and provider
+    calls. The hypothetical injected checker's 403 is B1017, not a reachable MIT route outcome.
+  proof: [cancel-tests, oracle, new-cases]
+- text: >-
+    cancellation_effect_order receives a provider success, calls B1041 update with operation=cancel
+    (MIT no-op), then post_call_success_hook, then enqueues status=success with call id default "",
+    then computes B004 headers including request_data. The success hook's return is used unconditionally,
+    even null, unlike file upload/list. Hidden d/c/https://mock.test/v1?secret=x yields model-id=d,
+    cache-key=c,model-api-base=https://mock.test/v1 under x-litellm- names, plus version/region/call-id.
+    Missing values use ""; B004 owns header omission. A success-hook failure leaves the remote cancel
+    in effect, runs failure hook and produces 500 without compensation or local refund.
+  proof: [cancel-tests, oracle, new-cases]
+- text: >-
+    cancellation_error_envelope makes upstream 429 with message=slow: non-ProxyException becomes
+    429/internal_server_error/null/"429" through B2400, preserving its message after B121 notice
+    stripping. Existing ProxyException retains type/param/code and headers; x-litellm-call-id fills
+    only an absent header when request_litellm_call_id finds a string. Failure hook precedes
+    log_llm_api_exception and final mapping; early failures may lack a call id. These rules differ
+    from file routes' status-sensitive error-type mapping and must not be shared accidentally.
+  proof: [cancel-tests, oracle, new-cases]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::batch_routes::/)
-      - test(/::replays_corpus$/)'
-  - id: case-cancel-provider-batch
-    why: the cancel-provider-batch behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_routes::tests::cancel_provider_batch($|::)/)'
-  - id: case-cancel-executed-batch
-    why: the cancel-executed-batch behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_routes::tests::cancel_executed_batch($|::)/)'
-  - id: case-cancel-refund-once
-    why: the cancel-refund-once behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_routes::tests::cancel_refund_once($|::)/)'
-  - id: case-cancel-race-completion
-    why: the cancel-race-completion behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_routes::tests::cancel_race_completion($|::)/)'
-  - id: case-cancel-no-router-500
-    why: the cancel-no-router-500 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_routes::tests::cancel_no_router_500($|::)/)'
-  - id: case-cancel-missing-model-id-400
-    why: the cancel-missing-model-id-400 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_routes::tests::cancel_missing_model_id_400($|::)/)'
-  - id: case-cancel-missing-batch-404
-    why: the cancel-missing-batch-404 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_routes::tests::cancel_missing_batch_404($|::)/)'
-  - id: case-executed-terminal-400
-    why: the executed-terminal-400 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_routes::tests::executed_terminal_400($|::)/)'
-  - id: case-required-managed-hook-500
-    why: the required-managed-hook-500 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_routes::tests::required_managed_hook_500($|::)/)'
-  - id: case-required-managed-raw-400
-    why: the required-managed-raw-400 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_routes::tests::required_managed_raw_400($|::)/)'
-  - id: case-route-aliases
-    why: the route-aliases behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_routes::tests::route_aliases($|::)/)'
-  - id: case-auth-missing
-    why: the auth-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_routes::tests::auth_missing($|::)/)'
-  - id: case-auth-invalid
-    why: the auth-invalid behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_routes::tests::auth_invalid($|::)/)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+  - id: cancel-tests
+    why: cancellation order, provider precedence or MIT hook boundary is untested
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::batch_routes::tests::/) - test(/replays_/)'
+  - id: new-cases
+    why: cancel aliases and failure branches have no new booted-proxy scenarios
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/batch-routes)"
 oracle_cases:
-- tools/oracle/cases/api/batch-routes/cancel-provider-batch.yaml
-- tools/oracle/cases/api/batch-routes/cancel-executed-batch.yaml
-- tools/oracle/cases/api/batch-routes/cancel-refund-once.yaml
-- tools/oracle/cases/api/batch-routes/cancel-race-completion.yaml
-- tools/oracle/cases/api/batch-routes/cancel-no-router-500.yaml
-- tools/oracle/cases/api/batch-routes/cancel-missing-model-id-400.yaml
-- tools/oracle/cases/api/batch-routes/cancel-missing-batch-404.yaml
-- tools/oracle/cases/api/batch-routes/executed-terminal-400.yaml
-- tools/oracle/cases/api/batch-routes/required-managed-hook-500.yaml
-- tools/oracle/cases/api/batch-routes/required-managed-raw-400.yaml
-- tools/oracle/cases/api/batch-routes/route-aliases.yaml
-- tools/oracle/cases/api/batch-routes/auth-missing.yaml
-- tools/oracle/cases/api/batch-routes/auth-invalid.yaml
-deviations: []
+- tools/oracle/cases/api/batch-routes/cancel-aliases-and-composition.yaml
+- tools/oracle/cases/api/batch-routes/cancellation-provider-precedence.yaml
+- tools/oracle/cases/api/batch-routes/encoded-cancel-credentials.yaml
+- tools/oracle/cases/api/batch-routes/unified-cancel-router-errors.yaml
+- tools/oracle/cases/api/batch-routes/executed-cancel-without-hook.yaml
+- tools/oracle/cases/api/batch-routes/cancel-managed-requirement.yaml
+- tools/oracle/cases/api/batch-routes/cancellation-effect-order.yaml
+- tools/oracle/cases/api/batch-routes/cancellation-error-envelope.yaml
+deviations:
+- what: Executed batch cancellation returns 400 invalid_request_error/code="400" with the database-required message even when connected, because the MIT managed store hook is absent; no cancellation/refund runs.
+  why: Max must decide managed files and batches. Preserve the current no-hook behavior without imposing an enterprise license gate or inventing a store implementation.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L89-L105
 out_of_scope:
-- 'litellm/proxy/batches_endpoints/endpoints.py: B1112 owns _request_tags L82-L86, _litellm_executed_batch_runner
-  L89-L105, _batch_from_database L108-L131, _raise_when_input_file_must_be_managed L134-L141, _litellm_metadata_of
-  L144-L155, _raise_not_found_when_openai_fallback_unservable L158-L172, _resolve_managed_input_file_storage_url
-  L175-L197, _create_provider_batch_for_managed_file L200-L215.'
-- 'litellm/proxy/batches_endpoints/endpoints.py: B1050 owns create_batch L233-L524.'
-- 'litellm/proxy/batches_endpoints/endpoints.py: B1051 owns retrieve_batch L542-L829.'
-- 'litellm/proxy/batches_endpoints/endpoints.py: B1133 owns list_batches L847-L1014.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- B1112 owns endpoint support helpers L82-L215; B1050 create_batch L233-L524; B1051 retrieve_batch L542-L829; B1133 list_batches L847-L1014. Their route factories are only composed here.
+- B1049 owns the runner's cancel method, terminal status checks and CAS retry. Without the ManagedBatchStore hook its invocation is unreachable from this route; B1043 refund work is not a direct dependency.
+- B1041 owns database update/no-hook behavior; B1048 batch_error; B1020 model grants; B004 common request/call-id/header behavior; B2400 final error conversion.
 pitfalls:
-- 'endpoints.py:1144 emits the diagnostic ''Cancelled batch using model: %s, original_id: %s''; retain its level
-  and fallback instead of turning it into a hard error.'
-- data reads 'file_id' with default original_batch_id; omission and an explicit value must not collapse into one
-  case.
+- Body custom_llm_provider outranks the header for cancellation, unlike file routes.
+- The executed-batch factory's database error also means the required hook is missing.
+- A successful cancellation hook may return null and is not type-checked before being returned.
 review_level: security
 budget:
-  max_changed_lines: 520
+  max_changed_lines: 640
   max_new_expects: 0

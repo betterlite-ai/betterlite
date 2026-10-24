@@ -1,68 +1,129 @@
 id: B944
 title: Responses ws history
 description: >-
-  Build managed WebSocket history and warmup primitives: parse response.create, extract output messages, apply previous_response_id
-  history, build warmup acknowledgements and authorize provider credential reuse. Store bounded connection-local
-  history; credentials stay SecretString and can only come from the selected deployment.
+  Implement the constructor and connection-local preparation helpers of
+  litellm.responses.streaming_iterator.ManagedResponsesWebSocketHandler. The owned code does not register an
+  HTTP or WebSocket route, read an environment variable, read a config key or query parameter, call a provider, or
+  write a database row. B945 owns the caller that catches warmup/provider/send failures, invokes a provider, and
+  saves a completed turn; this task owns the values and mutations that caller consumes. Keep history in an
+  unbounded map keyed by the decoded provider response id. An unknown previous_response_id is not persisted: it is
+  put back in call_kwargs for B945's downstream reconstruction.
 
 
-  Implement crates/betterlite-core/src/api/responses_ws_history.rs. Use ResponsesWsHistoryInput and ResponsesWsHistoryResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  The constructor receives a WebSocket sink, model, logging object, optional user_api_key_dict, optional
+  litellm_metadata, api_key, api_base, timeout, custom_llm_provider, first_message, quota_callbacks and arbitrary
+  kwargs. With model openai/gpt-4o-mini, all optional arguments absent, and kwargs
+  {extra_headers: {X-Test: yes}, litellm_call_id: drop, aresponses: drop, litellm_logging_obj: drop,
+  _aresponses_websocket: drop, user_api_key_dict: drop}, it stores litellm_metadata {}, model_group None,
+  _connection_provider openai, first_message None, api_key/api_base/timeout/custom_llm_provider None, quota_callbacks
+  (), an empty _session_history, and extra_kwargs {extra_headers: {X-Test: yes}}. The skip literals are exactly
+  litellm_logging_obj, litellm_call_id, aresponses, _aresponses_websocket and user_api_key_dict. A metadata map with
+  model_group router-alias beats deployment_model_name deployment-alias; model_group "" or an absent model_group
+  falls through to deployment_model_name, while truthy model_group 7 and falsey/non-string deployment_model_name
+  leave model_group None. A missing metadata map and an empty metadata map both result in a fresh {} value. A missing
+  or empty quota_callbacks value results in (), and a nonempty sequence is converted to a tuple.
 
 
-  Write adjacent tests.rs behavior functions warmup_no_provider_call, previous_response_history, unknown_history_id,
-  same_provider_credentials, different_provider_no_cre_1ae1 under api::responses_ws_history::tests. Each named function
-  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
-  has the separate name replays_corpus.
+  Build _RESPONSE_CREATE_PARAMS from ResponsesAPIRequestParams.__required_keys__ and __optional_keys__. The exact
+  accepted names are input, model, include, instructions, max_output_tokens, metadata, parallel_tool_calls,
+  previous_response_id, reasoning, store, background, stream, temperature, text, tool_choice, tools, top_p,
+  truncation, user, service_tier, safety_identifier, prompt, max_tool_calls, prompt_cache_key,
+  prompt_cache_retention, prompt_cache_options, stream_options, top_logprobs, partial_images and context_management.
+  For a flat object containing type response.create, input hello, model openai/gpt-4o-mini, store false, and
+  unknown extra ignored, _build_base_call_kwargs returns only the accepted non-None fields, including store false;
+  an accepted field set to null is omitted. A nonempty dict response source wins over every flat field, while an
+  absent, null, non-dict, or empty response source selects all top-level fields except type. B945 adds stream true
+  after this helper, so this task must not invent a second stream default.
 
 
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
+  _serialize_chunk tries model_dump_json(exclude_none=True), then model_dump(exclude_none=True) encoded with
+  json.dumps(default=str), then a dict encoded with json.dumps(default=str), then json.dumps(str(value)). Thus a
+  model-dump-json object, a model-dump-only object, {n: 7}, integer 7 and None each have a distinct case, with the
+  last two serialized as JSON strings 7 and None respectively. Any exception from those four attempts logs the exact
+  debug diagnostic ManagedResponsesWS: failed to serialize chunk: %s and returns None. _send_error with message
+  quota exceeded and its default error_type server_error sends one text frame containing
+  {type: error, error: {type: server_error, message: quota exceeded}}; with error_type invalid_request_error it
+  uses that literal type. An exception from send_text is swallowed and produces no second frame or replacement
+  error.
 
 
-  Register HelperCall::ResponsesWsHistory in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_ws_history: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+  _parse_message("not-json") sends one text frame whose JSON is
+  {type: error, error: {type: invalid_request_error, message: Invalid JSON in response.create event}} and returns
+  None. A valid {type: ping} object returns None without a frame. Because B925's _load_json_object is plain
+  json.loads and this method catches only json.JSONDecodeError, valid top-level [], null, 7 and "text" reach .get
+  and raise the normal object-shape exception instead of becoming invalid_request_error. A response.create object
+  proceeds unchanged.
 
 
-  Callable ownership: litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler.__init__ (L2519-L2556);
-  litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._serialize_chunk (L2563-L2575); litellm/responses/streaming_iterator.py:
-  ManagedResponsesWebSocketHandler._send_error (L2577-L2583); litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._get_history_messages
-  (L2585-L2594); litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._store_history (L2596-L2603);
-  litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._extract_response_id (L2606-L2617);
-  litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._extract_output_messages (L2620-L2654);
-  litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._input_to_messages (L2657-L2672); litellm/responses/streaming_iterator.py:
-  ManagedResponsesWebSocketHandler._parse_message (L2678-L2688); litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._is_warmup_frame
-  (L2691-L2695); litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._is_warmup_response_id
-  (L2698-L2704); litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._warmup_source_params
-  (L2707-L2711); litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._build_warmup_response
-  (L2713-L2729); litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._send_warmup_ack (L2731-L2751);
-  litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._build_base_call_kwargs (L2754-L2768);
-  litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._apply_history (L2770-L2801); litellm/responses/streaming_iterator.py:
-  ManagedResponsesWebSocketHandler._resolve_provider (L2804-L2814); litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._same_provider
-  (L2816-L2823); litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._inject_credentials (L2825-L2841);
-  litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._update_proxy_request (L2844-L2860).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
+  A response.create object with flat generate false, or with response {generate: false}, is a warmup. The selected
+  source is the nonempty nested response dict, otherwise the flat object without type. generate 0 is not warmup
+  because the source uses identity comparison with False. _build_warmup_response uses source model when truthy, then
+  model_group, then the constructor model; it emits object response, output [], status completed, usage
+  {input_tokens: 0, output_tokens: 0, total_tokens: 0}, current int(time.time()), and an id matching
+  resp_warmup_[0-9a-f]{32}. _send_warmup_ack sends response.created/status in_progress before
+  response.completed/status completed, copying the same response fields into both frames. If serialization of one
+  frame returns None, that frame is dropped and the loop attempts the other frame. send_text exceptions propagate to
+  B945, which owns their log and recovery.
 
 
-  Sizing: 255 owned nonblank/non-comment/non-docstring Python lines (298 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 275 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 525 total within the 530-line cap. The estimate includes tests and adapters, not just production code.
+  _input_to_messages("hello") returns one message with type message, role user and content
+  [{type: input_text, text: hello}]. An input array [{type: message, role: user}, 7, "drop"] keeps the first dict
+  only; missing, null, {}, 7 and "hello" as the whole input return []. _extract_output_messages keeps only dict
+  output items. A message with role absent and content [{type: output_text, text: A}, {type: text, text: B},
+  {type: input_text, text: C}] becomes one message with role assistant and content
+  [{type: output_text, text: AB}]. role null remains null; an empty joined text drops the message; an item type
+  function_call is appended unchanged; every other item is dropped. If a selected output_text/text part has
+  integer text 7, joining raises the source TypeError.
 
 
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
-  oracle and URL path encoding), B903 (Response id codecs), B909 (Responses input messages), B1087 (Api boundaries),
-  B732 (Typed authentication principals and grant resolution), B925 (Responses stream events). These are callable/type/config
-  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
-  branches.
+  _extract_response_id returns None for response {}, response {id: null}, response {id: 7} and response {id: ""}.
+  For an encoded id resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpncHQtNG8tbWluaTtyZXNwb25zZV9pZDpyYXctMQ==,
+  it returns raw-1 through B903's decoder. _store_history("raw-1", [message-A]) followed by
+  _get_history_messages(encoded-id) returns an equal new outer list, and a second _store_history("raw-1",
+  [message-B]) replaces message-A. An unencoded unknown id returns [], and neither lookup nor replacement writes a
+  database row.
+
+
+  _apply_history leaves call_kwargs unchanged for previous_response_id None and "". With previous_response_id
+  raw-1, prior history [{type: message, role: user, content: []}] and current messages [{type: message, role: user,
+  content: [{type: input_text, text: next}]}], it sets input to prior history followed by current messages and logs
+  ManagedResponsesWS: prepended 1 history messages for previous_response_id=%s with raw-1. With raw-2 and no prior
+  history, it leaves current input unchanged, sets previous_response_id to raw-2 and logs
+  ManagedResponsesWS: no in-memory history for previous_response_id=%s; falling back to DB-based session
+  reconstruction with raw-2. With resp_warmup_0123456789abcdef0123456789abcdef, it leaves call_kwargs unchanged and
+  logs ManagedResponsesWS: ignoring synthetic warmup previous_response_id=%s. None of these branches writes a
+  database row.
+
+
+  _resolve_provider returns openai for openai/gpt-4o-mini, anthropic for
+  anthropic/claude-3-5-sonnet-20241022, and None for "" or the resolver-failure input not-a-real-provider/model.
+  The constructor with not-a-real-provider/model and custom_llm_provider proxy stores _connection_provider proxy.
+  _same_provider is true for no frame model and the exact connection model, true when another model resolves to the
+  connection provider, and false for an unresolvable or different-provider model. _inject_credentials independently
+  copies non-None api_key key-1, api_base https://api.example.test, and timeout 7.5. It copies custom_llm_provider
+  proxy only on a true same-provider result, copies a truthy metadata map {trace_id: t1} as a new dict, and adds no
+  absent-value keys. A different-provider frame therefore still receives key-1, the base and 7.5, but not proxy.
+
+
+  _update_proxy_request evaluates
+  (call_kwargs.get("litellm_metadata") or {}).get("proxy_server_request") or {}. With no proxy request and
+  call_kwargs {input: [hello], store: null, tools: null, tool_choice: auto, instructions: null,
+  metadata: {tenant: t1}}, model openai/gpt-4o-mini, it creates body {input: [hello], store: null,
+  model: openai/gpt-4o-mini, tool_choice: auto, metadata: {tenant: t1}}, preserves any existing body keys, creates
+  litellm_metadata {} when absent, and stores the updated request under both call_kwargs.proxy_server_request and
+  call_kwargs.litellm_metadata.proxy_server_request. tools, tool_choice, instructions and metadata are copied only
+  when their values are non-null; input, store and model are always written, including null input/store. A present
+  truthy non-dict such as not-a-dict returns without mutation; absent, null, {} and other falsey values use the fresh
+  request path. This function changes kwargs only; it performs no database write.
+
+
+  Add production-driven tests under api::responses_ws_history::tests with the exact names constructor_defaults_and_passthrough,
+  serialization_and_error_drop, parse_message_cases, warmup_ack_without_provider, input_and_output_message_projection,
+  response_id_history, base_call_kwargs, apply_history_paths, same_provider_credentials,
+  different_provider_does_not_copy_credentials and proxy_request_projection. Assert exact frames, JSON values,
+  mutation keys, ordered warmup sends and diagnostics. Add independent B171 helper cases for these pure functions;
+  they do not call a FastAPI/WebSocket route or a provider. The raw JSON decoder remains B925's implementation and
+  this task adds no decoder or fuzz target.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -85,153 +146,161 @@ scope:
   - tools/oracle/cases/helpers/responses-ws-history/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2519-L2860
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2484-L2556
+  why: Defines the two allowlist sets, the five constructor skip keys, model_group truthiness, provider fallback, callback tuple default and empty history map.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2562-L2672
+  why: Supplies serializer precedence, error-frame swallowing, decoded-id lookup/replacement, output filtering and input normalization.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2678-L2751
+  why: Supplies parse-message drop/error behavior, identity-based warmup selection, response fields, frame order and serialization-drop continuation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2754-L2860
+  why: Supplies nested/flat selection, history diagnostics, provider equality and credential isolation, and the exact proxy request mutations.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L611-L674
+  why: Provides the resp_ base64 format and the fallback that returns an undecodable id unchanged.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1277-L1315
+  why: Defines every optional Responses parameter plus required input and model used to construct _RESPONSE_CREATE_PARAMS.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6513-L6562
+  why: Shows the non-native WebSocket caller constructing this handler; the provider call and lifecycle stay with B945.
 dod:
-- text: 'warmup no provider call: the named production behavior test asserts the result and effects described above.'
+- text: The constructor case proves the exact five skip literals, metadata/model_group precedence, None and empty defaults, provider fallback and empty history for the stated openai/gpt-4o-mini and proxy inputs.
   proof:
-  - case-warmup-no-provider-call
-  - oracle
-- text: 'previous response history: the named production behavior test asserts the result and effects described
-    above.'
+  - case-constructor-defaults-and-passthrough
+  - behavior-tests
+- text: The serialization case proves all four serializer branches, the integer and None JSON-string results, the exact debug drop diagnostic, both error types and swallowed sink failures.
   proof:
-  - case-previous-response-history
+  - case-serialization-and-error-drop
+  - behavior-tests
   - oracle
-- text: 'unknown history id: the named production behavior test asserts the result and effects described above.'
+- text: The parser case proves the exact invalid_request_error frame for not-json, silent ping drop, and object-shape exceptions for valid array, null, number and string JSON.
   proof:
-  - case-unknown-history-id
+  - case-parse-message-cases
+  - behavior-tests
   - oracle
-- text: 'same provider credentials: the named production behavior test asserts the result and effects described
-    above.'
+- text: The warmup case proves flat and nested generate=false selection, generate=0 rejection, model fallback, response.created then response.completed ordering, literal statuses/usage/output/object fields, id shape, timestamp type and serialization-drop continuation.
+  proof:
+  - case-warmup-ack-without-provider
+  - behavior-tests
+  - oracle
+- text: The message projection case proves string/array input filtering, output_text/text concatenation, assistant and null-role behavior, empty-output drops, unchanged function_call items, unknown-item drops and the integer-text TypeError.
+  proof:
+  - case-input-and-output-message-projection
+  - behavior-tests
+  - oracle
+- text: The response-id case proves raw-id decoding, missing/non-string/empty rejection, copied lookup results, replacement order and zero database writes.
+  proof:
+  - case-response-id-history
+  - behavior-tests
+  - oracle
+- text: The base-kwargs case proves nested nonempty precedence, flat fallback for absent/null/non-dict/empty response, exact accepted names and omission of null and unknown fields.
+  proof:
+  - case-base-call-kwargs
+  - behavior-tests
+  - oracle
+- text: The history case proves None/empty no-ops, one-message prepend and diagnostic, raw-2 downstream fallback and diagnostic, synthetic warmup no-op and zero database writes.
+  proof:
+  - case-apply-history-paths
+  - behavior-tests
+  - oracle
+- text: The provider case proves openai/anthropic/None resolution, custom-provider fallback, same-provider truth values, independent api_key/api_base/timeout copies, conditional custom_llm_provider and copied metadata.
   proof:
   - case-same-provider-credentials
+  - case-different-provider-does-not-copy-credentials
+  - behavior-tests
   - oracle
-- text: 'different provider no credential copy: the named production behavior test asserts the result and effects
-    described above.'
+- text: The proxy case proves body preservation and insertion order, null input/store/model writes, non-null optional-field filtering, fresh metadata creation, both literal proxy_server_request locations and the truthy non-dict early return.
   proof:
-  - case-different-provider-no-credential-copy
+  - case-proxy-request-projection
+  - behavior-tests
   - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+- text: The independent helper adapters, tagged seeds and named parity cases execute the pure functions against independently scripted pinned LiteLLM and exclude route/provider calls.
   proof:
   - oracle
   - helper-python
   - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
   - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::/)
-      - test(/::replays_corpus$/)'
-  - id: case-warmup-no-provider-call
-    why: the warmup-no-provider-call behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::warmup_no_provider_call($|::)/)'
-  - id: case-previous-response-history
-    why: the previous-response-history behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::previous_response_history($|::)/)'
-  - id: case-unknown-history-id
-    why: the unknown-history-id behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::unknown_history_id($|::)/)'
+    why: The scoped Responses WebSocket helper behavior is absent, incomplete or represented only by corpus replay.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::/) - test(/::replays_corpus$/)'
+  - id: case-constructor-defaults-and-passthrough
+    why: Constructor filtering, defaults, model-group precedence or provider fallback is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::constructor_defaults_and_passthrough($|::)/)'
+  - id: case-serialization-and-error-drop
+    why: Serializer precedence, exact error envelopes or sink-error swallowing is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::serialization_and_error_drop($|::)/)'
+  - id: case-parse-message-cases
+    why: Invalid JSON framing, non-response.create drop or non-object propagation is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::parse_message_cases($|::)/)'
+  - id: case-warmup-ack-without-provider
+    why: Warmup selection, exact acknowledgement fields, ordering or serialization-drop continuation is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::warmup_ack_without_provider($|::)/)'
+  - id: case-input-and-output-message-projection
+    why: Input filtering, output concatenation, role defaults or function-call preservation is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::input_and_output_message_projection($|::)/)'
+  - id: case-response-id-history
+    why: Decoded-id keying, copy-on-read, replacement or invalid-id behavior is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::response_id_history($|::)/)'
+  - id: case-base-call-kwargs
+    why: Nested/flat source selection or the exact non-null allowlist is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::base_call_kwargs($|::)/)'
+  - id: case-apply-history-paths
+    why: History prepend, database reconstruction fallback or synthetic warmup handling is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::apply_history_paths($|::)/)'
   - id: case-same-provider-credentials
-    why: the same-provider-credentials behavior or its assertions are absent
+    why: Same-provider resolution or credential/metadata injection is missing.
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::same_provider_credentials($|::)/)'
-  - id: case-different-provider-no-credential-copy
-    why: the different-provider-no-credential-copy behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::different_provider_no_cre_1ae1($|::)/)'
+  - id: case-different-provider-does-not-copy-credentials
+    why: Different-provider custom-provider isolation is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::different_provider_does_not_copy_credentials($|::)/)'
+  - id: case-proxy-request-projection
+    why: Proxy body projection, fresh metadata creation or the top-level proxy_server_request key is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::tests::proxy_request_projection($|::)/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_ws_history.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The independent helper adapter is absent or fails strict Python checks.
+    run: test -f tools/oracle/helpers/responses_ws_history.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_ws_history-*)"
-      && grep -qE "^[[:space:]]+responses_ws_history:" tools/oracle/fuzz/corpus/helper_case/responses_ws_history-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    why: The helper has no newly added tagged seed or its shared corpus replay fails.
+    run: test -n "$(git diff --name-only --diff-filter=A \"$GATE_BASE\" -- tools/oracle/fuzz/corpus/helper_case/responses_ws_history-*)" && grep -qE "^[[:space:]]+responses_ws_history:" tools/oracle/fuzz/corpus/helper_case/responses_ws_history-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-ws-history)"
+    why: No B944 parity case was added on this branch.
+    run: test -n "$(git diff --name-only --diff-filter=A \"$GATE_BASE\" -- tools/oracle/cases/helpers/responses-ws-history)"
 oracle_cases:
-- tools/oracle/cases/helpers/responses-ws-history/warmup-no-provider-call.yaml
-- tools/oracle/cases/helpers/responses-ws-history/previous-response-history.yaml
-- tools/oracle/cases/helpers/responses-ws-history/unknown-history-id.yaml
+- tools/oracle/cases/helpers/responses-ws-history/constructor-defaults-and-passthrough.yaml
+- tools/oracle/cases/helpers/responses-ws-history/serialization-and-error-drop.yaml
+- tools/oracle/cases/helpers/responses-ws-history/parse-message-cases.yaml
+- tools/oracle/cases/helpers/responses-ws-history/warmup-ack-without-provider.yaml
+- tools/oracle/cases/helpers/responses-ws-history/input-and-output-message-projection.yaml
+- tools/oracle/cases/helpers/responses-ws-history/response-id-history.yaml
+- tools/oracle/cases/helpers/responses-ws-history/base-call-kwargs.yaml
+- tools/oracle/cases/helpers/responses-ws-history/apply-history-paths.yaml
 - tools/oracle/cases/helpers/responses-ws-history/same-provider-credentials.yaml
-- tools/oracle/cases/helpers/responses-ws-history/different-provider-no-credential-copy.yaml
+- tools/oracle/cases/helpers/responses-ws-history/different-provider-does-not-copy-credentials.yaml
+- tools/oracle/cases/helpers/responses-ws-history/proxy-request-projection.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/streaming_iterator.py: B925 owns ProjectQuotaCallback.enforce_project_io_token_quota_for_frame
-  L64-L70, _get_openai_response_types L74-L77, _is_json_object L80-L81, _is_json_array L84-L85, _optional_str L88-L90,
-  _json_array_or_empty L93-L95, _is_str_mapping L98-L99, _MutableJsonObject.get L104-L104, _MutableJsonObject.get
-  L106-L106, _MutableJsonObject.__getitem__ L107-L107, _MutableJsonObject.__setitem__ L108-L108, _MutableJsonObject.__contains__
-  L109-L109, _MutableJsonObject.items L110-L110, _GetsLitellmParams.__call__ L114-L114, _UnmasksPiiText.__call__
-  L118-L118, _ShouldStoreResultInCache.__call__ L122-L122, _PostStreamingDeploymentHook.__call__ L126-L132, _typed_gets_litellm_params
-  L140-L141, _load_json_object L148-L150, _load_json_value L153-L155, _model_id_from_metadata L158-L161, _log_background_task_failure
-  L164-L169, _running_loop L175-L179, _spawn_logging_task L182-L189, _error_event_fields L221-L237, _status_code_for_error_field
-  L240-L243, _status_code_for_error_fields L246-L250, stream_error_status_and_message L253-L255, _map_stream_error_to_exception
-  L258-L278, _mid_stream_fallback_eligible L281-L285, BaseResponsesAPIStreamingIterator.__init__ L300-L349, BaseResponsesAPIStreamingIterator._check_max_streaming_duration
-  L351-L361, BaseResponsesAPIStreamingIterator._process_chunk L363-L532.'
-- 'litellm/responses/streaming_iterator.py: B927 owns BaseResponsesAPIStreamingIterator._process_chunk L363-L532,
-  BaseResponsesAPIStreamingIterator._note_yielded_event L954-L957, BaseResponsesAPIStreamingIterator._fallback_error
-  L959-L967, BaseResponsesAPIStreamingIterator._stream_ended_early_error L969-L977, BaseResponsesAPIStreamingIterator._raise_if_ended_without_terminal_event
-  L979-L986, BaseResponsesAPIStreamingIterator._raise_for_transport_error L988-L992, call_post_streaming_hooks_for_testing
-  L995-L1006, ResponsesAPIStreamingIterator.__init__ L1014-L1035, ResponsesAPIStreamingIterator.__aiter__ L1037-L1038,
-  ResponsesAPIStreamingIterator.__anext__ L1040-L1045, ResponsesAPIStreamingIterator._next_event L1047-L1092, ResponsesAPIStreamingIterator._handle_logging_completed_response
-  L1094-L1096, SyncResponsesAPIStreamingIterator.__init__ L1104-L1125, SyncResponsesAPIStreamingIterator.__iter__
-  L1127-L1128, SyncResponsesAPIStreamingIterator.__next__ L1130-L1175, SyncResponsesAPIStreamingIterator._handle_logging_completed_response
-  L1177-L1179, MockResponsesAPIStreamingIterator.__init__ L1192-L1218, MockResponsesAPIStreamingIterator._set_events_from_response
-  L1220-L1231, MockResponsesAPIStreamingIterator.__aiter__ L1233-L1234, MockResponsesAPIStreamingIterator.__anext__
-  L1236-L1245, MockResponsesAPIStreamingIterator.__iter__ L1247-L1248, MockResponsesAPIStreamingIterator.__next__
-  L1250-L1259, CachedResponsesAPIStreamingIterator.__init__ L1263-L1285, CachedResponsesAPIStreamingIterator._set_events_from_response
-  L1287-L1298, CachedResponsesAPIStreamingIterator.__aiter__ L1300-L1301, CachedResponsesAPIStreamingIterator.__anext__
-  L1303-L1312, CachedResponsesAPIStreamingIterator.__iter__ L1314-L1315, CachedResponsesAPIStreamingIterator.__next__
-  L1317-L1326.'
-- 'litellm/responses/streaming_iterator.py: B926 owns BaseResponsesAPIStreamingIterator._log_completed_response
-  L534-L576, BaseResponsesAPIStreamingIterator._restore_provider_response_headers L578-L606, BaseResponsesAPIStreamingIterator._handle_logging_completed_response
-  L608-L609, BaseResponsesAPIStreamingIterator._handle_logging_failed_response L611-L625, BaseResponsesAPIStreamingIterator._record_failed_response_usage
-  L627-L645, BaseResponsesAPIStreamingIterator._map_error_event_exception L647-L648, BaseResponsesAPIStreamingIterator._maybe_raise_for_error_event
-  L650-L671, BaseResponsesAPIStreamingIterator._get_completed_response_object L673-L683, BaseResponsesAPIStreamingIterator._persist_completed_response_to_cache
-  L685-L757, BaseResponsesAPIStreamingIterator._call_post_streaming_deployment_hook L759-L799, BaseResponsesAPIStreamingIterator.call_post_streaming_hooks_for_testing
-  L801-L807, BaseResponsesAPIStreamingIterator._run_post_success_hooks L809-L884, BaseResponsesAPIStreamingIterator._handle_failure
-  L886-L918, BaseResponsesAPIStreamingIterator._run_failure_handlers_in_order L920-L931, BaseResponsesAPIStreamingIterator._submit_sync_failure_handler
-  L933-L943, BaseResponsesAPIStreamingIterator._record_pending_logging_task L945-L946, BaseResponsesAPIStreamingIterator._await_pending_logging
-  L948-L952.'
-- 'litellm/responses/streaming_iterator.py: B928 owns _HasModelDump.model_dump L1331-L1331, _HasModelDumpJson.model_dump_json
-  L1336-L1336, _dump_response_object L1339-L1344, _build_response_status_event L1347-L1361, _build_content_part_done_event
-  L1364-L1403, _add_text_like_part_events L1406-L1473, _billed_terminal_response L1476-L1490, _dump_json_safely
-  L1493-L1498, _logging_copy L1501-L1511, _detached_shallow_copy L1514-L1518, _usage_as_model L1521-L1529, _estimate_usage_from_text
-  L1541-L1561, _estimate_usage_safely L1564-L1579, _stamp_responses_usage_cost L1582-L1598, build_synthetic_response_events
-  L1601-L1732.'
-- 'litellm/responses/streaming_iterator.py: B942 owns _extract_frame_quota_estimate_inputs L1752-L1784, _enforce_frame_project_quota
-  L1787-L1814, _ws_event_error L1832-L1836, _restore_input_item_ids L1839-L1840, _restored_container_fields L1843-L1854,
-  _restore_wrapped_ids_in_response_create L1857-L1866, _wrap_output_item_encrypted_content L1869-L1884, ResponsesWebSocketStreaming._enforce_authorized_model
-  L2101-L2126, ResponsesWebSocketStreaming._with_request_defaults L2128-L2134, ResponsesWebSocketStreaming._mask_response_create
-  L2136-L2238, ResponsesWebSocketStreaming._unmask_response_event L2265-L2328, ResponsesWebSocketStreaming._mask_response_completed
-  L2330-L2408, ResponsesWebSocketStreaming._enforce_or_reject_frame L2410-L2437.'
-- 'litellm/responses/streaming_iterator.py: B943 owns ResponsesWebSocketStreaming.__init__ L1900-L1932, ResponsesWebSocketStreaming._should_store_event
-  L1934-L1935, ResponsesWebSocketStreaming._store_event L1937-L1949, ResponsesWebSocketStreaming._collect_input_from_client_event
-  L1951-L1984, ResponsesWebSocketStreaming._store_input L1986-L1989, ResponsesWebSocketStreaming._failure_exception
-  L1991-L1999, ResponsesWebSocketStreaming._log_messages L2001-L2016, ResponsesWebSocketStreaming._record_usage_for_failure
-  L2018-L2031, ResponsesWebSocketStreaming._wrap_response_event L2033-L2049, ResponsesWebSocketStreaming.backend_to_client
-  L2051-L2099, ResponsesWebSocketStreaming.client_to_backend L2439-L2458, ResponsesWebSocketStreaming.bidirectional_forward
-  L2460-L2477.'
-- 'litellm/responses/streaming_iterator.py: B945 owns ManagedResponsesWebSocketHandler._stream_and_forward L2862-L2890,
-  ManagedResponsesWebSocketHandler._save_turn_history L2892-L2911, ManagedResponsesWebSocketHandler._process_response_create
-  L2917-L2990, ManagedResponsesWebSocketHandler.run L2996-L3016.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- 'litellm/responses/streaming_iterator.py: B925 owns ProjectQuotaCallback.enforce_project_io_token_quota_for_frame L63-L70, _get_openai_response_types L73-L77, _is_json_object L80-L81, _is_json_array L84-L85, _optional_str L88-L90, _json_array_or_empty L93-L95, _is_str_mapping L98-L99, the JSON protocols L102-L132, _typed_gets_litellm_params L140-L141, _load_json_object L148-L150 and the stream iterator implementation outside L2484-L2860.'
+- 'litellm/responses/streaming_iterator.py: B928 owns _HasModelDump.model_dump L1329-L1331 and _HasModelDumpJson.model_dump_json L1334-L1336; B944 only tests their dispatch order through the injected serializer cases.'
+- 'litellm/litellm_core_utils/get_llm_provider_logic.py: B174 owns get_llm_provider L158-L562; B944 only catches its resolver exceptions and compares the returned provider string.'
+- 'litellm/responses/utils.py: B903 owns _build_responses_api_response_id L611-L621 and _decode_responses_api_response_id L624-L674; B944 consumes the decoded response_id and does not implement base64 encoding/decoding.'
+- 'litellm/types/llms/openai.py: B909 owns the Responses input item records and transformations; B944 consumes the request-key declarations and converts already-decoded input/output dicts.'
+- 'litellm/responses/streaming_iterator.py: B942 owns frame quota/policy and encrypted-id helpers L1752-L1884 plus native ResponsesWebSocketStreaming L1900-L2477.'
+- 'litellm/responses/streaming_iterator.py: B945 owns _stream_and_forward L2862-L2890, _save_turn_history L2892-L2911, _process_response_create L2917-L2990 and run L2996-L3016, including provider I/O, route lifecycle, quota admission, call ordering, warmup exception recovery and database reconstruction.'
+- 'litellm/llms/custom_httpx/llm_http_handler.py: B945 owns async_responses_websocket L6513-L6562, which constructs this handler for non-native providers and calls run; B944 registers no route and makes no provider request.'
+- 'All other declarations and functions in the shared streaming_iterator.py file remain with their existing B925, B926, B927, B928, B942, B943 or B945 owner; B944 changes only the constructor/constants and methods described in the owned references.'
 pitfalls:
-- 'streaming_iterator.py:2781 emits the diagnostic ''ManagedResponsesWS: ignoring synthetic warmup previous_response_id=%s'';
-  retain its level and fallback instead of turning it into a hard error.'
-- 'streaming_iterator.py:2788 emits the diagnostic ''ManagedResponsesWS: prepended %d history messages for previous_response_id=%s'';
-  retain its level and fallback instead of turning it into a hard error.'
+- 'The constructor applies or before isinstance: model_group 7 suppresses deployment_model_name deployment-alias, while model_group "" reaches deployment_model_name; do not use a type check before the truthiness decision.'
+- 'A nonempty nested response dict hides flat input/model/store values even when those flat values are present; only an empty dict falls back to the flat fields.'
+- 'json.loads accepts [] and null here, and _parse_message catches only JSONDecodeError, so object-shape failures must remain exceptions rather than becoming invalid_request_error frames.'
+- 'Warmup checks generate is False, making JSON 0 a normal frame; nested response parameters also control the warmup model independently of flat model.'
+- 'The output role default is get("role", "assistant"), so role null survives, and joining a selected part whose text is integer 7 raises TypeError.'
+- 'Response history uses the decoded raw id and returns list(...) on lookup but stores the supplied message list directly; replacing raw-1 must not be changed into append or copy-on-write semantics.'
+- 'Missing history restores previous_response_id for downstream reconstruction, whereas a decoded resp_warmup_ id is ignored; neither branch performs a database write.'
+- 'api_key, api_base and timeout are copied before the provider comparison, but custom_llm_provider is copied only when _same_provider is true.'
+- 'The proxy projection always writes input, store and model, including nulls, and writes the updated request to call_kwargs.proxy_server_request as well as call_kwargs.litellm_metadata.proxy_server_request; no top-level proxy_request field exists.'
+- 'A truthy non-dict proxy_server_request returns before mutation, while absent, null or empty values are replaced with a new request and can create litellm_metadata {}.'
+- 'A serializer failure is a debug diagnostic plus None, and a warmup acknowledgement drops only that failed event before trying the next status.'
 review_level: security
 budget:
-  max_changed_lines: 530
+  max_changed_lines: 620
   max_new_expects: 1
