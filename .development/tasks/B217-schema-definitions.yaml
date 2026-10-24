@@ -1,0 +1,96 @@
+id: B217
+title: Bounded JSON Schema definition expansion
+description: >-
+  Implement _estimate_json_bytes, unpack_defs, _has_legacy_defs, unpack_legacy_defs and sanitize_input_schema_for_anthropic
+  from common_utils.py 922-1156. Preserve local-reference expansion and legacy definitions behavior over the named
+  opaque schema field. Cap expanded bytes and work, detect cycles, reject external fetching and keep deterministic
+  property order where observable. Budget 230 expansion, 100 adapters, 300 tests/fuzz and 50 wiring (680 total).
+  Add the schema_definitions cargo-fuzz target, call the production parser, and commit/replay malformed and boundary
+  seeds. Write the behavior rstest functions b217_behavior_tests_behavior in adjacent tests.rs files, with a named
+  case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
+  schema_definitions in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has
+  its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-prompts/Cargo.toml
+  - crates/betterlite-prompts/src/lib.rs
+  - crates/betterlite-prompts/src/error.rs
+  - crates/betterlite-prompts/src/definitions.rs
+  - crates/betterlite-prompts/src/definitions/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/schema-definitions/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  - crates/betterlite-prompts/fuzz/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L922-L1156
+  why: Definition expansion helpers.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+- text: The outside-byte parser has its target and newly committed production replay corpus.
+  proof:
+  - schema_definitions-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b217_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'schema_definitions' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: schema_definitions-corpus
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/schema_definitions)"
+      && test -f crates/betterlite-prompts/fuzz/fuzz_targets/schema_definitions.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/schema_definitions)"
+      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_schema_definitions_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/schema-definitions/defs-ref.yaml
+- tools/oracle/cases/helpers/schema-definitions/legacy-definitions.yaml
+- tools/oracle/cases/helpers/schema-definitions/recursive-ref.yaml
+- tools/oracle/cases/helpers/schema-definitions/missing-ref.yaml
+- tools/oracle/cases/helpers/schema-definitions/expansion-limit.yaml
+- tools/oracle/cases/helpers/schema-definitions/external-ref.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B178 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

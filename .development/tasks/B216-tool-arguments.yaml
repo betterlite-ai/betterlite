@@ -1,0 +1,105 @@
+id: B216
+title: Limited tool JSON repair and argument parsing
+description: >-
+  Implement _attempt_json_repair, parse_tool_call_arguments, split_concatenated_json_objects and salvage_concatenated_tool_arguments
+  (2324-2561). Repair strips only a trailing comma and closes unmatched brackets; do not accept the broader language
+  of a general repair crate. Preserve quoted braces and escapes, typed failure/fallback outcomes and bounded work.
+  Also implement get_tool_call_names, is_function_call, convert_custom_tool_format_to_chat_shape/convert_custom_tool_format_to_responses_shape,
+  check_is_function_call and with_prompt_cache_breakpoint (1597-1645,1674-1693); B183 owns get_file_ids_from_messages.
+  Reuse the single existing opaque argument field. Budget 290 parser/tool helpers, 100 adapters, 310 tests/fuzz
+  and 40 wiring (740 total). Add the tool_arguments cargo-fuzz target, call the production parser, and commit/replay
+  malformed and boundary seeds. Write the behavior rstest functions b216_behavior_tests_behavior in adjacent tests.rs
+  files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
+  helper operations tool_arguments in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each
+  operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-prompts/Cargo.toml
+  - crates/betterlite-prompts/src/lib.rs
+  - crates/betterlite-prompts/src/error.rs
+  - crates/betterlite-prompts/src/arguments.rs
+  - crates/betterlite-prompts/src/arguments/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/tool-arguments/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  - crates/betterlite-prompts/fuzz/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1597-L1693
+  why: Tool shape helpers, excluding file ID extraction.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L2324-L2561
+  why: Limited repair and argument parsing.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+- text: The outside-byte parser has its target and newly committed production replay corpus.
+  proof:
+  - tool_arguments-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b216_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'tool_arguments' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: tool_arguments-corpus
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/tool_arguments)"
+      && test -f crates/betterlite-prompts/fuzz/fuzz_targets/tool_arguments.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/tool_arguments)"
+      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_tool_arguments_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/tool-arguments/valid.yaml
+- tools/oracle/cases/helpers/tool-arguments/quoted-braces.yaml
+- tools/oracle/cases/helpers/tool-arguments/concatenated.yaml
+- tools/oracle/cases/helpers/tool-arguments/repairable.yaml
+- tools/oracle/cases/helpers/tool-arguments/unrepairable.yaml
+- tools/oracle/cases/helpers/tool-arguments/tool-names.yaml
+- tools/oracle/cases/helpers/tool-arguments/custom-chat.yaml
+- tools/oracle/cases/helpers/tool-arguments/custom-responses.yaml
+- tools/oracle/cases/helpers/tool-arguments/function-call.yaml
+- tools/oracle/cases/helpers/tool-arguments/cache-breakpoint.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B178 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1
