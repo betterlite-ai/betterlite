@@ -1853,7 +1853,7 @@ tasks:
     title: Trusted controls, provider headers and affinity
     status: todo
     depends_on: [B175]
-    file: null
+    file: tasks/B176-provider-controls.yaml
     covers:
       - "litellm/litellm_core_utils/{get_provider_specific_headers,get_litellm_params,llm_request_utils,provider_affinity,dot_notation_indexing}.py"
   - id: B177
