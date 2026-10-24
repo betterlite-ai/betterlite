@@ -1,9 +1,10 @@
 use crate::answer::parse_answer;
 use crate::development::Development;
 use crate::dispatch::seat::{Seat, invoke};
-use crate::dispatch::{Attempt, Step, find_runner, reviewer_role};
+use crate::dispatch::{Attempt, EarlierReview, Step, find_runner, prompt, reviewer_role};
 use crate::error::GateError;
 use crate::facts::Facts;
+use crate::git::git;
 use crate::review_check::review_problems;
 use crate::spec::agents::{Agents, Rung, Runner};
 use crate::spec::review::{Review, ReviewVerdict};
@@ -30,7 +31,7 @@ fn reviewer_rung<'agents>(
     })
 }
 
-fn step(attempt: &Attempt<'_>, answer: &Review) -> Step {
+fn step(attempt: &Attempt<'_>, answer: &Review, commit: String) -> Step {
     match answer.verdict {
         ReviewVerdict::Approve => {
             let brief = attempt.brief;
@@ -40,8 +41,9 @@ fn step(attempt: &Attempt<'_>, answer: &Review) -> Step {
                 brief.task.id, brief.branch
             )])
         }
-        ReviewVerdict::Changes => Step::Reviewed(
-            answer
+        ReviewVerdict::Changes => Step::Reviewed(EarlierReview {
+            commit,
+            findings: answer
                 .findings
                 .iter()
                 .map(|finding| {
@@ -51,7 +53,7 @@ fn step(attempt: &Attempt<'_>, answer: &Review) -> Step {
                     )
                 })
                 .collect(),
-        ),
+        }),
     }
 }
 
@@ -68,14 +70,7 @@ pub(crate) fn review(
     let rung = reviewer_rung(attempt.agents, brief.task.review_level, worker_runner)
         .ok_or_else(|| refused("no reviewer rung fits the vendor policy".to_owned()))?;
     let runner = find_runner(attempt.agents, &rung.runner)?;
-    let prompt = format!(
-        "You are the betterlite reviewer for task {id}: {title}.\nRead .development/roles/reviewer.md first and follow it. The rules are in .development/rules.yaml and the task is .development/{file}.\nReview branch {branch} against its base {base} with git diff {base}...HEAD. Change nothing.\nYour final answer is the review JSON described in .development/schema/review.schema.json.\n",
-        id = brief.task.id,
-        title = brief.task.title,
-        file = brief.file,
-        branch = brief.branch,
-        base = brief.base,
-    );
+    let prompt = prompt::reviewer(brief, attempt.earlier);
     let Some(text) = invoke(attempt, runner, rung, Seat::Reviewer, &prompt)? else {
         return Err(refused("the reviewer ended without an answer".to_owned()));
     };
@@ -89,5 +84,8 @@ pub(crate) fn review(
             problems.join("; ")
         )));
     }
-    Ok(step(attempt, &answer))
+    let commit = git(&worktree.root, &["rev-parse", "HEAD"])?
+        .trim()
+        .to_owned();
+    Ok(step(attempt, &answer, commit))
 }

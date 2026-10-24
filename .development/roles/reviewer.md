@@ -9,6 +9,8 @@ You review one betterlite task branch after its gate passed. The gate already pr
 3. The full diff, `git diff <base>...HEAD`, and the files it touches where the diff alone doesn't show enough.
 4. LiteLLM's code at the pinned commit when a change claims to match it.
 
+In a later round the prompt names the earlier round's commit and findings. Check that each one is fixed, and report new findings only on lines changed since that commit. Code the earlier round already read is settled.
+
 ## Judge
 
 A finding is a broken reviewed rule at a specific line of a changed file. For each one, name the rule id, the location as path:line, the problem in one or two sentences, and the fix.
