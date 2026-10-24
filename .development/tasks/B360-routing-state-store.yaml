@@ -16,6 +16,9 @@ description: Create the injected typed store used by B304 and all routing state 
   unsupported keys still fail by full path. Add a cargo-fuzz target route_value under crates/betterlite-router/fuzz
   and a normal replays_the_route_value_corpus test using the production parser. Keep the implementation,
   adapters and tests within 800 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+  For atomic Decimal updates, use the Redis client's WATCH/MULTI support with checked Rust Decimal arithmetic
+  or an existing exact scaled-integer primitive; neither INCRBYFLOAT nor Lua number arithmetic may process
+  money.
 scope:
   paths:
   - crates/betterlite-router/**
@@ -58,6 +61,10 @@ dod:
 - text: All mutants in changed router, config or wire code are caught.
   proof:
   - mutants
+- text: Real Redis tests prove atomic Decimal increments across two writers, lost-response batch deduplication
+    and bounded reconnect/shutdown; these tests fail rather than skip when Redis is unavailable.
+  proof:
+  - routing-tests
 checks:
   optional:
   - mutants
@@ -72,9 +79,8 @@ checks:
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-router/fuzz/fuzz_targets/route_value.rs && test -n "$(ls -A
-      crates/betterlite-router/fuzz/corpus/route_value)" && cargo nextest run --locked -p betterlite-router
-      --no-tests=fail -E 'test(replays_the_route_value_corpus)'
+    run: test -f crates/betterlite-router/fuzz/fuzz_targets/route_value.rs && test -n "$(ls -A crates/betterlite-router/fuzz/corpus/route_value)"
+      && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_route_value_corpus)'
   - id: probe-python
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
