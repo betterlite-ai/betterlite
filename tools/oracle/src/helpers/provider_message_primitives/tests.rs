@@ -26,3 +26,34 @@ fn helper_seeds_select_provider_message_primitives() {
     });
     assert!(selected);
 }
+
+#[rstest::rstest]
+#[case::native("response-format-native")]
+#[case::tool("response-format-tool")]
+#[case::developer("developer-role-projection")]
+#[case::iterator("iterator-initial-state")]
+#[case::batch("batch-initializer")]
+#[case::chat_id("chat-id-prefix")]
+#[case::tool_call("tool-call-record-projection")]
+fn provider_message_primitives_cases_match_litellm(#[case] name: &str) {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("cases/helpers/providers/provider-message-primitives")
+        .join(format!("{name}.yaml"));
+    let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    let run = super::super::run_case(&case, false).unwrap();
+    assert!(matches!(run, super::super::HelperRun::Match));
+}
+
+#[rstest::rstest]
+#[case::number("2")]
+#[case::zero("0")]
+#[case::text("x")]
+#[case::list("[1]")]
+fn schema_truthiness_matches_litellm(#[case] schema: &str) {
+    let source = format!(
+        "kind: helper\nname: truthiness\ncall: {{provider_message_primitives: {{function: response_format, optional_params: {{}}, value: {{response_schema: {schema}}}, supported: false, enforce_tool_choice: null}}}}\nenv: {{}}\ncompare: {{ignore: []}}\n"
+    );
+    let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
+    let run = super::super::run_case(&case, false).unwrap();
+    assert!(matches!(run, super::super::HelperRun::Match));
+}

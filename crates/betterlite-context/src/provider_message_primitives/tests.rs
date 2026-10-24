@@ -3,7 +3,7 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use tracing::field::{Field as EventField, Visit};
+use tracing::field::Field as EventField;
 use tracing::subscriber::with_default;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
@@ -22,20 +22,12 @@ struct Captured(Arc<Mutex<Vec<String>>>);
 
 impl<Inner: Subscriber> Layer<Inner> for Captured {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
-        let mut message = Message(String::new());
-        event.record(&mut message);
-        let line = format!("{} {}", event.metadata().level(), message.0);
+        let mut message = String::new();
+        event.record(&mut |field: &EventField, value: &dyn fmt::Debug| {
+            message = format!("{} {value:?}", field.name());
+        });
+        let line = format!("{} {message}", event.metadata().level());
         self.0.lock().unwrap().push(line);
-    }
-}
-
-struct Message(String);
-
-impl Visit for Message {
-    fn record_debug(&mut self, field: &EventField, value: &dyn fmt::Debug) {
-        if field.name() == "message" {
-            self.0 = format!("{value:?}");
-        }
     }
 }
 
@@ -203,7 +195,8 @@ fn developer_role_projection() {
         system(None),
     ];
     assert_eq!(projected.unwrap(), expected);
-    let notice = "DEBUG Translating developer role to system role for non-OpenAI providers.";
+    let notice =
+        "DEBUG message Translating developer role to system role for non-OpenAI providers.";
     assert_eq!(logs, vec![notice.to_owned(), notice.to_owned()]);
     let missing_role = vec![record(&[("content", Some("hi"))])];
     assert_eq!(
