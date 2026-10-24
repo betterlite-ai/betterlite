@@ -1,5 +1,6 @@
 mod bedrock_request_policy;
 mod catalog_generalizations;
+mod provider_message_primitives;
 mod url_path;
 
 use std::collections::BTreeMap;
@@ -18,12 +19,14 @@ use crate::process::sync_litellm;
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) enum HelperCall {
-    #[serde(rename = "url_path")]
-    UrlPath(url_path::UrlPathInput),
     #[serde(rename = "bedrock_request_policy")]
     BedrockRequestPolicy(bedrock_request_policy::BedrockRequestPolicyInput),
     #[serde(rename = "catalog_generalizations")]
     CatalogGeneralizations(catalog_generalizations::CatalogGeneralizationsInput),
+    #[serde(rename = "provider_message_primitives")]
+    ProviderMessagePrimitives(provider_message_primitives::PrimitivesInput),
+    #[serde(rename = "url_path")]
+    UrlPath(url_path::UrlPathInput),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -80,9 +83,10 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
 
 fn invoke(call: &HelperCall) -> HelperOutput {
     let result = match call {
-        HelperCall::UrlPath(input) => url_path::invoke(input),
         HelperCall::BedrockRequestPolicy(input) => bedrock_request_policy::invoke(input),
         HelperCall::CatalogGeneralizations(input) => return catalog_generalizations::invoke(input),
+        HelperCall::ProviderMessagePrimitives(input) => provider_message_primitives::invoke(input),
+        HelperCall::UrlPath(input) => url_path::invoke(input),
     };
     match result {
         Ok(value) => HelperOutput {

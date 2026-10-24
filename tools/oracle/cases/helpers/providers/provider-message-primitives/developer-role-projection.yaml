@@ -1,0 +1,13 @@
+kind: helper
+name: developer-role-projection
+call:
+  provider_message_primitives:
+    function: developer_role
+    messages:
+      - {role: system, content: be kind, name: base}
+      - {role: developer, content: be brief, name: ops}
+      - {role: user, content: hi}
+      - {role: developer, content: [{type: text, text: answer in English}]}
+env: {}
+compare:
+  ignore: []
