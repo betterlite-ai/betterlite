@@ -2502,11 +2502,12 @@ tasks:
     - B052
     - B060
     - B118
+    - B301
+    - B361
     file: tasks/B345-shadow-eval-validation.yaml
     covers:
     - litellm/types/management_endpoints/auto_router_endpoints.py
     - litellm/proxy/management_endpoints/auto_router_endpoints.py
-
   - id: B346
     milestone: M2 routing
     title: Priority queues and scheduled routing
