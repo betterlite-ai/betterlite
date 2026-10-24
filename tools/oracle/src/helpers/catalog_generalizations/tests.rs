@@ -21,11 +21,11 @@ fn helper_seeds_select_catalog_generalizations() {
         .collect();
     let mut outputs: Vec<String> = seeds
         .iter()
-        .filter_map(|seed| match &seed.call {
-            HelperCall::CatalogGeneralizations(input) => {
-                serde_json::to_string(&super::invoke(input)).ok()
-            }
-            HelperCall::UrlPath(_) => None,
+        .filter_map(|seed| {
+            let HelperCall::CatalogGeneralizations(input) = &seed.call else {
+                return None;
+            };
+            serde_json::to_string(&super::invoke(input)).ok()
         })
         .collect();
     outputs.sort();
