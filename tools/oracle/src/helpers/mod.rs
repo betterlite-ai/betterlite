@@ -1,32 +1,174 @@
-mod catalog_generalizations;
-mod dot_paths;
-mod provider_message_primitives;
-mod url_path;
+macro_rules! helper_group {
+    ($($operation:literal => $module:ident),* $(,)?) => {
+        $(mod $module;)*
+
+        pub(super) const GROUP: super::Group = super::Group { invoke, check };
+
+        fn invoke(
+            operation: &str,
+            input: &serde_json::Value,
+        ) -> Option<super::HelperResult> {
+            match operation {
+                $($operation => Some(<$module::Op as super::Helper>::decode_and_run(input)),)*
+                _ => None,
+            }
+        }
+
+        fn check(operation: &str, input: &serde_json::Value) -> Option<Result<(), String>> {
+            match operation {
+                $($operation => Some(<$module::Op as super::Helper>::check(input)),)*
+                _ => None,
+            }
+        }
+    };
+}
+
+mod anthropic;
+mod auth;
+mod azure;
+mod bedrock;
+mod config;
+mod context;
+mod core_ops;
+mod cost;
+mod db;
+mod error;
+mod foundry;
+mod http;
+mod logging;
+mod models;
+mod openai;
+mod oracle;
+mod paths;
+mod prompts;
+mod provider;
+mod redact;
+mod router;
+mod secrets;
+mod server;
+mod streaming;
+mod tokenizer;
+mod vertex;
 
 use std::collections::BTreeMap;
-use std::io::{self, Read, Write as _};
-use std::num::NonZeroUsize;
+use std::io::{self, Write as _};
 use std::path::Path;
-use std::process::{Child, Command, ExitStatus, Stdio};
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
 
 use crate::OracleError;
 use crate::case::HelperCase;
 use crate::compare;
 use crate::process::sync_litellm;
+use python::run_python;
+
+type HelperResult = Result<serde_json::Value, Box<HelperError>>;
+
+trait Helper {
+    type Input: serde::de::DeserializeOwned;
+
+    fn run(input: &Self::Input) -> HelperResult;
+
+    fn decode_and_run(input: &serde_json::Value) -> HelperResult {
+        let decoded = serde_json::from_value(input.clone()).map_err(|error| {
+            Box::new(HelperError {
+                class: "InvalidInput".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
+        Self::run(&decoded)
+    }
+
+    fn check(input: &serde_json::Value) -> Result<(), String> {
+        serde_json::from_value::<Self::Input>(input.clone())
+            .map(drop)
+            .map_err(|error| error.to_string())
+    }
+
+    fn not_built(operation: &str) -> HelperResult {
+        Err(Box::new(HelperError {
+            class: "NotBuilt".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: format!("the {operation} helper is not built yet"),
+        }))
+    }
+}
+
+struct Group {
+    invoke: fn(&str, &serde_json::Value) -> Option<HelperResult>,
+    check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
+}
+
+const GROUPS: [Group; 26] = [
+    anthropic::GROUP,
+    auth::GROUP,
+    azure::GROUP,
+    bedrock::GROUP,
+    config::GROUP,
+    context::GROUP,
+    core_ops::GROUP,
+    cost::GROUP,
+    db::GROUP,
+    error::GROUP,
+    foundry::GROUP,
+    http::GROUP,
+    logging::GROUP,
+    models::GROUP,
+    openai::GROUP,
+    oracle::GROUP,
+    paths::GROUP,
+    prompts::GROUP,
+    provider::GROUP,
+    redact::GROUP,
+    router::GROUP,
+    secrets::GROUP,
+    server::GROUP,
+    streaming::GROUP,
+    tokenizer::GROUP,
+    vertex::GROUP,
+];
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) enum HelperCall {
-    #[serde(rename = "catalog_generalizations")]
-    CatalogGeneralizations(catalog_generalizations::CatalogGeneralizationsInput),
-    #[serde(rename = "dot_paths")]
-    DotPaths(dot_paths::DotPathsInput),
-    #[serde(rename = "provider_message_primitives")]
-    ProviderMessagePrimitives(provider_message_primitives::PrimitivesInput),
-    #[serde(rename = "url_path")]
-    UrlPath(url_path::UrlPathInput),
+#[serde(
+    try_from = "BTreeMap<String, serde_json::Value>",
+    into = "BTreeMap<String, serde_json::Value>"
+)]
+pub(crate) struct HelperCall {
+    pub(crate) operation: String,
+    pub(crate) input: serde_json::Value,
+}
+
+impl TryFrom<BTreeMap<String, serde_json::Value>> for HelperCall {
+    type Error = String;
+
+    fn try_from(call: BTreeMap<String, serde_json::Value>) -> Result<Self, Self::Error> {
+        let mut entries = call.into_iter();
+        match (entries.next(), entries.next()) {
+            (Some((operation, input)), None) => {
+                let checked = GROUPS
+                    .iter()
+                    .find_map(|group| (group.check)(&operation, &input));
+                checked.unwrap_or_else(|| {
+                    Err(format!(
+                        "unknown variant `{operation}`, expected a registered helper operation"
+                    ))
+                })?;
+                Ok(Self { operation, input })
+            }
+            _ => Err("a helper call names exactly one operation".to_owned()),
+        }
+    }
+}
+
+impl From<HelperCall> for BTreeMap<String, serde_json::Value> {
+    fn from(call: HelperCall) -> Self {
+        Self::from([(call.operation, call.input)])
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -55,14 +197,8 @@ pub(crate) enum HelperRun {
 }
 
 pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun, OracleError> {
-    let call_json = serde_json::to_value(&case.call).map_err(OracleError::Json)?;
-    let Some((operation, input_value)) = call_json.as_object().and_then(|call| call.iter().next())
-    else {
-        return Err(OracleError::HelperInput {
-            message: "helper call is not a tagged object".to_owned(),
-        });
-    };
-    let python_input = serde_json::json!({"operation": operation, "input": input_value});
+    let python_input =
+        serde_json::json!({"operation": case.call.operation, "input": case.call.input});
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     sync_litellm(&root)?;
     let left = if self_check {
@@ -81,13 +217,21 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
     Ok(HelperRun::Match)
 }
 
-fn invoke(call: &HelperCall) -> HelperOutput {
-    let result = match call {
-        HelperCall::CatalogGeneralizations(input) => return catalog_generalizations::invoke(input),
-        HelperCall::DotPaths(input) => dot_paths::invoke(input),
-        HelperCall::ProviderMessagePrimitives(input) => provider_message_primitives::invoke(input),
-        HelperCall::UrlPath(input) => url_path::invoke(input),
-    };
+pub(crate) fn invoke(call: &HelperCall) -> HelperOutput {
+    let result = GROUPS
+        .iter()
+        .find_map(|group| (group.invoke)(&call.operation, &call.input))
+        .unwrap_or_else(|| {
+            let message = format!("no helper operation is named {}", call.operation);
+            Err(Box::new(HelperError {
+                class: "UnknownOperation".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message,
+            }))
+        });
     match result {
         Ok(value) => HelperOutput {
             ok: true,
@@ -102,128 +246,5 @@ fn invoke(call: &HelperCall) -> HelperOutput {
     }
 }
 
-fn run_python(
-    root: &Path,
-    input: &serde_json::Value,
-    case_env: &BTreeMap<String, String>,
-) -> Result<HelperOutput, OracleError> {
-    let mut command = Command::new("setpriv");
-    command
-        .args(["--pdeathsig", "KILL", "--"])
-        .arg(root.join("tools/oracle/litellm/.venv/bin/python"))
-        .arg(root.join("tools/oracle/helpers/dispatch.py"))
-        .env_clear();
-    configure_environment(&mut command, case_env);
-    let bytes = serde_json::to_vec(input).map_err(OracleError::Json)?;
-    let stdout_output = run_bounded(&mut command, bytes, Duration::from_secs(15))?;
-    serde_json::from_slice(&stdout_output).map_err(OracleError::HelperJson)
-}
-
-fn run_bounded(
-    command: &mut Command,
-    input: Vec<u8>,
-    timeout: Duration,
-) -> Result<Vec<u8>, OracleError> {
-    let mut child = command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(OracleError::HelperSpawn)?;
-    let pumped = pump_helper_pipes(&mut child, input);
-    let status = wait_for_helper_exit(&mut child, timeout)?;
-    let pipes = pumped?;
-    let (stdout_output, stdout_excess) = pipes
-        .output
-        .join()
-        .map_err(|_| OracleError::HelperJoin)?
-        .map_err(OracleError::HelperIo)?;
-    let (stderr_output, _stderr_excess) = pipes
-        .diagnostic
-        .join()
-        .map_err(|_| OracleError::HelperJoin)?
-        .map_err(OracleError::HelperIo)?;
-    if stdout_excess {
-        return Err(OracleError::HelperOutputTooLarge);
-    }
-    if !status.success() {
-        return Err(OracleError::HelperExited {
-            status,
-            diagnostic: String::from_utf8_lossy(&stderr_output).into_owned(),
-        });
-    }
-    pipes
-        .input
-        .join()
-        .map_err(|_| OracleError::HelperJoin)?
-        .map_err(OracleError::HelperIo)?;
-    Ok(stdout_output)
-}
-
-struct HelperPipes {
-    input: JoinHandle<io::Result<()>>,
-    output: JoinHandle<io::Result<(Vec<u8>, bool)>>,
-    diagnostic: JoinHandle<io::Result<(Vec<u8>, bool)>>,
-}
-
-fn pump_helper_pipes(child: &mut Child, input: Vec<u8>) -> Result<HelperPipes, OracleError> {
-    let mut stdin_pipe = child.stdin.take().ok_or(OracleError::HelperStdin)?;
-    let stdout_pipe = child.stdout.take().ok_or(OracleError::HelperStdout)?;
-    let stderr_pipe = child.stderr.take().ok_or(OracleError::HelperStderr)?;
-    Ok(HelperPipes {
-        input: thread::spawn(move || stdin_pipe.write_all(&input)),
-        output: thread::spawn(move || read_limited(stdout_pipe)),
-        diagnostic: thread::spawn(move || read_limited(stderr_pipe)),
-    })
-}
-
-fn wait_for_helper_exit(child: &mut Child, timeout: Duration) -> Result<ExitStatus, OracleError> {
-    let started = Instant::now();
-    loop {
-        if let Some(exit_status) = child.try_wait().map_err(OracleError::HelperIo)? {
-            return Ok(exit_status);
-        }
-        if started.elapsed() >= timeout {
-            child.kill().map_err(OracleError::HelperIo)?;
-            child.wait().map_err(OracleError::HelperIo)?;
-            return Err(OracleError::HelperTimeout);
-        }
-        thread::park_timeout(Duration::from_millis(10));
-    }
-}
-
-fn configure_environment(command: &mut Command, case_env: &BTreeMap<String, String>) {
-    for name in ["PATH", "HOME", "UV_CACHE_DIR", "UV_PYTHON_CACHE_DIR"] {
-        if let Some(value) = std::env::var_os(name) {
-            command.env(name, value);
-        }
-    }
-    for (name, value) in case_env {
-        command.env(name, value);
-    }
-    command.env("LITELLM_LOCAL_MODEL_COST_MAP", "True");
-}
-
-fn read_limited<R>(mut reader: R) -> io::Result<(Vec<u8>, bool)>
-where
-    R: Read,
-{
-    const MAX_OUTPUT: usize = 1024 * 1024;
-    let mut output = Vec::new();
-    let mut buffer = [0_u8; 8192];
-    let mut excess = false;
-    loop {
-        let Some(nonzero_count) = NonZeroUsize::new(reader.read(&mut buffer)?) else {
-            return Ok((output, excess));
-        };
-        let count = nonzero_count.get();
-        let remaining = MAX_OUTPUT.saturating_sub(output.len());
-        let bytes = buffer
-            .get(..count.min(remaining))
-            .ok_or_else(|| io::Error::other("reader returned an invalid byte count"))?;
-        output.extend(bytes.iter().copied());
-        excess |= count > remaining;
-    }
-}
-
+mod python;
 mod tests;

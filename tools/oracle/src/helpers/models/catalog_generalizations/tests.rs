@@ -4,7 +4,6 @@ use std::fs;
 use std::path::Path;
 
 use crate::case::{HelperCase, parse_helper_case};
-use crate::helpers::HelperCall;
 
 #[test]
 fn helper_seeds_select_catalog_generalizations() {
@@ -22,10 +21,13 @@ fn helper_seeds_select_catalog_generalizations() {
     let mut outputs: Vec<String> = seeds
         .iter()
         .filter_map(|seed| {
-            let HelperCall::CatalogGeneralizations(input) = &seed.call else {
-                return None;
-            };
-            serde_json::to_string(&super::invoke(input)).ok()
+            let input =
+                (seed.call.operation == "catalog_generalizations").then_some(&seed.call.input)?;
+            serde_json::to_string(&crate::helpers::invoke(&crate::helpers::HelperCall {
+                operation: "catalog_generalizations".to_owned(),
+                input: input.clone(),
+            }))
+            .ok()
         })
         .collect();
     outputs.sort();

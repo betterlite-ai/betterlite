@@ -13,13 +13,13 @@ use tracing::subscriber::with_default;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
-use super::HelperError;
+use crate::helpers::HelperError;
 
 mod tests;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum PrimitivesInput {
+pub(crate) enum Input {
     ResponseFormat {
         optional_params: Map<String, Value>,
         value: Value,
@@ -48,13 +48,19 @@ pub(crate) enum JsonModeInput {
     Explicit(Option<bool>),
 }
 
-pub(crate) fn invoke(input: &PrimitivesInput) -> Result<Value, Box<HelperError>> {
-    let logs = Logs::default();
-    let subscriber = tracing_subscriber::registry().with(logs.clone());
-    let result = with_default(subscriber, || outcome(input.clone()))
-        .map_err(|failure| Box::new(helper_error(&failure)))?;
-    let lines = logs.0.lock().map(|lines| lines.clone()).unwrap_or_default();
-    Ok(json!({"result": result, "logs": lines}))
+pub(crate) struct Op;
+
+impl crate::helpers::Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Input) -> crate::helpers::HelperResult {
+        let logs = Logs::default();
+        let subscriber = tracing_subscriber::registry().with(logs.clone());
+        let result = with_default(subscriber, || outcome(input.clone()))
+            .map_err(|failure| Box::new(helper_error(&failure)))?;
+        let lines = logs.0.lock().map(|lines| lines.clone()).unwrap_or_default();
+        Ok(json!({"result": result, "logs": lines}))
+    }
 }
 
 enum Failure {
@@ -63,18 +69,18 @@ enum Failure {
     ToolsNotList,
 }
 
-fn outcome(input: PrimitivesInput) -> Result<Value, Failure> {
+fn outcome(input: Input) -> Result<Value, Failure> {
     match input {
-        PrimitivesInput::ResponseFormat {
+        Input::ResponseFormat {
             optional_params,
             value,
             supported,
             enforce_tool_choice,
         } => response_format(optional_params, value, supported, enforce_tool_choice),
-        PrimitivesInput::DeveloperRole { messages } => developer_to_system(messages)
+        Input::DeveloperRole { messages } => developer_to_system(messages)
             .map(|projected| json!(projected))
             .map_err(Failure::Context),
-        PrimitivesInput::IteratorState { json_mode } => {
+        Input::IteratorState { json_mode } => {
             let state: StreamState<usize, String> = match json_mode {
                 JsonModeInput::Default => StreamState::from(0),
                 JsonModeInput::Explicit(mode) => StreamState {
@@ -87,13 +93,11 @@ fn outcome(input: PrimitivesInput) -> Result<Value, Failure> {
                 json!({"handles": 1, "reads": state.stream, "json_mode": state.json_mode, "http_response": state.http_response}),
             )
         }
-        PrimitivesInput::BatchInitializer => {
-            Ok(json!({"attributes": size_of_val(&BatchConfigBase)}))
-        }
-        PrimitivesInput::ChatId { uuid } => uuid::Uuid::parse_str(&uuid)
+        Input::BatchInitializer => Ok(json!({"attributes": size_of_val(&BatchConfigBase)})),
+        Input::ChatId { uuid } => uuid::Uuid::parse_str(&uuid)
             .map(|id| json!(format!("{CHAT_COMPLETION_ID_PREFIX}{id}")))
             .map_err(Failure::Uuid),
-        PrimitivesInput::ToolCall { record } => Ok(project_tool_call(record, &Recorder)),
+        Input::ToolCall { record } => Ok(project_tool_call(record, &Recorder)),
     }
 }
 

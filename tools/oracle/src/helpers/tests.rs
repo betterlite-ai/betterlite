@@ -16,7 +16,7 @@ fn helper_runner_tests_behavior(#[case] script: &str, #[case] expected: &str) {
     let mut command = Command::new("sh");
     command.args(["-c", script]);
     let timeout = Duration::from_millis(300);
-    let error = super::run_bounded(&mut command, Vec::new(), timeout).unwrap_err();
+    let error = super::python::run_bounded(&mut command, Vec::new(), timeout).unwrap_err();
     assert_eq!(error.to_string(), expected);
     let unreaped = fs::read_to_string("/proc/thread-self/children").unwrap();
     assert_eq!(unreaped, "");
@@ -56,7 +56,7 @@ fn helper_case_cannot_disable_the_local_cost_map() {
     )
     .expect("helper case should parse");
     let mut command = Command::new("true");
-    super::configure_environment(&mut command, &case.env);
+    super::python::configure_environment(&mut command, &case.env);
     let cost_map = command
         .get_envs()
         .find(|(name, _)| *name == "LITELLM_LOCAL_MODEL_COST_MAP");
@@ -75,7 +75,7 @@ fn helper_case_cannot_disable_the_local_cost_map() {
 #[case::over_limit(0x0010_0001, true)]
 fn helper_output_limit_is_enforced(#[case] size: usize, #[case] excess: bool) {
     let bytes = vec![b'x'; size];
-    let (output, observed_excess) = super::read_limited(Cursor::new(bytes)).unwrap();
+    let (output, observed_excess) = super::python::read_limited(Cursor::new(bytes)).unwrap();
     assert_eq!(output.len(), 0x0010_0000.min(size));
     assert_eq!(observed_excess, excess);
 }

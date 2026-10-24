@@ -4,7 +4,6 @@ use std::fs;
 use std::path::Path;
 
 use crate::case::{HelperCase, parse_helper_case};
-use crate::helpers::HelperCall;
 
 #[test]
 fn helper_seeds_select_provider_message_primitives() {
@@ -22,7 +21,7 @@ fn helper_seeds_select_provider_message_primitives() {
     let selected = seeds.iter().all(|source| {
         parse_helper_case(source).unwrap();
         let case: HelperCase = serde_saphyr::from_str(source).unwrap();
-        matches!(case.call, HelperCall::ProviderMessagePrimitives(_))
+        case.call.operation == "provider_message_primitives"
     });
     assert!(selected);
 }
@@ -40,8 +39,8 @@ fn provider_message_primitives_cases_match_litellm(#[case] name: &str) {
         .join("cases/helpers/providers/provider-message-primitives")
         .join(format!("{name}.yaml"));
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-    let run = super::super::run_case(&case, false).unwrap();
-    assert!(matches!(run, super::super::HelperRun::Match));
+    let run = crate::helpers::run_case(&case, false).unwrap();
+    assert!(matches!(run, crate::helpers::HelperRun::Match));
 }
 
 #[rstest::rstest]
@@ -69,6 +68,6 @@ fn matches_litellm(call: &str) {
         "kind: helper\nname: inline\ncall: {{provider_message_primitives: {{{call}}}}}\nenv: {{}}\ncompare: {{ignore: [{{pointer: /error/message, why: betterlite writes its own message}}]}}\n"
     );
     let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-    let run = super::super::run_case(&case, false).unwrap();
-    assert!(matches!(run, super::super::HelperRun::Match));
+    let run = crate::helpers::run_case(&case, false).unwrap();
+    assert!(matches!(run, crate::helpers::HelperRun::Match));
 }
