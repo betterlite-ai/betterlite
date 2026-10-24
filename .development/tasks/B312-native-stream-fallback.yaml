@@ -18,7 +18,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/native-stream-fallback/**
-  - tools/oracle/src/router_probes/native-stream-fallback/**
+  - tools/oracle/src/router_probes/native_stream_fallback/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/native_stream_fallback.py
   - tools/oracle/litellm/probes/registry.py
@@ -36,7 +36,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the native_stream_fallback prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: All mutants in changed router, config or wire code are caught.
