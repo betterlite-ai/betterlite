@@ -1,3 +1,4 @@
+mod provider_base_helpers;
 mod url_path;
 
 use std::collections::BTreeMap;
@@ -18,6 +19,8 @@ use crate::process::sync_litellm;
 pub(crate) enum HelperCall {
     #[serde(rename = "url_path")]
     UrlPath(url_path::UrlPathInput),
+    #[serde(rename = "provider_base_helpers")]
+    ProviderBaseHelpers(provider_base_helpers::BaseCall),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -73,18 +76,20 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
 }
 
 fn invoke(call: &HelperCall) -> HelperOutput {
-    match call {
-        HelperCall::UrlPath(input) => match url_path::invoke(input) {
-            Ok(value) => HelperOutput {
-                ok: true,
-                value: Some(value),
-                error: None,
-            },
-            Err(error) => HelperOutput {
-                ok: false,
-                value: None,
-                error: Some(*error),
-            },
+    let result = match call {
+        HelperCall::UrlPath(input) => url_path::invoke(input),
+        HelperCall::ProviderBaseHelpers(input) => provider_base_helpers::invoke(input),
+    };
+    match result {
+        Ok(value) => HelperOutput {
+            ok: true,
+            value: Some(value),
+            error: None,
+        },
+        Err(error) => HelperOutput {
+            ok: false,
+            value: None,
+            error: Some(*error),
         },
     }
 }

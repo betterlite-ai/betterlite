@@ -37,7 +37,10 @@ fn provider_base_config_cases(
     match (loaded, expected) {
         (Ok(config), Ok(settings)) => {
             let litellm = config.litellm_settings;
-            assert_eq!((litellm.modify_params, litellm.default_max_tokens), settings);
+            assert_eq!(
+                (litellm.modify_params, litellm.default_max_tokens),
+                settings
+            );
         }
         (Err(ConfigError::InvalidInteger { path, .. }), Err(expected_path)) => {
             assert_eq!(path, expected_path);

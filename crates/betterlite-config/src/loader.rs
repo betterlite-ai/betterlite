@@ -215,14 +215,16 @@ where
             .lookup("LITELLM_MODIFY_PARAMS")
             .is_some_and(|value| !value.is_empty())
     });
-    let default_max_tokens = lookup.lookup("DEFAULT_MAX_TOKENS").map_or(Ok(4096), |text| {
-        text.trim()
-            .parse::<i64>()
-            .map_err(|source| ConfigError::InvalidInteger {
-                path: "DEFAULT_MAX_TOKENS".to_owned(),
-                source,
-            })
-    })?;
+    let default_max_tokens = lookup
+        .lookup("DEFAULT_MAX_TOKENS")
+        .map_or(Ok(4096), |text| {
+            text.trim()
+                .parse::<i64>()
+                .map_err(|source| ConfigError::InvalidInteger {
+                    path: "DEFAULT_MAX_TOKENS".to_owned(),
+                    source,
+                })
+        })?;
     Ok(LiteLlmSettings {
         num_retries,
         request_timeout,

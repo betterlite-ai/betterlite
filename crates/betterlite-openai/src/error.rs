@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
@@ -26,26 +26,26 @@ pub enum OpenAiError {
     BudgetOverflow,
     #[error("a provider config does not serialize to an object")]
     ConfigNotObject,
-    #[error("a provider config does not serialize: {source}")]
-    ConfigSerialize {
+    #[error("a value does not serialize: {source}")]
+    Encode {
         #[source]
         source: serde_json::Error,
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ErrorRequest {
     pub method: String,
     pub url: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ErrorResponse {
     pub status_code: u16,
     pub request: ErrorRequest,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ProviderErrorParts {
     pub status_code: u16,
     pub message: String,
@@ -56,7 +56,7 @@ pub struct ProviderErrorParts {
     pub status_code_is_synthesized: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ProviderError {
     pub status_code: u16,
     pub status_code_is_synthesized: bool,

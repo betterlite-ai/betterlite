@@ -21,7 +21,7 @@ where
     Config: Serialize,
 {
     let serialized =
-        serde_json::to_value(config).map_err(|source| OpenAiError::ConfigSerialize { source })?;
+        serde_json::to_value(config).map_err(|source| OpenAiError::Encode { source })?;
     match serialized {
         Value::Object(fields) => Ok(fields
             .into_iter()
@@ -34,7 +34,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ThinkingRequest {
     pub thinking: bool,
     pub max_tokens: bool,
@@ -77,13 +77,18 @@ pub fn add_thinking_max_tokens(
     Ok(())
 }
 
-pub fn append_tools(options: &mut Map<String, Value>, tools: Vec<Value>) -> Result<(), OpenAiError> {
+pub fn append_tools(
+    options: &mut Map<String, Value>,
+    tools: Vec<Value>,
+) -> Result<(), OpenAiError> {
     match options.get_mut("tools") {
         None => {
             options.insert("tools".to_owned(), Value::Array(tools));
         }
         Some(Value::Array(existing)) => existing.extend(tools),
-        Some(Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_)) => {
+        Some(
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_),
+        ) => {
             return Err(OpenAiError::ToolsNotList);
         }
     }
@@ -116,11 +121,9 @@ pub fn response_format_refs(
         match node {
             Value::Object(fields) => {
                 if let Some(reference) = fields.get_mut("$ref") {
-                    let Value::String(path) = reference else {
-                        return Err(OpenAiError::RefNotText);
-                    };
-                    let model = path.rsplit_once('/').map_or(path.as_str(), |(_, name)| name);
-                    *path = format_ref(template, model)?;
+                    let path = reference.as_str().ok_or(OpenAiError::RefNotText)?;
+                    let model = path.rsplit_once('/').map_or(path, |(_, name)| name);
+                    *reference = Value::String(format_ref(template, model)?);
                 }
                 pending.extend(fields.values_mut());
             }
@@ -137,16 +140,24 @@ fn format_ref(template: &str, model: &str) -> Result<String, OpenAiError> {
     while let Some(position) = rest.find(['{', '}']) {
         let (literal, marker) = rest.split_at(position);
         formatted.push_str(literal);
-        if let Some(after) = marker.strip_prefix("{{").or_else(|| marker.strip_prefix("}}")) {
+        if let Some(after) = marker
+            .strip_prefix("{{")
+            .or_else(|| marker.strip_prefix("}}"))
+        {
             formatted.push_str(marker.get(..1).unwrap_or_default());
             rest = after;
             continue;
         }
         let field_text = marker.strip_prefix('{').ok_or(OpenAiError::TemplateBrace)?;
-        let (field, after) = field_text.split_once('}').ok_or(OpenAiError::TemplateBrace)?;
+        let (field, after) = field_text
+            .split_once('}')
+            .ok_or(OpenAiError::TemplateBrace)?;
         match field {
             "model" => formatted.push_str(model),
-            positional if positional.is_empty() || positional.starts_with(|first: char| first.is_ascii_digit()) => {
+            positional
+                if positional.is_empty()
+                    || positional.starts_with(|first: char| first.is_ascii_digit()) =>
+            {
                 return Err(OpenAiError::TemplatePosition);
             }
             named => {
@@ -199,6 +210,7 @@ fn block_count(blocks: &Value) -> Option<usize> {
     }
 }
 
+#[must_use]
 pub fn has_tool_calls(messages: &[HistoryMessage]) -> bool {
     for message in messages {
         if message.tool_calls.is_some() {
@@ -208,17 +220,20 @@ pub fn has_tool_calls(messages: &[HistoryMessage]) -> bool {
     false
 }
 
+#[must_use]
 pub fn assistant_has_thinking(messages: &[HistoryMessage]) -> bool {
     for message in messages {
         let blocks = message.thinking_blocks.as_ref();
         let assistant = message.role.as_deref() == Some("assistant");
-        if assistant && blocks.is_some_and(|value| block_count(value).is_none_or(|count| count > 0)) {
+        if assistant && blocks.is_some_and(|value| block_count(value).is_none_or(|count| count > 0))
+        {
             return true;
         }
     }
     false
 }
 
+#[must_use]
 pub fn last_tool_call_unthought(messages: &[HistoryMessage]) -> bool {
     let mut last_with_tools = None;
     for message in messages {
@@ -250,7 +265,7 @@ pub struct FunctionDefinition {
 pub struct ObjectParameters {
     #[serde(rename = "type")]
     pub kind: &'static str,
-    pub properties: BTreeMap<&'static str, ObjectParameters>,
+    pub properties: BTreeMap<&'static str, Self>,
 }
 
 pub const DUMMY_TOOLS: [ToolDefinition; 1] = [ToolDefinition {

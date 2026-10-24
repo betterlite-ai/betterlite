@@ -1,0 +1,7 @@
+kind: helper
+name: fuzz-seed
+call:
+  provider_base_helpers: dummy_tool
+env: {}
+compare:
+  ignore: []
