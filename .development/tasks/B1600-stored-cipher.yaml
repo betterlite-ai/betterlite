@@ -98,7 +98,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-secrets --no-tests=fail -E 'test(/^stored_cipher::/) - test(replays_the_stored_secret_corpus)'
     - id: encryption-config-tests
       why: Encryption settings were named without being accepted by the production config loader.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^encryption::tests::loads_/)' 
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^encryption::tests::loads_/)'
     - id: cipher-adapter-tests
       why: StoredCipher still has only a test implementation.
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^stored_cipher::tests::/)'
