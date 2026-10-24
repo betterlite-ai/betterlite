@@ -1,0 +1,99 @@
+id: B171
+title: Direct helper oracle and URL path encoding
+description: >-
+  Extend B001's betterlite-oracle with direct helper cases so core functions can be compared with pinned Python
+  without inventing proxy routes. Keep the existing HTTP case format and CLI unchanged. A helper file has kind:
+  helper, name, call (an externally tagged enum with an operation-specific typed input), env, and compare.ignore;
+  all records reject unknown and duplicate fields. The first operation is url_path for the single-segment and multi-segment
+  encoders, implemented in betterlite-http. Future tasks add enum variants and small adapters under tools/oracle/src/helpers
+  and tools/oracle/helpers. Run the Python adapter in a fresh process through uv run --locked --project tools/oracle/litellm;
+  its only imports from LiteLLM are the referenced MIT helpers, never the Rust bridge implementation. Compare typed
+  success values or exception class/status/type/param/code, keeping message exclusions explicit per case. Bound
+  case bytes, process output and runtime, reuse B001's diff artifacts and exit codes, and kill/reap a timed-out
+  child. The helper --self-check compares two Python executions; normal mode must invoke Rust and Python independently.
+  Add locked ruff and basedpyright development dependencies to the existing uv project and strict local adapter
+  typing without Any. Add the helper_case fuzz target and a replay test. Budget approximately 300 runner/adapter
+  lines, 150 encoder and manifest lines and 300 test/fuzz lines.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-http/Cargo.toml
+  - crates/betterlite-http/src/lib.rs
+  - crates/betterlite-http/src/url_path.rs
+  - crates/betterlite-http/src/url_path/**
+  - crates/betterlite-http/src/error.rs
+  - tools/oracle/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L96-L129
+  why: The two encoder functions and their exceptions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/mock_transport.py#L59-L92
+  why: Existing in-process test transport; Rust tests replace its Python-specific mechanics.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/asgi_handler.py#L17-L46
+  why: ASGI is an injectable test dependency, not another production HTTP backend.
+- url: https://docs.astral.sh/uv/concepts/projects/sync/
+  why: Run the pinned environment without changing its lock at test time.
+dod:
+- text: >-
+    Helper success, error and self-check cases compare independent implementations, and a deliberately changed Rust
+    result causes exit 1 with a useful pointer.
+  proof:
+  - helper-runner-tests
+  - oracle
+- text: Unknown operations, unknown fields, duplicate fields, hung children and excess output fail; children are
+    always reaped.
+  proof:
+  - helper-runner-tests
+- text: All existing HTTP seed cases remain executable and unchanged.
+  proof:
+  - http-self-check
+- text: The new helper-case parser has a committed corpus replayed through its production parser.
+  proof:
+  - helper-case-corpus
+- text: The Python helper adapters and their locked development environment pass strict checks.
+  proof:
+  - helper-python
+  - helper-lock
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-runner-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-oracle -p betterlite-http --no-tests=fail -E 'test(/helper|url_path/)'
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-lock
+    why: the Python helper tool dependencies are not locked
+    run: uv lock --check --project tools/oracle/litellm
+  - id: http-self-check
+    why: the helper mode broke the existing HTTP mode
+    run: cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/health tools/oracle/cases/chat
+oracle_cases:
+- tools/oracle/cases/helpers/url-path/single-reserved.yaml
+- tools/oracle/cases/helpers/url-path/multi-unicode.yaml
+- tools/oracle/cases/helpers/url-path/empty-segment.yaml
+- tools/oracle/cases/helpers/url-path/dot-segment.yaml
+- tools/oracle/cases/helpers/url-path/percent-encoded-input.yaml
+deviations: []
+out_of_scope:
+- Provider resolution, pricing, logging and other helper operations are added by their owning tasks.
+- Do not implement an embedded Python runtime or a gateway-only diagnostic endpoint.
+pitfalls:
+- Do not compare a fixture to itself or let --self-check substitute for the normal Rust-versus-Python run.
+- B001's existing crate-level untyped fixture allowance can be reused; production path encoders remain typed.
+- The local source checkout is reading material; workers execute the pinned uv environment and must not import code
+  from an unpinned checkout.
+- Add each new helper operation to the common dispatch module so the ordinary oracle check runs its listed cases.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1
