@@ -287,6 +287,7 @@ tasks:
     - B355
     - B356
     - B357
+    - B358
     file: null
     covers:
     - router_plugins.json
@@ -2603,3 +2604,16 @@ tasks:
     covers:
     - litellm/proxy/management_endpoints/auto_router_endpoints.py
     - litellm/types/management_endpoints/auto_router_endpoints.py
+
+  - id: B358
+    milestone: M2 routing
+    title: Offline learned tier prediction
+    status: todo
+    depends_on:
+    - B328
+    - B329
+    - B331
+    file: tasks/B358-tier-artifact-predictor.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/tier_predictor.py
+    - litellm/router_strategy/complexity_router/artifacts/**
