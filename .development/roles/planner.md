@@ -7,7 +7,7 @@ You turn backlog entries into task files that a cheaper model can finish without
 1. .development/README.md for the loop and the task format, and two finished task files for the voice and the level of detail.
 2. .development/rules.yaml, so no task asks for something a rule forbids.
 3. The backlog entries named in your prompt and the tasks they depend on.
-4. LiteLLM's code and docs at the pinned commit d665dc1a6315847fcad6cc2c1264ceb47c06abce for the behavior each task covers.
+4. LiteLLM's code and docs at the pinned commit d665dc1a6315847fcad6cc2c1264ceb47c06abce for the behavior each task covers. A read-only checkout of that commit, without the enterprise directory, sits in the litellm folder of the worktrees folder agents.yaml names.
 
 ## Write
 
@@ -19,6 +19,13 @@ You turn backlog entries into task files that a cheaper model can finish without
 - Pitfalls name the traps you found while reading, one sentence each.
 - review_level is security for tasks on auth, keys, secrets, budgets or spend, and standard for the rest.
 - A task on the config, router or wire-format crates lists mutants in checks.optional. A task that adds a parser of outside bytes (config, request bodies, SSE) adds a cargo-fuzz target and a check that replays its corpus.
+- Size a task by the LiteLLM code it rebuilds. The 800 lines include tests, fuzz targets and oracle adapters, so more than about 400 lines of LiteLLM logic means a split.
+- A test check filters on the module path, like `-E 'test(/^controls::/)'`, or the description names the exact test functions to write. The filter never matches a corpus replay test, so the check fails while behavior tests are missing.
+- Every check fails on the base branch. A corpus check greps for the new operation or key, not only for a corpus that replays, and every check a DoD item relies on is in its proof list.
+- Every function in a covered LiteLLM file is built or listed in out_of_scope with the task that owns it. Code nothing calls at the pinned commit is out of scope with that reason.
+- depends_on lists what the task uses directly, never an umbrella task, so independent tasks can run in parallel.
+- Where LiteLLM falls back with a warning, betterlite does the same. Every place betterlite differs in what a LiteLLM user sees (config, wire format, headers, status or error codes, fetched URLs) is listed under deviations with its reason.
+- review_level is security also for code that gates permissions, like a route-to-call-type map behind an allowlist, or that moves credentials between deployments.
 - Run `cargo gate validate` until it prints valid, then commit.
 
 ## Final answer

@@ -12,8 +12,10 @@ description: >-
   The CLI is cargo run -p betterlite-oracle -- [--self-check] <case file or directory>... It exits 0 when every case matches, 1 when any case differs, and 2 when the harness itself fails. It prints one line per case, PASS <name> or FAIL <name>: <first differing JSON pointer>, and writes both client responses, both sets of provider requests, a diff and both gateway logs under target/oracle/<name>/.
 
   Seed the case set with the cases the next tasks need: tools/oracle/cases/health/liveliness.yaml, tools/oracle/cases/chat/openai-basic.yaml (a non-streaming chat completion) and tools/oracle/cases/chat/openai-stream.yaml (the same request with stream true and an SSE answer).
+  In AGENTS.md, add how to run the oracle, and name the gate as cargo gate run <ID>: B000 wrote cargo gate run B000 there, and every later worker reads that file.
 scope:
   paths:
+    - AGENTS.md
     - Cargo.toml
     - deny.toml
     - tools/oracle/**
@@ -44,6 +46,8 @@ dod:
     proof: [self-check-parallel]
   - text: Both gateways run offline with LITELLM_LOCAL_MODEL_COST_MAP=True.
     proof: [offline-cost-map]
+  - text: AGENTS.md names the gate as cargo gate run <ID> and shows how to run the oracle.
+    proof: [agents-map]
 checks:
   optional: [mutants]
   commands:
@@ -65,6 +69,9 @@ checks:
     - id: offline-cost-map
       why: the harness does not keep LiteLLM off the network at startup
       run: grep -rq 'LITELLM_LOCAL_MODEL_COST_MAP' tools/oracle/src
+    - id: agents-map
+      why: AGENTS.md still names one task's gate or does not mention the oracle
+      run: grep -qF 'cargo gate run <ID>' AGENTS.md && ! grep -qF 'cargo gate run B000' AGENTS.md && grep -qF 'betterlite-oracle' AGENTS.md
 oracle_cases: []
 deviations: []
 out_of_scope:
@@ -82,5 +89,5 @@ pitfalls:
   - reqwest with rustls pulls in webpki-root-certs under CDLA-Permissive-2.0. Allow it in deny.toml as an exception for that one crate, not as a global license.
 review_level: standard
 budget:
-  max_changed_lines: 900
+  max_changed_lines: 1700
   max_new_expects: 2

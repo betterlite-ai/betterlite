@@ -1,0 +1,9 @@
+id: no-doc-or-block-comments
+language: rust
+severity: error
+message: names and types document the code; a comment is one // line that says why
+rule:
+  any:
+    - kind: block_comment
+    - kind: line_comment
+      regex: ^//[/!]

@@ -21,7 +21,7 @@ A task is done when `cargo gate run <ID>` passes and your final answer is a vali
 
 ## LiteLLM
 
-LiteLLM's behavior is the spec; its code isn't. Read it at the pinned commit the task links to, learn what it does, then write it the way the rules say. A Python class shape ported into Rust is a defect even when it works.
+LiteLLM's behavior is the spec; its code isn't. Read it at the pinned commit the task links to, learn what it does, then write it the way the rules say. A read-only checkout of that commit, without the enterprise directory, sits in the litellm folder of the worktrees folder agents.yaml names: ../litellm from a task worktree. Grep it there instead of fetching GitHub. A Python class shape ported into Rust is a defect even when it works.
 
 The oracle in tools/oracle (from B001) runs LiteLLM next to betterlite on the same request. When the task text and the oracle disagree, believe the oracle and say so in a note. When you think LiteLLM itself is wrong, don't copy the bug and don't quietly fix it: report it as a deviation and let the architect decide.
 

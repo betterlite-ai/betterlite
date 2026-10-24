@@ -1,0 +1,15 @@
+id: no-subprocess
+language: rust
+severity: error
+message: gateway code never spawns processes; only tests and crates under tools/ may
+ignores:
+  - tools/**
+  - .development/**
+  - crates/*/tests/**
+  - "**/tests.rs"
+rule:
+  any:
+    - kind: use_declaration
+      regex: '\b(std|tokio)::process::(Command\b|\{[^}]*\bCommand\b)'
+    - kind: scoped_identifier
+      regex: '^(std|tokio)::process::Command$'

@@ -2,21 +2,21 @@ tasks:
   - id: B000
     milestone: M0 foundation
     title: Workspace, gates and licensing
-    status: todo
+    status: done
     depends_on: []
     file: tasks/B000-workspace.yaml
     covers: []
   - id: B001
     milestone: M0 foundation
     title: Oracle harness against the pinned LiteLLM
-    status: todo
+    status: in-progress
     depends_on: [B000]
     file: tasks/B001-oracle.yaml
     covers: []
   - id: B002
     milestone: M0 foundation
     title: Load LiteLLM config.yaml into typed config
-    status: todo
+    status: in-progress
     depends_on: [B000]
     file: tasks/B002-config.yaml
     covers:
