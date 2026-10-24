@@ -2425,14 +2425,16 @@ tasks:
     title: Adaptive feedback signals and caller attribution
     status: todo
     depends_on:
+    - B376
     - B339
     - B012
     - B052
+    - B301
+    - B361
     file: tasks/B340-adaptive-feedback.yaml
     covers:
     - litellm/router_strategy/adaptive_router/{signals,hooks}.py
     - litellm/router_strategy/adaptive_router/adaptive_router.py
-
   - id: B341
     milestone: M2 routing
     title: Adaptive learning persistence in the existing Postgres schema
@@ -2901,6 +2903,17 @@ tasks:
     covers:
     - litellm/router_strategy/complexity_router/complexity_router.py
     - litellm/router_strategy/complexity_router/classification_rubrics.py
+  - id: B376
+    milestone: M2 routing
+    title: Adaptive feedback signal detectors
+    status: todo
+    depends_on:
+    - B010
+    - B388
+    - B301
+    file: tasks/B376-feedback-signals.yaml
+    covers:
+    - litellm/router_strategy/adaptive_router/signals.py
   - id: B382
     milestone: M2 routing
     title: Request-scoped routing read batches
