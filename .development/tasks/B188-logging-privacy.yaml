@@ -1,0 +1,106 @@
+id: B188
+title: Message privacy and safe callback metadata
+description: >-
+  Create betterlite-logging with typed privacy decisions, callback metadata provenance and per-callback redacted
+  snapshots. Reuse B187 for unconditional credential scrubbing, and implement the pinned message-redaction policy
+  separately so disabling content redaction never disables secret protection. Support turn_off_message_logging and
+  redact_user_api_key_info in config and typed request privacy metadata, preserving the actual header/dynamic/global
+  precedence measured by helper cases. Only config resolves environment references; dynamic callback metadata cannot
+  request an environment lookup, replace a configured exporter destination or impersonate trusted internal-call
+  metadata. Cover chat/text/embedding and typed Responses-shaped log snapshots without adding endpoints. Child privacy
+  inherits through an explicit context value; callers receive independent snapshots rather than shared mutable JSON.
+  Add callback_privacy parser fuzzing, helper cases, and chat/config corpus seeds for added wire fields. Budget
+  300 privacy/provenance lines, 100 config/wire and 330 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-logging/**
+  - crates/betterlite-config/**
+  - crates/betterlite-openai/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/logging-privacy/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L41-L325
+  why: Per-callback copies and redacted input/output shapes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L328-L437
+  why: Actual policy precedence and user-api-key metadata redaction.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L16-L210
+  why: Inherited privacy and request-supplied environment-reference rejection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/internal_call_metadata.py#L57-L168
+  why: Safe forwarding of trusted metadata.
+dod:
+- text: Policy precedence and redacted payloads match direct helper cases, including the legacy disable-redaction
+    header.
+  proof:
+  - oracle
+- text: >-
+    Two callbacks with different content privacy settings receive independent snapshots and neither can expose credentials
+    or restore an inherited private child payload.
+  proof:
+  - logging-privacy-tests
+- text: Request-supplied environment references, destinations and internal flags fail before lookup or export.
+  proof:
+  - logging-privacy-tests
+- text: Privacy, chat and config external-input parsers have replay corpus coverage.
+  proof:
+  - callback-privacy-corpus
+  - chat-request-corpus
+  - config-yaml-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: logging-privacy-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-logging -p betterlite-config --no-tests=fail -E 'test(/logging_privacy/)'
+  - id: callback-privacy-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-logging/fuzz/fuzz_targets/callback_privacy.rs && test -n "$(ls -A crates/betterlite-logging/fuzz/corpus/callback_privacy)"
+      && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_callback_privacy_corpus)'
+  - id: chat-request-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/logging-privacy/global.yaml
+- tools/oracle/cases/helpers/logging-privacy/dynamic-over-global.yaml
+- tools/oracle/cases/helpers/logging-privacy/disable-header.yaml
+- tools/oracle/cases/helpers/logging-privacy/enable-header.yaml
+- tools/oracle/cases/helpers/logging-privacy/string-boolean.yaml
+- tools/oracle/cases/helpers/logging-privacy/per-callback-copy.yaml
+- tools/oracle/cases/helpers/logging-privacy/stream-tools.yaml
+- tools/oracle/cases/helpers/logging-privacy/embedding-output.yaml
+- tools/oracle/cases/helpers/logging-privacy/responses-output.yaml
+- tools/oracle/cases/helpers/logging-privacy/key-info.yaml
+- tools/oracle/cases/helpers/logging-privacy/nested-private.yaml
+- tools/oracle/cases/helpers/logging-privacy/environment-reference.yaml
+deviations: []
+out_of_scope:
+- Exporter implementations and their config activation remain in M5.
+- SDK mutable Python globals are B157 and custom Python hook execution is B165.
+pitfalls:
+- The should_redact_message_logging docstring differs from its implementation; derive precedence from the pinned
+  code and oracle.
+- Redacted streaming callbacks must not mutate the chunks sent to the client.
+- Content privacy and secret redaction are separate decisions.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

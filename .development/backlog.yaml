@@ -1949,7 +1949,7 @@ tasks:
     title: Message privacy and safe callback metadata
     status: todo
     depends_on: [B187]
-    file: null
+    file: tasks/B188-logging-privacy.yaml
     covers:
       - "litellm/litellm_core_utils/{redact_messages,initialize_dynamic_callback_params,internal_call_metadata}.py"
   - id: B189
