@@ -1,7 +1,7 @@
 id: B251
 title: Failure callback dispatch and partial usage
 description: >-
-  Implement Own record_partial_usage_for_failure, record_assembled_response_for_failure, dispatch_failure_handlers,
+  Implement record_partial_usage_for_failure, record_assembled_response_for_failure, dispatch_failure_handlers,
   _failure_handler_helper_fn, special_failure_handlers, failure_handler/_failure_handler_body, async_failure_handler/_async_failure_handler_body
   and _should_run_sync_failure_callbacks_for_async_calls. Preserve partial usage and exactly-once sync/async claims,
   sanitize diagnostics, restore context and enqueue without awaiting capacity. Router/cache/spend-specific special
@@ -109,7 +109,7 @@ out_of_scope:
 - >-
   Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B117; MCP hooks 1633-1709 B140;
   cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B098; native response logging
-  4147-4343 B080/B081/B098.
+  4147-4320 B080/B081/B098; A2A response conversion 4322-4343 B142.
 - >-
   Enterprise callback controls are excluded by repository licensing rules; no enterprise implementation is read
   or ported.
