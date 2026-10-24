@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::error::GateError;
@@ -25,18 +26,22 @@ pub(crate) fn ensure(
 ) -> Result<(PathBuf, String), GateError> {
     let branch = branch_name(task);
     let path = root.join(worktrees).join(&task.id);
-    if path.join(".git").exists() {
-        return Ok((path, branch));
+    if !path.join(".git").exists() {
+        let location = path.to_str().ok_or_else(|| GateError::Dispatch {
+            task: task.id.clone(),
+            reason: format!("the worktree path {} is not UTF-8", path.display()),
+        })?;
+        let reference = format!("refs/heads/{branch}");
+        if git(root, &["rev-parse", "--verify", "--quiet", &reference]).is_ok() {
+            git(root, &["worktree", "add", location, &branch])?;
+        } else {
+            git(root, &["worktree", "add", "-b", &branch, location, "main"])?;
+        }
     }
-    let location = path.to_str().ok_or_else(|| GateError::Dispatch {
-        task: task.id.clone(),
-        reason: format!("the worktree path {} is not UTF-8", path.display()),
+    // Claude's sandbox matches writable paths literally, so a path through .. would not cover the worktree
+    let canonical = fs::canonicalize(&path).map_err(|source| GateError::Read {
+        path: path.clone(),
+        source,
     })?;
-    let reference = format!("refs/heads/{branch}");
-    if git(root, &["rev-parse", "--verify", "--quiet", &reference]).is_ok() {
-        git(root, &["worktree", "add", location, &branch])?;
-    } else {
-        git(root, &["worktree", "add", "-b", &branch, location, "main"])?;
-    }
-    Ok((path, branch))
+    Ok((canonical, branch))
 }
