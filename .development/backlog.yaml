@@ -2150,13 +2150,15 @@ tasks:
     title: Tag policy across aliases and fallback chains
     status: todo
     depends_on:
+    - B016
     - B320
     - B310
     - B052
+    - B301
+    - B002
     file: tasks/B321-tag-routing.yaml
     covers:
     - litellm/router_strategy/tag_based_routing.py
-
   - id: B322
     milestone: M2 routing
     title: Team-scoped deployment access and reserved windows
