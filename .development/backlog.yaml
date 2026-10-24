@@ -2735,6 +2735,7 @@ tasks:
     title: Tagged automatic-router registry and alias bindings
     status: todo
     depends_on:
+    - B016
     - B327
     - B334
     - B338
@@ -2742,11 +2743,13 @@ tasks:
     - B321
     - B343
     - B360
+    - B301
+    - B400
+    - B002
     file: tasks/B362-pre-routing-registry.yaml
     covers:
     - litellm/router.py
     - litellm/types/router.py
-
   - id: B363
     milestone: M2 routing
     title: Routing and classifier plugin bridge
@@ -3207,6 +3210,25 @@ tasks:
     file: tasks/B399-fallback-categories.yaml
     covers:
     - litellm/router.py
+  - id: B400
+    milestone: M2 routing
+    title: Automatic strategy construction and retirement
+    status: todo
+    depends_on:
+    - B327
+    - B334
+    - B338
+    - B339
+    - B331
+    - B335
+    - B363
+    - B301
+    - B328
+    - B330
+    file: tasks/B400-strategy-registration.yaml
+    covers:
+    - litellm/router.py
+    - litellm/router_strategy/complexity_router/complexity_router.py
   - id: B401
     milestone: M2 routing
     title: Deployment construction and stable identity
