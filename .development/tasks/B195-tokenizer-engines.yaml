@@ -10,7 +10,8 @@ description: >-
   custom asset is invalid. Copy assets byte-for-byte into fixtures, store immutable instances in a bounded constructor-owned
   cache, cap text/asset bytes and token output, and run CPU-heavy work through a bounded owned blocking facility.
   Add tokenizer_engine helper cases forcing LiteLLM's Python tokenizer backend, and tokenizer_asset plus tokenizer_input
-  fuzz targets. Budget 300 engine/asset adapters, 100 wiring and 340 tests.
+  fuzz targets. Budget 300 engine/asset adapters, 100 wiring and 340 tests. Seed B171's shared helper_case corpus
+  with every added operation and replay it through the common typed parser.
 scope:
   paths:
   - Cargo.toml
@@ -21,6 +22,7 @@ scope:
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/tokenizer-engine/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/tokenizer.py#L38-L217
@@ -55,6 +57,9 @@ dod:
   - tokenizer-asset-corpus
   - tokenizer-input-corpus
   - config-yaml-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -95,6 +100,11 @@ checks:
       c241737df24b4e7f7c9af4fdcee29a0ca903dcb288a8b753bc346a3092911767  anthropic_tokenizer.json
 
       SUMS'
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/tokenizer-engine/cl100k.yaml
 - tools/oracle/cases/helpers/tokenizer-engine/o200k.yaml
