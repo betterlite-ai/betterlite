@@ -1,16 +1,19 @@
 id: B014
 title: Shared call dispatch and core integration
 description: >-
-  Compose betterlite-core's single-call pipeline and adapt existing server routes to it, after B015 has implemented
-  text completion and moderation. Define exhaustive request/result enums for chat, embedding, text completion and
-  moderation, preserving incremental streams as a distinct result form. Sequence supported settings/context, provider
-  resolution/parameter preparation, pre-call rules, transport, response validation, error mapping and terminal logging
-  exactly once; provide the statically dispatched executor B201 needs. Reuse B206's common metadata helpers and
-  B207's route catalog, keeping route recognition separate from executable support. The huge main.py/utils.py/init
-  modules also contain routing, caches, spend, guardrails and Python wrappers owned by existing backlog tasks; this
-  part covers only the common orchestration boundary and existing route integration. Add real-server lifecycle tests
-  and run HTTP regression cases for all four operations, including stream cancellation and batch execution. Budget
-  280 pipeline lines, 180 handler/constructor integration lines and 300 tests.
+  Compose betterlite-core's single-call pipeline and adapt existing server routes to it, using the existing chat
+  and embedding implementations. Define exhaustive request/result enums for chat and embedding, preserving incremental
+  streams as a distinct result form. Sequence supported settings/context, provider resolution/parameter preparation,
+  pre-call rules, transport, response validation, error mapping and terminal logging exactly once; provide the statically
+  dispatched executor B201 needs. Reuse B206's common metadata helpers and B207's route catalog, keeping route recognition
+  separate from executable support. The huge main.py/utils.py/init modules also contain routing, caches, spend,
+  guardrails and Python wrappers owned by existing backlog tasks; this part covers only the common orchestration
+  boundary and existing route integration. Add real-server lifecycle tests and run HTTP regression cases for both
+  operations, including stream cancellation and batch execution.  B202 and B015 add text-completion and moderation
+  request/result variants afterwards, and must update every exhaustive match. Keep the pipeline in betterlite-core
+  above B198 leaf context/AWS types. Write the behavior rstest functions b014_call_dispatch_tests_behavior in adjacent
+  tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate
+  names.
 scope:
   paths:
   - Cargo.toml
@@ -20,17 +23,23 @@ scope:
   - crates/betterlite/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7767-L7860
-  why: A concrete non-chat call crossing the shared lifecycle.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1-L160
-  why: Existing common request-processing boundary to preserve while extracting native dispatch.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1913-L1990
+  why: common_processing_pre_call_logic
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2461-L2530
+  why: base_process_llm_request
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3625-L3700
+  why: _handle_llm_api_exception
 dod:
-- text: Every executable call type reaches the shared pipeline and the listed HTTP cases retain upstream/client
-    parity.
+- text: >-
+    Every executable call type reaches the shared pipeline and the listed HTTP cases retain upstream/client parity.
   proof:
   - oracle
   - call-dispatch-tests
-- text: Lifecycle order, typed errors, rules and terminal logging occur once, including streamed failure/cancellation
+- text: >-
+    Lifecycle order, typed errors, rules and terminal logging occur once, including streamed failure/cancellation
     and batch calls.
   proof:
   - call-dispatch-tests
@@ -43,24 +52,27 @@ checks:
   commands:
   - id: call-dispatch-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-server --no-tests=fail -E 'test(/call_dispatch/)'
+    run: >-
+      cargo nextest run --locked -p betterlite-core -p betterlite-server --no-tests=fail -E 'test(/::b014_call_dispatch_tests_behavior($|::)/)
+      - test(/replays_the_/)'
 oracle_cases:
 - tools/oracle/cases/chat/openai-basic.yaml
 - tools/oracle/cases/chat/openai-stream.yaml
 - tools/oracle/cases/chat/upstream-429.yaml
 - tools/oracle/cases/embeddings/string-input.yaml
-- tools/oracle/cases/completions/string-prompt.yaml
-- tools/oracle/cases/moderations/string-input.yaml
 deviations: []
 out_of_scope:
 - Retries/fallbacks/router scheduling are B016-B022; caches B125-B128; spend/budgets M4; guardrails M6.
 - Python global settings, import machinery, batch wrappers and response object methods are B157-B167.
-- Endpoint-specific schemas and routes outside the four implemented operations stay in their endpoint tasks.
+- Endpoint-specific schemas and routes outside the two implemented operations stay in their endpoint tasks.
+- >-
+  Text-completion and moderation dispatch variants and their regression cases are added by B202/B203 and B015; no
+  dependency on those tasks here.
 pitfalls:
 - The provider framework must remain below core so adapters do not call back into the orchestration layer.
 - A route table match is metadata, not proof the server installed that route.
 - Do not reintroduce two independent logging/error pipelines when moving existing handlers into core.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 800
   max_new_expects: 0
