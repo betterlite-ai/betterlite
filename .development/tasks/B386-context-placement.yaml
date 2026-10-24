@@ -43,7 +43,10 @@ scope:
   - tools/oracle/litellm/probes/context_placement.py
   - tools/oracle/cases/routing/context-placement/**
   - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/resolve.rs
+  - crates/betterlite-config/src/types.rs
   - crates/betterlite-config/src/router.rs
   - crates/betterlite-config/src/context_placement.rs
   - crates/betterlite-config/src/context_placement/**

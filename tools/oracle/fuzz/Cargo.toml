@@ -18,4 +18,18 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "probe_ipc"
+path = "fuzz_targets/probe_ipc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mock_script"
+path = "fuzz_targets/mock_script.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

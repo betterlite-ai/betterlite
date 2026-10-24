@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Parse Anthropic cache plans and fingerprint reusable prefixes
 status: todo
 depends_on: []
-file: null
+file: tasks/B3120-prompt-cache-plans.yaml
 covers:
   - "litellm/llms/anthropic/prompt_cache_prediction.py"
 parent: B075

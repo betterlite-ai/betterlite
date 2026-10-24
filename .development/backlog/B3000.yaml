@@ -1,15 +1,11 @@
 id: B3000
 milestone: M4 keys, spend and management
-title: Budget snapshots, window values and throttle policy
+title: Budget counter descriptors and numeric coercion helpers
 status: todo
-depends_on: [B002, B199, B720, B721, B732]
-file: null
+depends_on: [B002]
+file: tasks/B3000-budget-values.yaml
 covers:
   - "litellm/proxy/spend_tracking/budget_reservation.py"
-  - "litellm/proxy/spend_tracking/carried_budget_state.py"
-  - "litellm/types/proxy/carried_budget_state.py"
-  - "litellm/proxy/auth/budget_throttle.py"
-  - "litellm/proxy/common_utils/timezone_utils.py"
 parent: B071
 split_from: B071
 resolution: null

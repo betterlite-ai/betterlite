@@ -1,0 +1,143 @@
+id: B3044
+title: Resolve billable and recovered token usage
+description: >-
+  Build betterlite-rate-limit::usage_resolution to extract billable token counts
+  from completion responses and partial-stream recovery data. Extract combined,
+  input-only and output-only counts across typed Usage records, response-API
+  Responses usage objects, dictionaries, rerank metadata and recovered aggregates.
+  Apply the configured token_rate_limit_type (output/input/total) with a default/fallback
+  of total when the type is missing or invalid. Subtract cache-read tokens from input
+  and total billable counts only, since providers like AWS Bedrock don't bill cached
+  tokens; preserve the full cached token count in downstream cost/logging contexts.
+
+  Expose get_rate_limit_type (reading general_settings.token_rate_limit_type with
+  default total), _response_usage (extract from response objects as typed or dict),
+  _get_total_tokens_from_usage (apply rate-limit-type filter), _aggregate_only_total_tokens
+  (total when no input/output split is available), _resolve_rerank_token_usage (parse
+  rerank metadata fields), _resolve_io_token_reconcile_usage (separate billable input
+  from output for project I/O quotas, excluding cached tokens), and _recovered_partial_usage_tokens
+  (extract counts from recovered stream usage for failure accounting).
+
+scope:
+  paths:
+    - crates/betterlite-config/src/types.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-rate-limit/src/lib.rs
+    - crates/betterlite-rate-limit/src/usage_resolution.rs
+    - crates/betterlite-rate-limit/src/usage_resolution/**
+    - tools/oracle/src/rate_limit_probes/usage_resolution.rs
+    - tools/oracle/src/rate_limit_probes/usage_resolution/**
+    - tools/oracle/src/rate_limit_probes/mod.rs
+    - tools/oracle/litellm/probes/usage_resolution.py
+    - tools/oracle/cases/rate_limit/usage-resolution/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4219-L4313
+    why: _get_total_tokens_from_usage applies rate-limit-type filter and cache-token exclusion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4535-L4545
+    why: get_rate_limit_type reads general_settings with total default/fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4564-L4638
+    why: _resolve_rerank_token_usage and _resolve_io_token_reconcile_usage split by provider shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4269-L4313
+    why: _aggregate_only_total_tokens return 0 when split counts exist.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4288-L4313
+    why: _response_usage extracts usage from response objects or passes dicts through.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5094-L5103
+    why: _recovered_partial_usage_tokens calls reconcile_usage and applies rate-limit-type.
+dod:
+  - text: get_rate_limit_type returns the configured token_rate_limit_type from general_settings, defaulting to "total" when absent or invalid.
+    proof: [rate-limit-type-default]
+  - text: _get_total_tokens_from_usage applies the rate-limit-type filter (output/input/total) and excludes cached tokens for input/total types.
+    proof: [usage-filtering-behaviors, usage-filtering-boundaries]
+  - text: _response_usage extracts Usage, ResponseAPIUsage or Mapping from response objects; passes dict objects through unchanged.
+    proof: [usage-filtering-behaviors]
+  - text: _aggregate_only_total_tokens returns 0 when any input/output split counts exist, else returns the total.
+    proof: [usage-filtering-behaviors]
+  - text: _resolve_rerank_token_usage reads rerank response metadata, extracting tokens.input_tokens and tokens.output_tokens or billed_units.total_tokens when present.
+    proof: [rerank-usage-behaviors]
+  - text: _resolve_io_token_reconcile_usage returns (input - cached_tokens, output, true) for typed Usage/ResponseAPIUsage and dict objects, preserving full cached count elsewhere.
+    proof: [io-reconcile-behaviors, io-reconcile-boundaries]
+  - text: _recovered_partial_usage_tokens extracts usage counts from combined_usage_object, returning (total by rate-limit-type, input - cached, output).
+    proof: [recovered-usage-behaviors]
+  - text: Cached token subtraction handles None, missing fields, and non-dict prompt_tokens_details gracefully.
+    proof: [usage-filtering-boundaries]
+  - text: Every oracle case exercises the full usage extraction and reconciliation chain with exact token count assertions.
+    proof: [usage-oracle]
+pitfalls:
+  - "token_rate_limit_type is read from general_settings.get() with a string literal default; invalid values (not output/input/total) return the default 'total', not an error."
+  - "cached_tokens extraction checks hasattr and getattr safely; a Usage with None prompt_tokens_details must not crash when reading cached_tokens."
+  - "_aggregate_only_total_tokens returns 0 immediately if ANY of (prompt_tokens, completion_tokens, input_tokens, output_tokens) are non-zero; a total > 0 paired with any nonzero split count disqualifies the aggregate."
+  - "_response_usage passes through dict objects unchanged even if they don't contain usage keys; reconciliation handles missing fields by treating them as 0."
+  - "RerankResponse may have no meta field, no tokens field in meta, or no billed_units; _resolve_rerank_token_usage returns None only when all paths are absent."
+  - "cached_tokens can come from prompt_tokens_details.cached_tokens OR cache_read_input_tokens field in dict; both must be checked."
+  - "prompt_details in dict usage may be a non-dict value; isinstance checks protect against AttributeError when fields are missing or wrong type."
+  - "ResponseAPIUsage uses input_tokens/output_tokens names, not prompt_tokens/completion_tokens; the code must check both field names depending on usage object type."
+out_of_scope:
+  - B002 owns the config loading of general_settings.token_rate_limit_type field; B3044 adds that field support to betterlite-config as needed.
+  - B184 owns the native RateLimitError record that gets token usage stored on it.
+  - Usage record types (Usage, ResponseAPIUsage, RerankResponse) are imported typed views; this task reads them as-is.
+  - Downstream reconciliation operations (reserve/increment/refund) that consume these counts are owned by B3034/B3037/B3045.
+deviations:
+  - what: "cache-read tokens are excluded from input and total billable counts for rate limiting, but preserved in their original count values for cost/logging calculations elsewhere."
+    why: "Providers like AWS Bedrock don't bill cached tokens toward TPM but do report them in usage. Betterlite matches provider behavior by subtracting only from rate-limit windows."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4226-L4243"
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+checks:
+  optional: []
+  commands:
+    - id: rate-limit-type-default
+      why: get_rate_limit_type missing, fails to return default "total", or does not read general_settings
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/::rate_limit_type_behaviors(::|$)/)'
+    - id: usage-filtering-behaviors
+      why: task-specific behavior tests for usage extraction are missing, skipped or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/::usage_filtering_behaviors(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: usage-filtering-boundaries
+      why: task-specific boundary/error tests for usage extraction are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/::usage_filtering_boundaries(::|$)/)'
+    - id: rerank-usage-behaviors
+      why: rerank metadata extraction is missing, unchanged or fails
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/::rerank_usage_behaviors(::|$)/)'
+    - id: io-reconcile-behaviors
+      why: I/O token reconciliation behavior tests are missing, skipped or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/::io_reconcile_behaviors(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: io-reconcile-boundaries
+      why: I/O reconciliation error/edge-case tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/::io_reconcile_boundaries(::|$)/)'
+    - id: recovered-usage-behaviors
+      why: recovered partial usage extraction is missing or fails
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/::recovered_usage_behaviors(::|$)/)'
+    - id: usage-oracle
+      why: oracle cases or the full usage extraction chain are missing or fail
+      run: test -d tools/oracle/cases/rate_limit/usage-resolution && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
+        -- tools/oracle/cases/rate_limit/usage-resolution)" && cargo run --locked -p betterlite-oracle
+        -- --self-check tools/oracle/cases/rate_limit/usage-resolution
+    - id: config-token-rate-limit-type
+      why: general_settings.token_rate_limit_type not loaded by config or test missing
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_token_rate_limit_type_from_general_settings)'
+oracle_cases:
+  - tools/oracle/cases/rate_limit/usage-resolution/usage-output-type.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/usage-input-type.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/usage-total-type.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/usage-invalid-type-fallback.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/usage-missing-type-fallback.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/cached-tokens-excluded-from-input.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/cached-tokens-excluded-from-total.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/cached-tokens-preserved-in-output.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/response-api-usage-object.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/responses-dict-usage.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/dict-passthrough.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/aggregate-only-no-split.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/aggregate-only-with-split.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/rerank-tokens-metadata.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/rerank-billed-units.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/rerank-none-when-missing.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/io-reconcile-usage-object.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/io-reconcile-response-api.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/io-reconcile-dict.yaml
+  - tools/oracle/cases/rate_limit/usage-resolution/recovered-partial-combined-usage.yaml

@@ -1,0 +1,123 @@
+id: B3120
+title: Parse Anthropic cache plans and fingerprint reusable prefixes
+description: >-
+  Build the bounded native prompt decoder and cache-plan records in crates/betterlite-anthropic, exposing both the general
+  multi-breakpoint plan and the stricter single-message-breakpoint prediction view. The decoder validates request shape,
+  parses content blocks (text, tool_use, tool_result, thinking), builds prefix bodies at marked cache boundaries, chains
+  SHA-256 hashes through request position, preserves insertion-sensitive JSON serialization with compact separators,
+  enforces tool/system/message order, respects cache-control TTL ordering (5m or 1h), keeps automatic cache at the last
+  non-thinking content block when requested without conflict, applies the twenty-group lookback for position grouping
+  (including grouped tool-use/result blocks), and rejects unsupported shapes (thinking in predictions, conflicting TTLs,
+  >4 breakpoints, reversed TTL order). Return PromptCachePlan with full body and breakpoints, or UnsupportedCachePlan
+  with a reason. Reuse standard parsing/hashing libraries; no external provider calls.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-anthropic/**
+    - tools/oracle/cases/cache-prediction/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L68-L163
+    why: Request and block schemas (CacheControl, Text, ToolUse, ToolResult, Message, Tool, RequestOptions, Request, Thinking,
+      PlanMessage, PlanTool, PlanRequest), with strict validation and frozen dataclasses in the plan view
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L166-L192
+    why: CacheBoundary, PromptCachePlan, UnsupportedCachePlan dataclasses and reason variants
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L211-L257
+    why: _Position dataclass, _content_blocks, _position, _positions helpers that extract and validate blocks with markers
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L260-L310
+    why: _prefix_body reconstructs request shape at breakpoints, _position_group groups tool-use/result pairs, _chain_digest accumulates hashes
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L313-L410
+    why: _cacheable_position skips thinking blocks, _entry_fingerprint scopes prefixes, parse_cache_plan validates and builds
+      breakpoints with markers, automatic cache insertion, TTL checks, and twenty-group lookback fingerprints
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L413-L445
+    why: PromptPrefix dataclass and parse_prompt extracts single-breakpoint cache plan for observation recording
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L421-L428
+    why: _digest uses SHA-256 with json.dumps(separators=(",", ":"), ensure_ascii=False) and _json_object for validation-aware serialization
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L505-L508
+    why: _count_objects helper for provider counting API shape
+dod:
+  - text: Every request schema validates strict JSON with pydantic BaseModel ConfigDict(extra="forbid", frozen=True, strict=True)
+      in the plan view, rejecting unknown fields, extra fields and non-JSON types.
+    proof: [cache-plan-tests]
+  - text: CacheBoundary, PromptCachePlan and UnsupportedCachePlan record the full body, breakpoints with fingerprints, TTL,
+      lookback windows and reason codes exactly as the spec lists them.
+    proof: [cache-plan-tests]
+  - text: parse_cache_plan accepts _PlanRequest with thinking blocks, tool cache_control, explicit markers and cache-control-directed
+      automatic breakpoints, and returns the multi-breakpoint plan.
+    proof: [oracle]
+  - text: parse_prompt accepts _Request (no thinking), returns single-breakpoint PromptPrefix or None (unsupported/multi-breakpoint plan).
+    proof: [oracle]
+  - text: _positions extracts content blocks with markers from tools, system and messages in that order, grouping message blocks by index.
+    proof: [cache-plan-tests]
+  - text: _prefix_body reconstructs the request body from positions up to a breakpoint, preserving COUNT_TOKEN_OPTION_NAMES keys,
+      section order, role, and calling _count_objects for list serialization.
+    proof: [cache-plan-tests]
+  - text: _position_group groups consecutive tool_use/tool_result pairs and numbers other blocks by position, for the twenty-group lookback.
+    proof: [cache-plan-tests]
+  - text: parse_cache_plan accepts thinking blocks in plans and returns PromptCachePlan; it rejects >4 breakpoints, conflicting TTLs (explicit
+      vs automatic), and reversed TTL order, returning the reason variant instead of an error.
+    proof: [oracle]
+  - text: Hashes chain through parse_cache_plan accumulate, one per position, initialized with _digest(settings), with _chain_digest
+      per position and _entry_fingerprint wrapping each with TTL scope.
+    proof: [cache-plan-tests]
+  - text: "fingerprint and lookback_fingerprints are TTL-scoped via _entry_fingerprint, while content_fingerprint and lookback_content_fingerprints
+      stay raw chain hashes (unwrapped, TTL-independent) to match across different TTLs during lookback; all preserve insertion order and span
+      up to twenty position groups."
+    proof: [cache-plan-tests]
+  - text: cache_scope returns _digest((caller_key_hash, deployment_id, provider_key, model, anthropic_version)) for exact-before-lookup scoping.
+    proof: [cache-plan-tests]
+  - text: _digest uses json.dumps with separators=(",", ":"), ensure_ascii=False and SHA-256, so JSON key order changes the hash.
+    proof: [cache-plan-tests]
+  - text: The decoder has a cargo-fuzz target at crates/betterlite-anthropic/fuzz/fuzz_targets/cache_plan_decoder.rs, and replays_the_cache_plan_corpus
+      parses every file in its corpus without a panic.
+    proof: [cache-fuzz-corpus]
+  - text: Every mutant in the cache plan decoding, hash chaining and TTL/marker validation is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cache-fuzz-corpus
+      why: the cache plan fuzz target or its seeded corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-anthropic/fuzz/fuzz_targets/cache_plan_decoder.rs && test -n "$(ls -A crates/betterlite-anthropic/fuzz/corpus/cache_plan_decoder)" && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(replays_the_cache_plan_corpus)'
+    - id: cache-plan-tests
+      why: the Anthropic crate tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_plan::/) or test(/^cache_planning_behaviors/)'
+oracle_cases:
+  - tools/oracle/cases/cache-prediction/anthropic-basic-text.yaml
+  - tools/oracle/cases/cache-prediction/anthropic-content-blocks.yaml
+  - tools/oracle/cases/cache-prediction/anthropic-system-and-tools.yaml
+  - tools/oracle/cases/cache-prediction/anthropic-explicit-markers.yaml
+  - tools/oracle/cases/cache-prediction/anthropic-automatic-cache.yaml
+  - tools/oracle/cases/cache-prediction/anthropic-conflicting-ttl.yaml
+  - tools/oracle/cases/cache-prediction/anthropic-too-many-breakpoints.yaml
+  - tools/oracle/cases/cache-prediction/anthropic-reversed-ttl-order.yaml
+  - tools/oracle/cases/cache-prediction/anthropic-thinking-in-plan.yaml
+  - tools/oracle/cases/cache-prediction/anthropic-prediction-no-thinking.yaml
+  - tools/oracle/cases/cache-prediction/anthropic-prediction-multi-breakpoint.yaml
+  - tools/oracle/cases/cache-prediction/anthropic-invalid-shape.yaml
+deviations: []
+out_of_scope:
+  - Token counting (B3121 owns count_prompt_tokens and count_cache_plan)
+  - Provider API calls, credential resolution and HTTP
+  - Native target resolution and header validation (B3121)
+  - Cache observations recording (B3122)
+  - Cache routing and cost scenarios (B3123+)
+pitfalls:
+  - >-
+    JSON hashing with separators=(",", ":") and ensure_ascii=False must use the exact same serialization when reconstructing _prefix_body;
+    any reordering of keys changes the fingerprint. Do not use serde_json::to_string which sorts keys.
+  - >-
+    The thinking block is permissive in _PlanRequest but restricted in _Request; always validate against the right schema when determining support.
+  - >-
+    cache_control is a marker on individual blocks and a request-level automatic-trigger; only one automatic per plan, and it conflicts with explicit markers at the same position.
+  - >-
+    _position_group returns a tuple of (section, message_index, block_type or position_index): tool_use and tool_result are grouped by type name,
+    other blocks by their position index, which preserves grouping across non-tool content.
+  - >-
+    Lookback spans twenty position groups (the output of _position_group), not twenty positions; positions and groups have different
+    cardinality when tool blocks are consecutive.
+  - _count_objects returns list[dict] (mutable JSONValue dicts), as required by the existing provider count API in B3121.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

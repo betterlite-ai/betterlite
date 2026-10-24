@@ -206,6 +206,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-http",
  "clap",
+ "futures-util",
  "reqwest",
  "rstest",
  "serde",

@@ -1,0 +1,103 @@
+id: B3069
+title: Build CloudZero resource names and billing records
+description: >-
+  Implement CloudZero Resource Name (CZRN) generation and validation, and CloudZero Billing Format (CBF) transformation in `betterlite-logging::finops::cloudzero`.
+  CZRNs normalize and validate resource identifiers following the format `czrn:service-type:provider:region:owner-account-id:resource-type:cloud-local-id`, with provider mapping from LiteLLM's provider enum (azure, aws, gcp, google, anthropic, cohere, huggingface, replicate, together-ai).
+  CBF transformation filters daily usage records with zero successful requests and skips records that fail CZRN generation, producing a DataFrame with required fields time/usage_start, cost/cost, resource/id (the CZRN), usage/amount and units, plus CBF column mappings for service, account, region, usage_family and operation.
+  Preserve actual provider-map lookup ordering, per-record warning-and-drop behavior for CZRN failures and zero requests, account alias/hash formatting as `alias|hash`, token tags and date parsing with fallback to None when format is unknown.
+  The type file exports CBFRecord as `dict[str, Any]` to accommodate field names with forward slashes (e.g., `time/usage_start`, `cost/cost`), and carries the Apache-2.0 notices from the CloudZero source alongside the repository's MIT notice.
+scope:
+  paths:
+    - litellm/integrations/cloudzero/cz_resource_names.py
+    - litellm/integrations/cloudzero/transform.py
+    - litellm/types/integrations/cloudzero.py
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_resource_names.py#L26-L156
+    why: The CZRN regex, generator initialization, CZRN creation from LiteLLM data and components, validation, component extraction, and provider/component normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/transform.py#L31-L224
+    why: The CBF transformer with float/int conversion helpers, transformer initialization with CZRN generator, transform method with zero-request and CZRN-failure filtering, CBF record creation with dimension mappings and token breakdown, and date parsing with fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/cloudzero.py#L1-L34
+    why: The CBFRecord type as `dict[str, Any]` and expected CBF field documentation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4013-L4179
+    why: The LlmProviders enum values that _normalize_provider maps to CZRN standard names.
+dod:
+  - text: CZRNs are validated against the regex pattern and reject invalid formats with a ValueError message.
+    proof: [czrn-validator-tests]
+  - text: Provider names map from the LiteLLM provider enum to CZRN standard names, with unknown providers normalized as lowercase-hyphenated.
+    proof: [provider-normalization-tests]
+  - text: "Provider names \"azure_ai\" and \"vertex_ai\" normalize to \"azure-ai\" and \"vertex-ai\" respectively (with hyphens, not their mapped forms \"azure\" and \"gcp\"), because the underscore-to-hyphen substitution runs before the provider_map lookup, causing the normalized form to not match the enum-value keys."
+    proof: [provider-normalization-tests]
+  - text: Component normalization converts to lowercase (unless service-type), replaces invalid characters with hyphens, collapses consecutive hyphens, strips leading/trailing hyphens, and returns 'unknown' for empty strings.
+    proof: [component-normalization-tests]
+  - text: CBF transformation filters records with zero successful_requests before processing, with a warning showing count and original count.
+    proof: [zero-request-filtering-tests]
+  - text: Records that fail CZRN generation are skipped per-record, with a warning showing count of dropped records and filtered count.
+    proof: [czrn-failure-filtering-tests]
+  - text: Date strings in format 'YYYY-MM-DD' parse to UTC midnight datetime; unknown formats return None without raising.
+    proof: [date-parsing-tests]
+  - text: CBF records populate all required fields (time/usage_start, cost/cost, resource/id, usage/amount, usage/units) and optional dimension/tag fields from the source row.
+    proof: [cbf-record-shape-tests]
+  - text: Account alias formatting uses the pattern 'alias|hash' when alias exists, otherwise just hash (first 8 chars of api_key).
+    proof: [account-formatting-tests]
+  - text: Token breakdown tags appear in the CBF record only when prompt_tokens > 0 or completion_tokens > 0.
+    proof: [token-tags-tests]
+  - text: Every mutant in CZRN generation, component normalization and CBF transformation is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: czrn-validator-tests
+      why: the CZRN regex validator or its tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/cloudzero.*czrn.*valid/)'
+    - id: provider-normalization-tests
+      why: provider name mapping tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/cloudzero.*provider/)'
+    - id: component-normalization-tests
+      why: component normalization tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/cloudzero.*component/)'
+    - id: zero-request-filtering-tests
+      why: zero-request filtering tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/cloudzero.*zero.*request/)'
+    - id: czrn-failure-filtering-tests
+      why: CZRN failure filtering tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/cloudzero.*czrn.*fail|cloudzero.*drop/)'
+    - id: date-parsing-tests
+      why: date parsing tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/cloudzero.*date/)'
+    - id: cbf-record-shape-tests
+      why: CBF record field population tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/cloudzero.*cbf|cloudzero.*record/)'
+    - id: account-formatting-tests
+      why: account alias formatting tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/cloudzero.*account.*format|cloudzero.*alias/)'
+    - id: token-tags-tests
+      why: token breakdown tag tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/cloudzero.*token.*tag|cloudzero.*prompt.*token|cloudzero.*completion.*token/)'
+oracle_cases: []
+deviations:
+  - what: "Custom provider names \"azure_ai\" and \"vertex_ai\" normalize to \"azure-ai\" and \"vertex-ai\" (with hyphens), not to their standard forms \"azure\" and \"gcp\"."
+    why: "The _normalize_provider function lowercases and replaces underscores at line 131 before the provider_map lookup at line 134, so the normalized form \"azure-ai\" no longer matches the map's \"azure_ai\" key, and the lookup returns the normalized form instead of the mapped value."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_resource_names.py#L115-L136"
+  - what: "CBFRecord is a typed dict subclass, not a TypedDict, because CBF field names contain forward slashes (e.g., `time/usage_start`) which TypedDict keys cannot express."
+    why: "The CloudZero Billing Format uses field names with forward slash separators to denote hierarchies; a subclass of `dict[str, Any]` is the only type-safe representation in Python."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/cloudzero.py#L1-L34"
+  - what: "Filtering and warnings are printed to the console via Rich, matching LiteLLM's behavior, rather than delegated to a logging framework."
+    why: "The source implementation writes warnings to console at transformation time; preserving user-visible behavior requires the same output stream."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/transform.py#L81-L96"
+out_of_scope:
+  - CZRN and CBF serialization to external formats (covered by B3070 and other delivery tasks).
+  - Daily usage row querying (covered by B3060).
+  - CloudZero API delivery and scheduling (covered by B3070 and B3071).
+pitfalls:
+  - The CZRN regex pattern requires each component except cloud_local_id to match `[a-z0-9-]+`, so normalization must complete before validation or generation will fail.
+  - "The hyphen-for-underscore substitution in _normalize_provider (line 131) runs before the provider_map lookup (line 134), so provider_map keys containing underscores (AZURE_AI=\"azure_ai\", VERTEX_AI=\"vertex_ai\") never match because the lookup checks \"azure-ai\" instead of \"azure_ai\"."
+  - "create_from_components calls _normalize_component (the generic lowercase/hyphenation) on provider, not _normalize_provider; only create_from_litellm_data calls _normalize_provider before passing the already-mapped value into create_from_components."
+  - When api_key_alias is None or empty, the resource_account field must be api_key_hash alone, not `|hash`; the format string guards this with `if api_key_alias else api_key_hash`.
+  - Date parsing with polars requires catching both parsing failures and the ISO-format fallback separately, since polars raises exceptions for unparseable input rather than returning None.
+  - The zero_requests_dropped count is computed before filtering and checked after, so the warning shows the original count not the filtered count.
+  - CBF field names are literal strings in the returned dict; consistency with field-name spelling is required for CloudZero delivery to recognize them.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

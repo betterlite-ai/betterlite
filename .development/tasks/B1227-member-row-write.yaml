@@ -115,7 +115,10 @@ scope:
     - crates/betterlite-server/src/member_row_write/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/member_row_write.rs
     - crates/betterlite-config/src/member_row_write/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/member-row-write-*

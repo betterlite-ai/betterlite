@@ -48,7 +48,10 @@ scope:
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/speech_call.rs
   - crates/betterlite-config/src/api/speech_call/**
-  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/resolve.rs
+  - crates/betterlite-config/src/types.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/speech-call-*
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/speech_call.rs
