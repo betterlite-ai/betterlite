@@ -249,6 +249,7 @@ tasks:
     - B321
     - B322
     - B323
+    - B324
     file: null
     covers:
     - litellm/router_strategy/{tag_based_routing,budget_limiter}.py
@@ -2145,3 +2146,18 @@ tasks:
     file: tasks/B323-routing-groups.yaml
     covers:
     - litellm/router_utils/{routing_groups,reasoning_effort_capability}.py
+
+  - id: B324
+    milestone: M2 routing
+    title: Atomic caller and session deployment affinity
+    status: todo
+    depends_on:
+    - B016
+    - B304
+    - B052
+    - B080
+    - B323
+    file: tasks/B324-deployment-affinity.yaml
+    covers:
+    - litellm/router_utils/pre_call_checks/deployment_affinity_check.py
+    - litellm/caching/affinity_cache.py
