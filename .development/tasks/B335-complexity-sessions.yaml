@@ -1,0 +1,93 @@
+id: B335
+title: Session pins, plan-mode floors and stall escalation
+description: Add the complexity router's session/user-turn lifecycle around B334 placement, using B330
+  context and B324 atomic affinity. Implement lexical/semantic keyword overrides through B327, escalation
+  markers, plan-mode and housekeeping recognition, and the bounded stall detector. Keep persistent session
+  pins separate from transient floors so a one-turn constraint cannot rewrite the session's long-term
+  model. Return typed decision causes and signals for B012/header mapping. Use the existing Rust crate
+  boundaries from B004 and B008; integrate through the server when the provider dispatcher or callbacks
+  live in another core crate. This task's source slices are the linked ranges, not a port of their Python
+  classes. Add the listed oracle cases and the matching adapters to B301's component runner where state
+  is not observable over HTTP; adapters call production logic and never reproduce it. Use deterministic
+  candidate sets or supplied random samples for comparisons, and separate seeded distribution tests for
+  random choices. Extend the existing config_yaml fuzz target and committed corpus for every newly accepted
+  config form; unsupported keys still fail by full path. Keep the implementation, adapters and tests within
+  800 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/complexity-sessions/**
+  - tools/oracle/src/router_probes/complexity-sessions/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/complexity_sessions.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L3156-L3224
+  why: Plan mode and housekeeping controls.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L3440-L3498
+  why: Escalation and pin updates.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L3915-L4042
+  why: Lexical and semantic overrides.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L4110-L4425
+  why: Session identity, replay and pin writes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/stall_detector.py#L32-L118
+  why: Repeated failed-tool detection.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(complexity_sessions)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/complexity-sessions/session-pin-hit.yaml
+- tools/oracle/cases/routing/complexity-sessions/user-turn-reclassifies.yaml
+- tools/oracle/cases/routing/complexity-sessions/continuation-reuses-pin.yaml
+- tools/oracle/cases/routing/complexity-sessions/plan-floor-does-not-repin.yaml
+- tools/oracle/cases/routing/complexity-sessions/escalation-repins.yaml
+- tools/oracle/cases/routing/complexity-sessions/housekeeping-cheapest.yaml
+- tools/oracle/cases/routing/complexity-sessions/keyword-before-classifier.yaml
+- tools/oracle/cases/routing/complexity-sessions/repeated-failed-tool-escalates.yaml
+- tools/oracle/cases/routing/complexity-sessions/foreign-caller-same-session.yaml
+deviations: []
+out_of_scope:
+- Cross-model compaction and cache-cost prediction.
+- Adaptive soft-floor scoring.
+pitfalls:
+- Plugins can change policy every turn, so a retained pin must not skip the plugin path.
+- A plan-mode sentinel turn must not write a new session pin even when its computed tier already clears
+  the floor.
+- Stall detection must bind tool results to the matching call IDs.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

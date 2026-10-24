@@ -269,6 +269,7 @@ tasks:
     - B332
     - B333
     - B334
+    - B335
     file: null
     covers:
     - router_plugins.json
@@ -2297,3 +2298,15 @@ tasks:
     file: tasks/B334-complexity-placement.yaml
     covers:
     - litellm/router_strategy/complexity_router/complexity_router.py
+
+  - id: B335
+    milestone: M2 routing
+    title: Session pins, plan-mode floors and stall escalation
+    status: todo
+    depends_on:
+    - B334
+    - B330
+    - B327
+    file: tasks/B335-complexity-sessions.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/{complexity_router,stall_detector}.py
