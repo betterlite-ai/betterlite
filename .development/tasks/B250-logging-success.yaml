@@ -1,7 +1,7 @@
 id: B250
 title: Success callback dispatch and deduplication
 description: >-
-  Implement Own _is_assembled_stream_success/dispatch_success_handlers, _success_handler_helper_fn, recognized call-type
+  Implement _is_assembled_stream_success/dispatch_success_handlers, _success_handler_helper_fn, recognized call-type
   helpers, success_handler/_success_handler_body and async_success_handler/_async_success_handler_body for chat/embeddings,
   plus _handle_callback_failure and sync-success callback handling on async calls. Share native sync/async mechanics
   through typed events, restoring context on every exit. Exporter-specific branches in 2772-3577 are B110-B118;
@@ -10,6 +10,8 @@ description: >-
   functions b250_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
   in the DoD; corpus replay tests have separate names. Register helper operations logging_success in tools/oracle/src/helpers/mod.rs
   and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  Own recognized-call-type checks 2579-2620 and success emission deduplication 2678-2701; interaction detection/dispatch
+  2622-2676 is B098.
 scope:
   paths:
   - Cargo.toml
@@ -103,7 +105,7 @@ out_of_scope:
 - >-
   Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B117; MCP hooks 1633-1709 B140;
   cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B098; native response logging
-  4147-4343 B080/B081/B098.
+  4147-4320 B080/B081/B098; A2A response conversion 4322-4343 B142.
 - >-
   Enterprise callback controls are excluded by repository licensing rules; no enterprise implementation is read
   or ported.
