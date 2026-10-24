@@ -1,0 +1,10 @@
+kind: helper
+name: modify-params-default-and-env
+call:
+  provider_base_helpers:
+    modify_params:
+      environment: {LITELLM_MODIFY_PARAMS: "false"}
+      configured: null
+env: {LITELLM_MODIFY_PARAMS: "false"}
+compare:
+  ignore: []
