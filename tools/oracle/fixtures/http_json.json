@@ -1,0 +1,6 @@
+[
+  "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{\"ok\":true}",
+  {
+    "ok": true
+  }
+]

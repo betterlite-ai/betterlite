@@ -1,0 +1,6 @@
+name: test
+config: config
+env: {}
+request: {method: GET, path: /, headers: {}, body: null}
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: [{pointer: id, why: generated}]}

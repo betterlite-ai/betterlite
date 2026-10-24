@@ -1,0 +1,4 @@
+[
+  "HTTP/1.1 302 Found\r\nConnection: close\r\nLocation: http://127.0.0.1:1/redirected\r\n\r\n",
+  ""
+]

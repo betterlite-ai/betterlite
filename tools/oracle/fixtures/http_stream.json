@@ -1,0 +1,8 @@
+[
+  "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nConnection: close\r\n\r\ndata: {\"x\":1}\n\ndata: [DONE]\n\n",
+  [
+    {
+      "x": 1
+    }
+  ]
+]

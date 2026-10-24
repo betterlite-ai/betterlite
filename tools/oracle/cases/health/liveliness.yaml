@@ -1,0 +1,15 @@
+name: health-liveliness
+config: |
+  model_list: []
+env: {}
+request:
+  method: GET
+  path: /health/liveliness
+  headers: {}
+  body: null
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
