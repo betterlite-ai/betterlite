@@ -22,6 +22,7 @@ scope:
   - tools/oracle/src/compare/**
   - tools/oracle/src/mock.rs
   - tools/oracle/src/mock/**
+  - tools/oracle/src/tests.rs
   - Cargo.toml
   - deny.toml
   - tools/oracle/Cargo.toml
