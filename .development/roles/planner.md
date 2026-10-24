@@ -20,7 +20,7 @@ You turn backlog entries into task files that a cheaper model can finish without
 - review_level is security for tasks on auth, keys, secrets, budgets or spend, and standard for the rest.
 - A task on the config, router or wire-format crates lists mutants in checks.optional. A task that adds a parser of outside bytes (config, request bodies, SSE) adds a cargo-fuzz target and a check that replays its corpus.
 - Size a task by the LiteLLM code it rebuilds. The 800 lines include tests, fuzz targets and oracle adapters, so more than about 400 lines of LiteLLM logic means a split.
-- A test check filters on the module path, like `-E 'test(/^controls::/)'`, or the description names the exact test functions to write. The filter never matches a corpus replay test, so the check fails while behavior tests are missing.
+- A test check filters on the module path, like `-E 'test(/^controls::/)'`, or the description names the exact test functions to write. Module and test names come from the domain; a task id never appears in code. The filter never matches a corpus replay test, so the check fails while behavior tests are missing.
 - Every check fails on the base branch. A corpus check greps for the new operation or key, not only for a corpus that replays, and every check a DoD item relies on is in its proof list.
 - Every function in a covered LiteLLM file is built or listed in out_of_scope with the task that owns it. Code nothing calls at the pinned commit is out of scope with that reason.
 - depends_on lists what the task uses directly, never an umbrella task, so independent tasks can run in parallel.
