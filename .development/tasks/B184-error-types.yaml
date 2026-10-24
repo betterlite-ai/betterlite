@@ -14,7 +14,7 @@ description: >-
   and code from status with openai_code retained when present, matching proxy_server.py. Forward all provider headers
   as llm_provider-<name> (without double prefixing), plus the four bare x-ratelimit request/token limit/remaining
   headers; filter UNSAFE_PROXY_RESPONSE_HEADERS on the resulting name. Additionally remove cookie and CORS names
-  both raw and prefixed as the documented security deviation. Write the behavior rstest functions b184_error_type_tests_behavior
+  both raw and prefixed as the documented security deviation. Write the behavior rstest functions error_types_error_type_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations error_class in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed. Budget 290 error types, 110 adapters,
@@ -80,7 +80,7 @@ checks:
   - id: error-type-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-error -p betterlite-server --no-tests=fail -E 'test(/::b184_error_type_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-error -p betterlite-server --no-tests=fail -E 'test(/::error_types_error_type_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks

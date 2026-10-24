@@ -1,5 +1,6 @@
 use crate::auth::authenticate;
 use crate::error_body::request_timeout_error;
+use crate::model_list::model_routes;
 use axum::Json;
 use axum::Router;
 use axum::error_handling::HandleErrorLayer;
@@ -8,6 +9,7 @@ use axum::http::StatusCode;
 use axum::middleware;
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::get;
+use betterlite_config::types::ModelDeployment;
 use secrecy::SecretString;
 use serde::Serialize;
 use std::sync::Arc;
@@ -15,7 +17,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tower::ServiceBuilder;
 use tower::timeout::TimeoutLayer;
-pub(crate) fn router(master_key: Option<SecretString>, shutting_down: Arc<AtomicBool>) -> Router {
+pub(crate) fn router(
+    master_key: Option<SecretString>,
+    shutting_down: Arc<AtomicBool>,
+    model_list: &[ModelDeployment],
+) -> Router {
     let timeout_layers = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(|_: tower::BoxError| async {
             request_timeout_error()
@@ -25,6 +31,8 @@ pub(crate) fn router(master_key: Option<SecretString>, shutting_down: Arc<Atomic
         .route("/health/liveliness", get(health_liveliness))
         .route("/health/liveness", get(health_liveliness))
         .route("/health/readiness", get(health_readiness))
+        .with_state(shutting_down)
+        .merge(model_routes(model_list))
         .fallback(|| async {
             (
                 StatusCode::NOT_FOUND,
@@ -33,7 +41,6 @@ pub(crate) fn router(master_key: Option<SecretString>, shutting_down: Arc<Atomic
                 }),
             )
         })
-        .with_state(shutting_down)
         .layer(middleware::from_fn_with_state(master_key, authenticate))
         .layer(timeout_layers)
 }

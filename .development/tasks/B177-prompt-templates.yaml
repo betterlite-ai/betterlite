@@ -11,7 +11,7 @@ description: >-
   B182, Mistral B036, Watsonx B042 and Perplexity B041. Until each adapter is installed, return the framework typed
   unsupported-operation outcome rather than a fabricated prompt. Do not create remote-template acquisition or new
   config behavior before the open decision. Budget 230 selector/custom transforms, 100 adapters, 300 tests and 60
-  wiring (690 total). Write the behavior rstest functions b177_prompt_template_tests_behavior in adjacent tests.rs
+  wiring (690 total). Write the behavior rstest functions prompt_templates_prompt_template_tests_behavior in adjacent tests.rs
   files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
   helper operations prompt_factory in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each
   operation has its own Rust and Python adapter file and corpus seed.
@@ -77,7 +77,7 @@ checks:
   commands:
   - id: prompt-template-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b177_prompt_template_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::prompt_templates_prompt_template_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks

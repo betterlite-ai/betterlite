@@ -10,7 +10,7 @@ description: 'Implement typed routing-context input/output and wire the ordered 
   plugins, classifier_plugin, classifier_plugin_timeout_ms. Pinned declaration defaults: plugins=None;
   classifier_plugin=None; classifier_plugin_timeout_ms=3000. Resolve env values once in betterlite-config,
   never in router code. Implement the owned native service in crates/betterlite-router/src/routing_plugins.rs.
-  Add ProbeOperation::B363 in tools/oracle/src/router_probes/mod.rs and the corresponding B363 entry in
+  Add ProbeOperation::RoutingPlugins in tools/oracle/src/router_probes/mod.rs and the corresponding B363 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -55,11 +55,11 @@ scope:
   - crates/betterlite-config/src/routing_plugins.rs
   - crates/betterlite-config/src/routing_plugins/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b363-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/routing-plugins-*
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/fuzz_targets/plugin_json.rs
-  - crates/betterlite-router/fuzz/corpus/plugin_json/b363-*
+  - crates/betterlite-router/fuzz/corpus/plugin_json/routing-plugins-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/router_plugins.json#L1-L28
@@ -81,13 +81,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L14740-L14743
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b363_behaviors and b363_boundaries under routing_plugins::tests. The first asserts
+- text: Write tests named routing_plugins_behaviors and routing_plugins_boundaries under routing_plugins::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b363-behaviors
-  - b363-boundaries
+  - routing-plugins-behaviors
+  - routing-plugins-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -98,18 +98,18 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b363-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b363-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/routing-plugins-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/routing-plugins-invalid.yaml;
     the valid seed contains plugins. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b363-boundaries
-- text: Add crates/betterlite-router/fuzz/corpus/plugin_json/b363-valid.json and crates/betterlite-router/fuzz/corpus/plugin_json/b363-invalid.json;
+  - routing-plugins-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/plugin_json/routing-plugins-valid.json and crates/betterlite-router/fuzz/corpus/plugin_json/routing-plugins-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target plugin_json and normal replays_the_plugin_json_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b363-boundaries
+  - routing-plugins-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -117,13 +117,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b363-behaviors
+  - id: routing-plugins-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b363_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::routing_plugins_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b363-boundaries
+  - id: routing-plugins-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b363_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::routing_plugins_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -133,16 +133,16 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b363-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b363-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/routing-plugins-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/routing-plugins-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b363-" && grep -Fq 'plugins' crates/betterlite-config/fuzz/corpus/config_yaml/b363-valid.yaml
+      | grep -Fq "/routing-plugins-" && grep -Fq 'plugins' crates/betterlite-config/fuzz/corpus/config_yaml/routing-plugins-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-router/fuzz/corpus/plugin_json/b363-valid.json && test -f crates/betterlite-router/fuzz/corpus/plugin_json/b363-invalid.json
+    run: test -f crates/betterlite-router/fuzz/corpus/plugin_json/routing-plugins-valid.json && test -f crates/betterlite-router/fuzz/corpus/plugin_json/routing-plugins-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/plugin_json
-      | grep -Fq "/b363-" && test -f crates/betterlite-router/fuzz/fuzz_targets/plugin_json.rs && cargo
+      | grep -Fq "/routing-plugins-" && test -f crates/betterlite-router/fuzz/fuzz_targets/plugin_json.rs && cargo
       nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_plugin_json_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/routing-plugins/plugin-order-and-signals.yaml

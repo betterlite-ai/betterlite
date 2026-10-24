@@ -6,7 +6,7 @@ description: 'Serve POST /fallback and GET/DELETE /fallback/{model} using B309''
   the write fails. Use B300 scenarios for create/read/replace/delete sequences and B301 adapters with
   a typed repository fixture when database setup is not expressible as an HTTP case. Keep the three fallback
   categories independent and include parser fuzzing for the management request body. Implement the owned
-  native service in crates/betterlite-server/src/fallback_management.rs. Add ProbeOperation::B018 in tools/oracle/src/router_probes/mod.rs
+  native service in crates/betterlite-server/src/fallback_management.rs. Add ProbeOperation::FallbackManagement in tools/oracle/src/router_probes/mod.rs
   and the corresponding B018 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
   production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
@@ -37,7 +37,7 @@ scope:
   - tools/oracle/cases/routing/fallback-management/**
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/fallback.rs
-  - crates/betterlite-server/fuzz/corpus/fallback/b018-*
+  - crates/betterlite-server/fuzz/corpus/fallback/fallback-management-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/fallback_management_endpoints.py#L42-L246
@@ -49,13 +49,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/fallback_management_endpoints.py#L198-L246
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b018_behaviors and b018_boundaries under fallback_management::tests. The first
+- text: Write tests named fallback_management_behaviors and fallback_management_boundaries under fallback_management::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b018-behaviors
-  - b018-boundaries
+  - fallback-management-behaviors
+  - fallback-management-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -66,12 +66,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-server/fuzz/corpus/fallback/b018-valid.json and crates/betterlite-server/fuzz/corpus/fallback/b018-invalid.json;
+- text: Add crates/betterlite-server/fuzz/corpus/fallback/fallback-management-valid.json and crates/betterlite-server/fuzz/corpus/fallback/fallback-management-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target fallback and normal replays_the_fallback_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b018-boundaries
+  - fallback-management-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -79,13 +79,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b018-behaviors
+  - id: fallback-management-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b018_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::fallback_management_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b018-boundaries
+  - id: fallback-management-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b018_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::fallback_management_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -95,9 +95,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-server/fuzz/corpus/fallback/b018-valid.json && test -f crates/betterlite-server/fuzz/corpus/fallback/b018-invalid.json
+    run: test -f crates/betterlite-server/fuzz/corpus/fallback/fallback-management-valid.json && test -f crates/betterlite-server/fuzz/corpus/fallback/fallback-management-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/fallback
-      | grep -Fq "/b018-" && test -f crates/betterlite-server/fuzz/fuzz_targets/fallback.rs && cargo nextest
+      | grep -Fq "/fallback-management-" && test -f crates/betterlite-server/fuzz/fuzz_targets/fallback.rs && cargo nextest
       run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_fallback_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/fallback-management/create-read-replace-delete.yaml

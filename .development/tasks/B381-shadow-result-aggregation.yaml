@@ -4,7 +4,7 @@ description: 'Implement ShadowResultsRepository and grouped attempt/funnel aggre
   queries and B118 append-only observations. Compute exact tier/model/target slices, tie/error denominators,
   latest error and missing-funnel coverage. Preserve Decimal spend; no endpoint or job mutation is added.
   Implement the owned native service in crates/betterlite-server/src/shadow_result_aggregation.rs. Add
-  ProbeOperation::B381 in tools/oracle/src/router_probes/mod.rs and the corresponding B381 entry in tools/oracle/litellm/probes/registry.py;
+  ProbeOperation::ShadowResultAggregation in tools/oracle/src/router_probes/mod.rs and the corresponding B381 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
@@ -39,13 +39,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L516-L617
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b381_behaviors and b381_boundaries under shadow_result_aggregation::tests. The
+- text: Write tests named shadow_result_aggregation_behaviors and shadow_result_aggregation_boundaries under shadow_result_aggregation::tests. The
     first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
     bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
     cannot satisfy either check.
   proof:
-  - b381-behaviors
-  - b381-boundaries
+  - shadow-result-aggregation-behaviors
+  - shadow-result-aggregation-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -63,13 +63,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b381-behaviors
+  - id: shadow-result-aggregation-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b381_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::shadow_result_aggregation_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b381-boundaries
+  - id: shadow-result-aggregation-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b381_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::shadow_result_aggregation_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

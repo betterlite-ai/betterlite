@@ -8,7 +8,7 @@ description: 'Implement RedisFailurePolicy with closed/open/half-open generation
   Enabled compares lowercased text to true; preserve timeout streak duration and half-open behavior. Configuration
   boundary keys introduced or consumed here: REDIS_CIRCUIT_BREAKER_ENABLED, REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
   REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT, REDIS_CIRCUIT_BREAKER_TIMEOUT_MIN_DURATION, REDIS_TIMEOUT_LOG_INTERVAL.
-  Implement the owned native service in crates/betterlite-router/src/redis_failure_policy.rs. Add ProbeOperation::B393
+  Implement the owned native service in crates/betterlite-router/src/redis_failure_policy.rs. Add ProbeOperation::RedisFailurePolicy
   in tools/oracle/src/router_probes/mod.rs and the corresponding B393 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -51,7 +51,7 @@ scope:
   - crates/betterlite-config/src/redis_failure_policy.rs
   - crates/betterlite-config/src/redis_failure_policy/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b393-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/redis-failure-policy-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -64,13 +64,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L508-L517
   why: Redis policy env names and defaults.
 dod:
-- text: Write tests named b393_behaviors and b393_boundaries under redis_failure_policy::tests. The first
+- text: Write tests named redis_failure_policy_behaviors and redis_failure_policy_boundaries under redis_failure_policy::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b393-behaviors
-  - b393-boundaries
+  - redis-failure-policy-behaviors
+  - redis-failure-policy-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -81,13 +81,13 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b393-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b393-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/redis-failure-policy-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/redis-failure-policy-invalid.yaml;
     the valid seed contains REDIS_CIRCUIT_BREAKER_ENABLED. The cargo-fuzz target config_yaml and normal
     replays_the_config_yaml_corpus test call the production bounded parser. Both new files must be added
     relative to GATE_BASE.
   proof:
   - config-corpus
-  - b393-boundaries
+  - redis-failure-policy-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -95,13 +95,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b393-behaviors
+  - id: redis-failure-policy-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b393_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::redis_failure_policy_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b393-boundaries
+  - id: redis-failure-policy-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b393_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::redis_failure_policy_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -111,9 +111,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b393-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b393-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/redis-failure-policy-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/redis-failure-policy-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b393-" && grep -Fq 'REDIS_CIRCUIT_BREAKER_ENABLED' crates/betterlite-config/fuzz/corpus/config_yaml/b393-valid.yaml
+      | grep -Fq "/redis-failure-policy-" && grep -Fq 'REDIS_CIRCUIT_BREAKER_ENABLED' crates/betterlite-config/fuzz/corpus/config_yaml/redis-failure-policy-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

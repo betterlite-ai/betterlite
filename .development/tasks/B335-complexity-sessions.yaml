@@ -8,7 +8,7 @@ description: 'Add the complexity router session/user-turn lifecycle around B334 
   or consumed here: classification_mode, session_affinity, deployment_affinity, session_affinity_ttl_seconds.
   Pinned declaration defaults: classification_mode=''every_request''; session_affinity=False; deployment_affinity=True;
   session_affinity_ttl_seconds=3600. Resolve env values once in betterlite-config, never in router code.
-  Implement the owned native service in crates/betterlite-router/src/complexity_sessions.rs. Add ProbeOperation::B335
+  Implement the owned native service in crates/betterlite-router/src/complexity_sessions.rs. Add ProbeOperation::ComplexitySessions
   in tools/oracle/src/router_probes/mod.rs and the corresponding B335 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -50,7 +50,7 @@ scope:
   - crates/betterlite-config/src/complexity_sessions.rs
   - crates/betterlite-config/src/complexity_sessions/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b335-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/complexity-sessions-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -65,13 +65,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1291-L1293
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b335_behaviors and b335_boundaries under complexity_sessions::tests. The first
+- text: Write tests named complexity_sessions_behaviors and complexity_sessions_boundaries under complexity_sessions::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b335-behaviors
-  - b335-boundaries
+  - complexity-sessions-behaviors
+  - complexity-sessions-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -82,12 +82,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b335-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b335-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/complexity-sessions-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/complexity-sessions-invalid.yaml;
     the valid seed contains classification_mode. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b335-boundaries
+  - complexity-sessions-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -95,13 +95,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b335-behaviors
+  - id: complexity-sessions-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b335_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::complexity_sessions_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b335-boundaries
+  - id: complexity-sessions-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b335_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::complexity_sessions_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -111,9 +111,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b335-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b335-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/complexity-sessions-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/complexity-sessions-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b335-" && grep -Fq 'classification_mode' crates/betterlite-config/fuzz/corpus/config_yaml/b335-valid.yaml
+      | grep -Fq "/complexity-sessions-" && grep -Fq 'classification_mode' crates/betterlite-config/fuzz/corpus/config_yaml/complexity-sessions-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

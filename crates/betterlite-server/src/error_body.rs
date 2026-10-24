@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse as _, Response};
+use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 #[derive(Serialize)]
 struct ErrorResponse {
@@ -35,6 +35,48 @@ pub(crate) fn authentication_error(failure: &AuthenticationFailure) -> Response 
             }),
         )
             .into_response(),
+    }
+}
+pub(crate) enum ModelError {
+    InvalidFlags(Vec<&'static str>),
+    Detail(StatusCode, String),
+    Unsupported(String),
+}
+#[derive(Serialize)]
+struct DetailBody<Detail> {
+    detail: Detail,
+}
+#[derive(Serialize)]
+struct FlagIssue {
+    loc: [&'static str; 2],
+    msg: &'static str,
+    #[serde(rename = "type")]
+    issue_type: &'static str,
+}
+impl IntoResponse for ModelError {
+    fn into_response(self) -> Response {
+        match self {
+            Self::InvalidFlags(names) => {
+                let detail: Vec<FlagIssue> = names
+                    .into_iter()
+                    .map(|name| FlagIssue {
+                        loc: ["query", name],
+                        msg: "not a boolean",
+                        issue_type: "bool_parsing",
+                    })
+                    .collect();
+                (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(DetailBody { detail }),
+                )
+                    .into_response()
+            }
+            Self::Detail(status, detail) => (status, Json(DetailBody { detail })).into_response(),
+            Self::Unsupported(feature) => {
+                let detail = format!("betterlite does not support {feature} yet");
+                (StatusCode::NOT_IMPLEMENTED, Json(DetailBody { detail })).into_response()
+            }
+        }
     }
 }
 pub(crate) fn request_timeout_error() -> Response {

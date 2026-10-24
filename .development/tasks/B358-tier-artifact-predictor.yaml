@@ -12,7 +12,7 @@ description: 'Implement heuristic_v2 as a pure typed artifact predictor over B32
   or consumed here: heuristic_v2_artifact, heuristic_v2_success_threshold. Pinned declaration defaults:
   heuristic_v2_artifact=''ultrafeedback''; heuristic_v2_success_threshold=None. Resolve env values once
   in betterlite-config, never in router code. Implement the owned native service in crates/betterlite-router/src/tier_artifact_predictor.rs.
-  Add ProbeOperation::B358 in tools/oracle/src/router_probes/mod.rs and the corresponding B358 entry in
+  Add ProbeOperation::TierArtifactPredictor in tools/oracle/src/router_probes/mod.rs and the corresponding B358 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -56,13 +56,13 @@ scope:
   - crates/betterlite-config/src/tier_artifact_predictor.rs
   - crates/betterlite-config/src/tier_artifact_predictor/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b358-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/tier-artifact-predictor-*
   - crates/betterlite-router/src/posterior_math.rs
   - crates/betterlite-router/src/posterior_math/**
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/fuzz_targets/tier_data.rs
-  - crates/betterlite-router/fuzz/corpus/tier_data/b358-*
+  - crates/betterlite-router/fuzz/corpus/tier_data/tier-artifact-predictor-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/tier_predictor.py#L14-L157
@@ -70,13 +70,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1931-L1956
   why: Heuristic-v2 classifier output.
 dod:
-- text: Write tests named b358_behaviors and b358_boundaries under tier_artifact_predictor::tests. The
+- text: Write tests named tier_artifact_predictor_behaviors and tier_artifact_predictor_boundaries under tier_artifact_predictor::tests. The
     first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
     bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
     cannot satisfy either check.
   proof:
-  - b358-behaviors
-  - b358-boundaries
+  - tier-artifact-predictor-behaviors
+  - tier-artifact-predictor-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -87,18 +87,18 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b358-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b358-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/tier-artifact-predictor-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/tier-artifact-predictor-invalid.yaml;
     the valid seed contains heuristic_v2_artifact. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b358-boundaries
-- text: Add crates/betterlite-router/fuzz/corpus/tier_data/b358-valid.json and crates/betterlite-router/fuzz/corpus/tier_data/b358-invalid.json;
+  - tier-artifact-predictor-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/tier_data/tier-artifact-predictor-valid.json and crates/betterlite-router/fuzz/corpus/tier_data/tier-artifact-predictor-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target tier_data and normal replays_the_tier_data_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b358-boundaries
+  - tier-artifact-predictor-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -106,13 +106,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b358-behaviors
+  - id: tier-artifact-predictor-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b358_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::tier_artifact_predictor_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b358-boundaries
+  - id: tier-artifact-predictor-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b358_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::tier_artifact_predictor_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -122,16 +122,16 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b358-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b358-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/tier-artifact-predictor-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/tier-artifact-predictor-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b358-" && grep -Fq 'heuristic_v2_artifact' crates/betterlite-config/fuzz/corpus/config_yaml/b358-valid.yaml
+      | grep -Fq "/tier-artifact-predictor-" && grep -Fq 'heuristic_v2_artifact' crates/betterlite-config/fuzz/corpus/config_yaml/tier-artifact-predictor-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-router/fuzz/corpus/tier_data/b358-valid.json && test -f crates/betterlite-router/fuzz/corpus/tier_data/b358-invalid.json
+    run: test -f crates/betterlite-router/fuzz/corpus/tier_data/tier-artifact-predictor-valid.json && test -f crates/betterlite-router/fuzz/corpus/tier_data/tier-artifact-predictor-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/tier_data
-      | grep -Fq "/b358-" && test -f crates/betterlite-router/fuzz/fuzz_targets/tier_data.rs && cargo
+      | grep -Fq "/tier-artifact-predictor-" && test -f crates/betterlite-router/fuzz/fuzz_targets/tier_data.rs && cargo
       nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_tier_data_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/tier-artifact-predictor/artifact-global-domain-cohort.yaml

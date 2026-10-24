@@ -10,7 +10,7 @@ description: 'Implement ClassifierCall, ClassifierCircuit and ClassifierOutcome 
   circuit_breaker_enabled=true, circuit_breaker_cooldown_seconds=30.0, reasoning_effort=None, system_prompt=None
   and classification_rubric=None. vision.enabled=false and vision.max_images=1; only inline data images
   are eligible. Implement the owned native service in crates/betterlite-router/src/llm_classifier.rs.
-  Add ProbeOperation::B331 in tools/oracle/src/router_probes/mod.rs and the corresponding B331 entry in
+  Add ProbeOperation::LlmClassifier in tools/oracle/src/router_probes/mod.rs and the corresponding B331 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -51,7 +51,7 @@ scope:
   - crates/betterlite-config/src/llm_classifier.rs
   - crates/betterlite-config/src/llm_classifier/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b331-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/llm-classifier-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -78,13 +78,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1623-L1633
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b331_behaviors and b331_boundaries under llm_classifier::tests. The first asserts
+- text: Write tests named llm_classifier_behaviors and llm_classifier_boundaries under llm_classifier::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b331-behaviors
-  - b331-boundaries
+  - llm-classifier-behaviors
+  - llm-classifier-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -95,12 +95,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b331-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b331-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/llm-classifier-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/llm-classifier-invalid.yaml;
     the valid seed contains classifier_type. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b331-boundaries
+  - llm-classifier-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -108,13 +108,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b331-behaviors
+  - id: llm-classifier-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b331_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::llm_classifier_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b331-boundaries
+  - id: llm-classifier-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b331_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::llm_classifier_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -124,9 +124,9 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b331-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b331-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/llm-classifier-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/llm-classifier-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b331-" && grep -Fq 'classifier_type' crates/betterlite-config/fuzz/corpus/config_yaml/b331-valid.yaml
+      | grep -Fq "/llm-classifier-" && grep -Fq 'classifier_type' crates/betterlite-config/fuzz/corpus/config_yaml/llm-classifier-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

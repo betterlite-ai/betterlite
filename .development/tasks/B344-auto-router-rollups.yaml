@@ -6,7 +6,7 @@ description: 'Use B051/B070 repository and write-queue infrastructure to persist
   updates. Store costs as Decimal at the Rust boundary and reuse B051''s approved conversion for the unchanged
   database schema. Add real Postgres integration cases for concurrent and out-of-order turns; typed repository
   probes also compare the pinned transaction builder. Implement the owned native service in crates/betterlite-server/src/auto_router_rollups.rs.
-  Add ProbeOperation::B344 in tools/oracle/src/router_probes/mod.rs and the corresponding B344 entry in
+  Add ProbeOperation::AutoRouterRollups in tools/oracle/src/router_probes/mod.rs and the corresponding B344 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -55,13 +55,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L289-L292
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b344_behaviors and b344_boundaries under auto_router_rollups::tests. The first
+- text: Write tests named auto_router_rollups_behaviors and auto_router_rollups_boundaries under auto_router_rollups::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b344-behaviors
-  - b344-boundaries
+  - auto-router-rollups-behaviors
+  - auto-router-rollups-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -79,13 +79,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b344-behaviors
+  - id: auto-router-rollups-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b344_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::auto_router_rollups_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b344-boundaries
+  - id: auto-router-rollups-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b344_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::auto_router_rollups_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

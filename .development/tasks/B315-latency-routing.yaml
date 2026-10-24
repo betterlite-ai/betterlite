@@ -8,7 +8,7 @@ description: 'Implement latency-based-routing selection over B389 samples, B013 
   f64 only in latency_rank_math with one module-level #[expect(clippy::float_arithmetic, reason = "pinned
   statistical routing arithmetic")], counted in max_new_expects. Keep every price/spend/budget Decimal
   and compare selected model/tier exactly; diagnostic score tolerances cannot hide a selection difference.
-  Implement the owned native service in crates/betterlite-router/src/latency_routing.rs. Add ProbeOperation::B315
+  Implement the owned native service in crates/betterlite-router/src/latency_routing.rs. Add ProbeOperation::LatencyRouting
   in tools/oracle/src/router_probes/mod.rs and the corresponding B315 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -48,7 +48,7 @@ scope:
   - crates/betterlite-config/src/latency_routing.rs
   - crates/betterlite-config/src/latency_routing/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b315-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/latency-routing-*
   - crates/betterlite-router/src/latency_rank_math.rs
   - crates/betterlite-router/src/latency_rank_math/**
   - crates/betterlite-config/fuzz/Cargo.toml
@@ -57,13 +57,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_latency.py#L370-L549
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b315_behaviors and b315_boundaries under latency_routing::tests. The first asserts
+- text: Write tests named latency_routing_behaviors and latency_routing_boundaries under latency_routing::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b315-behaviors
-  - b315-boundaries
+  - latency-routing-behaviors
+  - latency-routing-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -74,12 +74,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b315-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b315-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/latency-routing-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/latency-routing-invalid.yaml;
     the valid seed contains routing_strategy. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b315-boundaries
+  - latency-routing-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -87,13 +87,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b315-behaviors
+  - id: latency-routing-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b315_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::latency_routing_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b315-boundaries
+  - id: latency-routing-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b315_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::latency_routing_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -103,9 +103,9 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b315-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b315-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/latency-routing-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/latency-routing-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b315-" && grep -Fq 'routing_strategy' crates/betterlite-config/fuzz/corpus/config_yaml/b315-valid.yaml
+      | grep -Fq "/latency-routing-" && grep -Fq 'routing_strategy' crates/betterlite-config/fuzz/corpus/config_yaml/latency-routing-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

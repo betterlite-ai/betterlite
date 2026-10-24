@@ -6,7 +6,7 @@ description: >-
   helpers. Own public get_standard_logging_metadata/scrub_sensitive_keys_in_metadata and logging_utils bounded base64
   truncation. Inject synthetic auth/deployment metadata rather than looking up storage. Pricing and cold-storage
   key construction remain B068/B115. B190 owns standard payload redaction after assembly. Budget 280 logic/types,
-  120 Rust/Python adapters, 300 tests and 60 wiring (760 total). Write the behavior rstest functions b253_behavior_tests_behavior
+  120 Rust/Python adapters, 300 tests and 60 wiring (760 total). Write the behavior rstest functions logging_metadata_behavior_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations logging_metadata in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed. Also own provider request-ID extraction
@@ -85,7 +85,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b253_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::logging_metadata_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

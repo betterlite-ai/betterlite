@@ -6,7 +6,7 @@ description: 'Implement ContextFit and ContextPlacement from B013 catalog limits
   write or modality check. Configuration boundary keys introduced or consumed here: enable_context_window_escalation,
   context_window_escalation_buffer. Pinned declaration defaults: enable_context_window_escalation=False;
   context_window_escalation_buffer=0.95. Resolve env values once in betterlite-config, never in router
-  code. Implement the owned native service in crates/betterlite-router/src/context_placement.rs. Add ProbeOperation::B386
+  code. Implement the owned native service in crates/betterlite-router/src/context_placement.rs. Add ProbeOperation::ContextPlacement
   in tools/oracle/src/router_probes/mod.rs and the corresponding B386 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -48,7 +48,7 @@ scope:
   - crates/betterlite-config/src/context_placement.rs
   - crates/betterlite-config/src/context_placement/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b386-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/context-placement-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -61,13 +61,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1241-L1243
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b386_behaviors and b386_boundaries under context_placement::tests. The first
+- text: Write tests named context_placement_behaviors and context_placement_boundaries under context_placement::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b386-behaviors
-  - b386-boundaries
+  - context-placement-behaviors
+  - context-placement-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -78,13 +78,13 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b386-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b386-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/context-placement-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/context-placement-invalid.yaml;
     the valid seed contains enable_context_window_escalation. The cargo-fuzz target config_yaml and normal
     replays_the_config_yaml_corpus test call the production bounded parser. Both new files must be added
     relative to GATE_BASE.
   proof:
   - config-corpus
-  - b386-boundaries
+  - context-placement-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -92,13 +92,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b386-behaviors
+  - id: context-placement-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b386_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::context_placement_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b386-boundaries
+  - id: context-placement-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b386_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::context_placement_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -108,9 +108,9 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b386-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b386-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/context-placement-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/context-placement-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b386-" && grep -Fq 'enable_context_window_escalation' crates/betterlite-config/fuzz/corpus/config_yaml/b386-valid.yaml
+      | grep -Fq "/context-placement-" && grep -Fq 'enable_context_window_escalation' crates/betterlite-config/fuzz/corpus/config_yaml/context-placement-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

@@ -7,7 +7,7 @@ description: 'Implement CustomDimension validation and pattern work accounting w
   custom_dimensions=(). Resolve env values once in betterlite-config, never in router code. MAX_CUSTOM_PATTERN_REPEAT=64,
   MAX_CUSTOM_PATTERN_WORK=2048, MAX_CUSTOM_DIMENSIONS_WORK=8192, MAX_CUSTOM_PATTERN_DEPTH=16 and CUSTOM_PATTERN_SCAN_CHARS=2048
   are source constants, not new environment settings. Implement the owned native service in crates/betterlite-router/src/custom_dimensions.rs.
-  Add ProbeOperation::B373 in tools/oracle/src/router_probes/mod.rs and the corresponding B373 entry in
+  Add ProbeOperation::CustomDimensions in tools/oracle/src/router_probes/mod.rs and the corresponding B373 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -45,13 +45,13 @@ scope:
   - crates/betterlite-config/src/custom_dimensions.rs
   - crates/betterlite-config/src/custom_dimensions/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b373-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/custom-dimensions-*
   - Cargo.toml
   - deny.toml
   - crates/betterlite-router/Cargo.toml
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/fuzz/fuzz_targets/dimension_pattern.rs
-  - crates/betterlite-config/fuzz/corpus/dimension_pattern/b373-*
+  - crates/betterlite-config/fuzz/corpus/dimension_pattern/custom-dimensions-*
   - crates/betterlite-config/Cargo.toml
   lint_tables: false
 references:
@@ -60,13 +60,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1743-L1761
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b373_behaviors and b373_boundaries under custom_dimensions::tests. The first
+- text: Write tests named custom_dimensions_behaviors and custom_dimensions_boundaries under custom_dimensions::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b373-behaviors
-  - b373-boundaries
+  - custom-dimensions-behaviors
+  - custom-dimensions-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -77,19 +77,19 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b373-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b373-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/custom-dimensions-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/custom-dimensions-invalid.yaml;
     the valid seed contains custom_dimensions. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b373-boundaries
-- text: Add crates/betterlite-config/fuzz/corpus/dimension_pattern/b373-valid.json and crates/betterlite-config/fuzz/corpus/dimension_pattern/b373-invalid.json;
+  - custom-dimensions-boundaries
+- text: Add crates/betterlite-config/fuzz/corpus/dimension_pattern/custom-dimensions-valid.json and crates/betterlite-config/fuzz/corpus/dimension_pattern/custom-dimensions-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target dimension_pattern and normal
     replays_the_dimension_pattern_corpus test call the production bounded parser. Both new files must
     be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b373-boundaries
+  - custom-dimensions-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -97,13 +97,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b373-behaviors
+  - id: custom-dimensions-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b373_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::custom_dimensions_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b373-boundaries
+  - id: custom-dimensions-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b373_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::custom_dimensions_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -113,16 +113,16 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b373-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b373-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/custom-dimensions-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/custom-dimensions-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b373-" && grep -Fq 'custom_dimensions' crates/betterlite-config/fuzz/corpus/config_yaml/b373-valid.yaml
+      | grep -Fq "/custom-dimensions-" && grep -Fq 'custom_dimensions' crates/betterlite-config/fuzz/corpus/config_yaml/custom-dimensions-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/dimension_pattern/b373-valid.json && test -f crates/betterlite-config/fuzz/corpus/dimension_pattern/b373-invalid.json
+    run: test -f crates/betterlite-config/fuzz/corpus/dimension_pattern/custom-dimensions-valid.json && test -f crates/betterlite-config/fuzz/corpus/dimension_pattern/custom-dimensions-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/dimension_pattern
-      | grep -Fq "/b373-" && test -f crates/betterlite-config/fuzz/fuzz_targets/dimension_pattern.rs &&
+      | grep -Fq "/custom-dimensions-" && test -f crates/betterlite-config/fuzz/fuzz_targets/dimension_pattern.rs &&
       cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_dimension_pattern_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/custom-dimensions/custom-binary-and-count.yaml

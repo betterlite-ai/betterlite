@@ -4,7 +4,7 @@ description: 'Implement RoutingReadBatch and RoutingPrefetch ownership over B360
   cooldown and usage key sets, settle or roll back reservations on cancellation, backfill local cache
   and consume each result once per request. Keep this service independent of selector implementations
   by passing typed key groups. Implement the owned native service in crates/betterlite-router/src/routing_read_batch.rs.
-  Add ProbeOperation::B382 in tools/oracle/src/router_probes/mod.rs and the corresponding B382 entry in
+  Add ProbeOperation::RoutingReadBatch in tools/oracle/src/router_probes/mod.rs and the corresponding B382 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -50,13 +50,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L69-L70
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b382_behaviors and b382_boundaries under routing_read_batch::tests. The first
+- text: Write tests named routing_read_batch_behaviors and routing_read_batch_boundaries under routing_read_batch::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b382-behaviors
-  - b382-boundaries
+  - routing-read-batch-behaviors
+  - routing-read-batch-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -74,13 +74,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b382-behaviors
+  - id: routing-read-batch-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b382_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::routing_read_batch_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b382-boundaries
+  - id: routing-read-batch-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b382_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::routing_read_batch_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

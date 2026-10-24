@@ -27,7 +27,7 @@ scope:
   - tools/oracle/cases/routing/harness/**
   - tools/oracle/fuzz/Cargo.toml
   - tools/oracle/fuzz/fuzz_targets/scenario.rs
-  - tools/oracle/fuzz/corpus/scenario/b300-*
+  - tools/oracle/fuzz/corpus/scenario/routing-scenarios-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7660-L7887
@@ -35,45 +35,45 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/client_initalization_utils.py#L16-L78
   why: Concurrent calls must be held at a barrier to test deployment saturation.
 dod:
-- text: Write tests named b300_behaviors and b300_boundaries under routing_scenarios::tests. The first
+- text: Write tests named routing_scenarios_behaviors and routing_scenarios_boundaries under routing_scenarios::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b300-behaviors
-  - b300-boundaries
+  - routing-scenarios-behaviors
+  - routing-scenarios-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Add tools/oracle/fuzz/corpus/scenario/b300-valid.json and tools/oracle/fuzz/corpus/scenario/b300-invalid.json;
+- text: Add tools/oracle/fuzz/corpus/scenario/routing-scenarios-valid.json and tools/oracle/fuzz/corpus/scenario/routing-scenarios-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target scenario and normal replays_the_scenario_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b300-boundaries
+  - routing-scenarios-boundaries
 - text: New two-step and barrier scenarios pass self-check and detect an altered second response or provider
     trace.
   proof:
   - scenario-self-check
-  - b300-behaviors
+  - routing-scenarios-behaviors
 checks:
   optional: []
   commands:
-  - id: b300-behaviors
+  - id: routing-scenarios-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b300_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::routing_scenarios_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b300-boundaries
+  - id: routing-scenarios-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b300_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::routing_scenarios_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f tools/oracle/fuzz/corpus/scenario/b300-valid.json && test -f tools/oracle/fuzz/corpus/scenario/b300-invalid.json
+    run: test -f tools/oracle/fuzz/corpus/scenario/routing-scenarios-valid.json && test -f tools/oracle/fuzz/corpus/scenario/routing-scenarios-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/scenario | grep
-      -Fq "/b300-" && test -f tools/oracle/fuzz/fuzz_targets/scenario.rs && cargo nextest run --locked
+      -Fq "/routing-scenarios-" && test -f tools/oracle/fuzz/fuzz_targets/scenario.rs && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(replays_the_scenario_corpus)'
   - id: scenario-self-check
     why: new scenarios fail the pinned self-check

@@ -10,7 +10,7 @@ description: 'Integrate B075''s existing cache prediction service with B334 plac
   cache_aware_routing_output_tokens, cache_aware_routing_timeout_ms. Pinned declaration defaults: cache_aware_routing=False;
   cache_aware_routing_output_tokens=1024; cache_aware_routing_timeout_ms=2000. Resolve env values once
   in betterlite-config, never in router code. Implement the owned native service in crates/betterlite-router/src/cache_cost_routing.rs.
-  Add ProbeOperation::B337 in tools/oracle/src/router_probes/mod.rs and the corresponding B337 entry in
+  Add ProbeOperation::CacheCostRouting in tools/oracle/src/router_probes/mod.rs and the corresponding B337 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -46,7 +46,7 @@ scope:
   - crates/betterlite-config/src/cache_cost_routing.rs
   - crates/betterlite-config/src/cache_cost_routing/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b337-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/cache-cost-routing-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -57,13 +57,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L318-L343
   why: B075 prediction API and bounded failure recovery.
 dod:
-- text: Write tests named b337_behaviors and b337_boundaries under cache_cost_routing::tests. The first
+- text: Write tests named cache_cost_routing_behaviors and cache_cost_routing_boundaries under cache_cost_routing::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b337-behaviors
-  - b337-boundaries
+  - cache-cost-routing-behaviors
+  - cache-cost-routing-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -74,12 +74,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b337-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b337-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/cache-cost-routing-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/cache-cost-routing-invalid.yaml;
     the valid seed contains cache_aware_routing. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b337-boundaries
+  - cache-cost-routing-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -87,13 +87,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b337-behaviors
+  - id: cache-cost-routing-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b337_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::cache_cost_routing_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b337-boundaries
+  - id: cache-cost-routing-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b337_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::cache_cost_routing_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -103,9 +103,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b337-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b337-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/cache-cost-routing-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/cache-cost-routing-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b337-" && grep -Fq 'cache_aware_routing' crates/betterlite-config/fuzz/corpus/config_yaml/b337-valid.yaml
+      | grep -Fq "/cache-cost-routing-" && grep -Fq 'cache_aware_routing' crates/betterlite-config/fuzz/corpus/config_yaml/cache-cost-routing-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

@@ -8,7 +8,7 @@ description: 'Implement typed FeedbackSignals and bounded transcript feature ext
   in this task budget. Money, prices, spend and budgets stay rust_decimal::Decimal, including database
   and wire boundaries. Reject nonfinite statistical input. Assert selected model/tier exactly; any opt-in
   tolerance is for diagnostic scores only, never a different selection. Implement the owned native service
-  in crates/betterlite-router/src/feedback_signals.rs. Add ProbeOperation::B376 in tools/oracle/src/router_probes/mod.rs
+  in crates/betterlite-router/src/feedback_signals.rs. Add ProbeOperation::FeedbackSignals in tools/oracle/src/router_probes/mod.rs
   and the corresponding B376 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
   production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
@@ -52,13 +52,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/signals.py#L1-L330
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b376_behaviors and b376_boundaries under feedback_signals::tests. The first
+- text: Write tests named feedback_signals_behaviors and feedback_signals_boundaries under feedback_signals::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b376-behaviors
-  - b376-boundaries
+  - feedback-signals-behaviors
+  - feedback-signals-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -76,13 +76,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b376-behaviors
+  - id: feedback-signals-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b376_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::feedback_signals_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b376-boundaries
+  - id: feedback-signals-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b376_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::feedback_signals_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

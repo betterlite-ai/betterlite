@@ -18,7 +18,7 @@ description: 'Implement the semantic auto_router marker using B014 embedding dis
   embedding_model=None. Resolve env values once in betterlite-config, never in router code. Keep the oracle
   semantic-router version from its uv lock; use local embedded vectors to assert threshold boundaries
   and selected route names. Implement the owned native service in crates/betterlite-router/src/semantic_router.rs.
-  Add ProbeOperation::B327 in tools/oracle/src/router_probes/mod.rs and the corresponding B327 entry in
+  Add ProbeOperation::SemanticRouter in tools/oracle/src/router_probes/mod.rs and the corresponding B327 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -68,7 +68,7 @@ scope:
   - crates/betterlite-config/src/semantic_router.rs
   - crates/betterlite-config/src/semantic_router/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b327-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/semantic-router-*
   - crates/betterlite-router/src/semantic_math.rs
   - crates/betterlite-router/src/semantic_math/**
   - Cargo.toml
@@ -77,7 +77,7 @@ scope:
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/fuzz_targets/route_index.rs
-  - crates/betterlite-router/fuzz/corpus/route_index/b327-*
+  - crates/betterlite-router/fuzz/corpus/route_index/semantic-router-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L46-L255
@@ -87,13 +87,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/install_auto_router.sh#L1-L4
   why: The shell script now only documents dependency installation; no runtime subprocess is required.
 dod:
-- text: Write tests named b327_behaviors and b327_boundaries under semantic_router::tests. The first asserts
+- text: Write tests named semantic_router_behaviors and semantic_router_boundaries under semantic_router::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b327-behaviors
-  - b327-boundaries
+  - semantic-router-behaviors
+  - semantic-router-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -104,18 +104,18 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b327-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b327-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/semantic-router-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/semantic-router-invalid.yaml;
     the valid seed contains auto_router_config_path. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b327-boundaries
-- text: Add crates/betterlite-router/fuzz/corpus/route_index/b327-valid.json and crates/betterlite-router/fuzz/corpus/route_index/b327-invalid.json;
+  - semantic-router-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/route_index/semantic-router-valid.json and crates/betterlite-router/fuzz/corpus/route_index/semantic-router-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target route_index and normal replays_the_route_index_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b327-boundaries
+  - semantic-router-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -123,13 +123,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b327-behaviors
+  - id: semantic-router-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b327_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::semantic_router_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b327-boundaries
+  - id: semantic-router-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b327_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::semantic_router_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -139,16 +139,16 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b327-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b327-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/semantic-router-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/semantic-router-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b327-" && grep -Fq 'auto_router_config_path' crates/betterlite-config/fuzz/corpus/config_yaml/b327-valid.yaml
+      | grep -Fq "/semantic-router-" && grep -Fq 'auto_router_config_path' crates/betterlite-config/fuzz/corpus/config_yaml/semantic-router-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-router/fuzz/corpus/route_index/b327-valid.json && test -f crates/betterlite-router/fuzz/corpus/route_index/b327-invalid.json
+    run: test -f crates/betterlite-router/fuzz/corpus/route_index/semantic-router-valid.json && test -f crates/betterlite-router/fuzz/corpus/route_index/semantic-router-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/route_index
-      | grep -Fq "/b327-" && test -f crates/betterlite-router/fuzz/fuzz_targets/route_index.rs && cargo
+      | grep -Fq "/semantic-router-" && test -f crates/betterlite-router/fuzz/fuzz_targets/route_index.rs && cargo
       nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_route_index_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/semantic-router/route-threshold.yaml

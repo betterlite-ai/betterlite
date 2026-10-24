@@ -5,7 +5,7 @@ description: 'Adapt B311 commitment and B310 fallback ownership to B080 typed Re
   IDs and headers. Use the endpoint service adapter in betterlite-server; no new SSE parser or provider
   transport belongs here. MAX_HELD_PRE_OUTPUT_RESPONSES_EVENTS=200; the limit is a pinned constant, not
   a new env variable. Implement the owned native service in crates/betterlite-router/src/responses_stream_fallback.rs.
-  Add ProbeOperation::B370 in tools/oracle/src/router_probes/mod.rs and the corresponding B370 entry in
+  Add ProbeOperation::ResponsesStreamFallback in tools/oracle/src/router_probes/mod.rs and the corresponding B370 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -50,13 +50,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5416-L5456
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b370_behaviors and b370_boundaries under responses_stream_fallback::tests. The
+- text: Write tests named responses_stream_fallback_behaviors and responses_stream_fallback_boundaries under responses_stream_fallback::tests. The
     first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
     bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
     cannot satisfy either check.
   proof:
-  - b370-behaviors
-  - b370-boundaries
+  - responses-stream-fallback-behaviors
+  - responses-stream-fallback-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -74,13 +74,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b370-behaviors
+  - id: responses-stream-fallback-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b370_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::responses_stream_fallback_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b370-boundaries
+  - id: responses-stream-fallback-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b370_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::responses_stream_fallback_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

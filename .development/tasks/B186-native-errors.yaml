@@ -6,7 +6,7 @@ description: >-
   and B242 remaining native family classifiers. Preserve already-mapped errors, ordered dispatch and typed final
   fallback without SDK/network/ambient credentials. Every case is one invocation of one family; each specialized
   branch lives in its classifier task, with cross-family dispatch/idempotence tested here. Budget 210 dispatch,
-  90 adapters, 280 tests and 50 wiring (630 total). Write the behavior rstest functions b186_native_error_tests_behavior
+  90 adapters, 280 tests and 50 wiring (630 total). Write the behavior rstest functions native_errors_native_error_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations native_error in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed.
@@ -66,7 +66,7 @@ checks:
   - id: native-error-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/::b186_native_error_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/::native_errors_native_error_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: provider-error-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

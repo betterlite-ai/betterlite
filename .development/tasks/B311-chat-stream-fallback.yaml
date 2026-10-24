@@ -5,7 +5,7 @@ description: 'Extend B005''s stream lifecycle with the B310 fallback engine. Tra
   and transfer response metadata and usage when a new stream takes over. Keep stream errors typed and
   close both failed and replacement streams on cancellation. Extend B005''s production SSE event parser
   and existing sse_events fuzz target for the new error events, then seed and replay its corpus. Implement
-  the owned native service in crates/betterlite-router/src/chat_stream_fallback.rs. Add ProbeOperation::B311
+  the owned native service in crates/betterlite-router/src/chat_stream_fallback.rs. Add ProbeOperation::ChatStreamFallback
   in tools/oracle/src/router_probes/mod.rs and the corresponding B311 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -44,7 +44,7 @@ scope:
   - crates/betterlite-openai/src/stream.rs
   - crates/betterlite-openai/src/stream/**
   - crates/betterlite-openai/fuzz/fuzz_targets/sse_events.rs
-  - crates/betterlite-openai/fuzz/corpus/sse_events/b311-*
+  - crates/betterlite-openai/fuzz/corpus/sse_events/chat-stream-fallback-*
   - crates/betterlite-openai/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -65,13 +65,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3056-L3127
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b311_behaviors and b311_boundaries under chat_stream_fallback::tests. The first
+- text: Write tests named chat_stream_fallback_behaviors and chat_stream_fallback_boundaries under chat_stream_fallback::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b311-behaviors
-  - b311-boundaries
+  - chat-stream-fallback-behaviors
+  - chat-stream-fallback-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -82,12 +82,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-openai/fuzz/corpus/sse_events/b311-valid.json and crates/betterlite-openai/fuzz/corpus/sse_events/b311-invalid.json;
+- text: Add crates/betterlite-openai/fuzz/corpus/sse_events/chat-stream-fallback-valid.json and crates/betterlite-openai/fuzz/corpus/sse_events/chat-stream-fallback-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target sse_events and normal replays_the_sse_events_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - stream-corpus
-  - b311-boundaries
+  - chat-stream-fallback-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -95,13 +95,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b311-behaviors
+  - id: chat-stream-fallback-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b311_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::chat_stream_fallback_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b311-boundaries
+  - id: chat-stream-fallback-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b311_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::chat_stream_fallback_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -111,9 +111,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: stream-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-openai/fuzz/corpus/sse_events/b311-valid.json && test -f crates/betterlite-openai/fuzz/corpus/sse_events/b311-invalid.json
+    run: test -f crates/betterlite-openai/fuzz/corpus/sse_events/chat-stream-fallback-valid.json && test -f crates/betterlite-openai/fuzz/corpus/sse_events/chat-stream-fallback-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/sse_events
-      | grep -Fq "/b311-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/sse_events.rs && cargo
+      | grep -Fq "/chat-stream-fallback-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/sse_events.rs && cargo
       nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_sse_events_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/chat-stream-fallback/failure-before-chunk.yaml

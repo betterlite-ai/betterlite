@@ -10,7 +10,7 @@ description: 'Build a typed per-turn override result for B335''s session lifecyc
   stall_escalation_repeat_threshold=3; semantic_keyword_matching=False; embedding_model=None; match_threshold=0.5;
   route_housekeeping_to_cheapest_tier=True. Resolve env values once in betterlite-config, never in router
   code. Implement the owned native service in crates/betterlite-router/src/complexity_turn_overrides.rs.
-  Add ProbeOperation::B359 in tools/oracle/src/router_probes/mod.rs and the corresponding B359 entry in
+  Add ProbeOperation::ComplexityTurnOverrides in tools/oracle/src/router_probes/mod.rs and the corresponding B359 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -56,7 +56,7 @@ scope:
   - crates/betterlite-config/src/complexity_turn_overrides.rs
   - crates/betterlite-config/src/complexity_turn_overrides/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b359-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/complexity-turn-overrides-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -73,13 +73,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L121-L130
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b359_behaviors and b359_boundaries under complexity_turn_overrides::tests. The
+- text: Write tests named complexity_turn_overrides_behaviors and complexity_turn_overrides_boundaries under complexity_turn_overrides::tests. The
     first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
     bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
     cannot satisfy either check.
   proof:
-  - b359-behaviors
-  - b359-boundaries
+  - complexity-turn-overrides-behaviors
+  - complexity-turn-overrides-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -90,12 +90,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b359-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b359-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/complexity-turn-overrides-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/complexity-turn-overrides-invalid.yaml;
     the valid seed contains keyword_tier_rules. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b359-boundaries
+  - complexity-turn-overrides-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -103,13 +103,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b359-behaviors
+  - id: complexity-turn-overrides-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b359_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::complexity_turn_overrides_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b359-boundaries
+  - id: complexity-turn-overrides-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b359_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::complexity_turn_overrides_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -119,9 +119,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b359-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b359-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/complexity-turn-overrides-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/complexity-turn-overrides-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b359-" && grep -Fq 'keyword_tier_rules' crates/betterlite-config/fuzz/corpus/config_yaml/b359-valid.yaml
+      | grep -Fq "/complexity-turn-overrides-" && grep -Fq 'keyword_tier_rules' crates/betterlite-config/fuzz/corpus/config_yaml/complexity-turn-overrides-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

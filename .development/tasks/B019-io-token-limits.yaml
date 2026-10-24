@@ -4,7 +4,7 @@ description: 'Integrate B365 IoReservation into B016 pre-call checks and B017 re
   normalized B014 final usage, refund failed/stale attempts against the original minute, retain reservations
   when usage is absent, and publish ITPM/OTPM remaining headers. B319 supplies independent model RPM/TPM
   checks; this task composes them without adding any selector. Implement the owned native service in crates/betterlite-router/src/io_token_limits.rs.
-  Add ProbeOperation::B019 in tools/oracle/src/router_probes/mod.rs and the corresponding B019 entry in
+  Add ProbeOperation::IoTokenLimits in tools/oracle/src/router_probes/mod.rs and the corresponding B019 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -42,13 +42,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L179-L185
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b019_behaviors and b019_boundaries under io_token_limits::tests. The first asserts
+- text: Write tests named io_token_limits_behaviors and io_token_limits_boundaries under io_token_limits::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b019-behaviors
-  - b019-boundaries
+  - io-token-limits-behaviors
+  - io-token-limits-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -66,13 +66,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b019-behaviors
+  - id: io-token-limits-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b019_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::io_token_limits_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b019-boundaries
+  - id: io-token-limits-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b019_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::io_token_limits_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

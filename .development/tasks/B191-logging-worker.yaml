@@ -11,7 +11,7 @@ description: >-
   deadline. Implement source 27-265 and 448-531 with typed tracing replacing _safe_log; delayed retries/aggressive
   clears 267-446 are intentionally replaced by bounded admission, and _flush_on_exit is replaced by explicit shutdown.
   Register worker_trace in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py with separate Rust/Python
-  adapters and a new seed. Compare event counts, final status and delivered set, not elapsed timing. Write b191_logging_worker_tests_behavior
+  adapters and a new seed. Compare event counts, final status and delivered set, not elapsed timing. Write logging_worker_tests_behavior
   rstest cases in adjacent tests.rs, separate from replay. Budget 320 worker, 100 adapters, 290 tests and 60 wiring
   (770 total).
 scope:
@@ -82,7 +82,7 @@ checks:
   - id: logging-worker-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b191_logging_worker_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::logging_worker_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
