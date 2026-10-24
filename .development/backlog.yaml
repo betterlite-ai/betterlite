@@ -251,6 +251,7 @@ tasks:
     - B323
     - B324
     - B325
+    - B326
     file: null
     covers:
     - litellm/router_strategy/{tag_based_routing,budget_limiter}.py
@@ -2176,3 +2177,16 @@ tasks:
     covers:
     - litellm/router_utils/prompt_caching_cache.py
     - litellm/router_utils/pre_call_checks/prompt_caching_deployment_check.py
+
+  - id: B326
+    milestone: M2 routing
+    title: Router budget windows and lossless spend synchronization
+    status: todo
+    depends_on:
+    - B016
+    - B304
+    - B068
+    - B071
+    file: tasks/B326-routing-budget-state.yaml
+    covers:
+    - litellm/router_strategy/budget_limiter.py
