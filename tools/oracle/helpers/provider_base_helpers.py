@@ -150,7 +150,8 @@ def class_config(argument: Json) -> Json:
     }
     fields = as_object(argument)
     attributes: dict[str, object] = dict(as_object(fields["values"]))
-    attributes.update({name: members[str(kind)] for name, kind in as_object(fields["methods"]).items()})
+    methods = as_object(fields["methods"])
+    attributes.update({name: members[str(kind)] for name, kind in methods.items()})
     parent = type("Parent", (BaseConfig,), {"inherited_default": 7})
     fixture = cast("type[BaseConfig]", type("Fixture", (parent,), attributes))
     return to_json(fixture.get_config())

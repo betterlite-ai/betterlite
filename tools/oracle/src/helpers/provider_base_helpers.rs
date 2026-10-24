@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_config::types::LiteLlmSettings;
 use betterlite_openai::base_helpers::{
     DUMMY_TOOLS, HiddenCarrier, HistoryMessage, ImageEditBase, ResponseKind, ResponsesBase,
     add_thinking_max_tokens, append_tools, assistant_has_thinking, has_tool_calls, hidden_params,
@@ -136,13 +137,14 @@ pub(crate) fn invoke(call: &BaseCall) -> Outcome {
     Ok(value.map_err(encode)?)
 }
 
+fn load_settings(lookup: Environment, source: &str) -> Result<LiteLlmSettings, ConfigError> {
+    let loaded = ConfigLoader { lookup }.load(source)?;
+    Ok(loaded.litellm_settings)
+}
+
 impl TokensCall {
     fn run(mut self) -> Outcome {
-        let loaded = ConfigLoader {
-            lookup: self.environment,
-        }
-        .load("")?;
-        let default_max_tokens = loaded.litellm_settings.default_max_tokens;
+        let default_max_tokens = load_settings(self.environment, "")?.default_max_tokens;
         add_thinking_max_tokens(&self.requested, &mut self.options, default_max_tokens)?;
         Ok(Value::Object(self.options))
     }
@@ -168,11 +170,9 @@ impl ModifyCall {
         let source = self.configured.map_or_else(String::new, |value| {
             format!("litellm_settings:\n  modify_params: {value}\n")
         });
-        let loaded = ConfigLoader {
-            lookup: self.environment,
-        }
-        .load(&source)?;
-        Ok(Value::Bool(loaded.litellm_settings.modify_params))
+        Ok(Value::Bool(
+            load_settings(self.environment, &source)?.modify_params,
+        ))
     }
 }
 
