@@ -8,3 +8,9 @@ covers:
   - "litellm/types/guardrails.py"
   - "litellm/types/guardrail_base_init.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/base.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

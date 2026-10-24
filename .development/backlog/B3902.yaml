@@ -6,3 +6,9 @@ depends_on: [B3900, B173]
 file: null
 covers:
   - "litellm/integrations/langfuse/langfuse_sdk.py"
+parent: B112
+split_from: B112
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

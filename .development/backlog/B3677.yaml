@@ -11,3 +11,9 @@ covers:
   - "litellm/llms/openai/speech/guardrail_translation/handler.py"
   - "litellm/llms/openai/transcriptions/guardrail_translation/handler.py"
   - "litellm/llms/openai/videos/guardrail_translation/handler.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

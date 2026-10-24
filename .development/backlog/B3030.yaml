@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/common_utils/proxy_rate_limit_error.py"
   - "litellm/proxy/hooks/rate_limiter_utils.py"
   - "litellm/proxy/hooks/parallel_request_limiter_v3.py"
+parent: B072
+split_from: B072
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

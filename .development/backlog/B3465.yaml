@@ -6,3 +6,9 @@ depends_on: [B3452, B3460, B3462, B3463, B3464, B884, B1103]
 file: null
 covers:
   - "litellm/proxy/rag_endpoints/endpoints.py"
+parent: B097
+split_from: B097
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

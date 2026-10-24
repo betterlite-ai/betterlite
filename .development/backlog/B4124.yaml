@@ -6,3 +6,9 @@ depends_on: [B4123, B216]
 file: null
 covers:
   - "litellm/integrations/anthropic_cache_control_hook.py"
+parent: B119
+split_from: B119
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

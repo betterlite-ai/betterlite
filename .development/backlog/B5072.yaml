@@ -10,3 +10,9 @@ covers:
   - "proxy_server_config.yaml"
   - "prometheus.yml"
   - "docker/.env.example"
+parent: B151
+split_from: B151
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

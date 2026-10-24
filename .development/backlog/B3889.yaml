@@ -6,3 +6,9 @@ depends_on: [B003]
 file: null
 covers:
   - "litellm/proxy/middleware/billable_request_metrics_middleware.py"
+parent: B111
+split_from: B111
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

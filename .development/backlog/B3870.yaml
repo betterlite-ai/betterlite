@@ -6,3 +6,9 @@ depends_on: []
 file: null
 covers:
   - "litellm/types/integrations/prometheus.py"
+parent: B111
+split_from: B111
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

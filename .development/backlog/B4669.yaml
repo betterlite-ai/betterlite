@@ -6,3 +6,9 @@ depends_on: [B4668, B726, B736, B737]
 file: null
 covers:
   - "litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py"
+parent: B137
+split_from: B137
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

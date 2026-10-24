@@ -8,3 +8,9 @@ covers:
   - "litellm/integrations/compression_interception/__init__.py"
   - "litellm/integrations/compression_interception/handler.py"
   - "litellm/types/integrations/compression_interception.py"
+parent: B100
+split_from: B100
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

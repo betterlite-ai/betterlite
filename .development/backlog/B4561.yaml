@@ -6,3 +6,9 @@ depends_on: []
 file: null
 covers:
   - "litellm/proxy/client/cli/commands/statusline_script.py"
+parent: B134
+split_from: B134
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

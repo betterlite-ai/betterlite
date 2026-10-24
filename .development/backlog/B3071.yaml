@@ -6,3 +6,9 @@ depends_on: [B002, B189, B1690, B3060, B3069, B3070]
 file: null
 covers:
   - "litellm/integrations/cloudzero/cloudzero.py"
+parent: B073
+split_from: B073
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

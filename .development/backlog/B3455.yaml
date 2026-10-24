@@ -6,3 +6,9 @@ depends_on: [B3451, B1301, B1302, B1303, B1305, B173]
 file: null
 covers:
   - "litellm/rag/ingestion/vertex_ai_ingestion.py"
+parent: B097
+split_from: B097
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

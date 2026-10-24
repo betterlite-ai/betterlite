@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/management_endpoints/common_daily_activity.py"
   - "litellm/types/proxy/management_endpoints/common_daily_activity.py"
+parent: B074
+split_from: B074
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

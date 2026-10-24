@@ -6,3 +6,9 @@ depends_on: [B3339, B3340, B672, B052, B014, B1100, B2400, B844]
 file: null
 covers:
   - "litellm/proxy/video_endpoints/endpoints.py"
+parent: B093
+split_from: B093
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

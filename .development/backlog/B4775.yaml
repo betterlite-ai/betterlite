@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/agent_endpoints/agent_registry.py"
   - "litellm/proxy/agent_endpoints/endpoints.py"
+parent: B141
+split_from: B141
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

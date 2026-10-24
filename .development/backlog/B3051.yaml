@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/hooks/dynamic_rate_limiter_v3.py"
   - "litellm/proxy/hooks/README.dynamic_rate_limiter_v3.md"
+parent: B072
+split_from: B072
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

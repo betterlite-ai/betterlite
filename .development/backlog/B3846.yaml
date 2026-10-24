@@ -8,3 +8,9 @@ covers:
   - "litellm/integrations/otel/mappers/{__init__,langfuse,langtrace,openinference,weave}.py"
   - "litellm/integrations/langtrace.py"
   - "litellm/integrations/arize/_utils.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

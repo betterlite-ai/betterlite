@@ -6,3 +6,9 @@ depends_on: [B3331, B173, B176, B249, B2402, B525, B547, B1361, B1362, B1363, B1
 file: null
 covers:
   - "litellm/llms/custom_httpx/llm_http_handler.py"
+parent: B093
+split_from: B093
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: []
 file: null
 covers:
   - "litellm/litellm_core_utils/{agentic_followup_kwargs,agentic_loop_settings}.py"
+parent: B119
+split_from: B119
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

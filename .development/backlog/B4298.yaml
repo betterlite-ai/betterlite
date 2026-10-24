@@ -6,3 +6,9 @@ depends_on: [B4290, B4296, B4297]
 file: null
 covers:
   - "litellm/caching/caching.py"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B002, B068]
 file: null
 covers:
   - "litellm/integrations/supabase.py"
+parent: B114
+split_from: B114
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

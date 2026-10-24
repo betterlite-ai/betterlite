@@ -9,3 +9,9 @@ covers:
   - "docker/prod_entrypoint.sh"
   - "docker/component_entrypoint.sh"
   - "docker/build_admin_ui.sh"
+parent: B151
+split_from: B151
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

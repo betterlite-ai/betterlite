@@ -8,3 +8,9 @@ covers:
   - "litellm/integrations/prometheus.py"
   - "litellm/integrations/prometheus_metrics_endpoint.py"
   - "litellm/proxy/middleware/prometheus_auth_middleware.py"
+parent: B111
+split_from: B111
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

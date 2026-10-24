@@ -6,3 +6,9 @@ depends_on: [B003, B700, B726, B732, B3159]
 file: null
 covers:
   - "litellm/proxy/management_endpoints/workflow_management_endpoints.py"
+parent: B076
+split_from: B076
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

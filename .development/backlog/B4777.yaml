@@ -6,3 +6,9 @@ depends_on: [B4770, B4772, B4775, B4776, B192, B700, B726, B816]
 file: null
 covers:
   - "litellm/proxy/agent_endpoints/agent_registry.py"
+parent: B141
+split_from: B141
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

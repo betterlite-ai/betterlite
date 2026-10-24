@@ -6,3 +6,9 @@ depends_on: [B4050, B4052, B4054, B4056, B4057, B4059, B189]
 file: null
 covers:
   - "litellm/proxy/prompts/prompt_registry.py"
+parent: B117
+split_from: B117
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

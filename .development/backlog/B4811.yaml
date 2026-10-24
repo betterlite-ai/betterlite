@@ -6,3 +6,9 @@ depends_on: []
 file: null
 covers:
   - "litellm/proxy/a2a/agent_card.py"
+parent: B142
+split_from: B142
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

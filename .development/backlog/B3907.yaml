@@ -8,3 +8,9 @@ covers:
   - "litellm/integrations/langfuse/langfuse.py"
   - "litellm/integrations/langfuse/langfuse_handler.py"
   - "litellm/types/integrations/langfuse.py"
+parent: B112
+split_from: B112
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

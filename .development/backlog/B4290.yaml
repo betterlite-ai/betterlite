@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/caching/{base_cache,in_memory_cache}.py"
   - "litellm/types/caching.py"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

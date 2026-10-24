@@ -6,3 +6,9 @@ depends_on: [B4560, B4562, B4563, B4564, B4565, B4569, B4570]
 file: null
 covers:
   - "litellm/proxy/client/cli/commands/configure_setup.py"
+parent: B134
+split_from: B134
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

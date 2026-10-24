@@ -6,3 +6,9 @@ depends_on: [B002, B173, B4413]
 file: null
 covers:
   - "litellm/secret_managers/aws_secret_manager_v2.py"
+parent: B129
+split_from: B129
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

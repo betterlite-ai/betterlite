@@ -6,3 +6,9 @@ depends_on: []
 file: null
 covers:
   - "litellm/proxy/common_utils/custom_openapi_spec.py"
+parent: B123
+split_from: B123
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

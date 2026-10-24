@@ -6,3 +6,9 @@ depends_on: [B3492, B1392, B173, B198, B249]
 file: null
 covers:
   - "litellm/interactions/agents/http_handler.py"
+parent: B098
+split_from: B098
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py"
   - "litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/README.md"
   - "litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/example_config.yaml"
+parent: B106
+split_from: B106
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B171, B726, B732, B858, B860, B1018, B2226]
 file: null
 covers:
   - "litellm/llms/litellm_proxy/skills/handler.py"
+parent: B078
+split_from: B078
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

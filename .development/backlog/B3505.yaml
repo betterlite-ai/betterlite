@@ -6,3 +6,9 @@ depends_on: [B3501, B3502, B3503, B185, B186, B198]
 file: null
 covers:
   - "litellm/interactions/agents/main.py"
+parent: B098
+split_from: B098
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B3270, B3271, B3272, B732, B737, B749]
 file: null
 covers:
   - "litellm/proxy/search_endpoints/search_tool_management.py"
+parent: B091
+split_from: B091
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

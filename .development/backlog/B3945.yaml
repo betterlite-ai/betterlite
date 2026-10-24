@@ -6,3 +6,9 @@ depends_on: [B2226]
 file: null
 covers:
   - "litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py"
+parent: B113
+split_from: B113
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

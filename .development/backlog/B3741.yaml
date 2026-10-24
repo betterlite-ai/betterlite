@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/agent_365.py"
+parent: B106
+split_from: B106
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

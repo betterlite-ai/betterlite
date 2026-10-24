@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/integrations/pointfive/{payload,upload_client}.py"
   - "litellm/types/integrations/pointfive.py"
+parent: B073
+split_from: B073
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

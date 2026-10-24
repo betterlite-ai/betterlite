@@ -6,3 +6,9 @@ depends_on: [B3660, B3661, B3662, B3682, B3683, B188, B726, B732, B736]
 file: null
 covers:
   - "litellm/proxy/guardrails/guardrail_endpoints.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

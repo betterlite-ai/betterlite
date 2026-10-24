@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/db/health_check_latest.py"
   - "litellm/proxy/health_endpoints/_health_endpoints.py"
+parent: B130
+split_from: B130
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: []
 file: null
 covers:
   - "litellm/proxy/openapi_registry.json"
+parent: B123
+split_from: B123
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

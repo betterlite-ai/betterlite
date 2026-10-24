@@ -6,3 +6,9 @@ depends_on: [B199, B360, B390, B2226]
 file: null
 covers:
   - "litellm/router_strategy/budget_limiter.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

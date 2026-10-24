@@ -6,3 +6,9 @@ depends_on: [B002, B173, B198, B218, B4380, B4381]
 file: null
 covers:
   - "litellm/caching/qdrant_semantic_cache.py"
+parent: B128
+split_from: B128
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

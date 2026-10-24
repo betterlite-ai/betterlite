@@ -6,3 +6,9 @@ depends_on: [B173, B3061]
 file: null
 covers:
   - "litellm/integrations/focus/destinations/vantage_destination.py"
+parent: B073
+split_from: B073
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

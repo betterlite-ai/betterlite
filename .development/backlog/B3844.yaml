@@ -8,3 +8,9 @@ covers:
   - "litellm/integrations/otel/model/payloads.py"
   - "litellm/integrations/opentelemetry.py"
   - "litellm/integrations/opentelemetry_utils/base_otel_llm_obs_attributes.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

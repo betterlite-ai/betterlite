@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/types/proxy/{cloudzero_endpoints,vantage_endpoints}.py"
   - "litellm/proxy/_types.py"
+parent: B073
+split_from: B073
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

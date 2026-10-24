@@ -10,3 +10,9 @@ covers:
   - "litellm/types/proxy/carried_budget_state.py"
   - "litellm/proxy/auth/budget_throttle.py"
   - "litellm/proxy/common_utils/timezone_utils.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

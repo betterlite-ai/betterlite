@@ -6,3 +6,9 @@ depends_on: [B002, B188, B198, B254]
 file: null
 covers:
   - "litellm/integrations/newrelic/newrelic.py"
+parent: B113
+split_from: B113
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

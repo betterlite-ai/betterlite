@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/hooks/prompt_injection_detection.py"
   - "litellm/litellm_core_utils/prompt_templates/factory.py"
+parent: B105
+split_from: B105
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

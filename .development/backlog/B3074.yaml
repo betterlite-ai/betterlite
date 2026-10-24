@@ -6,3 +6,9 @@ depends_on: [B002, B173, B188, B189, B190, B256, B3073]
 file: null
 covers:
   - "litellm/integrations/pointfive/{__init__,logger}.py"
+parent: B073
+split_from: B073
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

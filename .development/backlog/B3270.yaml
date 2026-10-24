@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/llms/base_llm/search/**"
   - "litellm/types/search.py"
+parent: B091
+split_from: B091
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

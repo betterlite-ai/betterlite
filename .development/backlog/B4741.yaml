@@ -6,3 +6,9 @@ depends_on: [B002]
 file: null
 covers:
   - "litellm/experimental_mcp_client/client.py"
+parent: B140
+split_from: B140
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

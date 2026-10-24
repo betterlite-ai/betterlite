@@ -6,3 +6,9 @@ depends_on: [B4050, B4059, B4060, B726]
 file: null
 covers:
   - "litellm/proxy/prompts/prompt_endpoints.py"
+parent: B117
+split_from: B117
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

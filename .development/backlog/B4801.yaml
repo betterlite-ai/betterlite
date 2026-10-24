@@ -6,3 +6,9 @@ depends_on: [B002, B173, B4800, B4813]
 file: null
 covers:
   - "litellm/a2a_protocol/main.py"
+parent: B142
+split_from: B142
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

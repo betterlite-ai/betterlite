@@ -6,3 +6,9 @@ depends_on: [B189, B219]
 file: null
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/**"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

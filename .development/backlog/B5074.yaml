@@ -6,3 +6,9 @@ depends_on: [B5070]
 file: null
 covers:
   - "docker/build_from_pip/**"
+parent: B151
+split_from: B151
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

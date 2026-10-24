@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/types/google_genai/{__init__,main}.py"
   - "litellm/llms/base_llm/google_genai/transformation.py"
+parent: B098
+split_from: B098
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

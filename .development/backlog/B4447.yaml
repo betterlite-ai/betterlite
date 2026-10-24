@@ -6,3 +6,9 @@ depends_on: [B002, B052, B173, B189, B4446, B4448]
 file: null
 covers:
   - "litellm/proxy/health_endpoints/_health_endpoints.py"
+parent: B130
+split_from: B130
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

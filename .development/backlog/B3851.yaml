@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/integrations/otel/presets/{__init__,agentops,newrelic,signoz,langfuse,destinations}.py"
   - "litellm/types/integrations/langfuse_otel.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

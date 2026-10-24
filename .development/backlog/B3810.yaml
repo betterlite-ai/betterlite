@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/tool_permission.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py"
+parent: B109
+split_from: B109
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

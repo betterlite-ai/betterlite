@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/management_endpoints/cache_settings_endpoints.py"
   - "litellm/types/management_endpoints/cache_settings_endpoints.py"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

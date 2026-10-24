@@ -6,3 +6,9 @@ depends_on: [B304, B732, B844, B3031, B3038, B3039]
 file: null
 covers:
   - "litellm/proxy/hooks/parallel_request_limiter_v3.py"
+parent: B072
+split_from: B072
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

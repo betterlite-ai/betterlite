@@ -9,3 +9,9 @@ covers:
   - "litellm/integrations/langfuse/langfuse_sdk.py"
   - "litellm/integrations/langfuse/langfuse_mock_client.py"
   - "litellm/types/integrations/langfuse.py"
+parent: B112
+split_from: B112
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

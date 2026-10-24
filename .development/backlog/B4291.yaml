@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/caching/disk_cache.py"
   - "litellm/proxy/common_utils/{cache_coordinator,cache_pydantic_utils}.py"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

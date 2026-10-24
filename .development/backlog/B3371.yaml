@@ -6,3 +6,9 @@ depends_on: [B3362, B014, B2400, B1101, B732, B003]
 file: null
 covers:
   - "litellm/proxy/container_endpoints/handler_factory.py"
+parent: B094
+split_from: B094
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

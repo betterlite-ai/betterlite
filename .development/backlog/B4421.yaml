@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/secret_managers/secret_manager_handler.py"
   - "litellm/secret_managers/dispatch.py"
+parent: B129
+split_from: B129
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

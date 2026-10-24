@@ -6,3 +6,9 @@ depends_on: [B4684, B864, B732]
 file: null
 covers:
   - "litellm/proxy/_experimental/mcp_server/tool_search.py"
+parent: B138
+split_from: B138
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

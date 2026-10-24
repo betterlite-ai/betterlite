@@ -6,3 +6,9 @@ depends_on: [B4658, B173, B733]
 file: null
 covers:
   - "litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py"
+parent: B137
+split_from: B137
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

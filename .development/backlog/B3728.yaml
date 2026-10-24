@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/guardrails/guardrail_hooks/azure/base.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/azure/base.py"
   - "litellm/proxy/hooks/azure_content_safety.py"
+parent: B106
+split_from: B106
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

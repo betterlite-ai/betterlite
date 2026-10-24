@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/caching/{llm_caching_handler,evicted_client_closer}.py"
   - "litellm/litellm_core_utils/specialty_caches/**"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

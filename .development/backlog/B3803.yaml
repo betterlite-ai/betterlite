@@ -6,3 +6,9 @@ depends_on: [B3802, B189]
 file: null
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/custom_code/{custom_code_guardrail,response_rejection_code,__init__}.py"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

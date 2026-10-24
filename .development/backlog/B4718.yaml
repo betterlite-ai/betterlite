@@ -6,3 +6,9 @@ depends_on: [B4711, B4712, B4716, B4717, B1600, B858, B865]
 file: null
 covers:
   - "litellm/proxy/management_endpoints/mcp_management_endpoints.py"
+parent: B139
+split_from: B139
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

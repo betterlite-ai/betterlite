@@ -6,3 +6,9 @@ depends_on: [B052, B700, B722, B723, B726]
 file: null
 covers:
   - "litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py"
+parent: B074
+split_from: B074
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

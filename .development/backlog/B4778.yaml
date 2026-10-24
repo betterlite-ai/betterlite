@@ -9,3 +9,9 @@ covers:
   - "litellm/proxy/agent_endpoints/auth/agent_access_groups.py"
   - "litellm/proxy/agent_endpoints/auth/agent_caller.py"
   - "litellm/proxy/agent_endpoints/auth/agent_permission_handler.py"
+parent: B141
+split_from: B141
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

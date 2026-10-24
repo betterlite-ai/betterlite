@@ -6,3 +6,9 @@ depends_on: [B002, B184, B2203, B2221, B2225]
 file: null
 covers:
   - "litellm/proxy/health_check.py"
+parent: B130
+split_from: B130
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

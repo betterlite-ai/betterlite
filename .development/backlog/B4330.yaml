@@ -6,3 +6,9 @@ depends_on: [B360, B393, B4324, B4325, B4326, B4327]
 file: null
 covers:
   - "litellm/caching/redis_batch.py"
+parent: B126
+split_from: B126
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

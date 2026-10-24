@@ -6,3 +6,9 @@ depends_on: [B003, B244, B4290, B4297, B4299]
 file: null
 covers:
   - "litellm/proxy/caching_routes.py"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

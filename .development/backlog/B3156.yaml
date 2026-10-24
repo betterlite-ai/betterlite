@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/roi_calculator/pull_cache.py"
   - "litellm/proxy/roi_calculator/sync.py"
+parent: B076
+split_from: B076
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

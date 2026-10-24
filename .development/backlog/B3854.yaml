@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/integrations/opentelemetry.py"
   - "litellm/integrations/opentelemetry_utils/gen_ai_semconv.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B3882, B3883, B813, B897, B723, B724, B726, B700, B1690, B189, B002
 file: null
 covers:
   - "litellm/integrations/prometheus.py"
+parent: B111
+split_from: B111
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

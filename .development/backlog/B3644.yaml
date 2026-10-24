@@ -6,3 +6,9 @@ depends_on: [B002, B193, B1018]
 file: null
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py"
+parent: B103
+split_from: B103
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/_experimental/mcp_server/toolset_db.py"
   - "litellm/types/mcp_server/mcp_toolset.py"
+parent: B138
+split_from: B138
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

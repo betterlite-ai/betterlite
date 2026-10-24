@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/llms/anthropic/prompt_cache_prediction.py"
   - "litellm/proxy/hooks/prompt_cache_prediction.py"
+parent: B075
+split_from: B075
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

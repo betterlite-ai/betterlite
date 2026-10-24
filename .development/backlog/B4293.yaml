@@ -6,3 +6,9 @@ depends_on: [B002, B2226, B390, B360, B393, B4290]
 file: null
 covers:
   - "litellm/caching/dual_cache.py"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

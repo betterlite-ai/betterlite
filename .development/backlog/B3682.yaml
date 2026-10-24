@@ -6,3 +6,9 @@ depends_on: [B3662, B3665, B3679, B3680, B3681, B189, B726]
 file: null
 covers:
   - "litellm/proxy/guardrails/guardrail_registry.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

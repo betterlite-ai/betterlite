@@ -6,3 +6,9 @@ depends_on: [B173, B4803, B4805]
 file: null
 covers:
   - "litellm/a2a_protocol/providers/pydantic_ai_agents/**"
+parent: B142
+split_from: B142
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

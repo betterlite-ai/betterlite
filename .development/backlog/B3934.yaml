@@ -6,3 +6,9 @@ depends_on: [B3930, B3932, B3933, B192, B253, B1106]
 file: null
 covers:
   - "litellm/integrations/datadog/datadog.py"
+parent: B113
+split_from: B113
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

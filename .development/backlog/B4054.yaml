@@ -6,3 +6,9 @@ depends_on: [B4050, B4053]
 file: null
 covers:
   - "litellm/integrations/gitlab/{gitlab_prompt_manager,__init__}.py"
+parent: B117
+split_from: B117
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

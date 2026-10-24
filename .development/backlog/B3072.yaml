@@ -6,3 +6,9 @@ depends_on: [B002, B005, B006, B173, B189]
 file: null
 covers:
   - "litellm/integrations/{lago,openmeter}.py"
+parent: B073
+split_from: B073
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

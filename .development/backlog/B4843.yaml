@@ -6,3 +6,9 @@ depends_on: [B173, B4841, B4842]
 file: null
 covers:
   - "litellm/harness/endpoint.py"
+parent: B143
+split_from: B143
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

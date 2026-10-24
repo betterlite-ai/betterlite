@@ -7,3 +7,9 @@ file: null
 covers:
   - "docker/Dockerfile.non_root"
   - "docker-compose.hardened.yml"
+parent: B151
+split_from: B151
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

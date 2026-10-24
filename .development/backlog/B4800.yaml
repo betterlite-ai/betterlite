@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/a2a_protocol/card_resolver.py"
   - "litellm/a2a_protocol/exceptions.py"
+parent: B142
+split_from: B142
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

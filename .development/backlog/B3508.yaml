@@ -6,3 +6,9 @@ depends_on: [B3504, B014, B052, B1100]
 file: null
 covers:
   - "litellm/proxy/google_endpoints/agents_endpoints.py"
+parent: B098
+split_from: B098
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

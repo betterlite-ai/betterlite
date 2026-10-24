@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/search_endpoints/search_tool_registry.py"
   - "litellm/proxy/search_endpoints/__init__.py"
+parent: B091
+split_from: B091
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

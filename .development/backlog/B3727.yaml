@@ -6,3 +6,9 @@ depends_on: [B3721, B3724]
 file: null
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py"
+parent: B106
+split_from: B106
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B3661, B3663, B3664, B3670, B3673, B3675]
 file: null
 covers:
   - "litellm/llms/anthropic/chat/guardrail_translation/handler.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

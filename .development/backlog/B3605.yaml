@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/pass_through_endpoints/success_handler.py"
   - "litellm/proxy/pass_through_endpoints/upstream_usage_headers.py"
+parent: B102
+split_from: B102
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

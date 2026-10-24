@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/management_endpoints/{prompt_cache_prediction,prompt_caching_requests}.py"
   - "litellm/types/management_endpoints/prompt_caching_requests.py"
+parent: B075
+split_from: B075
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

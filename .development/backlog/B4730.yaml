@@ -6,3 +6,9 @@ depends_on: []
 file: null
 covers:
   - "litellm/proxy/_experimental/mcp_server/rest_endpoints.py"
+parent: B139
+split_from: B139
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

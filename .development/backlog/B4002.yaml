@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/integrations/azure_sentinel/**"
   - "litellm/types/integrations/azure_sentinel.py"
+parent: B115
+split_from: B115
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

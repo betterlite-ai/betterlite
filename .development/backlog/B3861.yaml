@@ -8,3 +8,9 @@ covers:
   - "litellm/integrations/arize/_utils.py"
   - "litellm/integrations/weave/weave_otel.py"
   - "litellm/types/integrations/weave_otel.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

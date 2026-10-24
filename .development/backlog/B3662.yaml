@@ -6,3 +6,9 @@ depends_on: [B3660, B3661]
 file: null
 covers:
   - "litellm/types/guardrails.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

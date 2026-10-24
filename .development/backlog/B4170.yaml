@@ -6,3 +6,9 @@ depends_on: []
 file: null
 covers:
   - "litellm/litellm_core_utils/bug_report.py"
+parent: B121
+split_from: B121
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

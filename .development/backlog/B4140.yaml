@@ -6,3 +6,9 @@ depends_on: []
 file: null
 covers:
   - "litellm/proxy/config_resolvers/{__init__,_descriptors,alerting,changed_section_keys,settings_rules,settings_store}.py"
+parent: B120
+split_from: B120
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

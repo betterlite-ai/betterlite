@@ -6,3 +6,9 @@ depends_on: [B3090, B3091, B3092, B3093]
 file: null
 covers:
   - "litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py"
+parent: B074
+split_from: B074
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B4650, B4656, B173]
 file: null
 covers:
   - "litellm/proxy/_experimental/mcp_server/outbound_credentials/{token_exchanger,token_exchange_provider}.py"
+parent: B137
+split_from: B137
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B3990, B002, B192, B173, B594, B595]
 file: null
 covers:
   - "litellm/integrations/{s3,dynamodb}.py"
+parent: B115
+split_from: B115
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

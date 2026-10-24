@@ -6,3 +6,9 @@ depends_on: [B193, B199, B360, B390, B1035, B2203]
 file: null
 covers:
   - "litellm/proxy/hooks/model_max_budget_limiter.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

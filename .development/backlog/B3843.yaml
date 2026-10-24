@@ -6,3 +6,9 @@ depends_on: [B3841]
 file: null
 covers:
   - "litellm/integrations/otel/model/payloads.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

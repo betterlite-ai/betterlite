@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/guardrails/guardrail_registry.py"
   - "litellm/proxy/guardrails/init_guardrails.py"
   - "litellm/proxy/guardrails/auto_router_compression.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B002, B173, B187, B3842, B3854]
 file: null
 covers:
   - "litellm/integrations/opentelemetry.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

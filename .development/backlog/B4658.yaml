@@ -6,3 +6,9 @@ depends_on: [B4651, B4674, B732, B736, B738, B760, B870, B872, B1217, B1223, B16
 file: null
 covers:
   - "litellm/proxy/_experimental/mcp_server/{bridge_token_flow,proxy_api_credentials}.py"
+parent: B137
+split_from: B137
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

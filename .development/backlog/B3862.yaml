@@ -6,3 +6,9 @@ depends_on: [B3847, B3850, B3854, B3855, B3857, B3859, B3861, B3868]
 file: null
 covers:
   - "litellm/integrations/arize/{arize,arize_phoenix}.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

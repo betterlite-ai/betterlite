@@ -6,3 +6,9 @@ depends_on: [B002, B173]
 file: null
 covers:
   - "litellm/integrations/gcs_bucket/gcs_bucket_mock_client.py"
+parent: B115
+split_from: B115
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

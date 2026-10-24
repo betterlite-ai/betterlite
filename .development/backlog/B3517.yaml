@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/llms/opensandbox/sandbox/transformation.py"
   - "litellm/constants.py"
+parent: B099
+split_from: B099
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

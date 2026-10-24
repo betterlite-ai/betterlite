@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/_experimental/mcp_server/outbound_credentials/client_credentials.py"
   - "litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py"
+parent: B137
+split_from: B137
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

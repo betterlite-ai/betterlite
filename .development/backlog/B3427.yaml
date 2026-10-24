@@ -6,3 +6,9 @@ depends_on: [B3420, B3422, B3423]
 file: null
 covers:
   - "litellm/proxy/openai_evals_endpoints/endpoints.py"
+parent: B096
+split_from: B096
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

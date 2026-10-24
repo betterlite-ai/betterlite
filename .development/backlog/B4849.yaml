@@ -6,3 +6,9 @@ depends_on: [B4830, B4846, B4847]
 file: null
 covers:
   - "litellm/harness/sync.py"
+parent: B143
+split_from: B143
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

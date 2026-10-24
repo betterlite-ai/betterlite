@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/integrations/s3.py"
   - "litellm/types/integrations/s3_v2.py"
+parent: B115
+split_from: B115
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

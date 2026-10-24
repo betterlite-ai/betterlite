@@ -6,3 +6,9 @@ depends_on: [B002, B256, B173, B192, B590, B594, B595, B1600]
 file: null
 covers:
   - "litellm/integrations/sqs.py"
+parent: B115
+split_from: B115
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

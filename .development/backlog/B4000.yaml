@@ -6,3 +6,9 @@ depends_on: [B002, B256, B173, B192, B673, B677]
 file: null
 covers:
   - "litellm/integrations/azure_storage/**"
+parent: B115
+split_from: B115
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

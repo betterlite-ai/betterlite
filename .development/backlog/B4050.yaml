@@ -8,3 +8,9 @@ covers:
   - "litellm/integrations/{custom_prompt_management,prompt_management_base}.py"
   - "litellm/types/prompts/**"
   - "litellm/types/proxy/prompt_endpoints.py"
+parent: B117
+split_from: B117
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

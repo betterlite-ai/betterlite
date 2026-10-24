@@ -6,3 +6,9 @@ depends_on: [B3121, B3123, B206, B302, B334, B336, B374, B732, B844, B886]
 file: null
 covers:
   - "litellm/proxy/common_utils/cache_aware_routing.py"
+parent: B075
+split_from: B075
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

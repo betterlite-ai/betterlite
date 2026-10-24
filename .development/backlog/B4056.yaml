@@ -6,3 +6,9 @@ depends_on: [B4050, B4055]
 file: null
 covers:
   - "litellm/integrations/bitbucket/{bitbucket_prompt_manager,__init__}.py"
+parent: B117
+split_from: B117
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

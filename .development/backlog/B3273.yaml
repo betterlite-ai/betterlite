@@ -6,3 +6,9 @@ depends_on: [B3270, B3272, B310]
 file: null
 covers:
   - "litellm/router_utils/search_api_router.py"
+parent: B091
+split_from: B091
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

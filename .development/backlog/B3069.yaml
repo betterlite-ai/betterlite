@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/integrations/cloudzero/{cz_resource_names,transform}.py"
   - "litellm/types/integrations/cloudzero.py"
+parent: B073
+split_from: B073
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

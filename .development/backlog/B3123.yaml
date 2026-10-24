@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/anthropic/cache_aware_routing.py"
   - "litellm/proxy/common_utils/{prompt_cache_prediction,prompt_cache_pricing}.py"
   - "litellm/types/management_endpoints/prompt_cache_prediction.py"
+parent: B075
+split_from: B075
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

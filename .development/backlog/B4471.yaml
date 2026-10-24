@@ -7,3 +7,9 @@ file: null
 covers:
   - "gateway/main.py"
   - "backend/main.py"
+parent: B131
+split_from: B131
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/db/gateway_request_tracking.py"
   - "litellm/proxy/management_endpoints/gateway_request_endpoints.py"
   - "litellm/types/proxy/gateway_requests.py"
+parent: B074
+split_from: B074
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

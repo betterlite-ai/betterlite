@@ -6,3 +6,9 @@ depends_on: [B3331, B525, B547, B1361, B1363]
 file: null
 covers:
   - "litellm/utils.py"
+parent: B093
+split_from: B093
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

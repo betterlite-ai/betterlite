@@ -6,3 +6,9 @@ depends_on: [B4120]
 file: null
 covers:
   - "litellm/integrations/code_interpreter_interception/handler.py"
+parent: B119
+split_from: B119
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

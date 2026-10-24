@@ -6,3 +6,9 @@ depends_on: [B4711, B4713, B726, B1600, B173]
 file: null
 covers:
   - "litellm/proxy/_experimental/mcp_server/db.py"
+parent: B139
+split_from: B139
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

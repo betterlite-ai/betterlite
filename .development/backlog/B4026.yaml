@@ -6,3 +6,9 @@ depends_on: [B4020, B4024, B174, B844]
 file: null
 covers:
   - "litellm/integrations/SlackAlerting/slack_alerting.py"
+parent: B116
+split_from: B116
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

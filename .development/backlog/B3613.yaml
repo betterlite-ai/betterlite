@@ -6,3 +6,9 @@ depends_on: [B3600, B3601, B3605, B3607, B3609, B3610, B3611, B009, B011, B173, 
 file: null
 covers:
   - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
+parent: B102
+split_from: B102
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -10,3 +10,9 @@ covers:
   - "litellm/integrations/gitlab/gitlab_prompt_manager.py"
   - "litellm/integrations/bitbucket/bitbucket_prompt_manager.py"
   - "litellm/integrations/generic_prompt_management/generic_prompt_manager.py"
+parent: B117
+split_from: B117
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -8,3 +8,9 @@ covers:
   - "litellm/a2a_protocol/utils.py"
   - "litellm/a2a_protocol/cost_calculator.py"
   - "litellm/a2a_protocol/litellm_completion_bridge/handler.py"
+parent: B142
+split_from: B142
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

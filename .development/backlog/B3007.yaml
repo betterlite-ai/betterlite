@@ -6,3 +6,9 @@ depends_on: [B002, B3017, B360, B390, B732, B2226]
 file: null
 covers:
   - "litellm/proxy/hooks/max_budget_per_session_limiter.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -12,3 +12,9 @@ covers:
   - "litellm/proxy/middleware/per_request_root_path_middleware.py"
   - "litellm/proxy/_experimental/mcp_server/stdio_gate.py"
   - "litellm/types/proxy/control_plane_endpoints.py"
+parent: B078
+split_from: B078
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

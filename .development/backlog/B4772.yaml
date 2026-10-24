@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/agent_endpoints/identity.py"
   - "litellm/proxy/agent_endpoints/managed_identity.py"
   - "litellm/proxy/agent_endpoints/auth/managed_authorization.py"
+parent: B141
+split_from: B141
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

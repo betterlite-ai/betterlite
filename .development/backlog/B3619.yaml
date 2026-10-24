@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
   - "litellm/proxy/pass_through_endpoints/openai_passthrough_endpoints.py"
+parent: B102
+split_from: B102
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

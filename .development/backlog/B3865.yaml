@@ -6,3 +6,9 @@ depends_on: []
 file: null
 covers:
   - "litellm/tracing/{decode,messages,ui_format,types}.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B3090, B3094]
 file: null
 covers:
   - "litellm/proxy/management_endpoints/daily_activity_scopes.py"
+parent: B074
+split_from: B074
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

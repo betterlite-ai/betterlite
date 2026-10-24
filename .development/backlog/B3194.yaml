@@ -6,3 +6,9 @@ depends_on: [B001, B002, B003, B726, B860, B1140]
 file: null
 covers:
   - "litellm/proxy/public_endpoints/public_endpoints.py"
+parent: B077
+split_from: B077
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B002, B173]
 file: null
 covers:
   - "litellm/integrations/arize/{__init__,arize_phoenix_client,arize_phoenix_prompt_manager}.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

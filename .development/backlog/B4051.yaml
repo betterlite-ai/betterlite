@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/integrations/dotprompt/{prompt_manager,__init__}.py"
   - "litellm/integrations/dotprompt/README.md"
+parent: B117
+split_from: B117
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

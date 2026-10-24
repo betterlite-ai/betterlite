@@ -6,3 +6,9 @@ depends_on: [B002, B3014, B732, B750]
 file: null
 covers:
   - "litellm/proxy/auth/fallback_budget.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

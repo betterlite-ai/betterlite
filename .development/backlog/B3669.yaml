@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/openai/chat/guardrail_translation/handler.py"
   - "litellm/llms/openai/responses/guardrail_translation/tool_merge.py"
   - "litellm/proxy/guardrails/anthropic_sse.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

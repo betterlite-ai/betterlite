@@ -6,3 +6,9 @@ depends_on: [B171]
 file: null
 covers:
   - "litellm/proxy/discovery_endpoints/agent_skills_archive.py"
+parent: B078
+split_from: B078
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

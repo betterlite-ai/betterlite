@@ -8,3 +8,9 @@ covers:
   - "litellm/types/integrations/slack_alerting.py"
   - "litellm/integrations/SlackAlerting/utils.py"
   - "litellm/integrations/SlackAlerting/slack_alerting.py"
+parent: B116
+split_from: B116
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
