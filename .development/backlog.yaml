@@ -180,6 +180,7 @@ tasks:
     - B301
     - B302
     - B303
+    - B304
     file: null
     covers:
     - litellm/router_utils/{common_utils,client_initalization_utils,clientside_credential_handler,handle_error,pattern_match_deployments,response_headers,add_retry_fallback_headers,routing_read_batch}.py
@@ -1880,3 +1881,16 @@ tasks:
     covers:
     - litellm/router_utils/client_initalization_utils.py
     - litellm/router_utils/clientside_credential_handler.py
+
+  - id: B304
+    milestone: M2 routing
+    title: Router counters, callback state and batched reads
+    status: todo
+    depends_on:
+    - B302
+    - B012
+    file: tasks/B304-routing-state.yaml
+    covers:
+    - litellm/router_strategy/base_routing_strategy.py
+    - litellm/router_utils/routing_read_batch.py
+    - litellm/router_utils/router_callbacks/**

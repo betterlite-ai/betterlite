@@ -1,0 +1,101 @@
+id: B304
+title: Router counters, callback state and batched reads
+description: Add bounded router-owned state for callback counters, strategy windows and request-scoped
+  batched reads. Use an injected typed store boundary with an in-memory implementation and a Redis-backed
+  implementation using a maintained Rust Redis client, not a copy of the future response-cache subsystem.
+  Implement the base strategy delta/snapshot synchronization once, and route deployment success/failure
+  observations from B012 through it. Background synchronization is server-owned, bounded and drained on
+  shutdown; swaps retire the old strategy. Preserve unflushed deltas on transient storage failure and
+  distinguish absent, expired and unreadable entries. The later B126 cache task can reuse this routing
+  transport; do not depend on B125 or B126 because they already depend on B016. Limit this task to the
+  storage mechanism and counters; each strategy owns its payload and choice logic. Use the existing Rust
+  crate boundaries from B004 and B008; integrate through the server when the provider dispatcher or callbacks
+  live in another core crate. This task's source slices are the linked ranges, not a port of their Python
+  classes. Add the listed oracle cases and the matching adapters to B301's component runner where state
+  is not observable over HTTP; adapters call production logic and never reproduce it. Use deterministic
+  candidate sets or supplied random samples for comparisons, and separate seeded distribution tests for
+  random choices. Extend the existing config_yaml fuzz target and committed corpus for every newly accepted
+  config form; unsupported keys still fail by full path. Add a cargo-fuzz target routing_state under crates/betterlite-router/fuzz
+  and a normal replays_the_routing_state_corpus test using the production parser. Keep the implementation,
+  adapters and tests within 800 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/routing-state/**
+  - tools/oracle/src/router_probes/routing-state/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/routing_state.py
+  - tools/oracle/litellm/probes/registry.py
+  - Cargo.toml
+  - deny.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L16-L245
+  why: Delta flushing, merging and strategy retirement.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/routing_read_batch.py#L35-L235
+  why: Scoped batched reads and prefetch cancellation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/router_callbacks/track_deployment_metrics.py#L28-L142
+  why: Minute counters and already-counted usage metadata.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
+    replays.
+  proof:
+  - parser-corpus
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(routing_state)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: the parser fuzz target or seed corpus is missing, or replay fails
+    run: test -f crates/betterlite-router/fuzz/fuzz_targets/routing_state.rs && test -n "$(ls -A crates/betterlite-router/fuzz/corpus/routing_state)"
+      && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_routing_state_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/routing-state/counter-expiry.yaml
+- tools/oracle/cases/routing/routing-state/success-counted-once.yaml
+- tools/oracle/cases/routing/routing-state/failed-flush-restores-deltas.yaml
+- tools/oracle/cases/routing/routing-state/retire-drains.yaml
+- tools/oracle/cases/routing/routing-state/batch-request-isolation.yaml
+- tools/oracle/cases/routing/routing-state/redis-read-failure.yaml
+deviations: []
+out_of_scope:
+- Response caching, cluster discovery and Valkey platform configuration (B125/B126).
+- Strategy-specific ranking and budget decisions.
+pitfalls:
+- A failed Redis batch must not erase local increments made while the batch was in flight.
+- No lock may be held across a Redis await.
+- Test Redis behind an injected store and include a real local Redis smoke test with a bounded test-owned
+  subprocess.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
