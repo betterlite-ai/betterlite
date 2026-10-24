@@ -8,8 +8,13 @@ description: >-
   build canonical/alias lookup indexes without overwriting earlier entries. Alias collision decisions must be reported,
   not silently dropped. Expose typed exact lookup and provider/model metadata projections used by B174; do not implement
   pricing formulas. Add model_catalog helper cases against get_model_cost_map's load/finalization helpers plus full-fixture
-  parsing tests, and model_catalog fuzz target. Budget 300 loader/index lines, 80 adapters and 330 tests. Seed B171's
-  shared helper_case corpus with every added operation and replay it through the common typed parser.
+  parsing tests, and model_catalog fuzz target.  Seed B171's shared helper_case corpus with every added operation
+  and replay it through the common typed parser. Bundled-map tests reject unknown fields; runtime remote maps accept
+  unknown fields with warnings listing their full paths, per B205. Duplicate keys remain explicit errors. Write
+  the behavior rstest functions b193_model_catalog_tests_behavior in adjacent tests.rs files, with a named case
+  for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
+  model_catalog in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its
+  own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
@@ -27,13 +32,17 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L64-L105
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L64-L105
   why: Packaged catalog loading and raw-byte revision.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L481-L567
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L481-L567
   why: Canonical entries, aliases, generalizations and atomic adoption.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.json#L1-L140
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.json#L1-L140
   why: Pinned root asset.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/model_prices_and_context_window_backup.json#L1-L140
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/model_prices_and_context_window_backup.json#L1-L140
   why: Pinned runtime backup asset.
 dod:
 - text: Both raw catalog assets match the pinned checksums and every actual entry parses without unmodeled fields.
@@ -43,12 +52,15 @@ dod:
 - text: Canonical entries, aliases, conflict reporting and generalization extraction match listed helper cases.
   proof:
   - oracle
-- text: Duplicate JSON keys and excessive input fail explicitly without partial catalog state, and fuzz corpus replay
+  - helper-python
+- text: >-
+    Duplicate JSON keys and excessive input fail explicitly without partial catalog state, and fuzz corpus replay
     covers the parser.
   proof:
   - model-catalog-tests
   - model-catalog-corpus
-- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
 checks:
@@ -57,17 +69,20 @@ checks:
   commands:
   - id: model-catalog-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/model_catalog/)'
+    run: >-
+      cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::b193_model_catalog_tests_behavior($|::)/)
+      - test(/replays_the_/)'
   - id: model-catalog-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-models/fuzz/fuzz_targets/model_catalog.rs && test -n "$(ls -A crates/betterlite-models/fuzz/corpus/model_catalog)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/model_catalog)"
+      && test -f crates/betterlite-models/fuzz/fuzz_targets/model_catalog.rs && test -n "$(ls -A crates/betterlite-models/fuzz/corpus/model_catalog)"
       && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_model_catalog_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
     run: >-
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
-      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: catalog-pins
     why: a bundled catalog file differs from the pinned commit
     run: 'sha256sum --check --quiet <<''SUMS''
@@ -80,8 +95,10 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'model_catalog' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/model-catalog/packaged-map.yaml
 - tools/oracle/cases/helpers/model-catalog/canonical-lookup.yaml
@@ -90,10 +107,10 @@ oracle_cases:
 - tools/oracle/cases/helpers/model-catalog/alias-alias-conflict.yaml
 - tools/oracle/cases/helpers/model-catalog/generalizations-excluded.yaml
 deviations:
-- what: Duplicate keys and unsupported catalog fields are explicit load errors.
-  why: The no-silent-drops rule applies to configuration-like pricing inputs; retaining the active catalog is safer
-    than accepting a partial new one.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L85-L88
+- what: Duplicate JSON keys are explicit load errors; runtime unknown fields are accepted with path-naming warnings.
+  why: Preserve duplicate evidence while allowing forward-compatible remote catalogs under the architect decision.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L85-L88
 out_of_scope:
 - Refresh, provenance and override layering are B194.
 - Cost arithmetic and budget decisions are B068-B069.
