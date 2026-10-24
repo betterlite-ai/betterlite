@@ -10,7 +10,8 @@ description: >-
   metadata. Cover chat/text/embedding and typed Responses-shaped log snapshots without adding endpoints. Child privacy
   inherits through an explicit context value; callers receive independent snapshots rather than shared mutable JSON.
   Add callback_privacy parser fuzzing, helper cases, and chat/config corpus seeds for added wire fields. Budget
-  300 privacy/provenance lines, 100 config/wire and 330 tests.
+  300 privacy/provenance lines, 100 config/wire and 330 tests. Seed B171's shared helper_case corpus with every
+  added operation and replay it through the common typed parser.
 scope:
   paths:
   - Cargo.toml
@@ -22,6 +23,7 @@ scope:
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/logging-privacy/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L41-L325
@@ -51,6 +53,9 @@ dod:
   - callback-privacy-corpus
   - chat-request-corpus
   - config-yaml-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -78,6 +83,11 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/logging-privacy/global.yaml
 - tools/oracle/cases/helpers/logging-privacy/dynamic-over-global.yaml
