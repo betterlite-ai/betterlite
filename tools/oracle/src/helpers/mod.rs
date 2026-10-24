@@ -1,3 +1,4 @@
+mod catalog_generalizations;
 mod url_path;
 
 use std::collections::BTreeMap;
@@ -18,6 +19,8 @@ use crate::process::sync_litellm;
 pub(crate) enum HelperCall {
     #[serde(rename = "url_path")]
     UrlPath(url_path::UrlPathInput),
+    #[serde(rename = "catalog_generalizations")]
+    CatalogGeneralizations(catalog_generalizations::CatalogGeneralizationsInput),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -86,6 +89,7 @@ fn invoke(call: &HelperCall) -> HelperOutput {
                 error: Some(*error),
             },
         },
+        HelperCall::CatalogGeneralizations(input) => catalog_generalizations::invoke(input),
     }
 }
 
