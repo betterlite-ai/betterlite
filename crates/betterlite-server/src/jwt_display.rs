@@ -12,9 +12,13 @@ pub struct SsoDebugClaims<Parsed, Claims> {
     pub access_token_claims: Claims,
 }
 
-pub fn render<Parsed: Serialize, Claims: Serialize>(
+pub fn render<Parsed, Claims>(
     claims: &SsoDebugClaims<Parsed, Claims>,
-) -> Result<String, serde_json::Error> {
+) -> Result<String, serde_json::Error>
+where
+    Parsed: Serialize,
+    Claims: Serialize,
+{
     let json = serde_json::to_string_pretty(claims)?;
     let mut statement = String::from("const ssoData = ");
     // JSON escapes keep claims as typed; HTML entities would change the text the page shows

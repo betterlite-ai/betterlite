@@ -56,8 +56,8 @@ fn page(parsed_by_proxy: Claim, raw_claims: Claim, access_token_claims: Claim) -
 }
 
 fn run_page(html: &str, actions: &str) -> Observation {
-    let (_, script) = html.split_once("<script>").unwrap();
-    let (script, _) = script.split_once("</script>").unwrap();
+    let (_, page_tail) = html.split_once("<script>").unwrap();
+    let (script, _) = page_tail.split_once("</script>").unwrap();
     let runtime = Runtime::new().unwrap();
     let unhandled = Arc::new(AtomicIsize::new(0));
     let tracker = Arc::clone(&unhandled);
@@ -76,12 +76,6 @@ fn run_page(html: &str, actions: &str) -> Observation {
     assert_eq!(unhandled.load(Ordering::SeqCst), 0, "unhandled rejection");
     let observed = context.with(|ctx| ctx.eval::<String, _>("observe()").catch(&ctx).unwrap());
     serde_json::from_str(&observed).unwrap()
-}
-
-fn sso_data(html: &str) -> BTreeMap<String, BTreeMap<String, String>> {
-    let (_, json) = html.split_once("const ssoData = ").unwrap();
-    let (json, _) = json.split_once(";\n").unwrap();
-    serde_json::from_str(json).unwrap()
 }
 
 #[test]
@@ -178,10 +172,8 @@ fn copy_failure() {
     let seen = run_page(&html, &actions);
     assert_eq!(seen.errors, ["Could not copy text: |Error: denied"]);
     assert_eq!(seen.alerts.len(), 0);
-    assert_eq!(
-        [seen.raw, seen.access],
-        ["{\n  \"sub\": \"user-1\"\n}", EMPTY_NOTE]
-    );
+    let user = "{\n  \"sub\": \"user-1\"\n}";
+    assert_eq!([seen.raw, seen.access], [user, EMPTY_NOTE]);
 }
 
 #[rstest]
@@ -200,10 +192,11 @@ fn escaped_claims(#[case] claim: &'static str, #[case] escaped: &str) {
     let markup = ['<', '>', '&', '\u{2028}', '\u{2029}'];
     let template = TEMPLATE.matches(markup).count();
     assert_eq!(html.matches(markup).count(), template);
-    assert_eq!(sso_data(&html)["raw_claims"]["claim"], claim);
+    let (_, statement) = html.split_once("const ssoData = ").unwrap();
+    let (json, _) = statement.split_once(";\n").unwrap();
+    let data: BTreeMap<String, BTreeMap<String, String>> = serde_json::from_str(json).unwrap();
+    assert_eq!(data["raw_claims"]["claim"], claim);
     let quoted = serde_json::to_string(claim).unwrap();
-    assert_eq!(
-        run_page(&html, READY).raw,
-        format!("{{\n  \"claim\": {quoted}\n}}")
-    );
+    let shown = format!("{{\n  \"claim\": {quoted}\n}}");
+    assert_eq!(run_page(&html, READY).raw, shown);
 }
