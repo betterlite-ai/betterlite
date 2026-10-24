@@ -272,6 +272,7 @@ tasks:
     - B335
     - B336
     - B337
+    - B338
     file: null
     covers:
     - router_plugins.json
@@ -2340,3 +2341,15 @@ tasks:
     file: tasks/B337-cache-cost-routing.yaml
     covers:
     - litellm/router_strategy/complexity_router/complexity_router.py
+
+  - id: B338
+    milestone: M2 routing
+    title: Quality-tier and keyword routing
+    status: todo
+    depends_on:
+    - B328
+    - B013
+    - B016
+    file: tasks/B338-quality-router.yaml
+    covers:
+    - litellm/router_strategy/quality_router/**
