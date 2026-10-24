@@ -9,7 +9,8 @@ description: >-
   cases that call the pinned payload helpers with synthetic logging objects and injected timestamps, and compare
   the supported fields without broadly ignoring metadata. Fields owned by unimplemented auth/spend/guardrail systems
   remain explicitly absent and get typed extension slots, not invented zeros. Budget 350 payload/aggregation lines,
-  80 adapters and 300 tests.
+  80 adapters and 300 tests. Seed B171's shared helper_case corpus with every added operation and replay it through
+  the common typed parser.
 scope:
   paths:
   - Cargo.toml
@@ -27,6 +28,7 @@ scope:
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/logging-payload/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5640-L5770
@@ -53,6 +55,9 @@ dod:
 - text: Per-callback payloads are isolated and prompt/base64/secrets obey the selected privacy policy.
   proof:
   - logging-payload-tests
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -65,6 +70,11 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/logging-payload/chat-success.yaml
 - tools/oracle/cases/helpers/logging-payload/provider-failure.yaml
