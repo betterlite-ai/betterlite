@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Recheck key and user budgets before router fallbacks
 status: todo
 depends_on: [B002, B3014, B732, B750]
-file: null
+file: tasks/B3008-fallback-budget-check.yaml
 covers:
   - "litellm/proxy/auth/fallback_budget.py"
 parent: B071

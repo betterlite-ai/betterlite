@@ -1,0 +1,171 @@
+id: B3007
+title: Enforce agent session budgets
+description: >-
+  Implement `betterlite-auth::session_budget` with pre-call admission and successful-response
+  charging for registered agents. Keep `LITELLM_MAX_BUDGET_PER_SESSION_TTL=3600`, `{session_budget:<session_id>}:spend`,
+  metadata precedence, positive-cost-only increments and warning-backed Redis-to-memory fallback.
+  Pre-call admission extracts session_id from request metadata, falling back to litellm_metadata,
+  and checks if current spend exceeds max_budget_per_session from the agent's litellm_params.
+  Post-call success charging reads session_id and agent_id only from kwargs['litellm_params']['metadata']
+  with no litellm_metadata fallback (this asymmetry from LiteLLM's own behavior is preserved).
+  Spend increments only for positive response_cost values. Agents are resolved via the registry
+  at both pre-call and success time (the success callback uses the live registry, not the pre-call
+  auth snapshot). Cache reads try Redis first, fall back to in-memory on exception, and log
+  warnings without failing the request. The Lua script atomically increments and sets TTL only
+  on first write. Expose a typed session-budget handler class in the session-budget module;
+  task B071 registers it once at server startup.
+
+scope:
+  paths:
+    - crates/betterlite-auth/src/session_budget.rs
+    - crates/betterlite-auth/src/session_budget/**
+    - crates/betterlite-auth/src/lib.rs
+    - tools/oracle/cases/auth/session-budget/**
+  lint_tables: false
+
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L1-L68"
+    why: "Module docstring, imports, Lua script constant, TTL default, and _PROXY_MaxBudgetPerSessionHandler class docstring."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L70-L84"
+    why: Handler __init__ with cache and script registration.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L86-L128"
+    why: async_pre_call_hook admission check and 429 error.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L130-L174"
+    why: async_log_success_event charge logic and agent resolution.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L176-L188"
+    why: _get_session_id with metadata and litellm_metadata fallback.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L190-L206"
+    why: _get_max_budget_per_session agent registry lookup.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L208-L209"
+    why: Cache key format construction.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L211-L234"
+    why: Current spend read from Redis with fallback to in-memory.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L236-L253"
+    why: Atomic increment via Lua script with Redis-to-memory fallback.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L255-L269"
+    why: In-memory-only fallback increment with local cache.
+
+dod:
+  - text: The session budget handler implements both async_pre_call_hook and async_log_success_event callbacks.
+    proof: [session-budget-structure]
+  - text: Pre-call hook checks max_budget_per_session from agent litellm_params and rejects with 429 when current spend >= max_budget.
+    proof: [session-budget-admission]
+  - text: Success callback increments spend only for positive response_cost values and only when agent_id is present and registered.
+    proof: [session-budget-charging]
+  - text: Session ID is extracted from metadata.session_id, falling back to litellm_metadata.session_id.
+    proof: [session-budget-metadata]
+  - text: Cache key follows the format "{session_budget:<session_id>}:spend".
+    proof: [session-budget-cache-key]
+  - text: The TTL value is read from LITELLM_MAX_BUDGET_PER_SESSION_TTL environment variable or defaults to 3600 seconds.
+    proof: [session-budget-ttl]
+  - text: Redis reads and increments use the DualCache interface; exceptions during Redis operations log and fall back to in-memory cache.
+    proof: [session-budget-redis-fallback]
+  - text: The Redis increment uses the Lua script that atomically increments and sets EXPIRE on first write only.
+    proof: [session-budget-lua-script]
+  - text: In-memory fallback reads the current value, adds the amount, and writes back with TTL.
+    proof: [session-budget-in-memory]
+  - text: Agent resolution uses global_agent_registry.get_agent_by_id at both pre-call and success time.
+    proof: [session-budget-agent-registry]
+  - text: The 429 error includes resolved_model and llm_provider from resolve_llm_provider_for_rate_limit.
+    proof: [session-budget-error-context]
+  - text: Every oracle case exercises admission checks, successful charge, and fallback paths.
+    proof: [session-budget-oracle]
+
+pitfalls:
+  - "Pre-call admission extracts session ID from request data via _get_session_id, which tries metadata first then litellm_metadata; post-call charging reads session_id only from kwargs['litellm_params']['metadata'] with no litellm_metadata fallback."
+  - "If both metadata.session_id and litellm_metadata.session_id are absent or None in pre-call, the check is silently skipped (no-op)."
+  - "Post-call charging reads agent_id only from kwargs['litellm_params']['metadata'], not from the pre-call UserAPIKeyAuth snapshot; if metadata or agent_id is None, charging is skipped (no-op)."
+  - "The success callback re-resolves the agent from the registry and uses its litellm_params, not the pre-call auth snapshot; mismatches between pre-call and success-time agents are silent no-ops."
+  - "response_cost <= 0 is not incremented; zero-cost and negative-cost responses are silently skipped."
+  - "Redis script registration happens in __init__ if redis_cache is not None; calls to _increment_spend when increment_script is None fall back to in-memory immediately."
+  - "The TTL conversion `int(os.getenv(...))` expects a valid integer; invalid values raise ValueError at init time."
+  - "The Lua script returns the new float value as a string; conversion to float must not fail on valid results."
+  - "In-memory fallback does not have TTL expiration at the Python layer; entries stay until next successful cost write (no automatic cleanup)."
+  - "Multiple increments in rapid succession may not preserve exact float precision due to IEEE 754 rounding."
+  - "The cache-key pattern uses literal braces and colons; session IDs are not escaped or quoted, so IDs containing colons or braces could cause key collisions (unlikely in practice, but worth testing)."
+
+out_of_scope:
+  - B002 owns config loading and LITELLM_* environment variable defaults for non-proxy values.
+  - B360 owns the Redis client and async_get_cache/async_increment operations.
+  - B390 owns the in-memory cache interface and async_get_cache/async_set_cache operations.
+  - B732 owns UserAPIKeyAuth and agent_id field extraction.
+  - B2226 owns the shared cache interface and TTL policy.
+  - B3017 owns AgentRegistry.get_agent_by_id, resolve_llm_provider_for_rate_limit, and ProxyRateLimitError.
+  - The Redis script registration is owned by the transport layer (currently an architectural seam per the outline).
+  - Agent startup and global_agent_registry population are owned by B141.
+
+deviations:
+  - what: "Pre-call admission extracts session_id from request metadata, falling back to litellm_metadata; post-call charging reads session_id and agent_id only from kwargs['litellm_params']['metadata'] with no litellm_metadata fallback."
+    why: "LiteLLM's async_log_success_event reads only from litellm_params.metadata because the event data comes from the proxy state, not from the original request. betterlite preserves this asymmetry to match LiteLLM's behavior."
+  - what: "On Redis read or write failure, the code logs a warning and falls back to in-memory cache instead of raising an error."
+    why: "LiteLLM treats Redis cache failures as transient and falls back to local state; betterlite preserves this graceful degradation so a cache issue does not block legitimate requests."
+
+review_level: security
+
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+
+checks:
+  optional: []
+  commands:
+    - id: session-budget-structure
+      why: Session budget handler structure is missing or methods are renamed
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*structure)'
+    - id: session-budget-admission
+      why: Pre-call admission logic is missing, incorrect, or fails on budget check
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*admission)'
+    - id: session-budget-charging
+      why: Success charging logic is missing or fails to increment spend correctly
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*charging)'
+    - id: session-budget-metadata
+      why: Session ID extraction from metadata or litellm_metadata is incorrect
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*metadata)'
+    - id: session-budget-cache-key
+      why: Cache key format does not match "{session_budget:<session_id>}:spend"
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*cache_key)' && grep -q 'session_budget:' crates/betterlite-auth/src/session_budget.rs
+    - id: session-budget-ttl
+      why: TTL parsing from LITELLM_MAX_BUDGET_PER_SESSION_TTL or default 3600 is incorrect
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*ttl)'
+    - id: session-budget-redis-fallback
+      why: Redis fallback on exception is missing or does not preserve in-memory cache semantics
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*redis.*fallback)'
+    - id: session-budget-lua-script
+      why: Lua increment script is missing, incorrect, or does not set EXPIRE on first write
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*lua)' && grep -q 'INCRBYFLOAT' crates/betterlite-auth/src/session_budget.rs && grep -q 'EXPIRE' crates/betterlite-auth/src/session_budget.rs
+    - id: session-budget-in-memory
+      why: In-memory fallback increment is missing or does not read, add, and write back correctly
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*in_memory)'
+    - id: session-budget-agent-registry
+      why: Agent resolution from registry at pre-call or success time is missing or incorrect
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*agent.*registry)'
+    - id: session-budget-error-context
+      why: 429 error does not include resolved model and llm_provider
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*error)'
+    - id: session-budget-oracle
+      why: Oracle cases for admission, charging, or fallback paths are missing or fail
+      run: test -d tools/oracle/cases/auth/session-budget && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/auth/session-budget)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/auth/session-budget
+
+oracle_cases:
+  - tools/oracle/cases/auth/session-budget/admission-exceeds-budget.yaml
+  - tools/oracle/cases/auth/session-budget/admission-within-budget.yaml
+  - tools/oracle/cases/auth/session-budget/admission-no-session-id.yaml
+  - tools/oracle/cases/auth/session-budget/admission-no-agent.yaml
+  - tools/oracle/cases/auth/session-budget/admission-session-id-from-metadata.yaml
+  - tools/oracle/cases/auth/session-budget/admission-session-id-from-litellm-metadata.yaml
+  - tools/oracle/cases/auth/session-budget/charging-positive-cost.yaml
+  - tools/oracle/cases/auth/session-budget/charging-zero-cost-skipped.yaml
+  - tools/oracle/cases/auth/session-budget/charging-negative-cost-skipped.yaml
+  - tools/oracle/cases/auth/session-budget/charging-no-session-id.yaml
+  - tools/oracle/cases/auth/session-budget/charging-no-agent.yaml
+  - tools/oracle/cases/auth/session-budget/charging-session-id-only-in-litellm-metadata-skipped.yaml
+  - tools/oracle/cases/auth/session-budget/cache-key-format.yaml
+  - tools/oracle/cases/auth/session-budget/ttl-from-env.yaml
+  - tools/oracle/cases/auth/session-budget/ttl-default-3600.yaml
+  - tools/oracle/cases/auth/session-budget/redis-fallback-on-read-exception.yaml
+  - tools/oracle/cases/auth/session-budget/redis-fallback-on-increment-exception.yaml
+  - tools/oracle/cases/auth/session-budget/in-memory-increments-correctly.yaml
+  - tools/oracle/cases/auth/session-budget/agent-resolution-pre-call.yaml
+  - tools/oracle/cases/auth/session-budget/agent-resolution-success-time.yaml
+  - tools/oracle/cases/auth/session-budget/multiple-sessions-isolated.yaml
+  - tools/oracle/cases/auth/session-budget/429-error-includes-model-provider.yaml

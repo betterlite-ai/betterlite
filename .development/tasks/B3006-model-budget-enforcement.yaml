@@ -1,0 +1,106 @@
+id: B3006
+title: Enforce and charge entity model budgets
+description: Build the enforcement and charging engine in betterlite-auth::model_budget_limiter for the _PROXY_VirtualKeyModelMaxBudgetLimiter class, checking four entity scopes and charging the same configured counter names on successful responses. Preserve zero-cap denial (requests blocked when max_budget is 0), negative and unset cap bypass (max_budget < 0 or None allows unlimited), key-over-team precedence (a key's budget entry disables the team's for that model), first-affordable fallback selection, and batch-once markers preventing charge duplication across multiple poll attempts. Implement pre-call enforcement across key, user, end-user and team budgets with inheritance (team cap applies unless key overrides), and post-call charging that increments Redis-backed counters with in-memory dual-cache fallback and legacy counter aggregation for one window after upgrade. Implement the owned native service in crates/betterlite-auth/src/model_budget_limiter.rs.
+scope:
+  paths:
+  - crates/betterlite-auth/src/model_budget_limiter.rs
+  - crates/betterlite-auth/src/model_budget_limiter/**
+  - crates/betterlite-auth/src/lib.rs
+  - crates/betterlite-auth/src/error.rs
+  - tools/oracle/cases/model-budget/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L291-L305
+  why: "Class initialization and members, dual_cache holding Redis and in-memory stores."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L306-L326
+  why: "Pre-call enforcement for key scope: resolve budget, get current spend, raise BudgetExceededError if over."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L328-L340
+  why: "Fallback model search: try each model in budget_fallbacks list, return first that passes enforcement."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L342-L360
+  why: "Pre-call enforcement for user scope: same pattern as key, with entity_type USER."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L362-L380
+  why: "Pre-call enforcement for end-user scope: same pattern, with entity_type END_USER."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L382-L404
+  why: "Pre-call enforcement for team scope: skipped if key's budget_max_budget entry spend-gates the model."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L406-L439
+  why: "Core enforcement: check if None/negative budget skips, read current spend, compare against max, raise if exceeded."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L441-L469
+  why: "Read spend combining current-window key plus legacy-key (from prior version) for key and end-user scopes only."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L471-L475
+  why: "Cache read helper: try Redis first if available, fall back to in-memory DualCache."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L477-L485
+  why: "Deployment filter is a live no-op callback placeholder required by RouterBudgetLimiting interface."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L487-L578
+  why: "Post-call success hook: extract model, cost and entity budgets (key/team/user/end-user), resolve each, charge each scope."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L580-L613
+  why: "Charge entity: mark batch as charged (skip if already marked), increment spend counter through B3016's increment_spend_for_key."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L615-L620
+  why: "Batch once-per-window: increment marker key atomically; return true on first charge only."
+dod:
+- text: Pre-call enforcement checks all four entity scopes (key, user, end-user, team), raises BudgetExceededError for over-budget, and respects zero-cap block, negative/unset cap bypass, and key-over-team precedence.
+  proof:
+  - model-budget-enforcement-enforcement
+- text: Post-call charging increments spend counters for all applicable scopes through B3016 integration, marks batch responses once per window, and adds legacy spend reads for key and end-user in the first upgrade window.
+  proof:
+  - model-budget-enforcement-charging
+- text: Fallback model lookup finds the first model in the key's budget_fallbacks that passes enforcement, or returns None.
+  proof:
+  - model-budget-enforcement-fallbacks
+- text: Cache read precedence uses Redis if available, falls back to in-memory DualCache, and treats non-float spend values as zero.
+  proof:
+  - model-budget-enforcement-cache-reads
+- text: Every oracle case exercises pre-call enforcement across scopes, fallback selection, post-call charging, batch dedup and legacy carry through the booted proxy without invoking separate admission or settlement.
+  proof:
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: model-budget-enforcement-enforcement
+    why: pre-call enforcement tests fail or are missing
+    run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_limiter::enforcement/) - test(/replays_the_.*_corpus/)'
+  - id: model-budget-enforcement-charging
+    why: post-call charging tests fail or are missing
+    run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_limiter::charging/) - test(/replays_the_.*_corpus/)'
+  - id: model-budget-enforcement-fallbacks
+    why: fallback selection tests fail or are missing
+    run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_limiter::fallbacks/) - test(/replays_the_.*_corpus/)'
+  - id: model-budget-enforcement-cache-reads
+    why: cache read precedence tests fail or are missing
+    run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_limiter::cache/) - test(/replays_the_.*_corpus/)'
+oracle_cases:
+- tools/oracle/cases/model-budget/enforcement-key-zero-cap.yaml
+- tools/oracle/cases/model-budget/enforcement-key-negative-cap.yaml
+- tools/oracle/cases/model-budget/enforcement-key-exceeded.yaml
+- tools/oracle/cases/model-budget/enforcement-user-exceeded.yaml
+- tools/oracle/cases/model-budget/enforcement-end-user-exceeded.yaml
+- tools/oracle/cases/model-budget/enforcement-team-exceeded.yaml
+- tools/oracle/cases/model-budget/enforcement-team-overridden-by-key.yaml
+- tools/oracle/cases/model-budget/enforcement-fallback-first-passes.yaml
+- tools/oracle/cases/model-budget/enforcement-fallback-first-fails-second-passes.yaml
+- tools/oracle/cases/model-budget/charging-key-single.yaml
+- tools/oracle/cases/model-budget/charging-key-user-team-end-user.yaml
+- tools/oracle/cases/model-budget/charging-batch-charge-once.yaml
+- tools/oracle/cases/model-budget/charging-batch-poll-recharge.yaml
+- tools/oracle/cases/model-budget/charging-legacy-carry-key-scope.yaml
+- tools/oracle/cases/model-budget/charging-legacy-carry-end-user-scope.yaml
+- tools/oracle/cases/model-budget/charging-legacy-carry-window-cutoff.yaml
+deviations: []
+out_of_scope:
+- "Model budget name resolution and cache key generation (B3005)."
+- "Spend counter window increment and Redis flushing (B3016)."
+- "BudgetExceededError definition and HTTP status (B184)."
+- "DualCache implementation and Redis transport (B360, B390)."
+- "UserAPIKeyAuth and request metadata decoding (B732)."
+pitfalls:
+- "Zero max_budget (0) blocks the request; negative max_budget (< 0) and unset (None) both bypass the cap entirely."
+- "Key-over-team precedence checks whether the key has a spend-gated budget (max_budget is not None and >= 0) for the model; if so, team budget is skipped."
+- "Legacy spend carry applies only to key and end-user scopes; user scope is introduced by this change and has no legacy counter."
+- "Legacy carry stops after one budget window has passed since process startup (using time.monotonic()); wall-clock time does not apply."
+- "Batch markers use a separate cache key (spend_key:batch:batch_id) with TTL matching the budget duration; every poll of a batch retrieval extends the marker's expiry via refresh_ttl=True, and increment returns 1 on first charge, > 1 on subsequent polls."
+- "Cache read tries Redis first if redis_cache is not None, not based on whether Redis is configured; both reads treat non-float values as zero."
+- "async_log_success_event returns early if model is None or no entity budgets apply; multiple entities may be charged in one call."
+- "Fallback models are tried in order; each candidate's internal BudgetExceededError is caught and treated as a skip, and the function returns the first passing model or None, never raising."
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

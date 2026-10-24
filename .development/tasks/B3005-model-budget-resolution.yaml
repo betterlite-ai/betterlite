@@ -1,0 +1,118 @@
+id: B3005
+title: Resolve per-model budget names and report window usage
+description: >-
+  Implement `betterlite-auth::model_budget_values` to resolve which budget configuration
+  entry applies to a request, build exact cache keys for per-model spend counters, and
+  report current-window spend per configured budget model for /key/info and /user/info
+  endpoints. Preserve the candidate resolution chain (model name, name without provider
+  prefix, bedrock base model, bedrock family name), legacy-counter carry from the prior
+  version for one budget window, and Redis-authoritative spend reads with in-memory fallback.
+  Keep team override semantics (key budget can disable team budget for a model) and batch
+  response deduplication markers (batches report full cost on every poll, so charge once per
+  counter). Config keys: `model_max_budget` on user keys, teams, users and end-users. Budget
+  durations parse as duration_in_seconds allows. Cache prefixes (virtual_key_spend, team_model_spend,
+  user_model_spend, end_user_model_spend) form the Redis/memory keys alongside entity id,
+  configured model name and budget duration. Batch dedup needs `batch:<batch_id>` appended to
+  the spend key.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-auth/**
+    - tools/oracle/cases/model-budget/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L1-L274
+    why: Core B3005 ownership, covering cache key generation, model resolution, spend reporting and legacy carry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L51-L63
+    why: ResolvedModelBudget dataclass and its invariant that budget_model keys all counters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L65-L106
+    why: Cache key functions and legacy counter carry, including the one-window cutoff.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L135-L157
+    why: Model budget resolution chain and warning-backed fallthrough for malformed entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L160-L181
+    why: Team override and budget model candidates (prefix stripping, bedrock handling).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L184-L240
+    why: Bedrock model lookup, usage projection and current-window spend reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L243-L274
+    why: Silent spend read fallback and config validation helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py
+    why: BudgetConfig validation schema and expected fields (max_budget, budget_duration).
+dod:
+  - text: Cache key functions model_budget_spend_cache_key, model_budget_start_time_cache_key and batch_charged_once_marker_key build keys from entity type, id, budget model and duration with the exact LiteLLM prefix and format.
+    proof: [cache-keys]
+  - text: resolve_model_budget finds the first candidate that exists in model_max_budget and returns a ResolvedModelBudget, or None if no candidate applies.
+    proof: [resolution-cases]
+  - text: Candidates are the request model, the model without {provider}/ prefix, bedrock base and bedrock family name when the cost map marks it a bedrock model, in that order.
+    proof: [candidate-cases]
+  - text: A malformed model_max_budget entry in resolve_model_budget (unparseable BudgetConfig, missing budget_duration, invalid duration_in_seconds) is logged as warning and skipped, not fatal.
+    proof: [malformed-warn-skip-cases]
+  - text: A malformed model_max_budget entry in build_model_max_budget_usage is silently dropped from the usage report without logging a warning.
+    proof: [malformed-silent-cases]
+  - text: team_model_budget_applies returns false only when the key has a spend-gated budget (max_budget not None and >= 0) for the model.
+    proof: [team-override-cases]
+  - text: Legacy counter carry reads the old budget key (model name not configured name) for key and end-user scopes only, if within one budget window of startup and the key differs from the current key.
+    proof: [legacy-carry-cases]
+  - text: build_model_max_budget_usage returns a dict keyed on configured budget model names, with "current_spend" (float, 4 decimals), "budget_limit" and "time_period" per model.
+    proof: [usage-report-cases]
+  - text: _current_window_spends reads from Redis if available, returns in-memory cache as fallback, and treats an unusable batch result (None, wrong length, non-list) as all zeros.
+    proof: [spend-read-cases]
+  - text: batch_id_to_charge_once returns the batch id only for positive-cost batch retrieve calls, None otherwise.
+    proof: [batch-dedup-cases]
+checks:
+  optional: []
+  commands:
+    - id: resolution-cases
+      why: model resolution tests are missing, do not run or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_values::/)'
+    - id: cache-keys
+      why: cache key format does not match LiteLLM's or tests are missing
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_values::(cache_keys|spend_keys|batch_keys)/)'
+    - id: candidate-cases
+      why: model candidate chain tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_values::(candidates|bedrock)/)'
+    - id: malformed-warn-skip-cases
+      why: resolve_model_budget warning-and-skip tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_values::(invalid_resolve|malformed_resolve)/)'
+    - id: malformed-silent-cases
+      why: build_model_max_budget_usage silent drop tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_values::(invalid_build|malformed_build)/)'
+    - id: team-override-cases
+      why: team override logic tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_values::team_override/)'
+    - id: legacy-carry-cases
+      why: legacy counter carry tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_values::legacy_carry/)'
+    - id: usage-report-cases
+      why: usage report building tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_values::usage_report/)'
+    - id: spend-read-cases
+      why: spend reading and fallback tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_values::spend_reads/)'
+    - id: batch-dedup-cases
+      why: batch dedup marker tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^model_budget_values::batch_/)'
+oracle_cases: []
+deviations:
+  - what: Invalid BudgetConfig entries in resolve_model_budget log a warning and are skipped during resolution; validation failures are not fatal errors.
+    why: LiteLLM allows config entries that do not validate and falls back to lower-precedence ones, treating invalid entries as if they were absent. betterlite preserves this behavior.
+  - what: Invalid BudgetConfig entries in build_model_max_budget_usage are silently dropped from the usage report without logging.
+    why: This code path is used for reporting to users; a silently missing model avoids confusing operators with warnings about entries that already failed validation.
+  - what: Legacy counter carry stops after one budget window from startup; requests that land after that window use only the new counter spelling.
+    why: A legacy counter belongs to a window that was already open when this process replaced the prior one; past that window the old key could only miss.
+out_of_scope:
+  - "litellm/proxy/hooks/model_max_budget_limiter.py:277-288 (_resolve_entity_model_budgets): owned by B3006 since its only caller is async_log_success_event (B3006)."
+  - The class _PROXY_VirtualKeyModelMaxBudgetLimiter (lines 291-620) is enforcement and charging logic, owned by B3006.
+  - Redis transport operations (async_batch_get_cache, async_increment) are owned by B360; this task uses them as they are.
+  - The RouterBudgetLimiting interface and its relationship to the provider dispatch is owned by the router layer.
+  - Budget config parsing and field defaults are owned by the config loading task.
+pitfalls:
+  - "Cache keys join entity type, id, model name and duration with colons: the entity type is the prefix constant, not the enum value."
+  - "Legacy counter key uses request model name, not configured model name; identical keys skip the legacy read."
+  - "Team override checks max_budget sign (not None, >= 0) only, not actual charge; budget_limit: 0 blocks the team regardless of prior spend."
+  - "Malformed entries diverge: resolve_model_budget logs a warning, while build_model_max_budget_usage silently omits them from the report."
+  - "Bedrock model candidate generation uses litellm.model_cost; tests verifying bedrock fallback need a seeded cost map."
+  - "Legacy carry cutoff uses time.monotonic() uptime, not wall-clock time; process restart sees different windows."
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 2

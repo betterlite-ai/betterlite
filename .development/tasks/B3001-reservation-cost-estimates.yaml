@@ -1,0 +1,180 @@
+id: B3001
+title: Estimate reservation input and maximum request cost
+description: >-
+  Implement betterlite-auth::reservation_cost as standalone estimation functions
+  to count each candidate model once and reserve the maximum supported pricing shape,
+  with separate accounting for input-only cancellation floors. Preserve the 16384
+  output fallback for open-ended requests, model-specific ceilings, field precedence
+  (max_completion_tokens > max_tokens > max_output_tokens > default), image-mode gating,
+  and reasoning-rate maximization where both standard and reasoning costs exist. Return
+  None (skip reservation) when no pricing is known. Preserve unknown-price no-reservation
+  semantics: a model with zero known costs in every candidate shape returns None, not
+  zero. Multiple models in a request reserve once at the maximum cost across all
+  candidates. The estimate is performed before routing, so deployment-specific tiered
+  pricing tables must be pulled and cost against the group-flat rates to ensure any
+  eligible deployment can be served without under-reservation. Load model info from the
+  router's cached metadata services (cached_deployment_model_info, cached_model_group_info)
+  when available, falling back to litellm.get_model_info, and retain the cache-generation
+  order and error behavior. Input-cost estimates floor cancellations; output estimates
+  account for concurrent reservations. Estimate image-generation cost only when mode is
+  image_generation or image_edit, and sum both output_ and input_cost_per_image fields
+  when present, since naming is inconsistent across provider catalogs. Guard against
+  multimodal vision-input cost fields (mode not set, image-cost fields present) so
+  vision-priced models fall through to token-based reservation. Expose standalone
+  `estimate_request_max_cost`, `estimate_request_input_cost`, and owned `count_request_input_tokens`
+  in betterlite-auth; other helpers remain private. The request_body and route allow
+  these estimates to dispatch without a live deployment, but llm_router may be None.
+  On any exception loading metadata, log and return empty estimates rather than failing
+  the admission gate. Tiered-pricing selection uses B1666's select_tier_for_input and
+  tier_rate helpers; preserve their semantics and error handling. The max_tokens /
+  max_output_tokens field fallback for missing max_completion_tokens is explicit in the
+  source rather than a platform default. Testing must cover call chains through all three
+  router methods plus litellm.get_model_info fallback, models with tiered and flat
+  pricing separately, image generation and chat/embedding/rerank routes, reasoning models,
+  and cancellation-window behavior.
+scope:
+  paths:
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/reservation_cost.rs
+    - crates/betterlite-auth/src/reservation_cost/**
+    - crates/betterlite-auth/src/tiering.rs
+    - tools/oracle/src/auth_probes/reservation_cost.rs
+    - tools/oracle/src/auth_probes/reservation_cost/**
+    - tools/oracle/src/auth_probes/mod.rs
+    - tools/oracle/litellm/probes/registry.py
+    - tools/oracle/litellm/probes/protocol.py
+    - tools/oracle/litellm/probes/reservation_cost.py
+    - tools/oracle/cases/auth/reservation-cost/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1299-L1318
+    why: estimate_request_max_cost counts models once, reserves max.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1321-L1347
+    why: estimate_request_input_cost floors cancellation cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1350-L1368
+    why: Per-model input estimation and candidate selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1371-L1395
+    why: Input cost with tiered pricing tier selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1398-L1416
+    why: Per-model max cost estimation across all candidate shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1419-L1479
+    why: Max cost with image gate, reasoning-rate max, output multiplier, tiered vs flat.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1482-L1517
+    why: Image-generation cost with mode gating and image-count multiplier.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1520-L1556
+    why: 'Model cost info lookup order: router group, deployments, litellm fallback.'
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1559-L1587
+    why: Deployment tiered pricing table extraction and collection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1590-L1598
+    why: Model extraction from request body via route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1601-L1613
+    why: Async count_request_input_tokens reused by both estimates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1616-L1635
+    why: Input token estimation from counted, model max or None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1641-L1681
+    why: Output token estimation with field precedence, ceiling, multiplier and input only routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1666-L1692
+    why: Requested output tokens, multiplier and input only route detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tiered_pricing.py
+    why: select_tier_for_input and tier_rate from B1666.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py
+    why: get_model_from_request from B746.
+dod:
+  - text: Both estimate_request_max_cost and estimate_request_input_cost count each candidate model exactly once and return the maximum cost across all cost-info shapes.
+    proof: [reservation-cost-behaviors, reservation-cost-boundaries]
+  - text: Input cost returns the floor cost when any model-specific pricing is found; output estimate returns 16384 fallback or model ceiling when requested value is absent.
+    proof: [reservation-cost-behaviors]
+  - text: Image-generation cost applies only to image_generation/image_edit modes and sums both input_ and output_cost_per_image fields.
+    proof: [reservation-cost-behaviors]
+  - text: Output tokens account for n and best_of multipliers, reasoning rates use max(standard, reasoning), and tiered selection uses B1666's tier_rate.
+    proof: [reservation-cost-behaviors]
+  - text: count_request_input_tokens returns a map keyed by model name; both estimates reuse its result when provided.
+    proof: [reservation-cost-behaviors]
+  - text: Embeddings, rerank and moderation routes return 0 output tokens and skip output cost.
+    proof: [reservation-cost-behaviors]
+  - text: Every oracle case exercises the full request-to-cost chain and asserts exact cost value, None return, and model-lookup source for cached vs fallback paths.
+    proof: [cost-oracle]
+  - text: All metadata-lookup exceptions log and return empty estimates rather than failing admission.
+    proof: [reservation-cost-boundaries]
+  - text: The task adapter and probe operations use the production estimation functions and pass strict linting.
+    proof: [probe-python, cost-oracle]
+checks:
+  optional: []
+  commands:
+    - id: reservation-cost-behaviors
+      why: task-specific behavior tests for cost estimation are missing, skipped or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::reservation_cost_behaviors(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: reservation-cost-boundaries
+      why: task-specific boundary/error tests for cost estimation are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::reservation_cost_boundaries(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: probe-python
+      why: the new adapter is missing, unchanged, untyped or fails lint
+      run: test -f tools/oracle/litellm/probes/reservation_cost.py && test -n "$(git diff --name-only "$GATE_BASE"
+        -- tools/oracle/litellm/probes/reservation_cost.py)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+        tools/oracle/litellm/probes
+    - id: cost-oracle
+      why: oracle cases or the full request-cost chain are missing or fail
+      run: test -d tools/oracle/cases/auth/reservation-cost && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
+        -- tools/oracle/cases/auth/reservation-cost)" && cargo run --locked -p betterlite-oracle
+        -- --self-check tools/oracle/cases/auth/reservation-cost
+oracle_cases:
+  - tools/oracle/cases/auth/reservation-cost/flat-pricing-max-cost.yaml
+  - tools/oracle/cases/auth/reservation-cost/flat-pricing-input-cost.yaml
+  - tools/oracle/cases/auth/reservation-cost/tiered-pricing-selection.yaml
+  - tools/oracle/cases/auth/reservation-cost/multiple-models-takes-max.yaml
+  - tools/oracle/cases/auth/reservation-cost/image-generation-cost.yaml
+  - tools/oracle/cases/auth/reservation-cost/image-generation-mode-gate.yaml
+  - tools/oracle/cases/auth/reservation-cost/embedding-route-zero-output.yaml
+  - tools/oracle/cases/auth/reservation-cost/rerank-route-zero-output.yaml
+  - tools/oracle/cases/auth/reservation-cost/moderation-route-zero-output.yaml
+  - tools/oracle/cases/auth/reservation-cost/reasoning-rate-maximum.yaml
+  - tools/oracle/cases/auth/reservation-cost/output-multiplier-n.yaml
+  - tools/oracle/cases/auth/reservation-cost/output-multiplier-best-of.yaml
+  - tools/oracle/cases/auth/reservation-cost/max-completion-tokens-precedence.yaml
+  - tools/oracle/cases/auth/reservation-cost/max-tokens-fallback.yaml
+  - tools/oracle/cases/auth/reservation-cost/output-token-ceiling.yaml
+  - tools/oracle/cases/auth/reservation-cost/inference-config-max-tokens.yaml
+  - tools/oracle/cases/auth/reservation-cost/unknown-input-cost-returns-none.yaml
+  - tools/oracle/cases/auth/reservation-cost/unknown-output-cost-returns-none.yaml
+  - tools/oracle/cases/auth/reservation-cost/mixed-pricing-shapes-takes-max.yaml
+  - tools/oracle/cases/auth/reservation-cost/router-group-info-cache.yaml
+  - tools/oracle/cases/auth/reservation-cost/router-deployment-tiered-tables.yaml
+  - tools/oracle/cases/auth/reservation-cost/router-unavailable-fallback-litellm.yaml
+  - tools/oracle/cases/auth/reservation-cost/counted-input-tokens-reused.yaml
+  - tools/oracle/cases/auth/reservation-cost/model-max-input-fallback.yaml
+  - tools/oracle/cases/auth/reservation-cost/multimodal-vision-input-gate.yaml
+deviations: []
+out_of_scope:
+  - B3000 owns _to_float, _to_int and _get_value; this task calls betterlite-auth::budget_values's versions directly.
+  - B746 owns get_model_from_request and route parsing.
+  - B844/B845/B846 own Router.get_model_list, cached_deployment_model_info and cached_model_group_info
+    method implementations; this task calls those services as-is.
+  - B1666 owns select_tier_for_input, tier_rate and tiered-pricing table structure.
+  - B1695 owns count_input_tokens and count_input_tokens_for_model implementations and tokenizer dispatch.
+  - B2225 owns litellm.get_model_info implementation and the public model catalog.
+pitfalls:
+  - 'estimate_request_max_cost filters out None values before taking max(); one unknown-cost model kills
+    the whole estimate if it is the only candidate.'
+  - 'Image-generation cost is None when cost_per_image <= 0, so zero-cost image models return None and bypass
+    image-generation path entirely.'
+  - 'Tiered pricing requires isinstance(tiered_pricing, list) and tiered_pricing to be truthy; a model
+    with an empty tiered_pricing list falls through to flat-pricing path.'
+  - 'Reasoning rate uses max(output_cost_per_token, output_cost_per_reasoning_token), so either being None
+    must be handled correctly; both None causes output_rate to be 0.0 and later None returns.'
+  - 'Output token ceiling is min(requested or default, model_max or default), not just model_max, so requesting
+    max_tokens=999999999 is clamped to 16384 and then to model ceiling.'
+  - 'The mode gate for image generation is strict: mode must be "image_generation" or "image_edit", not substring-matched.'
+  - 'Multiple candidate models in an estimate use max() across costs, but None values are filtered first; this means
+    a second model with unknown pricing does not override a first model''s known cost.'
+  - 'Inference config is checked with isinstance(inference_config, Mapping) before dict access, so non-dict inferenceConfig values are silently skipped.'
+  - 'The tiered_pricing list can come from either the group cost info or a per-deployment override; both are
+    collected and cost-estimated together, so a deployment-specific tier overrides group pricing for that shape only.'
+  - 'Exception handling during metadata lookup is silently caught and logged; admission proceeds with an empty
+    estimate (None return), not an error.'
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

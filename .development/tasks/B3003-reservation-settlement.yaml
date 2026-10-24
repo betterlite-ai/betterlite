@@ -1,0 +1,121 @@
+id: B3003
+title: Settle, resize and release budget reservations
+description: >-
+  Build `betterlite-auth::reservation_settlement` to finalize budget reservations after requests complete, adjusting counters to actual cost incurred. Implement reconciliation for both normal completion and cancellation paths, with idempotent settlement stamps and deferred cleanup when release fails.
+
+  The reconciliation flow computes adjustments for every reserved counter, distinguishing between consistent counters (those whose reserved state matches expectation) and inconsistent counters (those flushed, expired or reseeded between reservation and settlement). Consistent adjustments pipeline together in one write; inconsistent counters reseed from the database and apply actual cost independently. When the caller supplies unapplied adjustments from `reconcile_budget_reservation(apply_consistent=False)`, `stamp_budget_reservation_actual_cost` records the settlement without writing, allowing the caller to batch with its own increments.
+
+  Preserve the finalized guard making settlement idempotent; cancellation reconciles to input-token cost (already billed to the provider) rather than zero; release failure triggers invalidation as a fallback cleanup. Keep shielded cleanup that completes even when the surrounding request cancels.
+
+  Implement extraction of reserved counter keys for parallel operations, and holder of counter-scope batch reads so every counter is read once.
+
+scope:
+  paths:
+    - crates/betterlite-auth/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L100-L106
+    why: "get_reserved_counter_keys: extract counter_key from every entry for parallel operations"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L350-L372
+    why: "reconcile_budget_reservation: settle reserved counters on actual cost, optionally defer writes to caller's pipeline"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L375-L386
+    why: "stamp_budget_reservation_actual_cost: record settlement after caller writes deferred adjustments"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L389-L393
+    why: "release_budget_reservation: reconcile reserved counters to zero cost"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L396-L426
+    why: "release_budget_reservation_on_cancel: settle to input cost on request cancellation, shielded from CancelledError"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L429-L438
+    why: "invalidate_budget_reservation_counters: drop reserved counters when release fails"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L441-L465
+    why: "release_or_invalidate_budget_reservation: release with fallback invalidation and finalized guard for idempotence"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L468-L478
+    why: "release_unbound_budget_reservation: release when no logging callback claimed ownership"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1098-L1102
+    why: "_counters_batch_scope: manager for batch-read of spend counters, one MGET per scope"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1105-L1127
+    why: "_EntryAdjustment, _entry_adjustment: immutable adjustment record and builder from entry cost delta"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1130-L1175
+    why: "_set_reserved_entries_actual_cost: reconcile all entries, separate consistent from inconsistent, pipeline consistent, reseed inconsistent"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1178-L1187
+    why: "_reseed_reserved_entry: restore counter from DB floor after flush/expire/reseed, then apply actual cost"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1190-L1203
+    why: "_counter_can_apply_adjustment: check counter state allows the adjustment without going negative"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1206-L1229
+    why: "_release_applied_entries_best_effort: rollback entries one at a time on exception, invalidate each on failure"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1232-L1245
+    why: "_resize_applied_reservation: adjust all entries to new reserved cost, zero applied adjustment for next settlement"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1248-L1258
+    why: "_counter_to_reservation_entry: builder from counter to reservation entry dict"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1261-L1265
+    why: "_get_entry_reserved_cost: extract reserved cost from entry with fallback to default"
+dod:
+  - text: "get_reserved_counter_keys extracts every counter_key from a reservation's entries and returns a set or frozenset."
+    proof: [settlement-tests]
+  - text: "reconcile_budget_reservation computes adjustments for every entry, returns pending increments when apply_consistent=False, and marks finalized=True when finalize=True."
+    proof: [settlement-tests]
+  - text: "stamp_budget_reservation_actual_cost records the target adjustment in every entry's applied_adjustment field without writing."
+    proof: [settlement-tests]
+  - text: "release_budget_reservation reconciles to actual_cost=0.0."
+    proof: [settlement-tests]
+  - text: "release_budget_reservation_on_cancel reconciles to input_cost and shields the reconcile from CancelledError."
+    proof: [settlement-tests]
+  - text: "invalidate_budget_reservation_counters calls _invalidate_spend_counter for every reserved counter key."
+    proof: [settlement-tests]
+  - text: "release_or_invalidate_budget_reservation releases with fallback invalidation; a second call is a no-op after finalized=True is set."
+    proof: [settlement-tests]
+  - text: "release_unbound_budget_reservation ignores reservations with callback_bound=True and calls release_or_invalidate_budget_reservation on others."
+    proof: [settlement-tests]
+  - text: "_counters_batch_scope enters a spend_counter_batch_scope for the frozenset of counter keys, reading each counter once via MGET."
+    proof: [settlement-tests]
+  - text: "_entry_adjustment returns None when counter_key is missing or adjustment is zero; otherwise returns _EntryAdjustment with counter_key, target_adjustment and applied delta."
+    proof: [settlement-tests]
+  - text: "_set_reserved_entries_actual_cost partitions adjustments into consistent (apply OK) and inconsistent (would go negative), pipelines consistent, reseeds and applies inconsistent, returns () when apply_consistent=True or the applicable pending increments when False."
+    proof: [settlement-tests]
+  - text: "_set_reserved_entries_actual_cost with reseed_on_inconsistent=False raises RuntimeError naming the first inconsistent entry's counter_key when at least one inconsistent adjustment exists."
+    proof: [settlement-tests]
+  - text: "_reseed_reserved_entry calls reseed_spend_counter_from_db, then increments by actual_cost if reseeded and actual_cost > 0."
+    proof: [settlement-tests]
+  - text: "_counter_can_apply_adjustment returns False on TypeError or ValueError from read_spend_counter_cache_value or when current_value is None; otherwise checks that adjustment >= 0 or current_value + adjustment >= -1e-12 (tolerance for float rounding)."
+    proof: [settlement-tests]
+  - text: "_release_applied_entries_best_effort reconciles each entry to 0.0 separately, catching exceptions and invalidating the counter on failure."
+    proof: [settlement-tests]
+  - text: "_resize_applied_reservation reconciles all entries to new_reserved_cost with reseed_on_inconsistent=False, then updates entry reserved_cost and applied_adjustment fields."
+    proof: [settlement-tests]
+  - text: "_counter_to_reservation_entry builds an entry dict with counter_key, entity_type, entity_id, reserved_cost and applied_adjustment=0.0."
+    proof: [settlement-tests]
+  - text: "_get_entry_reserved_cost returns the entry's reserved_cost, or the default if missing/None/unparseable."
+    proof: [settlement-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: settlement-tests
+      why: the settlement service tests fail, do not exist, or cannot reach the B3014/B3015 spend counter functions they call
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_settlement::/)'
+oracle_cases: []
+deviations:
+  - what: "Logging of failed cleanup is done via injected event sink or error log, not through LiteLLM's verbose_proxy_logger"
+    why: "betterlite uses its own observability; behavior (release failure + fallback to invalidation) is preserved"
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L459
+  - what: "Tolerance for float comparison (_get_entry_reserved_cost treats unparseable values as default; _counter_can_apply_adjustment uses -1e-12 tolerance) is preserved exactly as LiteLLM"
+    why: "numeric stability is inherent to the design, not a user-visible difference"
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1200-L1203
+out_of_scope:
+  - Reservation creation or pre-call cost estimation (B3001/B3004).
+  - Counter initialization or spending writes (B3015).
+  - Counter read operations or spending queries (B3014).
+  - Collect entity and window reservation counters (B3002 owns _get_budget_counters and its helpers at lines 481–908).
+  - Budget reservation lease renewal, unbilled-route handling and reserve_budget_for_request (B071 owns lines 225–347).
+  - Release of unbound reservations from middleware (B071).
+  - Callback registration or event delivery (B012, B1690).
+  - Per-model or per-session budget limits enforcement (B3006, B3007).
+pitfalls:
+  - "finalized guard makes settlement idempotent; stamping and resizing still mutate entries even when finalized=True is set elsewhere on the shared dict."
+  - "Adjustments are signed deltas; negative adjustments can fail on inconsistent counters unless -1e-12 float tolerance in _counter_can_apply_adjustment absorbs rounding."
+  - "Reseed only happens post-call to inconsistent entries; B3004 must fail on pre-call resize against inconsistent counters to keep in-flight cost from being lost."
+  - "asyncio.shield in release_budget_reservation_on_cancel runs the reconcile past request cancellation; do not invoke the request context inside the reconcile."
+  - "Unbound reservations lack callback_bound=True; only they get release_unbound_budget_reservation called after request completion."
+  - "Batch scope MGET reads all counters once at entry; _counter_can_apply_adjustment uses stale values for counters that changed during adjustment, which is the contract for why reseed exists."
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
