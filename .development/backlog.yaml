@@ -1969,7 +1969,7 @@ tasks:
     title: Typed request logging payloads
     status: todo
     depends_on: [B188, B011, B005, B175]
-    file: null
+    file: tasks/B190-logging-payloads.yaml
     covers:
       - "litellm/litellm_core_utils/{litellm_logging,logging_utils,classifier_logging,served_output_texts}.py"
       - "litellm/litellm_core_utils/README.md"
