@@ -271,6 +271,7 @@ tasks:
     - B334
     - B335
     - B336
+    - B337
     file: null
     covers:
     - router_plugins.json
@@ -2325,3 +2326,17 @@ tasks:
     file: tasks/B336-router-compaction.yaml
     covers:
     - litellm/router_strategy/complexity_router/context_compaction.py
+
+  - id: B337
+    milestone: M2 routing
+    title: Cache-cost-aware complexity placement
+    status: todo
+    depends_on:
+    - B334
+    - B325
+    - B075
+    - B081
+    - B068
+    file: tasks/B337-cache-cost-routing.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
