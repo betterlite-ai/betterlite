@@ -2034,12 +2034,13 @@ tasks:
     status: todo
     depends_on:
     - B311
-    - B080
+    - B310
+    - B370
     - B081
+    - B301
     file: tasks/B312-native-stream-fallback.yaml
     covers:
     - litellm/router.py
-
   - id: B313
     milestone: M2 routing
     title: Fallback provider and capability generalization rules
@@ -2786,6 +2787,18 @@ tasks:
     file: tasks/B369-cooldown-decisions.yaml
     covers:
     - litellm/router_utils/cooldown_handlers.py
+  - id: B370
+    milestone: M2 routing
+    title: Responses stream fallback and continuation
+    status: todo
+    depends_on:
+    - B311
+    - B310
+    - B080
+    - B301
+    file: tasks/B370-responses-stream-fallback.yaml
+    covers:
+    - litellm/router.py
   - id: B382
     milestone: M2 routing
     title: Request-scoped routing read batches
