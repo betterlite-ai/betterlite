@@ -14,7 +14,7 @@ description: >-
   variants to B014 exhaustive request/result dispatch; B203 later supplies both bridge directions. B202 also supplies
   text-completion privacy projection over its new response types. Write the behavior rstest functions b202_text_completion_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
-  separate names.
+  separate names. Budget 280 text types/dispatch, 270 tests, 110 fuzz/replay and 90 endpoint wiring (750 total).
 scope:
   paths:
   - Cargo.toml
