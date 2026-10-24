@@ -206,12 +206,14 @@ tasks:
     milestone: M2 routing
     title: Fallbacks, cooldowns and deployment health state
     status: todo
-    depends_on: [B017]
+    depends_on:
+    - B017
+    - B307
     file: null
     covers:
-      - "litellm/router_utils/{cooldown_cache,cooldown_callbacks,cooldown_handlers,fallback_event_handlers,health_state_cache}.py"
-      - "litellm/litellm_core_utils/{fallback_utils,fallback_generalizations}.py"
-      - "litellm/proxy/management_endpoints/fallback_management_endpoints.py"
+    - litellm/router_utils/{cooldown_cache,cooldown_callbacks,cooldown_handlers,fallback_event_handlers,health_state_cache}.py
+    - litellm/litellm_core_utils/{fallback_utils,fallback_generalizations}.py
+    - litellm/proxy/management_endpoints/fallback_management_endpoints.py
   - id: B019
     milestone: M2 routing
     title: Latency, cost, usage and least-busy routing strategies
@@ -1921,3 +1923,14 @@ tasks:
     file: tasks/B306-retry-policy.yaml
     covers:
     - litellm/router_utils/get_retry_from_policy.py
+
+  - id: B307
+    milestone: M2 routing
+    title: Cooldown expiry and deployment health snapshots
+    status: todo
+    depends_on:
+    - B017
+    - B304
+    file: tasks/B307-cooldown-state.yaml
+    covers:
+    - litellm/router_utils/{cooldown_cache,health_state_cache}.py
