@@ -233,17 +233,21 @@ tasks:
     - litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py
   - id: B020
     milestone: M2 routing
-    title: Tag, budget, access window and affinity routing
+    title: Budget-aware filtering and policy composition
     status: todo
     depends_on:
     - B016
-    - B320
+    - B383
+    - B326
     - B321
     - B322
     - B323
     - B324
     - B325
-    - B326
+    - B012
+    - B301
+    - B361
+    - B002
     file: tasks/B020-routing-budgets.yaml
     covers:
     - litellm/router_strategy/budget_limiter.py

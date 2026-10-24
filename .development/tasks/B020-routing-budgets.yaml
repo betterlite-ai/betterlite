@@ -1,30 +1,60 @@
 id: B020
 title: Budget-aware filtering and policy composition
-description: Finish policy routing by filtering B016's eligible pool against B326 provider, deployment
+description: 'Finish policy routing by filtering B016''s eligible pool against B326 provider, deployment
   and tag budget state. Integrate the filter with tags, reserved access windows, routing groups and affinity
   using the pinned phase ordering. Connect remaining-budget observations to B012 without implementing
   exporters. Enable MIT tag-budget logic without a paid-tier check, as the project decision requires;
   use component probes on the MIT filter for parity instead of asserting the proprietary gate. Preserve
-  the pinned read-failure and zero-budget behavior unless the architect approves the stricter policy noted
-  in pitfalls. Use the existing Rust crate boundaries from B004 and B008; integrate through the server
-  when the provider dispatcher or callbacks live in another core crate. This task's source slices are
-  the linked ranges, not a port of their Python classes. Add the listed oracle cases and the matching
-  adapters to B301's component runner where state is not observable over HTTP; adapters call production
-  logic and never reproduce it. Use deterministic candidate sets or supplied random samples for comparisons,
-  and separate seeded distribution tests for random choices. Extend the existing config_yaml fuzz target
-  and committed corpus for every newly accepted config form; unsupported keys still fail by full path.
-  Keep the implementation, adapters and tests within 800 changed lines; fixtures and oracle cases are
-  budget-excluded by checks.yaml.
+  zero-budget and missing-spend fail-open behavior, including unavailable shared reads; emit a warning
+  without credentials or money rounding. Configuration boundary keys introduced or consumed here: optional_pre_call_checks.
+  Pinned declaration defaults: optional_pre_call_checks=None. Resolve env values once in betterlite-config,
+  never in router code. Implement the owned native service in crates/betterlite-router/src/routing_budgets.rs.
+  Add ProbeOperation::B020 in tools/oracle/src/router_probes/mod.rs and the corresponding B020 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_strategy/budget_limiter.py: _LiteLLMParamsDictView.__init__
+  (L61-L62), _LiteLLMParamsDictView.__getattr__ (L64-L65), _LiteLLMParamsDictView.__getitem__ (L67-L68),
+  _LiteLLMParamsDictView.__contains__ (L70-L71), _LiteLLMParamsDictView.get (L73-L74), _LiteLLMParamsDictView.keys
+  (L76-L77), _LiteLLMParamsDictView.values (L79-L80), _LiteLLMParamsDictView.items (L82-L83), _LiteLLMParamsDictView.__iter__
+  (L85-L86), _LiteLLMParamsDictView.__len__ (L88-L89), _LiteLLMParamsDictView.dict (L91-L92), _LiteLLMParamsDictView.model_dump
+  (L94-L95), RouterBudgetLimiting.async_filter_deployments (L130-L204), RouterBudgetLimiting._filter_out_deployments_above_budget
+  (L206-L288), RouterBudgetLimiting._get_budget_config_for_deployment (L697-L703), RouterBudgetLimiting._get_budget_config_for_provider
+  (L705-L708), RouterBudgetLimiting._get_budget_config_for_tag (L710-L713), RouterBudgetLimiting._get_llm_provider_for_deployment
+  (L715-L736), RouterBudgetLimiting._track_provider_remaining_budget_prometheus (L738-L751), RouterBudgetLimiting._get_current_provider_spend
+  (L753-L777), RouterBudgetLimiting._get_current_provider_budget_reset_at (L779-L793), RouterBudgetLimiting._init_tag_budgets
+  (L915-L935). Implement these behaviors through the typed Rust services above; synchronous facades and
+  structural accessors reuse the same primitive instead of separate ports.'
 scope:
   paths:
-  - crates/betterlite-router/**
-  - crates/betterlite-config/**
-  - crates/betterlite-server/**
-  - tools/oracle/cases/routing/routing-budgets/**
+  - crates/betterlite-router/src/routing_budgets.rs
+  - crates/betterlite-router/src/routing_budgets/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/routing_budgets.rs
+  - crates/betterlite-server/src/routing/routing_budgets/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/routing_budgets.rs
   - tools/oracle/src/router_probes/routing_budgets/**
   - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/routing_budgets.py
   - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/routing_budgets.py
+  - tools/oracle/cases/routing/routing-budgets/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/routing_budgets.rs
+  - crates/betterlite-config/src/routing_budgets/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b020-*
+  - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L130-L288
@@ -33,40 +63,82 @@ references:
   why: Provider/tag lookup and remaining-budget observations.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L915-L935
   why: MIT tag initialization contains a paid-tier gate to omit.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L61-L62
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L64-L65
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L67-L68
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L70-L71
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L73-L74
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L76-L77
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L79-L80
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L82-L83
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L85-L86
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L88-L89
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L91-L92
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L94-L95
+  why: Previously uncovered helper owned by this task.
 dod:
-- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
-    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
+- text: Write tests named b020_behaviors and b020_boundaries under routing_budgets::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b020-behaviors
+  - b020-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests. Name these tests with the routing_budgets prefix so the required
-    filter runs them.
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
   proof:
-  - routing-tests
-- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
-    fields still fail startup.
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b020-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b020-invalid.yaml;
+    the valid seed contains optional_pre_call_checks. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - routing-tests
-- text: All mutants in changed router, config or wire code are caught.
+  - b020-boundaries
+- text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
 checks:
   optional:
   - mutants
   commands:
-  - id: routing-tests
-    why: the focused routing tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
-      -E 'test(routing_budgets)'
-  - id: config-corpus
-    why: the new configuration forms are absent from the fuzz corpus or their replay fails
-    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: b020-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b020_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b020-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b020_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
   - id: probe-python
-    why: the task's Python oracle adapter fails strict typing or linting
-    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
-      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/routing_budgets.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/routing_budgets.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b020-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b020-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b020-" && grep -Fq 'optional_pre_call_checks' crates/betterlite-config/fuzz/corpus/config_yaml/b020-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/routing-budgets/provider-budget-at-limit.yaml
 - tools/oracle/cases/routing/routing-budgets/deployment-budget-at-limit.yaml
@@ -84,11 +156,28 @@ deviations:
 out_of_scope:
 - Budget CRUD and account reservations (B059/B071).
 - Prometheus exporter (B111).
+- 'litellm/router_strategy/budget_limiter.py: B326 owns: _sum_increments_by_key (L98-L103), RouterBudgetLimiting._increment_spend_in_current_window
+  (L392-L412), RouterBudgetLimiting._get_redis_increment_queue_lock (L414-L415), RouterBudgetLimiting._detach_queued_increment_operations
+  (L417-L426), RouterBudgetLimiting._clear_detached_increment_operations (L428-L430), RouterBudgetLimiting._requeue_detached_increment_operations
+  (L432-L453), RouterBudgetLimiting._flush_queued_increment_operations (L455-L457), RouterBudgetLimiting._await_flush_task
+  (L459-L469), RouterBudgetLimiting._write_queued_increment_operations (L471-L489), RouterBudgetLimiting.async_log_success_event
+  (L491-L546), RouterBudgetLimiting._increment_spend_for_key (L548-L595), RouterBudgetLimiting.periodic_sync_in_memory_spend_with_redis
+  (L597-L613), RouterBudgetLimiting._push_in_memory_increments_to_redis (L615-L629), RouterBudgetLimiting._flush_queued_increments_with_lock
+  (L631-L633), RouterBudgetLimiting._sync_in_memory_spend_with_redis (L635-L655), RouterBudgetLimiting._flush_increments_then_copy_redis_spend
+  (L657-L695).'
+- 'litellm/router_strategy/budget_limiter.py: B383 owns: RouterBudgetLimiting.__init__ (L107-L128), RouterBudgetLimiting._async_get_cache_keys_for_router_budget_limiting
+  (L290-L353), RouterBudgetLimiting._get_or_set_budget_start_time (L355-L366), RouterBudgetLimiting._handle_new_budget_window
+  (L368-L390), RouterBudgetLimiting._init_provider_budget_in_cache (L795-L816), RouterBudgetLimiting.should_init_router_budget_limiter
+  (L819-L844), RouterBudgetLimiting._init_provider_budgets (L846-L867), RouterBudgetLimiting._init_deployment_budgets
+  (L869-L897), RouterBudgetLimiting.register_deployment_budget (L899-L906), RouterBudgetLimiting.unregister_deployment_budget
+  (L908-L913).'
 pitfalls:
-- The pin treats falsy zero budgets as unenforced and missing spend as zero; the architect must decide
-  whether to keep that compatibility or approve fail-closed enforcement before dispatch.
 - Do not silently turn the router's post-call budget estimate into a hard concurrent account reservation.
 - Budget and access filtering precede affinity.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
 review_level: security
 budget:
   max_changed_lines: 800
