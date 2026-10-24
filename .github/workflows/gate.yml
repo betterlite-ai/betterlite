@@ -5,12 +5,14 @@ on:
     branches: [main]
   merge_group:
     types: [checks_requested]
+  push:
+    branches: [main]
 
 permissions: {}
 
 concurrency:
-  group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref }}
-  cancel-in-progress: true
+  group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 defaults:
   run:
@@ -40,6 +42,11 @@ jobs:
           --health-retries 12
     env:
       CARGO_TERM_COLOR: never
+      SOURCE_TOOLS: |
+        /usr/local/cargo/bin/cargo-shear
+        /usr/local/cargo/bin/ast-grep
+        /usr/local/cargo/bin/sg
+        /usr/local/cargo/bin/similarity-rs
       POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
     steps:
       - name: Install system packages
@@ -84,6 +91,8 @@ jobs:
       - name: Restore the cargo cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
+          shared-key: gate
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: |
             .development/gate -> target
             . -> target
@@ -97,21 +106,36 @@ jobs:
         run: cargo gate validate
 
       - name: Test and lint the gate
-        if: github.event_name == 'merge_group'
+        if: github.event_name != 'pull_request'
         run: |
           cargo fmt --check --manifest-path .development/gate/Cargo.toml
           cargo clippy --locked --all-targets --manifest-path .development/gate/Cargo.toml -- -D warnings
           cargo test --locked --manifest-path .development/gate/Cargo.toml
 
       - name: Install the pinned tools
-        if: github.event_name == 'merge_group'
+        if: github.event_name != 'pull_request'
         uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-nextest@0.9.140,cargo-deny@0.20.2,cargo-llvm-cov@0.8.7,cargo-mutants@27.1.0,typos@1.48.0,prek@0.4.9,zizmor@1.26.1,uv@0.11.14
 
+      - name: Restore the tools built from source
+        if: github.event_name != 'pull_request'
+        id: tools
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.SOURCE_TOOLS }}
+          key: source-tools-cargo-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0
+
       - name: Install the tools without prebuilt binaries
-        if: github.event_name == 'merge_group'
+        if: github.event_name != 'pull_request' && steps.tools.outputs.cache-hit != 'true'
         run: cargo install --locked cargo-shear@1.13.1 ast-grep@0.45.3 similarity-rs@0.5.0
+
+      - name: Save the tools built from source
+        if: github.ref == 'refs/heads/main' && steps.tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.SOURCE_TOOLS }}
+          key: source-tools-cargo-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0
 
       - name: Run the task's checks on the merged result
         if: steps.find.outputs.task != '' && github.event_name == 'merge_group'
@@ -121,7 +145,7 @@ jobs:
         run: cargo gate run "$TASK"
 
       - name: Run the base checks on the merged result
-        if: steps.find.outputs.task == '' && github.event_name == 'merge_group'
+        if: steps.find.outputs.task == '' && github.event_name != 'pull_request'
         env:
           GATE_BASE: ${{ steps.find.outputs.base }}
         run: cargo gate run B000 --only fmt --only clippy --only tests --only doctests --only deny --only shear --only hooks --only similarity --only file-size --only workflows
