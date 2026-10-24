@@ -23,7 +23,8 @@ description: >-
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations url_path in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed. Place the runner behavior tests under
-  helpers:: and encoder tests under url_path:: so both crate-specific checks must find behavior tests.
+  helpers:: and encoder tests under url_path:: so both crate-specific checks must find behavior tests. Budget 330
+  runner/encoders, 90 adapters, 250 tests, 80 fuzz/replay and 50 tooling/wiring (800 total).
 scope:
   paths:
   - Cargo.toml
@@ -100,11 +101,15 @@ checks:
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-lock
     why: the Python helper tool dependencies are not locked
-    run: uv lock --check --project tools/oracle/litellm
+    run: >-
+      test -f tools/oracle/helpers/ruff.toml && test -f tools/oracle/helpers/pyrightconfig.json && grep -q ruff
+      tools/oracle/litellm/pyproject.toml && grep -q basedpyright tools/oracle/litellm/pyproject.toml && uv lock
+      --check --project tools/oracle/litellm
   - id: http-self-check
     why: the helper mode broke the existing HTTP mode
     run: >-
-      cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/health tools/oracle/cases/chat
+      test -f tools/oracle/helpers/dispatch.py && test -f tools/oracle/src/helpers/mod.rs && cargo run --locked
+      --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/health tools/oracle/cases/chat
 oracle_cases:
 - tools/oracle/cases/helpers/url-path/single-reserved.yaml
 - tools/oracle/cases/helpers/url-path/multi-unicode.yaml
