@@ -18,17 +18,21 @@ override-dependencies = ["litellm-enterprise; sys_platform == 'never'"]
 
 [tool.ruff]
 target-version = "py311"
+line-length = 120
 
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
   "COM812", # conflicts with the ruff formatter
+  "CPY", # the license lives in LICENSE, not in file headers
   "D", # the repository keeps no docstrings
+  "EM", # ProbeError takes a failure kind and its message directly
+  "INP001", # probes is a namespace package run with python -m from this folder
+  "TRY003", # same reason as EM
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "probes/tests/*" = ["S101"] # pytest checks with assert
 
-[tool.basedpyright]
-include = ["probes"]
-typeCheckingMode = "all"
+[tool.pytest.ini_options]
+pythonpath = ["."]
