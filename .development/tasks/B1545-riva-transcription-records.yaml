@@ -1,0 +1,86 @@
+id: B1545
+title: Shape Riva recognition options, final transcripts and gRPC failures
+description: >-
+  Introduce api::riva::records for NvidiaRivaAudioTranscriptionConfig and common_utils.py's error
+  mapping. These are typed transformations over B1122; neither HTTP nor protobuf decoding occurs
+  here. Map non-null language to the twelve bare-code BCP-47 defaults, retaining strings containing
+  a hyphen and unknown strings verbatim; empty/nonstring language becomes en-US. Requesting word
+  timestamps sets enable_word_time_offsets=true, while other timestamp requests do not clear an
+  existing flag. Preserve all other non-null optional inputs regardless of drop_params.
+
+  Build RecognitionOptions with source defaults language_code=en-US, sample_rate_hertz=16000,
+  encoding=LINEAR_PCM, audio_channel_count=1, automatic punctuation=true, word offsets=false,
+  max_alternatives=1, model empty, verbatim=false and profanity=false. riva_model_name is the only
+  source for the recognition model; the API model argument is ignored. A mapping endpointing_config
+  wins, even empty; otherwise server_vad chunking maps threshold to both start/stop thresholds,
+  silence_duration_ms to stop_history and prefix_padding_ms to stop_history_eou. Empty derived
+  settings and auto omit endpointing. Keep numeric conversions fallible and use Decimal for
+  thresholds. Wrap the record with falsey response_format default json and timestamp_granularities.
+  validate_environment returns headers unchanged.
+
+  build_transcription_response concatenates final transcript strings without inserting separators,
+  then strips the complete result. Always emit task=transcribe. Only verbose_json includes requested
+  nonempty word timing entries (milliseconds divided by 1000 using Decimal) and a non-null duration;
+  no segments or language field is synthesized. The handler will supply normalized final records.
+
+  Preserve the complete gRPC-name-to-HTTP table, including CANCELLED=499, DEADLINE_EXCEEDED=504,
+  UNIMPLEMENTED=501 and absent/unknown=500. Extract code().name only when callable and string-valued;
+  failures calling code/details are ignored. Prefer a nonempty string details() over exception text,
+  and retain the status name in the NVIDIA Riva gRPC error prefix when available. Represent SDK
+  observations with typed records for the later bridge, not an untyped error map.
+
+  call.riva_records compares language_cases, timing_flags, endpointing_precedence, empty_model,
+  concatenated_finals, verbose_words and grpc_error_table against source methods with fake SDK errors.
+  Approximately 285 source lines include the unused HTTP response method excluded below; allow
+  220 implementation, 220 tests and 120 oracle lines in a 650-line change.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/riva.rs
+    - crates/betterlite-core/src/api/riva/records.rs
+    - crates/betterlite-core/src/api/riva/records/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/riva_records.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/riva_records.py
+    - tools/oracle/cases/helpers/riva-records/**
+    - tools/oracle/fuzz/corpus/helper_case/riva_records*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/audio_transcription/transformation.py#L33-L264
+    why: Riva option defaults, language/VAD translation and final response projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/common_utils.py#L10-L91
+    why: gRPC status extraction and HTTP-equivalent provider errors.
+dod:
+  - text: Riva recognition records and transcript shaping preserve source defaults, timestamp selection and concatenation.
+    proof: [riva-record-tests, oracle, riva-record-python]
+  - text: SDK error observations map to the complete pinned HTTP status table without inventing status names from error text.
+    proof: [riva-record-tests, oracle, riva-record-python]
+checks:
+  optional: []
+  commands:
+    - id: riva-record-tests
+      why: Riva option, transcript or error transformations are untested
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::riva::records::/)'
+    - id: riva-record-python
+      why: Riva typed records lack comparison with independently invoked source helpers
+      run: grep -qE '^[[:space:]]+riva_records:' tools/oracle/fuzz/corpus/helper_case/riva_records* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/riva_records.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/riva-records/language-cases.yaml
+  - tools/oracle/cases/helpers/riva-records/timing-flags.yaml
+  - tools/oracle/cases/helpers/riva-records/endpointing-precedence.yaml
+  - tools/oracle/cases/helpers/riva-records/empty-model.yaml
+  - tools/oracle/cases/helpers/riva-records/concatenated-finals.yaml
+  - tools/oracle/cases/helpers/riva-records/verbose-words.yaml
+  - tools/oracle/cases/helpers/riva-records/grpc-error-table.yaml
+deviations: []
+out_of_scope:
+  - transform_audio_transcription_response has no caller at the pin because the Riva handler builds the response directly from gRPC results; omit its HTTP-only NotImplementedError and cases.
+pitfalls:
+  - Riva concatenates final chunks directly, so missing spaces in the upstream transcripts remain missing.
+  - A generic exception whose message says UNAUTHENTICATED still maps to 500 without code().name.
+  - Explicit empty endpointing_config suppresses chunking_strategy conversion.
+review_level: standard
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

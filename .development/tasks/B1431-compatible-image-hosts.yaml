@@ -1,0 +1,113 @@
+id: B1431
+title: AIML and CometAPI image generation and image-count pricing
+description: >-
+  Implement compatible_image_hosts in betterlite-openai using B997's leaf image records.
+  Port both factories, option maps, credential checks, request builders, response transforms
+  and cost wrappers. AIML tests the case-sensitive openai/ model prefix. Those models keep
+  n, size, quality, response_format, output_format, background, moderation and
+  output_compression; other AIML models accept only n, response_format and size, renaming
+  them to num_images, output_format and image_size. A string size containing x must split
+  into exactly two integers for width/height; other values pass through. Do not enforce
+  the TypedDict comments' image limits or defaults. Both maps skip a key already present
+  in optional_params before checking support; unsupported keys otherwise raise ValueError
+  unless drop_params is true. CometAPI accepts n, quality, response_format, size and style
+  without renaming. Request options overlay model/prompt for CometAPI and OpenAI-style
+  AIML; preserve duplicate-key failure of the other AIML TypedDict constructor.
+
+  AIML resolves base explicit/AIML_API_BASE/https://api.aimlapi.com, strips trailing
+  slashes and a final /v1, then appends /v1/images/generations. CometAPI resolves explicit/
+  COMETAPI_BASE_URL/COMETAPI_API_BASE/https://api.cometapi.com, trims slashes and appends
+  the same suffix without removing /v1. Keys resolve explicit/AIML_API_KEY/AIMLAPI_KEY
+  and explicit/COMETAPI_KEY/COMETAPI_API_KEY, respectively. All env keys default absent;
+  a falsey final key is a ValueError. Both overwrite Authorization with Bearer and
+  Content-Type with application/json. Add compatible_image_settings loader tests for
+  the complete alias chains, absent values and explicit precedence.
+
+  decode_compatible_image_reply accepts bounded HTTP body bytes and a host discriminator.
+  JSON failure uses B997's error with original status/headers. Subsequent malformed shape
+  errors keep their source failure class. Retain an existing nonempty ImageResponse.data
+  list and append new images; a falsey list becomes empty. AIML chooses exactly one
+  branch: list-valued data, else output.choices when present, else images. In data entries,
+  a present url wins even when null; otherwise b64_json or image_base64 uses truthy fallback
+  and retains revised_prompt. Choices prefer present image_base64 to url; images prefer
+  url to image_base64. Those latter branches omit revised_prompt. CometAPI iterates any
+  present data and copies both optional url and b64_json, omitting revised_prompt.
+  Neither decoder copies created, downloads returned URLs, or invokes post_call.
+
+  Pricing accepts only the ImageResponse variant, calls an injected model-info resolver
+  with the exact aiml/cometapi provider, and multiplies output_cost_per_image or zero by
+  the final data length. Use B193 exact price records; B068 will supply catalog selection
+  without becoming a dependency here. Helper compatible_image_record drives maps, reply
+  transforms and pricing through pinned methods. Add compatible_image_reply fuzzing and
+  separate replay tests, plus new HelperCase seeds asserting call.compatible_image_record
+  for both hosts. Counted source is 445 nonblank/noncomment lines, 401 excluding docstrings;
+  with shared host machinery estimate 295 implementation, 200 tests, 140 adapters,
+  70 decoder fuzz/replay and 75 configuration/export lines, capped at 800.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,compatible_image_hosts}.rs
+    - crates/betterlite-openai/src/compatible_image_hosts/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/compatible_image_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/compatible_image_reply/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,compatible_images}.rs
+    - crates/betterlite-config/tests/compatible_image_settings.rs
+    - tools/oracle/src/helpers/{mod,compatible_image_record}.rs
+    - tools/oracle/helpers/{dispatch,compatible_image_record}.py
+    - tools/oracle/cases/helpers/compatible-image-record/**
+    - tools/oracle/fuzz/corpus/helper_case/compatible_image_record*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aiml/image_generation/transformation.py#L26-L251
+    why: AIML's two request dialects and three mutually exclusive reply layouts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/image_generation/transformation.py#L24-L165
+    why: CometAPI's base alias order, option overlay and direct image field copying.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aiml/image_generation/cost_calculator.py#L8-L28
+    why: ImageResponse-only image-count pricing and missing-rate fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/image_generation/cost_calculator.py#L8-L28
+    why: The parallel cost wrapper changes the model-info provider identity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/aiml.py#L1-L27
+    why: TypedDict annotations describe fields without applying the comments' numeric restrictions.
+dod:
+  - text: Image requests preserve dialect selection, preexisting options and distinct URL rules.
+    proof: [image-host-tests, image-host-settings, image-host-python, oracle]
+  - text: Image replies and count-based prices match branch priority and append behavior.
+    proof: [image-host-tests, image-host-python, oracle]
+  - text: Both host decoders and helper operations execute new corpus inputs with bounded allocation.
+    proof: [image-host-corpus, image-host-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: image-host-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^compatible_image_hosts::/) - test(replays_compatible_image_corpus)'
+      why: Existing-data append and empty branch selection cannot be verified by happy-path images alone.
+    - id: image-host-settings
+      run: cargo nextest run --locked -p betterlite-config --test compatible_image_settings --no-tests=fail
+      why: Image-specific aliases differ from each host's chat credentials.
+    - id: image-host-python
+      run: test -f tools/oracle/helpers/compatible_image_record.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The image adapter must preserve constructor failures and nullable output fields.
+    - id: image-host-corpus
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/compatible_image_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_compatible_image_corpus)'
+      why: Replay newly added malformed and overlapping reply layouts through the host-tagged decoder.
+    - id: image-host-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_image_record*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::compatible_image_record::/)'
+      why: Seed tests require the compatible_image_record variant and at least one fixture per host.
+oracle_cases:
+  - tools/oracle/cases/helpers/compatible-image-record/aiml-openai-and-flux-options.yaml
+  - tools/oracle/cases/helpers/compatible-image-record/preexisting-unsupported-and-bad-size.yaml
+  - tools/oracle/cases/helpers/compatible-image-record/cometapi-v1-and-key-aliases.yaml
+  - tools/oracle/cases/helpers/compatible-image-record/empty-data-masks-output-choices.yaml
+  - tools/oracle/cases/helpers/compatible-image-record/null-url-and-base64-priority.yaml
+  - tools/oracle/cases/helpers/compatible-image-record/append-images-and-count-price.yaml
+deviations: []
+out_of_scope:
+  - B038 supplies image provider selection and existing HTTP image-route coverage; B997 retains shared image exceptions and records.
+  - AIML chat identity belongs to B038; these image credentials intentionally accept the extra AIMLAPI_KEY alias.
+pitfalls:
+  - An empty AIML data array suppresses otherwise usable output.choices images.
+  - Supplying a CometAPI base ending in /v1 produces /v1/v1/images/generations.
+  - Flux AIML's duplicate model or prompt options fail during TypedDict construction instead of overriding the argument.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security

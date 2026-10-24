@@ -1,0 +1,108 @@
+id: B1400
+title: xAI OAuth token records and refresh
+description: >-
+  Add xai_tokens to betterlite-openai for unattended use of an existing xAI OAuth login.
+  Own XAIOAuthAuthenticator.__init__, get_api_base, get_access_token, _client,
+  _ensure_token_dir, _read_auth_file, _write_auth_file, _is_expired, _discover,
+  _validate_xai_endpoint, _exchange_token, _build_auth_record, _refresh_tokens and
+  should_use_xai_oauth, together with their token/discovery records and exception types.
+  B1401 consumes these operations for interactive login. Resolve XAI_OAUTH_TOKEN_DIR
+  to ~/.config/litellm/xai_oauth, XAI_OAUTH_AUTH_FILE to auth.json and OAuth base from
+  XAI_OAUTH_API_BASE, XAI_API_BASE, then https://api.x.ai/v1. Preserve the default path
+  spelling for existing installations. Config owns environment expansion; use_xai_oauth
+  is a litellm_params flag defaulting false, whose Python truthiness is retained at the
+  compatibility boundary. Introduce config test xai_oauth_settings loading each variable
+  and the deployment flag through B002, including explicit values and unset defaults.
+
+  Use an injected filesystem, clock and B173 transport. Missing, unreadable, non-object
+  or malformed auth JSON acts as no login; an absent or unconvertible expires_at is expired,
+  including the exact 120-second early-refresh boundary. After acquiring the owned refresh
+  lock, reread the file before exchanging a token. Discovery uses the fixed auth.x.ai
+  well-known URL with Accept application/json and requires both endpoints. Permit only
+  HTTPS x.ai or dot-delimited subdomains, including endpoints restored from disk. Exchange
+  form fields using client ID b1a00492-073a-47ea-816f-4c329264a828. Retain the old refresh
+  token when omitted by renewal; missing access/refresh tokens fail. expires_in uses a
+  truthy value converted to integer or 3600, and token_type defaults Bearer.
+
+  Match directory mode 0700 and exclusive, no-follow 0600 temporary-file creation, JSON
+  write, flush, fsync, replace, then chmod; chmod failures only diagnose, while write
+  failures remove the temporary file and preserve their cause. Keep credentials secret
+  in every record and diagnostic. Implement bounded decode_xai_oauth for auth, discovery
+  and token-response bytes, and fuzz/replay all three tagged inputs. Register helper
+  xai_oauth_tokens for expiry, endpoint validation and record construction; Python calls
+  the pinned methods with a supplied clock, never performs network IO. Adjacent tests
+  exercise actual refresh orchestration with scripted transport and temporary files,
+  including two callers observing one successful refresh and failures before replacement.
+  Counted 229 nonblank/noncomment lines in these methods and declarations; reserve 290
+  implementation, 235 tests/config, 130 adapters and 105 parser/wiring lines, cap 800.
+scope:
+  paths:
+    - crates/betterlite-openai/Cargo.toml
+    - crates/betterlite-openai/src/{lib,error,xai_tokens}.rs
+    - crates/betterlite-openai/src/xai_tokens/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/xai_oauth.rs
+    - crates/betterlite-openai/fuzz/corpus/xai_oauth/**
+    - crates/betterlite-config/src/{lib,config,settings,model,env,providers,tests}.rs
+    - crates/betterlite-config/src/providers/xai.rs
+    - crates/betterlite-config/src/providers/xai/oauth.rs
+    - crates/betterlite-config/src/tests/xai_oauth.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/xai_oauth*
+    - tools/oracle/src/helpers/{mod,xai_oauth_tokens}.rs
+    - tools/oracle/helpers/{dispatch,xai_oauth_tokens}.py
+    - tools/oracle/cases/helpers/xai-oauth-tokens/**
+    - tools/oracle/fuzz/corpus/helper_case/xai_oauth_tokens*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L24-L75
+    why: Fixed issuer/client constants, token records and named failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L123-L152
+    why: File location, base selection and lock-then-reread refresh sequence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L206-L292
+    why: Durable replacement, permissive read fallback, expiry and endpoint restrictions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L345-L422
+    why: Form exchange, refresh-token preservation and opt-in predicate.
+dod:
+  - text: Refresh reads the latest on-disk token and retains the source expiry and replacement ordering.
+    proof: [xai-token-tests]
+  - text: Endpoint validation and token record defaults agree with the pinned OAuth helpers.
+    proof: [oracle, xai-token-python, xai-token-seeds]
+  - text: OAuth deployment and environment settings survive the real config loader.
+    proof: [xai-token-config]
+  - text: Malformed auth files and network JSON exercise the bounded production decoder.
+    proof: [xai-token-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: xai-token-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^xai_tokens::/) - test(replays_xai_oauth_corpus)'
+      why: Reread races, secret formatting and failed replacement are observable without contacting xAI.
+    - id: xai-token-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(xai_oauth_settings)'
+      why: The OAuth flag and all three OAuth environment variables must resolve through Config.
+    - id: xai-token-python
+      run: test -f tools/oracle/helpers/xai_oauth_tokens.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The reference adapter must call the real token helpers with strictly typed fixtures.
+    - id: xai-token-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_oauth_tokens*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::xai_oauth_tokens::/)'
+      why: Newly added seeds must select call.xai_oauth_tokens and reject another operation tag.
+    - id: xai-token-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/xai_oauth.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/xai_oauth)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_xai_oauth_corpus)'
+      why: Auth-file fallback and response parse failures must share the fuzzed decoder.
+oracle_cases:
+  - tools/oracle/cases/helpers/xai-oauth-tokens/expiry-skew-boundary.yaml
+  - tools/oracle/cases/helpers/xai-oauth-tokens/missing-and-invalid-expiry.yaml
+  - tools/oracle/cases/helpers/xai-oauth-tokens/endpoint-domain-boundary.yaml
+  - tools/oracle/cases/helpers/xai-oauth-tokens/refresh-fallback.yaml
+  - tools/oracle/cases/helpers/xai-oauth-tokens/zero-and-invalid-lifetime.yaml
+  - tools/oracle/cases/helpers/xai-oauth-tokens/missing-access-token.yaml
+deviations: []
+out_of_scope:
+  - B1401 owns login, _CallbackHandler.do_GET/log_message, _CallbackServer, _pkce_pair, _start_callback_server, _build_authorize_url and _wait_for_callback in oauth.py.
+  - B036 turns XAIOAuthError into the chat/Responses authentication envelope; CLI command registration remains B151.
+pitfalls:
+  - A stored token_endpoint needs the same x.ai suffix validation as a discovered endpoint.
+  - expires_in equal to zero falls back to 3600 rather than producing an immediately expired record.
+  - The second auth-file read happens under the refresh lock and can avoid the network exchange entirely.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security

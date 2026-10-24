@@ -1,0 +1,89 @@
+id: B1555
+title: Project DuckDuckGo instant answers and one-level related topics
+description: >-
+  Implement api::search_providers::duckduckgo for the entire Instant Answer adapter, using B091
+  search records. Load DUCKDUCKGO_API_BASE default https://api.duckduckgo.com, with an explicit truthy
+  base taking precedence; duckduckgo_search_settings verifies loading. No key is required or read.
+  validate_environment retains headers and writes only Content-Type application/json. The native
+  display name is DuckDuckGo and method GET.
+
+  Join query lists with a space and force format=json even when options request XML. Copy only
+  pretty/no_redirect/no_html/skip_disambig, plus max_results into _max_results. Return the internal
+  _duckduckgo_params record and urlencode it with doseq=true at base/?query; source does not trim
+  a trailing slash from base, and _max_results is actually sent upstream. Ignore unified country,
+  domain filters, max_tokens_per_page and unrelated options.
+
+  decode_duckduckgo_search reads bounded reply bytes and the already-parsed original request query.
+  Parse _max_results as an integer when possible; invalid values leave the limit absent. Emit an
+  abstract first only when both AbstractURL and AbstractText are truthy, with Heading default empty.
+  This append ignores the limit, so zero or negative limits still allow the abstract. Then process
+  RelatedTopics in order, skipping non-mapping top-level members. A member with FirstURL and Text
+  wins over its Topics field; otherwise visit one nested Topics level without recursive expansion.
+  Check the global result count before each top-level and nested member. The Answer field is never
+  projected despite the source comment mentioning it.
+
+  Split topic Text at its first literal space-hyphen-space into title/snippet. Without that separator,
+  the whole text is the snippet and title is the first 50 Unicode codepoints plus three dots only
+  when longer than 50. Both date fields remain null. Preserve failures for malformed nested entries
+  and invalid present field types. Add duckduckgo_reply fuzzing and replays_the_duckduckgo_corpus for
+  malformed nesting, multibyte titles and absent fields. call.duckduckgo_search compares forced_json,
+  outbound_limit_key, abstract_ignores_zero, nested_limit, direct_topic_priority, unicode_title and
+  answer_ignored through the actual source configuration. Source ownership is 193 nonblank/non-comment
+  lines plus export declarations; plan 190 production/config, 210 tests and 160 oracle/fuzz lines,
+  maximum 650 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/search_providers.rs
+    - crates/betterlite-core/src/api/search_providers/duckduckgo.rs
+    - crates/betterlite-core/src/api/search_providers/duckduckgo/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/duckduckgo.rs
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/duckduckgo_reply.rs
+    - crates/betterlite-core/fuzz/corpus/duckduckgo_reply/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/duckduckgo_search.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/duckduckgo_search.py
+    - tools/oracle/cases/helpers/duckduckgo-search/**
+    - tools/oracle/fuzz/corpus/helper_case/duckduckgo_search*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L21-L254
+    why: Keyless GET request, abstract priority and limited related-topic traversal.
+dod:
+  - text: DuckDuckGo settings and query construction preserve forced JSON, forwarded limit metadata and keyless headers.
+    proof: [duckduckgo-tests, oracle, duckduckgo-python]
+  - text: Instant-answer projection handles abstracts, nested limits and Unicode title splitting exactly at the provider byte boundary.
+    proof: [duckduckgo-tests, duckduckgo-corpus, oracle, duckduckgo-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: duckduckgo-tests
+      why: DuckDuckGo query or answer behavior and base loading are missing
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::search_providers::duckduckgo::/) - test(replays_the_duckduckgo_corpus) | test(duckduckgo_search_settings)'
+    - id: duckduckgo-corpus
+      why: nested instant-answer decoding has no newly added malformed input corpus
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/duckduckgo_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_duckduckgo_corpus)'
+    - id: duckduckgo-python
+      why: DuckDuckGo abstract and topic outputs lack pinned-source comparison
+      run: grep -qE '^[[:space:]]+duckduckgo_search:' tools/oracle/fuzz/corpus/helper_case/duckduckgo_search* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/duckduckgo_search.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/duckduckgo-search/forced-json.yaml
+  - tools/oracle/cases/helpers/duckduckgo-search/outbound-limit-key.yaml
+  - tools/oracle/cases/helpers/duckduckgo-search/abstract-ignores-zero.yaml
+  - tools/oracle/cases/helpers/duckduckgo-search/nested-limit.yaml
+  - tools/oracle/cases/helpers/duckduckgo-search/direct-topic-priority.yaml
+  - tools/oracle/cases/helpers/duckduckgo-search/unicode-title.yaml
+  - tools/oracle/cases/helpers/duckduckgo-search/answer-ignored.yaml
+deviations: []
+out_of_scope:
+  - Search transport and route registration are B091; B048 selects this keyless provider in the registry.
+pitfalls:
+  - _max_results is an upstream query parameter even though its name looks like internal bookkeeping.
+  - RelatedTopics nesting is traversed once, not recursively.
+  - A 51-character multibyte title truncates by characters rather than UTF-8 byte positions.
+review_level: standard
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

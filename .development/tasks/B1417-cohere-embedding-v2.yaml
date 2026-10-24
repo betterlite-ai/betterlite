@@ -1,0 +1,92 @@
+id: B1417
+title: Cohere embedding input selection and billed usage
+description: >-
+  Create cohere_embedding in betterlite-openai for the active methods of the v2
+  CohereEmbeddingConfig. Use B183's canonical data-URI base64 predicate and B193's
+  injected local encoding counter. Request classification deliberately tests every input
+  but retains only the last result: a final encoded value makes the entire list images
+  with input_type=image; otherwise it becomes texts with the imported constant
+  COHERE_DEFAULT_EMBEDDING_INPUT_TYPE=search_document. Empty input fails at input[0]
+  in transform_embedding_request; a first integer or list raises ValueError. Optional
+  fields overlay the constructed request, including model, texts/images and input_type.
+  Export the lower _transform_request equivalent for Bedrock callers, which can supply
+  an empty list without passing the wrapper's input[0] check.
+
+  encoding_format becomes embedding_types, retaining lists and wrapping every other
+  value, including null, in a singleton list; dimensions becomes output_dimension.
+  URL is the truthy supplied complete URL or https://api.cohere.ai/v2/embed, without
+  suffix insertion. Default Content-Type and a truthy key's Bearer header are overlaid
+  by caller headers. Defaults introduce no environment lookup; the search_document
+  constant is captured by the source import, not a newly invented runtime config key.
+
+  decode_cohere_embeddings accepts upstream JSON and records post_call before accessing
+  embeddings. Flatten each embedding-type group in insertion order, restarting index
+  at zero for each group and omitting type in this v2 output. Model comes from the
+  request. Usage sums nonzero billed_units.input_tokens and images, preserving both
+  optional detail fields even when zero; only when both are None does it count local
+  tokens. Preserve the source's preliminary encoding pass, which can fail even when
+  billed units are present, and its second pass when usage falls back. Keep this pure
+  usage projection reusable by B1418. transform_embedding_response takes input from
+  logging.model_call_details and encoding from the resolved litellm.encoding service.
+
+  Compare helper cohere_embedding directly with the pinned request/response/usage methods
+  using a counting fixture tokenizer and hook recorder. Corpus cohere_embeddings fuzzes
+  the production JSON decoder; add new call.cohere_embedding seeds and verify their
+  exact tag through the HelperCase parser. This file has 212 nonblank/noncomment lines;
+  _is_v3_model contributes two unreachable lines and is excluded. Plan 215 implementation,
+  215 tests, 130 adapter and 90 fuzz/shared-wiring lines within 700.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,cohere_embedding}.rs
+    - crates/betterlite-openai/src/cohere_embedding/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/cohere_embeddings.rs
+    - crates/betterlite-openai/fuzz/corpus/cohere_embeddings/**
+    - tools/oracle/src/helpers/{mod,cohere_embedding}.rs
+    - tools/oracle/helpers/{dispatch,cohere_embedding}.py
+    - tools/oracle/cases/helpers/cohere-embedding/**
+    - tools/oracle/fuzz/corpus/helper_case/cohere_embedding*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/embed/transformation.py#L33-L247
+    why: Last-input classification, complete URL, grouped vectors and the extra tokenizer pass.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L360-L360
+    why: Imported embedding input-type constant is search_document.
+dod:
+  - text: Mixed input lists follow the last value's encoding classification and inference options overlay the result.
+    proof: [cohere-embed-tests, cohere-embed-python, oracle]
+  - text: Group indices restart and billed image/text usage preserves zero-versus-absent details and tokenizer calls.
+    proof: [cohere-embed-tests, cohere-embed-python, oracle]
+  - text: Cohere embedding bytes and new helper records are decoded by their intended production entry points.
+    proof: [cohere-embed-corpus, cohere-embed-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cohere-embed-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^cohere_embedding::/) - test(replays_the_cohere_embeddings_corpus)'
+      why: Tokenizer call counts and duplicate output indices require behavior assertions.
+    - id: cohere-embed-python
+      run: test -f tools/oracle/helpers/cohere_embedding.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The independently executed source must receive the same ordered inputs and tokenizer failures.
+    - id: cohere-embed-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/cohere_embeddings.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/cohere_embeddings)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_cohere_embeddings_corpus)'
+      why: The parser must reject malformed grouping safely without using only old embedding fixtures.
+    - id: cohere-embed-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_embedding*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::cohere_embedding::/)'
+      why: A nonzero collection of new seeds must select cohere_embedding.
+oracle_cases:
+  - tools/oracle/cases/helpers/cohere-embedding/mixed-last-image.yaml
+  - tools/oracle/cases/helpers/cohere-embedding/mixed-last-text.yaml
+  - tools/oracle/cases/helpers/cohere-embedding/empty-wrapper-and-lower-request.yaml
+  - tools/oracle/cases/helpers/cohere-embedding/group-indices-and-null-format.yaml
+  - tools/oracle/cases/helpers/cohere-embedding/billed-zero-and-encoding-failure.yaml
+deviations: []
+out_of_scope:
+  - CohereEmbeddingConfig._is_v3_model has no caller at the pin; B1418 owns legacy v1 response typing and execution.
+  - B627 owns Bedrock's input_type assertion and model removal; B037 owns direct Cohere embedding routing and key precedence.
+pitfalls:
+  - An image at the beginning of a mixed list does not determine the request modality.
+  - Two embedding type groups can legitimately produce repeated index values.
+  - Billed usage does not bypass the preliminary tokenizer loop in the v2 response method.
+budget: {max_changed_lines: 700, max_new_expects: 0}
+review_level: standard

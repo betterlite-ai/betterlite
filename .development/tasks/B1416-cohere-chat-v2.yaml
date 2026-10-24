@@ -1,0 +1,91 @@
+id: B1416
+title: Cohere v2 chat replies and document citations
+description: >-
+  Implement cohere_chat_v2 in betterlite-openai, covering CohereV2ChatConfig and the
+  response declarations at types/llms/cohere.py L47–100. Build request bodies through
+  B503's OpenAIGPTConfig transformation and delegate auth and streams to B1414.
+  Constructor fields default None; use B668's resolved config behavior. The supported
+  options match v1's advertised list, but max_completion_tokens wins over max_tokens
+  regardless of insertion order. Other renames are n/num_generations, top_p/p and
+  stop/stop_sequences; tool_choice and extra_headers remain unmapped. get_complete_url
+  accepts a supplied empty string and rejects only None.
+
+  Decode JSON in decode_cohere_chat_v2. JSON failures retain the upstream status;
+  failure to expand the JSON value as keyword arguments into CohereV2ChatResponse is
+  422. That declaration is a TypedDict, not a validating Pydantic model: do not turn
+  every missing key into a new schema error. Later message/usage access failures retain
+  their original category. Concatenate text from all non-null message.content entries,
+  defaulting each missing text to empty; absent or null content leaves the existing
+  assistant content intact. For every citation, create an annotation for each source
+  whose type is document and which has a document key. Use start/end defaults zero,
+  document.title default empty and truthy source.url or source:{id default unknown};
+  never derive the URL from document metadata. Sources lacking a document yield nothing.
+
+  Nonempty message.tool_calls are copied with enumerate index replacing any source index,
+  then installed in a new assistant message with content null and the computed annotations.
+  Otherwise attach annotations only when nonempty. Usage comes from usage.tokens even
+  though the comment says billed_units. Clock and requested model replace created/model;
+  provider finish_reason and id are not copied. Preserve this difference from an ordinary
+  OpenAI response. Errors produced by get_error_class omit the supplied headers.
+
+  Add helper cohere_v2_reply for the pinned option, annotation and response methods;
+  typed seed assertions use call.cohere_v2_reply. Native tests cover existing-content
+  preservation and exception stages, and cohere_chat_v2 fuzzing drives the JSON decoder.
+  Source count is 309 transformation lines plus 38 response declaration lines, excluding
+  blanks/comments. Budget 295 implementation, 225 tests, 125 adapter and 90 fuzz/export
+  lines, capped at 775. API-key lookup and version dispatch stay in B037.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,cohere_chat_v2}.rs
+    - crates/betterlite-openai/src/cohere_chat_v2/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/cohere_chat_v2.rs
+    - crates/betterlite-openai/fuzz/corpus/cohere_chat_v2/**
+    - tools/oracle/src/helpers/{mod,cohere_v2_reply}.rs
+    - tools/oracle/helpers/{dispatch,cohere_v2_reply}.py
+    - tools/oracle/cases/helpers/cohere-v2-reply/**
+    - tools/oracle/fuzz/corpus/helper_case/cohere_v2_reply*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/chat/v2_transformation.py#L31-L353
+    why: V2 option precedence, response mutation and one annotation per document source.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/cohere.py#L47-L100
+    why: TypedDict construction does not validate every declared response field at runtime.
+dod:
+  - text: V2 citations expand by source and tool replies replace content without copying provider finish metadata.
+    proof: [cohere-v2-tests, cohere-v2-python, oracle]
+  - text: Option precedence and JSON-versus-record failure stages match the native v2 config.
+    proof: [cohere-v2-tests, cohere-v2-python, oracle]
+  - text: Both decoder and typed-helper corpora contain new runnable seeds.
+    proof: [cohere-v2-corpus, cohere-v2-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cohere-v2-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^cohere_chat_v2::/) - test(replays_the_cohere_chat_v2_corpus)'
+      why: Tests must distinguish TypedDict keyword expansion from subsequent field access.
+    - id: cohere-v2-python
+      run: test -f tools/oracle/helpers/cohere_v2_reply.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Citation fixtures exercise the source's annotation method rather than an adapter copy.
+    - id: cohere-v2-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/cohere_chat_v2.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/cohere_chat_v2)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_cohere_chat_v2_corpus)'
+      why: The V2 decoder must handle array roots and malformed citation structures within limits.
+    - id: cohere-v2-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_v2_reply*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::cohere_v2_reply::/)'
+      why: Seed parsing must assert the cohere_v2_reply tag and fail when none were added.
+oracle_cases:
+  - tools/oracle/cases/helpers/cohere-v2-reply/max-completion-wins.yaml
+  - tools/oracle/cases/helpers/cohere-v2-reply/multiple-document-sources.yaml
+  - tools/oracle/cases/helpers/cohere-v2-reply/tool-indices-and-content.yaml
+  - tools/oracle/cases/helpers/cohere-v2-reply/tokens-not-billed-units.yaml
+  - tools/oracle/cases/helpers/cohere-v2-reply/json-root-and-missing-fields.yaml
+deviations: []
+out_of_scope:
+  - B1415 owns ChatHistory and tool-result types before L47; this task consumes their prompt-layer counterparts only through B503.
+  - Cohere version routing is B2230 and main.py execution is B037; the common V2 streaming parser is B1414.
+pitfalls:
+  - A citation's fallback URL is built from source.id rather than document.id.
+  - Empty annotations leave an existing non-tool message's annotations untouched.
+  - CohereV2ChatResponse construction accepts mappings with missing fields because it is a TypedDict.
+budget: {max_changed_lines: 775, max_new_expects: 0}
+review_level: standard

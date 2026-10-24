@@ -1,0 +1,106 @@
+id: B1402
+title: xAI credential selection, usage reconciliation and reported charges
+description: >-
+  Build xai_identity and xai_usage in betterlite-openai. The first owns common_utils.py
+  except XAIModelInfo.get_provider_info, already B2220. Resolve explicit api_key, xai_key,
+  then XAI_API_KEY for chat; the legacy mode inserts litellm.api_key after xai_key. Read
+  module values through litellm_settings and environment through betterlite-config. Base
+  discovery uses explicit api_base, XAI_API_BASE, then https://api.x.ai, appending /v1/models
+  literally. Headers replace Authorization only for a non-None key and insert Content-Type
+  application/json only when neither supported casing exists. Model discovery prefixes every
+  returned id with xai/; base-model normalization removes every xai/ substring. Add loader
+  test xai_identity_settings for xai_key, XAI_API_KEY and XAI_API_BASE; reuse B1400's base
+  setting if present. Parse model-list JSON with bounded decode_xai_models and fuzz it.
+
+  Own every function in cost_calculator.py plus xai_reported_cost_in_usd and chat's
+  fold_reasoning_tokens_into_completion, _normalize_openai_compatible_usage_totals and
+  _usage_restated_from_xai_ticks. Integer nonboolean nonnegative ticks divide by exactly
+  10000000000 using Decimal. A valid finite nonnegative usage.cost bypasses token prices,
+  yielding input cost zero and output cost equal to the reported charge; it also suppresses
+  web-search charges. Otherwise pass adjusted Usage with completion details cleared to an
+  injected GenericTokenPricing delegate, supplied later by B068. Fold reasoning only when
+  total equals prompt+completion+reasoning and differs from prompt+completion; then raise a
+  deficient total to prompt+completion without lowering a larger one. Preserve idempotence.
+  Attach server_side_tool_usage_details even when web_search_calls cannot be converted;
+  only positive converted counts populate prompt_tokens_details.web_search_requests.
+  Search pricing tries positive medium, low, high rates in that order, falling back to
+  0.005 per call. Use parsed typed usage/model prices from B004/B193/B204, not a second
+  catalog or decimal parser. Helper xai_usage covers tick rejection, reported zero,
+  folded/raw reasoning, malformed search count and rate precedence; helper xai_identity
+  covers both key modes and header casing without sending requests. Count 192 lines in
+  common/cost after excluding B2220's ten, plus 73 shared chat-usage lines; budget 280
+  implementation, 220 behavior/config tests, 150 adapters and 100 fuzz/wiring, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,xai_identity,xai_usage}.rs
+    - crates/betterlite-openai/src/{xai_identity,xai_usage}/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/xai_models.rs
+    - crates/betterlite-openai/fuzz/corpus/xai_models/**
+    - crates/betterlite-config/src/{lib,config,settings,model,env,providers,tests}.rs
+    - crates/betterlite-config/src/providers/xai.rs
+    - crates/betterlite-config/src/providers/xai/identity.rs
+    - crates/betterlite-config/src/tests/xai_identity.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/xai_identity*
+    - tools/oracle/src/helpers/{mod,xai_identity,xai_usage}.rs
+    - tools/oracle/helpers/{dispatch,xai_identity,xai_usage}.py
+    - tools/oracle/cases/helpers/{xai-identity,xai-usage}/**
+    - tools/oracle/fuzz/corpus/helper_case/xai_identity*
+    - tools/oracle/fuzz/corpus/helper_case/xai_usage*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/common_utils.py#L11-L107
+    why: Cost ticks, endpoint-specific key order and model discovery; capability declaration remains B2220.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/cost_calculator.py#L17-L144
+    why: Provider-reported charges take precedence over token and search pricing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/chat/transformation.py#L34-L38
+    why: Chat Usage copy retaining every field except the restated cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/chat/transformation.py#L304-L404
+    why: Shared reasoning and total normalization; enhancement method in this span remains B1403.
+dod:
+  - text: Key precedence and default base differ exactly where the xAI endpoint families require it.
+    proof: [xai-identity-tests, xai-identity-config, oracle, xai-usage-python]
+  - text: Reported charges, reasoning reconciliation and search usage preserve zero and invalid-value behavior.
+    proof: [xai-usage-tests, oracle, xai-usage-python]
+  - text: Model discovery and new helper tags are checked with fresh parser seeds.
+    proof: [xai-model-corpus, xai-usage-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: xai-identity-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^xai_identity::/) - test(replays_xai_models_corpus)'
+      why: Discovery URL assembly and credential redaction cannot be inferred from pricing tests.
+    - id: xai-usage-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^xai_usage::/)'
+      why: Double-counting reasoning or charging searches after reported cost changes these results.
+    - id: xai-identity-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(xai_identity_settings)'
+      why: Secret settings must be accepted and selected by the config loader.
+    - id: xai-usage-python
+      run: test -f tools/oracle/helpers/xai_usage.py && test -f tools/oracle/helpers/xai_identity.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Both reference adapters must invoke their respective source functions.
+    - id: xai-usage-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_usage*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_identity*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::xai_(identity|usage)::/)'
+      why: Each new helper needs its own correctly tagged case corpus.
+    - id: xai-model-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/xai_models.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/xai_models)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_xai_models_corpus)'
+      why: Missing model IDs and malformed catalog replies reach the production decoder.
+oracle_cases:
+  - tools/oracle/cases/helpers/xai-identity/key-modes.yaml
+  - tools/oracle/cases/helpers/xai-identity/header-casing.yaml
+  - tools/oracle/cases/helpers/xai-identity/repeated-provider-prefix.yaml
+  - tools/oracle/cases/helpers/xai-usage/ticks-and-booleans.yaml
+  - tools/oracle/cases/helpers/xai-usage/reported-zero.yaml
+  - tools/oracle/cases/helpers/xai-usage/fold-once-and-preserve-larger-total.yaml
+  - tools/oracle/cases/helpers/xai-usage/search-count-conversion.yaml
+  - tools/oracle/cases/helpers/xai-usage/medium-low-high-rate.yaml
+deviations: []
+out_of_scope:
+  - XAIModelInfo.get_provider_info is B2220; B068 supplies generic_cost_per_token and installs the cost dispatcher.
+  - B1403 owns all remaining XAIChatConfig methods and XAIChatCompletionStreamingHandler.chunk_parser in chat/transformation.py.
+pitfalls:
+  - Boolean cost_in_usd_ticks is rejected even though Python bool is an integer subclass.
+  - usage.cost equal to zero is authoritative and disables extra web-search billing.
+  - A configured base already ending in /v1 becomes /v1/v1/models in XAIModelInfo.get_models.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security

@@ -1,0 +1,83 @@
+id: B1523
+title: Build Stability edit multipart bodies and attach catalog image cost
+description: >-
+  Implement api::stability::edit with every method in image_edit/transformations.py, the edit factory
+  and STABILITY_EDIT_ENDPOINTS. B1522 supplies loaded credentials, the aspect table and bounded image
+  reply decoder. Reuse B2225 model metadata for the response-cost header. Endpoint lookup takes the
+  first table substring after lowercasing and stripping stability/, defaulting to inpaint. Preserve
+  table order: style precedes style-transfer, so that longer name reaches /control/style. Base precedence
+  is explicit api_base, STABILITY_API_BASE, litellm_params.api_base, then https://api.stability.ai.
+
+  Copy all edit options before mapping. Add aspect_ratio for known size values, stash n/response_format
+  as _n/_response_format and remove the original three keys afterward. When drop_params is true,
+  unsupported fields remain in that copied map despite the source comment saying they are dropped;
+  later body construction decides whether they are transmitted. With drop_params false, raise for an
+  unsupported option. Build multipart text data with output_format fixed to png and nonempty prompt.
+  The first image list member becomes image; an empty image list fails. Separate mask, init_image and
+  style_image as files, taking their first list member only when nonempty. Omit null and internal fields.
+  Preserve the exact text allowlist, including top/bottom, search_prompt, select_prompt,
+  composition_fidelity and change_strength; output_format is not on that allowlist.
+
+  Decode through B1522 and preserve its errors/CONTENT_FILTERED handling. Start a fresh ImageResponse,
+  optionally append the base64 image, then look up model_info even for empty output. Place the float
+  output_cost_per_image under hidden additional_headers.llm_provider-x-litellm-response-cost; a missing
+  value defaults to zero, explicit null suppresses the header, and lookup/conversion failures propagate.
+  Do not multiply this header by requested n or make it depend on returned-image count.
+
+  Add helper call.stability_edit and cases style_transfer_shadowed, dropped_option_survives,
+  multipart_text_and_files, output_format_stays_png, env_before_litellm_base and empty_image_cost.
+  The Python adapter records source configuration output, including hidden headers. Test under
+  api::stability::edit and reuse the existing decoder corpus. This task owns 247 transformation,
+  23 factory and 16 table nonblank/non-comment lines; allocate 250 implementation, 210 tests and
+  110 oracle/registration lines, maximum 650.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/stability.rs
+    - crates/betterlite-core/src/api/stability/edit.rs
+    - crates/betterlite-core/src/api/stability/edit/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/stability_edit.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/stability_edit.py
+    - tools/oracle/cases/helpers/stability-edit/**
+    - tools/oracle/fuzz/corpus/helper_case/stability_edit*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L33-L319
+    why: Retained unsupported options, multipart separation and hidden cost header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/stability.py#L213-L228
+    why: Ordered edit endpoint lookup, including the style-transfer shadowing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/__init__.py#L19-L37
+    why: Edit factory chooses one shared configuration.
+dod:
+  - text: Stability editing reproduces the ordered endpoint lookup and actual two-stage option filtering in multipart output.
+    proof: [stability-edit-tests, oracle, stability-edit-python]
+  - text: Edit responses attach catalog cost with the exact missing/null and empty-result distinctions.
+    proof: [stability-edit-tests, oracle, stability-edit-python]
+checks:
+  optional: []
+  commands:
+    - id: stability-edit-tests
+      why: edit-specific multipart or cost-header behavior is absent
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::stability::edit::/)'
+    - id: stability-edit-python
+      why: source edit quirks have no executable differential comparison
+      run: grep -qE '^[[:space:]]+stability_edit:' tools/oracle/fuzz/corpus/helper_case/stability_edit* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/stability_edit.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/stability-edit/style-transfer-shadowed.yaml
+  - tools/oracle/cases/helpers/stability-edit/dropped-option-survives.yaml
+  - tools/oracle/cases/helpers/stability-edit/multipart-text-and-files.yaml
+  - tools/oracle/cases/helpers/stability-edit/output-format-stays-png.yaml
+  - tools/oracle/cases/helpers/stability-edit/env-before-litellm-base.yaml
+  - tools/oracle/cases/helpers/stability-edit/empty-image-cost.yaml
+deviations: []
+out_of_scope:
+  - B1522 owns StabilityImageGenerationRequest and the generation/aspect tables; its no-caller inventory excludes the other shared request/response declarations.
+pitfalls:
+  - drop_params=true leaves the original unsupported field in mapped_params instead of deleting it.
+  - The body ignores a supplied output_format and keeps png.
+  - Catalog price is attached even when the provider response contains no image.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

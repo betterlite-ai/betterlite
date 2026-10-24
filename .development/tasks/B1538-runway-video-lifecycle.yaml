@@ -1,0 +1,78 @@
+id: B1538
+title: Retrieve, cancel and download Runway video tasks
+description: >-
+  Finish api::runway::video_lifecycle using B1537's task decoder, status/time/progress helpers and
+  RunwayMLError. Implement content requests and both content response paths, URL extraction,
+  delete/cancel requests and replies, status retrieval, and the reachable unsupported-operation
+  request methods. Decode wrapped IDs with B672 and escape the original ID with B171; status/content
+  uses {base}/tasks/{id}, cancellation uses {base}/tasks/{id}/cancel, all with empty request data.
+  The common executor owns HTTP methods. Keep variant ignored for content retrieval.
+
+  Content selection accepts a truthy output string or the first array element. If absent, exact
+  uppercase PENDING/RUNNING/THROTTLED produce the still-processing error, FAILED reports failure or
+  Unknown error, and all other statuses produce the generic missing-URL error. Unlike status mapping,
+  this branch does not uppercase the status. Download a selected provider artifact through B173
+  without Authorization or X-Runway-Version, raise on HTTP failure, and return bounded bytes through
+  B1087. Cancel replies always use status=cancelled, keep the provider's raw id and parsed createdAt,
+  and do not attach usage or wrap the ID.
+
+  Retrieval returns normalized status, optional first output/completion/error fields, and progress
+  rounded half-even after multiplying by 100 and clamped to 0..100. Wrap nonempty IDs with provider
+  but no model. Unlike create, retrieve does not add usage or request-derived size/seconds. Preserve
+  each NotImplementedError message for remix, list, character create/get, edit and extension before
+  transport begins; no new remote endpoints are supported.
+
+  Add call.runway_video_lifecycle with encoded_task_path, cancelled_raw_id, retrieval_progress,
+  lowercase_processing_error, first_artifact, artifact_http_failure and unsupported_calls. Script
+  clients around actual Python methods and test the same production methods in Rust. No decoder is
+  introduced. The 251 owned physical source lines include response stubs excluded below; estimate
+  190 implementation, 220 tests and 120 oracle lines, maximum 650 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/runway.rs
+    - crates/betterlite-core/src/api/runway/video_lifecycle.rs
+    - crates/betterlite-core/src/api/runway/video_lifecycle/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/runway_video_lifecycle.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/runway_video_lifecycle.py
+    - tools/oracle/cases/helpers/runway-video-lifecycle/**
+    - tools/oracle/fuzz/corpus/helper_case/runway_video_lifecycle*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L397-L708
+    why: Content, cancellation, retrieval and unsupported method semantics.
+dod:
+  - text: Video lifecycle operations preserve encoded request identity, cancellation's raw ID and retrieval-only progress.
+    proof: [runway-lifecycle-tests, oracle, runway-lifecycle-python]
+  - text: Content download follows source error distinctions without forwarding Runway credentials to artifact storage.
+    proof: [runway-lifecycle-tests, oracle, runway-lifecycle-python]
+checks:
+  optional: []
+  commands:
+    - id: runway-lifecycle-tests
+      why: task retrieval, cancellation or content behavior has not been tested through production code
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::runway::video_lifecycle::/)'
+    - id: runway-lifecycle-python
+      why: Runway lifecycle assertions lack a checked source-method oracle
+      run: grep -qE '^[[:space:]]+runway_video_lifecycle:' tools/oracle/fuzz/corpus/helper_case/runway_video_lifecycle* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/runway_video_lifecycle.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/runway-video-lifecycle/encoded-task-path.yaml
+  - tools/oracle/cases/helpers/runway-video-lifecycle/cancelled-raw-id.yaml
+  - tools/oracle/cases/helpers/runway-video-lifecycle/retrieval-progress.yaml
+  - tools/oracle/cases/helpers/runway-video-lifecycle/lowercase-processing-error.yaml
+  - tools/oracle/cases/helpers/runway-video-lifecycle/first-artifact.yaml
+  - tools/oracle/cases/helpers/runway-video-lifecycle/artifact-http-failure.yaml
+  - tools/oracle/cases/helpers/runway-video-lifecycle/unsupported-calls.yaml
+deviations: []
+out_of_scope:
+  - B1537 owns module helpers and methods through timestamp parsing at 37-396, plus get_error_class at 709-714.
+  - transform_video_remix_response, transform_video_list_response, transform_video_create_character_response, transform_video_get_character_response, transform_video_edit_response and transform_video_extension_response have no caller at the pin because their paired request methods always raise; no response-stub tests are needed.
+pitfalls:
+  - Cancellation returns cancelled even when the upstream JSON contains another status.
+  - A lowercase running status without output follows the generic missing-URL branch.
+  - Retrieval deliberately loses the model component when wrapping a provider task ID.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

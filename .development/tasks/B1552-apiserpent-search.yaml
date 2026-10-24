@@ -1,0 +1,96 @@
+id: B1552
+title: Map APISerpent quick and deep GET searches
+description: >-
+  Add api::search_providers::apiserpent implementing the search configuration, parameter dataclass
+  behavior and exports under apiserpent/search. Use B091 SearchResponse/SearchResult and its shared
+  server-credential resolver. Load APISERPENT_API_BASE default https://apiserpent.com and unset
+  APISERPENT_API_KEY through apiserpent_search_settings in betterlite-config. A truthy explicit key
+  bypasses environment fallback; server keys require the shared trusted-netloc check against the
+  default or configured base. Missing key raises the exact source ValueError. Preserve incoming
+  headers while setting X-API-Key and JSON Content-Type. Display name is APISerpent and method GET.
+
+  Parameters default engine=google, country=us, num=10 and format=full; pages/freshness/safe/language/
+  pixel_position are absent unless provided. Validate only numeric bounds num 1..100 and pages 1..10;
+  Literal annotations do not add runtime engine/format/safe validation in the source. Join query
+  lists with a space. max_results clamps num to 1..100 for quick or 10..100 for truthy deep, and
+  overrides an explicit num. An explicit num without max_results retains the absolute 1..100 range
+  even for deep search. Lowercase country, copy recognized parameter names without overwriting
+  mapped fields, remove nulls, and lowercase boolean string values. For a nonempty domain list,
+  rewrite q as (query) (site:a OR site:b), with no AND keyword.
+
+  Return _apiserpent_params for URL construction. Trim base slashes and append /api/search/quick
+  unless deep is truthy, then /api/search. Suppress the suffix only when the base already ends with
+  that exact selected path. urlencode uses doseq=true. Preserve truthiness of deep, including a
+  nonempty string false selecting deep. decode_apiserpent_search parses bounded reply bytes where
+  results is either a flat list or an object with organic. Falsey results become empty. Project
+  missing title/url/snippet to empty strings, date to optional and last_updated=null; retain source
+  validation failures for invalid members rather than silently skipping them.
+
+  Register call.apiserpent_search with quick_defaults, deep_floor, direct_num_below_deep_floor,
+  domain_syntax, literal_values_unchecked, suffix_idempotence, trusted_key_destination and
+  flat_and_organic_results. Python invokes the source dataclass/config directly. Add apiserpent_reply
+  fuzzing and replays_the_apiserpent_corpus for malformed JSON and both result shapes. The owned
+  search files contain 203 nonblank/non-comment lines; plan 230 production/config, 200 tests and
+  170 oracle/fuzz lines, capped at 700. B048 will bind the provider to the search executor.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/search_providers.rs
+    - crates/betterlite-core/src/api/search_providers/apiserpent.rs
+    - crates/betterlite-core/src/api/search_providers/apiserpent/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/apiserpent.rs
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/apiserpent_reply.rs
+    - crates/betterlite-core/fuzz/corpus/apiserpent_reply/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/apiserpent_search.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/apiserpent_search.py
+    - tools/oracle/cases/helpers/apiserpent-search/**
+    - tools/oracle/fuzz/corpus/helper_case/apiserpent_search*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/apiserpent/search/transformation.py#L32-L174
+    why: Quick/deep endpoint choice, mapped query precedence and two response shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/apiserpent/search/defaults.py#L11-L66
+    why: Actual dataclass defaults and the only numeric validation performed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L137-L189
+    why: B091's shared host restriction for server-managed search credentials.
+dod:
+  - text: APISerpent settings, quick/deep parameter precedence and query URL construction agree with the source.
+    proof: [apiserpent-tests, oracle, apiserpent-python]
+  - text: Credentials stay within the shared trusted-host policy and both provider result shapes decode with source-compatible failures.
+    proof: [apiserpent-tests, apiserpent-corpus, oracle, apiserpent-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: apiserpent-tests
+      why: APISerpent mapping, loaded settings or trusted-key behavior is absent
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::search_providers::apiserpent::/) - test(replays_the_apiserpent_corpus) | test(apiserpent_search_settings)'
+    - id: apiserpent-corpus
+      why: APISerpent result decoding has no added fuzz corpus
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/apiserpent_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_apiserpent_corpus)'
+    - id: apiserpent-python
+      why: APISerpent search cases lack an independently checked source adapter
+      run: grep -qE '^[[:space:]]+apiserpent_search:' tools/oracle/fuzz/corpus/helper_case/apiserpent_search* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/apiserpent_search.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/apiserpent-search/quick-defaults.yaml
+  - tools/oracle/cases/helpers/apiserpent-search/deep-floor.yaml
+  - tools/oracle/cases/helpers/apiserpent-search/direct-num-below-deep-floor.yaml
+  - tools/oracle/cases/helpers/apiserpent-search/domain-syntax.yaml
+  - tools/oracle/cases/helpers/apiserpent-search/literal-values-unchecked.yaml
+  - tools/oracle/cases/helpers/apiserpent-search/suffix-idempotence.yaml
+  - tools/oracle/cases/helpers/apiserpent-search/trusted-key-destination.yaml
+  - tools/oracle/cases/helpers/apiserpent-search/flat-and-organic-results.yaml
+deviations: []
+out_of_scope:
+  - The root apiserpent package initializer stays with B048; shared search contracts, credential policy and HTTP routes remain B091.
+pitfalls:
+  - deep=true with num=2 is accepted unless max_results is also supplied.
+  - APISerpent's domain clause is juxtaposed with the query rather than joined with AND.
+  - An invalid engine string is not rejected by the dataclass's Literal annotation.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 1

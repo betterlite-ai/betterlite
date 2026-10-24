@@ -5,7 +5,7 @@ description: >-
   _build_litellm_metadata,vertex_access_token_resolver and _resolve_vertex_access_token_bounded
   in betterlite-core::api::realtime_connect. B1127 owns health probes, not half of this connector.
   B174 resolves identity, B176 projects litellm params, and B157 selects realtime config. Generic
-  configs use B2457. Direct branches call B545 Azure, B528 OpenAI, B666 Bedrock and B036 xAI;
+  configs use B2457. Direct branches call B545 Azure, B528 OpenAI, B666 Bedrock and B1405 xAI;
   Vertex uses B1303 tokens, B1365 config selection and B2457. Gemini/Meta configs stay with
   B1378/B1382 and B039. Preserve each branch's exact credential/header arguments.
 
@@ -20,7 +20,7 @@ description: >-
   AZURE_API_BASE,AZURE_API_KEY,OPENAI_API_KEY,XAI_API_BASE,XAI_API_KEY,LITELLM_AZURE_REALTIME_PROTOCOL,
   VERTEXAI_CREDENTIALS,VERTEXAI_PROJECT,VERTEXAI_LOCATION. REALTIME_CREDENTIAL_RESOLUTION_TIMEOUT_SECONDS
   defaults20.0 and uses float parsing. loads_realtime_connection_settings tests every setting through
-  the real loader, with new YAML seeds. B529 owns Azure AD resolution and B036 xAI key selection.
+  the real loader, with new YAML seeds. B529 owns Azure AD resolution and B1402 xAI key selection.
 
   Use B901 service realtime_connect for actual provider handshakes/frames; finite token resolvers and
   virtual time exercise timeout and refresh without live Google credentials. Existing decoders suffice.

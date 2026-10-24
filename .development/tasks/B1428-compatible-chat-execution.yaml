@@ -1,0 +1,92 @@
+id: B1428
+title: OpenAI-like chat execution and fake-stream mode differences
+description: >-
+  Implement CompatibleChatExecution in betterlite-provider::compatible_chat_call,
+  above its OpenAI wire and Bedrock fake-stream dependencies. Own every callable in
+  openai_like/chat/handler.py, including _fake_streamed_model_response, make_call,
+  make_sync_call and OpenAILikeChatHandler's preparation and execution methods.
+  Use B1425's base auth/URL validation and reply cleanup, B1427's default line stream,
+  B609's MockResponseIterator and B173 transport. Accept the selected message-transform
+  capability from B2230 and a concrete lower wire transformer; invoke it only for the
+  OpenAIGPTConfig/OpenAIConfig-compatible cases, preserving the original preparation order.
+  Lower provider config modules must not import this executable service.
+
+  Resolve custom_endpoint as truthy argument or popped optional value; a truthy argument
+  leaves the option unpopped. Always pop base_model, stream, extra_body, json_mode and
+  max_retries, with stream's falsey fallback false and extra_body's absent default {}.
+  Insert stream into options only when fake_stream is false. Build model/messages,
+  then remaining options, then extra_body, so extra_body wins. Record pre_call with body,
+  base and headers after message conversion. Nonstream async execution uses 600-second
+  total/five-second connect timeout only when timeout is None, maps HTTP status errors
+  to their status, timeout to 408 and other send errors to 500. Decode/project afterward
+  through B1425, outside the send-error catch. Sync-mode planning retains its supplied
+  timeout/client construction behavior; native execution stays async under B158's facade.
+
+  Streaming custom decoders receive 1024-byte transport reads and take precedence over
+  fake-stream conversion. Otherwise fake-stream builds B004's full response and feeds
+  B609 once; ordinary streaming uses B1427. make_sync_call checks exact status 200 and
+  logs first stream response received with an empty API key. make_call has no explicit
+  status check and logs the stream object. Crucially acompletion_stream_function always
+  writes stream=true but fails to forward its fake_stream argument to make_call; preserve
+  this observable async behavior. It also omits the request timeout on that send. Sync
+  fake streaming sends without a stream body key unless caller overlays restore it, and
+  uses stream=false on the HTTP transport. Keep preparation/send cancellation observable.
+
+  Helper compatible_chat_plan compares request preparation using the source handler and
+  a fixture sender that captures the plan at its send seam. Native execution tests cover
+  custom decoder precedence, first-poll timing, both fake-stream modes, strict sync status,
+  timeout defaults and hook ordering. Parsing is delegated to B004/B1425/B1427 and the
+  supplied decoder; this task introduces no new byte parser. Fresh helper seeds assert
+  call.compatible_chat_plan. The handler has 353 nonblank/noncomment source lines;
+  budget 280 implementation, 240 tests, 135 adapters and 70 wiring lines, maximum 775.
+scope:
+  paths:
+    - crates/betterlite-provider/src/{lib,error,compatible_chat_call}.rs
+    - crates/betterlite-provider/src/compatible_chat_call/**
+    - crates/betterlite-provider/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/src/helpers/{mod,compatible_chat_plan}.rs
+    - tools/oracle/helpers/{dispatch,compatible_chat_plan}.py
+    - tools/oracle/cases/helpers/compatible-chat-plan/**
+    - tools/oracle/fuzz/corpus/helper_case/compatible_chat_plan*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L29-L117
+    why: Fake-response construction, decoder precedence and sync-only status validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L119-L394
+    why: Option consumption, request layering and async fake_stream omission.
+dod:
+  - text: Compatible chat preparation preserves option consumption and extra_body precedence with the selected message transform.
+    proof: [compatible-call-tests, compatible-plan-python, oracle]
+  - text: Sync and async execution retain different fake-stream, timeout, status and logging behavior.
+    proof: [compatible-call-tests, compatible-plan-python, oracle]
+  - text: Fresh typed request-plan seeds prove the helper dispatch is installed.
+    proof: [compatible-plan-seeds]
+checks:
+  optional: []
+  commands:
+    - id: compatible-call-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^compatible_chat_call::/)'
+      why: Transport tests must detect the dropped async fake_stream argument and missing timeout forwarding.
+    - id: compatible-plan-python
+      run: test -f tools/oracle/helpers/compatible_chat_plan.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The fixture send seam must capture actual source preparation without reimplementing its body merge.
+    - id: compatible-plan-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_chat_plan*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::compatible_chat_plan::/)'
+      why: Added plan seeds must parse to compatible_chat_plan and cannot be an empty set.
+oracle_cases:
+  - tools/oracle/cases/helpers/compatible-chat-plan/custom-endpoint-short-circuit.yaml
+  - tools/oracle/cases/helpers/compatible-chat-plan/extra-body-last.yaml
+  - tools/oracle/cases/helpers/compatible-chat-plan/fake-stream-mode-payloads.yaml
+  - tools/oracle/cases/helpers/compatible-chat-plan/nonstream-default-timeout.yaml
+  - tools/oracle/cases/helpers/compatible-chat-plan/model-prefix-and-base-model.yaml
+deviations: []
+out_of_scope:
+  - B038 supplies provider bindings; Groq, WatsonX and SageMaker retain their own subclasses and signed/custom-decoder setup in B041/B042 leaves.
+  - B609 owns the fake iterator's chunk semantics; B1427 owns legacy line parsing and B005 stream cancellation/backpressure primitives.
+pitfalls:
+  - The async streaming wrapper accepts fake_stream but never passes it to make_call.
+  - A truthy explicit custom_endpoint leaves optional_params.custom_endpoint in the eventual body.
+  - Only the synchronous streaming helper explicitly rejects a non-200 response here.
+budget: {max_changed_lines: 775, max_new_expects: 0}
+review_level: security

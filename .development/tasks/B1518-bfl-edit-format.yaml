@@ -1,0 +1,84 @@
+id: B1518
+title: Encode BFL image edits from supplied image and mask bytes
+description: >-
+  Create api::bfl::edit using B1517 credentials, endpoint constants and reply decoder, B997 image
+  records and B183 supplied-media values. Cover BlackForestLabsImageEditConfig's supported-parameter,
+  mapping, environment, multipart capability, endpoint, byte-reading, request and response methods.
+  The edit mapper keeps non-null seed/output_format/safety_tolerance/prompt_upsampling/aspect_ratio/
+  steps/guidance/grow_mask/top/bottom/left/right values and supplies output_format=png; mask is consumed
+  separately during request construction. It ignores drop_params and silently omits unrelated options.
+  The four edit model names are matched against the lowercased last path component.
+
+  Read bytes unchanged, select only the first image recursively from lists, and read file-like objects
+  from position zero while restoring their former position. Plain path strings remain unsupported.
+  Stop recursion only when depth exceeds DEFAULT_MAX_RECURSE_DEPTH, default 100, and test the real
+  config loader in bfl_edit_depth_settings. Do not download an image or mask supplied as an HTTP URL;
+  return the documented local policy error before opening a network connection. Both sync and async
+  preparation follow that policy. Build JSON with prompt (including null when called directly), base64
+  input_image and optional base64 mask; files is empty and use_multipart_form_data is false. Merely
+  having a mask key attempts to read it, so a null mask is an error rather than omission.
+
+  Successful edit replies require a truthy result.sample, unlike generation's list support. Return a
+  fresh ImageResponse with one URL and the injected current timestamp; missing sample raises BFL 500,
+  JSON failure retains upstream status. All parsing delegates to B1517 or B183. The asynchronous
+  override async_transform_image_edit_request and _fetch_remote_image are reached by the generic
+  image-edit HTTP handler; represent their local-input behavior, with the same no-fetch rejection.
+
+  Add helper call.bfl_edit for first_image_only, restored_file_cursor, mask_presence,
+  edit_defaults, endpoint_fill and sample_required. The source adapter uses the actual class and
+  BytesIO inputs; remote-input rejection is a Rust-only test because it deliberately differs. Keep
+  api::bfl::edit tests separate from decoder replay. The 277 owned source lines need approximately
+  230 implementation/config, 220 tests and 100 adapter/wiring lines; maximum 650.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/bfl.rs
+    - crates/betterlite-core/src/api/bfl/edit.rs
+    - crates/betterlite-core/src/api/bfl/edit/**
+    - crates/betterlite-config/src/providers/bfl.rs
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/bfl_edit.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/bfl_edit.py
+    - tools/oracle/cases/helpers/bfl-edit/**
+    - tools/oracle/fuzz/corpus/helper_case/bfl_edit*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/transformation.py#L41-L333
+    why: Edit allowlist, local byte extraction, remote-download branch and single-sample response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6865-L6873
+    why: Polymorphic caller of async_transform_image_edit_request.
+dod:
+  - text: Edit preparation emits JSON image/mask data with the correct first-image and cursor semantics, without request URL fetches.
+    proof: [bfl-edit-tests, oracle, bfl-edit-python]
+  - text: Final edit response projection and loaded recursion limits preserve BFL's errors and timestamp behavior.
+    proof: [bfl-edit-tests, oracle, bfl-edit-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: bfl-edit-tests
+      why: local image conversion, no-fetch rejection or recursion settings are missing
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::bfl::edit::/) | test(bfl_edit_depth_settings)'
+    - id: bfl-edit-python
+      why: edit body and response comparisons cannot invoke the pinned transformer
+      run: grep -qE '^[[:space:]]+bfl_edit:' tools/oracle/fuzz/corpus/helper_case/bfl_edit* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/bfl_edit.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/bfl-edit/first-image-only.yaml
+  - tools/oracle/cases/helpers/bfl-edit/restored-file-cursor.yaml
+  - tools/oracle/cases/helpers/bfl-edit/mask-presence.yaml
+  - tools/oracle/cases/helpers/bfl-edit/edit-defaults.yaml
+  - tools/oracle/cases/helpers/bfl-edit/endpoint-fill.yaml
+  - tools/oracle/cases/helpers/bfl-edit/sample-required.yaml
+deviations:
+  - what: BFL edit image or mask URLs fail with HTTP 400, type invalid_request_error, param image or mask and code unsupported_media_url; supplied bytes and local file handles remain usable and no URL is fetched.
+    why: Max has not decided whether request-media downloads are allowed; retain the current no-download boundary and build no fetch service.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/transformation.py#L183-L290
+out_of_scope:
+  - B1520 submits edits and runs the polling lifecycle; B1517 owns authentication settings and all BFL response-byte decoding.
+pitfalls:
+  - mask appears in the advertised supported list but is absent from _BFL_REQUEST_PARAMS and needs its own byte conversion.
+  - An empty image list fails rather than falling through to a later image.
+  - The async BFL-specific handler calls the synchronous transformer at the pin, so both entry paths must enforce the media policy.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

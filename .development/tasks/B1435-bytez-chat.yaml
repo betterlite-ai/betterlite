@@ -1,0 +1,111 @@
+id: B1435
+title: Bytez media normalization, approximate usage and raw-text streaming
+description: >-
+  Implement bytez_wire in betterlite-openai and bytez_stream_call in betterlite-provider.
+  The wire module owns BytezChatConfig's transformations, helper functions and BytezError;
+  the provider module owns both custom stream entry points. The option map merges
+  non_default_params then optional_params, renames both token limits to max_new_tokens
+  and n to num_return_sequences, and passes stream, temperature, top_p and max_retries.
+  Explicitly unsupported entries are seed, stop, logit_bias, logprobs, both penalties,
+  top_logprobs, modalities, prediction, stream_options, tools, tool_choice, function_call,
+  functions, extra_headers, parallel_tool_calls, audio and web_search_options. They
+  raise a generic source error unless drop_params, whereas unknown keys pass through.
+
+  Validation first overwrites content-type, Authorization=Key {key}, and user-agent
+  with the pinned litellm/1.105.1 value, then rejects empty messages before rejecting
+  a falsey key. URL construction ignores the configured base and uses
+  https://api.bytez.com/models/v2/{model}, with B171 segment encoding. Normalize content
+  strings to text blocks, objects to a singleton list, and lists of strings/objects
+  to blocks; other shapes fail. Role comes from the original optional role field.
+  Accept text/text, image_url/url, input_audio/url and video_url/url, reading those
+  payload keys directly from the block. Require truthy type and payload, not a Python
+  string-type check; unknown types produce KeyError while document/file are known
+  unsupported types. Emit only role and normalized blocks, discarding extra fields.
+  The request always has messages, stream and params. Remove stream from params only
+  when truthy; false or null therefore remains inside params as well as at top level.
+
+  decode_bytez_reply consumes bounded response bytes. A non-None error field raises
+  BytezError with the response status, even for false or an empty string. Otherwise
+  assign injected current time and requested model, read output.content[0].text into
+  choice zero, and calculate usage by re-normalizing original input and output.
+  Count text.split(" ") entries, including empty words between repeated spaces;
+  every nontext block counts one. Do not substitute the tokenizer. Attach all response
+  headers in hidden additional_headers and the five nullable ratelimit-limit,
+  ratelimit-remaining, ratelimit-reset, inference-meter and inference-time fields on
+  the message. The response method has no post_call hook. BytezError uses a POST
+  request to the fixed API base and does not copy headers in get_error_class.
+
+  Both custom stream calls use B173, serialized JSON, stream=true and a 300-second
+  timeout, replacing a client of the wrong sync/async kind. Wrap HTTPStatusError and
+  reject every status except 200. Consume transport text fragments directly, including
+  embedded newlines and data: text; these are not SSE records. Feed each fragment to
+  B005's chunk processing as content with is_finished=false and empty finish_reason.
+  Preserve StopIteration and map other chunk-processing errors through B186. Reuse
+  the transport's incremental text decoder and cancellation, without coalescing chunks.
+
+  Helper bytez_record invokes parsed transformations and chunk_creator; injected-clock
+  and transport tests cover timing, status, timeout and client selection without making
+  oracle helpers perform HTTP. Fuzz decode_bytez_reply with malformed output layouts;
+  new call.bytez_record seeds must exercise both message normalization and usage.
+  Counted source is 383 nonblank/noncomment lines. Allow 300 implementation, 215 tests,
+  135 adapters, 75 fuzz/replay and 55 exports/dependency lines, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,bytez_wire}.rs
+    - crates/betterlite-openai/src/bytez_wire/**
+    - crates/betterlite-provider/src/{lib,bytez_stream_call}.rs
+    - crates/betterlite-provider/src/bytez_stream_call/**
+    - crates/betterlite-provider/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/bytez_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/bytez_reply/**
+    - tools/oracle/src/helpers/{mod,bytez_record}.rs
+    - tools/oracle/helpers/{dispatch,bytez_record}.py
+    - tools/oracle/cases/helpers/bytez-record/**
+    - tools/oracle/fuzz/corpus/helper_case/bytez_record*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bytez/chat/transformation.py#L35-L476
+    why: Bytez normalizes media, estimates usage by spaces and streams raw text through a custom wrapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bytez/common_utils.py#L1-L25
+    why: Fixed model API root and the native Bytez exception's request identity.
+dod:
+  - text: Bytez options, media blocks and usage retain the provider's non-OpenAI conventions.
+    proof: [bytez-behavior, bytez-python, oracle]
+  - text: Raw-text streaming honors status, timeout, chunk timing and cancellation in both call modes.
+    proof: [bytez-behavior]
+  - text: Reply and helper decoders exercise newly added malformed and valid Bytez inputs.
+    proof: [bytez-corpus, bytez-helper-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: bytez-behavior
+      run: cargo nextest run --locked -p betterlite-openai -p betterlite-provider --no-tests=fail -E '(test(/^bytez_wire::/) | test(/^bytez_stream_call::/)) - test(replays_bytez_reply_corpus)'
+      why: Wire tests alone cannot establish the custom stream transport's exact-200 rule or immediate delivery.
+    - id: bytez-python
+      run: test -f tools/oracle/helpers/bytez_record.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Approximate usage must come from Bytez's source helpers, not a generic tokenizer fixture.
+    - id: bytez-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/bytez_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/bytez_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_bytez_reply_corpus)'
+      why: Replay newly introduced Bytez response bytes through the production decoder.
+    - id: bytez-helper-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/bytez_record*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::bytez_record::/)'
+      why: Parsed seeds assert bytez_record and nonzero normalization and usage cases.
+oracle_cases:
+  - tools/oracle/cases/helpers/bytez-record/option-overlay-and-unknown-key.yaml
+  - tools/oracle/cases/helpers/bytez-record/top-level-media-url-and-empty-content.yaml
+  - tools/oracle/cases/helpers/bytez-record/false-stream-stays-in-params.yaml
+  - tools/oracle/cases/helpers/bytez-record/repeated-spaces-and-media-token.yaml
+  - tools/oracle/cases/helpers/bytez-record/non-null-error-and-response-headers.yaml
+  - tools/oracle/cases/helpers/bytez-record/plaintext-fragments-with-newlines.yaml
+deviations: []
+out_of_scope:
+  - B038 resolves BYTEZ_API_KEY in _complete_bytez and binds the custom stream wrapper to public chat execution.
+  - B005 retains the generic processed-chunk lifecycle and terminal emission around Bytez's chunk_creator.
+pitfalls:
+  - Bytez expects image_url blocks to carry a top-level url rather than OpenAI's nested image_url object.
+  - 'The literal string data: is ordinary generated text in Bytez streaming responses.'
+  - A stream=false option remains duplicated in the nested params object.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security

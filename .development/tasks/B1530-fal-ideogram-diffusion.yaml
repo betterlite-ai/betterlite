@@ -1,0 +1,82 @@
+id: B1530
+title: Adapt Fal Ideogram and Stable Diffusion size and response shapes
+description: >-
+  Build api::fal::ideogram and api::fal::stable_diffusion for all methods in their generation files,
+  using B1525's base configuration and decoded Fal reply. Ideogram has fixed endpoint fal-ai/ideogram/v3.
+  Stable Diffusion preserves a custom slash-containing path, preserves fal-ai/ paths and prepends
+  fal-ai/ only for bare model names. Both map n into num_images and size into image_size while testing
+  the original input key for optional-parameter precedence. Ideogram accepts and ignores response_format;
+  Stable Diffusion maps url/b64_json to output_format=jpeg. Each rejects unsupported fields unless
+  drop_params and overlays provider-specific options after prompt.
+
+  Ideogram trims size strings, recognizes six aliases including 1536x1024 as landscape_16_9 and
+  1024x1536 as portrait_16_9, and otherwise parses lowercase-x dimensions or falls back to square_hd.
+  For a size dictionary with integer width and height, retain only those fields; Python bool qualifies
+  as int here. Dictionaries lacking two integers and other nonstrings pass unchanged. Stable Diffusion
+  uses its own six string aliases (576x1024 and 1024x576), parses other WxH strings and falls back to
+  landscape_4_3; preserve source structural errors for unsupported nonstring shapes rather than using
+  Ideogram's permissive branch.
+
+  Both append URL-only image objects to existing response data, dropping base64 and dimensions.
+  Ideogram attempts ImageObject conversion for every list entry: maps supply url, all other entries
+  supply the entry itself, retaining invalid-field errors. Stable Diffusion ignores members that are
+  neither strings nor maps. Ideogram copies seed into existing hidden parameters by presence; Stable
+  Diffusion additionally copies timings and has_nsfw_concepts. Decoder errors retain original response
+  status/headers. Use the typed raw-entry view from B1525, not its generic filtered-image projection,
+  so malformed members remain distinguishable.
+
+  Register call.fal_render_profiles with whitespace_size, size_object_extra_fields,
+  portrait_preset_difference, custom_diffusion_path, invalid_reply_member and hidden_fields_by_family.
+  Compare pinned configurations against the Rust profile functions and test both module namespaces.
+  No external-byte decoder changes are required. The owned source totals 370 nonblank/non-comment
+  lines; 260 implementation, 230 tests, 110 adapters and 40 wiring lines fit a 700-line ceiling.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/{ideogram,stable_diffusion}.rs
+    - crates/betterlite-core/src/api/fal/ideogram/**
+    - crates/betterlite-core/src/api/fal/stable_diffusion/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/fal_render_profiles.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/fal_render_profiles.py
+    - tools/oracle/cases/helpers/fal-render-profiles/**
+    - tools/oracle/fuzz/corpus/helper_case/fal_render_profiles*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/ideogram_v3_transformation.py#L19-L190
+    why: Trimmed dimensions, typed object handling and unfiltered image-list conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/stable_diffusion_transformation.py#L19-L274
+    why: Custom model paths, different dimension presets and hidden metadata.
+dod:
+  - text: Ideogram and Stable Diffusion preserve their distinct size handling, response-format behavior and endpoint construction.
+    proof: [render-profile-tests, oracle, render-profile-python]
+  - text: Reply conversion differentiates malformed members and copies only each family's hidden fields.
+    proof: [render-profile-tests, oracle, render-profile-python]
+checks:
+  optional: []
+  commands:
+    - id: render-profile-tests
+      why: Ideogram or Stable Diffusion production mappings have no matching test coverage
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fal::ideogram::/) | test(/^api::fal::stable_diffusion::/)'
+    - id: render-profile-python
+      why: render-profile comparisons cannot call the pinned model classes
+      run: grep -qE '^[[:space:]]+fal_render_profiles:' tools/oracle/fuzz/corpus/helper_case/fal_render_profiles* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/fal_render_profiles.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/fal-render-profiles/whitespace-size.yaml
+  - tools/oracle/cases/helpers/fal-render-profiles/size-object-extra-fields.yaml
+  - tools/oracle/cases/helpers/fal-render-profiles/portrait-preset-difference.yaml
+  - tools/oracle/cases/helpers/fal-render-profiles/custom-diffusion-path.yaml
+  - tools/oracle/cases/helpers/fal-render-profiles/invalid-reply-member.yaml
+  - tools/oracle/cases/helpers/fal-render-profiles/hidden-fields-by-family.yaml
+deviations: []
+out_of_scope:
+  - B046's Fal factory chooses between these profiles; B1525 handles the wire JSON and credential layer.
+pitfalls:
+  - Ideogram accepts boolean dimensions in a size object even though generic Fal result dimensions exclude booleans.
+  - Stable Diffusion leaves custom/model paths intact instead of forcing a fal-ai/ prefix.
+  - Ideogram does not skip an integer image-list member before constructing its ImageObject.
+review_level: standard
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

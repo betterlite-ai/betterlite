@@ -1,0 +1,91 @@
+id: B1509
+title: Refresh ChatGPT credentials and coordinate device authorization
+description: >-
+  Implement ChatGptLogin in betterlite-openai/src/chatgpt/login.rs for get_access_token,
+  _login_device_code, _request_device_code, _poll_for_authorization_code, _exchange_code_for_tokens
+  and _refresh_tokens from authenticator.py. B1508 provides the file, claim and cooldown operations;
+  B1507 provides constants/errors. Use B173 HTTP with injected time, sleep and a private operator display
+  sink. A usable cached token wins. Otherwise try a truthy refresh_token; only RefreshAccessTokenError
+  is caught and warned before cooldown/login. During the cooldown wait for another login's file update,
+  and repeat that check inside _login_device_code before requesting another device code.
+
+  POST the client id app_EMoamEEZ73f0CkXaXp7hrann to https://auth.openai.com/api/accounts/deviceauth/usercode.
+  Accept user_code or usercode, require nonempty device_auth_id and user code, and stringify interval
+  with falsey fallback 5. Record the request time after obtaining the code and display
+  https://auth.openai.com/codex/device plus the code through the private sink. Poll /api/accounts/deviceauth/token
+  for at most 900 seconds; 403/404 wait max(interval,5), 200 must contain authorization_code,
+  code_challenge and code_verifier, and an incomplete successful reply also waits. Other HTTP failures
+  keep their upstream status; parse/transport failures use 400; polling expiration uses 408.
+
+  Exchange at /oauth/token with Content-Type application/x-www-form-urlencoded, preserving the source's
+  literal unescaped concatenation of grant_type, code, redirect_uri=https://auth.openai.com/deviceauth/callback,
+  client_id and code_verifier. Require access_token, refresh_token and id_token. Refresh instead posts
+  JSON with grant_type refresh_token and scope openid profile email, requires access/id tokens and
+  retains the previous refresh token when the new one is falsey. Persist B1508's rebuilt record before
+  returning; storage failures remain that store's logged fallback. Do not add an OAuth route or silently
+  substitute a standard flow whose pending-status rules differ.
+
+  decode_chatgpt_oauth reads bounded HTTP JSON into device, authorization and token reply variants.
+  Fuzz it with oauth_reply and replay the corpus. chatgpt_login helper fixtures run the pinned methods
+  with scripted HTTP/files/clock and capture private-display events separately from diagnostics.
+  Cases cached_without_http, failed_refresh_relogin, concurrent_login, pending_then_authorized,
+  incomplete_poll_timeout, literal_form_exchange and refresh_token_retained compare effects and exact
+  exception class/status while ignoring only message wording. Tests also verify cancellation cancels
+  polling and no token/code reaches ordinary logs. Owned callable size is 199 nonblank/non-comment lines;
+  budget 240 state machine/codec, 215 tests, 115 adapters, 75 fuzz and 45 wiring lines (690 total).
+scope:
+  paths:
+    - crates/betterlite-openai/src/chatgpt.rs
+    - crates/betterlite-openai/src/chatgpt/login.rs
+    - crates/betterlite-openai/src/chatgpt/login/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/oauth_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/oauth_reply/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/chatgpt_login.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/chatgpt_login.py
+    - tools/oracle/cases/helpers/chatgpt-login/**
+    - tools/oracle/fuzz/corpus/helper_case/chatgpt_login*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L55-L76
+    why: Cached-token, refresh, cooldown and login selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L153-L341
+    why: Device flow, required fields, polling statuses and two different token-exchange bodies.
+dod:
+  - text: Authentication sends the specified requests in order and preserves retry, cooldown, expiry and refresh failure outcomes.
+    proof: [chatgpt-login-tests, oracle, chatgpt-login-python]
+  - text: OAuth reply parsing and cancellation remain bounded and secret-safe.
+    proof: [chatgpt-login-tests, oauth-reply-corpus]
+checks:
+  optional: []
+  commands:
+    - id: chatgpt-login-tests
+      why: login sequencing or credential handling differs from the required state machine
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^chatgpt::login::/) - test(replays_oauth_reply)'
+    - id: chatgpt-login-python
+      why: device login has no independent typed adapter or parser seed
+      run: grep -qE '^[[:space:]]+chatgpt_login:' tools/oracle/fuzz/corpus/helper_case/chatgpt_login* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/chatgpt_login.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: oauth-reply-corpus
+      why: newly parsed authorization bytes have no fuzz target or replayed corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/oauth_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/oauth_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_oauth_reply)'
+oracle_cases:
+  - tools/oracle/cases/helpers/chatgpt-login/cached-without-http.yaml
+  - tools/oracle/cases/helpers/chatgpt-login/failed-refresh-relogin.yaml
+  - tools/oracle/cases/helpers/chatgpt-login/concurrent-login.yaml
+  - tools/oracle/cases/helpers/chatgpt-login/pending-then-authorized.yaml
+  - tools/oracle/cases/helpers/chatgpt-login/incomplete-poll-timeout.yaml
+  - tools/oracle/cases/helpers/chatgpt-login/literal-form-exchange.yaml
+  - tools/oracle/cases/helpers/chatgpt-login/refresh-token-retained.yaml
+deviations: []
+out_of_scope:
+  - B1508 owns the remaining authenticator methods, including claim decoding, record writes and _wait_for_access_token; the shared file's imports/constants do not create another authenticator implementation.
+pitfalls:
+  - code_challenge is mandatory in an authorized polling response even though the token exchange sends only code_verifier.
+  - HTTP 403 and 404 mean pending here, whereas other non-success statuses fail immediately.
+  - Refresh uses JSON but authorization-code exchange assembles an unescaped form body.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

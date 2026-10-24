@@ -1,0 +1,93 @@
+id: B1522
+title: Translate Stability generation parameters and base64 replies
+description: >-
+  Add api::stability::generation to betterlite-core with all StabilityImageGenerationConfig methods
+  and get_stability_image_generation_config. Own StabilityImageGenerationRequest, the size-to-aspect
+  table and STABILITY_GENERATION_MODELS from the shared type file. Load STABILITY_API_KEY (unset) and
+  STABILITY_API_BASE (https://api.stability.ai); explicit truthy call arguments win. Test those paths
+  with the B002 loader in stability_generation_environment. Missing key raises the source ValueError,
+  while valid credentials overwrite Authorization and Accept=application/json.
+
+  Choose the first endpoint-table key contained in the lowercased model after removing one leading
+  stability/; an unknown model goes to /v2beta/stable-image/generate/sd3. The selector does not vary by
+  model. Map known OpenAI sizes to the fixed aspect ratios, n to _n and response_format to
+  _response_format, preserving existing destination keys. An unknown size survives mapping as size
+  but is absent from the outgoing whitelist. Unsupported options raise or disappear under drop_params.
+  Request data starts with prompt and output_format=png, then accepts negative_prompt, aspect_ratio,
+  seed, output_format, model, mode, strength and style_preset, even when a supplied value is null.
+  Internal underscore keys never go upstream. Report multipart capability=true; neither _n nor
+  _response_format causes this adapter to loop or synthesize an image URL.
+
+  Implement decode_stability_image for bounded JSON replies shared with B1523. JSON parse failure and
+  presence of errors preserve upstream status/headers, including a successful HTTP status; exact
+  finish_reason=CONTENT_FILTERED raises 400. A truthy image appends one b64_json object to existing
+  data; missing or empty image leaves data empty without inventing a failure. Keep the existing response
+  created value. The stability_image fuzz target invokes this decoder and replays new malformed,
+  filtered, error-presence and empty-image seeds.
+
+  Expose helper call.stability_generation with cases unknown_model_sd3, size_mapping_loss,
+  internal_fields, null_provider_option, filtered_result and append_or_empty. Its Python side invokes
+  the real selector/configuration; Rust calls api::stability::generation. Count 215 transformation,
+  23 initializer and 36 live type/table lines; allow 240 service/config, 220 tests, 100 oracle and
+  65 fuzz/wiring lines, with a 700-line maximum.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/stability.rs
+    - crates/betterlite-core/src/api/stability/generation.rs
+    - crates/betterlite-core/src/api/stability/generation/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/stability_image.rs
+    - crates/betterlite-core/fuzz/corpus/stability_image/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/stability.rs
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/stability_generation.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/stability_generation.py
+    - tools/oracle/cases/helpers/stability-generation/**
+    - tools/oracle/fuzz/corpus/helper_case/stability_generation*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_generation/transformation.py#L37-L265
+    why: Substring endpoint selection, multipart fields and base64-only projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/stability.py#L12-L228
+    why: The live generation schema and tables, with unused declarations explicitly excluded below.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_generation/__init__.py#L19-L37
+    why: Factory always supplies the same generation configuration.
+dod:
+  - text: Generation mapping loads Stability credentials and produces the source's multipart field set for known and unknown models.
+    proof: [stability-generation-tests, oracle, stability-generation-python]
+  - text: Bounded reply conversion preserves filtered/error statuses and accepts a response without an image.
+    proof: [stability-generation-tests, stability-image-corpus, oracle, stability-generation-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: stability-generation-tests
+      why: Stability generation mapping, response behavior or configuration has not been implemented
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::stability::generation::/) - test(replays_the_stability_image_corpus) | test(stability_generation_environment)'
+    - id: stability-image-corpus
+      why: the shared Stability image decoder is not replaying new edge cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/stability_image)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_stability_image_corpus)'
+    - id: stability-generation-python
+      why: pinned generation behavior is not reached by a checked oracle adapter
+      run: grep -qE '^[[:space:]]+stability_generation:' tools/oracle/fuzz/corpus/helper_case/stability_generation* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/stability_generation.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/stability-generation/unknown-model-sd3.yaml
+  - tools/oracle/cases/helpers/stability-generation/size-mapping-loss.yaml
+  - tools/oracle/cases/helpers/stability-generation/internal-fields.yaml
+  - tools/oracle/cases/helpers/stability-generation/null-provider-option.yaml
+  - tools/oracle/cases/helpers/stability-generation/filtered-result.yaml
+  - tools/oracle/cases/helpers/stability-generation/append-or-empty.yaml
+deviations: []
+out_of_scope:
+  - B1523 owns STABILITY_EDIT_ENDPOINTS and edit execution policy in the shared types file.
+  - StabilityImageEditRequest, StabilityImageGenerationResponse, StabilityUpscaleRequest, StabilityInpaintRequest, StabilityOutpaintRequest, StabilityEraseRequest, StabilitySearchReplaceRequest, StabilityRemoveBackgroundRequest, StabilityControlRequest, StabilityEditResponse and STABILITY_ASPECT_RATIOS have no caller at the pin; do not build their declared validation or cases.
+pitfalls:
+  - Storing _n does not make this transformer send n generation requests.
+  - The first substring match determines the endpoint even when a later key is more specific.
+  - A non-CONTENT_FILTERED finish_reason is not itself an error.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 1

@@ -1,0 +1,86 @@
+id: B1528
+title: Distinguish Fal Imagen, Nano Banana and ByteDance image policies
+description: >-
+  Implement api::fal::imagen, api::fal::nano_banana and api::fal::bytedance for all callables in their
+  three generation modules, including Nano Banana's nested ratio_of helper. Use B1525 for Fal base
+  preparation and image decoding, and B1527 for the Flux response metadata inherited by ByteDance.
+  Imagen4 always uses fal-ai/imagen4/preview even for a requested fast/ultra suffix. Its size aliases
+  and ordered thresholds select 1:1,16:9,9:16,4:3,3:4, defaulting to 1:1 for gaps and malformed sizes.
+  Map n to num_images and ignore response_format; preserve the original-key precedence test. Imagen
+  replies append URL-only images from strings or maps, discard base64 and image dimensions, and copy
+  seed by presence into hidden parameters. Do not silently migrate Imagen requests to another family.
+
+  Nano Banana keeps the requested endpoint and prepends fal-ai/ only when missing. It also ignores
+  response_format but checks translated num_images/aspect_ratio keys before writing them. Its ratio
+  mapping chooses the nearest numeric ratio from the ten-item ordered list, so ties retain the first
+  entry; invalid/nonstring/zero-height values yield 1:1. This is a different algorithm from Imagen's
+  thresholds. Provider options such as resolution remain untouched and no resolution default is
+  inserted. Results inherit B1525's metadata-preserving image conversion rather than Imagen's URL-only
+  projection.
+
+  ByteDance Seedream and Dreamina inherit Flux response handling and use fixed endpoints
+  fal-ai/bytedance/seedream/v3/text-to-image and fal-ai/bytedance/dreamina/v3.1/text-to-image.
+  Share B1527's equivalent image_size mapper: six presets, custom integer dimensions, nonstring
+  passthrough and landscape_4_3 fallback. Map url/b64_json to jpeg, n to num_images and size to
+  image_size while retaining original-key precedence. All three families overlay prepared options
+  on prompt and retain their own supported-parameter failure behavior.
+
+  Add call.fal_image_families with imagen_fixed_preview, ratio_algorithms_differ,
+  banana_destination_wins, banana_resolution_passthrough, bytedance_endpoints and
+  family_reply_metadata. The oracle instantiates the actual Python classes and compares decoded
+  transforms; no new parser is introduced. Tests cover api::fal::imagen, nano_banana and bytedance.
+  These files contain 362 nonblank/non-comment lines; reuse keeps production near 270, tests 240,
+  adapters 120 and wiring 35, within 750 lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/{imagen,nano_banana,bytedance}.rs
+    - crates/betterlite-core/src/api/fal/imagen/**
+    - crates/betterlite-core/src/api/fal/nano_banana/**
+    - crates/betterlite-core/src/api/fal/bytedance/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/fal_image_families.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/fal_image_families.py
+    - tools/oracle/cases/helpers/fal-image-families/**
+    - tools/oracle/fuzz/corpus/helper_case/fal_image_families*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/imagen4_transformation.py#L19-L241
+    why: Fixed preview endpoint, threshold ratios and URL-only replies with seed metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/nano_banana_transformation.py#L9-L106
+    why: Dynamic family endpoint and nearest-ratio selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/bytedance_transformation.py#L6-L104
+    why: ByteDance size policy and two fixed model paths.
+dod:
+  - text: Imagen, Nano Banana and ByteDance requests preserve family-specific endpoints, precedence and size algorithms.
+    proof: [image-family-tests, oracle, image-family-python]
+  - text: Reply projection retains each family's distinct base64, dimension and hidden-metadata behavior.
+    proof: [image-family-tests, oracle, image-family-python]
+checks:
+  optional: []
+  commands:
+    - id: image-family-tests
+      why: one of the three Fal family implementations has no behavior coverage
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fal::imagen::/) | test(/^api::fal::nano_banana::/) | test(/^api::fal::bytedance::/)'
+    - id: image-family-python
+      why: family distinctions are not compared to executable pinned transformations
+      run: grep -qE '^[[:space:]]+fal_image_families:' tools/oracle/fuzz/corpus/helper_case/fal_image_families* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/fal_image_families.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/fal-image-families/imagen-fixed-preview.yaml
+  - tools/oracle/cases/helpers/fal-image-families/ratio-algorithms-differ.yaml
+  - tools/oracle/cases/helpers/fal-image-families/banana-destination-wins.yaml
+  - tools/oracle/cases/helpers/fal-image-families/banana-resolution-passthrough.yaml
+  - tools/oracle/cases/helpers/fal-image-families/bytedance-endpoints.yaml
+  - tools/oracle/cases/helpers/fal-image-families/family-reply-metadata.yaml
+deviations: []
+out_of_scope:
+  - The cross-family model-name selector belongs to B046; B1525 remains responsible for credentials and raw image JSON.
+pitfalls:
+  - Imagen4's docstring lists fast and ultra variants that its fixed endpoint does not select.
+  - Nano Banana preserves an existing aspect_ratio even when size is also supplied.
+  - Imagen drops returned image dimensions that the inherited Nano Banana conversion preserves.
+review_level: standard
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
