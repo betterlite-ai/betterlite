@@ -2277,14 +2277,15 @@ tasks:
     title: Build bounded classifier context from request messages
     status: todo
     depends_on:
-    - B329
+    - B384
     - B010
     - B080
     - B081
+    - B301
+    - B002
     file: tasks/B330-classifier-context.yaml
     covers:
     - litellm/router_strategy/complexity_router/complexity_router.py
-
   - id: B331
     milestone: M2 routing
     title: LLM, heuristic-first and hybrid complexity classifiers
@@ -2893,6 +2894,17 @@ tasks:
     file: tasks/B383-budget-windows.yaml
     covers:
     - litellm/router_strategy/budget_limiter.py
+  - id: B384
+    milestone: M2 routing
+    title: Classifier message and reminder extraction
+    status: todo
+    depends_on:
+    - B010
+    - B301
+    - B002
+    file: tasks/B384-classifier-message-text.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
   - id: B389
     milestone: M2 routing
     title: Latency and first-token observations
