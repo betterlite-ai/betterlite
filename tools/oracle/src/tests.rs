@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fs;
 use std::io::Error;
 use std::io::{Read as _, Write as _};
@@ -13,6 +14,9 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 use std::{env, process, slice};
+
+#[cfg(unix)]
+use std::os::unix::ffi::OsStringExt as _;
 
 use serde_json::Value;
 
@@ -103,7 +107,7 @@ fn comparison_cases(#[case] name: &str) {
 #[rstest::rstest]
 #[case::unknown("unknown", "unknown field")]
 #[case::missing("missing", "missing field")]
-#[case::duplicate("duplicate", "duplicate field")]
+#[case::duplicate("duplicate", "duplicate")]
 #[case::empty_name("empty_name", "cannot be empty")]
 #[case::empty_config("empty_config", "cannot be empty")]
 #[case::empty_path("empty_path", "cannot be empty")]
@@ -177,7 +181,7 @@ fn answer() -> UpstreamAnswer {
 }
 
 fn test_case() -> Case {
-    serde_yaml::from_str(&valid_case_yaml()).unwrap()
+    serde_saphyr::from_str(&valid_case_yaml()).unwrap()
 }
 
 #[rstest::rstest]
@@ -346,6 +350,46 @@ fn gateway_spec_picks_command_arguments_and_log(
     assert_eq!(spec.env.last(), Some(&("CASE".to_owned(), "1".to_owned())));
 }
 
+#[cfg(unix)]
+#[test]
+fn gateway_spec_rejects_a_non_utf8_config_path() {
+    let options = Options {
+        self_check: false,
+        paths: Vec::new(),
+    };
+    let config_path = OsString::from_vec(vec![b'/', 0xff]);
+    let case_env = BTreeMap::new();
+    let input = GatewayInput {
+        options: &options,
+        group_dir: Path::new("/group"),
+        config_path: Path::new(config_path.as_os_str()),
+        case_env: &case_env,
+    };
+    assert!(gateway::spec(&input, true, 7).is_err());
+}
+
+#[test]
+fn gateway_spec_keeps_required_environment_without_case_overrides() {
+    let options = Options {
+        self_check: false,
+        paths: Vec::new(),
+    };
+    let input = GatewayInput {
+        options: &options,
+        group_dir: Path::new("/group"),
+        config_path: Path::new("/group/config.yaml"),
+        case_env: &BTreeMap::new(),
+    };
+    let spec = gateway::spec(&input, false, 7).unwrap();
+    assert_eq!(
+        spec.env,
+        vec![
+            ("LITELLM_LOCAL_MODEL_COST_MAP".to_owned(), "True".to_owned()),
+            ("LITELLM_MASTER_KEY".to_owned(), "oracle-master".to_owned()),
+        ]
+    );
+}
+
 #[test]
 fn process_starts_waits_and_stops_gateways() {
     let mut gateway = gateway_fixture("started", "exec sleep 10", 1);
@@ -385,6 +429,19 @@ fn runner_helpers_create_safe_artifact_paths_and_ports() {
     let first_id = runner::unique_id().unwrap();
     assert!(first_id.starts_with(&format!("{}-", process::id())));
     assert_ne!(first_id, runner::unique_id().unwrap());
+}
+
+#[test]
+fn run_cases_propagates_a_gateway_start_failure() {
+    let options = Options {
+        self_check: false,
+        paths: Vec::new(),
+    };
+    let mut case = test_case();
+    case.config = "not: [valid".to_owned();
+    let result = runner::run_cases(&options, vec![case]);
+    let _error = result.unwrap_err();
+    fs::remove_dir_all("target/oracle").unwrap();
 }
 
 #[test]
@@ -436,6 +493,67 @@ fn compare_group_reports_each_case_and_writes_its_artifacts(
     assert_eq!(read("betterlite.log"), "second");
     assert_eq!(read("provider-litellm.json"), "[]");
     assert!(directory.join("client-betterlite.json").exists());
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn compare_group_uses_empty_request_slices_for_an_invalid_midpoint() {
+    let root = env::temp_dir().join(format!("betterlite-midpoint-{}", process::id()));
+    fs::create_dir_all(&root).unwrap();
+    let first_log = root.join("first.log");
+    let second_log = root.join("second.log");
+    fs::write(&first_log, "first").unwrap();
+    fs::write(&second_log, "second").unwrap();
+    let captures = runner::GroupCapture {
+        first: vec![response(value("{}"))],
+        second: vec![response(value("{}"))],
+        first_log,
+        second_log,
+        requests: Vec::new(),
+        midpoint: 1,
+    };
+    assert_eq!(
+        runner::compare_group(&root, &[test_case()], &captures).unwrap(),
+        vec![false]
+    );
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn prepare_places_each_group_below_the_artifact_root() {
+    let root = env::temp_dir().join(format!("betterlite-prepare-root-{}", process::id()));
+    let (directory, config) = artifacts::prepare(&root, &test_case(), "http://mock").unwrap();
+    assert_eq!(directory.parent(), Some(root.as_path()));
+    assert!(
+        directory
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("group-"))
+    );
+    assert_eq!(config, directory.join("config.yaml"));
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn artifact_write_reports_a_missing_gateway_log() {
+    let root = env::temp_dir().join(format!("betterlite-artifact-error-{}", process::id()));
+    fs::create_dir_all(&root).unwrap();
+    let missing = root.join("missing.log");
+    let case = test_case();
+    let first = response(value("{}"));
+    let second = response(value("{}"));
+    let input = artifacts::ArtifactInput {
+        root: &root,
+        case: &case,
+        first: &first,
+        second: &second,
+        first_requests: &[],
+        second_requests: &[],
+        first_log: &missing,
+        second_log: &missing,
+        result: None,
+    };
+    let _error = artifacts::write(input).unwrap_err();
     fs::remove_dir_all(&root).unwrap();
 }
 

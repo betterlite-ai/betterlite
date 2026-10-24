@@ -59,7 +59,7 @@ pub(crate) enum CaseError {
     #[error("cannot parse case {path}: {source}")]
     Parse {
         path: PathBuf,
-        source: serde_yaml::Error,
+        source: Box<serde_saphyr::Error>,
     },
     #[error("invalid case {path}: {message}")]
     Invalid { path: PathBuf, message: String },
@@ -77,9 +77,9 @@ pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<Case>, CaseError> {
             path: path.clone(),
             source,
         })?;
-        let case: Case = serde_yaml::from_str(&text).map_err(|source| CaseError::Parse {
+        let case: Case = serde_saphyr::from_str(&text).map_err(|source| CaseError::Parse {
             path: path.clone(),
-            source,
+            source: Box::new(source),
         })?;
         validate(&path, &case)?;
         cases.push(case);
