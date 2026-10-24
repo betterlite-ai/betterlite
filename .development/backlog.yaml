@@ -2162,6 +2162,7 @@ tasks:
     depends_on:
     - B195
     - B193
+    - B259
     file: tasks/B196-text-tokens.yaml
     covers:
     - litellm/litellm_core_utils/token_counter.py
@@ -2833,5 +2834,16 @@ tasks:
     - B195
     - B171
     file: tasks/B258-image-token-geometry.yaml
+    covers:
+    - litellm/litellm_core_utils/token_counter.py
+  - id: B259
+    milestone: M1 openai data plane
+    title: Token schema formatting and model normalization
+    status: todo
+    depends_on:
+    - B193
+    - B195
+    - B171
+    file: tasks/B259-token-formatting.yaml
     covers:
     - litellm/litellm_core_utils/token_counter.py

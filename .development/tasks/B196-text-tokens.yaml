@@ -1,15 +1,15 @@
 id: B196
 title: Text, message and tool token counting
 description: >-
-  Build text/message/tool token accounting on B195's engines in betterlite-tokenizer/count. Port the pinned model
-  normalization, encoding choice, legacy message constants, tool/function argument counting, tool-schema formatting,
-  completion priming and tool_choice adjustments as pure typed operations. Implement disable_token_counter and supported
-  bundled-engine selection through injected settings. Include the pinned long-input sampling/extrapolation algorithm,
-  measuring Unicode scalar counts rather than UTF-8 byte counts and using checked integer/rational arithmetic with
-  Python's ties-to-even rounding. Add token_count helper cases for threshold boundaries and known/unknown model
-  mappings; avoid declaring all counts exact because LiteLLM itself samples large inputs. Add a token_request fuzz
-  target for the typed helper input while reusing B004's chat parser at the HTTP boundary.  Seed B171's shared helper_case
-  corpus with every added operation and replay it through the common typed parser. Depend directly on B193 for open_ai_chat_completion_models,
+  Build text/message/tool token accounting on B195's engines in betterlite-tokenizer/count. Compose B259 model normalization,
+  encoding selection and tool-schema formatting with this task's legacy message constants, function argument counts,
+  completion priming and tool_choice adjustments. Implement disable_token_counter and supported bundled-engine selection
+  through injected settings. Include the pinned long-input sampling/extrapolation algorithm, measuring Unicode scalar
+  counts rather than UTF-8 byte counts and using checked integer/rational arithmetic with Python's ties-to-even
+  rounding. Add token_count helper cases for threshold boundaries and known/unknown model mappings; avoid declaring
+  all counts exact because LiteLLM itself samples large inputs. Add a token_request fuzz target for the typed helper
+  input while reusing B004's chat parser at the HTTP boundary.  Seed B171's shared helper_case corpus with every
+  added operation and replay it through the common typed parser. Depend directly on B193 for open_ai_chat_completion_models,
   anthropic_models and cohere_models. For tiktoken counts, encode successive Unicode-scalar slices of TIKTOKEN_ENCODE_CHUNK_SIZE_CHARS
   (default 1024, range 1-4096) and sum; whole-string BPE differs at boundaries. Config resolves TOKEN_COUNTER_MAX_EXACT_CHARS
   (default 4000000, range 1-1000000000); threshold cases set a small value in their environment. Above the exact
@@ -18,7 +18,10 @@ description: >-
   from B195. Write the behavior rstest functions b196_token_count_tests_behavior in adjacent tests.rs files, with
   a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper
   operations token_count in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation
-  has its own Rust and Python adapter file and corpus seed.
+  has its own Rust and Python adapter file and corpus seed. Own token_counter.py 364-662 and use B259 for 663-690
+  and 954-1051. The utils.py tokenizer backend and supported bundled-engine selection are B195; do not add HF acquisition
+  or decide its fallback. Budget 300 counting/sampling, 100 adapters, 240 tests, 70 fuzz/replay and 60 config/wiring
+  (770 total).
 scope:
   paths:
   - Cargo.toml
@@ -27,10 +30,6 @@ scope:
   - crates/betterlite-tokenizer/src/error.rs
   - crates/betterlite-tokenizer/src/count.rs
   - crates/betterlite-tokenizer/src/count/**
-  - crates/betterlite-tokenizer/src/tools.rs
-  - crates/betterlite-tokenizer/src/tools/**
-  - crates/betterlite-tokenizer/src/selection.rs
-  - crates/betterlite-tokenizer/src/selection/**
   - crates/betterlite-tokenizer/fuzz/**
   - crates/betterlite-config/**
   - tools/oracle/Cargo.toml
@@ -43,11 +42,6 @@ references:
 - url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L374-L690
   why: Request validation, message overhead, tool choice, extrapolation and encoding choice.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L954-L1051
-  why: Function definition text used in counting.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2376-L2470
-  why: Model/custom tokenizer selection.
 - url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L364-L370
   why: Chunk every tiktoken count before summing.
@@ -113,11 +107,8 @@ oracle_cases:
 - tools/oracle/cases/helpers/token-count/text-and-messages-error.yaml
 - tools/oracle/cases/helpers/token-count/empty-messages.yaml
 - tools/oracle/cases/helpers/token-count/legacy-name-overhead.yaml
-- tools/oracle/cases/helpers/token-count/azure-name.yaml
-- tools/oracle/cases/helpers/token-count/unknown-model.yaml
 - tools/oracle/cases/helpers/token-count/response-count.yaml
 - tools/oracle/cases/helpers/token-count/function-tool-arguments.yaml
-- tools/oracle/cases/helpers/token-count/tool-schema.yaml
 - tools/oracle/cases/helpers/token-count/tool-choice.yaml
 - tools/oracle/cases/helpers/token-count/threshold-unicode.yaml
 - tools/oracle/cases/helpers/token-count/sample-ties-even.yaml
@@ -128,6 +119,9 @@ deviations: []
 out_of_scope:
 - Image/document accounting and maximum-output adjustment are B197.
 - Monetary cost calculation is B068.
+- >-
+  Tool formatting and catalog-based model-name normalization are B259; engine/backend selection is B195, including
+  the undecided HF acquisition policy.
 pitfalls:
 - Rust byte length is not Python string length.
 - A named tool_choice contributes a different overhead from none or auto.
