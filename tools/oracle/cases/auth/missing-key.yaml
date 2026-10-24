@@ -1,0 +1,20 @@
+name: auth-missing-key
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {}
+  body:
+    model: test
+    messages: []
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: ""
+      why: LiteLLM returns an unstructured internal-server-error body for this generic exception

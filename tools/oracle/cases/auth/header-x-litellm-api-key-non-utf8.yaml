@@ -1,0 +1,22 @@
+name: auth-header-x-litellm-api-key-non-utf8
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    x-litellm-api-key: "invalid-\xFF"
+    Authorization: Bearer oracle-master
+  body:
+    model: test
+    messages: []
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own message

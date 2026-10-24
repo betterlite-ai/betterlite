@@ -1,0 +1,17 @@
+name: auth-health-readiness
+config: |
+  model_list: []
+env: {}
+request:
+  method: GET
+  path: /health/readiness
+  headers: {}
+  body: null
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /db
+      why: betterlite has no database and reports its own readiness state
