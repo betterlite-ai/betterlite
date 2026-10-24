@@ -88,6 +88,7 @@ pitfalls:
   - LiteLLM may add fields to the response that OpenAI did not send. Follow the oracle, and when a field is random per request, ignore its pointer in the case with a why.
   - The oracle under tools/ depends on reqwest directly, so the deny.toml entry is { crate = "reqwest", wrappers = ["betterlite-http", "betterlite-oracle"] }.
   - cargo fuzz init writes a fuzz/.gitignore that ignores corpus/. Drop that line, since the corpus is committed and replayed.
+review_level: standard
 budget:
   max_changed_lines: 800
   max_new_expects: 2

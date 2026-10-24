@@ -97,6 +97,10 @@
         "reviewer": {
           "$ref": "#/$defs/Role"
         },
+        "security_reviewer": {
+          "description": "Reviews tasks whose review_level is security.",
+          "$ref": "#/$defs/Role"
+        },
         "worker": {
           "$ref": "#/$defs/Role"
         }
@@ -105,6 +109,7 @@
       "required": [
         "worker",
         "reviewer",
+        "security_reviewer",
         "planner"
       ]
     },

@@ -98,6 +98,7 @@ pitfalls:
   - Run cargo insta review or cargo insta accept locally to write the snapshots, then commit them. The gate runs with INSTA_UPDATE=no.
   - cargo fuzz init writes a fuzz/.gitignore that ignores corpus/. Drop that line, since the corpus is committed and replayed.
   - The fuzz crate is its own workspace and runs on nightly. The replay test runs on the pinned stable toolchain and calls the loader directly, so it needs no fuzz dependency.
+review_level: standard
 budget:
   max_changed_lines: 800
   max_new_expects: 1

@@ -43,6 +43,7 @@ out_of_scope:
   - Cost tracking for embeddings.
 pitfalls:
   - Test names must contain embedding so the embeddings-tests filter selects them.
+review_level: standard
 budget:
   max_changed_lines: 500
   max_new_expects: 0

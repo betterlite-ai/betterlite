@@ -63,6 +63,10 @@
         "$ref": "#/$defs/Reference"
       }
     },
+    "review_level": {
+      "description": "security sends the change to the security_reviewer ladder in agents.yaml: auth, keys, secrets, budgets and spend. standard sends it to the reviewer ladder.",
+      "$ref": "#/$defs/ReviewLevel"
+    },
     "scope": {
       "$ref": "#/$defs/Scope"
     },
@@ -85,7 +89,8 @@
     "deviations",
     "out_of_scope",
     "pitfalls",
-    "budget"
+    "budget",
+    "review_level"
   ],
   "$defs": {
     "Budget": {
@@ -209,6 +214,13 @@
       "required": [
         "url",
         "why"
+      ]
+    },
+    "ReviewLevel": {
+      "type": "string",
+      "enum": [
+        "standard",
+        "security"
       ]
     },
     "Scope": {

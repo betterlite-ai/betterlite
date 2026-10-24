@@ -44,6 +44,10 @@ pub(crate) struct Task {
     #[schemars(description = "Known traps, each as one plain sentence.")]
     pub(crate) pitfalls: Vec<String>,
     pub(crate) budget: Budget,
+    #[schemars(
+        description = "security sends the change to the security_reviewer ladder in agents.yaml: auth, keys, secrets, budgets and spend. standard sends it to the reviewer ladder."
+    )]
+    pub(crate) review_level: ReviewLevel,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -118,4 +122,11 @@ pub(crate) struct Budget {
     pub(crate) max_changed_lines: usize,
     #[schemars(description = "New #[expect(...)] attributes the task may add.")]
     pub(crate) max_new_expects: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ReviewLevel {
+    Standard,
+    Security,
 }
