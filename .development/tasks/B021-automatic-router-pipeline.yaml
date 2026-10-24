@@ -11,7 +11,7 @@ description: 'Compose B362 registry selection and B366 ComplexityDecision with t
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router.py:
   Router.async_pre_routing_hook (L13796-L13980). Implement these behaviors through the typed Rust services
-  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports. It also owns the classifier audit logging in litellm/litellm_core_utils/classifier_logging.py, moved here from B190: classifier calls log their input and the masked originating request.'
 scope:
   paths:
   - crates/betterlite-router/src/automatic_router_pipeline.rs

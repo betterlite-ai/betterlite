@@ -1,0 +1,124 @@
+id: B258
+title: Image token headers and geometry
+description: >-
+  Implement token_counter.py 134-329: resize_image_high_res, calculate_tiles_needed, high_detail_image_token_upper_bound,
+  _unpack_ints, get_image_type, get_image_dimensions and calculate_img_tokens. Reuse B183 bounded data-URL bytes;
+  parse dimensions only for PNG/GIF/JPEG/WebP, preserving integer truncation, defaults and tile arithmetic without
+  decoding pixels. HEIC/unknown signatures use DEFAULT_IMAGE_WIDTH/HEIGHT; truncated recognized headers return typed
+  errors. Remote fetch behavior remains the open B009/B183 decision: exact helpers require local bytes and default
+  mode returns the pinned default count. No request-derived fetch is added. Compare direct image_tokens helpers
+  with Python using local bytes and explicit default mode. Budget 250 headers/arithmetic, 100 adapters, 280 tests,
+  80 fuzz/replay and 40 wiring (750 total). Add the image_token_header cargo-fuzz target, call the production parser,
+  and commit/replay malformed and boundary seeds. Write the behavior rstest functions b258_behavior_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations image_tokens in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed. Add format-boundary seeds to crates/betterlite-prompts/fuzz/corpus/media_data
+  and replay them through its production parser as well as the new image_token_header parser.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-tokenizer/Cargo.toml
+  - crates/betterlite-tokenizer/src/lib.rs
+  - crates/betterlite-tokenizer/src/error.rs
+  - crates/betterlite-tokenizer/src/image.rs
+  - crates/betterlite-tokenizer/src/image/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/image-token-geometry/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  - crates/betterlite-tokenizer/fuzz/**
+  - crates/betterlite-prompts/fuzz/corpus/media_data/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L134-L329
+  why: Header parsing, defaults and tile arithmetic.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+- text: The outside-byte parser has its target and newly committed production replay corpus.
+  proof:
+  - image-token-header-corpus
+- text: New header seeds extend and replay the shared media_data bytes corpus.
+  proof:
+  - shared-media-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/::b258_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'image_tokens' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: image-token-header-corpus
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/corpus/image_token_header)"
+      && test -f crates/betterlite-tokenizer/fuzz/fuzz_targets/image_token_header.rs && test -n "$(ls -A crates/betterlite-tokenizer/fuzz/corpus/image_token_header)"
+      && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(replays_the_image_token_header_corpus)'
+  - id: shared-media-corpus
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/media_data)"
+      && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/media_data)"
+      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_media_data_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/image-token-geometry/low-auto-high.yaml
+- tools/oracle/cases/helpers/image-token-geometry/default-image.yaml
+- tools/oracle/cases/helpers/image-token-geometry/png-gif-jpeg.yaml
+- tools/oracle/cases/helpers/image-token-geometry/webp-variants.yaml
+- tools/oracle/cases/helpers/image-token-geometry/unknown-header.yaml
+- tools/oracle/cases/helpers/image-token-geometry/resize-boundaries.yaml
+- tools/oracle/cases/helpers/image-token-geometry/heic-default-dimensions.yaml
+- tools/oracle/cases/helpers/image-token-geometry/truncated-png.yaml
+deviations:
+- what: Exact direct image counting requires local bytes; explicit default mode is available without fetching.
+  why: B009 and the bounded-inputs rule forbid fetching request-supplied media URLs.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L219-L248
+- what: >-
+    Open, waiting for Max: keep no remote image fetches with default-count request behavior, or share SSRF-checked
+    remote dimensions with the B009/B183 downloader.
+  why: >-
+    The public helper defaults use_default_image_token_count=false and may fetch; no new downloader is built pending
+    the shared decision.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L408-L443
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B197 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

@@ -1,0 +1,113 @@
+id: B179
+title: Shared message normalization and system placement
+description: >-
+  Finish shared message normalization with detect_first_expected_role, _counts_for_alternation, _insert_user_continue_message,
+  _insert_assistant_continue_message and get_completion_messages (common_utils.py 329-487), composing B218 content
+  projections, B219 fields/media/system helpers, B220 reasoning helpers and B221 system placement. Keep transforms
+  explicit per provider and source requests unchanged; B004 already owns the named provider_specific_fields passthrough.
+  This task does not call tool-schema helpers and has no B178 dependency. Budget 220 continuation/composition, 90
+  adapters, 300 behavior/corpus tests and 60 wiring (670 total). Write the behavior rstest functions b179_message_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations message_normalization in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-prompts/Cargo.toml
+  - crates/betterlite-prompts/src/lib.rs
+  - crates/betterlite-prompts/src/error.rs
+  - crates/betterlite-prompts/src/messages.rs
+  - crates/betterlite-prompts/src/messages/**
+  - crates/betterlite-prompts/src/system.rs
+  - crates/betterlite-prompts/src/system/**
+  - crates/betterlite-openai/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/messages/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L53-L487
+  why: Shared text/content/role conversion and continuation handling.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1699-L2143
+  why: Internal fields, prefix/system insertion and reasoning handling.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L2146-L2321
+  why: Media hoisting, tool references and consecutive system messages.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L2564-L2582
+  why: Text prompt conversion and rejection of token prompts on the chat path.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/mid_conversation_system.py#L98-L418
+  why: Leading and mid-turn system message placement.
+dod:
+- text: >-
+    Every listed normalization operation matches the helper oracle, including tool/reasoning and mid-conversation
+    system cases.
+  proof:
+  - oracle
+  - helper-python
+- text: Transforming one provider's copy does not modify another call's input, and list/output limits fail by name.
+  proof:
+  - message-tests
+- text: The extended wire variants are present in the chat parser replay corpus.
+  proof:
+  - chat-request-corpus
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: message-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b179_message_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: chat-request-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request)"
+      && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'message_normalization' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/messages/continuation.yaml
+- tools/oracle/cases/helpers/messages/first-role.yaml
+- tools/oracle/cases/helpers/messages/assistant-continuation.yaml
+- tools/oracle/cases/helpers/messages/empty-conversation.yaml
+- tools/oracle/cases/helpers/messages/continuation-composed-fields.yaml
+deviations: []
+out_of_scope:
+- Model-file ID rewriting and media decoding are B183.
+- Provider-specific tool exchange ordering is B180-B182.
+- >-
+  Content/role/text-prompt bridge is B218; internal fields, system insertion and media hoisting B219; reasoning
+  signatures B220; mid-conversation placement B221.
+- >-
+  Tool arguments and schemas B216/B217/B178; file/MIME/ID functions B183; common_utils.py function ownership is
+  split at the exact referenced ranges, not omitted.
+pitfalls:
+- A mid-conversation system message cannot simply be moved ahead of every earlier message.
+- Do not erase encrypted reasoning signatures when extracting readable reasoning.
+- Provider-specific transforms must be opt-in calls, not mutations performed by serde deserialization.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

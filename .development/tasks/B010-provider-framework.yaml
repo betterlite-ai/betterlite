@@ -1,0 +1,115 @@
+id: B010
+title: Closed provider framework and existing route integration
+description: >-
+  Finish the provider framework by composing the split helpers behind betterlite-provider's closed executable Provider
+  enum in src/provider.rs, initially OpenAi and AiohttpOpenAi. Give the framework concrete chat/stream/embedding
+  operation types, prepared request/result metadata and typed unsupported-operation errors, reusing existing betterlite-openai
+  models rather than creating a duplicate wire crate. Keep transformation, configured HTTP execution and response
+  decoding as explicit stages; the server resolves a deployment before passing its trusted inputs to the provider.
+  Provider-specific branches select their own prompt and parameter transforms, and unavailable adapters remain explicit
+  errors even when the catalog recognizes their names. Adapt B004-B006 server calls to this boundary, preserve B005's
+  cancellation and incremental SSE behavior, and expose typed bridge/iterator seams for B015 and future endpoints
+  without implementing unneeded endpoint bodies. Add framework oracle cases and regression tests; keep reqwest confined
+  to betterlite-http and update deny.toml only for the new crate edges.   B174 owns ProviderId; B010 owns executable
+  Provider, PreparedRequest in src/prepared.rs, OperationRequest/OperationResult in src/operation.rs and TransformRetry
+  in src/transform_retry.rs. AiohttpOpenAi is a separate variant: default base https://api.openai.com with /chat/completions
+  appended (no inserted /v1), Bearer {api_key} without OPENAI_API_KEY fallback, and only id/choices/created/model/object/system_fingerprint
+  copied into the response (no upstream usage). B010 wires B176 ControlOptions constructors from config/server.
+  Expose the provider transform-on-422 hook with explicit bounded attempt count; default is disabled and B026 Azure
+  AI is its first user. This hook is separate from B017 router retry. Budget 300 framework/variant, 130 server integration,
+  340 tests (770 total). Write the behavior rstest functions b010_provider_framework_tests_behavior in adjacent
+  tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate
+  names.
+scope:
+  paths:
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-provider/**
+  - crates/betterlite-server/**
+  - crates/betterlite-openai/**
+  - tools/oracle/cases/provider-framework/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L68-L467
+  why: Common provider transformation interface and its extension hooks.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/bridges/completion_transformation.py#L18-L55
+  why: Request/response/iterator bridge boundary.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L1-L220
+  why: Iterator responsibilities and end-of-stream state.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L1-L180
+  why: Shared provider response helpers.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L1-L83
+  why: Typed inputs shared by provider implementations.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aiohttp_openai/chat/transformation.py#L27-L81
+  why: Distinct endpoint, auth and response projection.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/chat/transformation.py#L316-L365
+  why: Provider-local transform-and-retry hook used by B026.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L450-L477
+  why: Bounded transformation attempts, distinct from router retries.
+dod:
+- text: Chat, streaming and embedding calls pass through the provider enum and retain all listed oracle behavior.
+  proof:
+  - oracle
+  - provider-framework-tests
+- text: >-
+    Unsupported executable adapters and call types fail before HTTP, and parallel calls do not share mutable request/settings
+    state.
+  proof:
+  - provider-framework-tests
+- text: Disconnects drop the upstream stream and decoding remains incremental under a slow provider.
+  proof:
+  - provider-framework-tests
+- text: Production dependency edges remain acyclic and only betterlite-http constructs outbound clients.
+  proof:
+  - clippy
+  - deny
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: provider-framework-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-provider -p betterlite-server --no-tests=fail -E 'test(/::b010_provider_framework_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+oracle_cases:
+- tools/oracle/cases/chat/openai-basic.yaml
+- tools/oracle/cases/chat/openai-tools.yaml
+- tools/oracle/cases/chat/openai-stream.yaml
+- tools/oracle/cases/chat/openai-stream-usage.yaml
+- tools/oracle/cases/embeddings/string-input.yaml
+- tools/oracle/cases/provider-framework/aiohttp-alias.yaml
+- tools/oracle/cases/provider-framework/aiohttp-no-key-fallback.yaml
+- tools/oracle/cases/provider-framework/aiohttp-drops-usage.yaml
+- tools/oracle/cases/provider-framework/aiohttp-explicit-base.yaml
+deviations: []
+out_of_scope:
+- >-
+  Router retry policy is B017; the provider-local transform-on-422 seam belongs here and B026 supplies Azure AI
+  behavior.
+- Python dynamic extension classes and synchronous wrappers are B157-B165.
+- Additional endpoints are represented only when their owning tasks implement their concrete types.
+- >-
+  base_llm.bridges chat-to-Responses conversion is B080; B010 defines its typed seam only, because Responses models
+  are not yet available.
+- >-
+  Base transformation tool/role/thinking helpers delegate to B175-B182; iterator SSE parsing is B005 and endpoint-specific
+  iterators B080-B099; no parallel parser is added.
+pitfalls:
+- >-
+  B004 puts wire models and the OpenAI adapter in the same crate, so betterlite-provider may depend on betterlite-openai
+  but never the reverse.
+- A catalog ProviderId is metadata and must not be used as proof that an executable adapter exists.
+- Do not buffer streams to make all operation result types look alike.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

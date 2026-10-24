@@ -1,0 +1,93 @@
+id: B256
+title: Bounded callback batch delivery
+description: >-
+  Implement CustomBatchLogger 16-93 and all batch_utils functions 15-160 in betterlite-logging/batch as an injected
+  typed primitive. Match retry status classification, 413 recursive splitting, oversized single-item behavior and
+  cancellation remainder. Batch size is 512, flush interval 5 seconds and max_queue_size 50000; failed events stay
+  for the next flush, and overflow drops oldest with warning/count. The caller owns the timer and flush task; this
+  part spawns no worker. Compare counts, final status, ordered delivery and delivered set, never elapsed timing.
+  Use synthetic callback/event IDs and injected transport in the Python and Rust batch_delivery adapters. Budget
+  270 logic/types, 120 adapters, 300 tests and 60 wiring (750 total). Write the behavior rstest functions b256_behavior_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations batch_delivery in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/lib.rs
+  - crates/betterlite-logging/src/error.rs
+  - crates/betterlite-logging/src/batch.rs
+  - crates/betterlite-logging/src/batch/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/batch-delivery/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L16-L93
+  why: Retention, batching and flush contract.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/batch_utils.py#L15-L160
+  why: Status classification, splitting and cancellation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L47-L48
+  why: Batch defaults.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b256_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'batch_delivery' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/batch-delivery/retryable-status.yaml
+- tools/oracle/cases/helpers/batch-delivery/batch-413.yaml
+- tools/oracle/cases/helpers/batch-delivery/single-item-413.yaml
+- tools/oracle/cases/helpers/batch-delivery/cancellation-remainder.yaml
+- tools/oracle/cases/helpers/batch-delivery/failed-batch-retained.yaml
+- tools/oracle/cases/helpers/batch-delivery/oldest-overflow.yaml
+- tools/oracle/cases/helpers/batch-delivery/flush-order.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B191 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

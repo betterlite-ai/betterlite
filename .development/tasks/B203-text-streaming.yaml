@@ -1,0 +1,102 @@
+id: B203
+title: Streaming text completions and completion bridge
+description: >-
+  Extend B202 text completions with incremental SSE and the text/chat transformation bridge required by the provider
+  framework. Reuse B005's framing parser and B010's typed stream lifecycle, add only text-choice chunk decoding
+  and explicit bridge mapping, and preserve finish reasons, multi-choice indices, logprobs and usage. A chat request
+  routed to a text-completion deployment selects the bridge explicitly; ordinary chat and ordinary text-completion
+  routes retain their own result types. Add HTTP oracle cases for both request paths, usage/options and errors before
+  streaming starts; fuzz text_stream decoding with arbitrary read boundaries and replay its corpus. Add pause-controlled
+  timing and client-disconnect tests that prove incremental delivery and upstream cancellation without buffering
+  a whole completion.  Own the reverse direction too: /v1/completions on openai/gpt-4o or another installed chat
+  provider builds chat messages and converts chat responses to text with convert_chat_to_text_completion; streaming
+  uses TextCompletionStreamWrapper semantics. Native providers added later reuse this same direction. Match completion-to-chat
+  dispatch for ft:babbage-002, ft:davinci-002 and openai_text_completion_compatible_providers. Add the text-stream
+  variants to B014 and text-stream privacy/logging to B188/B252 seams. Budget 290 stream/bridges, 120 integration,
+  330 tests/fuzz (740 total). Write the behavior rstest functions b203_text_stream_tests_behavior in adjacent tests.rs
+  files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-openai/**
+  - crates/betterlite-provider/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/completions/**
+  - tools/oracle/cases/chat-text-bridge/**
+  - crates/betterlite-core/**
+  - crates/betterlite-logging/src/stream.rs
+  - crates/betterlite-logging/src/stream/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/handler.py#L216-L321
+  why: Text streaming and wrapper selection.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/transformation.py#L81-L120
+  why: Explicit completion-to-chat response transformation.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/completion/transformation.py#L19-L76
+  why: Text endpoint transformation boundary.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5881-L5888
+  why: Text-completion provider branch.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1771-L1852
+  why: _complete_text_completion_openai.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L470-L516
+  why: Chat response to text completion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7325-L7402
+  why: Chat stream to text stream wrapper.
+dod:
+- text: Text streams, usage, multi-choice/logprob chunks and explicit chat/text bridge calls match listed HTTP cases.
+  proof:
+  - oracle
+- text: >-
+    A chunk reaches the client before the next provider event, and disconnect cancels and closes upstream within
+    one second.
+  proof:
+  - text-stream-tests
+- text: >-
+    Text decoding reuses SSE framing and corpus replay covers arbitrary chunk boundaries, invalid UTF-8 and malformed
+    JSON.
+  proof:
+  - text-stream-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: text-stream-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/::b203_text_stream_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: text-stream-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/text_stream)"
+      && test -f crates/betterlite-openai/fuzz/fuzz_targets/text_stream.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/text_stream)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_text_stream_corpus)'
+oracle_cases:
+- tools/oracle/cases/completions/stream-basic.yaml
+- tools/oracle/cases/completions/stream-usage.yaml
+- tools/oracle/cases/completions/stream-multiple-choices.yaml
+- tools/oracle/cases/completions/stream-logprobs.yaml
+- tools/oracle/cases/completions/stream-upstream-500.yaml
+- tools/oracle/cases/chat-text-bridge/nonstream.yaml
+- tools/oracle/cases/chat-text-bridge/stream.yaml
+- tools/oracle/cases/completions/chat-deployment-nonstream.yaml
+- tools/oracle/cases/completions/chat-deployment-stream.yaml
+- tools/oracle/cases/completions/chat-deployment-usage.yaml
+- tools/oracle/cases/chat-text-bridge/fine-tuned-babbage.yaml
+- tools/oracle/cases/chat-text-bridge/fine-tuned-davinci.yaml
+deviations: []
+out_of_scope:
+- Retry/fallback behavior after a stream starts stays with B017-B018, matching B005's boundary.
+- Other provider text-completion APIs remain in their provider tasks.
+pitfalls:
+- Do not emit chat-shaped chunks on a completion route unless the oracle demonstrates that exact shape.
+- An SSE data event can span multiple network reads and UTF-8 codepoints.
+- Terminal usage and DONE must each be emitted only when the pinned stream mapping emits them.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

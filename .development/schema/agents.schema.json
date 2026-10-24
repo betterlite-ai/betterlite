@@ -56,13 +56,21 @@
         "review_by_other_vendor": {
           "description": "The reviewer always runs on a different vendor than the worker whose change it reads.",
           "type": "boolean"
+        },
+        "writable": {
+          "description": "Folders a worker may write besides its worktree, like the repository's .git folder and tool caches. {git_common_dir} and {home} expand.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false,
       "required": [
         "review_by_other_vendor",
         "max_review_rounds",
-        "max_hook_blocks"
+        "max_hook_blocks",
+        "writable"
       ]
     },
     "Role": {
@@ -149,7 +157,7 @@
       ]
     },
     "Runner": {
-      "description": "How to start one agent run. The prompt goes to stdin. Arguments may use {model}, {effort}, {worktree}, {schema}, {schema_text}, {output}, {instructions}, {git_common_dir} and {home}.",
+      "description": "How to start one agent run. The prompt goes to stdin. Arguments may use {model}, {effort}, {worktree}, {schema}, {schema_text}, {output}, {instructions}, {git_common_dir}, {home}, {writable_roots} (the policy's writable folders as a TOML array) and {sandbox_settings} (a Claude settings file that sandboxes Bash to the worktree and those folders).",
       "type": "object",
       "properties": {
         "args": {
