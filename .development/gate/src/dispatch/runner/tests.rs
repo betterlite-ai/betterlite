@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::dispatch::runner::{Invocation, expand};
+use crate::dispatch::runner::{Invocation, claude_answer, expand};
 use crate::spec::agents::{PLACEHOLDERS, Rung};
 
 #[test]
@@ -33,4 +33,28 @@ fn every_placeholder_gets_its_own_value() {
         let alone = expand(&format!("{{{name}}}"), &rung, &invocation, "t").unwrap();
         assert!(!alone.contains('{'), "{name} was not expanded");
     }
+}
+
+#[test]
+fn a_structured_answer_is_the_claude_answer() {
+    let text = r#"{"structured_output":{"task":"B171"},"result":"done"}"#;
+    assert_eq!(
+        claude_answer(text).unwrap().as_deref(),
+        Some(r#"{"task":"B171"}"#)
+    );
+}
+
+#[test]
+fn a_json_result_stands_in_when_the_structured_output_is_missing() {
+    let text = r#"{"result":"{\"task\":\"B171\",\"status\":\"done\"}","stop_reason":"tool_use"}"#;
+    assert_eq!(
+        claude_answer(text).unwrap().as_deref(),
+        Some(r#"{"task":"B171","status":"done"}"#)
+    );
+}
+
+#[test]
+fn a_prose_result_is_no_answer() {
+    let text = r#"{"result":"I could not finish."}"#;
+    assert_eq!(claude_answer(text).unwrap(), None);
 }

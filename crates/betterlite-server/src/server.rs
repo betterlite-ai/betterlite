@@ -45,6 +45,7 @@ pub async fn run(config: Config, host: &str, port: u16) -> Result<(), ServerErro
     let application = router(
         config.general_settings.master_key,
         Arc::clone(&shutting_down),
+        &config.model_list,
     );
     let mut connections = JoinSet::new();
     let connection_builder = configure_connection_builder();
