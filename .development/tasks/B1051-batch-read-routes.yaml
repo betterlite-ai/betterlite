@@ -1,95 +1,91 @@
 id: B1051
-title: Batch read routes
+title: Batch retrieval route
 description: >-
-  Install batch retrieve/list routes with managed ownership and source provider fallback. Reconcile provider state,
-  managed output IDs, cost finalization and quota refunds before returning a typed batch/list object; do not delete
-  completed records while cost polling still owns them.
+  Implement the complete retrieve_batch handler and its three GET aliases. List registration belongs to B1133.
+  Run B1021 validate_managed_id_requirement before decoding the model or preparing the request. B004's
+  common_processing_pre_call_logic uses route_type=aretrieve_batch. When a unified id contains a model id,
+  resolve it through B844 and call B1020 authorize_model_for_key before any credentials or provider request.
+  Fall back to the id itself if the catalog cannot resolve its model name.
 
 
-  The oracle has no litellm-enterprise. get_proxy_hook(managed_files) is absent: preserve each MIT caller's own
-  early return or exception, not a replacement enterprise hook. Retain MIT id codecs, model-embedded file routing,
-  storage-only operations and pre-existing-row readers. Enterprise-only creation/ownership/output-ID methods are
-  out of scope.
+  Without enterprise, managed_files is absent: B1112/B1041's database lookup returns (None,None), even for an
+  existing managed-object row. An executed-batch id consequently returns 404 invalid_request_error/null/"404".
+  The cached terminal-response shortcut is unreachable here. Do not simulate its hook or build automatic batch
+  accounting/refunds. For ordinary provider responses, update_batch_in_database is a no-op; after success hooks,
+  ensure_batch_response_managed_file_ids may still resolve existing input/output/error file mappings for a unified
+  batch id, but it cannot mint new managed file ids. The enterprise cost poller is inactive, so this handler does
+  not set litellm_metadata.batch_ignore_default_logging=true.
 
 
-  Implement crates/betterlite-server/src/api/batch_read_routes.rs, crates/betterlite-core/src/api/batch_read_routes.rs.
-  Use BatchReadRoutesInput and BatchReadRoutesResult with typed nested records; inject only the clock, repositories,
-  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
-  ambient environment or duplicate credential resolution.
+  Use betterlite-server::api::batch_read_routes for HTTP extraction and betterlite-core::api::batch_read_routes
+  for retrieval orchestration. B1087 bounds the addressed id; B1019 decodes it. B012 supplies success/failure hooks
+  and tracked request-status updates. The server owns and drains those updates instead of detaching tasks.
 
 
   Register exactly these routes in this task: GET /{provider}/v1/batches/{batch_id:path}; GET /v1/batches/{batch_id:path};
-  GET /batches/{batch_id:path}. Each alias is exercised through the booted proxy. Every route factory is mounted
-  once; a family composer mounts its child factories without re-registering their methods/paths.
+  GET /batches/{batch_id:path}. batch_id is a trailing path capture, so it may contain slashes. B086 mounts this
+  retrieval factory; it must not register these GET handlers again when composing cancellation and listing.
 
 
-  Route input projections: data.file_id (absent original_batch_id); data.litellm_call_id (absent '').
+  Start data with batch_id from the path; never initialize a file_id from an unrelated body projection.
+  A model-encoded id selects authorized model credentials, moves the credentials helper's file_id into batch_id,
+  adds model and model_info, and sets litellm_metadata.model_group only when absent. B1037 performs the SDK call;
+  B1019 encodes the returned batch id and each nonempty input_file_id/output_file_id/error_file_id with that model.
+  Otherwise, a unified id or enable_loadbalancing_on_batch_endpoints=true uses Router.aretrieve_batch (B162).
+  No router raises HTTPException 500 with source detail {error:"LLM Router not initialized. Ensure models added to proxy."}.
+  B2400 converts that to 500 internal_server_error/param=null/code="500".
 
 
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): endpoints.py:726 status_code=500, exception_detail=FastAPI detail object. Compare the actual
-  source status, error type, param and code; ignore only error wording except in message-extraction tests.
+  The fallback provider is truthy path provider, then custom-llm-provider header, then custom_llm_provider query,
+  then openai. There is no body source. Apply team credentials before B1112's unservable-fallback check. If no provider
+  was requested and data.api_key, litellm.api_key, litellm.openai_key and OPENAI_API_KEY are all absent/empty, return
+  404 invalid_request_error, param=null, code="404", source message "No batch found with id '<id>'.".
+  An explicit provider skips this preliminary 404. Error handling awaits the failure hook, logs the exception with
+  request_litellm_call_id and delegates to B2400; an existing ProxyException preserves its type/param/code.
 
 
-  Write adjacent tests.rs behavior functions batch_retrieve_managed, batch_provider_fallback, batch_output_file_rewrite,
-  terminal_cost_finalization, route_aliases, auth_missing, auth_invalid under api::batch_read_routes::tests. Each
-  named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
+  Implement the DoD's named tests under api::batch_read_routes::tests. Fixtures seed an ordinary key and explicit
+  model grants; auth tests keep a fixed test master key configured. On success, compare B004's x-litellm-call-id,
+  x-litellm-model-id, x-litellm-cache-key and x-litellm-model-api-base headers, including their omission/empty defaults
+  when _hidden_params lacks model_id/cache_key/api_base. Error tests compare every error field except message wording.
 
 
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.enable_loadbalancing_on_batch_endpoints
-  defaults to None. No environment reads occur outside betterlite-config. Test api::batch_read_routes::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
+  betterlite-config::api::batch_read_routes::tests::loads_settings loads omitted/null enable_loadbalancing_on_batch_endpoints
+  as None, false as false and true as true; only true selects router fallback for a raw batch id. Seed B002's config_yaml
+  corpus with those values. require_managed_files is B1021's false-default setting, not a duplicate declaration here.
 
 
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
+  HTTP extraction and B1019 id decoding already bound and parse the input; retrieval adds orchestration, not a new decoder.
 
 
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
+  Run each batch fixture through the two HTTP servers and the same mock provider. B1139 isolates the seeded
+  managed rows and virtual keys. Match status, typed error fields, selected response headers and provider captures;
+  native orchestration tests also assert hook/write order. Every Python dependency is the MIT checkout without enterprise.
 
 
-  Callable ownership: litellm/proxy/batches_endpoints/endpoints.py: retrieve_batch (L542-L829). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+  Own retrieve_batch L542-L829, with decorators beginning at L527. Its terminal-cache branch remains documented
+  out of scope because it requires the absent enterprise managed_files hook; the function itself has one owner.
 
 
   Sizing: 238 owned nonblank/non-comment/non-docstring Python lines (249 nonblank/non-comment physical lines, including
   signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 258 implementation,
-  82 behavior tests, 84 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  38 wiring; 495 total within the 500-line cap. The estimate includes tests and adapters, not just production code.
+  140 behavior tests, 210 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
+  38 wiring; 679 total within the 700-line cap. The estimate includes tests and adapters, not just production code.
 
 
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1017 (Managed resource access), B1037
-  (Batch provider read), B1040 (Batch cost finalize), B1041 (Batch managed records), B1043 (Batch enqueued refund),
-  B1087 (Api boundaries), B1112 (Batch route support), B1129 (Batch provider list), B1100 (Shared request body decoding),
-  B1133 (Batch list route), B732 (Typed authentication principals and grant resolution), B855 (Authenticated request
-  admission and budget handoff), B756 (Authentication header selection and mode dispatch), B1019 (File routing ids),
-  B1021 (File upload options), B1048 (Executed batch input), B1020 (File credentials), B003 (HTTP server, health
-  routes and master key auth), B1139 (Stateful HTTP oracle scenarios), B856 (Management oracle namespaces and Postgres
-  test fixture), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Direct service owners are B004/B012 for processing/hooks, B844 for resolved model names, B1037 for provider retrieval,
+  B162 for Router.aretrieve_batch, B1019-B1021 for ids/credentials/managed requirements, B1041/B1112 for MIT batch support,
+  B1048 for batch_error and B2400 for provider-hint accessors/error handling. B732/B855/B756 provide authenticated
+  admission; B003/B002/B1087 provide HTTP/config/limits and B1139/B856 supply isolated HTTP fixtures.
 
 
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
+  A provider response passes through the success hook before existing file-id normalization, then the tracked
+  success-status update is submitted and custom headers are attached. A hook exception enters the failure path;
+  do not mark that call successful or return the pre-hook body. B012 owns callback execution and its own failures.
 
 
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
+  Errors before common_processing_pre_call_logic may have no call id; request_litellm_call_id returns None in that
+  case and B2400 adds no x-litellm-call-id header. Later failures retain the id established by common processing.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -120,53 +116,81 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L395-L395
-  why: Setting litellm_settings.enable_loadbalancing_on_batch_endpoints and its pinned default/precedence.
+  why: The load-balancing flag defaults to None and the route tests identity with True before choosing the router.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L527-L831
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Own retrieve_batch and all three GET aliases, with managed-id validation before model authorization and provider fallback.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
+  why: Batch failures preserve existing ProxyException fields and serialize their HTTP status as error.code.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+  why: The batch catch block reaches this error serializer after B2400 conversion; router-missing does not return a raw detail object.
 dod:
-- text: 'batch retrieve managed: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    executed_batch_unavailable GETs the base64 unified id for litellm_proxy;model_id:deploy_a;llm_batch_id:litellm_batch_missing
+    with deploy_a allowed and require_managed_files=false. The absent managed hook yields 404 invalid_request_error,
+    param=null, code="404", no upstream request and no database mutation, even if a matching managed-object row was seeded.
   proof:
-  - case-batch-retrieve-managed
+  - case-executed-batch-unavailable
   - oracle
-- text: 'batch provider fallback: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    batch_provider_fallback sends GET /openai/v1/batches/batch_a with header custom-llm-provider=azure and query
+    custom_llm_provider=bedrock; OpenAI receives batch_a and the mock 200 object=batch/status=in_progress returns.
+    Without a path provider, header=openai beats query=azure; without a header, query=openai beats JSON body
+    custom_llm_provider=azure. With all sources absent and an OpenAI key configured, openai is selected. Body-only
+    provider=azure is ignored. Provider requests use team credentials when B1020 resolves them.
   proof:
   - case-batch-provider-fallback
   - oracle
-- text: 'batch output file rewrite: the named production behavior test asserts the result and effects described
-    above.'
+- text: >-
+    batch_output_file_rewrite retrieves batch_bGl0ZWxsbTpiYXRjaF9hO21vZGVsLGJhdGNoLW1vZGVs for authorized batch-model.
+    Upstream receives batch_a with that model's credentials. A mock 200 with id=batch_a, input_file_id=file-in,
+    output_file_id=file-out and error_file_id=file-err returns the same model-encoded batch id and file- prefixed
+    unpadded base64url encodings of litellm:file-in;model,batch-model, litellm:file-out;model,batch-model and
+    litellm:file-err;model,batch-model respectively. Empty/null file ids remain empty/null.
   proof:
   - case-batch-output-file-rewrite
   - oracle
-- text: 'terminal cost finalization: the named production behavior test asserts the result and effects described
-    above.'
+- text: >-
+    managed_rows_do_not_shortcut_provider seeds a completed managed-object row for a non-executed unified batch.
+    With require_managed_files=false and deploy_a authorized, retrieval still calls the mock and returns its 200
+    status=in_progress. The row is unchanged, no cost-finalization/refund hook runs, and batch_ignore_default_logging
+    is not set. Pre-existing file mappings may replace input/output/error ids after the provider result; absent
+    mappings leave raw ids unchanged and create no managed-file rows.
   proof:
-  - case-terminal-cost-finalization
+  - case-managed-rows-no-shortcut
   - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+- text: route_aliases retrieves batch_a through /batches/batch_a, /v1/batches/batch_a and /openai/v1/batches/batch_a; each returns the mock 200 batch object with x-litellm-call-id.
   proof:
   - case-route-aliases
   - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
+- text: auth_missing omits authorization from GET /v1/batches/batch_a with a test master key configured; it returns 401 auth_error/param="None"/code="401" and makes no provider call.
   proof:
   - case-auth-missing
   - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
+- text: auth_invalid sends Bearer sk-invalid to that protected route; it returns 401 auth_error/param="None"/code="401" before provider selection.
   proof:
   - case-auth-invalid
   - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
+- text: loads_settings accepts omitted, null, false and true enable_loadbalancing_on_batch_endpoints values and the matching config corpus replays.
   proof:
   - config-tests
   - config-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+- text: Every batch retrieval fixture is newly added and the complete server/core/config tests run with the HTTP oracle.
   proof:
   - new-oracle-cases
+  - behavior-tests
   - oracle
+- text: >-
+    routing_failures uses a raw batch id with enable_loadbalancing_on_batch_endpoints=true and no router: 500
+    internal_server_error/null/"500". Separately omit the flag, all provider sources and every OpenAI key source:
+    GET /v1/batches/batch_a returns 404 invalid_request_error/null/"404". Both failures carry x-litellm-call-id and call no provider.
+  proof: [case-routing-failures, oracle]
+- text: >-
+    managed_requirement_precedes_model grants only model other, while the unified id addresses deploy_a.
+    With require_managed_files=true, the absent ownership hook returns 500 internal_server_error/null/"500"
+    before the model denial. A raw batch_a instead returns 400 internal_server_error/null/"400". With the requirement
+    false, the unified id reaches model authorization and returns 403 key_model_access_denied/param=model/code="403".
+    None of these cases resolves provider credentials or sends upstream traffic.
+  proof: [case-managed-requirement, oracle]
 checks:
   optional:
   - mutants
@@ -175,18 +199,24 @@ checks:
     why: the production domain behavior is absent in the scoped crates or only corpus replay exists
     run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail
       -E 'test(/^api::batch_read_routes::/) - test(/::replays_corpus$/)'
-  - id: case-batch-retrieve-managed
-    why: the batch-retrieve-managed behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_read_routes::tests::batch_retrieve_managed($|::)/)'
+  - id: case-executed-batch-unavailable
+    why: an executed id without the managed hook reaches a provider or a fabricated batch record
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_read_routes::tests::executed_batch_unavailable($|::)/)'
   - id: case-batch-provider-fallback
     why: the batch-provider-fallback behavior or its assertions are absent
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_read_routes::tests::batch_provider_fallback($|::)/)'
   - id: case-batch-output-file-rewrite
     why: the batch-output-file-rewrite behavior or its assertions are absent
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_read_routes::tests::batch_output_file_rewrite($|::)/)'
-  - id: case-terminal-cost-finalization
-    why: the terminal-cost-finalization behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_read_routes::tests::terminal_cost_finalization($|::)/)'
+  - id: case-managed-rows-no-shortcut
+    why: a managed-object row activates an enterprise-only shortcut
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_read_routes::tests::managed_rows_do_not_shortcut_provider($|::)/)'
+  - id: case-routing-failures
+    why: missing router and unservable OpenAI fallback use the same error projection
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_read_routes::tests::routing_failures($|::)/)'
+  - id: case-managed-requirement
+    why: model authorization runs before the required managed-id validation
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_read_routes::tests::managed_requirement_precedes_model($|::)/)'
   - id: case-route-aliases
     why: the route-aliases behavior or its assertions are absent
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_read_routes::tests::route_aliases($|::)/)'
@@ -207,14 +237,19 @@ checks:
     why: no new domain case exists on this branch
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/batch-read-routes)"
 oracle_cases:
-- tools/oracle/cases/api/batch-read-routes/batch-retrieve-managed.yaml
+- tools/oracle/cases/api/batch-read-routes/executed-batch-unavailable.yaml
 - tools/oracle/cases/api/batch-read-routes/batch-provider-fallback.yaml
 - tools/oracle/cases/api/batch-read-routes/batch-output-file-rewrite.yaml
-- tools/oracle/cases/api/batch-read-routes/terminal-cost-finalization.yaml
+- tools/oracle/cases/api/batch-read-routes/managed-rows-do-not-shortcut-provider.yaml
+- tools/oracle/cases/api/batch-read-routes/routing-failures.yaml
+- tools/oracle/cases/api/batch-read-routes/managed-requirement-precedes-model.yaml
 - tools/oracle/cases/api/batch-read-routes/route-aliases.yaml
 - tools/oracle/cases/api/batch-read-routes/auth-missing.yaml
 - tools/oracle/cases/api/batch-read-routes/auth-invalid.yaml
-deviations: []
+deviations:
+- what: Managed-file ownership and executed-batch retrieval remain unavailable; required managed ownership returns 500 internal_server_error/null/"500", and executed batch retrieval with that requirement off returns 404 invalid_request_error/null/"404".
+  why: Pending Max's managed-files/batches decision, retain the open-source no-enterprise behavior rather than recreate the proprietary hook.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1324-L1351
 out_of_scope:
 - 'litellm/proxy/batches_endpoints/endpoints.py: B1112 owns _request_tags L82-L86, _litellm_executed_batch_runner
   L89-L105, _batch_from_database L108-L131, _raise_when_input_file_must_be_managed L134-L141, _litellm_metadata_of
@@ -223,14 +258,13 @@ out_of_scope:
 - 'litellm/proxy/batches_endpoints/endpoints.py: B1050 owns create_batch L233-L524.'
 - 'litellm/proxy/batches_endpoints/endpoints.py: B1133 owns list_batches L847-L1014.'
 - 'litellm/proxy/batches_endpoints/endpoints.py: B086 owns cancel_batch L1032-L1256.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- The cached terminal response path requires the enterprise managed_files hook; B1041 documents the MIT no-hook early return.
+- B1037 owns provider HTTP execution; B162 owns Router.aretrieve_batch, and B1040/B1043 own cost finalization/refund helpers unused by this MIT route path.
 pitfalls:
-- endpoints.py:679 emits the diagnostic 'Batch %s is in non-terminal state %s, syncing with provider'; retain its
-  level and fallback instead of turning it into a hard error.
-- 'endpoints.py:720 emits the diagnostic ''Retrieved batch using model: %s, original_id: %s''; retain its level
-  and fallback instead of turning it into a hard error.'
+- A GET body custom_llm_provider is not a fallback source; only path, header and query select the provider here.
+- An existing managed-object row alone cannot activate terminal retrieval without managed_files.
+- prepare_data_with_credentials writes file_id; retrieve_batch must move it to batch_id before calling the SDK.
 review_level: security
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 700
   max_new_expects: 0

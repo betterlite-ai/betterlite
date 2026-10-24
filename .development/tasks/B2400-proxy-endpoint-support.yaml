@@ -1,0 +1,155 @@
+id: B2400
+title: Shared endpoint provider hints and exception handling
+description: >-
+  Implement get_custom_llm_provider_from_request_headers, get_custom_llm_provider_from_request_query,
+  get_custom_llm_provider_from_request_body, handle_exception_on_proxy and
+  _recreate_writer_on_read_only_transaction in betterlite-server::api::proxy_endpoint_support.
+  The provider header is custom-llm-provider; query/body use custom_llm_provider. Accessors return
+  their individual optional value, including empty strings. Routes retain responsibility for truthy
+  path/header/query/body/default precedence. B1100 supplies cached body decoding and its errors.
+
+  Also own is_known_model (utils.py:8260-8274) and ProxyLogging._arelease_max_parallel_requests_on_disconnect
+  (4134-4156). The first returns false for an absent model/router and otherwise tests exact membership in
+  B844's get_model_names result; it does not resolve aliases or provider prefixes. The second obtains the
+  parallel_request_limiter hook and awaits B072's v3 disconnect release only when that hook is the v3 limiter.
+  A missing or older hook is a no-op. Keep this small adapter below B1125 so disconnect cleanup has one owner.
+
+  Log the exception before using B872's read-only-transaction classifier. With a database, enqueue
+  recovery with reason=postgres_read_only_transaction without awaiting recovery. Use an injected
+  recovery-submission interface backed by the server's tracked work queue; shutdown joins its work.
+  B124 owns PrismaClient.recreate_read_only_writer and reconnect execution. A missing database is a no-op.
+
+  HTTPException becomes internal_server_error at its original status, with B003's normalized nullable
+  param. Existing ProxyException retains its fields and headers; a supplied x-litellm-call-id fills only
+  an absent header. Other exceptions use status_code or 500, internal_server_error, normalized param,
+  and B121's strip_bug_report_notice for the message. B121 also owns should_report_bug,
+  build_proxy_bug_report and bug_report_notice, including LITELLM_DISABLE_BUG_REPORT_LINK; inject its
+  diagnostic service. ProxyException serializes code as a string. No request credentials enter logs.
+
+  Register HelperCall::ProxyEndpointSupport and Python proxy_endpoint_support. The helper adapters
+  compare pure projections from decoded records and exception values; they never call FastAPI handlers.
+  Body-read caching and recovery scheduling have native integration tests. Route owners exercise the
+  resulting HTTP behavior. No byte decoder is added. The owned spans contain 92 nonblank/non-comment
+  Python lines including docstrings; allow 145 implementation, 175 tests, 100 adapters, 90 fixtures and
+  30 wiring lines, 540 total.
+scope:
+  paths:
+  - crates/betterlite-server/src/api/proxy_endpoint_support.rs
+  - crates/betterlite-server/src/api/proxy_endpoint_support/**
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/proxy_endpoint_support.rs
+  - tools/oracle/src/helpers/proxy_endpoint_support/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/proxy_endpoint_support.py
+  - tools/oracle/cases/helpers/proxy-endpoint-support/**
+  - tools/oracle/fuzz/corpus/helper_case/proxy-endpoint-support-*
+  - tools/oracle/Cargo.toml
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L52-L81
+  why: Own the three provider accessors; header spelling differs from the query/body key and precedence belongs to callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8199-L8237
+  why: Own exception conversion and recovery submission, including HTTPException's internal_server_error type.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_error_payload.py#L55-L83
+  why: B003 normalizes param and adds call ids without overwriting an existing header.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8260-L8274
+  why: File-upload load balancing asks this exact-name predicate, not a general model resolver.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4134-L4156
+  why: Realtime disconnect cleanup awaits only the v3 limiter hook; absent or differently typed hooks do nothing.
+dod:
+- text: >-
+    provider_hint_sources returns null for absent keys and "" for empty strings. Header custom-llm-provider=azure,
+    query custom_llm_provider=openai and body custom_llm_provider=bedrock remain independent results. Uppercase
+    CUSTOM-LLM-PROVIDER matches azure; a custom_llm_provider header does not match. The body accessor does not
+    validate its field type: null remains null and 123 remains 123 for the caller's subsequent validation.
+  proof: [provider-hints, oracle, helper-python]
+- text: >-
+    proxy_error_records maps HTTPException(404,detail="missing") to 404/internal_server_error/param=null/code="404";
+    a generic failure without status to 500/internal_server_error/null/"500"; status_code=429,param="file" to
+    429/internal_server_error/"file"/"429". Param="None" becomes null on new records. An existing ProxyException
+    with type=invalid_request_error,param="purpose",code=400 retains these fields and code="400".
+  proof: [exception-records, oracle, helper-python]
+- text: >-
+    call_id_precedence preserves an existing x-litellm-call-id=original when supplied new; inserts new if absent;
+    and adds no header when no call id is supplied. Other headers survive all three cases.
+  proof: [call-id, oracle, helper-python]
+- text: >-
+    recovery_and_body_reuse submits one postgres_read_only_transaction recovery for a classified read-only failure
+    with a database, zero without a database or for another failure. Mapping completes before recovery; shutdown
+    joins recovery work. Reading an already decoded custom_llm_provider=openai body causes no second byte read;
+    malformed JSON preserves B1100's decoding error.
+  proof: [integration-tests]
+- text: >-
+    diagnostics_order records exception logging before classification and recovery before conversion. Only the generic
+    exception branch asks the bug-report service; false skips its notice, true logs it at error level before message
+    stripping. Existing ProxyException bypasses that service and preserves its message.
+  proof: [diagnostics, oracle, helper-python]
+- text: A new proxy_endpoint_support seed executes both adapters and replays through B171's helper decoder.
+  proof: [helper-corpus, oracle, helper-python]
+- text: >-
+    known_upload_model receives catalog [model_a,model_a] and returns true for model_a, false for Model_A,
+    openai/model_a and absent model. An absent router returns false even for model_a. Each non-null lookup
+    calls the catalog once; the pure helper projection compares the returned boolean from the same catalog.
+  proof: [known-model, oracle, helper-python]
+- text: >-
+    disconnect_limiter_hook with a v3 parallel_request_limiter and principal key_a awaits one release(key_a)
+    before completing. Missing/v2 hooks cause zero releases. A failing release propagates the failure; this
+    adapter does not retry and cannot double-decrement the acquisition. Native tests use a controlled pending
+    release future, not sleeps or helper calls that perform I/O.
+  proof: [limiter-release]
+checks:
+  optional: []
+  commands:
+  - id: provider-hints
+    why: source spelling, absence or empty values changed
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::provider_hint_sources($|::)/)'
+  - id: exception-records
+    why: exception classes no longer select the prescribed error fields
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::proxy_error_records($|::)/)'
+  - id: call-id
+    why: forwarding an exception overwrites its existing call id
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::call_id_precedence($|::)/)'
+  - id: integration-tests
+    why: recovery detaches from shutdown or provider hints consume the body twice
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::recovery_and_body_reuse($|::)/)'
+  - id: diagnostics
+    why: generic and existing proxy exceptions take the same diagnostic path
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::diagnostics_order($|::)/)'
+  - id: helper-python
+    why: the endpoint-support adapter is absent or untyped
+    run: test -f tools/oracle/helpers/proxy_endpoint_support.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: known-model
+    why: upload routing resolves prefixes instead of checking the catalog names
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::known_upload_model($|::)/)'
+  - id: limiter-release
+    why: realtime disconnect cleanup releases an unsupported limiter or returns before release completes
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::disconnect_limiter_hook($|::)/)'
+  - id: helper-corpus
+    why: the new helper tag has no branch-added seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/proxy-endpoint-support-*)" && grep -qE '^[[:space:]]+proxy_endpoint_support:' tools/oracle/fuzz/corpus/helper_case/proxy-endpoint-support-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/proxy-endpoint-support/provider-hint-sources.yaml
+- tools/oracle/cases/helpers/proxy-endpoint-support/proxy-error-records.yaml
+- tools/oracle/cases/helpers/proxy-endpoint-support/call-id-precedence.yaml
+- tools/oracle/cases/helpers/proxy-endpoint-support/diagnostics-order.yaml
+- tools/oracle/cases/helpers/proxy-endpoint-support/known-upload-model.yaml
+deviations: []
+out_of_scope:
+- remove_sensitive_info_from_deployment in openai_endpoint_utils.py remains B124; these API routes do not call it.
+- Other utils.py functions retain existing owners; B124 owns the remaining proxy lifecycle and PrismaClient.recreate_read_only_writer.
+- B121 owns bug-report rendering and configuration; this task uses its diagnostic interface.
+- B072 owns the limiter's accounting and release implementation; this task owns only ProxyLogging's hook selection and await.
+- B087, B086, B1032-B1034, B1050-B1051, B1133 and B1075 own their route-specific provider precedence.
+pitfalls:
+- HTTPException(404) becomes internal_server_error here; the Responses request processor uses a different mapper.
+- An empty provider field is returned unchanged; only the calling route decides whether to fall through.
+- Reusing ProxyException preserves its original x-litellm-call-id even when another id is supplied.
+review_level: security
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0

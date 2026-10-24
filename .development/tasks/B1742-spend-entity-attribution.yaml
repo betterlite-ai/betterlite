@@ -1,0 +1,124 @@
+id: B1742
+title: Attribute queued balances to members, tags and the served access groups
+description: >-
+  Add betterlite-db::spend_attribution for _update_team_db, _update_org_db,
+  _update_project_db, _update_agent_db, _update_tag_db and _update_model_access_group_db,
+  plus _org_member_transaction_key, _served_model_access_groups and
+  debitable_model_access_groups. They enqueue B1733 records, never write database rows
+  directly. Missing database attachment or a None entity id suppresses that entity;
+  an empty string is still enqueued and left to the queue's identity rules. Team cost is
+  queued before its optional membership cost; failure in the membership enqueue is logged
+  and swallowed, whereas failure in the team enqueue is logged and rethrown. Preserve
+  team_id::<team>::user_id::<user> without escaping. Organization membership uses
+  organization_id::<percent-encoded-org>::user_id::<percent-encoded-user>, with quote's
+  safe='' semantics. Org/project/agent/tag enqueue failures log and propagate.
+  Tags accept the pinned JSON string or an already parsed list. Malformed JSON becomes
+  an empty collection. A decoded object iterates keys and a decoded string iterates its
+  characters; a noniterable truthy scalar fails through the ordinary logged-error path.
+  Retain only nonempty strings and retain duplicates, charging each occurrence. Define
+  decode_enqueue_tags(bytes) using the bounded B192 JSON reader, with native fuzz replay
+  for objects, strings, numbers, invalid UTF-8 and oversized inputs.
+  Access-group debit starts with B1715's ordered coercion of auth-attributed groups.
+  Empty attribution returns immediately. Resolve the actual served model id through
+  B844's catalog: missing router/id/deployment/model_info keeps the attributed set;
+  known model_info with absent or non-list access_groups narrows to empty. Lists/tuples
+  contribute string members and intersection preserves the original attribution order.
+  A fallback can remove a group but cannot add one. Each surviving group receives the
+  full cost; exceptions in this helper warn through B1708 and do not interrupt siblings.
+  The same pure selector is public for B069 reservation settlement. Test selection with
+  an immutable deployment fixture and queue failures with an owned bounded sink. These
+  functions account for 259 source lines. Also extract TurnCacheFacts, turn_cache_facts,
+  _write_ttl_seconds, _turn_time_utc, bounded_session_id and build_autorouter_turn_transaction
+  from B344 into betterlite-db::autorouter_facts, adding roughly 130 source lines below
+  both spend writing and routing assembly. Require top-level status success, no internal
+  origin, nonempty routing decision/router/session/model and either key or user identity.
+  Router name falls back to model_group; naive turn times remain naive and aware times
+  convert to UTC-naive. Session ids over 256 characters become sha256: plus the UTF-8
+  digest; use the existing workspace sha2 dependency. Preserve input order elsewhere.
+  B1693 supplies cache-read/creation evidence, classifier cost and recorded estimated
+  savings. Nonempty usage means telemetry covered; absent telemetry conservatively means
+  cache touched. Prefer a truthy one-hour creation split to five-minute, then positive
+  unsplit creation uses 300 seconds. Add classifier cost once to actual spend and retain
+  tier/baseline only when nonempty strings. Estimated-turn counters are set by presence
+  of an estimated savings amount, including zero. Build B1697's existing turn record.
+  Fuzz decode_turn_time(bytes) and compare identity/cache/turn projections through the
+  spend_entities helper with parsed fixtures. Budget 800 for this combined attribution
+  layer. No settings or HTTP routes are introduced.
+scope:
+  paths:
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/spend_attribution.rs
+    - crates/betterlite-db/src/spend_attribution/**
+    - crates/betterlite-db/src/autorouter_facts.rs
+    - crates/betterlite-db/src/autorouter_facts/**
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/enqueue_tags.rs
+    - crates/betterlite-db/fuzz/corpus/enqueue_tags/**
+    - crates/betterlite-db/fuzz/fuzz_targets/turn_time.rs
+    - crates/betterlite-db/fuzz/corpus/turn_time/**
+    - tools/oracle/src/helpers/{mod.rs,spend_entities.rs}
+    - tools/oracle/helpers/{dispatch.py,spend_entities.py}
+    - tools/oracle/cases/helpers/spend-entities/**
+    - tools/oracle/fuzz/corpus/helper_case/spend-entities-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L140-L283
+    why: Turn cache facts, bounded session identity and successful-turn projection extracted from B344.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L101-L102
+    why: Organization membership identity encoding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L408-L451
+    why: Served-deployment intersection and unknown-deployment fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1232-L1471
+    why: Entity enqueue order, tag iteration and exception boundaries.
+dod:
+  - text: Entity queues retain membership ordering, tag multiplicity and their distinct error propagation.
+    proof: [entity-enqueue-tests, enqueue-tags-corpus, oracle, spend-entities-python, spend-entities-corpus]
+  - text: Served-model access groups only narrow the auth-attributed ordered set.
+    proof: [access-group-debit-tests, oracle, spend-entities-python, spend-entities-corpus]
+  - text: Auto-router turns retain classifier cost, conservative cache evidence and bounded session identity without counting internal calls.
+    proof: [autorouter-fact-tests, turn-time-corpus, oracle, spend-entities-python, spend-entities-corpus]
+checks:
+  optional: []
+  commands:
+    - id: autorouter-fact-tests
+      why: Turn identities, cache facts or internal-call exclusions are missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^autorouter_facts::/) - test(replays_the_turn_time_corpus)'
+    - id: turn-time-corpus
+      why: Turn timestamp normalization lacks production decoder replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/turn_time)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_turn_time_corpus)'
+    - id: entity-enqueue-tests
+      why: Member, tag, project and agent enqueue behavior is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_attribution::enqueue::/) - test(replays_the_enqueue_tags_corpus)'
+    - id: access-group-debit-tests
+      why: Fallback deployment intersections lack behavioral tests.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_attribution::access_groups::/)'
+    - id: enqueue-tags-corpus
+      why: Serialized tag iteration is not fuzzed and replayed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/enqueue_tags)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_enqueue_tags_corpus)'
+    - id: spend-entities-python
+      why: Pure identity and group adapters do not pass Python checks.
+      run: test -f tools/oracle/helpers/spend_entities.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: spend-entities-corpus
+      why: Entity helper operations have no common-parser seed.
+      run: grep -rlq 'spend_entities:' tools/oracle/fuzz/corpus/helper_case/spend-entities-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-entities/turn-cache-ttl-classifier-and-estimates.yaml
+  - tools/oracle/cases/helpers/spend-entities/turn-identity-internal-and-long-session.yaml
+  - tools/oracle/cases/helpers/spend-entities/org-delimiters-and-tag-multiplicity.yaml
+  - tools/oracle/cases/helpers/spend-entities/unknown-versus-empty-served-groups.yaml
+  - tools/oracle/cases/helpers/spend-entities/fallback-cannot-expand-attribution.yaml
+deviations: []
+out_of_scope:
+  - In autorouter_session_rollup.py B1697 owns record/SQL declarations and writers, B1746 owns retry/partition/drain functions, and B344 retains read constants and its repository/model integration.
+  - B070 owns writer construction, update_database, _batch_database_updates, _update_key_db and _update_user_db.
+  - B1743 owns daily-record builders, timing and baseline attribution; B1744 owns tool/model/auto-router enqueue methods and router injection.
+  - B1749 owns batch-row claim/log insertion helpers; B1745 owns entity SQL and cache invalidation, using B1746's retry classification and committed-table tracking.
+  - B1746 owns daily SQL commits and interrupted-commit state; B1747 owns memory flush and discovery drain; B1748 owns Redis flush and handler dispatch.
+pitfalls:
+  - Missing model_info and present model_info without access_groups have opposite effects on whether attributed groups survive.
+  - Team membership keys retain raw delimiters while organization membership keys percent-encode them.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

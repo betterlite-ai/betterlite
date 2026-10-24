@@ -4,48 +4,63 @@ description: >-
   Implement ordered multipart/form extraction, numeric field coercion, nested metadata extraction and bounded upload
   reads. Return FormParts with filenames, MIME and repeated fields intact until LiteLLM chooses the last plain value
   or a key[] list.
+  Numeric eligibility unwraps Required/NotRequired and optional annotations, but excludes bool, Literal, containers
+  and unions containing more than one non-null type. Coercion leaves unparseable strings and nonstrings unchanged.
+  Match Python scalar syntax, including surrounding whitespace, a leading plus, underscores, Unicode decimal digits
+  and float nan/inf. Carry non-finite values as explicit typed variants until the consumer chooses its wire format;
+  helper comparison projects them as nan, positive_infinity or negative_infinity rather than invalid JSON numbers.
+
+  check_file_size_under_limit always writes metadata.file_size_in_mb using bytes/(1024*1024), treating absent file.size
+  as zero. Consult B844 get_deployment_by_model_group_name only if a router exists and model belongs to router_model_names.
+  A missing deployment/limit does not apply a model limit; a lookup exception logs an error and also falls through.
+  A configured limit allows equality and rejects only greater size. Preserve existing metadata keys.
+
+  get_request_body dispatches only POST: JSON uses B1100, form uses get_form_data, other media types raise ValueError
+  with source message "Unsupported content type: <content-type>"; every non-POST returns {} without reading bytes.
+  convert_upload_files_to_file_data wraps one upload in a one-element list. A list is treated as uploads only when
+  its first item has read; mixed lists therefore depend on the first item, not a scan for any upload.
+
+  Nested metadata defaults to prefix litellm_metadata[. Ignore other keys; skip UploadFile values with a warning.
+  Remove every occurrence of the prefix, strip all trailing ] characters, then split on ][. Empty first components
+  warn and drop. A deeper path encountered after a scalar parent warns and drops; a later scalar leaf overwrites
+  an earlier subtree silently. Preserve input order, intermediate empty components and non-string values.
 
 
-  Implement crates/betterlite-server/src/api/request_form.rs, crates/betterlite-core/src/api/request_form.rs. Use
-  RequestFormInput and RequestFormResult with typed nested records; inject only the clock, repositories, transports
-  and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce ambient
-  environment or duplicate credential resolution.
+  Put multipart decoding in betterlite-server::api::request_form and decoded-field coercion in
+  betterlite-core::api::request_form. FormParts keeps field order and bounded upload bytes; B1087 ApiLimits bounds
+  the body, headers and part count before allocation. Resolve model upload limits through the config/router interfaces.
 
 
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): http_parsing_utils.py:436 code=status.HTTP_400_BAD_REQUEST, type='bad_request', param='file';
-  http_parsing_utils.py:443 code=status.HTTP_400_BAD_REQUEST, type='bad_request', param='file'. Compare the actual
-  source status, error type, param and code; ignore only error wording except in message-extraction tests.
+  File-size errors carry HTTP 400, type=bad_request, param=file and serialized code="400". The source messages
+  distinguish "Tried setting max_file_size_mb for /audio/transcriptions" from "File size is too large";
+  betterlite uses its own wording while retaining those fields. The premium-only rejection is removed as decided below.
 
 
-  Write adjacent tests.rs behavior functions repeated_plain_last_wins, array_form_preserves_order, numeric_form_coercion,
-  nested_form_metadata, upload_size_unset under api::request_form::tests. Each named function drives production
-  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
-  replays_corpus.
+  The DoD names the tests in api::request_form::tests. Exercise multipart decoding in server tests and numeric/metadata
+  policy in core tests; keep replays_corpus separate so corpus-only coverage cannot satisfy behavior checks.
 
 
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): model_list[].litellm_params.max_file_size_mb
-  defaults to None; source premium gate is deliberately removed, source oversize 400 bad_request param file. No
-  environment reads occur outside betterlite-config. Test api::request_form::tests::loads_settings uses the production
-  Config loader and an injected environment map, with a named rstest case for every key above, explicit override,
-  unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent from the unsupported-key
-  report; a grep is not proof of support. Add new config_yaml seeds for these keys and replay B002's existing decoder
-  rather than introducing a second YAML parser.
+  In betterlite-config, loads_settings parses an omitted max_file_size_mb as None, explicit null as None and
+  model_list[].litellm_params.max_file_size_mb=1 as a one-MiB model limit. Assert the key is absent from the
+  unsupported-key report and that the loaded value reaches file-size checking. Add these three configurations
+  to B002's config_yaml corpus, using its production loader.
 
 
   The production external-byte decoder is betterlite-server::api::request_form::decode_request_form(bytes: &[u8],
-  limits: &ApiLimits), for Content-Type boundary plus bounded multipart/urlencoded bytes. Place its implementation
+  content_type: &[u8], limits: &ApiLimits), for Content-Type boundary plus bounded multipart/urlencoded bytes. Place its implementation
   in crates/betterlite-server/src/api/request_form.rs and call it from the actual boundary. The cargo-fuzz target
   crates/betterlite-server/fuzz/fuzz_targets/request_form.rs passes arbitrary bounded bytes to that exact decoder;
-  api::request_form::tests::replays_corpus replays newly committed seeds through the same function. Transform-only
+  api::request_form::tests::replays_corpus replays newly committed seeds through the same function. Fuzz inputs begin
+  with a two-byte big-endian header length, followed by exactly that many Content-Type bytes, then body bytes;
+  truncated headers are rejected by the harness before calling the decoder. Mutate the multipart boundary in both
+  locations independently, including quoted, missing and mismatched boundaries. Transform-only
   helpers reuse the already decoded records.
 
 
-  Register HelperCall::RequestForm in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {request_form: <typed input>}; operation is
-  only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and Python
-  invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered diagnostics/effects,
-  never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+  Register HelperCall::RequestForm in the Rust helper dispatcher and request_form in Python dispatch.py.
+  call: {request_form: ...} selects the case operation. Python calls the pinned parsing/coercion functions;
+  Rust calls the server/core modules. Upload fixtures expose bounded byte reads and ordered warnings for comparison.
+  HTTP authentication and route error mapping remain in the consuming image, audio and file route tasks.
 
 
   Callable ownership: litellm/proxy/common_utils/http_parsing_utils.py: _unqualified (L89-L94); litellm/proxy/common_utils/http_parsing_utils.py:
@@ -55,22 +70,18 @@ description: >-
   check_file_size_under_limit (L390-L450); litellm/proxy/common_utils/http_parsing_utils.py: get_form_data (L453-L467);
   litellm/proxy/common_utils/http_parsing_utils.py: convert_upload_files_to_file_data (L470-L512); litellm/proxy/common_utils/http_parsing_utils.py:
   get_request_body (L515-L527); litellm/proxy/common_utils/http_parsing_utils.py: extract_nested_form_metadata (L530-L615).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
+  All eleven functions are owned whole; the Rust annotation policy is a closed set of native numeric field descriptors.
 
 
   Sizing: 169 owned nonblank/non-comment/non-docstring Python lines (237 nonblank/non-comment physical lines, including
   signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 189 implementation,
-  94 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 33 config tests/seeds
-  and 38 wiring; 564 total within the 570-line cap. The estimate includes tests and adapters, not just production
+  160 behavior tests, 110 oracle fixtures, 100 Rust/Python adapters, 70 decoder fuzz/replay, 40 config tests/seeds
+  and 38 wiring; 707 total within the 730-line cap. The estimate includes tests and adapters, not just production
   code.
 
 
-  Direct inputs come from B003 (HTTP server, health routes and master key auth), B900 (Multipart oracle), B171 (Direct
-  helper oracle and URL path encoding), B1087 (Api boundaries), B1100 (Shared request body decoding), B002 (Load
-  LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  B003 supplies request/error types, B900 multipart fixtures, B171 helper transport, B1087 bounded input policy,
+  B1100 cached JSON/media-type handling, B844 model-group deployment lookup and B002 config loading.
 
 
   compatibility_deviations exercises the transcription upload-size differences below; ordinary helper parity uses
@@ -116,54 +127,87 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L390-L450
-  why: Setting model_list[].litellm_params.max_file_size_mb and its pinned default/precedence.
+  why: MiB metadata is recorded before lookup, the model must name a router group, and lookup errors bypass the model-specific limit.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L89-L159
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Own numeric annotation selection and coercion, including Python's accepted integer/float strings and unchanged invalid values.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L390-L617
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Own upload sizing, ordered repeated fields, file tuple conversion, method/media dispatch and bracket metadata conflict handling.
 dod:
-- text: 'repeated plain last wins: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    repeated_plain_last_wins decodes a form with model=first followed by model=last and returns model="last".
+    A single upload a.txt with bytes "abc" and MIME text/plain becomes [("a.txt","abc","text/plain")]. A list
+    beginning with an upload reads each entry in order; ["plain",upload] remains unchanged, while [upload,"plain"]
+    fails on the second entry's missing read method after reading the first. Empty lists stay empty.
   proof:
   - case-repeated-plain-last-wins
   - oracle
-- text: 'array form preserves order: the named production behavior test asserts the result and effects described
-    above.'
+  - helper-python
+- text: >-
+    array_form_preserves_order sends timestamp_granularities[]=word then timestamp_granularities[]=segment;
+    the result is timestamp_granularities=["word","segment"]. Plain x=leaf followed by x[]=child fails when
+    appending to a scalar, while x[]=child followed by x=leaf returns x="leaf".
   proof:
   - case-array-form-preserves-order
   - oracle
-- text: 'numeric form coercion: the named production behavior test asserts the result and effects described above.'
+  - helper-python
+- text: >-
+    numeric_form_coercion selects int, float and their optional/qualified forms, excluding bool, Literal[3], list[int]
+    and int|float. Int inputs " 7 ", "+3", "1_000" and "١٢" become 7, 3, 1000 and 12; "3.5", "nan", "inf"
+    stay strings. Float inputs " 7 ", "+3", "1_000", "1e2", "nan", "inf" and "-Infinity" become 7, 3, 1000,
+    100, NaN, positive infinity and negative infinity. "bad" and nonstring true are unchanged; unknown fields are untouched.
   proof:
   - case-numeric-form-coercion
   - oracle
-- text: 'nested form metadata: the named production behavior test asserts the result and effects described above.'
+  - helper-python
+- text: >-
+    nested_form_metadata maps litellm_metadata[a][b]=v to {a:{b:"v"}}. Ordered a=leaf then a/b=deep returns {a:"leaf"}
+    with a warning; reverse order returns {a:"leaf"} without warning. litellm_metadata[a]]] becomes a,
+    litellm_metadata[litellm_metadata[a]] also becomes a, and litellm_metadata[a][] creates {a:{"":"v"}}.
+    litellm_metadata[]=v and UploadFile metadata entries are dropped with warnings; other prefixes are ignored.
+    An explicit prefix metadata[ parses metadata[team]=t into {team:"t"}; empty input returns {}.
   proof:
   - case-nested-form-metadata
   - oracle
-- text: 'upload size unset: the named production behavior test asserts the result and effects described above.'
+  - helper-python
+- text: >-
+    upload_size_unset checks size=None and size=1048576 with no configured model limit: both return true and
+    metadata.file_size_in_mb is respectively 0 and 1. Existing metadata.team="t" survives. Router absent,
+    model outside router_model_names, deployment absent and limit=None skip model-limit enforcement. A deployment
+    lookup exception logs an error and returns true. These inputs remain below the native 16 MiB safety cap.
   proof:
   - case-upload-size-unset
   - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
+  - helper-python
+- text: >-
+    request_body_dispatch sends POST application/json with {"x":1}, POST application/x-www-form-urlencoded with
+    x=1, and POST multipart/form-data with boundary=test carrying x=1; results are {x:1}, {x:"1"}, {x:"1"}.
+    POST text/plain raises ValueError with source message "Unsupported content type: text/plain"; absent content-type
+    raises the same class with an empty suffix. GET, DELETE and PUT return {} even with JSON bytes present.
+  proof: [case-body-dispatch, oracle, helper-python]
+- text: loads_settings distinguishes omitted/null max_file_size_mb from a configured limit of 1 MiB and replays those configs.
   proof:
   - config-tests
   - config-corpus
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
+- text: decode_request_form receives both Content-Type bytes and body bytes from HTTP, fuzz and replay, including mismatched boundaries.
   proof:
   - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+- text: The request_form operation compares independent native and pinned coercion results and ordered upload reads.
   proof:
   - oracle
   - helper-python
   - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+- text: This branch adds the listed form scenarios; the complete server/core/config behavior suite runs alongside parity.
   proof:
   - new-oracle-cases
   - oracle
   - helper-python
   - helper-corpus
-- text: Shared transcription upload sizing applies the documented native limit and premium-gate differences.
+  - behavior-tests
+- text: >-
+    compatibility_deviations loads max_file_size_mb=1 and a matching router model: sizes 1048575 and 1048576 pass,
+    1048577 returns 400 bad_request/param=file/code="400". Open-source LiteLLM without premium rejects all three
+    with that same tuple and premium-related wording. With the model limit unset, 16777216 bytes pass and 16777217
+    return native 413 invalid_request_error/param=file/code=request_too_large; LiteLLM has no such default cap.
   proof:
   - deviation-tests
 checks:
@@ -196,6 +240,9 @@ checks:
     why: no newly added key-bearing config seed reaches the production loader
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/request-form-*)"
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: case-body-dispatch
+    why: non-POST bodies are read or unsupported POST media types are silently accepted
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_form::tests::request_body_dispatch($|::)/)'
   - id: parser-corpus
     why: the named production decoder has no fuzz target/new seed, or its replay fails
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/request_form)"
@@ -222,6 +269,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/request-form/numeric-form-coercion.yaml
 - tools/oracle/cases/helpers/request-form/nested-form-metadata.yaml
 - tools/oracle/cases/helpers/request-form/upload-size-unset.yaml
+- tools/oracle/cases/helpers/request-form/request-body-dispatch.yaml
 deviations:
 - what: 'Configured model_list[].litellm_params.max_file_size_mb applies to every transcription caller: within-limit
     uploads proceed, oversize returns 400 bad_request, param file, code 400. LiteLLM rejects even within-limit uploads
@@ -237,16 +285,12 @@ out_of_scope:
   L175-L280, is_opaque_audio_pass_through_request L283-L288, read_raw_json_body L291-L300, _safe_get_request_parsed_body
   L303-L309, get_client_requested_model L312-L316, _safe_get_request_query_params L319-L328, _safe_set_request_parsed_body
   L331-L340, rewrite_request_model L343-L358, _safe_get_request_headers L361-L387.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B082, B083 and B1032 own image, transcription and file-upload HTTP routing and authentication.
 pitfalls:
-- http_parsing_utils.py:430 emits the diagnostic 'Checking file size, file content size=%s, max_file_size_mb=%s';
-  retain its level and fallback instead of turning it into a hard error.
-- 'http_parsing_utils.py:579 emits the diagnostic ''Skipping UploadFile in metadata extraction for key: %s''; retain
-  its level and fallback instead of turning it into a hard error.'
+- Metadata conflicts are order-sensitive; sorting form keys changes which subtree survives and whether a warning is emitted.
+- Python float("nan") succeeds; leaving the original string is not equivalent to carrying a non-finite numeric value.
+- max_file_size_mb is checked with > after converting bytes to MiB; an equal-sized file is allowed once the premium gate is removed.
 review_level: security
 budget:
-  max_changed_lines: 570
+  max_changed_lines: 730
   max_new_expects: 1

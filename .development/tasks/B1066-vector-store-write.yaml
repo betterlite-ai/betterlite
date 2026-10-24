@@ -4,6 +4,10 @@ description: >-
   Implement provider vector store update/delete through B010, preserving metadata/name/expires_after projection
   and deletion results. Do not mutate proxy registry records until the separate management operation requests it.
 
+  B2402 owns the complete sync/async vector_store_update_handler and vector_store_delete_handler functions in
+  llms/custom_httpx/llm_http_handler.py, including metadata cleanup through B668 and the shared _handle_error.
+  Use that service directly; B173 supplies only the underlying pooled transport and does not own these endpoints.
+
 
   Implement crates/betterlite-core/src/api/vector_store_write.rs. Use VectorStoreWriteInput and VectorStoreWriteResult
   with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
@@ -165,6 +169,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/vector-store-write/provider-update-error.yaml
 deviations: []
 out_of_scope:
+- B2402 owns provider HTTP update/delete execution and metadata cleanup; this task owns the public SDK wrappers and argument filtering.
 - 'litellm/vector_stores/main.py: B1064 owns _direct_vector_store_embedding_executor L46-L53, mock_vector_store_search_response
   L56-L77, mock_vector_store_create_response L80-L105, acreate L109-L169, create L173-L282, asearch L286-L355, search
   L359-L491.'

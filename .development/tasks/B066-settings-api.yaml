@@ -1,0 +1,111 @@
+id: B066
+title: Assemble settings routes and publish dashboard banners and callback metadata
+description: >-
+  Finish the settings API composition in betterlite-server::settings_api, mounting each
+  completed route bundle once: B1647/B1648 secret-manager overrides, B1650 cost settings,
+  B1651 estimates, B1653 coordination Redis, B1654 compliance, B1655 release information,
+  B1657 signup defaults, B1658 allowed IPs, B1660 UI flags, B1661 SSO settings, B1662 theme/logo
+  and B1663 search settings. Compose B075's existing prompt-cache prediction router at the
+  inclusion point from cost_tracking_settings.py without duplicating its route registrations.
+  Preserve each owner's public/authenticated distinction; construction tests must detect
+  duplicate or missing registrations. The Python-only types/ui_crud __init__ files supply
+  import barrels, not another native router or a second metadata catalog.
+  Own callback_management_endpoints.py's GET /callbacks/list and GET /callbacks/configs in
+  callback_metadata_routes. Both use B052 auth. List returns B189's current success, failure
+  and success_and_failure classification, including general callbacks and deduplication;
+  compare each array as a set because the pin uses Python sets. Configs returns the complete
+  pinned callback_configs.json metadata already owned by B189, not a list filtered to installed
+  adapters and not runtime credentials. Reuse its validated immutable asset; do not add a
+  runtime filesystem dependency for packaged metadata. Configuration of callbacks stays B189.
+  Own user_banner_endpoints.py's models, validator, parser and GET /get/user_banner plus PATCH
+  /update/user_banner in user_banner_routes. Authenticate both; every authenticated caller
+  can read, while PATCH requires exact proxy_admin before checking DB. GET without DB returns
+  enabled=false, message="", severity=info, revision="". Parse a stored object or JSON string;
+  null, invalid JSON or a model-validation failure silently gives those same defaults.
+  decode_user_banner_input(bytes, Update|Stored) must preserve the different invalid-input
+  outcomes. message has a 4000-Unicode-codepoint maximum and must contain non-whitespace when
+  enabled; severity is info/warning/error, unknown update fields are ignored. PATCH does not
+  require store_model_in_db. Read and parse the old banner, replace all fields from update
+  defaults, generate a fresh lowercase 32-hex revision even for identical republishes, and
+  upsert JSON-string settings at B726's user_banner row. Only after that save submit B124's
+  config audit via B065 with action updated and the UI-settings table name. Return the exact
+  success message and new banner. No compare-and-swap or revision precondition is added.
+  HTTP sequences verify republish revisions, partial-body replacement, enabled-message
+  validation, corruption fallback, no-DB reads and role checks; native DB tests cover failed
+  upserts and audit admission. Fuzz user_banner_input and replay its corpus, using B001/B1630
+  only for real-proxy HTTP behavior. The 146 nonblank banner/callback source lines plus router
+  composition budget 230 implementation, 220 tests and 180 HTTP/fuzz material, cap 700.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/settings_api.rs
+    - crates/betterlite-server/src/settings_api/**
+    - crates/betterlite-server/src/callback_metadata_routes.rs
+    - crates/betterlite-server/src/callback_metadata_routes/**
+    - crates/betterlite-server/src/user_banner_routes.rs
+    - crates/betterlite-server/src/user_banner_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/user_banner_input.rs
+    - crates/betterlite-server/fuzz/corpus/user_banner_input/**
+    - tools/oracle/cases/management/settings-composition/**
+    - tools/oracle/cases/management/callback-metadata/**
+    - tools/oracle/cases/management/user-banner/**
+    - tools/oracle/fuzz/corpus/http_case/user-banner-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/callback_management_endpoints.py#L16-L56
+    why: Both callback route decorators, registry classification and complete packaged metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/user_banner_endpoints.py#L15-L130
+    why: Banner records, safe stored-row fallback, GET/PATCH decorators and fresh revision on every write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L32-L45
+    why: Prompt-cache prediction is an included router, not a duplicate implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/__init__.py#L1-L33
+    why: Import-only exports retain their individual metadata owners.
+dod:
+  - text: Settings composition mounts every owned bundle once and retains public routes alongside authenticated management routes.
+    proof: [settings-composition-tests, oracle]
+  - text: Callback listings and metadata reflect the existing registry and pinned catalog without exposing runtime credentials.
+    proof: [callback-metadata-tests, oracle]
+  - text: Banner publication retains full replacement, fresh revisions, safe stored-row defaults and administrator-only writes.
+    proof: [user-banner-tests, oracle, user-banner-corpus]
+checks:
+  optional: []
+  commands:
+    - id: settings-composition-tests
+      why: A settings bundle is missing, mounted twice or given the wrong authentication policy.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^settings_api::/)'
+    - id: callback-metadata-tests
+      why: Callback metadata is mistaken for active registration or credentials appear in its response.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^callback_metadata_routes::/)'
+    - id: user-banner-tests
+      why: Banner edits lose publication identity or permit unauthorized writes.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_banner_routes::/) - test(replays_the_user_banner_input_corpus)'
+    - id: user-banner-corpus
+      why: Banner request and stored-row decoders lack newly added validation and corruption examples.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/user_banner_input)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_user_banner_input_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/settings-composition/public-settings-and-authenticated-controls.yaml
+  - tools/oracle/cases/management/callback-metadata/phase-membership-and-catalog.yaml
+  - tools/oracle/cases/management/callback-metadata/authentication.yaml
+  - tools/oracle/cases/management/user-banner/no-database-read-defaults.yaml
+  - tools/oracle/cases/management/user-banner/corrupt-stored-banner-is-disabled.yaml
+  - tools/oracle/cases/management/user-banner/republish-changes-revision.yaml
+  - tools/oracle/cases/management/user-banner/partial-body-replaces-with-defaults.yaml
+  - tools/oracle/cases/management/user-banner/message-length-and-enabled-whitespace.yaml
+  - tools/oracle/cases/management/user-banner/admin-write-with-storage-switch-disabled.yaml
+deviations:
+  - what: A saved banner can succeed without its audit row when audit admission is full; the omission is warned and counted.
+    why: B065's bounded audit service replaces the source's detached task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/user_banner_endpoints.py#L119-L128
+out_of_scope:
+  - "common_utils.py has no remaining implementation here: B861 owns validate_finite_spend L13-L24, validate_budget_duration L27-L41, validation/delegation helpers L77-L205, _set_object_metadata_field L432-L456 and metadata helpers L639-L661/L675-L688; B800 owns _team_member_has_permission L208-L221; B863 owns administrator/invitation helpers L224-L429; B862 owns budget helpers including nested _disconnect L488-L636 and their constants."
+  - common_utils.py::_has_non_empty_value L664-L672 and the enterprise compatibility alias _is_user_team_admin have no caller at the pin; the imported _user_has_admin_view predicate remains B124's shared role predicate.
+  - "All proxy_setting_endpoints.py functions are assigned: B1656 L88-L127/L723-L783/L800-L849/L1001-L1072; B1657 L858-L998/L1080-L1127; B1658 L591-L720; B1659 L379-L399/L453-L470/L786-L797/L1671-L1742; B1660 L1750-L1961; B1661 L1136-L1322; B1662 L141-L167/L1330-L1463/L1969-L2024; B1663 L548-L582/L1472-L1664. register_extra_ui_setting L439-L450 has no caller at the pin."
+  - Cache and router metadata exported by types/management_endpoints/__init__.py belong to B125 and B348; coordination metadata belongs to B1652. Python import barrels create no native dependency on their high-level routes.
+pitfalls:
+  - Banner PATCH is a complete replacement despite its verb, and republishing identical text still creates a new revision.
+  - A callback can appear in success_and_failure through the general callback list even when neither dedicated phase list contains it.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security

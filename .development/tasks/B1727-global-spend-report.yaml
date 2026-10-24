@@ -1,0 +1,79 @@
+id: B1727
+title: Preserve legacy global report grouping and filter precedence
+description: >-
+  Implement GET /global/spend/report in server::spend::global_report, using B1726's daily
+  team query and a new owned team/customer query from spend_tracking_utils. Parse optional
+  start_date/end_date, group_by (team by default; team/customer/api_key/null), api_key,
+  internal_user_id, team_id and customer_id. Missing dates return 400 before the database
+  check; date conversion occurs outside the catch block. Unlike the scoped reports, this
+  handler imposes neither reversal nor 366-day validation. Database and query errors inside
+  its catch become HTTP 400 with detail.error. Remove only the premium_user requirement,
+  following the README; B052's existing global-route authorization still applies.
+  Preserve branch priority by non-null presence: api_key first (hash only sk- prefixes),
+  internal_user_id second, team_id plus customer_id third. Key/user reports group by key
+  and model, summing cost and input/output tokens, then rank keys by total_cost. An explicitly
+  empty key/user ID still selects its branch. Team/customer queries require both equality
+  predicates, group by day/team alias/customer/model/key, and return teams_customers with
+  nested metadata. Missing team aliases become Unassigned Team; absent database results
+  become []. The lower raw-query interface is B1726's, not a duplicate wrapper.
+  Otherwise group_by=team calls the existing optional-team report; group_by=customer
+  aggregates all customers by day, ignoring customer_id alone and team_id alone. group_by
+  api_key aggregates all keys, without a team/customer filter. Null group_by with no prior
+  filter returns JSON null. Do not normalize these legacy combinations into a more uniform
+  filter model. Every query binds input values and uses UTC start inclusive/end-plus-one-day
+  exclusive. SQL nested metadata arrays have no promised order; only day and outer cost
+  order are asserted, using distinct totals in fixtures to avoid unspecified ties.
+  decode_global_report_query accepts raw query bytes and is fuzzed for presence, duplicate
+  scalar and enum/date inputs. Native database tests cover combined filters and alias
+  collisions. Booted HTTP oracle cases opt into B1644 only for the MIT paid-flag branch;
+  a separate native test proves ordinary betterlite returns the report without a license
+  where stock OSS rejects it. The route's 281 and customer helper's 71 source lines fit an
+  800-line budget including SQL, parser, differential fixtures and native security tests.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/global_report.rs
+    - crates/betterlite-server/src/spend/global_report/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/global_report_query.rs
+    - crates/betterlite-server/fuzz/corpus/global_report_query/**
+    - tools/oracle/cases/http/global-spend-report/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1406-L1698
+    why: Global report decorator, branch priority and nested aggregate response shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L1002-L1076
+    why: Day/team/customer breakdown with two mandatory bound filters.
+dod:
+  - text: The global report preserves presence-based filter priority and its team/customer/api-key result shapes.
+    proof: [global-report-tests, global-report-corpus, oracle]
+  - text: Date failures and SQL errors keep their source boundaries while paid eligibility no longer blocks authorized users.
+    proof: [global-report-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: global-report-tests
+      why: Legacy filter precedence or license-free report access is unimplemented.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::global_report::/) - test(replays_the_global_report_query_corpus)'
+    - id: global-report-corpus
+      why: Presence-sensitive report queries have no new fuzz replay samples.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/global_report_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_global_report_query_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/global-spend-report/key-before-user-before-team-customer.yaml
+  - tools/oracle/cases/http/global-spend-report/team-null-alias-and-customer-metadata.yaml
+  - tools/oracle/cases/http/global-spend-report/customer-alone-and-api-key-group-filters.yaml
+  - tools/oracle/cases/http/global-spend-report/null-group-and-reversed-dates.yaml
+deviations:
+  - what: The global spend report works for an authorized caller without a license; stock LiteLLM's false premium flag makes this handler return 400.
+    why: MIT reporting follows the README's no-paid-tier decision, retaining the surrounding global-route authorization.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1494-L1504
+out_of_scope:
+  - B1726 owns scoped reports, get_spend_by_team and _query_raw_rows; B1600/B1713-B1716 own the other spend_tracking_utils helpers.
+  - B1721-B1725 own earlier chart/summary APIs, B1704 visibility and B069 plus the log query/detail/session leaves the rest of spend_management_endpoints.py.
+pitfalls:
+  - customer_id alone does not restrict the customer-grouped report.
+  - group_by=null can legitimately return JSON null when no higher-priority filter is present.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,81 @@
+id: B1665
+title: Define management problem, resource and pagination envelopes
+description: >-
+  Add management_envelopes in betterlite-server as the shared record layer below management
+  routes and the list framework. Own the full types/proxy/management_endpoints/management_v1.py
+  file plus management_v1/common.py's /management/v1 prefix constant. Define ProblemDetail,
+  PageLinks, PageMeta, FacetListResponse, ListMeta, ListLinks, ResourceResponse<T> and
+  ListResponse<T>. Keep entity rows flat inside data; do not introduce JSON:API type/id/attributes
+  wrappers. ResourceResponse contains data only. FacetListResponse carries bare strings with
+  page/page_size/has_more and self/prev/next links; counted ListResponse instead carries
+  total_count/page/page_size/total_pages and self/first/prev/next/last links. Nullable prev/next
+  remain serialized null on ordinary responses. The native field self_link serializes as self,
+  and its compatibility input accepts either spelling where the pinned model does.
+  ProblemDetail contains type/title/status/detail and nullable allowed, defaulting null.
+  Provide the source's normal record serialization and a problem-document serialization view
+  omitting only absent optional fields; the shared HTTP error handler chooses that view and
+  application/problem+json. Do not translate problem fields into OpenAI error.type/param/code
+  or replace the source's urn:litellm:error: identifiers. Page bounds, query validation, URL
+  construction and status-code selection stay in the list framework rather than these models.
+  Preserve order of rows, facet strings and allowed values; sorting belongs to callers.
+  Implement the pure management_envelope helper using pinned Pydantic record construction and
+  model_dump(mode="json", by_alias=True), with an explicit problem-document mode for
+  exclude_none=True. Rust must construct the production generic records from B171's typed
+  helper inputs, not return an expected JSON fixture. Cover the distinction between an empty
+  facet and counted list, null links, aliases, empty-versus-absent allowed, and a nested resource
+  action result. These are output records with no new external byte parser; add the operation's
+  helper_case seeds and replay the existing decoder. The 51 nonblank type lines plus five
+  prefix-module lines budget 100 records/exports, 100 behavior tests, 100 Rust/Python adapters
+  and 75 oracle/corpus lines within a 400-line task.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/management_envelopes.rs
+    - crates/betterlite-server/src/management_envelopes/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/management_envelope.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/management_envelope.py
+    - tools/oracle/cases/helpers/management-envelope/**
+    - tools/oracle/fuzz/corpus/helper_case/management-envelope-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/management_v1.py#L1-L80
+    why: Entire shared response model family, aliases and nullable fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/common.py#L1-L8
+    why: Shared path prefix has no router or runtime logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/list_api/common.py#L18-L40
+    why: The dependency-owned problem handler serializes the same model with absent fields omitted.
+dod:
+  - text: Resource, facet and counted-list envelopes preserve their different metadata and link fields.
+    proof: [management-envelope-tests, oracle, management-envelope-python, management-envelope-corpus]
+  - text: Problem-document output omits absent allowed while ordinary nullable links and flat resource data retain their wire shapes.
+    proof: [management-envelope-tests, oracle, management-envelope-python, management-envelope-corpus]
+checks:
+  optional: []
+  commands:
+    - id: management-envelope-tests
+      why: Shared management output loses aliases or conflates counted lists with facets.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management_envelopes::/)'
+    - id: management-envelope-python
+      why: Envelope comparison lacks the pinned model-based Python serializer.
+      run: test -f tools/oracle/helpers/management_envelope.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: management-envelope-corpus
+      why: No seed exercises the management_envelope variant read by the helper decoder.
+      run: grep -rlq 'management_envelope:' tools/oracle/fuzz/corpus/helper_case/management-envelope-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/management-envelope/facet-versus-counted-empty-list.yaml
+  - tools/oracle/cases/helpers/management-envelope/self-alias-and-null-neighbors.yaml
+  - tools/oracle/cases/helpers/management-envelope/problem-allowed-absent-versus-empty.yaml
+  - tools/oracle/cases/helpers/management-envelope/resource-action-remains-flat.yaml
+deviations: []
+out_of_scope:
+  - B007 currently owns list_api/common.py's ManagementProblem, HTTP translation, query errors and link construction; no function from that file is reimplemented here.
+  - B067 and its route parts own management_v1 budgets, users, teams and spend-log facets and the router in management_v1/__init__.py.
+pitfalls:
+  - Problem documents omit allowed when absent, whereas page links deliberately retain null prev and next fields.
+  - Facets have has_more but no total count or first/last links; counted entity lists use the other envelope.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

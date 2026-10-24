@@ -1,0 +1,93 @@
+id: B1667
+title: Price guardrail counters without losing unknown or report-only costs
+description: >-
+  Implement guardrail_pricing in betterlite-models for guardrail_cost.py's live functions and
+  records. Publish a typed CostBreakdown record for the known monetary components, optional
+  pricing-basis strings and additional_costs, retaining extension fields so adding guardrail
+  cost does not discard other billing information. Monetary values use B204's finite checked
+  Decimal representation. Keep the cost module independent of logging and guardrail execution;
+  callers supply a B193 catalog snapshot and already-parsed usage/metadata records.
+  Bedrock pricing tries bedrock/<region>/guardrails when region is truthy, then bedrock/guardrails.
+  A present malformed pricing entry warns and falls through; a valid empty guardrail_cost_per_unit
+  map wins and prevents fallback. No usable entry yields None. For a usable map return every
+  usage counter, with units*rate when its rate exists and null otherwise; zero rate means free
+  and is distinct from missing. guardrail_cost_total sums known values and treats an absent map
+  as zero. Azure Prompt Shield returns zero for exact cost_tier=free, None when no price is
+  supplied, otherwise text_records*price_per_1000_text_records/1000, using zero missing count.
+  Decode metadata entries independently as the source's two different parsed-record views.
+  Scalar billing accepts a nullable guardrail_cost_in_spend defaulting true; only false opts
+  out. Missing/nonfinite/nonpositive cost contributes zero. Invalid entry shapes or invalid
+  Boolean values warn and zero only that entry, preserving valid siblings in a list/tuple;
+  a non-list input is treated as one entry. Counter rollup separately validates a nullable
+  guardrail_cost_by_unit map whose values are finite nonnegative numbers or null. One invalid
+  counter invalidates that rollup entry, but cannot change scalar billing for the same raw
+  object. Null in_spend retains billing, unlike false. Preserve Pydantic's accepted Boolean
+  and numeric-string coercions and ignored extra fields.
+  cost_breakdown_with_guardrail returns the original optional record for nonpositive added
+  cost. For positive cost, clone existing fields or start empty, replace guardrail_cost and
+  add the new amount to existing total_cost or zero. Do not subtract an old guardrail_cost:
+  repeated calls add again, as the source does. Native tests cover regional fallback, empty
+  pricing, exact arithmetic and overflow. The pure guardrail_costs helper calls scalar-entry,
+  by-unit validation, sum, Azure and breakdown functions directly, including forged counter
+  maps beside valid scalar costs. Catalog-dependent Bedrock lookup is tested natively rather
+  than patched into Python globals. Inputs are parsed records, so this leaf adds helper_case
+  corpus seeds but no new byte decoder. The 112 nonblank source lines, less the unused
+  two-line wrapper, budget 220 pricing/records, 220 tests and 210 helpers/fixtures, cap 725.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/cost_breakdown.rs
+    - crates/betterlite-models/src/guardrail_pricing.rs
+    - crates/betterlite-models/src/guardrail_pricing/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/guardrail_costs.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/guardrail_costs.py
+    - tools/oracle/cases/helpers/guardrail-costs/**
+    - tools/oracle/fuzz/corpus/helper_case/guardrail-costs-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L1-L158
+    why: Separate scalar/rollup validation, regional pricing and positive-cost breakdown merging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3503-L3532
+    why: CostBreakdown field vocabulary preserved by the guardrail merge.
+dod:
+  - text: Bedrock and Azure prices distinguish no price, explicit zero and malformed regional fallback while retaining exact money.
+    proof: [guardrail-pricing-tests, oracle, guardrail-costs-python]
+  - text: Malformed rollup counters cannot suppress valid scalar spend, and report-only or nullable flags retain their source meanings.
+    proof: [guardrail-pricing-tests, oracle, guardrail-costs-python, guardrail-costs-corpus]
+  - text: Adding guardrail cost preserves all prior breakdown fields and the source's repeated-add behavior.
+    proof: [guardrail-pricing-tests, oracle, guardrail-costs-python, guardrail-costs-corpus]
+checks:
+  optional: []
+  commands:
+    - id: guardrail-pricing-tests
+      why: Guardrail pricing drops sibling spend or confuses unpriced counters with free counters.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^guardrail_pricing::/)'
+    - id: guardrail-costs-python
+      why: Guardrail cost comparisons lack a checked pure-function adapter.
+      run: test -f tools/oracle/helpers/guardrail_costs.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: guardrail-costs-corpus
+      why: The guardrail_costs call variant has no committed helper decoder regressions.
+      run: grep -rlq 'guardrail_costs:' tools/oracle/fuzz/corpus/helper_case/guardrail-costs-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-costs/null-and-false-spend-flags.yaml
+  - tools/oracle/cases/helpers/guardrail-costs/malformed-entry-keeps-valid-sibling.yaml
+  - tools/oracle/cases/helpers/guardrail-costs/forged-counter-map-does-not-zero-scalar.yaml
+  - tools/oracle/cases/helpers/guardrail-costs/unpriced-counter-versus-explicit-zero.yaml
+  - tools/oracle/cases/helpers/guardrail-costs/azure-free-missing-price-and-text-records.yaml
+  - tools/oracle/cases/helpers/guardrail-costs/repeated-breakdown-addition-preserves-basis.yaml
+deviations:
+  - what: Guardrail pricing uses exact Decimal results; unrepresentable prices or arithmetic overflow produce a typed pricing error instead of float rounding or infinity.
+    why: Cost arithmetic must remain finite and checked, while metadata entries the source already ignores still contribute zero independently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L70-L91
+out_of_scope:
+  - bedrock_guardrail_cost L94-L95 has no caller at the pin and is omitted; callers use the by-unit function and explicit total.
+  - B068's final calculator and B069's spend paths consume these results; guardrail hooks and usage-rollup writers keep their existing execution ownership.
+pitfalls:
+  - A valid empty regional guardrail price map blocks global fallback, leaving every counter unpriced.
+  - The breakdown helper overwrites guardrail_cost but adds to total_cost without removing a previously recorded guardrail amount.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: security

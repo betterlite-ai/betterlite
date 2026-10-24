@@ -1,0 +1,102 @@
+id: B1720
+title: Attribute failed requests and preserve partial billed usage
+description: >-
+  Implement server::spend::failure for the failure hook, key/team enrichment, metadata
+  patching, OAuth stamp probe, tracking eligibility and request-tag helpers in
+  proxy_track_cost_callback.py. Load general_settings.disable_error_logs as an exact
+  Boolean, default false, through loads_spend_failure_settings. Consume the shared
+  disable_spend_updates predicate from B1714 rather than defining it in this callback.
+  Always attempt reservation release first, even when error logs are disabled or the
+  request route is ineligible. A release failure attempts invalidation and marks finalized
+  only after successful invalidation. Then accept a null route or B882's LLM/info routes;
+  other routes stop. Build trusted key metadata through B1106, stamp status=failure, strip
+  the traceback key entirely when B1708 suppresses it, and sanitize error information with
+  B1713. Skip all enrichment for B715's DBLookupDeadlineExceeded. Otherwise a truthy key
+  hash and null alias trigger B738 lookup; fill only null alias/user/team/org/project fields.
+  A truthy team ID and null team alias trigger B737 lookup independently. Lookup exceptions
+  are debug-only, and resolve_missing_key_identity=false suppresses the key lookup while
+  retaining team alias enrichment for delayed events.
+  OAuth provenance accepts only a Boolean from the route-selected proxy bucket (B1105),
+  never an arbitrary truthy client field. Merge trusted metadata into request metadata,
+  copy guardrail information from litellm_metadata only if the destination lacks its key,
+  preserve truthy nested tags, and preserve the existing proxy request object. Fill model
+  and provider only when their keys are absent. Lift a falsey standard logging object and
+  null trace ID from the call log. Start time is a datetime-valued request field, otherwise
+  logging start time or now. Recover nonnegative partial stream cost only with a typed
+  combined Usage object, then add B1667 guardrail charges. Write this failure directly via
+  B070, preserving the exception as response evidence and the authenticated project/org.
+  The standalone metadata patch copies only non-null user_api_key-prefixed fields and tags
+  into already-existing dictionary buckets where the destination value is null. Request
+  tags prefer a list-valued standard payload, even empty, then a list-valued metadata field.
+  Tracking eligibility first honors disable_spend_updates; any non-null key/user/team/end
+  user/agent qualifies, including empty string. With no identity, only pass_through,
+  llm_passthrough_route, allm_passthrough_route, call_mcp_tool and aretrieve_batch qualify.
+  Pure failure_metadata oracle operations cover the stamp, patch, tag and eligibility
+  transforms. Stateful lookup/write sequencing uses native PostgreSQL and fault-injected
+  backend tests; a helper adapter must not invoke the async failure hook. These approximately
+  320 source lines receive an 800-line allowance for config, tests and adapters.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/failure.rs
+    - crates/betterlite-server/src/spend/failure/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/spend-failure-*
+    - tools/oracle/src/helpers/{mod.rs,failure_metadata.rs}
+    - tools/oracle/helpers/{dispatch.py,failure_metadata.py}
+    - tools/oracle/cases/helpers/failure-metadata/**
+    - tools/oracle/fuzz/corpus/helper_case/failure-metadata-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L90-L100
+    why: OAuth provenance is read only from the proxy's route-selected bucket.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L150-L290
+    why: Failure cleanup, metadata reconstruction and partial stream plus guardrail spend.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L503-L610
+    why: Deadline-aware enrichment and nonoverwriting metadata patch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L635-L692
+    why: Identity eligibility, diagnostic key listing and tag precedence; reservation forwarding reuses B1719.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7403-L7413
+    why: Exact-true disable-spend setting shared by writers and callbacks.
+dod:
+  - text: Failed requests release reservations before filtering, retain trusted identity, and persist only recovered partial-stream and guardrail charges.
+    proof: [failure-tests]
+  - text: Enrichment and metadata transforms distinguish absent/null, empty tags, delayed identity and route-stamped OAuth evidence.
+    proof: [failure-tests, oracle, failure-python, failure-corpus]
+  - text: Error-log disabling loads through config and combines with the shared exact-true spend flag.
+    proof: [failure-settings, failure-config-corpus, oracle, failure-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: failure-tests
+      why: Error attribution, lookup suppression or partial-cost persistence is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::failure::/)'
+    - id: failure-settings
+      why: The configured disable flags are declared but not loaded.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_spend_failure_settings)'
+    - id: failure-python
+      why: Pure failure metadata projections lack a checked oracle adapter.
+      run: test -f tools/oracle/helpers/failure_metadata.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: failure-corpus
+      why: The failure metadata operation is not seeded in helper replay.
+      run: grep -rlq 'failure_metadata:' tools/oracle/fuzz/corpus/helper_case/failure-metadata-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: failure-config-corpus
+      why: Spend failure settings have no added YAML decoder samples.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/spend-failure-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/failure-metadata/oauth-bucket-and-bool-only.yaml
+  - tools/oracle/cases/helpers/failure-metadata/null-only-patches-and-empty-tags.yaml
+  - tools/oracle/cases/helpers/failure-metadata/anonymous-call-types-and-disable-flag.yaml
+deviations: []
+out_of_scope:
+  - B069 owns success/offload callbacks and interaction deferral; B1719 owns settlement, and this task does not create managed batches merely because eligibility recognizes their call type.
+  - B070's queue leaves and B124 retain remaining ProxyUpdateSpend/proxy utilities; B1715 owns token hashing.
+pitfalls:
+  - disable_error_logs does not bypass reservation release.
+  - An empty alias is already populated, so it prevents the null-alias key lookup.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,87 @@
+id: B1618
+title: Validate SSO return targets and set session cookies
+description: >-
+  Introduce sso_return_targets in betterlite-server for _is_same_origin_return_path,
+  _sso_return_to_redirect, set_session_token_cookie, _persist_return_to_cookie,
+  SSOAuthenticationHandler._validate_return_to (including _origin) and
+  get_redirect_url_for_sso. A relative return target starts with one slash and contains no
+  backslash, ASCII control, space or DEL. Otherwise compare lowercased scheme/host and explicit
+  or default port against general_settings.control_plane_url=None; absent configuration
+  ignores the absolute target and an origin mismatch raises 400. Match the pinned parser's
+  malformed-port failures instead of silently treating them as origin mismatches.
+  Relative returns receive a 303 plus the token cookie. Cross-origin returns store
+  {token,redirect_url} at login_code:<32-random-byte-code> for 60 seconds, preferring the
+  supplied Redis usage cache over the user API key cache, then append login=success and code.
+  Both clear litellm_cp_return_to. The token cookie deliberately has HttpOnly=false and
+  SameSite=lax because the dashboard reads it; Secure comes from B743's trust-aware HTTPS
+  check. Persist safe return targets in the HttpOnly litellm_cp_return_to cookie for 600s;
+  suppress origin-mismatch HTTP errors only. Callback URL assembly uses B124's custom URL
+  helper and ignores existing_key. Add decode_sso_return_target for URL string bytes and
+  a sso_return_target fuzz target. A pure sso_return_target helper compares relative-path
+  and origin validation; native response tests inspect cache writes, Location and Set-Cookie.
+  Test loads_control_plane_url through betterlite-config. There are 128 owned source lines;
+  allocate 190 implementation, 160 tests, 90 adapters and 100 config/fuzz lines, budget 600.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/sso_return_targets.rs
+    - crates/betterlite-server/src/sso_return_targets/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/sso_return_target.rs
+    - crates/betterlite-server/fuzz/corpus/sso_return_target/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/sso_return_targets.rs
+    - crates/betterlite-config/src/sso_return_targets/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/sso-return-target-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/sso_return_target.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/sso_return_target.py
+    - tools/oracle/cases/helpers/sso-return-targets/**
+    - tools/oracle/fuzz/corpus/helper_case/sso-return-target-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2784-L2924
+    why: Relative paths, control-plane origins, opaque redirect codes and cookie attributes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3241-L3261
+    why: Shared callback URL composition without existing_key in its query.
+dod:
+  - text: Relative paths and configured origins accept the same targets as LiteLLM, including malformed input failures.
+    proof: [return-target-tests, oracle, return-target-python]
+  - text: Redirect responses preserve the exact cookie policy and keep cross-origin JWTs behind expiring opaque codes.
+    proof: [return-target-tests, return-target-config]
+  - text: URL and configuration bytes replay through their production decoders.
+    proof: [return-target-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: return-target-tests
+      why: A return target can escape the allowed origin or the browser receives an incorrect cookie/code.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sso_return_targets::/) - test(replays_the_sso_return_target_corpus)'
+    - id: return-target-config
+      why: control_plane_url is not loaded and passed to the actual validator.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sso_return_targets::tests::loads_control_plane_url/)'
+    - id: return-target-python
+      why: Origin comparison lacks its checked direct Python helper.
+      run: test -f tools/oracle/helpers/sso_return_target.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: return-target-corpora
+      why: Return-target fuzzing or its new config/helper envelope seeds are absent.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/sso_return_target.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/sso_return_target)" && grep -rlq 'sso_return_target:' tools/oracle/fuzz/corpus/helper_case/sso-return-target-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-return-target-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_sso_return_target_corpus) | test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sso-return-targets/protocol-relative-and-backslash.yaml
+  - tools/oracle/cases/helpers/sso-return-targets/control-characters.yaml
+  - tools/oracle/cases/helpers/sso-return-targets/default-port-and-host-case.yaml
+  - tools/oracle/cases/helpers/sso-return-targets/unconfigured-and-wrong-origin.yaml
+  - tools/oracle/cases/helpers/sso-return-targets/invalid-port.yaml
+deviations: []
+out_of_scope:
+  - Redemption at POST /v3/login/exchange belongs to its existing management owner, not this redirect producer.
+  - B1624 creates browser sessions and B063 supplies login routes; other ui_sso.py definitions follow B063's inventory.
+pitfalls:
+  - Marking token HttpOnly breaks the retained dashboard even though litellm_cp_return_to itself is HttpOnly.
+  - The code redirect appends an ampersand whenever return_to already contains a question mark, matching the source even with a fragment.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: security

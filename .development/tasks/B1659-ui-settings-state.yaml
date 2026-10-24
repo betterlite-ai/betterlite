@@ -1,0 +1,100 @@
+id: B1659
+title: Load UI flags and refresh their runtime policy projection
+description: >-
+  Create ui_settings_state in betterlite-server and ui_settings bindings in betterlite-config.
+  Own UISettings, UISettingsResponse, its allowlist/runtime constants, the OSS branch of
+  _get_effective_ui_settings_class, derived-value/source helpers, get_ui_settings_cached,
+  apply_runtime_general_settings_flags and sync_ui_settings_to_general_settings. UISettings
+  retains extra fields for the PATCH caller to filter; all fourteen Boolean fields default
+  false. Their names are disable_model_add_for_internal_users, disable_team_admin_delete_team_user,
+  require_auth_for_public_ai_hub, allow_public_health_readiness_details, forward_client_headers_to_llm_api,
+  forward_llm_provider_auth_headers, disable_agents_for_internal_users, allow_agents_for_team_admins,
+  disable_vector_stores_for_internal_users, allow_vector_stores_for_team_admins, scope_user_search_to_org,
+  disable_custom_api_keys, disable_key_generate_for_org_admin and enable_chat_ui.
+  enabled_ui_pages_internal_users defaults null and team_admin_editable_team_fields defaults [];
+  its schema enum uses B1200's sorted permission set. Load these effective general_settings
+  keys through B120's SettingsStore, preserving config/DB/default provenance and existing
+  bindings owned by other policy tasks. loads_ui_setting_flags must exercise every key and
+  defaults via the real config loader, not merely deserialize the response model.
+  The derived enable_ptu_cost_attribution value comes from B1664's PTU flag service and
+  LITELLM_ENABLE_PTU_COST_ATTRIBUTION=false; apply_user_budget_to_team_keys is true only for
+  the exact Boolean true in general_settings. Neither belongs to the persisted UI allowlist.
+  Source reporting for PTU is config when its env value exists or the value is true; the
+  user-budget flag is config only when true. All other sources use B120 source_for and
+  B1656's model defaults. Do not recreate the absent enterprise field-registration mechanism.
+  Read ui_settings:settings_dict from B125's dual cache first; return any cached dictionary
+  unchanged. On a miss without DB return {} without caching. Otherwise read UISettingsRepository
+  row ui_settings, accept object or JSON-string storage, filter to the sixteen allowed keys
+  and cache for 600 seconds. Malformed stored JSON propagates on this path. Provide
+  decode_stored_ui_settings(bytes) and a stored_ui_settings fuzz target for that external
+  database boundary. Runtime projection copies only the ten fields listed at source L404-L415:
+  health details, the two header-forwarding flags, the four agent/vector access flags, the
+  two custom/org-key flags and team_admin_editable_team_fields. Apply these as the ui_settings
+  DB row to SettingsStore; a legacy plain map only updates present entries. Periodic sync
+  reads the repository directly, catches read/decode errors with a warning and retains current
+  runtime flags; it does not refresh the dual cache. Native tests cover TTL, cached unsanitized
+  dictionaries, row removal versus map update and failed refresh. B1660 supplies HTTP parity
+  for provenance; the pure ui_settings_record helper calls UISettings.model_validate/model_dump
+  for defaults, coercion, extra fields and exclude_unset behavior without touching globals.
+  Roughly 214 function/model lines plus allowlist constants budget
+  270 state/config, 230 tests and 230 helper/fuzz/schema material within 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/ui_settings_state.rs
+    - crates/betterlite-server/src/ui_settings_state/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/stored_ui_settings.rs
+    - crates/betterlite-server/fuzz/corpus/stored_ui_settings/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/ui_settings.rs
+    - crates/betterlite-config/src/ui_settings/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/ui-settings-*
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/ui_settings_record.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/ui_settings_record.py
+    - tools/oracle/cases/helpers/ui-settings-record/**
+    - tools/oracle/fuzz/corpus/helper_case/ui-settings-record-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L232-L470
+    why: UI models, exact allowlist, derived flags and runtime subset; unused enterprise registration is excluded.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L786-L797
+    why: Derived-field source labels differ from ordinary SettingsStore provenance.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1667-L1742
+    why: Ten-minute cache and separate best-effort direct-DB runtime refresh.
+dod:
+  - text: UI flag records and configuration defaults preserve field presence, allowed names and derived-field provenance.
+    proof: [ui-state-tests, ui-state-config, oracle, ui-state-python, ui-state-corpora]
+  - text: Cache lookup and periodic policy refresh retain their distinct sanitization, TTL and failure behavior.
+    proof: [ui-state-tests, ui-state-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: ui-state-tests
+      why: UI state refresh changes unrelated policy fields or mishandles cached/stored rows.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^ui_settings_state::/) - test(replays_the_stored_ui_settings_corpus)'
+    - id: ui-state-config
+      why: UI flags are modeled but never loaded from effective configuration.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^ui_settings::tests::loads_ui_setting_flags/)'
+    - id: ui-state-python
+      why: UI record coercion lacks its independently checked Python model adapter.
+      run: test -f tools/oracle/helpers/ui_settings_record.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: ui-state-corpora
+      why: Stored UI rows, real configuration keys or the projection operation have no new replay coverage.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/stored_ui_settings)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/ui-settings-*')" && grep -rlq 'ui_settings_record:' tools/oracle/fuzz/corpus/helper_case/ui-settings-record-* && cargo nextest run --locked -p betterlite-server -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_stored_ui_settings_corpus) | test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/ui-settings-record/defaults-versus-exclude-unset.yaml
+  - tools/oracle/cases/helpers/ui-settings-record/boolean-coercion-and-retained-extras.yaml
+deviations: []
+out_of_scope:
+  - "The rest of proxy_setting_endpoints.py is assigned to B1656 (L88-L127, L723-L783, L800-L849, L1001-L1072), B1657 (L858-L998, L1080-L1127), B1658 (L591-L720), B1660 (L1750-L1961), B1661 (L1136-L1322), B1662 (L141-L167, L1330-L1463, L1969-L2024), and B1663 (L548-L582, L1472-L1664)."
+  - register_extra_ui_setting L439-L450 has no caller at the pin; its extension-only branch in _get_effective_ui_settings_class is omitted with the absent enterprise package.
+pitfalls:
+  - The cache-hit path returns a dictionary without reapplying the allowlist, unlike a fresh database read.
+  - scope_user_search_to_org is a persisted UI flag but is not one of the ten flags copied into general_settings.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

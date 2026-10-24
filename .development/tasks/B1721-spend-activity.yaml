@@ -1,0 +1,77 @@
+id: B1721
+title: Report request activity and attribute spend to live providers
+description: >-
+  Add GET /global/activity, /global/activity/model and /global/spend/provider to
+  server::spend::activity. These are the only paths for these handlers. All use B052 auth;
+  INTERNAL_USER and INTERNAL_USER_VIEW_ONLY query their own user ID, while other admitted
+  roles use the global query. Preserve that role test rather than replacing it with the
+  admin-view predicate. Missing user ID in the internal path is an error, not global scope.
+  Require start_date and end_date strings. Parse them with Python %Y-%m-%d compatibility,
+  attach UTC, and select start inclusive through end plus one day exclusive. Missing dates
+  return 400 before the database check; malformed dates occur outside the handlers' catch
+  blocks and retain the proxy's resulting error envelope. Do not introduce the scoped
+  report's 366-day validation here. decode_activity_query takes raw query bytes, retaining
+  FastAPI's last scalar value, and has a server fuzz target and committed replay corpus.
+  Activity counts rows and sums total_tokens by day. Convert dates to English %b %d and
+  sort those labels lexicographically, even across months; do not silently fix chronology.
+  Model activity additionally groups by model_group, selects ten groups by descending
+  request count, then sorts each group's daily labels. Keep the distinct empty database
+  result shapes: None gives [], while no rows produces the appropriate empty aggregate.
+  Activity's caught failures return 400; model activity's caught failures return 500.
+  Provider spend groups nonempty model_id rows, then consults B844's current deployment
+  catalog and B174's provider resolver. Missing deployments and resolution errors contribute
+  nothing; the initialized Unknown label is never emitted. Combine successful deployments
+  by provider with Decimal sums, without sorting the final provider list artificially.
+  This handler's caught failures return 400, including the missing internal user case.
+  Use B726 spend rows and bound SQL parameters. Native PostgreSQL tests cover inclusive
+  end dates, nullable aggregation and missing deployments. Booted HTTP oracle cases assert
+  all three routes, authenticated role scope, validation order, statuses and error fields;
+  compare array order wherever the Python projection sorts it. The three row records and
+  five handlers/helpers own 399 nonblank source lines, budgeted at 800 including fuzz and
+  HTTP fixtures; SQL projections may share native typed query builders without copying a
+  second implementation into tests.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/activity.rs
+    - crates/betterlite-server/src/spend/activity/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/activity_query.rs
+    - crates/betterlite-server/fuzz/corpus/activity_query/**
+    - tools/oracle/cases/http/spend-activity/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L620-L941
+    why: User-scoped/global activity queries, date-label sorting and top-ten model projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1277-L1403
+    why: Provider report decorator, query and live-deployment attribution.
+dod:
+  - text: Activity reports preserve role scope, date boundaries, label ordering and each handler's error status.
+    proof: [activity-tests, activity-corpus, oracle]
+  - text: Provider totals include only spend whose current deployment resolves to a provider.
+    proof: [activity-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: activity-tests
+      why: Activity queries or deployment attribution have no behavioral implementation.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::activity::/) - test(replays_the_activity_query_corpus)'
+    - id: activity-corpus
+      why: The activity query parser lacks new malformed and boundary samples.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/activity_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_activity_query_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/spend-activity/global-and-internal-user.yaml
+  - tools/oracle/cases/http/spend-activity/missing-dates-user-and-database.yaml
+  - tools/oracle/cases/http/spend-activity/month-label-order-and-top-ten.yaml
+  - tools/oracle/cases/http/spend-activity/provider-removed-and-unresolvable-deployments.yaml
+deviations: []
+out_of_scope:
+  - B1722 owns exception activity; B1723 tags and key/user spend; B1724 global totals; B1725 estimation/team/provider budgets; B1726 and B1727 grouped reports.
+  - B1704 owns visibility, B069 capture rate and route composition, and the later spend-log leaves own list/detail/session handlers and their SQL helpers.
+pitfalls:
+  - February labels sort before January labels because this API sorts formatted text, not timestamps.
+  - Historical spend for a deleted deployment disappears from the provider report instead of entering Unknown.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

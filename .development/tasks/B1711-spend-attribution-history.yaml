@@ -1,0 +1,85 @@
+id: B1711
+title: Recover missing key labels with bounded historical probes
+description: >-
+  Extend betterlite-db::key_attribution::history with key_metadata_recovery.py's historical
+  edge SQL, _SpendLogDigestRow and all cache/recovery functions from _is_spend_log_digest
+  through recover_key_metadata_from_spend_logs. Accept a plain SHA256 digest or one after
+  stripping exactly one hashed-jwt- prefix using B1710. Keep the original digest as the
+  database api_key and cache identity; stripping is validation only.
+  For each requested key, probe the first 100 rows in the half-open time window ascending,
+  then select the first row with any nonempty alias/user/team. Record its start time, or
+  the 100th oldest row's time when none was named; that boundary limits the descending
+  last-100-row probe. Do not replace this with a full scan or with independent first/last
+  searches. Metadata alias comes only from user_api_key_alias; team/user prefer nonempty
+  row columns then their metadata equivalents. Merge first/last values independently
+  through B1710's unanimity rule, dropping fields whose two observed values disagree.
+  Query all requested keys as one sorted text array with lateral subqueries, SET LOCAL
+  enable_bitmapscan=off and B1710's 5000ms statement/10000ms transaction bound. Catch
+  database errors through that leaf's warning boundary; a failed query is treated as
+  no fresh evidence for cache purposes. Validate typed rows before merging and discard
+  returned digests not requested or metadata with no truthy value.
+  Use a shared process cache of at most 10000 entries, default TTL 600 seconds, and one
+  async mutex for historical queries. Cache keys include digest and Python ISO-formatted
+  start/end timestamps. Check the cache before locking and again inside the lock, querying
+  only still-missing digests. A first miss stores an empty result for 30 seconds plus a
+  :missed-before marker at the default TTL; another miss while that marker survives uses
+  the full 600-second TTL. A successful result uses default TTL and does not clear the
+  marker. Return only nonempty metadata, even though cached empty values suppress work.
+  These limits are pinned constants, not new environment settings.
+  Native Postgres/cache tests cover first/last disagreement by field, unnamed oldest
+  windows, equal timestamps, timeout fallback, two concurrent callers, first versus
+  repeated miss expiry and window isolation. Pure history_attribution cases compare the
+  digest predicate, cache-key formatting and edge-row metadata projection only; the SQL
+  and cache coordinator are never run through a fabricated pure oracle adapter.
+  Owned source is approximately 175 nonblank lines; budget 210 SQL/cache logic, 250
+  integration tests and 130 projection adapters/seeds, within 650.
+scope:
+  paths:
+    - crates/betterlite-db/src/key_attribution.rs
+    - crates/betterlite-db/src/key_attribution/history.rs
+    - crates/betterlite-db/src/key_attribution/history/**
+    - tools/oracle/src/helpers/{mod.rs,history_attribution.rs}
+    - tools/oracle/helpers/{dispatch.py,history_attribution.py}
+    - tools/oracle/cases/helpers/history-attribution/**
+    - tools/oracle/fuzz/corpus/helper_case/history-attribution-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L44-L93
+    why: First/last bounded lateral probes and the oldest probe's stopping point.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L133-L165
+    why: Edge metadata projection and bounded process cache/lock declarations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L375-L480
+    why: Digest/window keys, lock recheck, negative-cache escalation and final filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1923-L1927
+    why: Cache TTLs/capacity and bounded-probe/query constants.
+dod:
+  - text: Historical evidence is bounded by the two edge probes and only unanimous fields survive per-key projection.
+    proof: [history-tests, oracle, history-python, history-corpus]
+  - text: Concurrent recovery coalesces under one lock and retains first/repeated negative-cache TTL behavior across failures and windows.
+    proof: [history-tests]
+checks:
+  optional: []
+  commands:
+    - id: history-tests
+      why: Edge SQL, query bounds or cache transitions return unsupported attribution or repeat expensive reads.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^key_attribution::history::/)'
+    - id: history-python
+      why: The historical metadata helper does not call the pinned projection functions.
+      run: test -f tools/oracle/helpers/history_attribution.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: history-corpus
+      why: The history projection helper has no replay seed.
+      run: grep -rlq 'history_attribution:' tools/oracle/fuzz/corpus/helper_case/history-attribution-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/history-attribution/prefixed-digest-preserves-database-key.yaml
+  - tools/oracle/cases/helpers/history-attribution/independent-alias-team-owner-conflicts.yaml
+  - tools/oracle/cases/helpers/history-attribution/iso-window-cache-key.yaml
+deviations: []
+out_of_scope:
+  - B1710 owns all remaining key_metadata_recovery.py functions and the shared records/timeout primitive; reporting routes decide when recovery is needed.
+pitfalls:
+  - A cached empty mapping is a hit that suppresses a query but is omitted from returned attribution.
+  - The descending probe starts at the oldest probe's stopping point, not necessarily at the requested window start.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

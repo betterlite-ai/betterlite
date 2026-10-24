@@ -50,15 +50,15 @@ description: >-
   (L967-L970); litellm/proxy/litellm_pre_call_utils.py: _get_dynamic_logging_metadata (L973-L1031); litellm/proxy/litellm_pre_call_utils.py:
   _tenant_otel_params (L1037-L1041); litellm/proxy/litellm_pre_call_utils.py: _dynamically_disabled_backends (L1047-L1072);
   litellm/proxy/litellm_pre_call_utils.py: resolve_tenant_otel_destinations (L1075-L1150); litellm/proxy/litellm_pre_call_utils.py:
-  _tenant_service_name (L1153-L1170); litellm/proxy/litellm_pre_call_utils.py: clean_headers (L1173-L1197). Abstract/protocol
+  _tenant_service_name (L1153-L1170). Abstract/protocol
   declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
   is the explicit preparation/transition stage described above, with typed values passed to the following stage.
 
 
-  Sizing: 339 owned nonblank/non-comment/non-docstring Python lines (395 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 359 implementation,
+  Sizing: 328 owned nonblank/non-comment/non-docstring Python lines (373 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 348 implementation,
   58 behavior tests, 36 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 606 total within the 610-line cap. The estimate includes tests and adapters, not just production code.
+  30 wiring; 595 total within the 610-line cap. The estimate includes tests and adapters, not just production code.
 
 
   Direct inputs come from B732 (Typed authentication principals and grant resolution), B171 (Direct helper oracle
@@ -98,7 +98,7 @@ references:
   why: Setting litellm_settings.allow_dynamic_callback_disabling and its pinned default/precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L253-L393
   why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L835-L1197
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L835-L1170
   why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
 dod:
 - text: 'metadata slot selection: the named production behavior test asserts the result and effects described above.'
@@ -174,7 +174,7 @@ deviations: []
 out_of_scope:
 - 'litellm/proxy/litellm_pre_call_utils.py: B1104 owns _trace_id_from_traceparent L101-L110, _trace_id_from_otel_span
   L113-L124, add_otel_trace_id_to_request L127-L141, _session_id_from_baggage L144-L151, parse_cache_control L225-L236,
-  clean_headers L1198-L1223 stage, _is_credential_header L1226-L1228, redact_credential_headers L1231-L1247, LiteLLMProxyRequestSetup._get_timeout_from_request
+  clean_headers L1173-L1223, _is_credential_header L1226-L1228, redact_credential_headers L1231-L1247, LiteLLMProxyRequestSetup._get_timeout_from_request
   L1252-L1274, LiteLLMProxyRequestSetup._get_stream_timeout_from_request L1277-L1284, LiteLLMProxyRequestSetup._get_keepalive_seconds_from_request
   L1287-L1297, LiteLLMProxyRequestSetup._get_num_retries_from_request L1300-L1307, LiteLLMProxyRequestSetup._get_spend_logs_metadata_from_request_headers
   L1310-L1319, LiteLLMProxyRequestSetup._get_forwardable_headers L1322-L1341, LiteLLMProxyRequestSetup._get_case_insensitive_header

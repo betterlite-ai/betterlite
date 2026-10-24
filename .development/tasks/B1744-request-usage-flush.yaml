@@ -1,0 +1,94 @@
+id: B1744
+title: Queue request usage and flush derived analytics after spend logs
+description: >-
+  Add betterlite-db::request_usage for tool, model-usage, auto-router-turn and baseline
+  observation queues, plus the guarded spend-log job. Own the writer's five _enqueue_*
+  methods and get_llm_router as an injected optional catalog, never an ambient import.
+  Tool usage uses B1706 with realtime_tool_calls; model usage uses B1734. Both catch enqueue
+  failures at debug level. Auto-router enqueue requires nonempty serialized metadata and
+  a mapping routing_decision, prices savings with B1694, then builds a turn with B1742.
+  Attempt baseline capture before appending the actual turn: serialized
+  autorouter_baseline_observation must strictly decode CapturedBaselineObservation, and
+  its api_key/session_id must exactly match the log. Extract that eight-field frozen DTO
+  from B342 into this lower module, reusing B1696 observation and B204 ModelInfo records.
+  Replace observation.request_id with this log's id, build B1698 accounting with B1743
+  daily targets, and cap the baseline queue at 10000. A full queue warns and falls back
+  to the actual turn. Baseline capture errors also warn and retain actual-turn enqueue.
+  Successful capture wakes B1749's log monitor and suppresses a duplicate turn append.
+  Tool discovery reads MCP metadata first (namespaced_tool_name before name; origin is
+  mcp_server_name or user_defined), OpenAI request tools, Anthropic passthrough tools, then
+  response calls through B1706. Key alias and user agent come from litellm_params.metadata.
+  Use B1734's first-name-wins discovery queue; one malformed source can stop this helper's
+  remaining extraction and is debug-logged. Make enqueue awaits owned and bounded using
+  B1690 capacity; preserve the explicit baseline-full fallback separately.
+  Extract proxy/utils.py::_total_queued_spend_transactions, update_spend_logs_job and
+  _run_spend_logs_job here. Census log/tool/model/turn/baseline queues under their respective
+  locks and add B118's pending shadow-funnel event count. An empty census still flushes
+  baseline accounting. Otherwise serialize jobs with one write lock, pop up to 10000 logs
+  once and call B1749's writer. Cancellation parks/requeues that batch and propagates;
+  ordinary log-write failure stops the rest of this pass. On successful write, invoke
+  B104 guardrail usage on the same rows, warning nonfatally; pop at most 10000 tool records
+  and flush B1706, logging dropped records on failure; drain all model records and flush
+  B1734 with the same loss policy; await B1699 baseline flush; drain at most 10000 turns
+  through B1746; finally flush B118 shadow funnel. Turn/funnel failures log and do not retry
+  the drained batch. Adapt B104/B118 through typed lower-layer sinks so the db crate does
+  not import server features. Define decode_captured_baseline(bytes), bounded to 64 MiB,
+  and add its strict-extra-field/identity cases to B1734 rollup_inputs fuzz dispatch.
+  This cohort owns about 360 source lines. Budget 800 for queue/fault tests and strict DTO
+  parsing. Native enqueue tests execute MCP/OpenAI/Anthropic/response precedence against
+  the actual bounded discovery queue, including malformed-input interruption and a second
+  flush cycle. These stateful source methods are not exposed through a helper oracle.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/request_usage.rs
+    - crates/betterlite-db/src/request_usage/**
+    - crates/betterlite-db/fuzz/fuzz_targets/rollup_inputs.rs
+    - crates/betterlite-db/fuzz/corpus/rollup_inputs/captured-baseline-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L394-L405
+    why: Optional router access becomes an explicit catalog input.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L702-L846
+    why: Tool/model/turn queues and baseline capture fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L890-L971
+    why: Ordered tool-discovery sources and captured attribution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7506-L7529
+    why: Complete queue census, including funnel-only work.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7577-L7702
+    why: Single-pop job and ordered analytics drains.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/autorouter_baseline_cache.py#L56-L67
+    why: Strict captured observation record extracted below B342's hook.
+dod:
+  - text: Request analytics enqueue with correct discovery precedence and baseline fallback without duplicating actual turns.
+    proof: [usage-enqueue-tests, captured-baseline-corpus]
+  - text: One job processes its popped logs and derived queues in order with the pinned cancellation and loss boundaries.
+    proof: [usage-flush-tests]
+checks:
+  optional: []
+  commands:
+    - id: usage-enqueue-tests
+      why: Tool discovery, baseline identity or queue ownership is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^request_usage::enqueue::/)'
+    - id: usage-flush-tests
+      why: Queue census, serialized jobs or per-stage failure behavior is untested.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^request_usage::flush::/)'
+    - id: captured-baseline-corpus
+      why: Captured baseline JSON lacks a new production-decoder replay input.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/rollup_inputs/captured-baseline-*)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_rollup_inputs_corpus)'
+oracle_cases: []
+deviations:
+  - what: Tool, model and turn queues wait for bounded capacity instead of growing without a limit; captured baseline JSON over 64 MiB is rejected and actual-turn accounting continues.
+    why: Owned memory limits prevent a stalled database from exhausting the gateway while retaining the existing baseline fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L702-L846
+out_of_scope:
+  - B342 keeps baseline capture/invalidation hooks; only CapturedBaselineObservation moves here so spend writing does not depend on the routing hook.
+  - In proxy/utils.py B1749 owns row queues/writes, B1747 monitor/shutdown, B1748 periodic entry points, and B124 retains unrelated utilities.
+  - Other writer projections are B1742/B1743; balance commits belong to B1745, daily commits to B1746, flushing to B1747/B1748, log claims to B1749 and the final request coordinator to B070.
+pitfalls:
+  - Tool usage drains only 10000 records per pass while model usage drains its whole snapshot.
+  - A baseline-only or shadow-funnel-only backlog must wake the job even when there are no request-log rows.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

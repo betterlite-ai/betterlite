@@ -33,6 +33,8 @@ Inside a run, both CLIs call `cargo gate hook` when the agent tries to stop: Cod
 
 Every path in the inventory has to be accounted for: a backlog entry's covers globs claim it, or litellm.yaml excludes it with a reason. `cargo gate validate` fails while any path is unclaimed or any glob claims nothing, so nothing LiteLLM does outside its enterprise directory can fall out of the backlog. Moving to a newer LiteLLM release means updating litellm.yaml, regenerating the inventory and claiming the new paths.
 
+Every deliberate difference from LiteLLM is written down twice: in the worker's report and in docs/deviations/<task id>.yaml, one file per task, in the format schema/deviations.schema.json describes. The dispatcher refuses a report whose deviations don't match that file, and `cargo gate validate` checks every log. So the LiteLLM bugs betterlite chose not to copy, and why, live in the repository.
+
 ## Repository
 
 The code lives at https://github.com/betterlite-ai/betterlite, a public repository in an org whose only member is Max. Every change reaches main through a pull request and the merge queue, with rebase merges only and branches deleted after merge. Every pull request gets auto-merge when it opens, so it merges by itself once the gate check passes. A workflow can't do that step: when GITHUB_TOKEN queues a PR, the queue's own checks never start. Commits use the no-reply address 66359507+HardMax71@users.noreply.github.com, set in this clone's git config.
@@ -84,6 +86,7 @@ The gate reads every format into Rust types that reject unknown fields, missing 
 | `cargo gate hook` | The Stop hook for Claude Code and Codex; reads the hook JSON on stdin |
 | `cargo gate coverage` | Prints how many LiteLLM paths each backlog entry claims, then every unclaimed path and every glob that claims nothing |
 | `cargo gate inventory <checkout>` | Rewrites litellm-inventory.txt from a LiteLLM clone at the commit litellm.yaml pins |
+| `cargo gate trace <path[:line]>` | Names the task that covers a LiteLLM path (with the pinned lines it ports and the betterlite files it writes) or that writes a betterlite file (with its LiteLLM sources), plus the deviations it logged |
 
 The base is `GATE_BASE` when it is set, otherwise the merge base with origin/main, otherwise with main. Every command check gets `GATE_TASK`, `GATE_BASE`, `GATE_LOG_DIR` and `GATE_ORACLE_CASES` in its environment, and none of the variables cargo sets for the gate itself, so each check uses the toolchain its own worktree pins.
 

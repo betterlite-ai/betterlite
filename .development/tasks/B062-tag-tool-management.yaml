@@ -1,0 +1,77 @@
+id: B062
+title: Set global and scoped tool policy and compose tag management
+description: >-
+  Finish tag/tool management by adding POST /v1/tool/policy and
+  DELETE /v1/tool/{tool_name:path}/overrides to betterlite-server::tool_policy_routes.
+  Own update_tool_policy, delete_tool_policy_override and both _resolve_*_to_object_permission_id
+  helpers in tool_management_endpoints.py. Use B1605 records and B1606 policy writes.
+  A global update requires an input or output policy. A scoped update accepts exactly one
+  team_id or key_hash; blocked adds the tool to blocked_tools and every other input policy,
+  including None, removes it. output_policy is echoed for scoped updates without changing
+  the permission list. Resolve a key by hashing whenever sk- occurs anywhere in the input;
+  trim team IDs. If no permission exists, create it, conditionally attach it to the owner,
+  and on a lost race delete the new permission and reread the winner. Preserve these ordered
+  writes even on DELETE, which can allocate an empty permission before returning 404.
+  Refresh the shared policy registry only when already initialized; a refresh error after a
+  committed policy write remains HTTP 500. Reuse B722/B724/B725 and B732 auth records, and
+  the raw-token hashing primitive already owned by key authentication. Decode bounded policy
+  bodies and override queries with decode_tool_policy(&[u8]) and fuzz tool_policy_request.
+  Compose the B1603/B1604 tag routers and B1607 tool reports once; extend its suffix dispatcher
+  for /overrides rather than mounting a second catch-all. B860 HTTP cases compare success and
+  error status/type/param/code, content-type, and slash decoding. Named Rust tests
+  attach_race_cleans_orphan, delete_allocates_permission, refresh_failure_keeps_write and
+  composed_paths_are_unique inspect real rows and router construction. Ownership is 222 source
+  lines; budget 260 handlers, 220 tests, 100 parser/fuzz and 70 composition, within 675 lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/tool_reports.rs
+    - crates/betterlite-server/src/tool_policy_routes.rs
+    - crates/betterlite-server/src/tool_policy_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/tool_policy_request.rs
+    - crates/betterlite-server/fuzz/corpus/tool_policy_request/**
+    - tools/oracle/cases/management/tool-policy-routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tool_management_endpoints.py#L525-L582
+    why: Conditional owner attachment and cleanup of the losing permission row.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tool_management_endpoints.py#L585-L759
+    why: Decorated global/scoped write and override deletion routes.
+dod:
+  - text: Policy routes retain mutually exclusive scopes, key hashing, empty policy errors and post-write refresh behavior.
+    proof: [oracle, tool-policy-route-tests]
+  - text: Owner-attachment races clean only the losing row, and the composed router registers every tag/tool path once.
+    proof: [tool-policy-route-tests]
+  - text: Policy bodies and override queries have a bounded decoder exercised by fuzz corpus replay.
+    proof: [tool-policy-request-corpus]
+checks:
+  optional: []
+  commands:
+    - id: tool-policy-route-tests
+      why: Tool policy routing, race cleanup or final router composition fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^tool_policy_routes::/) - test(replays_the_tool_policy_request_corpus)'
+    - id: tool-policy-request-corpus
+      why: Policy input parsing has no new corpus or rejects its regression seeds.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/tool_policy_request.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/tool_policy_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_tool_policy_request_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/tool-policy-routes/global-create-and-partial-update.yaml
+  - tools/oracle/cases/management/tool-policy-routes/empty-or-double-scope.yaml
+  - tools/oracle/cases/management/tool-policy-routes/key-hash-and-team-whitespace.yaml
+  - tools/oracle/cases/management/tool-policy-routes/scoped-output-only-unblocks.yaml
+  - tools/oracle/cases/management/tool-policy-routes/delete-no-existing-override.yaml
+  - tools/oracle/cases/management/tool-policy-routes/delete-slash-name.yaml
+  - tools/oracle/cases/management/tool-policy-routes/auth-and-missing-db.yaml
+deviations: []
+out_of_scope:
+  - B1607 owns every remaining function and declaration in tool_management_endpoints.py, including all GET routes and the shared path dispatcher.
+  - Tag mutations and request records are B1603; tag visibility and daily reports are B1604; tool records and persistence are B1605/B1606.
+pitfalls:
+  - A scoped output-only update removes an existing block because the branch tests only input_policy == blocked.
+  - Policy refresh failure does not undo the database mutation that preceded it.
+budget:
+  max_changed_lines: 675
+  max_new_expects: 0
+review_level: security

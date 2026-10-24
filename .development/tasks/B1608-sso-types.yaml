@@ -1,0 +1,86 @@
+id: B1608
+title: SSO identity records and privilege ordering
+description: >-
+  Define sso_types in betterlite-auth from both types/proxy ui_sso modules and
+  management_endpoints/types.py. Reuse B732's roles and B770's budget/key field types instead
+  of defining competing role or money representations. Own highest_privilege_role,
+  is_valid_litellm_user_role, _role_from_claim_value, get_litellm_user_role, CustomOpenID and
+  sso_helper_utils.py's two UI-access predicates. Keep case-insensitive role recognition,
+  ignore nonstring members in role arrays, rank proxy_admin, proxy_admin_viewer, internal_user,
+  internal_user_viewer first, then choose an unranked role lexicographically. A restricted
+  access-mode object is not the string admin_only.
+  Model OpenID identity, typed extra claims, ReturnedUITokenObject, ParsedOpenIDResult,
+  RoleMappings, TeamMappings, SSOConfig, Microsoft Graph records, DefaultTeamSSOParams and
+  LiteLLM_UpperboundKeyGenerateParams. Optional SSOConfig fields stay absent until supplied;
+  role mappings default roles={} and default_role=None; default team models=[] with other
+  limits absent. Sensitive client fields use secret types. Define decode_sso_record(&[u8])
+  for stored SSO JSON and provider identity records, with a tagged sso_record fuzz input.
+  Own ui_sso.py's _as_object as the native typed JSON-value boundary and its shared bearer-field
+  classification; the Python cast helper itself has no runtime transformation.
+  The sso_roles helper compares role projection and UI-access predicates directly, including
+  conflicting app roles and invalid scalars. Ownership is 300 nonblank, noncomment source
+  lines, mostly field declarations/docstrings; estimate 250 records, 150 tests, 90 adapters
+  and 100 fuzz/exports, within a 625-line limit.
+scope:
+  paths:
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/sso_types.rs
+    - crates/betterlite-auth/src/sso_types/**
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/sso_record.rs
+    - crates/betterlite-auth/fuzz/corpus/sso_record/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/sso_roles.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/sso_roles.py
+    - tools/oracle/cases/helpers/sso-roles/**
+    - tools/oracle/fuzz/corpus/helper_case/sso-roles-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/types.py#L14-L97
+    why: Role hierarchy, heterogeneous role claims and extended OpenID.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/ui_sso.py#L1-L236
+    why: SSO configuration, Microsoft Graph and default-team records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/ui_sso.py#L1-L30
+    why: UI token and parsed identity field presence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso_helper_utils.py#L1-L22
+    why: Admin-only mode and role access predicates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L257-L258
+    why: Identity cast represented by the shared typed JSON boundary.
+dod:
+  - text: Role arrays resolve consistently regardless of input order and UI-mode predicates retain their narrow meanings.
+    proof: [sso-type-tests, oracle, sso-role-python]
+  - text: Identity/config JSON retains omission, defaults and secret redaction under corpus replay.
+    proof: [sso-type-tests, sso-record-corpus, sso-role-corpus]
+checks:
+  optional: []
+  commands:
+    - id: sso-type-tests
+      why: SSO role normalization or record defaults differ from the pinned contracts.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^sso_types::/) - test(replays_the_sso_record_corpus)'
+    - id: sso-role-python
+      why: The role adapter is absent or fails strict Python checks.
+      run: test -f tools/oracle/helpers/sso_roles.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: sso-record-corpus
+      why: SSO record bytes lack a fuzz target and branch-added replay data.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/sso_record.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/sso_record)" && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(replays_the_sso_record_corpus)'
+    - id: sso-role-corpus
+      why: The shared helper decoder has no sso_roles call seed.
+      run: grep -rlq 'sso_roles:' tools/oracle/fuzz/corpus/helper_case/sso-roles-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sso-roles/multiple-ranked-roles.yaml
+  - tools/oracle/cases/helpers/sso-roles/unranked-roles-sort.yaml
+  - tools/oracle/cases/helpers/sso-roles/case-and-nonstring-claims.yaml
+  - tools/oracle/cases/helpers/sso-roles/access-mode-string-versus-object.yaml
+deviations: []
+out_of_scope:
+  - SSOConfig persistence and admin configuration routes belong to B066's settings parts; these records do not register routes.
+  - B063 records the owner of every other ui_sso.py definition; no provider exchange is implemented in this record module.
+pitfalls:
+  - The wire value for the proxy viewer role is proxy_admin_viewer even though Python's enum member says PROXY_ADMIN_VIEW_ONLY.
+  - Unknown role strings remain absent instead of becoming internal_user by default.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: security

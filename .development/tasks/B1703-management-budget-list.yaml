@@ -1,0 +1,69 @@
+id: B1703
+title: Serve the paginated management budget collection
+description: >-
+  Register only GET /management/v1/budgets in betterlite-server::management::budget_list,
+  authenticated through B052 and executed by B1702. Own budgets.py completely. Return
+  BudgetListItem fields budget_id, max_budget, soft_budget, tpm_limit, rpm_limit, tpd_limit,
+  budget_duration, budget_reset_at, created_at and updated_at; nullable fields default null,
+  timestamps are required where the source requires them, and database BigInt strings
+  become JSON integers. Money uses Decimal. The selected database columns are exactly
+  these fields, never the full budget row or related key records.
+  Permit proxy admins and admin viewers through B732's admin-view predicate. The spec
+  defaults to -created_at, ascending budget_id tiebreaker, page_size 50 and maximum 100.
+  Allow sorting budget_id/max_budget/tpm_limit/rpm_limit/tpd_limit/created_at, searching
+  budget_id, duration in/is_null, max_budget gte/lte/is_null and created_at gte/lte.
+  budget_duration is deliberately unsortable and bare equality is unsupported on all
+  three declared filters. Count and page queries use the same bound predicates; a count
+  query with no result row means zero. LIMIT/OFFSET binds follow predicate binds.
+  Check database availability before executing the scoped plan: absent database gives
+  503 urn:litellm:error:database-not-connected even for an otherwise forbidden caller.
+  Preserve ManagementProblem errors; other query/row-conversion failures become 500
+  urn:litellm:error:internal-server-error. Install the shared B1701 problem response
+  conversion for this router, without changing errors on older budget APIs.
+  Booted-proxy oracle cases compare status, content-type, problem type/allowed and full
+  list envelope/links; ignore only free-text title/detail with a stated wording reason.
+  Cover admin viewer, forbidden internal user, absent database, empty/page-beyond-end,
+  null descending sort, numeric limits, wildcards, duplicate/unknown query names and
+  rejected duration sort. Native Postgres tests prove count/page selection and query
+  failure mapping. There are 168 nonblank source lines; allow 190 route/executor,
+  210 tests and 180 HTTP fixtures/wiring, within 650 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/management.rs
+    - crates/betterlite-server/src/management/budget_list.rs
+    - crates/betterlite-server/src/management/budget_list/**
+    - tools/oracle/cases/http/management-budgets/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/budgets.py#L47-L144
+    why: Budget projection, bound queries and the exact list specification.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/budgets.py#L147-L204
+    why: Route decorator, database-first check and RFC 9457 error boundaries.
+dod:
+  - text: The authenticated collection returns scoped, filtered, sorted pages with numeric limits and correct links/counts.
+    proof: [budget-list-tests, oracle]
+  - text: Permission, database, query and validation failures expose the source status/problem type and application/problem+json.
+    proof: [budget-list-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: budget-list-tests
+      why: The budget list leaks columns, misorders nulls or changes error precedence.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management::budget_list::/)'
+oracle_cases:
+  - tools/oracle/cases/http/management-budgets/admin-viewer-and-internal-user.yaml
+  - tools/oracle/cases/http/management-budgets/database-unavailable.yaml
+  - tools/oracle/cases/http/management-budgets/empty-and-past-last-page.yaml
+  - tools/oracle/cases/http/management-budgets/null-budget-and-bigint-limits.yaml
+  - tools/oracle/cases/http/management-budgets/duration-filter-and-literal-search.yaml
+  - tools/oracle/cases/http/management-budgets/duplicate-unknown-and-invalid-sort.yaml
+deviations: []
+out_of_scope:
+  - B059 retains budget mutation and legacy budget routes; B1701/B1702 implement the shared list contract, and B067 only mounts this router.
+pitfalls:
+  - Duration values such as 7d and 30d may be filtered but never sorted by this resource.
+  - A database-less request reaches the 503 check before the list scope check.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

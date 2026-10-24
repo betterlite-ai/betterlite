@@ -1,0 +1,98 @@
+id: B1655
+title: Report the latest release with cached unavailable results
+description: >-
+  Implement release_info in betterlite-server and authenticated GET /get/latest_release_info.
+  Own latest_release_endpoints.py's records, bullet classification, parser, fetch/cache service,
+  dependency accessors and handler. Use B173's pooled HTTP transport with a five-second deadline
+  and B125's one-entry in-memory cache. Query the fixed betterlite GitHub releases/latest URL
+  specified below; this is product metadata, with no request-supplied URL or public override.
+  Parse only status 200 and a JSON object with string tag_name, html_url and body. Strip exactly
+  one leading lowercase v from the version. Count only lines matching the source's asterisk
+  bullet expression at column zero; exclude first-contribution bullets before classification.
+  feat and fix prefixes are case-insensitive, optional scope/breaking markers are recognized,
+  and other prefixes or unprefixed bullets enter other_updates. Indented bullets and hyphen
+  lists do not count. Missing buckets serialize as zero.
+  Cache successful results for 3600 seconds and typed unavailable results for 300 seconds
+  under latest_release_info. Use an async fetch lock with a second cache check after acquiring
+  it, so concurrent misses share one fetch. Wrong-status, invalid-payload and HTTP transport
+  errors become unavailable; the route warns and returns JSON null with 200. Keep cancellation
+  distinct from transport failure and never cache a caller cancellation. Bound downloaded
+  bytes using B173's existing response limit. Decode through decode_latest_release(status,
+  bytes), fuzz latest_release and replay replays_the_latest_release_corpus.
+  Add the pure release_bullets helper oracle for classification. To test the actual route
+  deterministically, add a typed latest_release_fixture HttpCase option that binds only this
+  service's fixed remote URL to B001's mock server. A checked, fixed Python startup fixture
+  replaces the pinned module's URL constant; the native B860 fixture-control channel injects
+  the corresponding transport destination before boot. Neither side replaces a handler,
+  parser or cache. Reject conflicting startup hooks and keep this override unavailable to
+  normal production configuration. Test two successive HTTP steps for cached success and
+  cached null, and native clock-controlled expiry/concurrent-miss/cancellation cases. The
+  118 nonblank source lines budget 170 service, 180 native tests, 170 oracle fixture wiring,
+  120 helper adapters and 100 fuzz/cases, within 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/release_info.rs
+    - crates/betterlite-server/src/release_info/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/latest_release.rs
+    - crates/betterlite-server/fuzz/corpus/latest_release/**
+    - tools/oracle/src/case.rs
+    - tools/oracle/src/process.rs
+    - tools/oracle/src/process/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/release_bullets.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/release_bullets.py
+    - tools/oracle/fixtures/release-oracle/**
+    - tools/oracle/cases/helpers/release-bullets/**
+    - tools/oracle/cases/management/release-info/**
+    - tools/oracle/fuzz/corpus/helper_case/release-bullets-*
+    - tools/oracle/fuzz/corpus/http_case/release-info-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/latest_release_endpoints.py#L18-L132
+    why: Release records, exact bullet expressions, response decoding and double-checked cache population.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/latest_release_endpoints.py#L134-L153
+    why: Authenticated route returns null for a cached unavailable result.
+dod:
+  - text: Release summaries preserve the pinned bullet grammar, field validation and lowercase-v normalization.
+    proof: [release-tests, oracle, release-python, release-corpora]
+  - text: Success and unavailable results use their different lifetimes and concurrent misses share a fetch.
+    proof: [release-tests, oracle, release-fixture-tests, release-python]
+  - text: The real HTTP route remains authenticated and fixture redirection cannot become a public URL override.
+    proof: [release-tests, release-fixture-tests, oracle, release-python, release-corpora]
+checks:
+  optional: []
+  commands:
+    - id: release-tests
+      why: A release response is counted incorrectly or unavailable results flood GitHub.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^release_info::/) - test(replays_the_latest_release_corpus)'
+    - id: release-fixture-tests
+      why: Release oracle setup changes production handlers or leaks its fixed override between proxy processes.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^process::release_fixture::/)'
+    - id: release-python
+      why: Release helper or fixed startup fixture lacks strict Python checking.
+      run: test -f tools/oracle/helpers/release_bullets.py && test -f tools/oracle/fixtures/release-oracle/startup.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/fixtures/release-oracle && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/fixtures/release-oracle/pyrightconfig.json
+    - id: release-corpora
+      why: Release JSON and the new helper/HTTP options are absent from decoder replay inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/latest_release)" && grep -rlq 'release_bullets:' tools/oracle/fuzz/corpus/helper_case/release-bullets-* && grep -rlq 'latest_release_fixture:' tools/oracle/fuzz/corpus/http_case/release-info-* && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_latest_release_corpus) | test(replays_the_helper_case_corpus) | test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/release-bullets/scopes-breaking-markers-and-case.yaml
+  - tools/oracle/cases/helpers/release-bullets/first-contributors-indent-and-non-bullets.yaml
+  - tools/oracle/cases/management/release-info/success-is-cached.yaml
+  - tools/oracle/cases/management/release-info/non-200-is-cached-null.yaml
+  - tools/oracle/cases/management/release-info/invalid-release-record-and-auth.yaml
+deviations:
+  - what: Release information comes from https://api.github.com/repos/betterlite-ai/betterlite/releases/latest and links to betterlite releases instead of LiteLLM releases.
+    why: The retained dashboard is rebranded for betterlite and its upgrade notice must describe the installed product.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/latest_release_endpoints.py#L18-L22
+out_of_scope:
+  - B144-B150 own dashboard rendering and upgrade-banner presentation; this service only supplies its JSON data.
+pitfalls:
+  - A GitHub failure is cached for five minutes and returned as null, not raised as a failed management request.
+  - The first-contributor exclusion runs before the generic bullet counter, so those entries never inflate other_updates.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: standard

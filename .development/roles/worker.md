@@ -42,5 +42,5 @@ Your final answer is one JSON object that matches .development/schema/report.sch
 - summary says what changed, in two to four plain sentences.
 - blocker is empty when done.
 - prior_art has one entry per problem you solved by picking an existing solution or deliberately writing your own. Each entry compares at least two options with https links and marks exactly one chosen. Every crate you added to a Cargo.toml must be a chosen option here, or the gate fails.
-- deviations lists every place betterlite now differs from LiteLLM, with why and a link when there is one.
+- deviations lists every place betterlite now differs from LiteLLM, with why and a link when there is one. Write the same entries to docs/deviations/<ID>.yaml (`task: <ID>` and a `deviations` list of what, why and link); the scope check always allows that one file, and the dispatcher compares it with the report.
 - notes holds facts the architect needs and nothing else.

@@ -1,0 +1,82 @@
+id: B1613
+title: Start and confirm browser-bound CLI login flows
+description: >-
+  Register public POST /sso/cli/start and POST /sso/cli/complete/{login_id} in
+  betterlite-server::cli_login_flow. Implement the ui_sso.py flow/hash/code/cache helpers
+  at L261-L401, both handlers and SSOAuthenticationHandler._get_cli_state. Use B125/B126's
+  cache interfaces: a configured Redis is authoritative for flow reads/writes, with an open
+  Redis circuit treated as a missing flow instead of falling back to local memory. Store
+  only SHA256 hashes of the poll secret, normalized code and browser completion token.
+  Generate cli- plus 24 random URL-safe bytes, a separate 32-byte poll secret, and eight
+  characters from ABCDEFGHJKLMNPQRSTUVWXYZ23456789 displayed four-four. Flow TTL is 600s;
+  writes refresh it. Limit starts to 30 per 60s using the hashed client IP from B744 and
+  general_settings.use_x_forwarded_for=false. general_settings.allow_cli_sso_verification_uri_complete
+  defaults false; when enabled, B124's URL helper builds the source=litellm-cli link.
+  CLI OAuth state uses litellm-session-token:login_id with an optional strictly valid displayed
+  code; existing_key has no effect. Complete requires a ready session, then compares the
+  normalized Unicode-alphanumeric code hash and browser token hash in constant time; only
+  then set user_code_verified and serve B1612's success page. Keep the old sk- login-id 400
+  diagnostic and identical invalid-code errors for either bad secret. Define decode_cli_flow
+  for cached JSON and decode_cli_complete_form for UTF-8 URL-encoded body bytes, retaining the
+  first duplicate form value. Fuzz them through cli_login_input. The 205 source lines yield
+  approximately 260 product, 200 behavior/HTTP tests and 130 config/fuzz lines, budget 700.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/cli_login_flow.rs
+    - crates/betterlite-server/src/cli_login_flow/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/cli_login_input.rs
+    - crates/betterlite-server/fuzz/corpus/cli_login_input/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/cli_login_flow.rs
+    - crates/betterlite-config/src/cli_login_flow/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/cli-login-flow-*
+    - tools/oracle/cases/sso/cli-flow/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L261-L401
+    why: Rate limiting, flow lookup, Redis authority and secret comparison.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L703-L785
+    why: Both public route decorators and completion write order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3441-L3466
+    why: CLI source, legacy argument and state formatting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1743-L1747
+    why: CLI state prefix, cache namespace and lifetime.
+dod:
+  - text: Actual unauthenticated HTTP starts and completion failures preserve status, headers and error envelopes.
+    proof: [flow-tests, oracle]
+  - text: Successful verification changes only its flag, while Redis outages cannot resurrect a local flow.
+    proof: [flow-tests]
+  - text: The two general settings load with false defaults and new form/cache inputs survive corpus replay.
+    proof: [flow-config, flow-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: flow-tests
+      why: CLI secrets, replay state, IP throttling or the public route boundary is incorrect.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cli_login_flow::/) - test(replays_the_cli_login_input_corpus)'
+    - id: flow-config
+      why: The production loader ignores the optional complete-URI setting or forwarded-IP policy.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^cli_login_flow::tests::loads_flow_settings/)'
+    - id: flow-corpora
+      why: CLI cache/form bytes or their config seed have no branch-added regression inputs.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/cli_login_input.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/cli_login_input)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/cli-login-flow-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(replays_the_cli_login_input_corpus) | test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/sso/cli-flow/public-start-without-complete-uri.yaml
+  - tools/oracle/cases/sso/cli-flow/opt-in-complete-uri.yaml
+  - tools/oracle/cases/sso/cli-flow/thirty-first-start.yaml
+  - tools/oracle/cases/sso/cli-flow/legacy-and-invalid-login-id.yaml
+  - tools/oracle/cases/sso/cli-flow/unready-and-expired-session.yaml
+deviations: []
+out_of_scope:
+  - Browser identity completion and its browser token are created by B1615; B1614 consumes verified flows to issue a CLI JWT.
+  - B063's ui_sso.py inventory assigns the provider and UI-session functions outside the flow ranges above.
+pitfalls:
+  - A Redis circuit breaker returning no flow must produce the expired-session 400 even if local cache still has a copy.
+  - User-code comparison strips punctuation and uppercases Unicode, but state prefill accepts only the fixed ASCII code pattern.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security

@@ -8,6 +8,7 @@ use crate::error::GateError;
 use crate::spec::agents::Agents;
 use crate::spec::backlog::Backlog;
 use crate::spec::catalog::Catalog;
+use crate::spec::deviations::DeviationLog;
 use crate::spec::litellm::Litellm;
 use crate::spec::report::Report;
 use crate::spec::review::Review;
@@ -15,7 +16,7 @@ use crate::spec::rules::Rules;
 use crate::spec::task::Task;
 
 pub(crate) fn generate() -> Result<Vec<(&'static str, String)>, GateError> {
-    let schemas: [(&'static str, Schema); 8] = [
+    let schemas: [(&'static str, Schema); 9] = [
         ("task.schema.json", schema_for!(Task)),
         ("backlog.schema.json", schema_for!(Backlog)),
         ("checks.schema.json", schema_for!(Catalog)),
@@ -24,6 +25,7 @@ pub(crate) fn generate() -> Result<Vec<(&'static str, String)>, GateError> {
         ("report.schema.json", schema_for!(Report)),
         ("review.schema.json", schema_for!(Review)),
         ("litellm.schema.json", schema_for!(Litellm)),
+        ("deviations.schema.json", schema_for!(DeviationLog)),
     ];
     schemas
         .into_iter()

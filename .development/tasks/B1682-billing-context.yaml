@@ -1,0 +1,121 @@
+id: B1682
+title: Select billing model identity and deliver cost breakdowns
+description: >-
+  Implement betterlite-core::cost::context for cost_calculator.py L773-L925,
+  _store_cost_breakdown_in_logging_obj L1221-L1289, _response_time_ms_for_cost L1317-L1329,
+  _deployment_model_info/_ocr_model_info L2075-L2111 and pricing_entry_for_cost_calc L2141-L2171.
+  Also own Logging.set_cost_breakdown L1719-L1796 as betterlite-logging::cost_breakdown,
+  extending B247's request-owned state with B1667's CostBreakdown and B1673's optional billed
+  rate record. Keep the logging record update below core and its best-effort caller above it.
+  These 338 nonblank source lines budget 340 production across those modules, 260 tests
+  and 200 adapters/cases, capped at 800.
+  Preserve typed-response versus dictionary identity: both expose a model, but only an
+  object's _hidden_params attribute supplies hidden model/provider_response_model/region.
+  A supplied provider, even empty string, prevents inference; otherwise B174 failure logs
+  debug and returns no provider. Hidden string values require nonempty strings. With exact
+  custom_pricing=true, prefer router_model_id only if its raw entry declares any nonnull
+  cost_per_second, input/output seconds, input_cost_per_query, tiered_pricing or field
+  containing both cost_per and token. This predicate tests declaration, not numeric validity
+  or positivity, and excludes per-image-only rates. Otherwise use request model. Without
+  custom pricing, precedence is nonnull base_model, nonempty provider_response_model,
+  hidden model only when response model is absent, response model, request model. Preserve
+  empty explicit base/response strings. Hidden region or supplied region applies only when
+  pricing from a response without explicit custom/base pricing.
+  Prefix a selected name only when its first slash component is not a B209 known provider.
+  Include the priced region in that prefix when present. The alias-strip operation first
+  preserves the whole name when dropping its initial component finds a registered raw key;
+  otherwise preserve a matching provider/region head and try increasingly stripped tail
+  prefixes, stopping before a known-provider segment. Choose the first raw catalog hit,
+  leaving the input unchanged if none exists. Do not broaden this to arbitrary suffix search.
+  Deployment price extraction is enabled by truthy custom_pricing. A registered mapping
+  under router_model_id wins even when empty; otherwise use the first nonnull model_info
+  from truthy logging metadata then litellm_metadata. OCR overlays top-level logging params
+  before that extracted record, per field, through B1678. pricing_entry_for_cost_calc
+  returns a deployment entry immediately when it has a nonnull router-id-or-model key;
+  otherwise try selected model, response model and request model with soft effective lookup,
+  accepting the first truthy result and returning its truthy raw entry or effective fallback.
+  Response time prefers any numeric _response_ms including zero/negative/Boolean, then a
+  truthy explicit total_time, then B254's logging response-time method, else zero.
+  Breakdown storage first replaces billed_token_rates and the whole base CostBreakdown
+  with input/output/total/tool_usage_cost and nullable service_tier/data_residency/vertex_location.
+  Add cache-read/write/reasoning lines only when positive; include nonempty additional_costs,
+  and include every supplied discount/margin field even when zero. A later call replaces,
+  rather than merges, the previous breakdown. Core's forwarding helper skips a missing
+  logging target and catches any storage failure at debug without altering the computed cost.
+  Native tests cover raw/effective lookup, identity precedence, alias stopping rules, record
+  replacement and a failing breakdown target. Pure billing_context oracle operations use
+  explicit-provider identity inputs that avoid catalog-dependent paths, the declaration
+  predicate, and isolated request-record breakdown projection with no callback/global state.
+  Add helper_case seeds for response-kind distinctions and zero-valued breakdown fields.
+  No runtime setting or new external-byte decoder belongs to these parsed context views.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/context.rs
+    - crates/betterlite-core/src/cost/context/**
+    - crates/betterlite-logging/Cargo.toml
+    - crates/betterlite-logging/src/lib.rs
+    - crates/betterlite-logging/src/logging_state.rs
+    - crates/betterlite-logging/src/cost_breakdown.rs
+    - crates/betterlite-logging/src/cost_breakdown/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/billing_context.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/billing_context.py
+    - tools/oracle/cases/helpers/billing-context/**
+    - tools/oracle/fuzz/corpus/helper_case/billing-context-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L773-L925
+    why: Model identity, declared-price recognition and bounded provider-segment stripping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1221-L1289
+    why: Breakdown forwarding is deliberately best effort and never changes the charge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1317-L1329
+    why: A stamped numeric response time wins even when zero.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2075-L2171
+    why: Deployment/logging pricing provenance and effective-to-raw entry selection; B1678 owns the interleaved lookup/layering helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1719-L1796
+    why: Replacement semantics, positive-only token detail lines and nullable billing basis fields.
+dod:
+  - text: Billing identity follows response-kind, custom/base/hidden model and region precedence without silently selecting a different catalog alias.
+    proof: [billing-context-tests, oracle, billing-context-python]
+  - text: Deployment overrides and pricing diagnostics preserve raw declarations, empty mappings and effective lookup fallback order.
+    proof: [billing-context-tests, oracle, billing-context-python, billing-context-corpus]
+  - text: Cost breakdown storage replaces the previous record with correctly omitted or zero-valued fields, and a failing target cannot change the price.
+    proof: [billing-context-tests, breakdown-record-tests, oracle, billing-context-python]
+checks:
+  optional: []
+  commands:
+    - id: billing-context-tests
+      why: Billing selects the wrong model/region or propagates a bookkeeping failure as a cost failure.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::context::/)'
+    - id: breakdown-record-tests
+      why: Logging retains stale breakdown fields or suppresses explicit zero discount/margin values.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^cost_breakdown::/)'
+    - id: billing-context-python
+      why: Billing-context projections lack a strict adapter against the source's functions and record update.
+      run: test -f tools/oracle/helpers/billing_context.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: billing-context-corpus
+      why: No billing_context variant covers typed versus dictionary responses in parser replay.
+      run: grep -rlq 'billing_context:' tools/oracle/fuzz/corpus/helper_case/billing-context-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/billing-context/explicit-base-versus-provider-response-model.yaml
+  - tools/oracle/cases/helpers/billing-context/dictionary-hidden-key-is-not-an-attribute.yaml
+  - tools/oracle/cases/helpers/billing-context/declared-zero-token-price-versus-image-only.yaml
+  - tools/oracle/cases/helpers/billing-context/stamped-zero-response-time-wins.yaml
+  - tools/oracle/cases/helpers/billing-context/breakdown-positive-token-lines-and-zero-margin.yaml
+  - tools/oracle/cases/helpers/billing-context/second-breakdown-replaces-old-additional-costs.yaml
+deviations: []
+out_of_scope:
+  - B1678 owns cost_calculator.py L2114-L2138's OCR layering and soft/raw lookup helpers; B1681 owns websocket grouping and realtime pricing, and B1680 owns usage aggregation.
+  - Context does not own cost_calculator.py's adjustment formulas (B1649), custom token prices (B1673), image defaults (B1674), timed/transcription/video math (B1676), extra fees (B1677), batches (B1679), usage/tier diagnostics (B1683), token/vector/rerank dispatch (B1686), completion preparation (B1688), or replicate/early-call charges (B1689); B068 executes the enclosing completion and response calculators.
+  - Logging lifecycle methods other than set_cost_breakdown remain with B247-B254 and B190 under their existing litellm_logging.py coverage; this task neither dispatches callbacks nor performs spend writes.
+pitfalls:
+  - Per-image-only catalog entries do not satisfy the custom token/seconds/query declaration predicate used to select a router id.
+  - Hidden response metadata is read as an object attribute, so a dictionary key named _hidden_params cannot change billing identity.
+  - Replacing a cost breakdown drops old additional costs and token-detail lines rather than accumulating them across calls.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

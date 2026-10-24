@@ -4,6 +4,7 @@ use crate::answer::parse_answer;
 use crate::checks;
 use crate::dependencies::added_dependencies;
 use crate::development::Development;
+use crate::deviations;
 use crate::dispatch::seat::{Seat, invoke};
 use crate::dispatch::{Attempt, Step, prompt, review};
 use crate::error::GateError;
@@ -56,7 +57,13 @@ fn failures(
 ) -> Result<Vec<String>, GateError> {
     let verdict = checks::run(worktree, &worktree.task(task_id)?, &[])?;
     let added = added_dependencies(&worktree.root, &resolve_base(&worktree.root)?)?;
-    let problems = report_problems(report, task_id, &added);
+    let mut problems = report_problems(report, task_id, &added);
+    let logged = deviations::read_log(&worktree.root, task_id)?;
+    problems.extend(deviations::mismatch(
+        &report.deviations,
+        logged.as_ref(),
+        task_id,
+    ));
     if verdict.passed && problems.is_empty() {
         return Ok(Vec::new());
     }

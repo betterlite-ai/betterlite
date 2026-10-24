@@ -1,0 +1,95 @@
+id: B1713
+title: Remove credentials and prompt echoes from persisted spend content
+description: >-
+  Implement betterlite-logging::spend_sanitize for spend_tracking_utils.py's raw-model
+  scrubbing at 434-495 and request/error/guardrail/serialization transforms at 1096-1510.
+  Receive store_bodies and maximum string length as explicit policy inputs; B1714 resolves
+  them, so this lower module never imports server globals. Reuse B244's sensitive-key
+  detector with apikey added. Strip secret_fields at every mapping depth, mask credential
+  strings as REDACTED_BY_LITELM, and disable credential masking inside arguments/logprobs,
+  tool-use input and tool-result content/output while still stripping secret_fields and
+  truncating strings. Apply that exception recursively only below the matching value.
+  Truncate Unicode characters using the source's 35-percent head/65-percent tail layout
+  and exact litellm_truncated marker/safeguard note. Retain Python slice behavior when a
+  kept segment is zero or negative, including the full tail for -0. Use checked integer
+  arithmetic; the recorded deviation covers binary-float rounding at the split boundary.
+  The sanitizer's visited mapping set remains populated across siblings, so a repeated
+  mapping becomes {}; the generic JSON projection instead removes identities on unwind,
+  emits <circular_reference> for a current-path cycle and <max_depth_exceeded> at depth 0,
+  default 20. Preserve typed model-dump/object-attribute projection and primitive values;
+  represent foreign-object identity at the Python bridge with owned node IDs, never Rc/RefCell.
+  Scan quoted input/messages/prompt keys and input_value assignments in provider error
+  strings. Honor escaped quotes and the source bracket scanner; an unterminated structured
+  value redacts through end of text, while an unquoted scalar is left intact. Expose
+  redact_spend_error_text(&str) as the production text decoder and fuzz arbitrary UTF-8
+  text through it with a bounded byte-entry adapter in the logging crate.
+  When bodies are disabled, normalize a bare guardrail mapping to a list, omit nonmapping
+  entries and redact only present guardrail_request/guardrail_response/match_details/
+  classification fields. Preserve numeric tokens_before/tokens_after/tokens_saved/
+  compression_ratio from guardrail_response, excluding booleans. With bodies enabled,
+  preserve the source input shape. Error sanitization first uses ProxyModelNotFoundError's
+  safe spend message when supplied, then redacts prompt echoes if required, then applies
+  the storage sanitizer to error_message/traceback and remaining fields.
+  Raw-model scrubbing replaces literal, Python-repr and JSON-escaped spellings with
+  unknown-model, deduplicated in that order. For a truncation marker, remove the longest
+  matching model prefix at the end of the head and suffix at the start of the tail,
+  inserting unknown-model on each affected side; touch only error_message and traceback.
+  Pure spend_sanitize cases cover every transform, including malformed errors, repeated
+  references and guardrail numeric exceptions. Owned functions/constants total about 380
+  nonblank lines; allocate 370 implementation, 240 tests and 190 oracle/fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-logging/src/lib.rs
+    - crates/betterlite-logging/src/spend_sanitize.rs
+    - crates/betterlite-logging/src/spend_sanitize/**
+    - crates/betterlite-logging/fuzz/{Cargo.toml,fuzz_targets/spend_error_text.rs,corpus/spend_error_text/**}
+    - tools/oracle/src/helpers/{mod.rs,spend_sanitize.rs}
+    - tools/oracle/helpers/{dispatch.py,spend_sanitize.py}
+    - tools/oracle/cases/helpers/spend-sanitize/**
+    - tools/oracle/fuzz/corpus/helper_case/spend-sanitize-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L434-L495
+    why: Raw model spellings and model fragments split across a truncation marker.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L1096-L1510
+    why: Credential/content distinctions, prompt-echo scanner, guardrail/error sanitation and cycle-safe projection.
+dod:
+  - text: Persisted content masks credential strings and prompt echoes while preserving tool content and numeric guardrail statistics where the source does.
+    proof: [sanitize-tests, oracle, sanitize-python, sanitize-helper-corpus]
+  - text: Error scanning, raw-model fragment removal, Unicode truncation and object traversal terminate with their specified malformed/cycle behavior.
+    proof: [sanitize-tests, sanitize-text-corpus, oracle, sanitize-python]
+checks:
+  optional: []
+  commands:
+    - id: sanitize-tests
+      why: A spend sanitizer leaks a protected field or changes a retained tool/guardrail value.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^spend_sanitize::/) - test(replays_the_spend_error_text_corpus)'
+    - id: sanitize-python
+      why: Direct sanitizer/scanner projections have no checked oracle adapter.
+      run: test -f tools/oracle/helpers/spend_sanitize.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: sanitize-helper-corpus
+      why: Sanitizer projection records have no helper-parser seed.
+      run: grep -rlq 'spend_sanitize:' tools/oracle/fuzz/corpus/helper_case/spend-sanitize-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: sanitize-text-corpus
+      why: The production error-text scanner lacks new malformed-input replay coverage.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-logging/fuzz/corpus/spend_error_text)" && test -f crates/betterlite-logging/fuzz/fuzz_targets/spend_error_text.rs && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_spend_error_text_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-sanitize/tool-content-versus-credential-fields.yaml
+  - tools/oracle/cases/helpers/spend-sanitize/quoted-nested-unterminated-and-scalar-errors.yaml
+  - tools/oracle/cases/helpers/spend-sanitize/guardrail-numeric-stats-exclude-bools.yaml
+  - tools/oracle/cases/helpers/spend-sanitize/raw-model-escaped-and-split-by-marker.yaml
+  - tools/oracle/cases/helpers/spend-sanitize/repeated-mapping-cycle-and-depth-boundary.yaml
+  - tools/oracle/cases/helpers/spend-sanitize/unicode-and-zero-kept-tail.yaml
+deviations:
+  - what: The 35/65 string split uses exact rational arithmetic, so a binary-float rounding boundary may preserve one different character at either edge.
+    why: The workspace forbids floating-point arithmetic; use deterministic checked integer ratios and test the differing 180-character limit natively.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L1160-L1186
+out_of_scope:
+  - B1714 resolves body-storage settings and builds request/response/session projections; B1715 owns identity/metadata attribution and B1716 composes get_logging_payload.
+pitfalls:
+  - Credential-looking keys inside function arguments are user content, but nested secret_fields must still disappear.
+  - A malformed echoed prompt must redact the remaining string rather than leave its unterminated body visible.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

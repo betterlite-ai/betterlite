@@ -1,0 +1,86 @@
+id: B1648
+title: Persist CyberArk overrides with runtime rollback and boot-state restoration
+description: >-
+  Implement cyberark_config_routes for POST/GET/DELETE /config_overrides/cyberark and
+  POST /config_overrides/cyberark/test_connection. Authenticate through B052, restrict
+  mutations/probes to proxy_admin and permit administrator viewers on GET. CRUD checks
+  DB availability after role checks; the probe needs only an active CyberArk manager.
+  Decode through B1646 and merge non-null supplied fields over truthy values from a
+  non-null stored row, falling back to the current CyberArk environment view only when
+  that row/value is absent. Empty strings clear fields. Require cyberark_api_base plus
+  cyberark_api_key or a complete client_cert/client_key pair, otherwise 400.
+  Before the first overwrite, capture deployment boot values once. Snapshot current values,
+  apply the merge and initialize B129's CyberArk client. Initialization failure restores
+  the values and returns 500 without inventing a full previous-manager rollback. Persistence
+  is a different failure boundary: call B1646's encrypted upsert, set the last-config marker
+  on success, but on any persistence error restore the previous runtime via its best-effort
+  reinitialization/Vault fallback and return 500. Emit the redacted created/updated audit
+  only after success, using row existence even for a null config_value and the optional
+  litellm-changed-by header. Preserve actual encrypted-row write order without a transaction
+  spanning manager initialization and PostgreSQL.
+  GET returns the shared field schema and masks cyberark_api_key/client_key in either the
+  stored sparse mapping or full environment projection. DELETE ignores missing-row errors
+  and prior-decryption failure, restores the original boot environment/manager through
+  B1646 even when no row existed, and audits only an actual deletion. Probe obtains the
+  active client's headers, then GETs conjur_addr plus /whoami with that client's ssl_verify
+  through B173; authentication and HTTP/TLS failures produce 502, wrong manager 400, and
+  successful operations 200/status=success. B129 owns default account/admin names, TLS and
+  token refresh settings; this route does not reset them independently.
+  Use B1644 eligible oracle children because the MIT CyberArk client has a premium flag
+  check, and B1630 transcripts for update/read/delete/probe sequences against local Conjur.
+  Native fault tests prove persistence rollback and original-boot restoration after multiple
+  updates. The 220 handler lines budget 245 implementation, 235 tests and 170 HTTP/decoder
+  fixtures, with a 725-line limit.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/cyberark_config_routes.rs
+    - crates/betterlite-server/src/cyberark_config_routes/**
+    - crates/betterlite-server/fuzz/corpus/config_override/cyberark-routes-*
+    - tools/oracle/cases/management/cyberark-config/**
+    - tools/oracle/fuzz/corpus/http_case/cyberark-config-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L651-L932
+    why: CyberArk route decorators, persistence rollback, masked reads, idempotent deletion and whoami probe.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/cyberark_secret_manager.py#L30-L71
+    why: Dependency-owned client initialization and the oracle eligibility prerequisite.
+dod:
+  - text: CyberArk updates merge and clear fields, persist encrypted data and restore runtime state after persistence failure.
+    proof: [cyberark-route-tests, oracle]
+  - text: Deletion restores original deployment values after repeated edits, while read responses remain masked and viewer-accessible.
+    proof: [cyberark-route-tests, oracle]
+  - text: Active-client probes honor TLS/auth configuration and HTTP status/header/error behavior.
+    proof: [cyberark-route-tests, oracle, cyberark-route-corpora]
+checks:
+  optional: []
+  commands:
+    - id: cyberark-route-tests
+      why: CyberArk override rollback, role checks or active-client probing changes observable state incorrectly.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cyberark_config_routes::/)'
+    - id: cyberark-route-corpora
+      why: CyberArk override requests and route transcripts lack new decoder corpus inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/config_override/cyberark-routes-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/cyberark-config-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_override_corpus) | test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/cyberark-config/partial-update-preserves-account.yaml
+  - tools/oracle/cases/management/cyberark-config/empty-api-key-needs-certificate-pair.yaml
+  - tools/oracle/cases/management/cyberark-config/delete-restores-first-boot-values.yaml
+  - tools/oracle/cases/management/cyberark-config/viewer-read-is-masked.yaml
+  - tools/oracle/cases/management/cyberark-config/whoami-receives-current-authentication.yaml
+  - tools/oracle/cases/management/cyberark-config/probe-denial-and-wrong-manager.yaml
+  - tools/oracle/cases/management/cyberark-config/non-admin-and-malformed-body.yaml
+deviations:
+  - what: CyberArk failures keep their 500/502 statuses but credential-bearing exception text is removed from responses and logs.
+    why: An initialization, authentication or persistence exception must not reveal the active API key or client private key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L726-L746
+out_of_scope:
+  - B1646 implements every shared helper and protocol in config_override_endpoints.py L50-L322; B1647 implements Vault's four handlers L328-L645.
+  - Secret-manager authentication/token caching is B129, and periodic configuration reload remains B124.
+pitfalls:
+  - The CyberArk boot snapshot is captured once, so deleting a second edited configuration restores deployment values rather than the first edit.
+  - Unlike Vault, CyberArk explicitly restores runtime state when encrypted persistence fails after initialization.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: security

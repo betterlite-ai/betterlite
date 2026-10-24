@@ -1,0 +1,118 @@
+id: B1749
+title: Persist request logs with byte limits and isolated poison rows
+description: >-
+  Add betterlite-db::spend_log_storage for bounded row queues, Redis parking/recovery,
+  log inserts and batch-charge claims. Extract enqueue_spend_logs, request_spend_log_flush,
+  dequeue_spend_logs, _park_spend_logs_in_redis, requeue_spend_logs,
+  recover_parked_spend_logs, ProxyUpdateSpend.update_spend_logs,
+  _is_transient_spend_log_write_error, _create_spend_logs_with_poison_isolation and
+  _raise_failed_update_spend_exception from proxy/utils.py. Queue byte accounting belongs
+  to the owned store and uses B1706 sizing/trimming under its lock. Head replay precedes
+  newly queued rows, but trimming still removes oldest rows and retains one newest row
+  even when oversized. Load SPEND_LOG_QUEUE_MAX_BYTES=64000000, clamped to at least one,
+  and optional SPEND_LOGS_URL (unset by default). Reuse B1706 statement limits. A flush
+  request coalesces only while a monitor exists; no monitor means no signal to retain.
+  Parking delegates B1737 and returns false with warning on failure; replay uses Redis
+  first then the memory head. Recover at most the fixed 1000 parked rows; a memory-enqueue
+  failure reparks those popped rows before propagating, including cancellation.
+  Own the writer's _is_batch_cost_row, _batch_cost_row_to_write, _record_spend_log,
+  _claim_batch_cost_spend_log, _take_over_uncharged_batch_cost_row and
+  _insert_spend_log_to_db. Only successful aretrieve_batch logs claim a charge. Insert
+  with duplicate skipping; an inserted row charges, an existing positive successful
+  batch row suppresses charge, and an unrelated/missing row charges without replacing it.
+  A zero row can be taken over by a positive cost using a conditional update on exact
+  request_id/call_type/status/spend=0; failed takeover returns false for a later retry.
+  Claim read/insert failure queues the row and returns true. With logging disabled, keep
+  only request_id,call_type,spend,startTime,endTime,status for this deduplication row.
+  Ordinary log insertion requires a database attachment even when SPEND_LOGS_URL is set;
+  responses/aresponses insertion also wakes the monitor.
+  A log pass pops at most 10000 rows unless passed a caller-owned batch. If an external
+  writer URL and B173 client both exist, POST the serialized array to base/spend/update
+  with Content-Type application/json. Preserve the source's lack of action for a non-200
+  HTTP response. Otherwise process groups of 1000 rows, split by B1706 row/byte limits,
+  and create_many with duplicate skipping. Give each 1000-row group 256 failed-insert
+  isolation attempts. Only data rejection splits a failing statement left then right;
+  singleton poison rows and a still-failing remainder at exhausted budget are dropped
+  with diagnostics. Transport/unavailable/deadlock errors never enter bisection. Healthy
+  later statements remain attemptable after the isolation budget is exhausted.
+  Transient writes retry with 2^attempt seconds; after the final attempt requeue and
+  propagate. Other database errors requeue once then propagate; unrelated exceptions
+  propagate without that database-specific replay. Preserve caller-owned batches.
+  Failure reporting submits an owned B012 failure event with call_type update_spend,
+  elapsed duration and the [Non-Blocking] diagnostic prefix, then rethrows the original
+  error. About 370 source lines fit an 800-line budget with PostgreSQL poison/claim races,
+  fake writer HTTP statuses, queue-budget/config tests and pure batch_claim_row cases.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/spend_log_storage.rs
+    - crates/betterlite-db/src/spend_log_storage/**
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/spend-log-storage-*
+    - tools/oracle/src/helpers/{mod.rs,batch_claim_row.rs}
+    - tools/oracle/helpers/{dispatch.py,batch_claim_row.py}
+    - tools/oracle/cases/helpers/batch-claim-row/**
+    - tools/oracle/fuzz/corpus/helper_case/batch-claim-row-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L105-L121
+    why: Successful batch detection and minimal charge marker fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L609-L700
+    why: Claim, collision and conditional takeover semantics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1473-L1493
+    why: Database attachment and immediate Responses flush signal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7200-L7268
+    why: Byte-accounted queue, monitor notification and dequeue.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7311-L7401
+    why: Database/external-writer branches and retry ownership.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7461-L7503
+    why: Parking fallback and recovery compensation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7833-L7927
+    why: Poison isolation budget and nonblocking failure reporting.
+dod:
+  - text: Queue accounting, parking and external/database writes retain the pinned retry and loss boundaries.
+    proof: [log-storage-tests, log-storage-settings, log-storage-config-corpus]
+  - text: Data poison is isolated without treating an outage as bad rows or losing healthy later statements.
+    proof: [poison-isolation-tests]
+  - text: Concurrent batch claims and zero-row takeover suppress only an already recorded positive charge.
+    proof: [batch-claim-tests, oracle, batch-claim-python, batch-claim-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: log-storage-tests
+      why: Row queue ownership, writer statuses or parking compensation is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_log_storage::rows::/)'
+    - id: poison-isolation-tests
+      why: Poison splitting and its per-group failure budget have no database tests.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_log_storage::poison::/)'
+    - id: batch-claim-tests
+      why: Batch claim collisions and conditional takeover lack concurrent tests.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_log_storage::batch_claim::/)'
+    - id: log-storage-settings
+      why: Log queue bytes and external writer settings are not loaded and checked.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_spend_log_storage_settings)'
+    - id: log-storage-config-corpus
+      why: Storage configuration has no newly added config-parser inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/spend-log-storage-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: batch-claim-python
+      why: Minimal batch-row adapters do not pass strict Python checks.
+      run: test -f tools/oracle/helpers/batch_claim_row.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: batch-claim-corpus
+      why: Charge-marker helper variants have no tagged replay seed.
+      run: grep -rlq 'batch_claim_row:' tools/oracle/fuzz/corpus/helper_case/batch-claim-row-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/batch-claim-row/successful-retrieve-versus-other-calls.yaml
+  - tools/oracle/cases/helpers/batch-claim-row/logging-disabled-six-field-marker.yaml
+deviations: []
+out_of_scope:
+  - B1747 owns the wait helper between queue notification and dequeue plus monitor/shutdown; B1744 owns census and usage job orchestration; B1748 owns periodic balance/tag jobs.
+  - B1745 extracts end-user writes, B1743 extracts metadata status and B1714 extracts disable_spend_updates; other proxy/utils.py functions keep B124 and existing narrower owners.
+  - B070 and B1742 through B1748 own all remaining writer construction, enqueue and commit functions; this task handles ordinary provider batch-retrieve evidence, not managed batch orchestration.
+pitfalls:
+  - The poison budget resets per 1000-row outer group, not per SQL statement and not once for the entire 10000-row pass.
+  - An external spend writer returning HTTP 500 does not trigger the source's retry branch unless the HTTP client itself raises.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

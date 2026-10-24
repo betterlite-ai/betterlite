@@ -1,0 +1,90 @@
+id: B1627
+title: Expose SSO readiness, UI settings and opt-in diagnostics
+description: >-
+  Add sso_status_debug to betterlite-server, owning get_ui_settings, sso_readiness,
+  _raise_if_sso_debug_disabled, debug_sso_login and debug_sso_callback in ui_sso.py.
+  Register authenticated GET /sso/get/ui_settings and /sso/readiness, plus public
+  GET /sso/debug/login and /sso/debug/callback gated by ENABLE_SSO_DEBUG (absent unless
+  explicitly true, otherwise 404). Readiness selects the first present Google/Microsoft/
+  generic client ID and reports missing variables in source order; missing requirements
+  yield 503. It deliberately ignores SAML, while UI settings call B881's SAML-aware
+  has_user_setup_sso. UI output includes PROXY_BASE_URL, PROXY_LOGOUT_URL and
+  LITELLM_UI_API_DOC_BASE_URL, all absent by default, and B121's spend_logs_row_count (initially
+  zero). DISABLE_EXPENSIVE_DB_QUERIES is count > MAX_SPENDLOG_ROWS_TO_QUERY=1000000.
+  general_settings.default_team_disabled defaults false; PROXY_DEFAULT_TEAM_DISABLED only
+  forces true when its lowercased value is true, never forces a configured true back to false.
+  Debug login uses B1628 authorization with the debug callback URL and no paid-tier check.
+  Debug callback derives its URL from PROXY_BASE_URL or request base directly, without the
+  regular root-path helper. Reuse B1615's query decoder and SSO-specific group projection,
+  dispatch raw Google/Microsoft responses or generic B1623 output, and show a 400 HTML
+  failure when no provider returns data. Remove null/private-name fields, preserve scalar
+  values and use Python-compatible string representations for compound parsed fields.
+  Render parsed_by_proxy, raw_claims and access_token_claims through B769's safe JSON-in-script
+  template. Strip bearer fields from all three projections, including parsed_by_proxy's
+  source gap, and invoke B1617's nonblocking capture-gap diagnostic. These routes never
+  create a session or retain an assertion. loads_status_debug_settings exercises the seven
+  settings above and threshold behavior. Source ownership is 239 lines; reserve 270 product,
+  200 tests and 100 config/corpus lines within 650. Existing query/provider decoders handle
+  all input bytes; this task adds only configuration replay seeds.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/sso_status_debug.rs
+    - crates/betterlite-server/src/sso_status_debug/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/sso_status_debug.rs
+    - crates/betterlite-config/src/sso_status_debug/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/sso-status-debug-*
+    - tools/oracle/cases/sso/status-debug/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2669-L2781
+    why: Authenticated settings/readiness routes and their deliberately different SSO discovery rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4679-L4855
+    why: Debug opt-in gate, route decorators, provider dispatch and rendered claim projections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1589-L1591
+    why: Spend-row threshold environment default.
+dod:
+  - text: Authenticated settings/readiness and public debug gating have the pinned status, error and header contracts.
+    proof: [status-debug-tests, oracle]
+  - text: Debug rendering never exposes bearer fields or executable claim markup and does not create user sessions.
+    proof: [status-debug-tests, oracle]
+  - text: Debug opt-in, URL settings, team-disable precedence and spend threshold are supported by actual config loading.
+    proof: [status-debug-config, status-debug-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: status-debug-tests
+      why: SSO status endpoints or debug rendering violate authentication, projection or no-license behavior.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sso_status_debug::/)'
+    - id: status-debug-config
+      why: A status/debug setting is ignored or resolves with the wrong precedence/default.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sso_status_debug::tests::loads_status_debug_settings/)'
+    - id: status-debug-corpus
+      why: Status/debug config changes lack newly added production-loader replay data.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-status-debug-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/sso/status-debug/settings-and-readiness-require-auth.yaml
+  - tools/oracle/cases/sso/status-debug/saml-enabled-but-oauth-readiness-unconfigured.yaml
+  - tools/oracle/cases/sso/status-debug/microsoft-missing-secret-and-tenant.yaml
+  - tools/oracle/cases/sso/status-debug/generic-required-variable-order.yaml
+  - tools/oracle/cases/sso/status-debug/disabled-debug-is-404.yaml
+  - tools/oracle/cases/sso/status-debug/enabled-callback-without-provider.yaml
+  - tools/oracle/cases/sso/status-debug/generic-claim-display.yaml
+  - tools/oracle/cases/sso/status-debug/default-team-disable-cannot-be-forced-off.yaml
+deviations:
+  - what: ENABLE_SSO_DEBUG=true allows the configured provider's debug login without an Enterprise license.
+    why: Paid-tier enforcement is removed by the README decision; the explicit debug opt-in still applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4701-L4710
+  - what: parsed_by_proxy omits access_token, id_token and refresh_token even when an IdP puts them in userinfo.
+    why: LiteLLM scrubs only the other two projections here, leaving a credential disclosure that violates secrets-stay-secret.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4816-L4844
+out_of_scope:
+  - B769 owns the rebranded escaped HTML template, B121 maintains spend-row state and B063 assigns all other ui_sso.py functions.
+pitfalls:
+  - A SAML-only deployment reports SSO_ENABLED=true but readiness says sso_configured=false because that route checks only OAuth IDs.
+  - Debug callback URL construction does not add SERVER_ROOT_PATH in the way the normal callback helper does.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

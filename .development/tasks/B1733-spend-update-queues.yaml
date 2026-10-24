@@ -1,0 +1,85 @@
+id: B1733
+title: Compact entity and daily spend updates without mutating queued callers
+description: >-
+  Implement every SpendUpdateQueue and DailySpendUpdateQueue method in betterlite-db::
+  spend_queues, using B1690's bounded queue settings and service-event sink. Define the
+  eleven optional entity transaction maps and SpendUpdateQueueItem here; daily row records
+  come from B1697. Enqueue awaits capacity, then compacts at the inherited in-memory
+  threshold. Compaction drains only currently queued entries and restores aggregated
+  records while allowing concurrent producers to retain their updates. Use an owned queue
+  state machine so the drain/reinsert path cannot block itself on a full channel.
+  Entity compaction groups by entity type plus ID in first-seen order, clones the first
+  record and adds falsey costs as zero on collisions. Database aggregation creates all
+  eleven maps, uses empty string for a falsey ID, and sums costs for user,end_user,key,
+  team,team_member,organization,organization_member,project,tag,agent,model_access_group.
+  Missing or unsupported entity kinds are debug-skipped as at the pin; represent that
+  legacy input boundary explicitly instead of a wildcard arm over the known enum.
+  Daily compaction produces one map keyed by the existing daily transaction key. Clone
+  the first payload deeply, preserve its identity/metadata, and add spend, prompt and
+  completion tokens, request/success/failure counts, cache tokens, compression tokens,
+  four savings amounts, total_response_time_ms and timed_requests as the source lists.
+  Do not recompute successful/failed counts or overwrite model_group from later entries.
+  Optional incoming metrics coalesce falsey values to zero; missing existing fields use
+  zero, while an existing explicit null retains the source's invalid-addition failure.
+  Money uses checked Decimal and counters checked integers. A singleton retains absent
+  optional metrics rather than materializing every zero field.
+  Daily queues also own interrupted-commit tasks: register settlement work in an owned
+  task set, remove completed work, and await all settlements before a flush drains new
+  rows. Shutdown drains that set. The entity queue has no corresponding commit registry.
+  Flush logs its nonempty item count and emits the inherited queue-size event with the
+  correct IN_MEMORY_SPEND_UPDATE_QUEUE or IN_MEMORY_DAILY_SPEND_UPDATE_QUEUE service kind;
+  run these notifications through the owned service task set, not detached tasks.
+  Pure spend_queue_merge cases invoke only aggregation transforms on parsed records.
+  Native concurrency tests cover threshold compaction, blocked producers, input immutability
+  and interrupted-settlement visibility. No new bytes are decoded here; Redis decoding is
+  a later buffer task. The two queue files and entity records own about 374 source lines,
+  allowing 800 changed lines for both queue implementations and their differential tests.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/spend_queues.rs
+    - crates/betterlite-db/src/spend_queues/**
+    - tools/oracle/src/helpers/{mod.rs,spend_queue_merge.rs}
+    - tools/oracle/helpers/{dispatch.py,spend_queue_merge.py}
+    - tools/oracle/cases/helpers/spend-queue-merge/**
+    - tools/oracle/fuzz/corpus/helper_case/spend-queue-merge-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_update_queue.py#L1-L235
+    why: Entire entity queue, compaction, transaction mapping and service event.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/daily_spend_update_queue.py#L1-L183
+    why: Daily record aggregation and tracked interrupted commits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5688-L5710
+    why: Entity transaction maps and optional queued update fields.
+dod:
+  - text: Entity and daily compaction conserve their exact counters and first-record metadata without changing caller-owned inputs.
+    proof: [spend-queue-tests, oracle, spend-queue-python, spend-queue-corpus]
+  - text: Capacity pressure and interrupted commits cannot lose, deadlock or expose a batch before settlement finishes.
+    proof: [spend-queue-tests]
+checks:
+  optional: []
+  commands:
+    - id: spend-queue-tests
+      why: Queue compaction, backpressure or settlement ownership is unimplemented.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_queues::/)'
+    - id: spend-queue-python
+      why: Aggregation adapters are absent or fail strict Python checks.
+      run: test -f tools/oracle/helpers/spend_queue_merge.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: spend-queue-corpus
+      why: Queue aggregation operations lack helper decoder seeds.
+      run: grep -rlq 'spend_queue_merge:' tools/oracle/fuzz/corpus/helper_case/spend-queue-merge-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-queue-merge/eleven-entities-missing-kind-and-falsey-id.yaml
+  - tools/oracle/cases/helpers/spend-queue-merge/daily-first-metadata-and-new-savings-fields.yaml
+  - tools/oracle/cases/helpers/spend-queue-merge/singleton-absence-and-existing-null.yaml
+deviations: []
+out_of_scope:
+  - B1690 owns base capacity/configuration and service delivery; B1697 daily row records/SQL; the Redis buffer leaves own serialization and cross-pod draining.
+  - Other _types.py records retain their earlier data/API owners; B1734 owns window and tool-discovery queues.
+pitfalls:
+  - Daily aggregation preserves the first row's metadata even when a later row carries a different model_group.
+  - A daily flush waits for interrupted commits before draining, so requeued rows from settlement join that flush.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security
