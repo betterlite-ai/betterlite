@@ -1,0 +1,13 @@
+---
+source: crates/betterlite-config/tests/config_tests/mod.rs
+expression: result
+---
+Err(
+    Unsupported {
+        paths: [
+            "litellm_settings.callbacks",
+            "litellm_settings.code_interpreter_interception_params",
+            "sandbox_tools",
+        ],
+    },
+)

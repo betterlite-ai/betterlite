@@ -1,0 +1,14 @@
+---
+source: crates/betterlite-config/tests/config_tests/mod.rs
+expression: result
+---
+Err(
+    Unsupported {
+        paths: [
+            "model_list.0.rpm",
+            "model_list.0.tpm",
+            "model_list.1.rpm",
+            "model_list.1.tpm",
+        ],
+    },
+)

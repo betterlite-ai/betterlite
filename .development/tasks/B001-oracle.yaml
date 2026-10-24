@@ -13,6 +13,7 @@ description: >-
 
   Seed the case set with the cases the next tasks need: tools/oracle/cases/health/liveliness.yaml, tools/oracle/cases/chat/openai-basic.yaml (a non-streaming chat completion) and tools/oracle/cases/chat/openai-stream.yaml (the same request with stream true and an SSE answer).
   In AGENTS.md, add how to run the oracle, and name the gate as cargo gate run <ID>: B000 wrote cargo gate run B000 there, and every later worker reads that file.
+  litellm[proxy] depends on the proprietary litellm-enterprise package. Drop it in tools/oracle/litellm/pyproject.toml with [tool.uv] override-dependencies = ["litellm-enterprise; sys_platform == 'never'"], so it is never installed and LiteLLM runs its open-source code paths only.
 scope:
   paths:
     - AGENTS.md
@@ -36,6 +37,8 @@ references:
 dod:
   - text: tools/oracle/litellm pins litellm[proxy]==1.105.1 and its uv.lock is current.
     proof: [litellm-pinned, litellm-lock]
+  - text: The oracle environment has no litellm-enterprise. pyproject.toml drops it with uv's override-dependencies (uv.lock keeps an entry with a never-true marker, so it is never installed), and importing litellm_enterprise fails inside the environment.
+    proof: [no-enterprise-package]
   - text: Case files parse strictly. An unknown field, a missing field or a duplicate key is rejected with the file name in the error.
     proof: [oracle-tests]
   - text: The comparator reports the first differing JSON pointer and honors the ignore list and all three header lists. Each of these behaviors has a test.
@@ -57,6 +60,9 @@ checks:
     - id: litellm-lock
       why: tools/oracle/litellm/uv.lock does not match its pyproject.toml
       run: uv lock --check --project tools/oracle/litellm
+    - id: no-enterprise-package
+      why: litellm[proxy] pulls in the proprietary litellm-enterprise package, which betterlite must neither run nor read
+      run: "grep -qF \"litellm-enterprise; sys_platform == 'never'\" tools/oracle/litellm/pyproject.toml && ! uv run --locked --project tools/oracle/litellm python -c 'import litellm_enterprise'"
     - id: oracle-tests
       why: the oracle's own tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail

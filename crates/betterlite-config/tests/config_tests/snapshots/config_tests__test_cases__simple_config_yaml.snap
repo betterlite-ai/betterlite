@@ -1,0 +1,47 @@
+---
+source: crates/betterlite-config/tests/config_tests/mod.rs
+expression: result
+---
+Ok(
+    Config {
+        model_list: [
+            ModelDeployment {
+                model_name: "gpt-5-mini",
+                litellm_params: LiteLlmParams {
+                    model: Some(
+                        "gpt-5-mini",
+                    ),
+                    api_base: None,
+                    api_key: None,
+                    api_version: None,
+                    timeout: None,
+                    stream_timeout: None,
+                    max_retries: None,
+                    rpm: None,
+                    tpm: None,
+                    weight: None,
+                },
+                model_info: ModelInfo {
+                    id: None,
+                },
+            },
+        ],
+        general_settings: GeneralSettings {
+            master_key: None,
+        },
+        router_settings: RouterSettings {
+            routing_strategy: None,
+            num_retries: None,
+            timeout: None,
+            allowed_fails: None,
+            cooldown_time: None,
+            fallbacks: [],
+        },
+        litellm_settings: LiteLlmSettings {
+            num_retries: None,
+            request_timeout: None,
+            drop_params: None,
+        },
+        environment_variables: {},
+    },
+)

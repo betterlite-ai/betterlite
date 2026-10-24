@@ -1,0 +1,13 @@
+---
+source: crates/betterlite-config/tests/config_tests/mod.rs
+expression: result
+---
+Err(
+    Unsupported {
+        paths: [
+            "general_settings.custom_auth",
+            "general_settings.pass_through_endpoints",
+            "litellm_settings.include_cost_in_streaming_usage",
+        ],
+    },
+)

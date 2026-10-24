@@ -10,6 +10,11 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+serde = { version = "1.0.228", features = ["derive"] }
+serde-saphyr = "2.0.0"
+serde_ignored = "0.1.14"
+secrecy = "0.10.3"
+thiserror = "2.0.17"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
