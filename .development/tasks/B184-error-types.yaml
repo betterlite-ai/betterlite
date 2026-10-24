@@ -1,0 +1,80 @@
+id: B184
+title: Shared provider error taxonomy
+description: >-
+  Create betterlite-error for the shared error taxonomy used by provider adapters, the server, logging and eventually
+  Python. Define one thiserror enum with typed causes and a separate closed classification enum plus immutable metadata:
+  model/provider identity, HTTP status, wire type/param/code, retry metadata, rate-limit category/dimension and
+  an explicitly allowed response-header set. Extract B004's generic error envelope into this crate without changing
+  its wire shape, retaining absence/null/string distinctions. Preserve causes inside Rust but write bounded betterlite-owned
+  client messages; no opaque error Debug dump reaches the client. Introduce helper error_class cases constructing
+  each public LiteLLM exception family with synthetic inputs and comparing only the observable fields, including
+  specialized budget/guardrail/schema/mid-stream classes as data types without implementing those systems. Budget
+  260 taxonomy/envelope lines, 150 integration lines and 300 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-error/**
+  - crates/betterlite-openai/**
+  - crates/betterlite-server/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/error-class/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L24-L115
+  why: Rate-limit category and dimension.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L132-L531
+  why: Common HTTP-facing exception metadata.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L535-L888
+  why: Specialized API and transport error classes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L892-L1264
+  why: Validation, budget, guardrail and stream-related classes.
+dod:
+- text: Every exception family in the listed helper cases matches status/type/param/code and category metadata;
+    messages are excluded with reasons.
+  proof:
+  - oracle
+- text: Wrapping transport/parse errors preserves their source and serialization retains null-versus-string distinctions.
+  proof:
+  - error-type-tests
+- text: Vendor Set-Cookie/CORS headers and synthetic secrets never escape through the allowed client envelope or
+    Debug output.
+  proof:
+  - error-type-tests
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: error-type-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-error -p betterlite-server --no-tests=fail -E 'test(/error_type|error_envelope/)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/error-class/auth-notfound-permission.yaml
+- tools/oracle/cases/helpers/error-class/badrequest-unprocessable.yaml
+- tools/oracle/cases/helpers/error-class/timeout-status-override.yaml
+- tools/oracle/cases/helpers/error-class/rate-limit-category.yaml
+- tools/oracle/cases/helpers/error-class/budget-dimension.yaml
+- tools/oracle/cases/helpers/error-class/context-content-policy.yaml
+- tools/oracle/cases/helpers/error-class/server-gateway-unavailable.yaml
+- tools/oracle/cases/helpers/error-class/api-connection-validation.yaml
+- tools/oracle/cases/helpers/error-class/unsupported-schema.yaml
+- tools/oracle/cases/helpers/error-class/guardrail-midstream.yaml
+deviations: []
+out_of_scope:
+- Provider-specific body parsing is B185-B186; normalized logging codes and call-id attachment are B011.
+- Retry policy and budget enforcement remain B017 and M4.
+pitfalls:
+- A transport timeout and an upstream HTTP 504 are not guaranteed to carry the same status.
+- Vendor response headers are not automatically client-safe error headers.
+- Avoid a dependency cycle by keeping classification independent of betterlite-provider's executable enum.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

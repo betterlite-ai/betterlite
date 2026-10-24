@@ -1917,14 +1917,14 @@ tasks:
     title: Shared provider error taxonomy
     status: todo
     depends_on: [B004, B171]
-    file: null
+    file: tasks/B184-error-types.yaml
     covers:
       - "litellm/exceptions.py"
   - id: B185
     milestone: M1 openai data plane
     title: OpenAI-family error mapping
     status: todo
-    depends_on: [B184]
+    depends_on: [B184, B187]
     file: null
     covers:
       - "litellm/litellm_core_utils/exception_mapping_utils.py"
