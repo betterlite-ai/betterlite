@@ -265,6 +265,7 @@ tasks:
     - B328
     - B329
     - B330
+    - B331
     file: null
     covers:
     - router_plugins.json
@@ -2242,3 +2243,16 @@ tasks:
     file: tasks/B330-classifier-context.yaml
     covers:
     - litellm/router_strategy/complexity_router/complexity_router.py
+
+  - id: B331
+    milestone: M2 routing
+    title: LLM, heuristic-first and hybrid complexity classifiers
+    status: todo
+    depends_on:
+    - B330
+    - B014
+    - B012
+    - B068
+    file: tasks/B331-llm-classifier.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/{complexity_router,classification_rubrics}.py
