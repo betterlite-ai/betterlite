@@ -28,6 +28,12 @@ fn helper_runner_tests_behavior(#[case] script: &str, #[case] expected: &str) {
 #[case::missing_field_name("call: {url_path: {function: segment, value: a}}", "missing field")]
 #[case::unknown_case_field("x: 1", "unknown field")]
 #[case::duplicate_field("name: b", "duplicate")]
+#[case::unknown_dot_paths_function("call: {dot_paths: {nope: {}}}", "unknown variant")]
+#[case::unknown_dot_paths_field(
+    "call: {dot_paths: {delete: {data: {}, path: a, x: 1}}}",
+    "unknown field"
+)]
+#[case::missing_dot_paths_path("call: {dot_paths: {delete: {data: {}}}}", "missing field")]
 fn helper_cases_reject_unknown_and_duplicate_fields(#[case] fields: &str, #[case] reason: &str) {
     let source = format!("kind: helper\nname: a\nenv: {{}}\ncompare: {{ignore: []}}\n{fields}\n");
     assert!(parse_helper_case(&source).unwrap_err().contains(reason));
@@ -72,4 +78,15 @@ fn helper_output_limit_is_enforced(#[case] size: usize, #[case] excess: bool) {
     let (output, observed_excess) = super::read_limited(Cursor::new(bytes)).unwrap();
     assert_eq!(output.len(), 0x0010_0000.min(size));
     assert_eq!(observed_excess, excess);
+}
+
+#[rstest::rstest]
+#[case::too_long_get("get: {data: {}, default: null, key_path: ", "the path has 8193 bytes")]
+#[case::too_long_delete("delete: {data: {}, path: ", "the path has 8193 bytes")]
+fn dot_paths_adapter_reports_path_errors(#[case] prefix: &str, #[case] message: &str) {
+    let source = format!("dot_paths: {{{prefix}{}}}}}", "a".repeat(8193));
+    let call: super::HelperCall = serde_saphyr::from_str(&source).unwrap();
+    let error = super::invoke(&call).error.unwrap();
+    assert_eq!(error.class, "PathError");
+    assert!(error.message.starts_with(message));
 }

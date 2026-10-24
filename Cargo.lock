@@ -216,6 +216,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-http",
  "betterlite-models",
+ "betterlite-paths",
  "clap",
  "futures-util",
  "reqwest",
@@ -228,6 +229,16 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "betterlite-paths"
+version = "0.1.0"
+dependencies = [
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

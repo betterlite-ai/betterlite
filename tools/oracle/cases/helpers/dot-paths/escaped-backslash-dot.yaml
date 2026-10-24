@@ -1,0 +1,8 @@
+kind: helper
+name: escaped-backslash-dot
+call:
+  dot_paths:
+    get: {data: {"a\\.b": 1, "a\\": {"b": 2}}, key_path: "a\\\\.b", default: null}
+env: {}
+compare:
+  ignore: []

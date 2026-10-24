@@ -1,0 +1,8 @@
+task: B213
+deviations:
+  - what: Lookup and delete return a typed PathError when the path is longer than max_path_bytes, has more segments than max_depth or more bracket selectors than max_selectors, or when a delete would visit more than max_visits values. LiteLLM has no limits, and delete_nested_value swallows every exception and returns the partly edited copy.
+    why: Paths come from operator config and token claims, so every input needs a cap; a failed delete returns nothing instead of a half-edited copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dot_notation_indexing.py#L224-L232
+  - what: An array index written with non-ASCII decimal digits, such as tools[٣].name, matches nothing in betterlite. Python's int() reads any Unicode decimal digit, so LiteLLM deletes from element 3.
+    why: The Rust standard library has no Unicode decimal-digit table, and a crate for one corner of operator-written drop paths isn't worth the dependency. ASCII digits, signs, underscores and Unicode whitespace padding behave like int().
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dot_notation_indexing.py#L147

@@ -1,0 +1,8 @@
+kind: helper
+name: negative-zero-index
+call:
+  dot_paths:
+    delete: {data: {"t": [{"x": 1}, {"x": 2}]}, path: "t[-0].x"}
+env: {}
+compare:
+  ignore: []

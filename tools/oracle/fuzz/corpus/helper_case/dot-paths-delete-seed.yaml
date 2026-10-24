@@ -1,0 +1,10 @@
+kind: helper
+name: dot-paths-delete-seed
+call:
+  dot_paths:
+    delete:
+      data: {"tools": [{"name": "t1", "input_examples": ["a"]}]}
+      path: tools[*].input_examples
+env: {}
+compare:
+  ignore: []
