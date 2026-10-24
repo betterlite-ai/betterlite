@@ -282,6 +282,7 @@ tasks:
     - B345
     - B350
     - B352
+    - B353
     file: null
     covers:
     - router_plugins.json
@@ -2534,3 +2535,16 @@ tasks:
     file: tasks/B352-complexity-placement-gates.yaml
     covers:
     - litellm/router_strategy/complexity_router/complexity_router.py
+
+  - id: B353
+    milestone: M2 routing
+    title: Two-solver forecasts and Fuse profile presets
+    status: todo
+    depends_on:
+    - B331
+    - B332
+    file: tasks/B353-two-solver-classifier.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/llm_v2.py
+    - litellm/router_strategy/complexity_router/fuse_presets.py
+    - litellm/router_strategy/complexity_router/fuse_presets.json

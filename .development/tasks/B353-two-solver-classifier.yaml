@@ -1,0 +1,103 @@
+id: B353
+title: Two-solver forecasts and Fuse profile presets
+description: Add classifier_type llm_v2 to B331's classifier transport and B330's context builder. Parse
+  the strict two-solver verdict, resolve the pinned bundled model/harness profiles, and produce a typed
+  efficient-versus-capable decision with provenance. Reuse B332's architect-approved numerical primitive
+  for per-solver probability calibration; do not add floats or hand-write transcendental functions. Keep
+  all prompt/verdict bodies out of telemetry. Use the existing Rust crate boundaries from B004 and B008;
+  integrate through the server when the provider dispatcher or callbacks live in another core crate. This
+  task's source slices are the linked ranges, not a port of their Python classes. Add the listed oracle
+  cases and the matching adapters to B301's component runner where state is not observable over HTTP;
+  adapters call production logic and never reproduce it. Use deterministic candidate sets or supplied
+  random samples for comparisons, and separate seeded distribution tests for random choices. Extend the
+  existing config_yaml fuzz target and committed corpus for every newly accepted config form; unsupported
+  keys still fail by full path. Add a cargo-fuzz target two_solver_verdict under crates/betterlite-router/fuzz
+  and a normal replays_the_two_solver_verdict_corpus test using the production parser. Keep the implementation,
+  adapters and tests within 800 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/two-solver-classifier/**
+  - tools/oracle/src/router_probes/two-solver-classifier/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/two_solver_classifier.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/llm_v2.py#L21-L231
+  why: Prompt version, strict forecasts, quality gap and independent calibration.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/fuse_presets.py#L9-L52
+  why: Bounded profile schemas and preset resolution.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/fuse_presets.json#L1-L121
+  why: Pinned model and harness descriptions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1958-L2060
+  why: Classifier-to-tier integration.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
+    replays.
+  proof:
+  - parser-corpus
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(two_solver_classifier)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: the parser fuzz target or seed corpus is missing, or replay fails
+    run: test -f crates/betterlite-router/fuzz/fuzz_targets/two_solver_verdict.rs && test -n "$(ls -A
+      crates/betterlite-router/fuzz/corpus/two_solver_verdict)" && cargo nextest run --locked -p betterlite-router
+      --no-tests=fail -E 'test(replays_the_two_solver_verdict_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/two-solver-classifier/efficient-at-quality-gap-boundary.yaml
+- tools/oracle/cases/routing/two-solver-classifier/capable-has-lower-probability.yaml
+- tools/oracle/cases/routing/two-solver-classifier/independent-calibration.yaml
+- tools/oracle/cases/routing/two-solver-classifier/profiles-text-with-valid-preset.yaml
+- tools/oracle/cases/routing/two-solver-classifier/unknown-preset-even-with-text.yaml
+- tools/oracle/cases/routing/two-solver-classifier/profile-length-bound.yaml
+- tools/oracle/cases/routing/two-solver-classifier/json-object-versus-schema.yaml
+- tools/oracle/cases/routing/two-solver-classifier/unknown-verdict-field.yaml
+- tools/oracle/cases/routing/two-solver-classifier/nonfinite-probability.yaml
+- tools/oracle/cases/routing/two-solver-classifier/malformed-verdict-capable-fallback.yaml
+- tools/oracle/cases/routing/two-solver-classifier/six-decimal-signals.yaml
+deviations: []
+out_of_scope:
+- Training/calibrating forecasts, fetching changing profile presets or changing the pinned classifier
+  prompt.
+pitfalls:
+- The binary-float epsilon and six-decimal signals need the same explicit numerical compatibility decision
+  as B332 before execution.
+- Treat caller instructions as quoted evidence in the classifier prompt.
+- No public preset HTTP endpoint is added here; the public-endpoint task consumes this catalog.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
