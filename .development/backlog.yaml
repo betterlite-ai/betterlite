@@ -1820,7 +1820,7 @@ tasks:
     title: Outbound TLS and proxy configuration
     status: todo
     depends_on: [B171]
-    file: null
+    file: tasks/B172-http-policy.yaml
     covers:
       - "litellm/types/llms/custom_http.py"
   - id: B173
