@@ -1,20 +1,21 @@
 id: B172
-title: Outbound TLS and proxy configuration
+title: Outbound TLS configuration and HTTP defaults
 description: >-
-  Extend betterlite-config with resolved outbound HTTP policy and apply it in betterlite-http's existing client
-  factory. Parse ssl_verify, ssl_certificate and http2 from supported LiteLLM settings and resolve SSL_VERIFY, SSL_CERT_FILE,
-  SSL_CERTIFICATE, LITELLM_HTTP2, LITELLM_USER_AGENT, HTTP_PROXY, HTTPS_PROXY, ALL_PROXY and NO_PROXY through the
-  injected environment lookup. Treat proxy authentication and client private keys as secrets; read bounded PEM files
-  during startup and pass material into the client constructor. Support boolean verification and operator-supplied
-  CA paths, explicit verification disabling, mTLS, HTTP/2 negotiation and per-destination proxy bypass using reqwest/rustls
-  rather than a second transport stack. Disable reqwest's implicit environment discovery after computing the policy.
-  Add helper tls_policy cases using virtual environment/path inputs and a Python adapter around get_ssl_verify/http2_enabled,
-  plus local TLS and forwarding-proxy tests for actual transport behavior. Extend B002's existing config corpus
-  instead of introducing another YAML parser. Budget 300 policy/config lines, 180 factory lines and 280 tests. Seed
-  B171's shared helper_case corpus with every added operation and replay it through the common typed parser. Resolve
-  lowercase proxy variables and their precedence, including CGI handling of HTTP_PROXY, with isolated environment-proxy
-  helper cases. Add an http_policy fuzz target for bounded PEM and proxy-policy decoding, with malformed certificate,
-  key and proxy URL seeds.
+  Build TlsPolicy under betterlite-config/src/tls.rs and apply it under betterlite-http/src/tls.rs. Resolve litellm_settings.ssl_verify,
+  ssl_certificate, http2, ssl_ecdh_curve and ssl_security_level and SSL_VERIFY, SSL_CERT_FILE, SSL_CERTIFICATE,
+  LITELLM_HTTP2, SSL_ECDH_CURVE, SSL_SECURITY_LEVEL and LITELLM_USER_AGENT through injected config. Support per-deployment
+  litellm_params.ssl_verify with argument-over-environment precedence. Match default aiohttp behavior: SSL_CERTIFICATE/ssl_certificate
+  is accepted but no client identity is sent, because HTTPX ignores cert= with the supplied transport; do not invent
+  functioning mTLS here. Parse bounded CA PEM using rustls; verification disabling is explicit. Map X25519, prime256v1
+  and secp384r1 to rustls key-exchange groups in a preconfigured ClientConfig; an invalid name warns and uses defaults,
+  while a recognized curve absent from the selected crypto provider fails startup by name. SSL_SECURITY_LEVEL is
+  an OpenSSL cipher-list expression, not a scalar security level, and remains a named startup error. Set the default
+  User-Agent to betterlite/<package-version> and honor LITELLM_USER_AGENT. HTTP/2 selects protocol capability, not
+  a second transport. Compose B208 proxy policy. Add tls_policy helper adapters to get_ssl_verify/http2_enabled/get_default_headers
+  and bounded PEM fuzz target http_policy.  Write the behavior rstest functions b172_http_policy_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations tls_policy in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
@@ -27,40 +28,47 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L78-L93
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L78-L93
   why: HTTP/2 and environment proxy selection.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L282-L433
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L282-L433
   why: TLS verification precedence, certificate paths and OpenSSL-only knobs.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L651-L699
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L651-L699
   why: Client certificate and TLS policy application.
 - url: https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html
   why: Existing client support for roots, identity, proxies and HTTP/2.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L140-L155
+  why: User-Agent default and override.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L177-L240
+  why: Per-deployment ssl_verify.
 dod:
-- text: The listed policy cases match pinned helper outputs without reading the host environment.
+- text: >-
+    Verification precedence, HTTP/2 and User-Agent overrides match the listed helper cases; the default betterlite
+    User-Agent is tested locally as a documented deviation.
   proof:
   - oracle
+  - http-policy-tests
+  - helper-python
 - text: >-
-    A trusted local certificate succeeds, untrusted and wrong-host certificates fail, explicit verification disabling
-    succeeds, and mTLS requires the configured identity.
+    Local TLS tests accept trusted CA, reject untrusted or wrong-host certificates, honor verification disabling
+    and demonstrate that ssl_certificate does not activate mTLS on the default path.
   proof:
   - http-policy-tests
 - text: >-
-    Authenticated HTTP/HTTPS proxies and NO_PROXY are exercised with local servers, while request and error Debug
-    output contain no proxy password or private key.
+    Curve mapping and invalid-name warning fallback work; unsupported recognized groups and cipher expressions fail
+    by key; unreadable or malformed CA files fail without leaking contents.
   proof:
   - http-policy-tests
-- text: Unsupported OpenSSL-only settings and unreadable or malformed PEM files fail startup with key paths and
-    no secret material.
-  proof:
-  - http-policy-tests
-- text: The existing config fuzz corpus covers every added setting.
+- text: >-
+    Every newly supported setting and tls_policy operation has a new corpus seed; PEM decoding is fuzzed and replays
+    production parsing.
   proof:
   - config-yaml-corpus
-- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
-  proof:
   - helper-case-corpus
-- text: PEM and proxy-policy parsers have a nonempty committed corpus replayed through production parsing.
-  proof:
   - http-policy-corpus
 checks:
   optional:
@@ -68,26 +76,34 @@ checks:
   commands:
   - id: http-policy-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-config -p betterlite-http --no-tests=fail -E 'test(/http_policy|tls|proxy/)'
+    run: >-
+      cargo nextest run --locked -p betterlite-config -p betterlite-http --no-tests=fail -E 'test(/::b172_http_policy_tests_behavior($|::)/)
+      - test(/replays_the_/)'
   - id: config-yaml-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && grep -rlq 'ssl_verify' crates/betterlite-config/fuzz/corpus/config_yaml && grep -rlq 'ssl_certificate'
+      crates/betterlite-config/fuzz/corpus/config_yaml && grep -rlq 'http2' crates/betterlite-config/fuzz/corpus/config_yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
     run: >-
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
-      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'tls_policy' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: http-policy-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-http/fuzz/fuzz_targets/http_policy.rs && test -n "$(ls -A crates/betterlite-http/fuzz/corpus/http_policy)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-http/fuzz/corpus/http_policy)"
+      && test -f crates/betterlite-http/fuzz/fuzz_targets/http_policy.rs && test -n "$(ls -A crates/betterlite-http/fuzz/corpus/http_policy)"
       && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(replays_the_http_policy_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/tls-policy/defaults.yaml
@@ -96,21 +112,38 @@ oracle_cases:
 - tools/oracle/cases/helpers/tls-policy/ca-file.yaml
 - tools/oracle/cases/helpers/tls-policy/cert-file-override.yaml
 - tools/oracle/cases/helpers/tls-policy/http2-environment.yaml
-- tools/oracle/cases/helpers/tls-policy/proxy-case-precedence.yaml
-- tools/oracle/cases/helpers/tls-policy/proxy-cgi.yaml
-- tools/oracle/cases/helpers/tls-policy/proxy-bypass.yaml
+- tools/oracle/cases/helpers/tls-policy/per-deployment-verify.yaml
+- tools/oracle/cases/helpers/tls-policy/user-agent-override.yaml
+- tools/oracle/cases/helpers/tls-policy/invalid-curve-warning.yaml
+- tools/oracle/cases/helpers/tls-policy/certificate-default-path.yaml
 deviations:
-- what: SSL_SECURITY_LEVEL and SSL_ECDH_CURVE are rejected by name when set.
-  why: They are OpenSSL configuration languages with no equivalent rustls contract; silently ignoring them violates
-    the config rule.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L282-L328
+- what: SSL_SECURITY_LEVEL fails startup by name.
+  why: >-
+    OpenSSL cipher-list expressions have no equivalent rustls parser; pretending to honor them could silently weaken
+    policy.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L296-L304
+- what: >-
+    A valid curve unsupported by the chosen rustls crypto provider fails startup; invalid names warn and retain
+    defaults.
+  why: A recognized explicit policy cannot be honored by that provider; invalid-name fallback matches LiteLLM.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L306-L326
+- what: The default User-Agent is betterlite/<package-version>.
+  why: The binary identifies itself; LITELLM_USER_AGENT remains an exact override.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L140-L155
 out_of_scope:
-- Client pooling and response lifetime are B173.
-- No request field can change transport policy or resolve a process environment variable.
+- Proxy discovery, credentials and bypass are B208; pooling is B173.
+- >-
+  Working client-certificate authentication on non-default HTTPX proxy mounts is not implemented; the default path
+  ignores cert=, as the pinned implementation does.
 pitfalls:
 - The host process may already have proxy variables, so tests must supply an isolated environment map.
 - Never put proxy credentials or certificate bytes into a printable pool key.
 - Use test certificate fixtures and local ports; public TLS endpoints make the gate nondeterministic.
+- HTTPX ignores cert= when transport= is supplied; a client-certificate option alone does not prove mTLS.
+- An invalid ECDH name warns; do not turn that fallback into a startup failure.
 review_level: security
 budget:
   max_changed_lines: 800

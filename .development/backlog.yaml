@@ -1816,12 +1816,14 @@ tasks:
       - "litellm/llms/custom_httpx/{asgi_handler,mock_transport}.py"
   - id: B172
     milestone: M1 openai data plane
-    title: Outbound TLS and proxy configuration
+    title: Outbound TLS configuration and HTTP defaults
     status: todo
-    depends_on: [B171]
+    depends_on:
+    - B171
+    - B208
     file: tasks/B172-http-policy.yaml
     covers:
-      - "litellm/types/llms/custom_http.py"
+    - litellm/types/llms/custom_http.py
   - id: B173
     milestone: M1 openai data plane
     title: Pooled outbound requests and response limits
@@ -2113,3 +2115,12 @@ tasks:
     file: tasks/B207-call-route-metadata.yaml
     covers:
       - "litellm/litellm_core_utils/api_route_to_call_types.py"
+  - id: B208
+    milestone: M1 openai data plane
+    title: Environment proxy selection and authentication
+    status: todo
+    depends_on:
+    - B171
+    file: tasks/B208-http-proxies.yaml
+    covers:
+    - litellm/llms/custom_httpx/http_handler.py
