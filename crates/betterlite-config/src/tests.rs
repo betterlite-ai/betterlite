@@ -5,7 +5,7 @@ use secrecy::ExposeSecret;
 use std::collections::BTreeMap;
 
 fn map_loader(values: BTreeMap<String, String>) -> ConfigLoader<BTreeMap<String, String>> {
-    ConfigLoader::new(values)
+    ConfigLoader { lookup: values }
 }
 #[test]
 fn loads_repeated_deployments_in_file_order() {

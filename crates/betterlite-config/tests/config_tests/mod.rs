@@ -17,7 +17,10 @@ macro_rules! fixture_test {
         fn $test() {
             let path = format!("tests/fixtures/litellm/{}", $fixture);
             let source = read_to_string(path).unwrap();
-            let result = ConfigLoader::new(BTreeMap::<String, String>::new()).load(&source);
+            let result = ConfigLoader {
+                lookup: BTreeMap::<String, String>::new(),
+            }
+            .load(&source);
 
             insta::assert_debug_snapshot!($snapshot, result);
         }
@@ -132,7 +135,12 @@ fn replays_the_config_yaml_corpus() {
             let entry = entry_result?;
             let bytes = read(entry.path())?;
             if let Ok(source) = from_utf8(&bytes) {
-                drop(ConfigLoader::new(BTreeMap::<String, String>::new()).load(source));
+                drop(
+                    ConfigLoader {
+                        lookup: BTreeMap::<String, String>::new(),
+                    }
+                    .load(source),
+                );
             }
             Ok::<(), Error>(())
         })
