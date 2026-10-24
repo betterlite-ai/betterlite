@@ -1,0 +1,104 @@
+id: B236
+title: Shared error facts, parsing and status fallbacks
+description: >-
+  Implement ExceptionCheckers, get_error_message, _get_body_error_code, _get_response_headers, _accepted_init_kwargs,
+  extract_and_raise_litellm_exception, _ProviderHTTPException and _litellm_proxy_response (39-272), plus _response_or_stub/_map_exception_by_status
+  (2236-2349). Build typed bounded error facts and common provider_error parser; B184 owns envelopes. Preserve cause
+  and absent/null/string distinctions. Budget 270 extraction/status, 100 adapters, 300 tests/fuzz and 50 wiring
+  (720 total). Add the provider_error cargo-fuzz target, call the production parser, and commit/replay malformed
+  and boundary seeds. Write the behavior rstest functions b236_behavior_tests_behavior in adjacent tests.rs files,
+  with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
+  helper operations error_facts in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation
+  has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-error/Cargo.toml
+  - crates/betterlite-error/src/lib.rs
+  - crates/betterlite-error/src/error.rs
+  - crates/betterlite-error/src/facts.rs
+  - crates/betterlite-error/src/facts/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/error-facts/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  - crates/betterlite-error/fuzz/**
+  - crates/betterlite-error/src/parse.rs
+  - crates/betterlite-error/src/parse/**
+  - crates/betterlite-error/src/status.rs
+  - crates/betterlite-error/src/status/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L39-L272
+  why: Common error extraction/checkers.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2236-L2349
+  why: Generic status mapping.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+- text: The outside-byte parser has its target and newly committed production replay corpus.
+  proof:
+  - provider_error-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/::b236_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'error_facts' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: provider_error-corpus
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-error/fuzz/corpus/provider_error)"
+      && test -f crates/betterlite-error/fuzz/fuzz_targets/provider_error.rs && test -n "$(ls -A crates/betterlite-error/fuzz/corpus/provider_error)"
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(replays_the_provider_error_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/error-facts/rate-limit-text.yaml
+- tools/oracle/cases/helpers/error-facts/context-text.yaml
+- tools/oracle/cases/helpers/error-facts/proxy-envelope.yaml
+- tools/oracle/cases/helpers/error-facts/body-code.yaml
+- tools/oracle/cases/helpers/error-facts/synthesized-status.yaml
+- tools/oracle/cases/helpers/error-facts/unknown-status.yaml
+- tools/oracle/cases/helpers/error-facts/malformed-json.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B185 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
