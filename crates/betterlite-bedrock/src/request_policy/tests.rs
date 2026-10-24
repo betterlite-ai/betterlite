@@ -56,7 +56,10 @@ fn policy(fields: &[&str]) -> Option<BedrockRequestPolicy> {
 }
 
 // IndexMap equality ignores order, and order is part of every outcome here
-fn rendered(value: &impl Debug) -> String {
+fn rendered<Value>(value: &Value) -> String
+where
+    Value: Debug,
+{
     format!("{value:?}")
 }
 
