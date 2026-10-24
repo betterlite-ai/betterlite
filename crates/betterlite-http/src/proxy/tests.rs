@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::fs::{self, File};
-use std::path::Path;
+use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
 use std::thread;
@@ -16,7 +16,11 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tracing::subscriber::set_default;
 
+use crate::error::ProxyError;
 use crate::proxy::ProxiedClient;
+
+// nothing listens on port 1, so a request that skips its proxy fails at once
+const CLOSED: &str = "http://127.0.0.1:1/v1/models";
 
 async fn answer(listener: &TcpListener) -> String {
     let (mut stream, _) = listener.accept().await.unwrap();
@@ -36,12 +40,13 @@ async fn answer(listener: &TcpListener) -> String {
 }
 
 #[rstest]
-#[case::forwards_absolute_form(&[("HTTP_PROXY", "http://us%40er:p%40ss%3Asecret@LISTENER")], "http://api.example.com/v1/models", "GET http://api.example.com/v1/models HTTP/1.1|Basic dXNAZXI6cEBzczpzZWNyZXQ=")]
-#[case::forwards_without_credentials(&[("HTTP_PROXY", "LISTENER")], "http://api.example.com/v1/models", "GET http://api.example.com/v1/models HTTP/1.1|none")]
-#[case::bypassed_host_goes_direct(&[("HTTP_PROXY", "http://user:secret@proxy.invalid:9"), ("NO_PROXY", "127.0.0.1")], "http://LISTENER/v1/models", "GET /v1/models HTTP/1.1|none")]
-#[case::unsupported_scheme_fails_by_name(&[("HTTP_PROXY", "socks5://user:secret@LISTENER")], "http://api.example.com/v1/models", "error|the proxy for this request uses socks5://, and only http:// proxies are supported")]
-#[case::invalid_url_fails_by_name(&[("HTTP_PROXY", "http://user:secret@LISTENER:99999")], "http://api.example.com/v1/models", "error|the http proxy URL is not valid")]
-#[case::dropped_proxy_warns_without_password(&[("AIOHTTP_TRUST_ENV", "true"), ("DISABLE_AIOHTTP_TRUST_ENV", "true"), ("HTTP_PROXY", "https://user:secret@proxy.invalid:9")], "http://LISTENER/v1/models", "GET /v1/models HTTP/1.1|none warned")]
+#[case::forwards_absolute_form(&[("HTTP_PROXY", "http://us%40er:p%40ss%3Asecret@LISTENER")], CLOSED, "GET http://127.0.0.1:1/v1/models HTTP/1.1|Basic dXNAZXI6cEBzczpzZWNyZXQ=")]
+#[case::forwards_without_credentials(&[("HTTP_PROXY", "LISTENER")], CLOSED, "GET http://127.0.0.1:1/v1/models HTTP/1.1|none")]
+#[case::scheme_proxy_beats_all_proxy(&[("ALL_PROXY", "http://127.0.0.1:1"), ("HTTP_PROXY", "LISTENER")], CLOSED, "GET http://127.0.0.1:1/v1/models HTTP/1.1|none")]
+#[case::bypassed_host_goes_direct(&[("HTTP_PROXY", "http://user:secret@127.0.0.1:1"), ("NO_PROXY", "127.0.0.1")], "http://LISTENER/v1/models", "GET /v1/models HTTP/1.1|none")]
+#[case::unsupported_scheme_fails_by_name(&[("HTTP_PROXY", "socks5://user:secret@LISTENER")], CLOSED, "error|the proxy for this request uses socks5://, and only http:// proxies are supported")]
+#[case::invalid_url_fails_by_name(&[("HTTP_PROXY", "http://user:secret@LISTENER:99999")], CLOSED, "error|the http proxy URL is not valid")]
+#[case::dropped_proxy_warns_without_password(&[("AIOHTTP_TRUST_ENV", "true"), ("DISABLE_AIOHTTP_TRUST_ENV", "true"), ("HTTP_PROXY", "https://user:secret@127.0.0.1:1")], "http://LISTENER/v1/models", "GET /v1/models HTTP/1.1|none warned")]
 #[tokio::test]
 async fn http_proxies_proxy_policy_tests_behavior(
     #[case] variables: &[(&str, &str)],
@@ -69,8 +74,8 @@ async fn http_proxies_proxy_policy_tests_behavior(
     let mut observed = if expected.starts_with("error|") {
         format!("error|{}", client.execute(request).await.unwrap_err())
     } else {
-        let (response, exchange) = tokio::join!(client.execute(request), answer(&listener));
-        response.unwrap();
+        let proxy_side = async { Ok::<_, ProxyError>(answer(&listener).await) };
+        let (_response, exchange) = tokio::try_join!(client.execute(request), proxy_side).unwrap();
         exchange
     };
     let written = fs::read_to_string(&log_path).unwrap();
@@ -83,19 +88,16 @@ async fn http_proxies_proxy_policy_tests_behavior(
     assert!(!format!("{client:?}").contains("secret"));
 }
 
-#[test]
-fn replays_the_proxy_policy_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/proxy_policy");
-    for entry in fs::read_dir(corpus).unwrap() {
-        let text = fs::read_to_string(entry.unwrap().path()).unwrap();
-        let (proxy, no_proxy) = text.split_once('\n').unwrap_or((&text, ""));
-        let environment = BTreeMap::from([
-            ("HTTPS_PROXY".to_owned(), proxy.to_owned()),
-            ("NO_PROXY".to_owned(), no_proxy.to_owned()),
-        ]);
-        let settings = LiteLlmSettings::default();
-        let policy = Arc::new(ProxyPolicy::resolve(&settings, &environment));
-        let _route = policy.route(&Url::parse("https://api.example.com/v1").unwrap());
-        ProxiedClient::build(ClientBuilder::new(), &policy).unwrap();
-    }
+#[rstest]
+fn replays_the_proxy_policy_corpus(#[files("fuzz/corpus/proxy_policy/*")] path: PathBuf) {
+    let text = fs::read_to_string(path).unwrap();
+    let (proxy, no_proxy) = text.split_once('\n').unwrap_or((&text, ""));
+    let environment = BTreeMap::from([
+        ("HTTPS_PROXY".to_owned(), proxy.to_owned()),
+        ("NO_PROXY".to_owned(), no_proxy.to_owned()),
+    ]);
+    let settings = LiteLlmSettings::default();
+    let policy = Arc::new(ProxyPolicy::resolve(&settings, &environment));
+    let _route = policy.route(&Url::parse("https://api.example.com/v1").unwrap());
+    ProxiedClient::build(ClientBuilder::new(), &policy).unwrap();
 }

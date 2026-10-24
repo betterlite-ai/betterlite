@@ -55,12 +55,15 @@ impl ProxyPolicy {
         };
         let mut proxies = environment_proxies(environment);
         let no_proxy = proxies.remove("no");
-        let primary = if settings.disable_aiohttp_trust_env || is_true("DISABLE_AIOHTTP_TRUST_ENV")
-        {
-            BTreeMap::new()
-        } else {
-            primary_routes(&proxies)
-        };
+        let mut primary = BTreeMap::new();
+        for (name, value) in &proxies {
+            let prefix = if value.contains("://") { "" } else { "http://" };
+            let route = parse_route(name, &format!("{prefix}{value}"), None);
+            primary.insert(name.clone(), route);
+        }
+        if settings.disable_aiohttp_trust_env || is_true("DISABLE_AIOHTTP_TRUST_ENV") {
+            primary.clear();
+        }
         let mut warnings = Vec::new();
         let fallback = if settings.aiohttp_trust_env || is_true("AIOHTTP_TRUST_ENV") {
             fallback_routes(&proxies, environment, &mut warnings)
@@ -127,17 +130,6 @@ fn environment_proxies(environment: &BTreeMap<String, String>) -> BTreeMap<Strin
     proxies
 }
 
-fn primary_routes(proxies: &BTreeMap<String, String>) -> BTreeMap<String, ProxyRoute> {
-    proxies
-        .iter()
-        .map(|(name, value)| {
-            let prefix = if value.contains("://") { "" } else { "http://" };
-            let route = parse_route(name, &format!("{prefix}{value}"), None);
-            (name.clone(), route)
-        })
-        .collect()
-}
-
 fn fallback_routes(
     proxies: &BTreeMap<String, String>,
     environment: &BTreeMap<String, String>,
@@ -181,10 +173,8 @@ fn bypasses(no_proxy: &str, host: &str) -> bool {
         .any(|entry| {
             let name = entry.trim_start_matches('.').to_lowercase();
             let suffix = format!(".{name}");
-            host_only == name
-                || lowered == name
-                || host_only.ends_with(&suffix)
-                || lowered.ends_with(&suffix)
+            // only an IPv6 host loses a tail to the port split, and it has no dots for a suffix
+            host_only == name || lowered == name || lowered.ends_with(&suffix)
         })
 }
 
