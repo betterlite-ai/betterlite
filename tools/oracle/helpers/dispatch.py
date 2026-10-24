@@ -5,6 +5,7 @@ from typing import TypeAlias, cast
 
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
+from bedrock_request_policy import run as run_bedrock_request_policy
 from url_path import run as run_url_path
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -37,11 +38,15 @@ def main() -> int:
     except Exception as error:  # noqa: BLE001 - malformed protocol input is reported on stderr
         sys.stderr.write(f"invalid helper request: {error}\n")
         return 2
-    if operation != "url_path":
+    operations = {
+        "url_path": run_url_path,
+        "bedrock_request_policy": run_bedrock_request_policy,
+    }
+    if operation not in operations:
         sys.stderr.write(f"unknown helper operation: {operation}\n")
         return 2
     try:
-        value = run_url_path(input_value)
+        value = operations[operation](input_value)
         output: dict[str, Json] = {"ok": True, "value": value}
     except Exception as error:  # noqa: BLE001 - the wire contract names every helper exception
         output = {

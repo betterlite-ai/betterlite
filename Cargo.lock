@@ -201,6 +201,7 @@ name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "betterlite-bedrock",
  "betterlite-http",
  "clap",
  "futures-util",

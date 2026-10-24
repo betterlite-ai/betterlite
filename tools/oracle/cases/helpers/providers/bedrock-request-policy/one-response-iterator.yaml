@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-one-response-iterator
+call:
+  bedrock_request_policy:
+    fields: []
+    step:
+      iterate:
+        response: null
+        calls: [async, sync, async, sync]
+env: {}
+compare:
+  ignore: []

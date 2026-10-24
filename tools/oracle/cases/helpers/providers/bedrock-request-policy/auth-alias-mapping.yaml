@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-auth-alias-mapping
+call:
+  bedrock_request_policy:
+    fields: []
+    step:
+      aliases:
+        non_default:
+          region_name: null
+          aws_region_name: ignored
+          vertex_location: us-central1
+        optional:
+          aws_region_name: us-east-1
+          keep: 1
+env: {}
+compare:
+  ignore: []
