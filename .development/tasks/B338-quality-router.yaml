@@ -1,0 +1,144 @@
+id: B338
+title: Quality-tier and keyword routing
+description: 'Add the quality_router marker with its typed config and per-deployment routing preferences.
+  Reuse B328''s classifier and B013 prices, build the sorted quality index once per catalog snapshot and
+  publish the existing x-litellm-quality-router-* metadata through B016. Keep keyword overrides and tier
+  resolution distinct so ordering can be tested without the classifier. Configuration boundary keys introduced
+  or consumed here: available_models, complexity_to_quality, default_model, quality_tier, keywords, order.
+  Pinned declaration defaults: available_models=list; complexity_to_quality=lambda: DEFAULT_COMPLEXITY_TO_QUALITY.copy();
+  default_model=None; keywords=(); order=None. Resolve env values once in betterlite-config, never in
+  router code. QualityRouterConfig and RoutingPreferences accept extra fields at the pin: preserve accepted
+  values and warn about ignored extras, rather than turning them into a startup failure. Implement the
+  owned native service in crates/betterlite-router/src/quality_router.rs. Add ProbeOperation::B338 in
+  tools/oracle/src/router_probes/mod.rs and the corresponding B338 entry in tools/oracle/litellm/probes/registry.py;
+  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
+  lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_strategy/quality_router/quality_router.py:
+  QualityRouter.__init__ (L45-L93), QualityRouter._tier_to_models (L96-L100), QualityRouter._get_routing_preferences
+  (L102-L121), QualityRouter._get_deployment_input_cost (L123-L146), QualityRouter._get_deployment_model_name
+  (L148-L152), QualityRouter._build_tier_index (L154-L219), QualityRouter._order_key (L221-L224), QualityRouter._cost_key
+  (L226-L229), QualityRouter._keyword_override (L231-L269), QualityRouter._keyword_override.sort_key (L259-L266),
+  QualityRouter._resolve_model_for_quality_tier (L271-L304), QualityRouter._stash_decision (L306-L320),
+  QualityRouter.async_pre_routing_hook (L322-L452). Implement these behaviors through the typed Rust services
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/quality_router.rs
+  - crates/betterlite-router/src/quality_router/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/quality_router.rs
+  - crates/betterlite-server/src/routing/quality_router/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/quality_router.rs
+  - tools/oracle/src/router_probes/quality_router/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/quality_router.py
+  - tools/oracle/cases/routing/quality-router/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/quality_router.rs
+  - crates/betterlite-config/src/quality_router/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b338-*
+  - crates/betterlite-config/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/quality_router/config.py#L10-L74
+  why: Quality config and preference order.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/quality_router/quality_router.py#L45-L304
+  why: Index, keyword ties and tier resolution.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/quality_router/quality_router.py#L306-L452
+  why: Decision/header metadata and pre-routing hook.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L147-L164
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b338_behaviors and b338_boundaries under quality_router::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b338-behaviors
+  - b338-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b338-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b338-invalid.yaml;
+    the valid seed contains available_models. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b338-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b338-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b338_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b338-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b338_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/quality_router.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/quality_router.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b338-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b338-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b338-" && grep -Fq 'available_models' crates/betterlite-config/fuzz/corpus/config_yaml/b338-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/quality-router/keyword-before-complexity.yaml
+- tools/oracle/cases/routing/quality-router/quality-before-order-before-price.yaml
+- tools/oracle/cases/routing/quality-router/name-last-tiebreak.yaml
+- tools/oracle/cases/routing/quality-router/exact-round-up-round-down.yaml
+- tools/oracle/cases/routing/quality-router/missing-tier-default.yaml
+- tools/oracle/cases/routing/quality-router/no-user-message.yaml
+- tools/oracle/cases/routing/quality-router/text-content-blocks.yaml
+- tools/oracle/cases/routing/quality-router/quality-response-headers.yaml
+- tools/oracle/cases/routing/quality-router/unknown-config-fields-warning.yaml
+deviations: []
+out_of_scope:
+- Learning quality from feedback; that belongs to the adaptive router.
+- litellm/router_strategy/quality_router/__init__.py has no functions at the pin; its exports/data are
+  accounted for by the owning native module, with no Python wrapper port.
+- litellm/router_strategy/quality_router/config.py has no functions at the pin; its exports/data are accounted
+  for by the owning native module, with no Python wrapper port.
+pitfalls:
+- Higher quality wins before an explicit lower order value.
+- A missing quality tier first rounds up, then down, before using default_model.
+- Price arithmetic and serialization remain Decimal.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

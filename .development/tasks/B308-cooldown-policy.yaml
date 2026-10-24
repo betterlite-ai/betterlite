@@ -1,0 +1,115 @@
+id: B308
+title: Cooldown error policy and callback events
+description: 'Apply B369 CooldownDecision using B307 cooldown records and B304 deployment counters. Emit
+  B012 typed cooldown events exactly once, keep notification failures from masking provider errors, and
+  implement disabled-cooldown and debug snapshots. Prometheus export remains B111. Implement the owned
+  native service in crates/betterlite-router/src/cooldown_policy.rs. Add ProbeOperation::B308 in tools/oracle/src/router_probes/mod.rs
+  and the corresponding B308 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
+  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
+  lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
+  services instead of copying their algorithms. Function coverage in litellm/router_utils/cooldown_callbacks.py:
+  router_cooldown_event_callback (L21-L78), _get_prometheus_logger_from_callbacks (L81-L97). Implement
+  these behaviors through the typed Rust services above; synchronous facades and structural accessors
+  reuse the same primitive instead of separate ports. Function coverage in litellm/router_utils/cooldown_handlers.py:
+  _set_cooldown_deployments (L427-L489), _async_get_cooldown_deployments (L492-L515), _async_get_cooldown_deployments_with_debug_info
+  (L518-L531), _get_cooldown_deployments (L534-L558). Implement these behaviors through the typed Rust
+  services above; synchronous facades and structural accessors reuse the same primitive instead of separate
+  ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/cooldown_policy.rs
+  - crates/betterlite-router/src/cooldown_policy/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/cooldown_policy.rs
+  - crates/betterlite-server/src/routing/cooldown_policy/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/cooldown_policy.rs
+  - tools/oracle/src/router_probes/cooldown_policy/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/cooldown_policy.py
+  - tools/oracle/cases/routing/cooldown-policy/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/cooldown_handlers.py#L427-L558
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/cooldown_callbacks.py#L21-L97
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/fallback_event_handlers.py#L46-L154
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L14643-L14695
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b308_behaviors and b308_boundaries under cooldown_policy::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b308-behaviors
+  - b308-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b308-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b308_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b308-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b308_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/cooldown_policy.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/cooldown_policy.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/cooldown-policy/disabled-cooldown.yaml
+- tools/oracle/cases/routing/cooldown-policy/single-event-per-failure.yaml
+deviations: []
+out_of_scope:
+- Prometheus exporter implementation (B111).
+- B369 owns cooldown decision policy; consume its tested public interface.
+- 'litellm/router_utils/cooldown_handlers.py: B369 owns: mark_advisor_orchestration_failure (L48-L59),
+  is_advisor_orchestration_failure (L62-L64), is_background_response_cost_poll_not_found (L67-L73), _first_present
+  (L90-L100), _get_deployment_cooldown_policy (L103-L123), _resolve_allowed_fails_from_policy (L126-L138),
+  _should_cooldown_based_on_deployment_policy (L141-L189), _has_explicit_allowed_fails_policy_for_exception
+  (L192-L215), _is_cooldown_required (L218-L268), _should_run_cooldown_logic (L271-L327), _should_cooldown_deployment
+  (L330-L424), should_cooldown_based_on_allowed_fails_policy (L561-L609), _increment_allowed_fails (L612-L622),
+  _is_allowed_fails_set_on_router (L625-L639), cast_exception_status_to_int (L642-L651), is_caller_timeout_408
+  (L654-L671).'
+pitfalls:
+- allowed_fails is a strict exceeded threshold, not an at-least threshold.
+- A caller's deadline and a provider's timeout do not always trigger the same cooldown.
+- Avoid counting the same failed attempt in both fallback and callback paths.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

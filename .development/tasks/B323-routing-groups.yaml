@@ -1,0 +1,161 @@
+id: B323
+title: Routing groups, priority tiers and reasoning capabilities
+description: 'Add typed routing_groups that materialize B302 candidates without duplicating provider definitions.
+  Implement validation and scoped strategy selection, including priority-group order, then expose aggregate
+  supported reasoning efforts from B013 metadata and B010 capability mappings. Keep absent capability
+  provenance distinct from an explicitly empty supported set. Wire group selection into B016 and the B019
+  selector enum. Configuration boundary keys introduced or consumed here: routing_groups. Pinned declaration
+  defaults: routing_groups=None. Resolve env values once in betterlite-config, never in router code. Implement
+  the owned native service in crates/betterlite-router/src/routing_groups.rs. Add ProbeOperation::B323
+  in tools/oracle/src/router_probes/mod.rs and the corresponding B323 entry in tools/oracle/litellm/probes/registry.py;
+  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
+  lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_utils/reasoning_effort_capability.py:
+  _bare_model_entry (L53-L63), _declared_effort_flags (L66-L73), declared_reasoning_efforts (L76-L87),
+  declared_reasoning_efforts_for_model (L90-L103), nearest_declared_reasoning_effort (L110-L122), _supports_none_reasoning_effort
+  (L125-L137), deployment_is_catalog_mapped (L140-L153), resolve_supported_reasoning_efforts (L156-L198),
+  intersect_supported_reasoning_efforts (L201-L212). Implement these behaviors through the typed Rust
+  services above; synchronous facades and structural accessors reuse the same primitive instead of separate
+  ports. Function coverage in litellm/router_utils/routing_groups.py: apply_routing_group_priority (L8-L17),
+  validate_routing_strategy (L23-L35), parse_routing_groups (L38-L100). Implement these behaviors through
+  the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
+  instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/routing_groups.rs
+  - crates/betterlite-router/src/routing_groups/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/routing_groups.rs
+  - crates/betterlite-server/src/routing/routing_groups/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/routing_groups.rs
+  - tools/oracle/src/router_probes/routing_groups/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/routing_groups.py
+  - tools/oracle/cases/routing/routing-groups/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/routing_groups.rs
+  - crates/betterlite-config/src/routing_groups/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b323-*
+  - crates/betterlite-config/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/routing_groups.py#L8-L100
+  why: Group validation, strategy names and priority materialization.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/reasoning_effort_capability.py#L53-L212
+  why: Capability provenance, intersection and nearest supported effort.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L55-L85
+  why: Priority-group schema constraints.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1475-L1517
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1519-L1547
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1549-L1566
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1568-L1591
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1593-L1596
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1613-L1628
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2462-L2491
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2503-L2529
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11889-L11912
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11914-L11920
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11923-L11931
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11984-L12039
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b323_behaviors and b323_boundaries under routing_groups::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b323-behaviors
+  - b323-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b323-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b323-invalid.yaml;
+    the valid seed contains routing_groups. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b323-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b323-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b323_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b323-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b323_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/routing_groups.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/routing_groups.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b323-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b323-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b323-" && grep -Fq 'routing_groups' crates/betterlite-config/fuzz/corpus/config_yaml/b323-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/routing-groups/duplicate-and-reserved-group.yaml
+- tools/oracle/cases/routing/routing-groups/one-nonpriority-owner.yaml
+- tools/oracle/cases/routing/routing-groups/priority-overlap.yaml
+- tools/oracle/cases/routing/routing-groups/group-strategy-override.yaml
+- tools/oracle/cases/routing/routing-groups/unmapped-does-not-narrow.yaml
+- tools/oracle/cases/routing/routing-groups/declared-empty-intersection.yaml
+- tools/oracle/cases/routing/routing-groups/nearest-effort-round-up.yaml
+- tools/oracle/cases/routing/routing-groups/none-never-rounded.yaml
+- tools/oracle/cases/routing/routing-groups/unknown-group-member-preserved.yaml
+deviations: []
+out_of_scope:
+- Auto-router tier classification (B021).
+pitfalls:
+- Priority routing is a group policy, not a sixth global selector.
+- Unknown group members are future catalog references in the pin, not discarded deployments.
+- Reasoning off is not a rung on the increasing-effort ladder.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

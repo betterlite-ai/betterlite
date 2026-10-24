@@ -1,0 +1,102 @@
+id: B377
+title: Automatic router identity and dependency validation
+description: 'Implement StrategyRouterKind, RouterDependencies and configuration-placement validation
+  for semantic, complexity, quality and adaptive marker deployments. Enumerate classifier, embedding,
+  evaluation and tier model dependencies using exact config keys, including custom tiers and prompts.
+  Licensing capability-count/tuning helpers have no runtime equivalent under the accepted product decision.
+  Implement the owned native service in crates/betterlite-server/src/router_dependencies.rs. Add ProbeOperation::B377
+  in tools/oracle/src/router_probes/mod.rs and the corresponding B377 entry in tools/oracle/litellm/probes/registry.py;
+  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
+  lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_utils/auto_router_model_naming.py:
+  classify_strategy_router_model (L68-L84), is_complexity_router_model (L87-L89), _named (L92-L94), _pool
+  (L97-L103), _mapping (L109-L110), strategy_router_dependencies (L113-L184), uses_heuristic_v2_classifier
+  (L187-L189), defines_custom_tiers (L192-L198), defines_custom_classifier_prompt (L204-L221), uses_custom_tier_or_classifier_prompt
+  (L224-L226), validate_complexity_router_config_write (L347-L372), carries_complexity_router_settings
+  (L380-L389), validate_complexity_router_config_placement (L392-L411), validate_strategy_router_model_write
+  (L414-L453). Implement these behaviors through the typed Rust services above; synchronous facades and
+  structural accessors reuse the same primitive instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-server/src/router_dependencies.rs
+  - crates/betterlite-server/src/router_dependencies/**
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/router_dependencies.rs
+  - crates/betterlite-server/src/routing/router_dependencies/**
+  - tools/oracle/src/router_probes/router_dependencies.rs
+  - tools/oracle/src/router_probes/router_dependencies/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/router_dependencies.py
+  - tools/oracle/cases/routing/router-dependencies/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/auto_router_model_naming.py#L68-L226
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/auto_router_model_naming.py#L347-L453
+  why: Implementation boundary verified against the pinned checkout.
+dod:
+- text: Write tests named b377_behaviors and b377_boundaries under router_dependencies::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b377-behaviors
+  - b377-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b377-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b377_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b377-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b377_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/router_dependencies.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/router_dependencies.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/router-dependencies/misplaced-router-config.yaml
+deviations:
+- what: Auto-router capability counts and tuning quotas do not restrict configuration.
+  why: The accepted product decision enables all MIT features without a paid tier.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/auto_router_tuning_baseline.py#L147-L174
+out_of_scope:
+- B343 owns final integration and the remaining functions listed in its implementation boundary.
+- 'litellm/router_utils/auto_router_model_naming.py: Licensing-only behavior is omitted under the accepted
+  no-paid-tier decision; B343 records the deviation: claimed_capability (L307-L312), gated_capability_of
+  (L315-L320), count_capability_routers (L323-L329), capability_limit_violation (L332-L344).'
+pitfalls:
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

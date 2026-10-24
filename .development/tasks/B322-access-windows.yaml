@@ -1,0 +1,155 @@
+id: B322
+title: Team-scoped deployment access and reserved windows
+description: 'Add typed team candidate filtering and model_info.access_windows, using B052''s authenticated
+  principal and an injected clock/time-zone database. Keep catalog lookup and reservation filtering distinct
+  so direct deployment IDs cannot skip authorization. Surface the blocking window through typed no-deployment
+  errors. Add config corpus cases for IANA zones, overnight windows, overlapping windows and invalid bounds.
+  Configuration boundary keys introduced or consumed here: access_windows. Pinned declaration defaults:
+  access_windows=None. Resolve env values once in betterlite-config, never in router code. Implement the
+  owned native service in crates/betterlite-router/src/access_windows.rs. Add ProbeOperation::B322 in
+  tools/oracle/src/router_probes/mod.rs and the corresponding B322 entry in tools/oracle/litellm/probes/registry.py;
+  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
+  lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_utils/access_windows.py:
+  parse_access_windows (L16-L20), access_windows_config_error (L23-L32), is_window_active (L35-L40), _reservation_blocking_window
+  (L49-L60), filter_reserved_deployments (L63-L75). Implement these behaviors through the typed Rust services
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
+  Function coverage in litellm/router_utils/common_utils.py: _is_proxy_admin_request (L20-L28), get_request_team_id
+  (L31-L40), filter_team_based_models (L143-L207). Implement these behaviors through the typed Rust services
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/access_windows.rs
+  - crates/betterlite-router/src/access_windows/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/access_windows.rs
+  - crates/betterlite-server/src/routing/access_windows/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/access_windows.rs
+  - tools/oracle/src/router_probes/access_windows/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/access_windows.py
+  - tools/oracle/cases/routing/access-windows/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/access_windows.rs
+  - crates/betterlite-config/src/access_windows/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b322-*
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-router/Cargo.toml
+  - crates/betterlite-config/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/access_windows.py#L16-L75
+  why: Window validation and active reservation filtering.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L175-L219
+  why: Time-zone and wall-clock types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/common_utils.py#L20-L61
+  why: Trusted team and alias lookup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/common_utils.py#L143-L207
+  why: Team-only pools and admin ambiguity.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10324-L10331
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10333-L10348
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10581-L10597
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12923-L12939
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b322_behaviors and b322_boundaries under access_windows::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b322-behaviors
+  - b322-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b322-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b322-invalid.yaml;
+    the valid seed contains access_windows. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b322-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b322-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b322_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b322-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b322_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/access_windows.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/access_windows.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b322-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b322-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b322-" && grep -Fq 'access_windows' crates/betterlite-config/fuzz/corpus/config_yaml/b322-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/access-windows/same-team-only.yaml
+- tools/oracle/cases/routing/access-windows/forged-team-metadata.yaml
+- tools/oracle/cases/routing/access-windows/admin-ambiguous-public-name.yaml
+- tools/oracle/cases/routing/access-windows/start-inclusive-end-exclusive.yaml
+- tools/oracle/cases/routing/access-windows/overnight-window.yaml
+- tools/oracle/cases/routing/access-windows/dst-transition.yaml
+- tools/oracle/cases/routing/access-windows/overlapping-allowed-team.yaml
+- tools/oracle/cases/routing/access-windows/no-team-active-reservation.yaml
+deviations: []
+out_of_scope:
+- Team CRUD or role implementation (B052/B057).
+- 'litellm/router_utils/common_utils.py: B014 owns: provider_for_generic_call (L291-L314).'
+- 'litellm/router_utils/common_utils.py: B082 owns: add_model_file_id_mappings (L118-L140).'
+- 'litellm/router_utils/common_utils.py: B302 owns: resolve_model_group_alias (L43-L61).'
+- 'litellm/router_utils/common_utils.py: B303 owns: get_litellm_params_sensitive_credential_hash (L110-L115),
+  warn_on_provider_credential_mismatch (L317-L359).'
+- 'litellm/router_utils/common_utils.py: B364 owns: _deployment_supports_web_search (L210-L227), filter_web_search_deployments
+  (L230-L259).'
+- 'litellm/router_utils/common_utils.py: B398 owns: truncate_fallback_error_detail (L64-L77), format_no_fallback_group_message
+  (L80-L92), format_fallback_outcome_message (L95-L107).'
+pitfalls:
+- Window times are local wall-clock times in the named zone, not UTC offsets.
+- An admin without a team must not silently pick between identically named team models.
+- Do not turn absent authenticated team context into a caller-provided metadata lookup.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

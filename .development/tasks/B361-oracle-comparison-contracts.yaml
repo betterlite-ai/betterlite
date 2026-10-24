@@ -1,0 +1,104 @@
+id: B361
+title: Explicit numerical and deviation comparison contracts
+description: 'Extend the oracle comparator shared by legacy HTTP cases, B301 component probes and the
+  generic comparison interface later used by B300 scenarios with two strict opt-in rules. A numerical
+  rule names one JSON pointer, a nonnegative Decimal absolute tolerance and a reason; exact comparison
+  remains the default. An expected-difference rule names one pointer with exact expected LiteLLM and betterlite
+  values plus the task''s deviation reason/reference. Assert each side before excluding that pointer from
+  the remaining structural comparison. Reject duplicate, overlapping, missing and type-incompatible paths.
+  During --self-check assert the LiteLLM value on both sides. Never permit a tolerance for selected models,
+  tiers, status codes, counts, spend, provider requests or permission outcomes. Add this format to the
+  existing strict case parser and its corpus; no case may hide an unexpected difference behind ignore.
+  This tooling-only slice is estimated at 500 to 700 changed lines including comparator tests. The architect
+  permits finite f64 statistics in named algorithm modules, with one float_arithmetic expectation per
+  module; this comparator remains Decimal-based and grants no production lint exception. Implement the
+  owned native service in tools/oracle/src/oracle_comparison_contracts.rs (oracle tooling). Budget allocation:
+  at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
+  lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
+  services instead of copying their algorithms. Use compare.numeric entries with pointer, absolute_tolerance
+  and why; compare.expected_difference entries contain pointer, reference, rust, why and link. The comparison-rules
+  corpus must exercise expected_difference. The existing compare.ignore stays limited to justified nondeterminism/error
+  wording.'
+scope:
+  paths:
+  - tools/oracle/src/lib.rs
+  - tools/oracle/src/main.rs
+  - tools/oracle/src/error.rs
+  - tools/oracle/src/oracle_comparison_contracts.rs
+  - tools/oracle/src/oracle_comparison_contracts/**
+  - tools/oracle/src/case.rs
+  - tools/oracle/src/case/**
+  - tools/oracle/src/runner.rs
+  - tools/oracle/src/runner/**
+  - tools/oracle/src/compare.rs
+  - tools/oracle/src/compare/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/src/router_probes/comparison/**
+  - tools/oracle/cases/routing/probes/**
+  - tools/oracle/fuzz/Cargo.toml
+  - tools/oracle/fuzz/fuzz_targets/route_probe.rs
+  - tools/oracle/fuzz/corpus/route_probe/b361-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/llm_v2.py#L200-L224
+  why: Floating-point epsilon and diagnostic formatting require an explicit comparison policy.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L43-L112
+  why: The bounded scheduler cleanup deviation needs independently asserted outcomes.
+dod:
+- text: Write tests named b361_behaviors and b361_boundaries under oracle_comparison_contracts::tests.
+    The first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
+    bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
+    cannot satisfy either check.
+  proof:
+  - b361-behaviors
+  - b361-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: Add tools/oracle/fuzz/corpus/route_probe/b361-valid.json and tools/oracle/fuzz/corpus/route_probe/b361-invalid.json;
+    the valid seed contains expected_difference. The cargo-fuzz target route_probe and normal replays_the_route_probe_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - parser-corpus
+  - b361-boundaries
+checks:
+  optional: []
+  commands:
+  - id: b361-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b361_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b361-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b361_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: parser-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f tools/oracle/fuzz/corpus/route_probe/b361-valid.json && test -f tools/oracle/fuzz/corpus/route_probe/b361-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/route_probe | grep
+      -Fq "/b361-" && grep -Fq 'expected_difference' tools/oracle/fuzz/corpus/route_probe/b361-valid.json
+      && test -f tools/oracle/fuzz/fuzz_targets/route_probe.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_route_probe_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/probes/comparison-exact.yaml
+- tools/oracle/cases/routing/probes/comparison-diagnostic.yaml
+deviations: []
+out_of_scope:
+- 'Choosing algorithm tolerances: selection is always exact; diagnostic-only tolerances must cite the
+  numerical bound and cannot mask changed decisions.'
+- Changing the pinned package or suppressing mismatched deployment choices.
+pitfalls:
+- Seed probe cases still call the production one-candidate selector; comparator-only edge values belong
+  in unit tests.
+- Document each deliberate difference in the owning task and assert it in a case rather than normalizing
+  it away.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

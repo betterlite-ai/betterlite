@@ -1,0 +1,101 @@
+id: B380
+title: Shadow evaluation lifecycle response models
+description: 'Implement typed ShadowJob, ShadowLeg and lifecycle response construction over B051 stored
+  job rows. Derive pending/running/exhausted/stopped status, budget spent and immutable arm/target configuration.
+  Keep Decimal spend and omit key secrets. Share these types with B356 writes and B357 reads; no endpoint
+  or scheduler is added. Implement the owned native service in crates/betterlite-server/src/shadow_eval_models.rs.
+  Add ProbeOperation::B380 in tools/oracle/src/router_probes/mod.rs and the corresponding B380 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/types/management_endpoints/auto_router_endpoints.py:
+  ShadowEvalJobTargetResponse.budget_spent (L667-L669), ShadowEvalJobResponse.router_name (L729-L732),
+  ShadowEvalJobResponse.status (L736-L752). Implement these behaviors through the typed Rust services
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-server/src/shadow_eval_models.rs
+  - crates/betterlite-server/src/shadow_eval_models/**
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/shadow_eval_models.rs
+  - crates/betterlite-server/src/routing/shadow_eval_models/**
+  - tools/oracle/src/router_probes/shadow_eval_models.rs
+  - tools/oracle/src/router_probes/shadow_eval_models/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/shadow_eval_models.py
+  - tools/oracle/cases/routing/shadow-eval-models/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L329-L514
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L618-L752
+  why: Implementation boundary verified against the pinned checkout.
+dod:
+- text: Write tests named b380_behaviors and b380_boundaries under shadow_eval_models::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b380-behaviors
+  - b380-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b380-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b380_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b380-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b380_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/shadow_eval_models.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/shadow_eval_models.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/shadow-eval-models/independent-target-budgets.yaml
+- tools/oracle/cases/routing/shadow-eval-models/no-secret-key-returned.yaml
+deviations: []
+out_of_scope:
+- B356 owns final integration and the remaining functions listed in its implementation boundary.
+- 'litellm/types/management_endpoints/auto_router_endpoints.py: B345 owns: StartShadowEvalRequest._reject_the_retired_turn_budget
+  (L443-L448), StartShadowEvalRequest._round_percentage (L452-L453), StartShadowEvalRequest._dedupe_targets
+  (L457-L460), StartShadowEvalRequest._models_are_names (L464-L467), StartShadowEvalRequest._at_least_one_target_at_most_hundred
+  (L470-L476), StartShadowEvalRequest._model_scope_is_forward_only (L479-L488), StartShadowEvalRequest._baseline_model_matches_direction
+  (L491-L496), StartShadowEvalRequest._resolve_router_set (L499-L513).'
+- 'litellm/types/management_endpoints/auto_router_endpoints.py: B349 owns: AutoRouterRoutingTestRequest._reject_messages_no_surface_accepts
+  (L114-L131), AutoRouterRoutingTestRequest._resolve_request_carrier (L134-L143), AutoRouterRoutingTestRequest.wire_body
+  (L145-L158).'
+pitfalls:
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

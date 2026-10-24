@@ -1,0 +1,105 @@
+id: B382
+title: Request-scoped routing read batches
+description: 'Implement RoutingReadBatch and RoutingPrefetch ownership over B360 typed batch reads. Merge
+  cooldown and usage key sets, settle or roll back reservations on cancellation, backfill local cache
+  and consume each result once per request. Keep this service independent of selector implementations
+  by passing typed key groups. Implement the owned native service in crates/betterlite-router/src/routing_read_batch.rs.
+  Add ProbeOperation::B382 in tools/oracle/src/router_probes/mod.rs and the corresponding B382 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_utils/routing_read_batch.py: _backfill_prefetched_cache
+  (L35-L49), RoutingPrefetch.release (L62-L66), RoutingPrefetch._settle (L68-L82), RoutingPrefetch.arm
+  (L85-L122), RoutingPrefetch.armed (L125-L127), RoutingPrefetch.take (L130-L140), RoutingReadBatch.__init__
+  (L149-L151), RoutingReadBatch.scoped (L155-L160), RoutingReadBatch.active (L163-L164), RoutingReadBatch.for_strategy
+  (L167-L173), RoutingReadBatch.async_get_cooldown_deployments (L175-L210), RoutingReadBatch._read_prefetched
+  (L213-L235). Implement these behaviors through the typed Rust services above; synchronous facades and
+  structural accessors reuse the same primitive instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/routing_read_batch.rs
+  - crates/betterlite-router/src/routing_read_batch/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/routing_read_batch.rs
+  - crates/betterlite-server/src/routing/routing_read_batch/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/routing_read_batch.rs
+  - tools/oracle/src/router_probes/routing_read_batch/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/routing_read_batch.py
+  - tools/oracle/cases/routing/routing-read-batch/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/routing_read_batch.py#L35-L235
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L51-L52
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L54-L57
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L61-L66
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L69-L70
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b382_behaviors and b382_boundaries under routing_read_batch::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b382-behaviors
+  - b382-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b382-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b382_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b382-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b382_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/routing_read_batch.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/routing_read_batch.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/routing-read-batch/batch-request-isolation.yaml
+- tools/oracle/cases/routing/routing-read-batch/redis-read-failure.yaml
+deviations: []
+out_of_scope:
+- B304 owns final integration and the remaining functions listed in its implementation boundary.
+pitfalls:
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

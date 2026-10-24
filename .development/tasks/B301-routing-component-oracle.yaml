@@ -1,0 +1,123 @@
+id: B301
+title: Component probes for deterministic routing oracle cases
+description: 'Register tagged component cases in the existing B001 oracle CLI using B392 IPC and child
+  lifecycle. Define a closed ProbeOperation enum in tools/oracle/src/router_probes/mod.rs and Python operation
+  dispatch in tools/oracle/litellm/probes/registry.py; every later task adds its named variant there.
+  Start with SingleCandidate invoking production simple-shuffle on both sides. Build betterlite-router-probe
+  with a 300-second deadline and run probes with a 30-second deadline. Permit betterlite-oracle as the
+  test-tool consumer of betterlite-router and betterlite-server in deny.toml, preserving their existing
+  product consumers. Component adapters call production functions; management adapters call server services
+  with injected repositories. Implement the owned native service in tools/oracle/src/routing_component_oracle.rs
+  (oracle tooling). Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140
+  Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use
+  only the existing checks.yaml exclusions. Reuse predecessor services instead of copying their algorithms.'
+scope:
+  paths:
+  - tools/oracle/src/lib.rs
+  - tools/oracle/src/main.rs
+  - tools/oracle/src/error.rs
+  - tools/oracle/src/routing_component_oracle.rs
+  - tools/oracle/src/routing_component_oracle/**
+  - tools/oracle/src/case.rs
+  - tools/oracle/src/case/**
+  - tools/oracle/src/runner.rs
+  - tools/oracle/src/runner/**
+  - tools/oracle/src/compare.rs
+  - tools/oracle/src/compare/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/bin/betterlite-router-probe.rs
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/pyproject.toml
+  - tools/oracle/litellm/uv.lock
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/tests/**
+  - tools/oracle/cases/routing/probes/**
+  - Cargo.toml
+  - deny.toml
+  - tools/oracle/fuzz/Cargo.toml
+  - tools/oracle/fuzz/fuzz_targets/route_probe.rs
+  - tools/oracle/fuzz/corpus/route_probe/b301-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/simple_shuffle.py#L17-L67
+  why: A one-candidate seed avoids cross-language RNG differences.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/get_retry_from_policy.py#L32-L70
+  why: An example of internal decisions future tasks need to observe.
+dod:
+- text: Write tests named b301_behaviors and b301_boundaries under routing_component_oracle::tests. The
+    first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
+    bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
+    cannot satisfy either check.
+  proof:
+  - b301-behaviors
+  - b301-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add tools/oracle/fuzz/corpus/route_probe/b301-valid.json and tools/oracle/fuzz/corpus/route_probe/b301-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target route_probe and normal replays_the_route_probe_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - parser-corpus
+  - b301-boundaries
+- text: The oracle is the only new tool consumer of router and server; existing product consumer restrictions
+    remain.
+  proof:
+  - probe-layering
+  - deny
+checks:
+  optional: []
+  commands:
+  - id: b301-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b301_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b301-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b301_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/registry.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/registry.py)" && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: parser-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f tools/oracle/fuzz/corpus/route_probe/b301-valid.json && test -f tools/oracle/fuzz/corpus/route_probe/b301-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/route_probe | grep
+      -Fq "/b301-" && test -f tools/oracle/fuzz/fuzz_targets/route_probe.rs && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(replays_the_route_probe_corpus)'
+  - id: probe-layering
+    why: the router tool exception is missing from dependency policy
+    run: grep -qE 'crate = "betterlite-router", wrappers = \["betterlite-server", "betterlite-oracle"\]'
+      deny.toml && grep -qE 'crate = "betterlite-server", wrappers = \["betterlite", "betterlite-oracle"\]'
+      deny.toml
+oracle_cases:
+- tools/oracle/cases/routing/probes/single-candidate.yaml
+deviations: []
+out_of_scope:
+- A general eval language, dynamic import paths supplied by case files, or arbitrary commands in cases.
+- Copying Python algorithms into adapters or installing the enterprise package.
+- B392 owns typed routing probe ipc and child lifecycle; consume its tested public interface.
+pitfalls:
+- Python imports the pinned installed package; the read-only checkout supplies references, never modified
+  source.
+- Fail on an empty selected case set rather than passing silently.
+- Later task adapters must call production functions, not independently calculate expected outcomes.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

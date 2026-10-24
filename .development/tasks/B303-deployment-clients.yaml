@@ -1,0 +1,186 @@
+id: B303
+title: Deployment client reuse and parallel request guards
+description: 'Connect B302 catalog identities to B009 clients and B010 provider configuration using typed
+  SecretString request api_key overrides. Preserve credential-specific client identity and per-deployment
+  parallel guards through stream completion. The URL builder accepts only validated configuration; request
+  api_base/base_url fields cannot flow into it. B052 owns the request api_base 400 via is_request_body_safe;
+  do not add another rejection handler or fetch a supplied URL. Configuration boundary keys introduced
+  or consumed here: max_parallel_requests, default_max_parallel_requests, client_ttl. Pinned declaration
+  defaults: client_ttl=3600. Resolve env values once in betterlite-config, never in router code. client_ttl
+  defaults to 3600 seconds. calculate_max_parallel_requests uses explicit max_parallel_requests, then
+  rpm, then max(1, floor(tpm/1000*6)), with default_max_parallel_requests only when none is set; a falsy
+  result installs no cap. Constructor source fields for secret clearing on URL redirection belong to B052
+  because request URL redirection is unavailable here. Implement the owned native service in crates/betterlite-router/src/deployment_clients.rs.
+  Add ProbeOperation::B303 in tools/oracle/src/router_probes/mod.rs and the corresponding B303 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_utils/client_initalization_utils.py:
+  MaxParallelRequestsLimit.__init__ (L20-L24), MaxParallelRequestsLimit.__enter__ (L26-L27), MaxParallelRequestsLimit.__exit__
+  (L29-L32), MaxParallelRequestsLimit.acquire (L34-L47), MaxParallelRequestsLimit.release (L49-L50), InitalizeCachedClient.set_max_parallel_requests_client
+  (L55-L78). Implement these behaviors through the typed Rust services above; synchronous facades and
+  structural accessors reuse the same primitive instead of separate ports. Function coverage in litellm/router_utils/clientside_credential_handler.py:
+  is_clientside_credential (L69-L73), get_dynamic_litellm_params (L76-L105). Implement these behaviors
+  through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
+  instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/deployment_clients.rs
+  - crates/betterlite-router/src/deployment_clients/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/deployment_clients.rs
+  - crates/betterlite-server/src/routing/deployment_clients/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/deployment_clients.rs
+  - tools/oracle/src/router_probes/deployment_clients/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/deployment_clients.py
+  - tools/oracle/cases/routing/deployment-clients/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/deployment_clients.rs
+  - crates/betterlite-config/src/deployment_clients/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b303-*
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/chat.rs
+  - crates/betterlite-openai/src/request.rs
+  - crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs
+  - crates/betterlite-openai/fuzz/corpus/chat_request/b303-*
+  - crates/betterlite-config/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/client_initalization_utils.py#L16-L78
+  why: Non-waiting deployment concurrency guards.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/clientside_credential_handler.py#L16-L105
+  why: Credential identity and endpoint override handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12293-L12332
+  why: Cached client selection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5145-L5190
+  why: Configured concurrency-cap precedence and fallback calculation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/common_utils.py#L110-L115
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/common_utils.py#L317-L359
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3937-L3970
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3973-L3990
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3992-L4096
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4098-L4120
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8699-L8713
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10286-L10299
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10550-L10570
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10599-L10661
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b303_behaviors and b303_boundaries under deployment_clients::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b303-behaviors
+  - b303-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b303-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b303-invalid.yaml;
+    the valid seed contains max_parallel_requests. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b303-boundaries
+- text: Add crates/betterlite-openai/fuzz/corpus/chat_request/b303-valid.json and crates/betterlite-openai/fuzz/corpus/chat_request/b303-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target chat_request and normal replays_the_chat_request_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - chat-corpus
+  - b303-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b303-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b303_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b303-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b303_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/deployment_clients.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/deployment_clients.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b303-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b303-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b303-" && grep -Fq 'max_parallel_requests' crates/betterlite-config/fuzz/corpus/config_yaml/b303-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: chat-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-openai/fuzz/corpus/chat_request/b303-valid.json && test -f crates/betterlite-openai/fuzz/corpus/chat_request/b303-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request
+      | grep -Fq "/b303-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && cargo
+      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/deployment-clients/same-credentials-reuse.yaml
+- tools/oracle/cases/routing/deployment-clients/different-key-isolation.yaml
+- tools/oracle/cases/routing/deployment-clients/parallel-limit-429.yaml
+- tools/oracle/cases/routing/deployment-clients/stream-holds-slot.yaml
+- tools/oracle/cases/routing/deployment-clients/release-after-provider-error.yaml
+- tools/oracle/cases/routing/deployment-clients/request-url-cannot-reach-builder.yaml
+- tools/oracle/cases/routing/deployment-clients/api-key-override-keeps-config-base.yaml
+deviations:
+- what: Request destination overrides never reach client URL construction.
+  why: The architect requires configuration-only URLs; B052 owns the api_base 400. Client-key overrides
+    remain supported.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/clientside_credential_handler.py#L76-L105
+out_of_scope:
+- New HTTP transports or provider authentication mechanisms.
+- Retries and global admission queues.
+- Request api_base rejection and is_request_body_safe belong to B052; request URL overrides are not a
+  routing feature.
+- 'litellm/router_utils/clientside_credential_handler.py: B052 owns: _admin_config_fields_to_clear_on_base_override
+  (L19-L63).'
+pitfalls:
+- Request API keys remain SecretString and never enter Debug or oracle logs.
+- B009 owns HTTP construction; do not instantiate reqwest clients in the router.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
