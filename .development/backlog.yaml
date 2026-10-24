@@ -213,6 +213,7 @@ tasks:
     - B309
     - B310
     - B311
+    - B312
     file: null
     covers:
     - litellm/router_utils/{cooldown_cache,cooldown_callbacks,cooldown_handlers,fallback_event_handlers,health_state_cache}.py
@@ -1984,5 +1985,17 @@ tasks:
     - B310
     - B005
     file: tasks/B311-chat-stream-fallback.yaml
+    covers:
+    - litellm/router.py
+
+  - id: B312
+    milestone: M2 routing
+    title: Responses and Messages stream fallback boundaries
+    status: todo
+    depends_on:
+    - B311
+    - B080
+    - B081
+    file: tasks/B312-native-stream-fallback.yaml
     covers:
     - litellm/router.py

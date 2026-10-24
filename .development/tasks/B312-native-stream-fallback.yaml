@@ -1,0 +1,76 @@
+id: B312
+title: Responses and Messages stream fallback boundaries
+description: Adapt B311's ownership and commitment model to the existing B080 Responses and B081 Messages
+  endpoint adapters, using their typed events. Add the protocol-specific pre-output buffering limits,
+  ping behavior, event identity handling and accumulated usage projection. The router consumes a normalized
+  commitment signal from each endpoint adapter; it does not parse those wire formats. Keep failed provider
+  operations with resource IDs inside their authorized group. Use the existing Rust crate boundaries from
+  B004 and B008; integrate through the server when the provider dispatcher or callbacks live in another
+  core crate. This task's source slices are the linked ranges, not a port of their Python classes. Add
+  the listed oracle cases and the matching adapters to B301's component runner where state is not observable
+  over HTTP; adapters call production logic and never reproduce it. Use deterministic candidate sets or
+  supplied random samples for comparisons, and separate seeded distribution tests for random choices.
+  Keep the implementation, adapters and tests within 800 changed lines; fixtures and oracle cases are
+  budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/native-stream-fallback/**
+  - tools/oracle/src/router_probes/native-stream-fallback/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/native_stream_fallback.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L528-L695
+  why: Messages ping/error commitment and wrapper.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3092-L3553
+  why: Responses buffering, fallback acquisition and usage.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5416-L5797
+  why: Native Responses and Messages retry/fallback adapters.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(native_stream_fallback)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/native-stream-fallback/responses-created-before-error.yaml
+- tools/oracle/cases/routing/native-stream-fallback/responses-output-delta-commits.yaml
+- tools/oracle/cases/routing/native-stream-fallback/messages-ping-before-content.yaml
+- tools/oracle/cases/routing/native-stream-fallback/messages-content-block-commits.yaml
+- tools/oracle/cases/routing/native-stream-fallback/native-fallback-usage.yaml
+- tools/oracle/cases/routing/native-stream-fallback/buffer-limit-commits.yaml
+- tools/oracle/cases/routing/native-stream-fallback/disconnect-native-stream.yaml
+deviations: []
+out_of_scope:
+- Implementing Responses or Messages endpoints from scratch.
+pitfalls:
+- This task waits for B080 and B081; do not invent their future wire crate names.
+- If those endpoint adapters live outside betterlite-server, the architect must add their exact paths
+  to scope before dispatch.
+- Opaque provider resource identifiers must not be reissued to another provider.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
