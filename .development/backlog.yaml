@@ -416,7 +416,8 @@ tasks:
     depends_on:
     - B010
     - B011
-    - B177
+    - B182
+    - B186
     file: null
     covers:
     - litellm/llms/{cohere,voyage,jina_ai,infinity}/**
