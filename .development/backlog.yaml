@@ -230,24 +230,26 @@ tasks:
     milestone: M2 routing
     title: Auto, complexity, adaptive and quality routers
     status: todo
-    depends_on: [B019]
+    depends_on:
+    - B019
     file: null
     covers:
-      - "router_plugins.json"
-      - "litellm/router_strategy/{auto_router,complexity_router,adaptive_router,quality_router}/**"
-      - "litellm/router_strategy/{lar1_routing,savings_baseline}.py"
-      - "litellm/types/lar1.py"
-      - "litellm/router_utils/{auto_router_model_naming,auto_router_tuning_baseline}.py"
-      - "litellm/proxy/hooks/autorouter_baseline_cache.py"
-      - "litellm/proxy/auth/auto_router_checks.py"
-      - "litellm/proxy/management_endpoints/auto_router_endpoints.py"
-      - "litellm/types/management_endpoints/auto_router_endpoints.py"
-      - "litellm/proxy/management_helpers/auto_router_*.py"
-      - "litellm/proxy/db/autorouter_session_rollup.py"
-      - "litellm/models/autorouter_session.py"
-      - "litellm/repositories/autorouter_session_repository.py"
-      - "litellm/proxy/public_endpoints/autorouter_presets.json"
-      - "docker/install_auto_router.sh"
+    - router_plugins.json
+    - litellm/router_strategy/{auto_router,complexity_router,adaptive_router,quality_router}/**
+    - litellm/router_strategy/{lar1_routing,savings_baseline}.py
+    - litellm/types/lar1.py
+    - litellm/router_utils/{auto_router_model_naming,auto_router_tuning_baseline}.py
+    - litellm/proxy/hooks/autorouter_baseline_cache.py
+    - litellm/proxy/auth/auto_router_checks.py
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+    - litellm/proxy/management_helpers/auto_router_*.py
+    - litellm/proxy/db/autorouter_session_rollup.py
+    - litellm/models/autorouter_session.py
+    - litellm/repositories/autorouter_session_repository.py
+    - litellm/proxy/public_endpoints/autorouter_presets.json
+    - docker/install_auto_router.sh
+    - litellm/litellm_core_utils/classifier_logging.py
   - id: B022
     milestone: M2 routing
     title: Request scheduler, priorities and admission control
@@ -2086,11 +2088,24 @@ tasks:
     milestone: M1 openai data plane
     title: Typed request logging payloads
     status: todo
-    depends_on: [B188, B011, B005, B175]
+    depends_on:
+    - B188
+    - B011
+    - B005
+    - B006
+    - B212
+    - B247
+    - B248
+    - B249
+    - B250
+    - B251
+    - B252
+    - B253
+    - B254
     file: tasks/B190-logging-payloads.yaml
     covers:
-      - "litellm/litellm_core_utils/{litellm_logging,logging_utils,classifier_logging,served_output_texts}.py"
-      - "litellm/litellm_core_utils/README.md"
+    - litellm/litellm_core_utils/{litellm_logging,logging_utils,served_output_texts}.py
+    - litellm/litellm_core_utils/README.md
   - id: B191
     milestone: M1 openai data plane
     title: Bounded callback worker and batch delivery
@@ -2645,3 +2660,101 @@ tasks:
     file: tasks/B246-callback-validation.yaml
     covers:
     - litellm/proxy/common_utils/callback_config_validation.py
+  - id: B254
+    milestone: M1 openai data plane
+    title: Typed standard logging fields and normalization
+    status: todo
+    depends_on:
+    - B188
+    - B011
+    - B005
+    - B006
+    - B212
+    file: tasks/B254-logging-fields.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+    - litellm/types/utils.py
+  - id: B247
+    milestone: M1 openai data plane
+    title: Per-call logging state and callback eligibility
+    status: todo
+    depends_on:
+    - B188
+    - B189
+    - B254
+    - B198
+    file: tasks/B247-logging-state.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+  - id: B248
+    milestone: M1 openai data plane
+    title: Per-request callback selection
+    status: todo
+    depends_on:
+    - B247
+    - B189
+    - B188
+    file: tasks/B248-dynamic-callbacks.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+  - id: B249
+    milestone: M1 openai data plane
+    title: Pre-call and post-call logging dispatch
+    status: todo
+    depends_on:
+    - B247
+    - B248
+    - B191
+    - B187
+    file: tasks/B249-logging-pre-post.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+  - id: B250
+    milestone: M1 openai data plane
+    title: Success callback dispatch and deduplication
+    status: todo
+    depends_on:
+    - B247
+    - B248
+    - B191
+    - B254
+    - B252
+    file: tasks/B250-logging-success.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+  - id: B251
+    milestone: M1 openai data plane
+    title: Failure callback dispatch and partial usage
+    status: todo
+    depends_on:
+    - B247
+    - B248
+    - B191
+    - B254
+    - B011
+    file: tasks/B251-logging-failure.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+  - id: B252
+    milestone: M1 openai data plane
+    title: Bounded stream logging and served text
+    status: todo
+    depends_on:
+    - B188
+    - B005
+    - B006
+    file: tasks/B252-logging-streams.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+  - id: B253
+    milestone: M1 openai data plane
+    title: Standard logging metadata and payload privacy inputs
+    status: todo
+    depends_on:
+    - B188
+    - B011
+    - B254
+    - B212
+    file: tasks/B253-logging-metadata.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py

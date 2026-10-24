@@ -1,16 +1,17 @@
 id: B190
 title: Typed request logging payloads
 description: >-
-  Add typed logging events and payload assembly under betterlite-logging/payload, using B188 privacy snapshots and
-  B011 error metadata. Cover call identity, model/deployment, request/response timing, usage, served/requested service
-  tier, errors and standard model-parameter projection; preserve Decimal for optional cost/rate fields but do not
-  fabricate spend data before B068-B069. Implement classifier audit snapshots and served-output text overlays, aggregating
-  streams incrementally with bounded text/tool buffers instead of retaining every chunk. Add helper logging_payload
-  cases that call the pinned payload helpers with synthetic logging objects and injected timestamps, and compare
-  the supported fields without broadly ignoring metadata. Fields owned by unimplemented auth/spend/guardrail systems
-  remain explicitly absent and get typed extension slots, not invented zeros. Budget 350 payload/aggregation lines,
-  80 adapters and 300 tests. Seed B171's shared helper_case corpus with every added operation and replay it through
-  the common typed parser.
+  Complete get_standard_logging_object_payload/emit_standard_logging_payload (litellm_logging.py 6485-6779) over
+  B254 typed fields, B253 metadata and B252 stream aggregation. Compose the Logging lifecycle supplied by B247 state,
+  B248 dynamic callbacks, B249 pre/post dispatch, B250 success and B251 failure; B012 wires them into server routes.
+  Implement redact_messages.py redacted_standard_logging_payload/_redact_standard_logging_object (175-210) after
+  assembling independent per-callback snapshots. Preserve Decimal seconds/numbers for startTime/endTime/completionStartTime/response_time,
+  optional cost fields, service tier from B212 and absent unimplemented auth/spend fields. Classifier audit belongs
+  to B021. Budget 280 final assembly/privacy, 110 adapters, 300 tests and 60 wiring (750 total). Write the behavior
+  rstest functions b190_logging_payload_tests_behavior in adjacent tests.rs files, with a named case for each behavior
+  and failure in the DoD; corpus replay tests have separate names. Register helper operations logging_payload in
+  tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python
+  adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
@@ -19,10 +20,6 @@ scope:
   - crates/betterlite-logging/src/error.rs
   - crates/betterlite-logging/src/payload.rs
   - crates/betterlite-logging/src/payload/**
-  - crates/betterlite-logging/src/stream.rs
-  - crates/betterlite-logging/src/stream/**
-  - crates/betterlite-logging/src/classifier.rs
-  - crates/betterlite-logging/src/classifier/**
   - crates/betterlite-openai/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/**
@@ -31,31 +28,47 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5640-L5770
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5640-L5770
   why: Standard payload setup and identifiers.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6347-L6779
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6347-L6779
   why: Status, errors, response metadata and standard event construction.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_utils.py#L53-L167
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_utils.py#L53-L167
   why: Bounded base64 truncation.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_utils.py#L230-L319
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_utils.py#L230-L319
   why: Stream reconstruction and timing.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/classifier_logging.py#L16-L67
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/classifier_logging.py#L16-L67
   why: Classifier audit fields.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/served_output_texts.py#L95-L171
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/served_output_texts.py#L95-L171
   why: Capture the text actually served to the client.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L175-L210
+  why: Standard logging payload privacy moved here from B188.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570-L3615
+  why: All payload fields, including Decimal-backed timestamps.
 dod:
-- text: Listed success/failure/stream/classifier payload cases match the pinned helper for supported fields and
-    preserve absence explicitly.
+- text: >-
+    Success/failure payloads, typed timestamps and per-callback standard-payload redaction match the pinned helpers
+    with explicit absence.
   proof:
   - oracle
-- text: A stream with many chunks uses bounded aggregation, preserves usage once and cannot emit a success event
-    after an error or cancellation.
+  - helper-python
+- text: >-
+    Composed lifecycle emits one terminal payload and no success after failure/cancellation; stream mechanics are
+    supplied by B252.
   proof:
   - logging-payload-tests
 - text: Per-callback payloads are isolated and prompt/base64/secrets obey the selected privacy policy.
   proof:
   - logging-payload-tests
-- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
 checks:
@@ -64,31 +77,39 @@ checks:
   commands:
   - id: logging-payload-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/logging_payload/)'
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b190_logging_payload_tests_behavior($|::)/)
+      - test(/replays_the_/)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
     run: >-
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
-      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'logging_payload' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/logging-payload/chat-success.yaml
 - tools/oracle/cases/helpers/logging-payload/provider-failure.yaml
-- tools/oracle/cases/helpers/logging-payload/stream-tools-usage.yaml
-- tools/oracle/cases/helpers/logging-payload/served-text-overlay.yaml
-- tools/oracle/cases/helpers/logging-payload/sparse-choices.yaml
 - tools/oracle/cases/helpers/logging-payload/service-tier.yaml
-- tools/oracle/cases/helpers/logging-payload/classifier-audit.yaml
-- tools/oracle/cases/helpers/logging-payload/private-classifier.yaml
-- tools/oracle/cases/helpers/logging-payload/base64-truncation.yaml
+- tools/oracle/cases/helpers/logging-payload/standard-payload-redaction.yaml
+- tools/oracle/cases/helpers/logging-payload/decimal-times.yaml
+- tools/oracle/cases/helpers/logging-payload/lifecycle-payload.yaml
 deviations: []
 out_of_scope:
 - Cost calculation and spend rows are B068-B069; their optional typed payload fields are not populated here.
 - Exporter-specific schema and Python callback invocation remain in later tasks.
+- >-
+  Logging class ownership: state/eligibility B247, dynamic callback selection B248, pre/post dispatch B249, success
+  B250, failure B251, stream aggregation B252; payload setup B253/B254.
+- >-
+  ClassifierAudit helpers and _autorouter_savings_for_payload are B021; deployment pricing and cost helpers B068/B069;
+  callback setup/get_custom_logger_compatible_class B189 plus exporter branches B110-B118; prompt-management B117,
+  MCP B094, other endpoint conversions B080-B099.
 pitfalls:
 - Logged output must reflect post-processing that changed the served response, not the raw provider text.
 - A sparse choice index must not allocate an unbounded vector.
