@@ -264,6 +264,7 @@ tasks:
     - B327
     - B328
     - B329
+    - B330
     file: null
     covers:
     - router_plugins.json
@@ -2228,3 +2229,16 @@ tasks:
     file: tasks/B329-complexity-config.yaml
     covers:
     - litellm/router_strategy/complexity_router/config.py
+
+  - id: B330
+    milestone: M2 routing
+    title: Build bounded classifier context from request messages
+    status: todo
+    depends_on:
+    - B329
+    - B010
+    - B080
+    - B081
+    file: tasks/B330-classifier-context.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
