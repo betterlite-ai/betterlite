@@ -9,7 +9,7 @@ description: Add GET /auto_router/shadow_eval and GET /auto_router/shadow_eval/{
   the listed oracle cases and the matching adapters to B301's component runner where state is not observable
   over HTTP; adapters call production logic and never reproduce it. Use deterministic candidate sets or
   supplied random samples for comparisons, and separate seeded distribution tests for random choices.
-  Add a cargo-fuzz target shadow_eval_query under crates/betterlite-server/fuzz and a normal replays_the_shadow_eval_query_corpus
+  Add a cargo-fuzz target shadow_q under crates/betterlite-server/fuzz and a normal replays_the_shadow_q_corpus
   test using the production parser. Keep the implementation, adapters and tests within 800 changed lines;
   fixtures and oracle cases are budget-excluded by checks.yaml.
 scope:
@@ -18,7 +18,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/shadow-eval-results/**
-  - tools/oracle/src/router_probes/shadow-eval-results/**
+  - tools/oracle/src/router_probes/shadow_eval_results/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/shadow_eval_results.py
   - tools/oracle/litellm/probes/registry.py
@@ -36,7 +36,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the shadow_eval_results prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
@@ -56,8 +57,8 @@ checks:
       -E 'test(shadow_eval_results)'
   - id: parser-corpus
     why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-server/fuzz/fuzz_targets/shadow_eval_query.rs && test -n "$(ls -A crates/betterlite-server/fuzz/corpus/shadow_eval_query)"
-      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_shadow_eval_query_corpus)'
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/shadow_q.rs && test -n "$(ls -A crates/betterlite-server/fuzz/corpus/shadow_q)"
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_shadow_q_corpus)'
   - id: probe-python
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
