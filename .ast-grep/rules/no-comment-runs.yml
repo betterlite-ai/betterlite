@@ -1,0 +1,8 @@
+id: no-comment-runs
+language: rust
+severity: error
+message: a comment is one line; a reason that needs more lines belongs in the task report or the commit message
+rule:
+  kind: line_comment
+  precedes:
+    kind: line_comment

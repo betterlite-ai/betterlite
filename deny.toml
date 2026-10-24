@@ -1,0 +1,34 @@
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+private = { ignore = true }
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+  { crate = "openssl", use-instead = "rustls" },
+  { crate = "openssl-sys", use-instead = "rustls" },
+  { crate = "native-tls", use-instead = "rustls" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
