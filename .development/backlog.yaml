@@ -392,11 +392,13 @@ tasks:
     milestone: M3 providers
     title: Gemini through Google AI Studio
     status: todo
-    depends_on: [B031]
+    depends_on:
+    - B031
+    - B186
     file: null
     covers:
-      - "litellm/llms/gemini/**"
-      - "litellm/types/llms/{gemini,gemini_audio_transcription}.py"
+    - litellm/llms/gemini/**
+    - litellm/types/llms/{gemini,gemini_audio_transcription}.py
   - id: B036
     milestone: M3 providers
     title: xAI, Mistral and Codestral
@@ -446,37 +448,49 @@ tasks:
     milestone: M3 providers
     title: Self-hosted inference servers
     status: todo
-    depends_on: [B024]
+    depends_on:
+    - B024
+    - B186
     file: null
     covers:
-      - "litellm/llms/{hosted_vllm,vllm,ollama,oobabooga,lm_studio,llamafile,lemonade,docker_model_runner,xinference,triton,petals}/**"
-      - "litellm/types/llms/{ollama,triton}.py"
+    - >-
+      litellm/llms/{hosted_vllm,vllm,ollama,oobabooga,lm_studio,llamafile,lemonade,docker_model_runner,xinference,triton,petals}/**
+    - litellm/types/llms/{ollama,triton}.py
   - id: B041
     milestone: M3 providers
     title: Aggregators and hosted inference platforms
     status: todo
-    depends_on: [B024]
+    depends_on:
+    - B024
+    - B186
     file: null
     covers:
-      - "litellm/llms/{openrouter,together_ai,fireworks_ai,groq,perplexity,vercel_ai_gateway,cloudflare,nvidia_nim,edenai}/**"
-      - "litellm/types/llms/openrouter.py"
+    - >-
+      litellm/llms/{openrouter,together_ai,fireworks_ai,groq,perplexity,vercel_ai_gateway,cloudflare,nvidia_nim,edenai}/**
+    - litellm/types/llms/openrouter.py
   - id: B042
     milestone: M3 providers
     title: Cloud ML platforms
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B186
     file: null
     covers:
-      - "litellm/llms/{sagemaker,databricks,watsonx,oci,snowflake,sap,predibase,replicate,huggingface}/**"
-      - "litellm/types/llms/{databricks,watsonx,oci}.py"
+    - litellm/llms/{sagemaker,databricks,watsonx,oci,snowflake,sap,predibase,replicate,huggingface}/**
+    - litellm/types/llms/{databricks,watsonx,oci}.py
   - id: B043
     milestone: M3 providers
     title: Regional hosts and other native APIs
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B186
     file: null
     covers:
-      - "litellm/llms/{dashscope,volcengine,minimax,tencent,modelscope,gigachat,ai21,nlp_cloud}/**"
+    - litellm/llms/{dashscope,volcengine,minimax,tencent,modelscope,gigachat,ai21,nlp_cloud}/**
   - id: B044
     milestone: M3 providers
     title: litellm_proxy provider, custom providers and deprecated providers
