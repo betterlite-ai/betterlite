@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use crate::OracleError;
 use crate::case::HelperCase;
 use crate::compare;
+use crate::process::sync_litellm;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
@@ -53,12 +54,14 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
         });
     };
     let python_input = serde_json::json!({"operation": operation, "input": input_value});
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    sync_litellm(&root)?;
     let left = if self_check {
-        run_python(&python_input, &case.env)?
+        run_python(&root, &python_input, &case.env)?
     } else {
         invoke(&case.call)
     };
-    let right = run_python(&python_input, &case.env)?;
+    let right = run_python(&root, &python_input, &case.env)?;
     if let Some(difference) = compare::compare_helper(&left, &right, &case.compare.ignore) {
         let pointer = difference.pointer;
         writeln!(io::stderr().lock(), "FAIL {}: {pointer}", case.name)
@@ -87,17 +90,14 @@ fn invoke(call: &HelperCall) -> HelperOutput {
 }
 
 fn run_python(
+    root: &Path,
     input: &serde_json::Value,
     case_env: &BTreeMap<String, String>,
 ) -> Result<HelperOutput, OracleError> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut command = Command::new("setpriv");
     command
-        .args(["--pdeathsig", "KILL", "--", "uv", "run", "--locked"])
-        .args(["--no-dev", "--project"])
-        .arg(root.join("tools/oracle/litellm"))
-        // uv does not pass a SIGKILL on, so timeout bounds python when the runner kills uv.
-        .args(["timeout", "--signal=KILL", "10", "python"])
+        .args(["--pdeathsig", "KILL", "--"])
+        .arg(root.join("tools/oracle/litellm/.venv/bin/python"))
         .arg(root.join("tools/oracle/helpers/dispatch.py"))
         .env_clear();
     configure_environment(&mut command, case_env);

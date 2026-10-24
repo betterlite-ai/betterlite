@@ -6,7 +6,6 @@ use betterlite_http::url_path::{encode_segment, encode_segments};
 pub(crate) struct UrlPathInput {
     pub(crate) function: UrlPathFunction,
     pub(crate) value: String,
-    #[serde(default = "default_field_name")]
     pub(crate) field_name: String,
 }
 
@@ -25,11 +24,6 @@ pub(crate) fn invoke(input: &UrlPathInput) -> Result<serde_json::Value, Box<supe
     result
         .map(serde_json::Value::String)
         .map_err(|error| Box::new(helper_error(&error, &input.field_name)))
-}
-
-fn default_field_name() -> String {
-    let field_name = "path parameter";
-    field_name.to_owned()
 }
 
 fn helper_error(error: &UrlPathError, field_name: &str) -> super::HelperError {

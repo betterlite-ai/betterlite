@@ -9,19 +9,9 @@ const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'~');
 
-pub fn encode_url_path_segment(value: &str) -> Result<String, UrlPathError> {
-    let field_name = "path parameter";
-    encode_segment(value, field_name)
-}
-
 pub fn encode_segment(value: &str, field_name: &str) -> Result<String, UrlPathError> {
     validate_segment(value, field_name)?;
     Ok(utf8_percent_encode(value, PATH_SEGMENT).to_string())
-}
-
-pub fn encode_url_path_segments(value: &str) -> Result<String, UrlPathError> {
-    let field_name = "path";
-    encode_segments(value, field_name)
 }
 
 pub fn encode_segments(value: &str, field_name: &str) -> Result<String, UrlPathError> {

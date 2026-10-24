@@ -24,6 +24,7 @@ fn b171_helper_runner_tests_behavior(#[case] script: &str, #[case] expected: &st
 #[rstest::rstest]
 #[case::unknown_operation("call: {nope: {}}", "unknown variant")]
 #[case::unknown_input_field("call: {url_path: {x: 1}}", "unknown field")]
+#[case::missing_field_name("call: {url_path: {function: segment, value: a}}", "missing field")]
 #[case::unknown_case_field("x: 1", "unknown field")]
 #[case::duplicate_field("name: b", "duplicate")]
 fn helper_cases_reject_unknown_and_duplicate_fields(#[case] fields: &str, #[case] reason: &str) {
@@ -34,12 +35,9 @@ fn helper_cases_reject_unknown_and_duplicate_fields(#[case] fields: &str, #[case
 #[test]
 fn helper_case_cannot_disable_the_local_cost_map() {
     let case: HelperCase = serde_saphyr::from_str(
-        "kind: helper\nname: reserved\ncall: {url_path: {function: segment, value: .}}\nenv: {LITELLM_LOCAL_MODEL_COST_MAP: 'False'}\ncompare: {ignore: []}\n",
+        "kind: helper\nname: reserved\ncall: {url_path: {function: segment, value: ., field_name: id}}\nenv: {LITELLM_LOCAL_MODEL_COST_MAP: 'False'}\ncompare: {ignore: []}\n",
     )
     .expect("helper case should parse");
-    assert!(
-        matches!(&case.call, super::HelperCall::UrlPath(input) if input.field_name == "path parameter")
-    );
     assert!(matches!(
         super::run_case(&case, false).expect("helper should run"),
         super::HelperRun::Match
