@@ -1,12 +1,30 @@
 use std::collections::BTreeMap;
 use std::mem;
 
-use crate::bedrock_records::{ContentItem, Output, Response, TextContent, Usage};
+use crate::bedrock_records::{ContentItem, Extensions, Output, Response, TextContent, Usage};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 mod tests;
 
 pub const DEFAULT_CHUNK_BUDGET_CHARS: usize = 25_000;
+const INTERVENED: &str = "GUARDRAIL_INTERVENED";
+const TOO_LARGE: [&str; 6] = [
+    "text unit",
+    "maximum input size",
+    "content size",
+    "too long",
+    "too large",
+    "exceeds the maximum",
+];
+
+#[derive(Debug, Error)]
+pub enum ChunkingError {
+    #[error("there is no content item to split")]
+    EmptyContent,
+    #[error("the summed usage counter {counter} does not fit in 64 bits")]
+    UsageOverflow { counter: String },
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkResult {
@@ -24,10 +42,8 @@ pub fn uses_grounding(content: &[ContentItem]) -> bool {
 }
 
 fn source_text(item: &ContentItem) -> &str {
-    let Some(block) = &item.text else {
-        return "";
-    };
-    block.text.as_deref().unwrap_or("")
+    let block = item.text.as_ref().and_then(|text| text.text.as_deref());
+    block.unwrap_or("")
 }
 
 #[must_use]
@@ -50,34 +66,36 @@ pub fn bin_pack(content: &[ContentItem], budget: usize) -> Vec<Vec<ContentItem>>
     batches
 }
 
-#[must_use]
-pub fn split(content: &[ContentItem]) -> Option<(Vec<ContentItem>, Vec<ContentItem>)> {
+pub type Halves = (Vec<ContentItem>, Vec<ContentItem>);
+
+pub fn split(content: &[ContentItem]) -> Result<Option<Halves>, ChunkingError> {
     if content.len() > 1 {
-        let (left, right) = content.split_at_checked(content.len().checked_div(2)?)?;
-        return Some((left.to_vec(), right.to_vec()));
+        let (left, right) = content.split_at(content.len().div_euclid(2));
+        return Ok(Some((left.to_vec(), right.to_vec())));
     }
-    let block = content.first()?.text.as_ref()?;
-    let text = block.text.as_ref()?;
+    let first = content.first().ok_or(ChunkingError::EmptyContent)?;
+    let block = first.text.clone().unwrap_or_default();
+    let text = block.text.unwrap_or_default();
     if text.chars().count() < 2 {
-        return None;
+        return Ok(None);
     }
-    let boundary = text.char_indices().nth(nearest_whitespace(text))?.0;
-    let (left, right) = text.split_at_checked(boundary)?;
+    let boundary = text.char_indices().nth(nearest_whitespace(&text));
+    let (left, right) = text.split_at(boundary.map_or(text.len(), |(index, _)| index));
     let fragment = |part: &str| ContentItem {
         text: Some(TextContent {
             text: Some(part.to_owned()),
             qualifiers: block.qualifiers.clone().filter(|values| !values.is_empty()),
-            extra: BTreeMap::new(),
+            extra: Extensions::new(),
         }),
-        extra: BTreeMap::new(),
+        extra: Extensions::new(),
     };
-    Some((vec![fragment(left)], vec![fragment(right)]))
+    Ok(Some((vec![fragment(left)], vec![fragment(right)])))
 }
 
 #[must_use]
 pub fn nearest_whitespace(text: &str) -> usize {
     let length = text.chars().count();
-    let midpoint = length.checked_shr(1).unwrap_or_default();
+    let midpoint = length.div_euclid(2);
     let whitespace =
         |character: char| character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character);
     let before = text
@@ -104,124 +122,96 @@ pub fn nearest_whitespace(text: &str) -> usize {
 
 #[must_use]
 pub fn is_input_too_large(detail: Option<&str>) -> bool {
-    let Some(message) = detail else {
-        return false;
-    };
-    let lowered = message.to_lowercase();
-    [
-        "text unit",
-        "maximum input size",
-        "content size",
-        "too long",
-        "too large",
-        "exceeds the maximum",
-    ]
-    .iter()
-    .any(|pattern| lowered.contains(pattern))
+    let lowered = detail.map(str::to_lowercase).unwrap_or_default();
+    TOO_LARGE.iter().any(|pattern| lowered.contains(pattern))
 }
 
 fn chunk_outputs(chunk: &ChunkResult) -> &[Output] {
     let response = &chunk.response;
-    response
+    let outputs = response
         .outputs
         .as_deref()
-        .filter(|values| !values.is_empty())
-        .or(response.output.as_deref())
-        .unwrap_or_default()
+        .filter(|values| !values.is_empty());
+    outputs.or(response.output.as_deref()).unwrap_or_default()
+}
+
+const fn text_output(text: String) -> Output {
+    Output {
+        text: Some(text),
+        extra: Extensions::new(),
+    }
 }
 
 fn merge_group(group: &[ChunkResult]) -> (Vec<Output>, bool) {
-    let Some(first) = group.first() else {
-        return (Vec::new(), false);
-    };
     let masked = group.iter().any(|chunk| !chunk_outputs(chunk).is_empty());
     if group.len() > 1 {
-        let text = group
-            .iter()
-            .map(|chunk| {
-                chunk_outputs(chunk)
-                    .first()
-                    .and_then(|output| output.text.as_deref())
-                    .unwrap_or_else(|| chunk.content.first().map_or("", source_text))
-            })
-            .collect();
-        return (
-            vec![Output {
-                text: Some(text),
-                extra: BTreeMap::new(),
-            }],
-            masked,
-        );
+        let fragment_text = |chunk: &ChunkResult| {
+            let masked_text = chunk_outputs(chunk)
+                .first()
+                .and_then(|output| output.text.clone());
+            masked_text.unwrap_or_else(|| chunk.content.first().map_or("", source_text).to_owned())
+        };
+        let merged_text = group.iter().map(fragment_text).collect();
+        return (vec![text_output(merged_text)], masked);
     }
-    let outputs = chunk_outputs(first);
-    if !outputs.is_empty() {
-        return (outputs.to_vec(), true);
+    if masked {
+        let outputs = group.iter().flat_map(chunk_outputs).cloned();
+        return (outputs.collect(), true);
     }
-    (
-        first
-            .content
-            .iter()
-            .map(|item| Output {
-                text: Some(source_text(item).to_owned()),
-                extra: BTreeMap::new(),
-            })
-            .collect(),
-        false,
-    )
+    let sources = group.iter().flat_map(|chunk| &chunk.content);
+    let placeholders = sources.map(|item| text_output(source_text(item).to_owned()));
+    (placeholders.collect(), false)
 }
 
-#[must_use]
-pub fn merge(chunks: &[ChunkResult]) -> Response {
-    let mut merged = Response::default();
+fn sum_usage(chunks: &[ChunkResult]) -> Result<Option<Usage>, ChunkingError> {
+    let usages = chunks
+        .iter()
+        .filter_map(|chunk| chunk.response.usage.as_ref());
+    let mut totals: BTreeMap<String, Option<i64>> = BTreeMap::new();
+    for (key, counter) in usages.flat_map(|usage| &usage.0) {
+        let total = totals.entry(key.clone()).or_insert(Some(0));
+        let sum = total
+            .unwrap_or_default()
+            .checked_add(counter.unwrap_or_default());
+        let overflow = || ChunkingError::UsageOverflow {
+            counter: key.clone(),
+        };
+        *total = Some(sum.ok_or_else(overflow)?);
+    }
+    Ok((!totals.is_empty()).then_some(Usage(totals)))
+}
+
+pub fn merge(chunks: &[ChunkResult]) -> Result<Response, ChunkingError> {
     let mut outputs = Vec::new();
     let mut any_masked = false;
     let mut remaining = chunks;
     while let Some(first) = remaining.first() {
-        let size = first.fragment_group_size.max(1).min(remaining.len());
-        let Some((group, rest)) = remaining.split_at_checked(size) else {
-            break;
-        };
+        let size = first.fragment_group_size.clamp(1, remaining.len());
+        let (group, rest) = remaining.split_at(size);
         let (unit_outputs, masked) = merge_group(group);
         outputs.extend(unit_outputs);
         any_masked |= masked;
         remaining = rest;
     }
+    let mut merged = Response::default();
+    let mut actions = Vec::new();
+    let mut assessments = Vec::new();
     for chunk in chunks {
-        merge_fields(&mut merged, &chunk.response);
+        merged.absorb(&chunk.response);
+        actions.extend(chunk.response.action.clone());
+        assessments.extend(chunk.response.assessments.clone().unwrap_or_default());
     }
-    if any_masked && !outputs.is_empty() {
-        merged.output = Some(outputs.clone());
-        merged.outputs = Some(outputs);
-    }
-    merged
-}
-
-fn merge_fields(merged: &mut Response, response: &Response) {
-    merged.extra.extend(response.extra.clone());
-    if merged.action.as_deref() != Some("GUARDRAIL_INTERVENED") && response.action.is_some() {
-        merged.action.clone_from(&response.action);
-    }
-    if let Some(outputs) = &response.outputs {
-        merged.outputs = Some(outputs.clone());
-    }
-    if let Some(output) = &response.output {
-        merged.output = Some(output.clone());
-    }
-    if let Some(assessments) = &response.assessments {
-        merged
-            .assessments
-            .get_or_insert_default()
-            .extend(assessments.clone());
-    }
-    if let Some(usage) = &response.usage {
-        let totals = merged.usage.get_or_insert_with(Usage::default);
-        for (key, counter) in &usage.0 {
-            let entry = totals.0.entry(key.clone()).or_insert(Some(0));
-            *entry = Some(
-                entry
-                    .unwrap_or_default()
-                    .saturating_add(counter.unwrap_or_default()),
-            );
-        }
-    }
+    let intervened = actions.iter().any(|action| action == INTERVENED);
+    let masked_outputs = (any_masked && !outputs.is_empty()).then_some(outputs);
+    merged.absorb(&Response {
+        usage: sum_usage(chunks)?,
+        action: intervened
+            .then(|| INTERVENED.to_owned())
+            .or_else(|| actions.pop()),
+        output: masked_outputs.clone(),
+        outputs: masked_outputs,
+        assessments: (!assessments.is_empty()).then_some(assessments),
+        extra: Extensions::new(),
+    });
+    Ok(merged)
 }

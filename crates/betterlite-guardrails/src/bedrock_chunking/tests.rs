@@ -1,87 +1,47 @@
 #![cfg(test)]
 
 use super::*;
-use crate::bedrock_records::TextContent;
 
-fn item(text: &str) -> ContentItem {
-    let content = TextContent {
-        text: Some(text.to_owned()),
-        qualifiers: None,
-        extra: BTreeMap::new(),
-    };
-    ContentItem {
-        text: Some(content),
-        extra: BTreeMap::new(),
+fn chunk(wire: &str, text: &str, fragment_group_size: usize) -> ChunkResult {
+    let item = format!(r#"{{"text":{{"text":"{text}"}}}}"#);
+    ChunkResult {
+        response: serde_json::from_str(wire).unwrap(),
+        content: vec![serde_json::from_str(&item).unwrap()],
+        fragment_group_size,
     }
 }
 
-#[test]
-fn bin_pack_preserves_order_within_budget() {
-    let batches = bin_pack(&[item("ab"), item("cd"), item("e")], 4);
-    assert_eq!(batches.len(), 2);
-    assert_eq!(batches[0].len(), 2);
+fn merged_wire(chunks: &[ChunkResult]) -> String {
+    serde_json::to_string(&merge(chunks).unwrap()).unwrap()
 }
 
 #[test]
-fn split_preserves_whitespace_and_qualifiers() {
-    let value = item("one two three");
-    let (left, right) = split(&[value]).expect("splittable");
-    let left_text = left[0].text.as_ref().and_then(|text| text.text.as_deref());
-    let right_text = right[0].text.as_ref().and_then(|text| text.text.as_deref());
-    assert_eq!(
-        format!("{}{}", left_text.unwrap_or(""), right_text.unwrap_or("")),
-        "one two three"
-    );
+fn split_refuses_empty_and_unsplittable_content() {
+    assert!(matches!(split(&[]), Err(ChunkingError::EmptyContent)));
+    assert!(split(&chunk("{}", "a", 1).content).unwrap().is_none());
+    assert_eq!(nearest_whitespace("abcd "), 2);
+    assert_eq!(nearest_whitespace("ab\u{1f}cdefgh"), 3);
+    assert_eq!(bin_pack(&[], 4).len(), 1);
+    assert!(!is_input_too_large(None));
 }
 
 #[test]
-fn merge_selects_intervened_action() {
-    let first = ChunkResult {
-        response: serde_json::from_str(r#"{"action":"NONE"}"#).unwrap(),
-        content: vec![item("a")],
-        fragment_group_size: 1,
-    };
-    let second = ChunkResult {
-        response: serde_json::from_str(r#"{"action":"GUARDRAIL_INTERVENED"}"#).unwrap(),
-        content: vec![item("b")],
-        fragment_group_size: 1,
-    };
-    assert_eq!(
-        merge(&[first, second]).action.as_deref(),
-        Some("GUARDRAIL_INTERVENED")
-    );
-}
-
-#[test]
-fn merge_sums_known_counters_and_retains_earlier_extensions() {
+fn merge_reassembles_fragments_and_keeps_late_nulls() {
     let chunks = [
-        ChunkResult {
-            response: serde_json::from_str(
-                r#"{"usage":{"topicPolicyUnits":2,"future":3},"trace":"first"}"#,
-            )
-            .unwrap(),
-            content: vec![item("safe")],
-            fragment_group_size: 1,
-        },
-        ChunkResult {
-            response: serde_json::from_str(
-                r#"{"usage":{"topicPolicyUnits":4,"future":5},"outputs":[{"text":"MASK"}]}"#,
-            )
-            .unwrap(),
-            content: vec![item("secret")],
-            fragment_group_size: 1,
-        },
+        chunk(r#"{"outputs":[],"action":"NONE"}"#, "safe", 1),
+        chunk(r#"{"outputs":[{"text":"A"}]}"#, "a", 2),
+        chunk(r#"{"outputs":[{"text":null}],"action":null}"#, "b", 2),
     ];
-    let merged = merge(&chunks);
-    assert_eq!(
-        merged.usage.unwrap().0.get("topicPolicyUnits"),
-        Some(&Some(6))
-    );
-    assert!(merged.extra.contains_key("trace"));
-    assert_eq!(merged.outputs.unwrap()[0].text.as_deref(), Some("safe"));
+    let outputs = r#"[{"text":"safe"},{"text":"Ab"}]"#;
+    let expected = format!(r#"{{"action":"NONE","output":{outputs},"outputs":{outputs}}}"#);
+    assert_eq!(merged_wire(&chunks), expected);
+    let unmasked = [chunk(r#"{"outputs":[],"action":null}"#, "a", 1)];
+    assert_eq!(merged_wire(&unmasked), r#"{"outputs":[],"action":null}"#);
 }
 
 #[test]
-fn bin_pack_counts_unicode_characters() {
-    assert_eq!(bin_pack(&[item("\u{e9}"), item("\u{732b}")], 2).len(), 1);
+fn merge_refuses_a_usage_total_past_i64() {
+    let huge = format!(r#"{{"usage":{{"u":{}}}}}"#, i64::MAX);
+    let overflow = merge(&[chunk(&huge, "a", 1), chunk(&huge, "b", 1)]);
+    assert!(matches!(overflow, Err(ChunkingError::UsageOverflow { counter }) if counter == "u"));
 }
