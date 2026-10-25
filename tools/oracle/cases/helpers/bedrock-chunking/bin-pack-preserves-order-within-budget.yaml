@@ -1,0 +1,10 @@
+kind: helper
+name: bin-pack-preserves-order-within-budget
+call:
+  bedrock_chunking:
+    step:
+      operation: bin_pack
+      content: [{text: {text: abc}}, {text: {text: de}}]
+      budget: 4
+env: {}
+compare: {ignore: []}

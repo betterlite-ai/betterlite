@@ -250,6 +250,10 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-guardrails"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "betterlite-http"
@@ -305,6 +309,7 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-guardrails",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",

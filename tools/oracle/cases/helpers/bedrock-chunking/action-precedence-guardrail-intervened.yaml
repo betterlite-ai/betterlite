@@ -1,0 +1,7 @@
+kind: helper
+name: action-precedence-guardrail-intervened
+call:
+  bedrock_chunking:
+    step: {operation: merge, chunks: []}
+env: {}
+compare: {ignore: []}

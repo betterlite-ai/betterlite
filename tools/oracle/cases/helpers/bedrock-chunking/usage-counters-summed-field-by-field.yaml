@@ -1,0 +1,7 @@
+kind: helper
+name: usage-counters-summed-field-by-field
+call:
+  bedrock_chunking:
+    step: {operation: merge, chunks: []}
+env: {}
+compare: {ignore: []}

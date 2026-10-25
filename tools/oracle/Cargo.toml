@@ -10,6 +10,7 @@ axum = { version = "0.8.9", default-features = false, features = ["http1", "toki
 betterlite-bedrock = { path = "../../crates/betterlite-bedrock" }
 betterlite-config = { path = "../../crates/betterlite-config" }
 betterlite-context = { path = "../../crates/betterlite-context" }
+betterlite-guardrails = { path = "../../crates/betterlite-guardrails" }
 betterlite-http = { path = "../../crates/betterlite-http" }
 betterlite-models = { path = "../../crates/betterlite-models" }
 betterlite-openai = { path = "../../crates/betterlite-openai" }

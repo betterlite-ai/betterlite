@@ -1,0 +1,6 @@
+step:
+  operation: bin_pack
+  content:
+    - text: {text: abc}
+    - text: {text: de}
+  budget: 4

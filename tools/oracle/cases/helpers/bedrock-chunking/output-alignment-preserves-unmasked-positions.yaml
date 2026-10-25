@@ -1,0 +1,7 @@
+kind: helper
+name: output-alignment-preserves-unmasked-positions
+call:
+  bedrock_chunking:
+    step: {operation: merge, chunks: []}
+env: {}
+compare: {ignore: []}
