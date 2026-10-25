@@ -18,13 +18,26 @@ pub(crate) struct Input {
 
 fn parse_file_type(name: &str) -> Result<FileType, String> {
     let file_type = match name {
-        "AAC" => FileType::Aac, "CSV" => FileType::Csv, "DOC" => FileType::Doc,
-        "DOCX" => FileType::Docx, "FLAC" => FileType::Flac, "FLV" => FileType::Flv,
-        "GIF" => FileType::Gif, "JPEG" => FileType::Jpeg, "JSON" => FileType::Json,
-        "M4A" => FileType::M4a, "MPA" => FileType::Mpa, "MP3" => FileType::Mp3,
-        "MPEG" => FileType::Mpeg, "MPGA" => FileType::Mpga, "PNG" => FileType::Png,
-        "PDF" => FileType::Pdf, "TXT" => FileType::Txt, "3GPP" => FileType::ThreeGpp,
-        "WEBP" => FileType::Webp, "WEBM" => FileType::Webm,
+        "AAC" => FileType::Aac,
+        "CSV" => FileType::Csv,
+        "DOC" => FileType::Doc,
+        "DOCX" => FileType::Docx,
+        "FLAC" => FileType::Flac,
+        "FLV" => FileType::Flv,
+        "GIF" => FileType::Gif,
+        "JPEG" => FileType::Jpeg,
+        "JSON" => FileType::Json,
+        "M4A" => FileType::M4a,
+        "MPA" => FileType::Mpa,
+        "MP3" => FileType::Mp3,
+        "MPEG" => FileType::Mpeg,
+        "MPGA" => FileType::Mpga,
+        "PNG" => FileType::Png,
+        "PDF" => FileType::Pdf,
+        "TXT" => FileType::Txt,
+        "3GPP" => FileType::ThreeGpp,
+        "WEBP" => FileType::Webp,
+        "WEBM" => FileType::Webm,
         other => return Err(format!("unknown file type: {other}")),
     };
     Ok(file_type)
@@ -42,11 +55,19 @@ fn mime_table(input: &Input) -> Result<Value, String> {
 fn lookup_edges(input: &Input) -> Result<Value, String> {
     let mut extensions = Vec::new();
     for extension in &input.extensions {
-        extensions.push(mime_from_extension(extension).map_err(|error| error.to_string())?.to_owned());
+        extensions.push(
+            mime_from_extension(extension)
+                .map_err(|error| error.to_string())?
+                .to_owned(),
+        );
     }
     let mut mimes = Vec::new();
     for mime in &input.mimes {
-        mimes.push(extension_from_mime(mime).map_err(|error| error.to_string())?.to_owned());
+        mimes.push(
+            extension_from_mime(mime)
+                .map_err(|error| error.to_string())?
+                .to_owned(),
+        );
     }
     Ok(json!({"extensions": extensions, "mimes": mimes}))
 }
