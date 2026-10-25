@@ -1,24 +1,9 @@
 #![cfg(test)]
 use crate::auth::parse_key_header;
-use crate::passthrough::{EndpointType, get_endpoint_type};
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use std::{fs, path::Path};
 
-#[test]
-fn passthrough_endpoint_type_behavior() {
-    assert_eq!(
-        get_endpoint_type("https://vertex.example/generateContent", None),
-        EndpointType::VertexAi
-    );
-    assert_eq!(
-        get_endpoint_type("https://api.openai.com/v1/chat", None),
-        EndpointType::OpenAi
-    );
-}
-
-#[test]
-fn passthrough_payload() {}
 #[rstest]
 #[case::repeated_bearer("Bearer test-Bearer master", "test-master")]
 #[case::repeated_basic("Basic test-Basic master", "test-master")]

@@ -10,7 +10,6 @@ use std::thread;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
-use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, Method, Request, Url};
 use rstest::rstest;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -18,10 +17,6 @@ use tokio::net::TcpListener;
 use tracing::subscriber::set_default;
 
 use crate::error::HttpError;
-use crate::passthrough::{
-    buffer_response, construct_url_with_subpath, get_response_body, get_response_headers,
-    streaming_response,
-};
 use crate::proxy::ProxiedClient;
 
 // nothing listens on port 1, so a request that skips its proxy fails at once
@@ -29,45 +24,6 @@ const CLOSED: &str = "http://127.0.0.1:1/v1/models";
 
 // past basic_auth the password lives only as base64 in Proxy-Authorization, so a leak can skip the plaintext
 const LEAKS: [&str; 3] = ["secret", "dXNlcjpzZWNyZXQ=", "dXNAZXI6cEBzczpzZWNyZXQ="];
-
-#[test]
-fn passthrough_url_joining_behavior() {
-    assert_eq!(
-        construct_url_with_subpath("https://upstream/base", "v1/../items/", true),
-        "https://upstream/base/items/"
-    );
-}
-
-#[test]
-fn passthrough_response_headers_behavior() {
-    let mut headers = HeaderMap::new();
-    headers.insert("content-length", HeaderValue::from_static("10"));
-    let output = get_response_headers(&headers, Some("call-1"), Some(&headers));
-    assert!(!output.contains_key("content-length"));
-    assert_eq!(output.get("x-litellm-call-id").unwrap(), "call-1");
-    assert_eq!(
-        get_response_body(br#"{"ok":true}"#).map(|value| value.to_string()),
-        Some(r#"{"ok":true}"#.to_owned())
-    );
-}
-
-#[test]
-fn passthrough_buffering_behavior() {
-    let mut headers = HeaderMap::new();
-    headers.insert("content-type", HeaderValue::from_static("application/json"));
-    assert!(buffer_response(200, &headers));
-    headers.insert(
-        "content-type",
-        HeaderValue::from_static("application/octet-stream"),
-    );
-    assert!(!buffer_response(200, &headers));
-    assert!(!streaming_response(&headers));
-    headers.insert(
-        "content-type",
-        HeaderValue::from_static("text/event-stream"),
-    );
-    assert!(streaming_response(&headers));
-}
 
 async fn answer(listener: &TcpListener) -> String {
     let (mut stream, _) = listener.accept().await.unwrap();

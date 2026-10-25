@@ -18,6 +18,9 @@ const EXCLUDED_HEADERS: &[&str] = &[
 #[must_use]
 pub fn get_response_body(body: &[u8]) -> Option<Value> {
     let parsed = serde_json::from_slice(body);
+    if body.is_empty() {
+        return None;
+    }
     parsed.ok()
 }
 
@@ -34,25 +37,22 @@ pub fn get_response_headers(
         response_headers.insert("x-litellm-call-id", value);
     }
     if let Some(custom) = custom_headers {
-        for (name, value) in custom {
-            if !is_excluded_header(name.as_str()) {
-                response_headers.insert(name, value.clone());
-            }
-        }
+        response_headers.extend(
+            custom
+                .iter()
+                .filter(|(name, _)| !is_excluded_header(name.as_str()))
+                .map(|(name, value)| (name.clone(), value.clone())),
+        );
     }
     response_headers
 }
 
 #[must_use]
 pub fn streaming_response(headers: &HeaderMap) -> bool {
-    let streaming = headers
-        .get("content-type")
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.contains("text/event-stream"));
-    if streaming {
-        return true;
-    }
-    false
+    let Some(content_type) = response_content_type(headers) else {
+        return false;
+    };
+    content_type.contains("text/event-stream")
 }
 
 #[must_use]
@@ -60,9 +60,7 @@ pub fn buffer_response(status_code: u16, headers: &HeaderMap) -> bool {
     if status_code >= 400 {
         return true;
     }
-    let media_type = headers
-        .get("content-type")
-        .and_then(|value| value.to_str().ok())
+    let media_type = response_content_type(headers)
         .unwrap_or_default()
         .split(';')
         .next()
@@ -75,17 +73,20 @@ pub fn buffer_response(status_code: u16, headers: &HeaderMap) -> bool {
         || media_type.starts_with("application/x-amz-json")
 }
 
+fn response_content_type(headers: &HeaderMap) -> Option<&str> {
+    if headers.is_empty() {
+        return None;
+    }
+    headers.get("content-type")?.to_str().ok()
+}
+
 #[must_use]
-pub fn _resolve_stream_param(
+pub fn update_stream_param(
     request_body: &Map<String, Value>,
     stream: Option<bool>,
 ) -> Option<bool> {
-    let resolved_stream = request_body
-        .get("stream")
-        .and_then(Value::as_bool)
-        .or(stream);
-    resolved_stream?;
-    resolved_stream
+    let request_stream = request_body.get("stream").and_then(Value::as_bool);
+    request_stream.or(stream)
 }
 
 #[must_use]
@@ -139,24 +140,21 @@ pub fn join_base_and_endpoint_path(base_url: &str, endpoint_path: &str) -> Strin
     combined
 }
 
+mod tests;
+
 fn filtered_headers(headers: &HeaderMap) -> HeaderMap {
     if headers.is_empty() {
         return HeaderMap::new();
     }
-    let filtered: HeaderMap = headers
+    headers
         .iter()
         .filter(|(name, _)| !is_excluded_header(name.as_str()))
         .map(|(name, value)| (name.clone(), value.clone()))
-        .collect();
-    if filtered.is_empty() {
-        return filtered;
-    }
-    filtered
+        .collect()
 }
 
 fn is_excluded_header(name: &str) -> bool {
-    let excluded = EXCLUDED_HEADERS.contains(&name.to_ascii_lowercase().as_str());
-    if excluded {
+    if EXCLUDED_HEADERS.contains(&name.to_ascii_lowercase().as_str()) {
         return true;
     }
     false
@@ -167,11 +165,9 @@ fn path_from_url(base_url: &str) -> &str {
     if let Some((_, authority)) = without_query.split_once("//") {
         return path_after_authority(authority);
     }
-    if without_query.starts_with('/') {
-        without_query
-    } else {
-        ""
-    }
+    without_query
+        .strip_prefix('/')
+        .map_or("", |_| without_query)
 }
 
 fn path_after_authority(authority: &str) -> &str {

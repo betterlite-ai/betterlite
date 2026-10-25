@@ -32,6 +32,9 @@ pub struct PassthroughLogPayload {
     pub response_body: Option<Value>,
     pub cost_per_request: Option<f64>,
 }
+
+mod tests;
+
 #[must_use]
 pub fn get_endpoint_type(url: &str, custom_llm_provider: Option<&str>) -> EndpointType {
     if custom_llm_provider == Some("typesafe")
@@ -61,15 +64,8 @@ pub fn get_endpoint_type(url: &str, custom_llm_provider: Option<&str>) -> Endpoi
 
 fn endpoint_hostname(url: &str) -> Option<&str> {
     let (_, remainder) = url.split_once("//")?;
-    let authority = remainder
-        .split_once('/')
-        .map_or(remainder, |(host, _)| host);
-    let host_with_user = authority
-        .rsplit_once('@')
-        .map_or(authority, |(_, host)| host);
-    let host_without_port = host_with_user
-        .split_once(':')
-        .map_or(host_with_user, |(host, _)| host);
+    let authority = remainder.split('/').next()?;
+    let host_without_port = authority.split(':').next()?;
     if host_without_port.is_empty() {
         None
     } else {
