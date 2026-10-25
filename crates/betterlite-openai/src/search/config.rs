@@ -13,7 +13,9 @@ pub type SecretLookup<'source> = dyn Fn(&str) -> Option<String> + 'source;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum SearchConfigError {
-    #[error("refusing to send the server-configured {credential_name} to the caller-supplied api_base '{api_base}'")]
+    #[error(
+        "refusing to send the server-configured {credential_name} to the caller-supplied api_base '{api_base}'"
+    )]
     UntrustedCredential {
         credential_name: String,
         api_base: String,
@@ -38,9 +40,23 @@ pub struct SearchError {
     pub headers: BTreeSet<(String, String)>,
 }
 
-pub struct BaseSearchConfig;
+impl SearchError {
+    fn from_http_parts(
+        status_code: i64,
+        message: &str,
+        headers: BTreeSet<(String, String)>,
+    ) -> Self {
+        match (status_code, message, headers) {
+            (status_code, message, headers) => Self {
+                status_code,
+                message: message.to_owned(),
+                headers,
+            },
+        }
+    }
+}
 
-impl BaseSearchConfig {
+impl super::BaseSearchConfig {
     #[must_use]
     pub const fn ui_friendly_name() -> &'static str {
         "Unknown Search Provider"
@@ -112,19 +128,23 @@ impl BaseSearchConfig {
         &self,
         headers: BTreeSet<(String, String)>,
     ) -> (BTreeSet<(String, String)>, Option<Vec<u8>>) {
-        (headers, None)
+        let signature = None;
+        (headers, signature)
     }
 
     pub const fn get_complete_url(&self) -> Result<String, SearchConfigError> {
-        Err(SearchConfigError::NotImplemented("get_complete_url"))
+        let error = SearchConfigError::NotImplemented("get_complete_url");
+        Err(error)
     }
 
     pub const fn transform_search_request(&self) -> Result<(), SearchConfigError> {
-        Err(SearchConfigError::NotImplemented("transform_search_request"))
+        let error = SearchConfigError::NotImplemented("transform_search_request");
+        Err(error)
     }
 
     pub const fn transform_search_response(&self) -> Result<(), SearchConfigError> {
-        Err(SearchConfigError::NotImplemented("transform_search_response"))
+        let error = SearchConfigError::NotImplemented("transform_search_response");
+        Err(error)
     }
 
     #[must_use]
@@ -134,7 +154,7 @@ impl BaseSearchConfig {
         message: &str,
         headers: BTreeSet<(String, String)>,
     ) -> SearchError {
-        self.get_error_class(message, status_code, headers)
+        SearchError::from_http_parts(status_code, message, headers)
     }
 
     #[must_use]
