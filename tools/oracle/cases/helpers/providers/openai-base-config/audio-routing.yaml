@@ -1,5 +1,1 @@
-kind: helper
-name: audio-routing
-call: {openai_base_config: {audio_routing: {model: gpt-audio, chat_models: [gpt-audio]}}}
-env: {}
-compare: {ignore: []}
+{kind: helper, name: audio-routing, call: {openai_base_config: {audio_routing: {model: gpt-audio, chat_models: [gpt-audio]}}}, env: {}, compare: {ignore: []}}

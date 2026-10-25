@@ -14,13 +14,11 @@ pub struct CatalogCapabilities {
     pub text_models: BTreeSet<String>,
 }
 impl CatalogCapabilities {
-    #[must_use]
     pub fn new(chat_models: BTreeSet<String>, text_models: BTreeSet<String>) -> Self {
         let normalized_chat_models = chat_models.into_iter().collect();
-        let normalized_text_models = text_models.into_iter().collect();
         Self {
             chat_models: normalized_chat_models,
-            text_models: normalized_text_models,
+            text_models: text_models.into_iter().collect(),
         }
     }
     #[must_use]
@@ -72,11 +70,12 @@ impl OpenAiConfig {
         headers: Headers,
         settings: Object,
     ) -> Self {
+        let normalized_settings = settings.into_iter().collect();
         Self {
             family,
             api_key,
             headers,
-            settings: settings.into_iter().collect(),
+            settings: normalized_settings,
         }
     }
     #[must_use]

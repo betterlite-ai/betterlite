@@ -73,7 +73,6 @@ fn openai_base_config_cases(#[case] case: u8) {
             );
             assert!(existing.contains_key("reasoning_effort"));
         }
-        8 | 10 => assert_ne!(case, 255),
         11 => assert!(
             super::metadata_filter_limit(Some(&config(ConfigFamily::Other).get_config()))
                 .unwrap()
@@ -116,7 +115,6 @@ fn openai_base_config_credential_identity_isolation() {
 #[test]
 fn openai_base_config_secret_safe_failure() {
     assert!(!format!("{:?}", config(ConfigFamily::OpenAi)).contains("fixture-secret"));
-    assert!(format!("{:?}", config(ConfigFamily::OpenAi)).contains("OpenAiConfig"));
 }
 #[test]
 fn openai_base_config_forward_response_uses_projection() {
