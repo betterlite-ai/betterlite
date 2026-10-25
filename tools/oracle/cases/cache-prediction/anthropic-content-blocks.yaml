@@ -1,1 +1,9 @@
-anthropic-basic-text.yaml
+kind: helper
+name: anthropic-content-blocks
+call:
+  anthropic_cache_plan:
+    function: cache_plan
+    body: {model: claude, max_tokens: 32, messages: [{role: user, content: [{type: text, text: hello}, {type: tool_use, id: call, name: lookup, input: {q: x}}, {type: tool_result, tool_use_id: call, content: ok, cache_control: {type: ephemeral}}]}]}
+env: {}
+compare: {ignore: []}
+

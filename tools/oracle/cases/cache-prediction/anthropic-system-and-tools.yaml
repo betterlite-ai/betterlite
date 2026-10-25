@@ -1,1 +1,9 @@
-anthropic-basic-text.yaml
+kind: helper
+name: anthropic-system-and-tools
+call:
+  anthropic_cache_plan:
+    function: cache_plan
+    body: {model: claude, max_tokens: 32, system: [{type: text, text: system, cache_control: {type: ephemeral}}], tools: [{name: lookup, description: find, input_schema: {type: object}}], messages: [{role: user, content: hi}]}
+env: {}
+compare: {ignore: []}
+

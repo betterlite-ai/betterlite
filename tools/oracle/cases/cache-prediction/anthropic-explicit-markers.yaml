@@ -1,1 +1,9 @@
-anthropic-basic-text.yaml
+kind: helper
+name: anthropic-explicit-markers
+call:
+  anthropic_cache_plan:
+    function: cache_plan
+    body: {model: claude, max_tokens: 32, messages: [{role: user, content: [{type: text, text: first, cache_control: {type: ephemeral, ttl: 1h}}, {type: text, text: second, cache_control: {type: ephemeral}}]}]}
+env: {}
+compare: {ignore: []}
+

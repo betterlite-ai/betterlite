@@ -1,1 +1,9 @@
-anthropic-basic-text.yaml
+kind: helper
+name: anthropic-automatic-cache
+call:
+  anthropic_cache_plan:
+    function: cache_plan
+    body: {model: claude, max_tokens: 32, cache_control: {type: ephemeral}, messages: [{role: user, content: hello}]}
+env: {}
+compare: {ignore: []}
+

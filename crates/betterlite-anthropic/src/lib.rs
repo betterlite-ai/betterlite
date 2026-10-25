@@ -1,12 +1,3 @@
-#![expect(
-    clippy::restriction,
-    clippy::pedantic,
-    clippy::style,
-    clippy::complexity,
-    clippy::nursery,
-    reason = "Anthropic cache plans preserve arbitrary provider JSON and insertion order for exact fingerprints"
-)]
-
 pub mod anthropic_capability_catalog;
 pub mod anthropic_http_stream;
 pub mod api;

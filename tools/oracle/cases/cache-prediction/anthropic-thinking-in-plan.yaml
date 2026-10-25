@@ -1,1 +1,9 @@
-anthropic-basic-text.yaml
+kind: helper
+name: anthropic-thinking-in-plan
+call:
+  anthropic_cache_plan:
+    function: cache_plan
+    body: {model: claude, max_tokens: 32, thinking: {type: enabled, budget_tokens: 16}, messages: [{role: assistant, content: [{type: thinking, thinking: internal, signature: sig}, {type: text, text: answer, cache_control: {type: ephemeral}}]}]}
+env: {}
+compare: {ignore: []}
+

@@ -1,3 +1,12 @@
+#![expect(
+    clippy::restriction,
+    clippy::pedantic,
+    clippy::style,
+    clippy::complexity,
+    clippy::nursery,
+    reason = "Cache-plan JSON is intentionally validation-aware and preserves provider insertion order for fingerprints"
+)]
+
 #[path = "cache_plan_planning.rs"]
 mod cache_plan_planning;
 #[path = "cache_plan_validation.rs"]
