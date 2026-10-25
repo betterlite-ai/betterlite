@@ -1,44 +1,67 @@
-pub mod discovery;
-pub mod models;
-mod tests;
-use models::{DecodedScimResource, Group, Patch, ResourceKind, User};
+use serde::Serialize;
+use serde_json::value::RawValue;
+use std::collections::BTreeMap;
 use thiserror::Error;
 
+macro_rules! record {
+    ($(#[$meta:meta])* $name:ident { $($fields:tt)* }) => {
+        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+        $(#[$meta])*
+        pub struct $name { $($fields)* }
+    };
+}
+macro_rules! schema_list {
+    ($name:ident, $urn:literal) => {
+        #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        #[serde(transparent)]
+        pub struct $name(pub Vec<String>);
+        impl Default for $name {
+            fn default() -> Self {
+                Self(vec![String::from($urn)])
+            }
+        }
+    };
+}
+pub mod attribute;
+pub mod discovery;
+pub mod group;
+mod tests;
+pub mod user;
+pub const ENTERPRISE_USER_SCHEMA: &str =
+    "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
+pub const ENTERPRISE_METADATA_KEY: &str = "scim_enterprise";
+pub const ENTITLEMENTS_METADATA_KEY: &str = "scim_entitlements";
+pub const ROLES_METADATA_KEY: &str = "scim_roles";
+pub const MANAGED_TEAM_METADATA_KEY: &str = "scim_managed";
+pub const TEAM_DATA_METADATA_KEY: &str = "scim_data";
+// directory meta and extension members are stored and echoed as sent, never read by the proxy
+pub type RawObject = BTreeMap<String, Box<RawValue>>;
 #[derive(Debug, Error)]
 pub enum ScimRecordError {
-    #[error("invalid SCIM JSON: {source}")]
-    Json {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("unsupported SCIM patch operation: {op}")]
-    UnsupportedOp { op: String },
+    #[error("the SCIM resource body is not valid: {0}")]
+    Decode(#[source] serde_json::Error),
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceKind {
+    User,
+    Group,
+    Patch,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum ScimResource {
+    User(Box<user::User>),
+    Group(group::Group),
+    Patch(group::Patch),
 }
 pub fn decode_scim_resource(
     bytes: &[u8],
     kind: ResourceKind,
-) -> Result<DecodedScimResource, ScimRecordError> {
-    match kind {
-        ResourceKind::User => Ok(DecodedScimResource::User(Box::new(
-            serde_json::from_slice::<User>(bytes)
-                .map_err(|source| ScimRecordError::Json { source })?,
-        ))),
-        ResourceKind::Group => Ok(DecodedScimResource::Group(Box::new(
-            serde_json::from_slice::<Group>(bytes)
-                .map_err(|source| ScimRecordError::Json { source })?,
-        ))),
-        ResourceKind::Patch => {
-            let mut patch = serde_json::from_slice::<Patch>(bytes)
-                .map_err(|source| ScimRecordError::Json { source })?;
-            for operation in &mut patch.operations {
-                operation.op = operation.op.to_lowercase();
-                if !matches!(operation.op.as_str(), "add" | "remove" | "replace") {
-                    return Err(ScimRecordError::UnsupportedOp {
-                        op: operation.op.clone(),
-                    });
-                }
-            }
-            Ok(DecodedScimResource::Patch(Box::new(patch)))
-        }
-    }
+) -> Result<ScimResource, ScimRecordError> {
+    let decoded = match kind {
+        ResourceKind::User => serde_json::from_slice(bytes).map(ScimResource::User),
+        ResourceKind::Group => serde_json::from_slice(bytes).map(ScimResource::Group),
+        ResourceKind::Patch => serde_json::from_slice(bytes).map(ScimResource::Patch),
+    };
+    decoded.map_err(ScimRecordError::Decode)
 }

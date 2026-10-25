@@ -4,7 +4,10 @@ call:
   scim_record:
     kind: patch
     value:
-      Operations: [{op: RePlAcE, path: active, value: true}]
+      Operations:
+        - {op: RePlAcE, path: active, value: "False"}
+        - {op: ADD, path: members, value: [{value: u1}, u2, 3]}
+        - {op: remove, path: "members[value eq \"u1\"]"}
 env: {}
 compare:
   ignore: []

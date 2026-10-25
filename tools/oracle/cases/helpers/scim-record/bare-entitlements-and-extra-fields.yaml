@@ -5,7 +5,7 @@ call:
     kind: user
     value:
       schemas: [u]
-      entitlements: [admin, {value: billing, source: hr}]
+      entitlements: [admin, {value: billing, source: {system: hr, ids: [1, 2]}, primary: true}]
       roles: []
 env: {}
 compare:

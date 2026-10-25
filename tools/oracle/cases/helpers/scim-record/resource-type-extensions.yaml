@@ -7,9 +7,9 @@ call:
       id: User
       name: User
       endpoint: /Users
-      schema: urn:ietf:params:scim:schemas:core:2.0:User
+      schema_: urn:ietf:params:scim:schemas:core:2.0:User
       schemaExtensions:
-        - schema: urn:example:extension
+        - schema_: urn:ietf:params:scim:schemas:extension:enterprise:2.0:User
           required: false
 env: {}
 compare:

@@ -6,7 +6,7 @@ call:
     value:
       schemas: [g]
       displayName: Team
-      members: [{value: u1, type: 4}]
+      members: [{value: u1, type: 4}, {value: u2, type: User}, {value: u3, type: {nested: true}}, {value: u4}]
 env: {}
 compare:
   ignore: []

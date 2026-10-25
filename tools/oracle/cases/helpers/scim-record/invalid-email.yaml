@@ -5,7 +5,9 @@ call:
     kind: user
     value:
       schemas: [u]
-      emails: [{value: invalid-address}]
+      emails: [{value: ada@localhost}]
 env: {}
 compare:
-  ignore: []
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message

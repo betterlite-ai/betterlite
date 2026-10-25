@@ -1,0 +1,1 @@
+u{"schemas":["u"],"userName":"ada","active":"False","emails":[{"value":"Ada@EXAMPLE.com"}],"roles":["admin",{"value":"x","extra":[1,{"a":null}]}],"enterprise_user":{"manager":{"ref":"/Users/1"}}}

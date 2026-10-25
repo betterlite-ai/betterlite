@@ -1,75 +1,57 @@
+use betterlite_server::scim_records::discovery::{ResourceType, Schema};
+use betterlite_server::scim_records::user::Active;
+use betterlite_server::scim_records::{ResourceKind, ScimResource, decode_scim_resource};
 use serde::Deserialize;
+use serde_json::{Value, json};
+
+use crate::helpers::{Helper, HelperError, HelperResult};
 
 pub(crate) struct Op;
 
 #[derive(Deserialize)]
-#[serde(tag = "kind", content = "value")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub(crate) enum Input {
-    #[serde(rename = "user")]
-    User(serde_json::Value),
-    #[serde(rename = "group")]
-    Group(serde_json::Value),
-    #[serde(rename = "patch")]
-    Patch(serde_json::Value),
-    #[serde(rename = "schema")]
-    Schema(serde_json::Value),
-    #[serde(rename = "resource_type")]
-    ResourceType(serde_json::Value),
+    User(Value),
+    Group(Value),
+    Patch(Value),
+    Schema(Value),
+    ResourceType(Value),
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let make_error = |class: &str, message: String| {
-            Box::new(crate::helpers::HelperError {
-                class: class.to_owned(),
+    fn run(input: &Input) -> HelperResult {
+        let dumped = match input {
+            Input::User(value) => decode(value, ResourceKind::User),
+            Input::Group(value) => decode(value, ResourceKind::Group),
+            Input::Patch(value) => decode(value, ResourceKind::Patch),
+            Input::Schema(value) => Schema::deserialize(value).and_then(serde_json::to_value),
+            Input::ResourceType(value) => {
+                ResourceType::deserialize(value).and_then(serde_json::to_value)
+            }
+        };
+        dumped.map_err(|error| {
+            Box::new(HelperError {
+                class: "ValidationError".to_owned(),
                 status: None,
                 error_type: None,
                 param: None,
                 code: None,
-                message,
+                message: error.to_string(),
             })
-        };
-        if let Input::Schema(value) = input {
-            let record: betterlite_server::scim_records::discovery::ScimSchema =
-                serde_json::from_value(value.clone())
-                    .map_err(|source| make_error("ValidationError", source.to_string()))?;
-            return serde_json::to_value(record)
-                .map_err(|source| make_error("SerializationError", source.to_string()));
-        }
-        if let Input::ResourceType(value) = input {
-            let record: betterlite_server::scim_records::discovery::ScimResourceType =
-                serde_json::from_value(value.clone())
-                    .map_err(|source| make_error("ValidationError", source.to_string()))?;
-            return serde_json::to_value(record)
-                .map_err(|source| make_error("SerializationError", source.to_string()));
-        }
-        let Some((value, kind)) = (match input {
-            Input::User(value) => Some((
-                value,
-                betterlite_server::scim_records::models::ResourceKind::User,
-            )),
-            Input::Group(value) => Some((
-                value,
-                betterlite_server::scim_records::models::ResourceKind::Group,
-            )),
-            Input::Patch(value) => Some((
-                value,
-                betterlite_server::scim_records::models::ResourceKind::Patch,
-            )),
-            Input::Schema(_) | Input::ResourceType(_) => None,
-        }) else {
-            return Err(make_error(
-                "InvalidInput",
-                "unknown SCIM resource kind".to_owned(),
-            ));
-        };
-        let bytes = serde_json::to_vec(value)
-            .map_err(|source| make_error("InvalidInput", source.to_string()))?;
-        let decoded = betterlite_server::scim_records::decode_scim_resource(&bytes, kind)
-            .map_err(|source| make_error("ValidationError", source.to_string()))?;
-        serde_json::to_value(decoded)
-            .map_err(|source| make_error("SerializationError", source.to_string()))
+        })
+    }
+}
+
+fn decode(value: &Value, kind: ResourceKind) -> Result<Value, serde_json::Error> {
+    let bytes = serde_json::to_vec(value)?;
+    match decode_scim_resource(&bytes, kind) {
+        Ok(ScimResource::User(user)) => Ok(json!({
+            "record": serde_json::to_value(&user)?,
+            "active_set": matches!(user.active, Active::Sent(_)),
+        })),
+        Ok(resource) => serde_json::to_value(resource),
+        Err(error) => Err(serde::de::Error::custom(error)),
     }
 }

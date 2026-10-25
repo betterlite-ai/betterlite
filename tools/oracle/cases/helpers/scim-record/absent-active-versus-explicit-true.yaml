@@ -6,6 +6,7 @@ call:
     value:
       schemas: [urn:ietf:params:scim:schemas:core:2.0:User]
       userName: ada
+      meta: {resourceType: User, version: {etag: 3}}
 env: {}
 compare:
   ignore: []

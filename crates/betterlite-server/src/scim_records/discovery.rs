@@ -1,203 +1,117 @@
-#![expect(
-    clippy::disallowed_types,
-    reason = "SCIM discovery metadata and extensions retain unmodeled directory JSON"
-)]
-
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ScimResource {
-    pub schemas: Vec<String>,
-    pub id: Option<String>,
-    #[serde(rename = "externalId")]
-    pub external_id: Option<String>,
-    #[expect(
-        clippy::disallowed_types,
-        reason = "SCIM meta is an unmodeled passthrough field"
-    )]
-    pub meta: Option<Value>,
+
+use super::RawObject;
+use super::group::Group;
+use super::user::User;
+
+macro_rules! characteristic {
+    ($name:ident, $case:literal { $($variants:tt)* }) => {
+        #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+        #[serde(rename_all = $case)]
+        pub enum $name { $($variants)* }
+    };
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ScimSchemaExtension {
-    #[serde(alias = "schema")]
-    pub schema_: String,
+schema_list! { ResourceTypeSchemas, "urn:ietf:params:scim:schemas:core:2.0:ResourceType" }
+schema_list! { SchemaSchemas, "urn:ietf:params:scim:schemas:core:2.0:Schema" }
+schema_list! { ProviderSchemas, "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig" }
+schema_list! { ListSchemas, "urn:ietf:params:scim:api:messages:2.0:ListResponse" }
+// LiteLLM renames schema_ only in ResourceType.model_dump, which nested extensions never reach
+record! { SchemaExtension {
+    #[serde(rename = "schema_")] pub schema: String,
     pub required: bool,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ScimResourceType {
-    #[serde(default = "resource_type_schema")]
-    pub schemas: Vec<String>,
+}}
+record! { #[serde(rename_all = "camelCase")] ResourceType {
+    #[serde(default)] pub schemas: ResourceTypeSchemas,
     pub id: String,
     pub name: String,
     pub description: Option<String>,
     pub endpoint: String,
-    #[serde(rename = "schema", alias = "schema_")]
-    pub schema_: String,
-    #[serde(
-        default,
-        rename = "schemaExtensions",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub schema_extensions: Option<Vec<ScimSchemaExtension>>,
-    #[expect(
-        clippy::disallowed_types,
-        reason = "SCIM meta is an unmodeled passthrough field"
-    )]
-    pub meta: Option<Value>,
-}
-fn resource_type_schema() -> Vec<String> {
-    vec!["urn:ietf:params:scim:schemas:core:2.0:ResourceType".to_owned()]
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ScimSchemaAttribute {
+    #[serde(rename(serialize = "schema", deserialize = "schema_"))] pub schema: String,
+    #[serde(skip_serializing_if = "Option::is_none")] pub schema_extensions: Option<Vec<SchemaExtension>>,
+    pub meta: Option<RawObject>,
+}}
+// only a top-level SCIMSchemaAttribute.model_dump drops a null subAttributes, and LiteLLM dumps them nested
+record! { #[serde(rename_all = "camelCase")] SchemaAttribute {
     pub name: String,
-    #[serde(rename = "type")]
-    pub kind: String,
-    #[serde(default, rename = "multiValued")]
-    pub multi_valued: bool,
+    #[serde(rename = "type")] pub kind: String,
+    #[serde(default)] pub multi_valued: bool,
     pub description: Option<String>,
-    #[serde(default)]
-    pub required: bool,
-    #[serde(default = "default_read_write")]
-    pub mutability: String,
-    #[serde(default = "default_returned")]
-    pub returned: String,
-    #[serde(default = "default_unique")]
-    pub uniqueness: String,
-    #[serde(
-        default,
-        rename = "subAttributes",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default)] pub required: bool,
+    #[serde(default)] pub mutability: Mutability,
+    #[serde(default)] pub returned: Returned,
+    #[serde(default)] pub uniqueness: Uniqueness,
     pub sub_attributes: Option<Vec<Self>>,
-}
-fn default_read_write() -> String {
-    "readWrite".to_owned()
-}
-fn default_returned() -> String {
-    "default".to_owned()
-}
-fn default_unique() -> String {
-    "none".to_owned()
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ScimSchema {
-    #[serde(default = "schema_schema")]
-    pub schemas: Vec<String>,
+}}
+characteristic! { Mutability, "camelCase" { ReadOnly, #[default] ReadWrite, Immutable, WriteOnly } }
+characteristic! { Returned, "lowercase" { Always, Never, #[default] Default, Request } }
+characteristic! { Uniqueness, "lowercase" { #[default] None, Server, Global } }
+record! { Schema {
+    #[serde(default)] pub schemas: SchemaSchemas,
     pub id: String,
     pub name: String,
     pub description: Option<String>,
-    #[serde(default)]
-    pub attributes: Vec<ScimSchemaAttribute>,
-    #[expect(
-        clippy::disallowed_types,
-        reason = "SCIM meta is an unmodeled passthrough field"
-    )]
-    pub meta: Option<Value>,
-}
-fn schema_schema() -> Vec<String> {
-    let schema = "urn:ietf:params:scim:schemas:core:2.0:Schema".to_owned();
-    vec![schema]
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ScimFeature {
+    #[serde(default)] pub attributes: Vec<SchemaAttribute>,
+    pub meta: Option<RawObject>,
+}}
+record! { #[derive(Copy, Default)] #[serde(rename_all = "camelCase")] Feature {
     pub supported: bool,
     pub max_operations: Option<u64>,
     pub max_payload_size: Option<u64>,
     pub max_results: Option<u64>,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ScimServiceProviderConfig {
-    #[serde(default = "service_provider_schema")]
-    pub schemas: Vec<String>,
-    #[serde(default = "default_patch_feature")]
-    pub patch: ScimFeature,
-    #[serde(default = "default_unsupported_feature")]
-    pub bulk: ScimFeature,
-    #[serde(default = "default_unsupported_feature")]
-    pub filter: ScimFeature,
-    #[serde(default = "default_unsupported_feature")]
-    pub change_password: ScimFeature,
-    #[serde(default = "default_unsupported_feature")]
-    pub sort: ScimFeature,
-    #[serde(default = "default_unsupported_feature")]
-    pub etag: ScimFeature,
-    #[expect(
-        clippy::disallowed_types,
-        reason = "SCIM authentication schemes are unmodeled passthrough data"
-    )]
-    pub authentication_schemes: Option<Vec<Value>>,
-    #[expect(
-        clippy::disallowed_types,
-        reason = "SCIM meta is an unmodeled passthrough field"
-    )]
-    pub meta: Option<Value>,
-}
-fn service_provider_schema() -> Vec<String> {
-    vec!["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig".to_owned()]
-}
-const fn default_patch_feature() -> ScimFeature {
-    ScimFeature {
-        supported: true,
-        max_operations: None,
-        max_payload_size: None,
-        max_results: None,
+}}
+record! { #[serde(rename_all = "camelCase", default)] ServiceProviderConfig {
+    pub schemas: ProviderSchemas,
+    pub patch: Feature,
+    pub bulk: Feature,
+    pub filter: Feature,
+    pub change_password: Feature,
+    pub sort: Feature,
+    pub etag: Feature,
+    pub authentication_schemes: Option<Vec<RawObject>>,
+    pub meta: Option<RawObject>,
+}}
+impl Default for ServiceProviderConfig {
+    fn default() -> Self {
+        let unsupported = Feature::default();
+        Self {
+            schemas: ProviderSchemas::default(),
+            patch: Feature {
+                supported: true,
+                ..unsupported
+            },
+            bulk: unsupported,
+            filter: unsupported,
+            change_password: unsupported,
+            sort: unsupported,
+            etag: unsupported,
+            authentication_schemes: None,
+            meta: None,
+        }
     }
 }
-const fn default_unsupported_feature() -> ScimFeature {
-    ScimFeature {
-        supported: false,
-        max_operations: None,
-        max_payload_size: None,
-        max_results: None,
-    }
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+// list responses are built by the handlers and only ever serialized
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ScimListResponse {
-    #[serde(default = "list_response_schema")]
-    pub schemas: Vec<String>,
+pub struct ListResponse {
+    pub schemas: ListSchemas,
     pub total_results: u64,
-    #[serde(default = "default_start_index")]
     pub start_index: Option<u64>,
-    #[serde(default = "default_items_per_page")]
     pub items_per_page: Option<u64>,
-    #[expect(
-        clippy::disallowed_types,
-        reason = "SCIM list resources are unmodeled passthrough records"
-    )]
     #[serde(rename = "Resources")]
-    pub resources: Vec<Value>,
+    pub resources: ListedResources,
 }
-fn list_response_schema() -> Vec<String> {
-    vec!["urn:ietf:params:scim:api:messages:2.0:ListResponse".to_owned()]
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum ListedResources {
+    Users(Vec<User>),
+    Groups(Vec<Group>),
 }
-#[expect(
-    clippy::unnecessary_wraps,
-    reason = "serde default must return the nullable wire field type"
-)]
-const fn default_start_index() -> Option<u64> {
-    Some(1)
-}
-#[expect(
-    clippy::unnecessary_wraps,
-    reason = "serde default must return the nullable wire field type"
-)]
-const fn default_items_per_page() -> Option<u64> {
-    Some(10)
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ScimPlaceholderMergeResult {
+record! { PlaceholderMergeResult {
     pub placeholder_user_id: String,
     pub merged_into_user_id: String,
     pub team_ids: Vec<String>,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LiteLlmUserScimMetadata {
+}}
+record! { #[serde(rename_all = "camelCase")] UserScimMetadata {
     pub given_name: Option<String>,
     pub family_name: Option<String>,
-}
+}}
