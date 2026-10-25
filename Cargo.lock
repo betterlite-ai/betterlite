@@ -336,6 +336,7 @@ version = "0.1.0"
 name = "betterlite-db"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "rstest",
  "rust_decimal",
  "serde",
@@ -454,6 +455,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-paths",
  "betterlite-secrets",
+ "chrono",
  "clap",
  "futures-util",
  "hex",
