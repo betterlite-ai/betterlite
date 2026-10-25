@@ -1,0 +1,5 @@
+kind: helper
+name: otel-vocabulary-provider-seed
+call: {otel_vocabulary: {function: Provider, custom_llm_provider: vendor_new}}
+env: {}
+compare: {ignore: []}
