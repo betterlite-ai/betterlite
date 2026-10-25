@@ -564,6 +564,7 @@ OPERATIONS: frozenset[str] = frozenset(
         "mcp_permission_ids",
         "mcp_rotation",
         "mcp_search_primitives",
+        "mcp_session_token",
         "mcp_stored_contracts",
         "media_metadata",
         "media_relay_logging",
