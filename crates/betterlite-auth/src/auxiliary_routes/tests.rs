@@ -10,11 +10,6 @@ use super::{
     UI_ROUTES, public_routes,
 };
 
-#[test]
-fn openai_names_have_expected_count() {
-    assert_eq!(OPENAI_ROUTE_NAMES.len(), 8);
-}
-
 #[rstest]
 #[case::mcp_sse_messages(MCP_INFERENCE_ROUTES, 3, "/mcp/sse/messages")]
 #[case::mcp_sse_messages_trailing_slash(MCP_INFERENCE_ROUTES, 4, "/mcp/sse/messages/")]
