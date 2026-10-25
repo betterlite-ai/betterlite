@@ -82,19 +82,19 @@ pub(crate) struct HelperError {
         rename = "type",
         default,
         skip_serializing_if = "Option::is_none",
-        with = "double_option"
+        with = "serde_with::rust::double_option"
     )]
     pub(crate) error_type: OptionalString,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        with = "double_option"
+        with = "serde_with::rust::double_option"
     )]
     pub(crate) param: OptionalString,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        with = "double_option"
+        with = "serde_with::rust::double_option"
     )]
     pub(crate) code: OptionalCode,
     pub(crate) message: String,
@@ -105,28 +105,4 @@ pub(crate) struct HelperError {
 pub(crate) enum ErrorCode {
     Text(String),
     Number(serde_json::Number),
-}
-
-mod double_option {
-    use serde::{Deserialize as _, Deserializer, Serialize as _, Serializer};
-
-    pub(super) fn deserialize<'de, D, T>(decoder: D) -> Result<Option<Option<T>>, D::Error>
-    where
-        D: Deserializer<'de>,
-        T: serde::Deserialize<'de>,
-    {
-        let value = Option::<T>::deserialize(decoder)?;
-        Ok(Some(value))
-    }
-
-    pub(super) fn serialize<S, T>(value: &Option<Option<T>>, encoder: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-        T: serde::Serialize,
-    {
-        match value {
-            None => encoder.serialize_none(),
-            Some(value) => value.serialize(encoder),
-        }
-    }
 }
