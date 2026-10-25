@@ -10,15 +10,15 @@ axum.workspace = true
 betterlite-config = { path = "../betterlite-config" }
 form_urlencoded = "1.2.2"
 hyper-util = { workspace = true, features = ["server-auto", "tokio", "service"] }
-serde.workspace = true
 regex.workspace = true
 secrecy.workspace = true
+serde.workspace = true
+serde_json = "1.0.154"
 subtle.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tower = { workspace = true, features = ["timeout"] }
 tracing.workspace = true
-serde_json = "1.0.154"
 
 [dev-dependencies]
 rquickjs = "0.14.0"
