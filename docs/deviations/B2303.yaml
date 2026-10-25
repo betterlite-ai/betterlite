@@ -1,29 +1,29 @@
 task: B2303
 deviations:
-  - what: Non-string encryption diagnostics omit the supplied value.
-    why: secrets-stay-secret forbids logging potentially sensitive input values while retaining the diagnostic type.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L142-L146
-  - what: Secret decoding enforces encoded-size and JSON-depth limits.
-    why: bounded-inputs requires finite limits before decoding untrusted ciphertext or structured data.
+  - what: Decryption failure diagnostics carry betterlite's own error text instead of the Python exception string, and a failure to encrypt without any key is betterlite's MissingKey error instead of Python's AttributeError on None.
+    why: errors-match-litellm keeps messages in betterlite's words; the field name, salt advice and salt documentation link remain present.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L194-L206
+  - what: Encoded scalar, bearer and raw stored-map JSON inputs over 1048576 bytes fail through each decoder's existing outcome (the scalar failure policy, None for bearers, SecretMapDecodeError for maps) before they are decoded.
+    why: bounded-inputs requires a finite limit; every compatible ciphertext stays well under it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L273-L289
-  - what: The debug line for a non-string value passed to encrypt_value names its Rust type and omits the value.
-    why: secrets-stay-secret forbids logging the supplied structure, which can hold credentials.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L142-L146
   - what: Non-string encryption diagnostics include the type but omit the supplied value.
-    why: secrets-stay-secret forbids logging the supplied structure, which can hold credentials.
+    why: secrets-stay-secret forbids logging potentially sensitive structures while retaining the diagnostic type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L142-L146
+  - what: Non-string encryption diagnostics omit the supplied value.
+    why: secrets-stay-secret forbids logging potentially sensitive input values.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L142-L146
   - what: Oversized encoded inputs and deeply nested map JSON are rejected before unbounded allocation.
     why: bounded-inputs requires finite limits before decoding untrusted ciphertext or structured data.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L273-L289
-  - what: Encoded scalar, bearer and raw stored-map JSON inputs over 1048576 bytes fail through each decoder's existing outcome (the scalar failure policy, None for bearers, SecretMapDecodeError for maps) before they are decoded.
-    why: bounded-inputs requires a finite limit; every compatible ciphertext stays well under it.
+  - what: Secret decoding enforces encoded-size and JSON-depth limits.
+    why: bounded-inputs requires finite limits before decoding untrusted ciphertext or structured data.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L273-L289
   - what: Stored-map JSON is size-checked before parsing straight into a string map or a string, so any nesting fails at depth two as SecretMapDecodeError and nothing deeper is recursed into.
-    why: bounded-inputs; LiteLLM rejects the same inputs, since a nested value is never a string, so only the recursion bound differs.
+    why: bounded-inputs requires a finite boundary; LiteLLM rejects nested values as non-string map values, while betterlite also bounds recursion.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L277-L287
-  - what: Decryption failure diagnostics carry betterlite's own error text instead of the Python exception string, and a failure to encrypt without any key is betterlite's MissingKey error instead of Python's AttributeError on None.
-    why: errors-match-litellm keeps messages in betterlite's words; the field name, the salt advice and the salt documentation link are kept.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L194-L206
+  - what: The debug line for a non-string value passed to encrypt_value names its Rust type and omits the value.
+    why: secrets-stay-secret forbids logging the supplied structure, which can hold credentials.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L142-L146
   - what: The salt key and encryption_algorithm are read when a config snapshot loads, not on every call.
-    why: inject-dependencies keeps environment reads in the config crate; each reload builds a new snapshot, so a changed setting still reaches the codec.
+    why: inject-dependencies keeps environment reads in the config crate; each reload builds a new snapshot, so changed settings still reach the codec.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L26-L56
