@@ -288,6 +288,10 @@ fn native_secret_diagnostics_redact_values() {
     assert!(
         messages[2].ends_with("https://docs.litellm.ai/docs/proxy/prod#5-set-litellm-salt-key")
     );
+    assert_eq!(
+        messages[2],
+        "Error decrypting value for key: api_key, Did your master_key/salt key change recently? \nError: the secret is too short to hold its nonce\nSet permanent salt key - https://docs.litellm.ai/docs/proxy/prod#5-set-litellm-salt-key"
+    );
     let rendered = format!("{messages:?} {error} {error:?} {stored:?}");
     assert!(!rendered.contains("sk-live"));
 }

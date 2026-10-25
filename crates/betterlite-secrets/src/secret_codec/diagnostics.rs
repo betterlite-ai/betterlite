@@ -36,7 +36,7 @@ impl SecretEvent<'_> {
                 format!("Unable to decrypt value for key: {field}, returning None")
             }
             Self::DecryptFailed { field, error } => format!(
-                "Error decrypting value for key: {field}, did your master_key/salt key change recently? Error: {error}. Set a permanent salt key: {SALT_DOCS}"
+                "Error decrypting value for key: {field}, Did your master_key/salt key change recently? \nError: {error}\nSet permanent salt key - {SALT_DOCS}"
             ),
         }
     }
