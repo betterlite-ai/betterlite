@@ -15,7 +15,8 @@ hex = "0.4.3"
 hyper-util = "0.1.21"
 percent-encoding = "2.3.2"
 regex = "1.13.1"
-secrecy = "0.10.3"
+rust_decimal = "1.43.0"
+secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
 serde_ignored = "0.1.14"
@@ -28,7 +29,7 @@ tokio-postgres = "0.7.18"
 tower = "0.5.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["json"] }
-url = "2.5.7"
+uuid = { version = "1.28.0", default-features = false, features = ["v4"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

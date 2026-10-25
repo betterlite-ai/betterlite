@@ -1,9 +1,11 @@
 use reqwest::blocking::Client;
+use secrecy::ExposeSecret as _;
 use std::collections::BTreeMap;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use super::gateway::{GatewayInput, start as start_gateway};
 use crate::OracleError;
 use crate::artifacts;
 use crate::case::{Case, LoadedCase};
@@ -15,10 +17,9 @@ use crate::mock::{MockProvider, ProviderRequest};
 use crate::paths::artifact_root;
 use crate::process::Gateway;
 use crate::routing_mock_scripts::MockScript;
-use betterlite_postgres_fixture::connection::PostgresFixture;
 
-use super::gateway::{GatewayInput, start as start_gateway};
-
+mod config;
+mod fixtures;
 pub(crate) fn run_cases(
     options: &Options,
     cases: Vec<LoadedCase>,
@@ -31,7 +32,9 @@ pub(crate) fn run_cases(
     for loaded_case in cases {
         match loaded_case {
             LoadedCase::Http(http_case) => {
-                let group_key = format!("{}\n{:?}", http_case.config, http_case.env);
+                let mut group_env = http_case.env.clone();
+                group_env.remove("POSTGRES_TEST_URL");
+                let group_key = format!("{}\n{:?}", http_case.config, group_env);
                 groups.entry(group_key).or_default().push(http_case);
             }
             LoadedCase::Helper(helper_case) => {
@@ -52,7 +55,6 @@ pub(crate) fn run_cases(
     }
     Ok(exit_status(outcomes.contains(&true)))
 }
-
 pub(crate) fn exit_status(different: bool) -> ExitCode {
     if different {
         ExitCode::from(1)
@@ -60,12 +62,24 @@ pub(crate) fn exit_status(different: bool) -> ExitCode {
         ExitCode::SUCCESS
     }
 }
-
 pub(crate) fn run_group(
     options: &Options,
     root: &Path,
     cases: &[Case],
 ) -> Result<Vec<bool>, OracleError> {
+    let configured_url = config::process_environment_url()?;
+    run_group_with_url(options, root, cases, configured_url.as_deref())
+}
+
+fn run_group_with_url(
+    options: &Options,
+    root: &Path,
+    cases: &[Case],
+    configured_url: Option<&str>,
+) -> Result<Vec<bool>, OracleError> {
+    if cases.is_empty() {
+        return Err(OracleError::MissingCapture(0));
+    }
     let upstream_answers = cases
         .iter()
         .flat_map(|case| case.upstream.iter())
@@ -73,33 +87,108 @@ pub(crate) fn run_group(
         .collect::<Vec<_>>();
     let mock = MockProvider::start(MockScript::try_from(upstream_answers.as_slice())?)?;
     let first_case = cases.first().ok_or(OracleError::MissingCapture(0))?;
-    let (first_fixture, second_fixture) = provision_fixtures(cases)?;
-    let (group_dir, config_path) = artifacts::prepare(root, first_case, &mock.base_url)?;
-    let client = http::client()?;
-    let input = GatewayInput {
+    let fixtures = fixtures::provision(cases, configured_url)?;
+    let operation_result = run_group_capture(GroupCaptureInput {
+        options,
+        root,
+        cases,
+        first_case,
+        fixtures: &fixtures,
+        mock,
+    });
+    let cleanup_result = fixtures.close();
+    match (operation_result, cleanup_result) {
+        (Ok(outcomes), Ok(())) => Ok(outcomes),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(cleanup_error)) => Err(OracleError::DatabaseCleanup(cleanup_error)),
+        (Err(error), Err(cleanup_error)) => Err(OracleError::OperationCleanup {
+            operation: Box::new(error),
+            cleanup: cleanup_error,
+        }),
+    }
+}
+
+struct GroupCaptureInput<'input> {
+    options: &'input Options,
+    root: &'input Path,
+    cases: &'input [Case],
+    first_case: &'input Case,
+    fixtures: &'input fixtures::FixtureGuard,
+    mock: MockProvider,
+}
+
+fn run_group_capture(input: GroupCaptureInput<'_>) -> Result<Vec<bool>, OracleError> {
+    let GroupCaptureInput {
+        options,
+        root,
+        cases,
+        first_case,
+        fixtures,
+        mock,
+    } = input;
+    let (group_dir, first_config, second_config) =
+        prepare_gateway_configs(root, first_case, fixtures, &mock.base_url)?;
+    let first_input = GatewayInput {
         options,
         group_dir: &group_dir,
-        config_path: &config_path,
+        config_path: &first_config,
         case_env: &first_case.env,
     };
-    let captures = capture_gateways(&input, cases, &client, mock)?;
-    let result = compare_group(root, cases, &captures);
-    close_fixture(first_fixture)?;
-    close_fixture(second_fixture)?;
-    result
+    let second_input = GatewayInput {
+        options,
+        group_dir: &group_dir,
+        config_path: &second_config,
+        case_env: &first_case.env,
+    };
+    let client = http::client()?;
+    let captures = capture_gateways(&first_input, &second_input, cases, &client, mock)?;
+    compare_group(root, cases, &captures)
+}
+fn prepare_gateway_configs(
+    root: &Path,
+    first_case: &Case,
+    fixtures: &fixtures::FixtureGuard,
+    upstream: &str,
+) -> Result<(PathBuf, PathBuf, PathBuf), OracleError> {
+    match (&fixtures.first, &fixtures.second) {
+        (Some(first), Some(second)) => {
+            let first_url = first.options.database_url();
+            let second_url = second.options.database_url();
+            let (group_dir, base_config) = artifacts::prepare(root, first_case, upstream)?;
+            let first_config = config::with_database(
+                &base_config,
+                first_url.expose_secret(),
+                "config-first.yaml",
+            )?;
+            let second_config = config::with_database(
+                &base_config,
+                second_url.expose_secret(),
+                "config-second.yaml",
+            )?;
+            Ok((group_dir, first_config, second_config))
+        }
+        (None, None) => {
+            let (group_dir, config) = artifacts::prepare(root, first_case, upstream)?;
+            Ok((group_dir, config.clone(), config))
+        }
+        _ => Err(OracleError::DatabaseFixturesDiffer {
+            cases: vec![first_case.name.clone()],
+        }),
+    }
 }
 
 fn capture_gateways(
-    input: &GatewayInput<'_>,
+    first_input: &GatewayInput<'_>,
+    second_input: &GatewayInput<'_>,
     cases: &[Case],
     client: &Client,
     mock: MockProvider,
 ) -> Result<GroupCapture, OracleError> {
-    let first = start_gateway(input, true)?;
+    let first = start_gateway(first_input, true)?;
     let first_log = first.log_path.clone();
     let first_results = capture_gateway(client, first, cases)?;
     let first_trace = mock.finish_run()?;
-    let second = start_gateway(input, false)?;
+    let second = start_gateway(second_input, false)?;
     let second_log = second.log_path.clone();
     let second_results = capture_gateway(client, second, cases)?;
     let second_requests = mock
@@ -115,37 +204,6 @@ fn capture_gateways(
         first_requests: first_trace.into_iter().map(|call| call.request).collect(),
         second_requests,
     })
-}
-
-fn provision_fixtures(
-    cases: &[Case],
-) -> Result<(Option<PostgresFixture>, Option<PostgresFixture>), OracleError> {
-    let database_fixture = cases.iter().find_map(|case| case.database.clone());
-    let Some(database) = database_fixture else {
-        return Ok((None, None));
-    };
-    let configured_url = cases
-        .iter()
-        .find_map(|case| case.env.get("POSTGRES_TEST_URL").map(String::as_str));
-    let first = PostgresFixture::provision_from_url(configured_url, &database)
-        .map_err(OracleError::DatabaseFixture)?;
-    let second = match PostgresFixture::provision_from_url(configured_url, &database) {
-        Ok(second_database) => second_database,
-        Err(error) => {
-            drop(first.close());
-            return Err(OracleError::DatabaseFixture(error));
-        }
-    };
-    Ok((Some(first), Some(second)))
-}
-
-fn close_fixture(maybe_database: Option<PostgresFixture>) -> Result<(), OracleError> {
-    if let Some(created_database) = maybe_database {
-        created_database
-            .close()
-            .map_err(OracleError::DatabaseFixture)?;
-    }
-    Ok(())
 }
 
 pub(crate) struct GroupCapture {

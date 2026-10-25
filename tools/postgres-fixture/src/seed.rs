@@ -1,19 +1,21 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use rust_decimal::Decimal;
+use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 
 use crate::error::FixtureError;
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DatabaseFixture {
     #[serde(default)]
     pub seed: FixtureSeed,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FixtureSeed {
     #[serde(default)]
@@ -30,7 +32,7 @@ pub struct FixtureSeed {
     pub jwt_mappings: Vec<JwtMapping>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UserRow {
     pub user_id: String,
@@ -38,16 +40,27 @@ pub struct UserRow {
     pub user_email: Option<String>,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KeyRow {
-    pub token: String,
+    pub token: SecretString,
     pub user_id: String,
     #[serde(default)]
     pub team_id: Option<String>,
     #[serde(default)]
-    pub role: Option<String>,
+    pub role: Option<CallerRole>,
 }
+
+impl PartialEq for KeyRow {
+    fn eq(&self, other: &Self) -> bool {
+        self.token.expose_secret() == other.token.expose_secret()
+            && self.user_id == other.user_id
+            && self.team_id == other.team_id
+            && self.role == other.role
+    }
+}
+
+impl Eq for KeyRow {}
 
 impl fmt::Debug for KeyRow {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -60,7 +73,7 @@ impl fmt::Debug for KeyRow {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TeamRow {
     pub team_id: String,
@@ -68,27 +81,54 @@ pub struct TeamRow {
     pub team_alias: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Membership {
     pub user_id: String,
     pub team_id: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BudgetRow {
     pub budget_id: String,
     pub user_id: String,
     #[serde(default)]
-    pub max_budget: Option<String>,
+    pub max_budget: Option<Decimal>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JwtMapping {
     pub subject: String,
     pub user_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CallerRole {
+    ProxyAdmin,
+    ProxyAdminViewer,
+    OrgAdmin,
+    InternalUser,
+    InternalUserViewer,
+    Team,
+    Customer,
+}
+
+impl CallerRole {
+    #[must_use]
+    pub const fn as_wire(self) -> &'static str {
+        match self {
+            Self::ProxyAdmin => "proxy_admin",
+            Self::ProxyAdminViewer => "proxy_admin_viewer",
+            Self::OrgAdmin => "org_admin",
+            Self::InternalUser => "internal_user",
+            Self::InternalUserViewer => "internal_user_viewer",
+            Self::Team => "team",
+            Self::Customer => "customer",
+        }
+    }
 }
 
 impl FixtureSeed {

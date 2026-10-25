@@ -54,6 +54,21 @@ pub enum OracleError {
     },
     #[error("invalid case {path}: {message}")]
     CaseInvalid { path: PathBuf, message: String },
+    #[error("case is not valid UTF-8: {source}")]
+    CaseUtf8 {
+        #[source]
+        source: Utf8Error,
+    },
+    #[error("cannot parse HTTP case: {source}")]
+    HttpCaseParse {
+        #[source]
+        source: Box<serde_saphyr::Error>,
+    },
+    #[error("HTTP case fixture is invalid: {source}")]
+    HttpCaseFixture {
+        #[source]
+        source: FixtureError,
+    },
     #[error("HTTP request failed: {0}")]
     HttpRequest(#[source] reqwest::Error),
     #[error("HTTP I/O failed: {0}")]
@@ -168,6 +183,20 @@ pub enum OracleError {
     HelperJson(#[source] serde_json::Error),
     #[error("database fixture failed: {0}")]
     DatabaseFixture(#[source] FixtureError),
+    #[error("cases declare different database fixtures: {cases:?}")]
+    DatabaseFixturesDiffer { cases: Vec<String> },
+    #[error("database fixture cleanup failed: {0}")]
+    DatabaseCleanup(#[source] FixtureError),
+    #[error("oracle operation failed and fixture cleanup failed: {operation}; {cleanup}")]
+    OperationCleanup {
+        #[source]
+        operation: Box<Self>,
+        cleanup: FixtureError,
+    },
+    #[error("cannot read POSTGRES_TEST_URL from the oracle environment: {0}")]
+    Environment(#[source] io::Error),
+    #[error("POSTGRES_TEST_URL is not valid UTF-8: {0}")]
+    EnvironmentText(#[source] Utf8Error),
 }
 
 pub fn run() -> Result<ExitCode, OracleError> {

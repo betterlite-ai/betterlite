@@ -27,7 +27,7 @@ fn empty_or_malformed_urls_and_credentials_are_handled() {
     ));
     assert!(matches!(
         select_source(Some("not-postgres")),
-        Err(FixtureError::InvalidConfiguredUrl)
+        Err(FixtureError::InvalidConfiguredUrl { .. })
     ));
     let FixtureSource::Configured(options) =
         select_source(Some("postgresql://u:secret@localhost/db")).unwrap()

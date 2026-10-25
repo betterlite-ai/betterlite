@@ -1,4 +1,5 @@
 use crate::{error::FixtureError, seed::FixtureSeed, sql::BASELINE};
+use secrecy::ExposeSecret as _;
 use tokio_postgres::{Client, types::ToSql};
 
 macro_rules! insert_rows {
@@ -27,31 +28,32 @@ async fn seed_rows(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureErr
     insert_rows!(
         client,
         &seed.users,
-        "INSERT INTO \"LiteLLM_UserTable\" VALUES ($1,$2)",
+        "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\",\"user_email\") VALUES ($1,$2)",
         user_id,
         user_email
     );
     insert_rows!(
         client,
         &seed.teams,
-        "INSERT INTO \"LiteLLM_TeamTable\" VALUES ($1,$2)",
+        "INSERT INTO \"LiteLLM_TeamTable\" (\"team_id\",\"team_alias\") VALUES ($1,$2)",
         team_id,
         team_alias
     );
     insert_rows!(
         client,
         &seed.memberships,
-        "INSERT INTO \"LiteLLM_TeamMembership\" VALUES ($1,$2)",
+        "INSERT INTO \"LiteLLM_TeamMembership\" (\"user_id\",\"team_id\") VALUES ($1,$2)",
         user_id,
         team_id
     );
     insert_rows!(
         client,
         &seed.budgets,
-        "INSERT INTO \"LiteLLM_BudgetTable\" VALUES ($1,$2,$3)",
+        "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\",\"max_budget\",\"created_by\",\"updated_by\") VALUES ($1,$2,$3,$4)",
         budget_id,
+        max_budget,
         user_id,
-        max_budget
+        user_id
     );
     insert_rows!(
         client,
@@ -65,15 +67,25 @@ async fn seed_rows(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureErr
 
 async fn keys(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
     for row in &seed.keys {
-        let hash = FixtureSeed::key_hash(&row.token);
-        let params: &[&(dyn ToSql + Sync)] = &[&hash, &row.user_id, &row.team_id, &row.role];
+        let hash = FixtureSeed::key_hash(row.token.expose_secret());
+        let params: &[&(dyn ToSql + Sync)] = &[&hash, &row.user_id, &row.team_id];
         client
             .execute(
-                "INSERT INTO \"LiteLLM_VerificationToken\" VALUES ($1,$2,$3,$4)",
+                "INSERT INTO \"LiteLLM_VerificationToken\" (\"token\",\"user_id\",\"team_id\") VALUES ($1,$2,$3)",
                 params,
             )
             .await
             .map_err(FixtureError::Database)?;
+        if let Some(role) = row.role {
+            let role_params: &[&(dyn ToSql + Sync)] = &[&role.as_wire(), &row.user_id];
+            client
+                .execute(
+                    "UPDATE \"LiteLLM_UserTable\" SET \"user_role\" = $1 WHERE \"user_id\" = $2",
+                    role_params,
+                )
+                .await
+                .map_err(FixtureError::Database)?;
+        }
     }
     Ok(())
 }
