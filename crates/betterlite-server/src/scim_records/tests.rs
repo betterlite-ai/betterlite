@@ -1,10 +1,8 @@
 #![cfg(test)]
-
 use crate::scim_records::{
     decode_scim_resource,
     models::{DecodedScimResource, PATCH_SCHEMA, ResourceKind},
 };
-
 #[test]
 fn omitted_active_defaults_but_is_not_present() {
     let decoded =
@@ -15,7 +13,6 @@ fn omitted_active_defaults_but_is_not_present() {
     assert!(user.active);
     assert!(!user.active_present);
 }
-
 #[test]
 fn explicit_active_true_is_present() {
     let decoded =
@@ -25,7 +22,6 @@ fn explicit_active_true_is_present() {
     };
     assert!(user.active && user.active_present);
 }
-
 #[test]
 fn patch_operation_lowercases_without_trimming() {
     let decoded =
@@ -38,7 +34,6 @@ fn patch_operation_lowercases_without_trimming() {
     let result = decode_scim_resource(br#"{"Operations":[{"op":" add"}]}"#, ResourceKind::Patch);
     result.unwrap_err();
 }
-
 #[test]
 fn malformed_member_type_is_absent() {
     let decoded = decode_scim_resource(
@@ -51,7 +46,6 @@ fn malformed_member_type_is_absent() {
     };
     assert_eq!(group.members.unwrap()[0].kind, None);
 }
-
 #[test]
 fn enterprise_ref_accepts_both_names() {
     let bytes = br#"{"schemas":["u"],"urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":{"manager":{"$ref":"/Users/1"}}}"#;
@@ -69,7 +63,6 @@ fn enterprise_ref_accepts_both_names() {
         Some("/Users/1")
     );
 }
-
 #[test]
 fn replays_the_scim_resource_corpus() {
     let empty = include_bytes!("../../fuzz/corpus/scim_resource/empty.json");

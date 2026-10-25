@@ -1,11 +1,9 @@
 pub mod discovery;
 pub mod models;
 mod tests;
-
 use models::{DecodedScimResource, Group, Patch, ResourceKind, User};
 use serde_json::Error;
 use std::io::{Error as IoError, ErrorKind};
-
 pub fn decode_scim_resource(
     bytes: &[u8],
     kind: ResourceKind,

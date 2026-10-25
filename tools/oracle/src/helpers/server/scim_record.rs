@@ -1,5 +1,4 @@
 pub(crate) struct Op;
-
 fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
     let class_name = class.to_owned();
     Box::new(crate::helpers::HelperError {
@@ -11,10 +10,8 @@ fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError
         message,
     })
 }
-
 impl crate::helpers::Helper for Op {
     type Input = serde_json::Value;
-
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let kind = input
             .get("kind")
