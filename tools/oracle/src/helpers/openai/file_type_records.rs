@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Input {
+pub(crate) struct Input {
     function: String,
     #[serde(default)]
     extensions: Vec<String>,
