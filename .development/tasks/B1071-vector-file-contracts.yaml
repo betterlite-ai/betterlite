@@ -18,12 +18,15 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_file_contracts.rs
   - crates/betterlite-core/src/api/vector_file_contracts/**
   - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/vector_file_contracts.rs
   - crates/betterlite-provider/src/api/vector_file_contracts/**
   - crates/betterlite-openai/src/api.rs
+  - crates/betterlite-openai/src/api/**
   - crates/betterlite-openai/src/api/vector_file_contracts.rs
   - crates/betterlite-openai/src/api/vector_file_contracts/**
   - crates/betterlite-openai/fuzz/Cargo.toml

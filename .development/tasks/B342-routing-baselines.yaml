@@ -26,12 +26,17 @@ scope:
   - crates/betterlite-router/src/routing_baselines/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/routing_baselines.rs
   - crates/betterlite-server/src/routing/routing_baselines/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_baselines.rs
   - tools/oracle/src/router_probes/routing_baselines/**
   - tools/oracle/src/router_probes/mod.rs

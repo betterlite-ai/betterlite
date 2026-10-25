@@ -109,16 +109,23 @@ scope:
   - crates/betterlite-config/Cargo.toml
   - crates/betterlite-config/src/lib.rs
   - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/loader/**
   - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/raw/**
   - crates/betterlite-config/tests/**
   - crates/betterlite-config/src/resolve.rs
+  - crates/betterlite-config/src/resolve/**
   - crates/betterlite-config/src/types.rs
+  - crates/betterlite-config/src/types/**
   - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/**
   - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/**
   - crates/betterlite-config/src/providers/bedrock/invoke_agent.rs
   - crates/betterlite-config/src/providers/bedrock/invoke_agent/**
   - crates/betterlite-config/src/tests.rs
   - crates/betterlite-config/src/tests/invoke_agent_config.rs
+  - crates/betterlite-config/src/tests/invoke_agent_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/invoke_agent*
   lint_tables: false
 references:

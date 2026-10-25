@@ -18,6 +18,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_stream_usage.rs
   - crates/betterlite-core/src/api/messages_stream_usage/**
   - tools/oracle/src/helpers/core_ops/messages_stream_usage.rs

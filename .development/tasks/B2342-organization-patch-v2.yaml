@@ -63,8 +63,11 @@ scope:
     - crates/betterlite-server/src/organization_patch_v2/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/cases/management/organization-patch-v2/**
   lint_tables: false

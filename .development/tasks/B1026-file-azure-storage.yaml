@@ -24,9 +24,11 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/file_azure_storage.rs
   - crates/betterlite-core/src/api/file_azure_storage/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/file_azure_storage.rs
   - crates/betterlite-config/src/api/file_azure_storage/**
   - tools/oracle/Cargo.toml

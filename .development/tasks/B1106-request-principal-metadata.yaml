@@ -60,6 +60,7 @@ scope:
   - crates/betterlite-core/src/api/request_principal_metadata.rs
   - crates/betterlite-core/src/api/request_principal_metadata/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml

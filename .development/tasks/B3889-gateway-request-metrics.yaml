@@ -24,6 +24,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/middleware/billable_request_metrics.rs
+    - crates/betterlite-server/src/middleware/billable_request_metrics/**
     - crates/betterlite-server/src/middleware/billable_request_metrics/tests.rs
   lint_tables: false
 

@@ -25,9 +25,11 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_retrieval_context.rs
   - crates/betterlite-core/src/api/vector_retrieval_context/**
   - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/dispatch/**
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/vector_retrieval_context.rs
   - tools/oracle/sdk_http/dispatch.py

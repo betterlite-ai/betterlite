@@ -57,6 +57,7 @@ scope:
   - crates/betterlite-core/src/api/request_destination.rs
   - crates/betterlite-core/src/api/request_destination/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml

@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/summary_model_limits.rs
   - crates/betterlite-core/src/api/summary_model_limits/**
   - tools/oracle/src/helpers/core_ops/summary_model_limits.rs

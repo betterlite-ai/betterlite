@@ -15,6 +15,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_stream_split.rs
   - crates/betterlite-core/src/api/messages_stream_split/**
   - tools/oracle/src/helpers/core_ops/messages_stream_split.rs
