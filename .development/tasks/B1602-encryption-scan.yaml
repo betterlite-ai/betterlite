@@ -22,7 +22,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/encryption_scan.rs
     - crates/betterlite-db/src/encryption_scan/**
     - crates/betterlite-db/fuzz/Cargo.toml

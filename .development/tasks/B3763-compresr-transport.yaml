@@ -9,7 +9,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-guardrails/src/compresr_transport.rs
-    - crates/betterlite-guardrails/src/lib.rs
     - crates/betterlite-guardrails/Cargo.toml
     - tools/oracle/cases/helpers/compresr-transport/**
     - tools/oracle/src/helpers/guardrails/compresr_transport.rs

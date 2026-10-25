@@ -19,7 +19,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/session_budget.rs
     - crates/betterlite-auth/src/session_budget/**
-    - crates/betterlite-auth/src/lib.rs
     - tools/oracle/cases/auth/session-budget/**
   lint_tables: false
 

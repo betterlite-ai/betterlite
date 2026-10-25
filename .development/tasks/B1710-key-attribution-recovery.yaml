@@ -34,10 +34,8 @@ description: >-
   and 170 helper/wiring lines, at most 800.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/key_attribution.rs
     - crates/betterlite-db/src/key_attribution/**
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/key_digest.rs
     - crates/betterlite-models/src/key_digest/**
     - tools/oracle/src/helpers/db/key_attribution.rs

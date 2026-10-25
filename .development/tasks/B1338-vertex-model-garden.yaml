@@ -21,8 +21,10 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,model_garden}.rs
+    - crates/betterlite-vertex/src/model_garden.rs
     - crates/betterlite-vertex/src/model_garden/**
     - crates/betterlite-provider/src/{lib,model_garden_call}.rs
+    - crates/betterlite-provider/src/model_garden_call.rs
     - crates/betterlite-provider/src/model_garden_call/**
     - crates/betterlite-provider/Cargo.toml
     - tools/oracle/src/helpers/provider/model_garden_target.rs

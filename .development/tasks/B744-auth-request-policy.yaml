@@ -96,7 +96,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_request_policy.rs
     - crates/betterlite-auth/src/auth_request_policy/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/auth_request_policy.rs
     - tools/oracle/src/helpers/server/auth_request_policy/**

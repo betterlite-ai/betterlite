@@ -60,7 +60,6 @@ scope:
   paths:
     - crates/betterlite-db/src/spend_partitions.rs
     - crates/betterlite-db/src/spend_partitions/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - Cargo.toml
     - tools/betterlite-db-admin/Cargo.toml
@@ -68,6 +67,7 @@ scope:
     - tools/betterlite-db-admin/src/commands.rs
     - tools/betterlite-db-admin/src/spend_partitions.rs
     - tools/betterlite-db-admin/src/spend_partitions/**
+    - crates/betterlite-db/src/spend_partitions/fixtures.rs
     - crates/betterlite-db/src/spend_partitions/fixtures/**
   lint_tables: false
 references:

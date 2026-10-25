@@ -12,8 +12,6 @@ description: >-
   each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
-  - crates/betterlite-error/src/lib.rs
-  - crates/betterlite-error/src/error.rs
   - crates/betterlite-error/src/native.rs
   - crates/betterlite-error/src/native/**
   - crates/betterlite-error/src/parse.rs

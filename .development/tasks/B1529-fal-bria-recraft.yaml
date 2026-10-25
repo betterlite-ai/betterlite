@@ -32,7 +32,9 @@ scope:
   paths:
     - crates/betterlite-core/src/api/fal.rs
     - crates/betterlite-core/src/api/fal/{bria,recraft,images}.rs
+    - crates/betterlite-core/src/api/fal/bria.rs
     - crates/betterlite-core/src/api/fal/bria/**
+    - crates/betterlite-core/src/api/fal/recraft.rs
     - crates/betterlite-core/src/api/fal/recraft/**
     - crates/betterlite-core/fuzz/corpus/fal_image_reply/bria_*
     - tools/oracle/src/helpers/core_ops/fal_single_image_models.rs

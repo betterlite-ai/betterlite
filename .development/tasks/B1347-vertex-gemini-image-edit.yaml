@@ -22,6 +22,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_gemini_edit}.rs
+    - crates/betterlite-vertex/src/vertex_gemini_edit.rs
     - crates/betterlite-vertex/src/vertex_gemini_edit/**
     - tools/oracle/src/helpers/vertex/gemini_edit.rs
     - tools/oracle/src/helpers/vertex/gemini_edit/**

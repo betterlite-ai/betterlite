@@ -37,7 +37,6 @@ description: >-
   Approximately 310 owned source lines allow 800 changed lines including concurrency tests.
 scope:
   paths:
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/spend_reseed.rs
     - crates/betterlite-auth/src/spend_reseed/**
     - crates/betterlite-config/src/lib.rs

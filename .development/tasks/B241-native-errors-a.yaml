@@ -12,8 +12,6 @@ description: >-
   never copy AnthropicError or other LiteLLM branding prefixes.
 scope:
   paths:
-  - crates/betterlite-error/src/lib.rs
-  - crates/betterlite-error/src/error.rs
   - crates/betterlite-error/src/native_errors_a.rs
   - crates/betterlite-error/src/native_errors_a/**
   - tools/oracle/Cargo.toml

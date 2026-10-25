@@ -29,7 +29,6 @@ description: >-
   105 implementation, 155 tests, 100 helper adapters and 55 fixture/export lines, cap 450.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/tiered_pricing.rs
     - crates/betterlite-models/src/tiered_pricing/**
     - tools/oracle/src/helpers/models/pricing_tier.rs

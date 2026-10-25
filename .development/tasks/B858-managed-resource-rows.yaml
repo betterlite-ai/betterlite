@@ -131,8 +131,8 @@ scope:
   paths:
     - crates/betterlite-db/src/managed_resource_rows.rs
     - crates/betterlite-db/src/managed_resource_rows/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/managed_resource_rows/fixtures.rs
     - crates/betterlite-db/src/managed_resource_rows/fixtures/**
     - tools/oracle/src/helpers/db/managed_resource_rows.rs
     - tools/oracle/src/helpers/db/managed_resource_rows/**

@@ -34,7 +34,6 @@ description: >-
   for implementation, metrics tests, config loading, adapters and bound-parser replay.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/spend_partitions.rs
     - crates/betterlite-db/src/spend_partitions/**
     - crates/betterlite-db/src/cleanup_metrics.rs

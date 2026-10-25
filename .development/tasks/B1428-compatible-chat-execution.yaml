@@ -42,6 +42,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-provider/src/{lib,error,compatible_chat_call}.rs
+    - crates/betterlite-provider/src/compatible_chat_call.rs
     - crates/betterlite-provider/src/compatible_chat_call/**
     - crates/betterlite-provider/Cargo.toml
     - Cargo.lock

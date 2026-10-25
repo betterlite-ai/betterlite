@@ -22,6 +22,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,cache_lookup}.rs
+    - crates/betterlite-vertex/src/cache_lookup.rs
     - crates/betterlite-vertex/src/cache_lookup/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/cache_page.rs

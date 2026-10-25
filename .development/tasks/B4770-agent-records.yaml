@@ -13,7 +13,9 @@ description: >-
 
 scope:
   paths:
+    - crates/betterlite-core/src/agents.rs
     - crates/betterlite-core/src/agents/**
+    - crates/betterlite-auth/src/identity.rs
     - crates/betterlite-auth/src/identity/**
   lint_tables: false
 

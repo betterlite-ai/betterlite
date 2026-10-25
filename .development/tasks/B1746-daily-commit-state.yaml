@@ -38,7 +38,6 @@ description: >-
   phase-controlled cancellation, retry classification and pure commit_remainder cases.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/spend_commit.rs
     - crates/betterlite-db/src/spend_commit/**
     - crates/betterlite-db/src/autorouter_drain.rs

@@ -45,7 +45,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/pass_through_registry.rs
     - crates/betterlite-auth/src/pass_through_registry/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-config/src/pass_through_registry.rs
     - crates/betterlite-config/src/pass_through_registry/**

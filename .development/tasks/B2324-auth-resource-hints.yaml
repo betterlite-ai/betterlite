@@ -46,7 +46,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/resource_hints.rs
     - crates/betterlite-auth/src/resource_hints/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/resource_hint.rs

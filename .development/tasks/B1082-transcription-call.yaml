@@ -40,7 +40,6 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/transcription_call.rs
   - crates/betterlite-core/src/api/transcription_call/**
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/transcription_call.rs
   - crates/betterlite-config/src/api/transcription_call/**

@@ -21,6 +21,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,gemini_response_parts}.rs
+    - crates/betterlite-vertex/src/gemini_response_parts.rs
     - crates/betterlite-vertex/src/gemini_response_parts/**
     - tools/oracle/src/helpers/vertex/gemini_response_parts.rs
     - tools/oracle/src/helpers/vertex/gemini_response_parts/**

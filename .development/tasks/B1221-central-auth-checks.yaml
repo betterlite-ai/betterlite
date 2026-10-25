@@ -99,7 +99,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/central_auth_checks.rs
     - crates/betterlite-auth/src/central_auth_checks/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/state.rs

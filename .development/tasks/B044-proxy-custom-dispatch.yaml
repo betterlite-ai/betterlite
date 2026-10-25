@@ -43,7 +43,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/lib.rs
     - crates/betterlite-provider/src/provider.rs
     - crates/betterlite-provider/src/operation.rs
     - crates/betterlite-provider/src/legacy_dispatch.rs

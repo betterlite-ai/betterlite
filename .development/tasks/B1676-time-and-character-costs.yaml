@@ -45,7 +45,6 @@ description: >-
   live source lines allocate 330 logic, 250 tests and 195 adapters/fixtures, cap 800.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/duration_cost.rs
     - crates/betterlite-models/src/duration_cost/**
     - tools/oracle/src/helpers/models/duration_cost.rs

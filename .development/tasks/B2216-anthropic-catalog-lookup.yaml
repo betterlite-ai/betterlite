@@ -61,8 +61,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-context/Cargo.toml
-  - crates/betterlite-context/src/lib.rs
-  - crates/betterlite-context/src/error.rs
   - crates/betterlite-context/src/anthropic_catalog_lookup.rs
   - crates/betterlite-context/src/anthropic_catalog_lookup/**
   - tools/oracle/Cargo.toml

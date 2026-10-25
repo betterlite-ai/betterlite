@@ -32,6 +32,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,studio_agents}.rs
+    - crates/betterlite-vertex/src/studio_agents.rs
     - crates/betterlite-vertex/src/studio_agents/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/studio_agent_payload.rs

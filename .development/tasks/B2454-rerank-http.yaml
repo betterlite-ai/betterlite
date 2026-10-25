@@ -24,7 +24,6 @@ scope:
   - crates/betterlite-provider/src/api/rerank_http.rs
   - crates/betterlite-provider/src/api/rerank_http/**
   - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/error.rs
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/rerank_http.rs
   - tools/oracle/sdk_http/dispatch.py

@@ -23,6 +23,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,studio_identity}.rs
+    - crates/betterlite-vertex/src/studio_identity.rs
     - crates/betterlite-vertex/src/studio_identity/**
     - crates/betterlite-config/src/{lib,config,model,settings,env,providers}.rs
     - crates/betterlite-config/src/providers/{vertex,gemini}.rs

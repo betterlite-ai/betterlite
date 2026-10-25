@@ -31,6 +31,7 @@ scope:
   paths:
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,vertex_batch_upload}.rs
+    - crates/betterlite-vertex/src/vertex_batch_upload.rs
     - crates/betterlite-vertex/src/vertex_batch_upload/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_upload.rs

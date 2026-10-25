@@ -36,8 +36,10 @@ scope:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-core/src/{lib,dispatch,operation,vertex_embedding_dispatch}.rs
+    - crates/betterlite-core/src/vertex_embedding_dispatch.rs
     - crates/betterlite-core/src/vertex_embedding_dispatch/**
     - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_embedding_binding}.rs
+    - crates/betterlite-provider/src/vertex_embedding_binding.rs
     - crates/betterlite-provider/src/vertex_embedding_binding/**
     - crates/betterlite-config/src/loader.rs
     - crates/betterlite-config/src/raw.rs

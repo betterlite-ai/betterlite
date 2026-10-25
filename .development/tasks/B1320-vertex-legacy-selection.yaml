@@ -26,6 +26,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,legacy_vertex}.rs
+    - crates/betterlite-vertex/src/legacy_vertex.rs
     - crates/betterlite-vertex/src/legacy_vertex/**
     - tools/oracle/src/helpers/vertex/legacy_vertex_plan.rs
     - tools/oracle/src/helpers/vertex/legacy_vertex_plan/**

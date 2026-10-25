@@ -71,8 +71,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-models/Cargo.toml
-  - crates/betterlite-models/src/lib.rs
-  - crates/betterlite-models/src/error.rs
   - crates/betterlite-models/src/provider_metadata_factory.rs
   - crates/betterlite-models/src/provider_metadata_factory/**
   - tools/oracle/Cargo.toml

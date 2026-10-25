@@ -35,8 +35,11 @@ scope:
   paths:
     - crates/betterlite-core/src/api/fal.rs
     - crates/betterlite-core/src/api/fal/{imagen,nano_banana,bytedance}.rs
+    - crates/betterlite-core/src/api/fal/imagen.rs
     - crates/betterlite-core/src/api/fal/imagen/**
+    - crates/betterlite-core/src/api/fal/nano_banana.rs
     - crates/betterlite-core/src/api/fal/nano_banana/**
+    - crates/betterlite-core/src/api/fal/bytedance.rs
     - crates/betterlite-core/src/api/fal/bytedance/**
     - tools/oracle/src/helpers/core_ops/fal_image_families.rs
     - tools/oracle/src/helpers/core_ops/fal_image_families/**

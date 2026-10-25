@@ -54,6 +54,7 @@ scope:
     - crates/betterlite-openai/src/{lib,bytez_wire}.rs
     - crates/betterlite-openai/src/bytez_wire/**
     - crates/betterlite-provider/src/{lib,bytez_stream_call}.rs
+    - crates/betterlite-provider/src/bytez_stream_call.rs
     - crates/betterlite-provider/src/bytez_stream_call/**
     - crates/betterlite-provider/Cargo.toml
     - Cargo.lock

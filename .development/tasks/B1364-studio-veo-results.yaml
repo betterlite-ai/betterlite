@@ -27,6 +27,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,studio_veo_operation}.rs
+    - crates/betterlite-vertex/src/studio_veo_operation.rs
     - crates/betterlite-vertex/src/studio_veo_operation/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/studio_veo_operation.rs

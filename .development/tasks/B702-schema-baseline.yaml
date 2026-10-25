@@ -86,7 +86,6 @@ scope:
   paths:
     - crates/betterlite-db/src/schema_baseline.rs
     - crates/betterlite-db/src/schema_baseline/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/migrations/20250326162113_baseline/migration.sql
   lint_tables: false

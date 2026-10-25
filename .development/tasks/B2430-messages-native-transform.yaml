@@ -24,7 +24,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_native_transform.rs
   - crates/betterlite-core/src/api/messages_native_transform/**

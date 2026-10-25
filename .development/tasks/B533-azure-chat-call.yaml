@@ -95,8 +95,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
-  - crates/betterlite-azure/src/lib.rs
-  - crates/betterlite-azure/src/error.rs
   - crates/betterlite-azure/src/chat_call.rs
   - crates/betterlite-azure/src/chat_call/**
   - tools/oracle/Cargo.toml

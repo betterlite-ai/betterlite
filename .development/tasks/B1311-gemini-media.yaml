@@ -26,6 +26,7 @@ scope:
   paths:
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,error,gemini_media}.rs
+    - crates/betterlite-vertex/src/gemini_media.rs
     - crates/betterlite-vertex/src/gemini_media/**
     - tools/oracle/src/helpers/vertex/gemini_media.rs
     - tools/oracle/src/helpers/vertex/gemini_media/**

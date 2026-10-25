@@ -32,7 +32,9 @@ scope:
   paths:
     - crates/betterlite-core/src/api/bfl.rs
     - crates/betterlite-core/src/api/bfl/{generation_call,poll}.rs
+    - crates/betterlite-core/src/api/bfl/generation_call.rs
     - crates/betterlite-core/src/api/bfl/generation_call/**
+    - crates/betterlite-core/src/api/bfl/poll.rs
     - crates/betterlite-core/src/api/bfl/poll/**
     - tools/oracle/src/helpers/core_ops/bfl_jobs.rs
     - tools/oracle/src/helpers/core_ops/bfl_jobs/**

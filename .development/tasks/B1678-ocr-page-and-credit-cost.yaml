@@ -42,7 +42,6 @@ description: >-
   interface, 240 tests and 180 adapter/fixture lines, within a 725-line budget.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/price_lookup.rs
     - crates/betterlite-models/src/price_lookup/**
     - crates/betterlite-models/src/ocr_pricing.rs

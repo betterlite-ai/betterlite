@@ -359,8 +359,6 @@ scope:
   lint_tables: false
   paths:
   - crates/betterlite-context/Cargo.toml
-  - crates/betterlite-context/src/lib.rs
-  - crates/betterlite-context/src/error.rs
   - crates/betterlite-context/src/cloud_storage.rs
   - crates/betterlite-context/src/cloud_storage/**
   - tools/oracle/Cargo.toml

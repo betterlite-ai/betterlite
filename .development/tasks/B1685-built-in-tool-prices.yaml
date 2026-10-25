@@ -53,7 +53,6 @@ description: >-
   fuzz lines, capped at 800. This is accounting for existing tool calls, not a file service.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/tool_fees.rs
     - crates/betterlite-models/src/tool_fees/**
     - crates/betterlite-config/Cargo.toml

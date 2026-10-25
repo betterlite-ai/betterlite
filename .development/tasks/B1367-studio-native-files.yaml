@@ -31,6 +31,7 @@ scope:
     - crates/betterlite-vertex/Cargo.toml
     - Cargo.lock
     - crates/betterlite-vertex/src/{lib,error,studio_files}.rs
+    - crates/betterlite-vertex/src/studio_files.rs
     - crates/betterlite-vertex/src/studio_files/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/studio_file_metadata.rs

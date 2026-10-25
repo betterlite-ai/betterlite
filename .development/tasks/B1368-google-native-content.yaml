@@ -30,6 +30,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,google_native_content}.rs
+    - crates/betterlite-vertex/src/google_native_content.rs
     - crates/betterlite-vertex/src/google_native_content/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/google_native_content.rs

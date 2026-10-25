@@ -20,6 +20,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,studio_chat}.rs
+    - crates/betterlite-vertex/src/studio_chat.rs
     - crates/betterlite-vertex/src/studio_chat/**
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/studio_chat.rs

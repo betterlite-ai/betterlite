@@ -64,7 +64,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/inference_routes.rs
     - crates/betterlite-auth/src/inference_routes/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/inference_routes.rs
     - tools/oracle/src/helpers/auth/inference_routes/**

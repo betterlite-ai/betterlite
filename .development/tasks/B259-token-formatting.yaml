@@ -16,8 +16,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-tokenizer/Cargo.toml
-  - crates/betterlite-tokenizer/src/lib.rs
-  - crates/betterlite-tokenizer/src/error.rs
   - crates/betterlite-tokenizer/src/tools.rs
   - crates/betterlite-tokenizer/src/tools/**
   - tools/oracle/Cargo.toml

@@ -134,8 +134,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
-  - crates/betterlite-bedrock/src/lib.rs
-  - crates/betterlite-bedrock/src/error.rs
   - crates/betterlite-bedrock/src/batch_create.rs
   - crates/betterlite-bedrock/src/batch_create/**
   - tools/oracle/Cargo.toml

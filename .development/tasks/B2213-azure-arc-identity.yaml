@@ -97,8 +97,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
-  - crates/betterlite-azure/src/lib.rs
-  - crates/betterlite-azure/src/error.rs
   - Cargo.toml
   - deny.toml
   - crates/betterlite-azure/src/azure_arc_identity.rs

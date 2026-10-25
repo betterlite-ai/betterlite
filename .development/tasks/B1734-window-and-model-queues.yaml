@@ -39,7 +39,6 @@ description: >-
   and both queue/catalog records total roughly 399 source lines, capped at 800 with tests.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/window_queue.rs
     - crates/betterlite-db/src/window_queue/**
     - crates/betterlite-db/src/tool_discovery.rs

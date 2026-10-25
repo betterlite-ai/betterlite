@@ -17,7 +17,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-lens/Cargo.toml
-    - crates/betterlite-lens/src/lib.rs
     - crates/betterlite-lens/src/models.rs
     - crates/betterlite-lens/src/models/**
     - crates/betterlite-lens/src/state.rs

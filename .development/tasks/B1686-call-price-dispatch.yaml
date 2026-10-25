@@ -59,7 +59,6 @@ scope:
     - crates/betterlite-core/src/cost/call_price.rs
     - crates/betterlite-core/src/cost/call_price/**
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/lib.rs
     - crates/betterlite-provider/src/pricing.rs
     - crates/betterlite-provider/src/pricing/**
     - tools/oracle/src/helpers/core_ops/call_price.rs

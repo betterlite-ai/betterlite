@@ -23,6 +23,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,studio_image_edit}.rs
+    - crates/betterlite-vertex/src/studio_image_edit.rs
     - crates/betterlite-vertex/src/studio_image_edit/**
     - tools/oracle/src/helpers/vertex/studio_image_edit.rs
     - tools/oracle/src/helpers/vertex/studio_image_edit/**

@@ -16,7 +16,6 @@ scope:
   paths:
   - crates/betterlite-redis/src/redis_cluster_node_isolation.rs
   - crates/betterlite-redis/src/redis_cluster_node_isolation/tests.rs
-  - crates/betterlite-redis/src/lib.rs
   - crates/betterlite-redis/Cargo.toml
   - tools/oracle/src/helpers/redis/cluster_node_isolation.rs
   - tools/oracle/src/helpers/redis/cluster_node_isolation/**

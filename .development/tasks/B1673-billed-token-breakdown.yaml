@@ -39,7 +39,6 @@ description: >-
   nonblank lines budget 330 production, 260 tests and 210 oracle material, totaling 800.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/billed_tokens.rs
     - crates/betterlite-models/src/billed_tokens/**
     - crates/betterlite-models/src/cost_usage.rs

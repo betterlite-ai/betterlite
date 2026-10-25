@@ -13,7 +13,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-guardrails/Cargo.toml
-  - crates/betterlite-guardrails/src/lib.rs
   - crates/betterlite-guardrails/src/cisco_conversation.rs
   - tools/oracle/src/helpers/guardrails/cisco_conversation.rs
   - tools/oracle/src/helpers/guardrails/cisco_conversation/**

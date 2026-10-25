@@ -127,7 +127,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/oauth_tokens.rs
     - crates/betterlite-auth/src/oauth_tokens/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/oauth_tokens.rs
     - tools/oracle/src/helpers/auth/oauth_tokens/**
