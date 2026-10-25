@@ -3,6 +3,7 @@
     reason = "pass-through records preserve provider JSON that betterlite does not model"
 )]
 
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use url::Url;
@@ -25,13 +26,14 @@ pub enum EndpointType {
     Decisions,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PassthroughLogPayload {
     pub url: String,
     pub request_method: Option<String>,
     pub request_body: Option<Value>,
     pub response_body: Option<Value>,
-    pub cost_per_request: Option<f64>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    pub cost_per_request: Option<Decimal>,
 }
 
 mod tests;
@@ -64,14 +66,6 @@ pub fn get_endpoint_type(url: &str, custom_llm_provider: Option<&str>) -> Endpoi
         "api.anthropic.com" => EndpointType::Anthropic,
         "openai.azure.com" => EndpointType::OpenAi,
         openai_host if openai_host.contains("openai.com") => EndpointType::OpenAi,
-        _ if is_tinyfish_agent_url(url) => EndpointType::Tinyfish,
         _ => EndpointType::Generic,
     }
-}
-
-#[must_use]
-pub fn is_tinyfish_agent_url(url: &str) -> bool {
-    let parsed = Url::parse(url).ok();
-    let host = parsed.as_ref().and_then(Url::host_str);
-    host.is_some_and(|value| value == "agent.tinyfish.ai")
 }

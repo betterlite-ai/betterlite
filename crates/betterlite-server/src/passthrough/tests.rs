@@ -2,9 +2,10 @@
 
 use super::{
     CUSTOM_BODY_STATE_KEY, ENDPOINT_MARKER, EndpointType, MODEL_INFO_STATE_KEY,
-    PassthroughLogPayload, RAW_BODY_STATE_KEY, get_endpoint_type, is_tinyfish_agent_url,
+    PassthroughLogPayload, RAW_BODY_STATE_KEY, get_endpoint_type,
 };
 use rstest::rstest;
+use rust_decimal::Decimal;
 use serde_json::json;
 
 #[rstest]
@@ -28,7 +29,7 @@ use serde_json::json;
 #[case::openai("https://api.openai.com/chat", None, EndpointType::OpenAi)]
 #[case::azure("https://openai.azure.com/chat", None, EndpointType::OpenAi)]
 #[case::openai_substring("https://eu.notopenai.com.example/chat", None, EndpointType::OpenAi)]
-#[case::tinyfish("https://agent.tinyfish.ai/runs", None, EndpointType::Tinyfish)]
+#[case::tinyfish("https://agent.tinyfish.ai/runs", None, EndpointType::Generic)]
 #[case::tinyfish_subdomain("https://eu.agent.tinyfish.ai/runs", None, EndpointType::Generic)]
 #[case::generic("https://example.test/infer", None, EndpointType::Generic)]
 #[case::unparsable("not a url", None, EndpointType::Generic)]
@@ -67,7 +68,7 @@ fn passthrough_payload() {
         request_method: Some("POST".to_owned()),
         request_body: Some(serde_json::from_str(r#"{"a":1}"#).unwrap()),
         response_body: None,
-        cost_per_request: Some(0.5_f64),
+        cost_per_request: Some(Decimal::new(5, 1)),
     };
     let expected: serde_json::Value =
         serde_json::from_str(r#"{"url":"https://up/v1","request_method":"POST","request_body":{"a":1},"response_body":null,"cost_per_request":0.5}"#).unwrap();
@@ -111,12 +112,4 @@ fn passthrough_payload_variants_and_state_keys() {
             "__litellm_pass_through_endpoint__"
         ]
     );
-}
-
-#[rstest]
-#[case::agent("https://agent.tinyfish.ai/runs", true)]
-#[case::other("https://example.test/runs", false)]
-#[case::invalid("not a url", false)]
-fn passthrough_tinyfish_url_behavior(#[case] url: &str, #[case] expected: bool) {
-    assert_eq!(is_tinyfish_agent_url(url), expected);
 }
