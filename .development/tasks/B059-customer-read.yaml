@@ -51,6 +51,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/customer-read/**
+    - tools/oracle/helpers/b059.py
+    - tools/oracle/helpers/b059/**
+    - tools/oracle/src/helpers/server/b059.rs
+    - tools/oracle/src/helpers/server/b059/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L500-L577

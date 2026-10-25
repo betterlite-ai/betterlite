@@ -143,24 +143,14 @@ scope:
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/oauth-tokens/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/oauth_tokens.rs
-    - crates/betterlite-config/src/oauth_tokens/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/oauth-tokens-*
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/oauth_tokens.rs
     - crates/betterlite-auth/fuzz/corpus/oauth_tokens/**
     - crates/betterlite-server/src/auth/oauth_tokens.rs
     - crates/betterlite-server/src/auth/oauth_tokens/**
+    - crates/betterlite-config/src/sections/oauth_tokens.rs
+    - crates/betterlite-config/src/sections/oauth_tokens/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L1-L213
@@ -254,7 +244,7 @@ checks:
         run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^oauth_tokens::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::oauth_tokens::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.

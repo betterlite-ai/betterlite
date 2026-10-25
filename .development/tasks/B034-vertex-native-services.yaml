@@ -50,6 +50,10 @@ scope:
     - crates/betterlite-core/src/api/vertex_service_bindings/**
     - tools/oracle/cases/api/vertex-services/**
     - tools/oracle/fixtures/vertex-services/**
+    - tools/oracle/helpers/b034.py
+    - tools/oracle/helpers/b034/**
+    - tools/oracle/src/helpers/provider/b034.rs
+    - tools/oracle/src/helpers/provider/b034/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/__init__.py#L1-L12

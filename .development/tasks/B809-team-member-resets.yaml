@@ -73,6 +73,10 @@ scope:
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-member-resets/**
     - crates/betterlite-server/src/team_member_resets/fixtures/**
+    - tools/oracle/helpers/b809.py
+    - tools/oracle/helpers/b809/**
+    - tools/oracle/src/helpers/server/b809.rs
+    - tools/oracle/src/helpers/server/b809/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3918-L4123

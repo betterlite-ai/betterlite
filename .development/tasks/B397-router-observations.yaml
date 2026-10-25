@@ -40,6 +40,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/router_observations.py
   - tools/oracle/cases/routing/router-observations/**
+  - tools/oracle/helpers/b397.py
+  - tools/oracle/helpers/b397/**
+  - tools/oracle/src/helpers/router/b397.rs
+  - tools/oracle/src/helpers/router/b397/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8057-L8373

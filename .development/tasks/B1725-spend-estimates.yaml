@@ -62,6 +62,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/spend_estimate.rs
     - crates/betterlite-server/fuzz/corpus/spend_estimate/**
     - tools/oracle/cases/http/spend-estimates/**
+    - tools/oracle/helpers/b1725.py
+    - tools/oracle/helpers/b1725/**
+    - tools/oracle/src/helpers/server/b1725.rs
+    - tools/oracle/src/helpers/server/b1725/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L753-L793

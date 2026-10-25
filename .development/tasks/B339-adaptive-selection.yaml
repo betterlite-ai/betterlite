@@ -57,6 +57,10 @@ scope:
   - Cargo.toml
   - deny.toml
   - crates/betterlite-router/Cargo.toml
+  - tools/oracle/helpers/b339.py
+  - tools/oracle/helpers/b339/**
+  - tools/oracle/src/helpers/router/b339.rs
+  - tools/oracle/src/helpers/router/b339/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/bandit.py#L29-L137

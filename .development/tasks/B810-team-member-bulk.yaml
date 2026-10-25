@@ -84,6 +84,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-member-bulk/**
+    - tools/oracle/helpers/b810.py
+    - tools/oracle/helpers/b810/**
+    - tools/oracle/src/helpers/server/b810.rs
+    - tools/oracle/src/helpers/server/b810/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4126-L4308

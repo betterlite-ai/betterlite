@@ -28,6 +28,10 @@ scope:
   - tools/oracle/sdk_http/vector_store_create_read_transport.py
   - tools/oracle/cases/sdk-http/vector-store-create-read-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-create-read-transport-*
+  - tools/oracle/helpers/b2485.py
+  - tools/oracle/helpers/b2485/**
+  - tools/oracle/src/helpers/core_ops/b2485.rs
+  - tools/oracle/src/helpers/core_ops/b2485/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10101-L10492

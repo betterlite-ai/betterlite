@@ -27,6 +27,10 @@ scope:
     - crates/betterlite-server/src/cli_poll_grants/**
     - crates/betterlite-server/fuzz/corpus/cli_login_input/team-grants-*
     - tools/oracle/cases/sso/cli-poll/**
+    - tools/oracle/helpers/b1614.py
+    - tools/oracle/helpers/b1614/**
+    - tools/oracle/src/helpers/server/b1614.rs
+    - tools/oracle/src/helpers/server/b1614/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L206-L234

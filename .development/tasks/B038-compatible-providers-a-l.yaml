@@ -85,6 +85,10 @@ scope:
     - crates/betterlite-config/tests/compatible_provider_settings.rs
     - Cargo.lock
     - tools/oracle/cases/providers/compatible-a-l/**
+    - tools/oracle/helpers/b038.py
+    - tools/oracle/helpers/b038/**
+    - tools/oracle/src/helpers/provider/b038.rs
+    - tools/oracle/src/helpers/provider/b038/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1566-L1614

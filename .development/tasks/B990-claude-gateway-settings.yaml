@@ -95,6 +95,10 @@ scope:
   - Cargo.lock
   - tools/oracle/cases/api/claude-gateway-settings/**
   - tools/oracle/fixtures/claude-gateway-settings/**
+  - tools/oracle/helpers/b990.py
+  - tools/oracle/helpers/b990/**
+  - tools/oracle/src/helpers/server/b990.rs
+  - tools/oracle/src/helpers/server/b990/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/gateway_endpoints.py#L355-L397

@@ -79,18 +79,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/audit_record.rs
     - crates/betterlite-server/fuzz/corpus/audit_record/**
-    - crates/betterlite-config/src/audit_events.rs
-    - crates/betterlite-config/src/audit_events/**
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/audit-events-*
     - tools/oracle/src/helpers/server/audit_events.rs
@@ -99,6 +87,8 @@ scope:
     - tools/oracle/helpers/audit_events/**
     - tools/oracle/cases/helpers/audit-events/**
     - tools/oracle/fuzz/corpus/helper_case/audit-events-*
+    - crates/betterlite-config/src/sections/audit_events.rs
+    - crates/betterlite-config/src/sections/audit_events/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L23-L245
@@ -128,7 +118,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^audit_events::tests::/) - test(/replays_the_/)'
     - id: config-tests
       why: Settings are not loaded through the actual configuration pipeline.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^audit_events::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::audit_events::tests::/) - test(/replays_the_/)'
     - id: postgres-tests
       why: License-free audit persistence and row/failure effects are unproved.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/audit_events::tests::audit_enabled_without_license$/)'

@@ -42,6 +42,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/adaptive_concurrency.py
   - tools/oracle/cases/routing/adaptive-concurrency/**
+  - tools/oracle/helpers/b347.py
+  - tools/oracle/helpers/b347/**
+  - tools/oracle/src/helpers/router/b347.rs
+  - tools/oracle/src/helpers/router/b347/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L18-L78
