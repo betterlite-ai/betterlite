@@ -260,6 +260,7 @@ dependencies = [
  "reqwest",
  "rstest",
  "secrecy",
+ "serde_json",
  "thiserror",
  "tokio",
  "tracing",
@@ -396,6 +397,7 @@ dependencies = [
  "regex",
  "rquickjs",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -404,6 +406,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -1597,6 +1600,7 @@ dependencies = [
  "serde",
  "serde_json",
  "wasm-bindgen",
+ "zmij",
 ]
 
 [[package]]
