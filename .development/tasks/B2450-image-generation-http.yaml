@@ -34,6 +34,10 @@ scope:
   - tools/oracle/sdk_http/image_generation_http.py
   - tools/oracle/cases/sdk-http/image-generation-http/**
   - tools/oracle/fuzz/corpus/sdk_http_case/image-generation-http-*
+  - tools/oracle/helpers/b2450.py
+  - tools/oracle/helpers/b2450/**
+  - tools/oracle/src/helpers/provider/b2450.rs
+  - tools/oracle/src/helpers/provider/b2450/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6920-L7151
@@ -91,5 +95,5 @@ pitfalls:
 - extra_body is not merged here, even though it appears in both signatures.
 review_level: security
 budget:
-  max_changed_lines: 540
+  max_changed_lines: 1000
   max_new_expects: 0

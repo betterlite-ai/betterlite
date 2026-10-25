@@ -47,19 +47,9 @@ scope:
     - tools/oracle/cases/helpers/login-form/**
     - tools/oracle/fuzz/corpus/helper_case/login-form-*
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/login_form.rs
-    - crates/betterlite-config/src/login_form/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/login-form-*
+    - crates/betterlite-config/src/sections/login_form.rs
+    - crates/betterlite-config/src/sections/login_form/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/ui_login.py#L6-L278
@@ -87,7 +77,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^login_form::tests::/) - test(/replays_the_/)'
     - id: config-tests
       why: The named environment and general_settings bindings must reach the renderer.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^login_form::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::login_form::tests::/) - test(/replays_the_/)'
     - id: helper-python
       why: The independent helper adapter must exist and pass strict checking.
       run: test -f tools/oracle/helpers/login_form.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
@@ -117,6 +107,6 @@ pitfalls:
   - The form action uses literal concatenation while the banner URL uses join_paths, so slash behavior differs.
   - A present but empty UI_PASSWORD must still display the default-credential hint.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

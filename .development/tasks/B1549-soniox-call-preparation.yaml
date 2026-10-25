@@ -88,5 +88,5 @@ pitfalls:
   - Pre-call logging says atranscription=true even when the caller selected synchronous execution.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 1

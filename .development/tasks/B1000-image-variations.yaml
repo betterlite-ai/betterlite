@@ -25,19 +25,6 @@ scope:
   - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/image_variations.rs
   - crates/betterlite-core/src/api/image_variations/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/image_variations.rs
-  - crates/betterlite-config/src/api/image_variations/**
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/image-variations-*
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/image_variations.rs
@@ -45,6 +32,12 @@ scope:
   - tools/oracle/sdk_http/image_variations.py
   - tools/oracle/cases/sdk-http/image-variations/**
   - tools/oracle/fuzz/corpus/sdk_http_case/image-variations-*
+  - crates/betterlite-config/src/sections/image_variations.rs
+  - crates/betterlite-config/src/sections/image_variations/**
+  - tools/oracle/helpers/b1000.py
+  - tools/oracle/helpers/b1000/**
+  - tools/oracle/src/helpers/core_ops/b1000.rs
+  - tools/oracle/src/helpers/core_ops/b1000/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L564-L708
@@ -84,10 +77,10 @@ checks:
   commands:
   - id: behavior-tests
     why: Ignored options, timeout asymmetry and the second-call fallback need direct tests.
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::image_variations::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::image_variations::/) - test(/::replays_corpus$/)'
   - id: config-tests
     why: REQUEST_TIMEOUT must load through config and reach Topaz's dispatch input.
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::image_variations::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::image_variations::tests::loads_settings($|::)/)'
   - id: sdk-python
     why: Variation comparison must call the SDK against mock HTTP.
     run: test -f tools/oracle/sdk_http/image_variations.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
@@ -111,5 +104,5 @@ pitfalls:
 - get_llm_provider's dynamic key is discarded before model-info credential resolution.
 review_level: standard
 budget:
-  max_changed_lines: 480
+  max_changed_lines: 1000
   max_new_expects: 1

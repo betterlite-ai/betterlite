@@ -264,6 +264,6 @@ pitfalls:
 - The foreign-deployment comparison case-folds served model names, while router path matching remains exact-case.
 - Caller api-version wins only when truthy; preserving an empty override as active changes which base query is removed.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

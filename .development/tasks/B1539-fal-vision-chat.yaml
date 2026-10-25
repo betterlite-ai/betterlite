@@ -84,5 +84,5 @@ pitfalls:
   - The source validates usage_info even when output is an empty string.
 review_level: security
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0

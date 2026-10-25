@@ -27,6 +27,10 @@ scope:
   - tools/oracle/sdk_http/messages_stream_logging.py
   - tools/oracle/cases/sdk-http/messages-stream-logging/**
   - tools/oracle/fuzz/corpus/sdk_http_case/messages-stream-logging-*
+  - tools/oracle/helpers/b2436.py
+  - tools/oracle/helpers/b2436/**
+  - tools/oracle/src/helpers/core_ops/b2436.rs
+  - tools/oracle/src/helpers/core_ops/b2436/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L388-L466
@@ -107,5 +111,5 @@ pitfalls:
 - 'A missing type on a dict chunk emits event: message; forwarding raw JSON would break Anthropic clients.'
 review_level: security
 budget:
-  max_changed_lines: 580
+  max_changed_lines: 1000
   max_new_expects: 0

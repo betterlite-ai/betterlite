@@ -41,6 +41,10 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/oauth-callback-*
     - tools/oracle/cases/sso/oauth-callback/**
     - tools/oracle/fixtures/multipart-oracle/oauth-callback/**
+    - tools/oracle/helpers/b1615.py
+    - tools/oracle/helpers/b1615/**
+    - tools/oracle/src/helpers/server/b1615.rs
+    - tools/oracle/src/helpers/server/b1615/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2020-L2146
@@ -85,6 +89,6 @@ pitfalls:
   - CLI completion stores only currently resolvable team rows, rather than copying stale membership IDs into the future credential.
   - A completed IdP callback still leaves user_code_verified false until the separate browser form succeeds.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

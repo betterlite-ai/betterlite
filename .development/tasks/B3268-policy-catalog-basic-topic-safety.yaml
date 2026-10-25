@@ -202,5 +202,5 @@ pitfalls:
   - "The topic-filtering off_topic category requires enabled: true, action: BLOCK, and severity_threshold: medium; if any are missing or wrong, the backup category check fails."
 review_level: standard
 budget:
-  max_changed_lines: 350
+  max_changed_lines: 1000
   max_new_expects: 0

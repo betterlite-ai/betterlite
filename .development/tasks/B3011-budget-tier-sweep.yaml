@@ -58,7 +58,7 @@ deviations:
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L680-L730"
 review_level: security
 budget:
-  max_changed_lines: 200
+  max_changed_lines: 1000
   max_new_expects: 0
 checks:
   optional: []

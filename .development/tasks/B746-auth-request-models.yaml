@@ -316,6 +316,6 @@ pitfalls:
   - Provider path models override a body model, unlike the earlier /openai/deployments fallback.
   - A failing legacy decoder can leave a model hint while the independent unified decoder still runs.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

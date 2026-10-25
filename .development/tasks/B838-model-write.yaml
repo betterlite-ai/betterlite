@@ -78,6 +78,10 @@ scope:
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-write/**
     - crates/betterlite-server/src/model_write/fixtures/**
+    - tools/oracle/helpers/b838.py
+    - tools/oracle/helpers/b838/**
+    - tools/oracle/src/helpers/server/b838.rs
+    - tools/oracle/src/helpers/server/b838/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2182-L2780
@@ -193,6 +197,6 @@ pitfalls:
   - Rename/delete grants only when the last configured or stored sibling stops serving the old public
     name.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

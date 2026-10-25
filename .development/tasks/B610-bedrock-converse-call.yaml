@@ -329,6 +329,6 @@ pitfalls:
   assume its temporary stripped view is the final id.
 - Async streaming accepts timeout but does not forward it to make_call; sync client construction does use it.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

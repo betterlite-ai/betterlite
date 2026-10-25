@@ -122,5 +122,5 @@ pitfalls:
 - Use tempfile or an equivalent existing atomic-file facility rather than building random filenames by hand.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 1

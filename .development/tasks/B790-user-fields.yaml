@@ -138,19 +138,9 @@ scope:
     - tools/oracle/cases/helpers/user-fields/**
     - tools/oracle/fuzz/corpus/helper_case/user-fields-*
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/user_fields.rs
-    - crates/betterlite-config/src/user_fields/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/user-fields-*
+    - crates/betterlite-config/src/sections/user_fields.rs
+    - crates/betterlite-config/src/sections/user_fields/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L1-L160
@@ -258,7 +248,7 @@ checks:
         - test(/replays_the_/)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^user_fields::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::user_fields::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
@@ -309,6 +299,6 @@ pitfalls:
   - A team-member HTTPException is always swallowed here, while an unrelated ordinary exception is rethrown.
   - Removing a password from a bare model is outside _strip_password_from_response's actual dict-only behavior.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

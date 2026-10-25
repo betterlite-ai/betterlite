@@ -92,6 +92,6 @@ pitfalls:
   - Fastapi-sso 0.19.0 requires neither state nor a state cookie by default, but rejects a mismatching cookie when both values exist.
   - Google's raw debug response can contain an unverified email even though ordinary identity conversion rejects it.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -51,6 +51,10 @@ scope:
     - tools/oracle/cases/management/callback-metadata/**
     - tools/oracle/cases/management/user-banner/**
     - tools/oracle/fuzz/corpus/http_case/user-banner-*
+    - tools/oracle/helpers/b066.py
+    - tools/oracle/helpers/b066/**
+    - tools/oracle/src/helpers/server/b066.rs
+    - tools/oracle/src/helpers/server/b066/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/callback_management_endpoints.py#L16-L56
@@ -106,6 +110,6 @@ pitfalls:
   - Banner PATCH is a complete replacement despite its verb, and republishing identical text still creates a new revision.
   - A callback can appear in success_and_failure through the general callback list even when neither dedicated phase list contains it.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

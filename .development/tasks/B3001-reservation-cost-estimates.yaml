@@ -45,6 +45,10 @@ scope:
     - tools/oracle/litellm/probes/protocol.py
     - tools/oracle/litellm/probes/reservation_cost.py
     - tools/oracle/cases/auth/reservation-cost/**
+    - tools/oracle/helpers/b3001.py
+    - tools/oracle/helpers/b3001/**
+    - tools/oracle/src/helpers/auth/b3001.rs
+    - tools/oracle/src/helpers/auth/b3001/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1299-L1318
@@ -175,6 +179,6 @@ pitfalls:
   - 'Exception handling during metadata lookup is silently caught and logged; admission proceeds with an empty
     estimate (None return), not an error.'
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

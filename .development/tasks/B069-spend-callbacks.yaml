@@ -164,6 +164,6 @@ pitfalls:
   - A standard logging object with response_cost=null suppresses a nonnull kwargs response_cost fallback.
   - queued interactions with an id can retain a reservation, but requires_action without usage must raise a tracking alert.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -122,5 +122,5 @@ pitfalls:
 - Duration silently ignores PathLike and bytearray inside tuples even though it accepts either as a top-level input.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 1

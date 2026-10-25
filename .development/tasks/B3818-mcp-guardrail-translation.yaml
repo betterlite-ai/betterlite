@@ -130,7 +130,7 @@ pitfalls:
       The mcp_arguments/arguments fallback applies consistently across input projection, conflict detection and writeback, preserving both field names where they coexist.
 
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0
 
 review_level: security

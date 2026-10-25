@@ -159,26 +159,9 @@ scope:
   - crates/betterlite-foundry/fuzz/fuzz_targets/foundry_image_edits.rs
   - crates/betterlite-foundry/fuzz/corpus/foundry_image_edits/**
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/**
-  - crates/betterlite-config/src/providers/foundry.rs
-  - crates/betterlite-config/src/providers/foundry/**
-  - crates/betterlite-config/src/providers/foundry/image_edits.rs
-  - crates/betterlite-config/src/providers/foundry/image_edits/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/foundry_image_edits_config.rs
-  - crates/betterlite-config/src/tests/foundry_image_edits_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/foundry_image_edits*
+  - crates/betterlite-config/src/sections/foundry_image_edits.rs
+  - crates/betterlite-config/src/sections/foundry_image_edits/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_edit/__init__.py#L22-L42
@@ -393,6 +376,6 @@ pitfalls:
 - MAI silently uses the first non-None image and discards mask fields rather than rejecting unsupported multipart
   input.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

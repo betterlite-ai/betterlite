@@ -41,6 +41,10 @@ scope:
     - crates/betterlite-config/src/sso_login_entry/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-login-entry-*
     - tools/oracle/cases/sso/login-entry/**
+    - tools/oracle/helpers/b1628.py
+    - tools/oracle/helpers/b1628/**
+    - tools/oracle/src/helpers/server/b1628.rs
+    - tools/oracle/src/helpers/server/b1628/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L998-L1127
@@ -87,6 +91,6 @@ pitfalls:
   - Microsoft login redirection can use the common tenant while its callback still rejects an absent MICROSOFT_TENANT.
   - The source validates a litellm-cli flow before choosing the SAML-only branch, even though that branch passes return_to as RelayState instead of CLI state.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

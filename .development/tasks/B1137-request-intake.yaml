@@ -140,23 +140,15 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/request_intake.rs
-  - crates/betterlite-config/src/api/request_intake/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/request-intake-*
   - tools/oracle/cases/api/request-intake/**
   - tools/oracle/fixtures/request-intake/**
+  - crates/betterlite-config/src/sections/request_intake.rs
+  - crates/betterlite-config/src/sections/request_intake/**
+  - tools/oracle/helpers/b1137.py
+  - tools/oracle/helpers/b1137/**
+  - tools/oracle/src/helpers/server/b1137.rs
+  - tools/oracle/src/helpers/server/b1137/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1993-L2580
@@ -274,7 +266,7 @@ checks:
   commands:
   - id: behavior-tests
     why: The request-intake production tests or one of their named cases is absent, so a missing mutation can pass an oracle fixture alone.
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::request_intake::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::request_intake::/) - test(/::replays_corpus$/)'
   - id: case-forged-controls
     why: Root and metadata control stripping, the gateway cache key, and the authenticated mock exception are not all exercised.
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_intake::tests::forged_controls($|::)/)'
@@ -301,7 +293,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_intake::tests::final_handoff_order($|::)/)'
   - id: config-tests
     why: A declared request-intake setting is rejected, has the wrong default, does not override, or lacks its loader test.
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::request_intake::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::request_intake::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: No new request-intake YAML seed reaches B002's production decoder replay with the declared settings.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/request-intake-*)" && grep -R -E -q 'forward_llm_provider_auth_headers|overwrite_user_with_key_hash|global_max_parallel_requests|turn_off_message_logging|litellm_key_header_name|use_x_forwarded_for' crates/betterlite-config/fuzz/corpus/config_yaml/request-intake-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
@@ -342,5 +334,5 @@ pitfalls:
 - 'The service-success hook is scheduled with asyncio.create_task after _enforced_params_check and is not awaited; treating it as an inline database write changes the return/error timing.'
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -46,6 +46,10 @@ scope:
     - crates/betterlite-auth/fuzz/corpus/sso_record/settings-api-*
     - tools/oracle/cases/management/sso-settings/**
     - tools/oracle/fuzz/corpus/http_case/sso-settings-*
+    - tools/oracle/helpers/b1661.py
+    - tools/oracle/helpers/b1661/**
+    - tools/oracle/src/helpers/server/b1661.rs
+    - tools/oracle/src/helpers/server/b1661/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1130-L1322
@@ -91,6 +95,6 @@ pitfalls:
   - PATCH's successful response includes submitted client secrets, while GET masks resolved secrets; using one serializer for both changes the wire contract.
   - Legacy environment cleanup runs after the SSO upsert and audit submission, so its 500 can accompany a completed configuration replacement.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

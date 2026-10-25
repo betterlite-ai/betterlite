@@ -217,6 +217,6 @@ pitfalls:
 - The legacy boto3 file-content branch has a textual caller but is bypassed by unconditional provider-config selection.
 - Binary content may look like JSONL and must still be returned byte-for-byte.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

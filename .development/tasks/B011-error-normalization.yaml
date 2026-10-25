@@ -132,5 +132,5 @@ pitfalls:
 - A 429 message mentioning a budget can normalize differently from a generic 429.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -69,6 +69,10 @@ scope:
   - Cargo.lock
   - tools/oracle/cases/websocket/realtime-websocket-route/**
   - tools/oracle/fixtures/realtime-websocket-route/**
+  - tools/oracle/helpers/b1125.py
+  - tools/oracle/helpers/b1125/**
+  - tools/oracle/src/helpers/server/b1125.rs
+  - tools/oracle/src/helpers/server/b1125/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L188-L192
@@ -417,5 +421,5 @@ pitfalls:
 - Pre-call cancellation bypasses the upstream finally block and releases only parallel capacity.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

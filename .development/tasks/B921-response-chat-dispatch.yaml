@@ -26,6 +26,10 @@ scope:
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/response_chat_dispatch.py
   - tools/oracle/cases/sdk-http/response-chat-dispatch/**
+  - tools/oracle/helpers/b921.py
+  - tools/oracle/helpers/b921/**
+  - tools/oracle/src/helpers/core_ops/b921.rs
+  - tools/oracle/src/helpers/core_ops/b921/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L1-L396
@@ -109,5 +113,5 @@ pitfalls:
 - Completed Responses objects bypass stream wrapping even when the caller requested streaming.
 review_level: standard
 budget:
-  max_changed_lines: 790
+  max_changed_lines: 1000
   max_new_expects: 1

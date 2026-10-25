@@ -329,6 +329,6 @@ pitfalls:
   - A {name:path} Google model placeholder may span slashes but must stop at the colon before generateContent.
   - Ordinary allowed-route prefix matching requires a slash boundary, while an explicit trailing wildcard deliberately does not.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

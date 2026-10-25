@@ -111,24 +111,14 @@ scope:
     - crates/betterlite-db/src/database_reencryption.rs
     - crates/betterlite-db/src/database_reencryption/**
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/database_reencryption.rs
-    - crates/betterlite-config/src/database_reencryption/**
     - tools/oracle/src/helpers/db/database_reencryption.rs
     - tools/oracle/src/helpers/db/database_reencryption/**
     - tools/oracle/helpers/database_reencryption.py
     - tools/oracle/helpers/database_reencryption/**
     - tools/oracle/cases/helpers/database-reencryption/**
     - tools/oracle/fuzz/corpus/helper_case/database-reencryption-*
+    - crates/betterlite-config/src/sections/database_reencryption.rs
+    - crates/betterlite-config/src/sections/database_reencryption/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L17-L160
@@ -187,7 +177,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_reencryption::.*postgres_/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_reencryption::.*postgres_partial_progress_after_failure$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_reencryption::.*postgres_concurrent_change_preserved$/)'
     - id: config-tests
       why: Invalid recursion depth must fail startup while empty migration/salt variables retain presence semantics.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_reencryption::tests::/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::database_reencryption::tests::/)'
     - id: helper-python
       why: Pure traversal and outcome comparisons must invoke the pinned functions.
       run: test -f tools/oracle/helpers/database_reencryption.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
@@ -213,6 +203,6 @@ pitfalls:
   - A failed later update leaves earlier ciphertexts migrated, so remaining old-key values need a restart with the previous key retained.
   - Salt-variable presence skips migration even for an empty string, while an empty new-key override in the codec falls back.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security
