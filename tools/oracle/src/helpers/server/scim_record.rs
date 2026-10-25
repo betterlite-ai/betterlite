@@ -2,20 +2,26 @@ use betterlite_server::scim_records::discovery::{ResourceType, Schema};
 use betterlite_server::scim_records::user::Active;
 use betterlite_server::scim_records::{ResourceKind, ScimResource, decode_scim_resource};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 pub(crate) struct Op;
 
+#[expect(
+    clippy::disallowed_types,
+    reason = "The SCIM oracle transports arbitrary model input as JSON."
+)]
+type ScimJson = serde_json::Value;
+
 #[derive(Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub(crate) enum Input {
-    User(Value),
-    Group(Value),
-    Patch(Value),
-    Schema(Value),
-    ResourceType(Value),
+    User(ScimJson),
+    Group(ScimJson),
+    Patch(ScimJson),
+    Schema(ScimJson),
+    ResourceType(ScimJson),
 }
 
 impl Helper for Op {
@@ -44,7 +50,7 @@ impl Helper for Op {
     }
 }
 
-fn decode(value: &Value, kind: ResourceKind) -> Result<Value, serde_json::Error> {
+fn decode(value: &ScimJson, kind: ResourceKind) -> Result<ScimJson, serde_json::Error> {
     let bytes = serde_json::to_vec(value)?;
     match decode_scim_resource(&bytes, kind) {
         Ok(ScimResource::User(user)) => Ok(json!({
