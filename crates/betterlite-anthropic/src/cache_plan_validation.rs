@@ -1,6 +1,5 @@
 use super::JsonObject;
 use serde_json::Value;
-
 pub(super) fn valid_shape(body: &JsonObject, plan: bool) -> bool {
     let common = [
         "model",
@@ -99,7 +98,6 @@ pub(super) fn valid_shape(body: &JsonObject, plan: bool) -> bool {
     }
     true
 }
-
 pub(super) fn valid_options(body: &JsonObject, plan: bool) -> bool {
     let common = body.get("model").is_none_or(Value::is_string)
         && body.get("max_tokens").is_none_or(integer)
@@ -128,7 +126,6 @@ pub(super) fn valid_options(body: &JsonObject, plan: bool) -> bool {
         });
     common && (!plan || plan_options)
 }
-
 fn valid_message(value: &Value, plan: bool) -> bool {
     let Some(message) = value.as_object() else {
         return false;
@@ -150,7 +147,6 @@ fn valid_message(value: &Value, plan: bool) -> bool {
                     .is_some_and(|items| items.iter().all(|item| valid_block(item, plan, false)))
         })
 }
-
 fn valid_block(value: &Value, plan: bool, system: bool) -> bool {
     let Some(block) = value.as_object() else {
         return false;
@@ -215,7 +211,6 @@ fn valid_block(value: &Value, plan: bool, system: bool) -> bool {
         && block.get("is_error").is_none_or(Value::is_boolean)
         && valid_marker(block)
 }
-
 fn valid_result_text(value: &Value) -> bool {
     let result = value.as_object().is_some_and(|item| {
         fields(item, &["type", "text"])

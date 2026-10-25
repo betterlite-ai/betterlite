@@ -2,7 +2,6 @@ use super::cache_plan_validation::{cache_ttl, nonempty};
 use super::{JsonObject, Position, Section};
 use serde_json::{Map, Number, Value};
 use sha2::{Digest as _, Sha256};
-
 pub(super) fn blocks(value: &Value) -> Vec<&Value> {
     match value {
         Value::String(_) => vec![value],

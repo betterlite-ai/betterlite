@@ -2,18 +2,14 @@
 mod cache_plan_planning;
 #[path = "cache_plan_validation.rs"]
 mod cache_plan_validation;
-use serde_json::{Map, Value};
-
 use cache_plan_planning::{
     cacheable, chained_hashes, digest, entry_fingerprint, lookbacks, position_groups, prefix_body,
     selected_settings,
 };
 use cache_plan_validation::{cache_ttl, valid_shape};
-
+use serde_json::{Map, Value};
 mod tests;
-
 pub type JsonObject = Map<String, Value>;
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CacheBoundary {
     pub fingerprint: String,
@@ -23,13 +19,11 @@ pub struct CacheBoundary {
     pub content_fingerprint: String,
     pub lookback_content_fingerprints: Vec<String>,
 }
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PromptCachePlan {
     pub full_body: JsonObject,
     pub breakpoints: Vec<CacheBoundary>,
 }
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UnsupportedCacheReason {
     UnsupportedPromptShape,
@@ -40,12 +34,10 @@ pub enum UnsupportedCacheReason {
     TokenCountUnavailable,
     InconsistentPrefixTokenCount,
 }
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnsupportedCachePlan {
     pub reason: UnsupportedCacheReason,
 }
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PromptPrefix {
     pub prefix_body: JsonObject,
@@ -53,14 +45,12 @@ pub struct PromptPrefix {
     pub fingerprints: Vec<String>,
     pub ttl_seconds: u32,
 }
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Section {
     Tools,
     System,
     Messages,
 }
-
 #[derive(Clone, Debug)]
 struct Position {
     section: Section,
@@ -69,7 +59,6 @@ struct Position {
     block: JsonObject,
     marker: Option<u32>,
 }
-
 pub fn parse_cache_plan(body: &JsonObject) -> Result<PromptCachePlan, UnsupportedCachePlan> {
     if !valid_shape(body, true) {
         return Err(unsupported(UnsupportedCacheReason::UnsupportedPromptShape));
@@ -131,7 +120,6 @@ pub fn parse_cache_plan(body: &JsonObject) -> Result<PromptCachePlan, Unsupporte
         breakpoints,
     })
 }
-
 fn markers(
     body: &JsonObject,
     positions: &[Position],
@@ -168,7 +156,6 @@ fn markers(
     }
     Ok(result)
 }
-
 #[must_use]
 pub fn parse_prompt(body: &JsonObject) -> Option<PromptPrefix> {
     if !valid_shape(body, false) {
@@ -186,7 +173,6 @@ pub fn parse_prompt(body: &JsonObject) -> Option<PromptPrefix> {
         ttl_seconds: boundary.ttl_seconds,
     })
 }
-
 #[must_use]
 pub fn cache_scope(
     caller_key_hash: &str,
@@ -209,7 +195,6 @@ pub fn cache_scope(
     ));
     scope
 }
-
 const fn unsupported(reason: UnsupportedCacheReason) -> UnsupportedCachePlan {
     let plan = UnsupportedCachePlan { reason };
     plan
