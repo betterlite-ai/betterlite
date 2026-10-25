@@ -63,6 +63,7 @@ use std::path::Path;
 use crate::OracleError;
 use crate::case::HelperCase;
 use crate::compare;
+pub(crate) use crate::compare::{HelperError, HelperOutput};
 use crate::process::sync_litellm;
 use python::run_python;
 
@@ -183,26 +184,6 @@ impl From<HelperCall> for BTreeMap<String, serde_json::Value> {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct HelperOutput {
-    pub(crate) ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) value: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) error: Option<HelperError>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct HelperError {
-    pub(crate) class: String,
-    pub(crate) status: Option<u16>,
-    #[serde(rename = "type")]
-    pub(crate) error_type: Option<String>,
-    pub(crate) param: Option<String>,
-    pub(crate) code: Option<String>,
-    pub(crate) message: String,
-}
-
 pub(crate) enum HelperRun {
     Match,
     Difference,
@@ -249,12 +230,22 @@ pub(crate) fn invoke(call: &HelperCall) -> HelperOutput {
             ok: true,
             value: Some(value),
             error: None,
+            warnings: Vec::new(),
+            effects: Vec::new(),
         },
-        Err(error) => HelperOutput {
-            ok: false,
-            value: None,
-            error: Some(*error),
-        },
+        Err(failure) => {
+            let mut error = *failure;
+            error.error_type.get_or_insert(None);
+            error.param.get_or_insert(None);
+            error.code.get_or_insert(None);
+            HelperOutput {
+                ok: false,
+                value: None,
+                error: Some(error),
+                warnings: Vec::new(),
+                effects: Vec::new(),
+            }
+        }
     }
 }
 
