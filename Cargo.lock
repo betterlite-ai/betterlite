@@ -277,6 +277,7 @@ version = "0.1.0"
 dependencies = [
  "fancy-regex",
  "rstest",
+ "serde",
  "serde_json",
  "thiserror",
  "tracing",
