@@ -1,0 +1,8 @@
+kind: helper
+name: db-system-redis-prefix-coverage
+call:
+  otel_vocabulary:
+    function: DbSystem
+    values: [redis, postgres, batch_write_to_db, redis_spend_update_queue, redis_, Redis, REDIS_queue, redisx, router, ""]
+env: {}
+compare: {ignore: []}

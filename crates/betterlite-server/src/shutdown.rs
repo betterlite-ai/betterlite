@@ -54,5 +54,6 @@ impl ShutdownSignal {
         #[cfg(not(unix))]
         let _ = tokio::signal::ctrl_c().await;
         shutting_down.store(true, Ordering::Release);
+        tracing::info!("betterlite server shutting down");
     }
 }

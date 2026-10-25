@@ -1,7 +1,7 @@
 id: B2312
 milestone: M4 keys, spend and management
 title: Daily activity scopes, row contracts and SQL identifiers
-status: todo
+status: done
 depends_on: [B171, B856]
 file: tasks/B2312-daily-activity-contracts.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/repositories/daily_activity_sql.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 131

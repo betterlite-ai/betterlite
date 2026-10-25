@@ -1,0 +1,95 @@
+{
+  "kind": "helper",
+  "name": "key-and-export-fields",
+  "call": {
+    "daily_activity_contracts": {
+      "steps": {
+        "key_spend_fields": {
+          "kind": "key_spend",
+          "value": {
+            "api_key": "",
+            "spend": "0.25",
+            "prompt_tokens": 7,
+            "completion_tokens": 7,
+            "total_tokens": 7,
+            "api_requests": 7,
+            "successful_requests": 7,
+            "failed_requests": 7,
+            "cache_read_input_tokens": 7,
+            "cache_creation_input_tokens": 7
+          }
+        },
+        "key_metadata_fields": {
+          "kind": "key_metadata",
+          "value": {
+            "api_key": "",
+            "key_alias": null,
+            "team_id": null,
+            "user_id": null,
+            "user_email": null,
+            "key_exists": true,
+            "tags": [
+              "a",
+              "b",
+              "a"
+            ]
+          }
+        },
+        "export_fields": {
+          "kind": "export",
+          "value": {
+            "date": "",
+            "entity_id": "",
+            "entity_alias": null,
+            "api_key": null,
+            "key_alias": null,
+            "user_id": null,
+            "user_email": null,
+            "model": null,
+            "spend": "0.25",
+            "flat_cost": "0.25",
+            "prompt_tokens": 7,
+            "completion_tokens": 7,
+            "api_requests": 7,
+            "successful_requests": 7,
+            "failed_requests": 7,
+            "cache_read_input_tokens": 7,
+            "cache_creation_input_tokens": 7
+          }
+        },
+        "daily_row_fields": {
+          "kind": "daily_row",
+          "value": {
+            "id": "",
+            "date": "",
+            "api_key": "",
+            "model": null,
+            "model_group": null,
+            "custom_llm_provider": null,
+            "mcp_namespaced_tool_name": null,
+            "endpoint": null,
+            "prompt_tokens": 7,
+            "completion_tokens": 7,
+            "cache_read_input_tokens": 7,
+            "cache_creation_input_tokens": 7,
+            "compression_saved_tokens": 7,
+            "compression_savings_spend": "0.25",
+            "prompt_caching_savings_spend": "0.25",
+            "gateway_injected_caching_savings_spend": "0.25",
+            "autorouter_savings_spend": "0.25",
+            "spend": "0.25",
+            "api_requests": 7,
+            "successful_requests": 7,
+            "failed_requests": 7,
+            "total_response_time_ms": 7,
+            "timed_requests": 7
+          }
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

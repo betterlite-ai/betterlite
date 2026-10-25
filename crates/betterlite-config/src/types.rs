@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_secrets::secret_codec::CipherSettings;
 use secrecy::SecretString;
 use serde::Deserialize;
 
@@ -41,8 +42,9 @@ pub struct ModelInfo {
     pub id: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct GeneralSettings {
+    pub cipher: CipherSettings,
     pub master_key: Option<SecretString>,
 }
 
