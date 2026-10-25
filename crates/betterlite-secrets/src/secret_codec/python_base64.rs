@@ -1,23 +1,10 @@
 use base64::Engine as _;
-use base64::alphabet::STANDARD;
-use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD};
 
 use crate::error::SecretError;
 use crate::secret_codec::MAX_ENCODED_BYTES;
 
-// CPython's binascii keeps the stray bits of a final partial group, so both decoders accept them
-const LENIENT: GeneralPurpose = GeneralPurpose::new(
-    &STANDARD,
-    GeneralPurposeConfig::new()
-        .with_decode_allow_trailing_bits(true)
-        .with_decode_padding_mode(DecodePaddingMode::RequireNone),
-);
-const STRICT: GeneralPurpose = GeneralPurpose::new(
-    &STANDARD,
-    GeneralPurposeConfig::new()
-        .with_decode_allow_trailing_bits(true)
-        .with_decode_padding_mode(DecodePaddingMode::RequireCanonical),
-);
+const SYMBOLS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 #[derive(Clone, Copy)]
 enum Group {
@@ -25,6 +12,26 @@ enum Group {
     One,
     Two,
     Three,
+}
+
+// CPython keeps the stray low bits of a final partial group and the base64 crate refuses them
+fn clear_stray_bits(encoded: &mut String) {
+    let data = encoded.trim_end_matches('=').len();
+    let mask = match data & 3 {
+        2 => 0b11_0000,
+        3 => 0b11_1100,
+        _ => return,
+    };
+    let Some(last) = data.checked_sub(1) else {
+        return;
+    };
+    let index = encoded
+        .get(last..data)
+        .and_then(|symbol| SYMBOLS.find(symbol));
+    let cleared = index.and_then(|value| SYMBOLS.get(value & mask..=value & mask));
+    if let Some(symbol) = cleared {
+        encoded.replace_range(last..data, symbol);
+    }
 }
 
 const fn bounded_ascii(text: &str) -> Result<(), SecretError> {
@@ -54,7 +61,7 @@ pub(crate) fn decode_lenient(text: &str, url_alphabet: bool) -> Result<Vec<u8>, 
                     half_padded = true;
                     continue;
                 }
-                (Group::Two, true) | (Group::Three, _) => return finish(&sextets, true),
+                (Group::Two, true) | (Group::Three, _) => return finish(sextets, true),
                 (Group::Empty | Group::One, _) => continue,
             },
             (b'-', true) => '+',
@@ -75,14 +82,15 @@ pub(crate) fn decode_lenient(text: &str, url_alphabet: bool) -> Result<Vec<u8>, 
         Group::Empty => true,
         Group::One | Group::Two | Group::Three => false,
     };
-    finish(&sextets, complete)
+    finish(sextets, complete)
 }
 
-fn finish(sextets: &str, complete: bool) -> Result<Vec<u8>, SecretError> {
+fn finish(mut sextets: String, complete: bool) -> Result<Vec<u8>, SecretError> {
     if !complete {
         return Err(SecretError::Base64);
     }
-    LENIENT
+    clear_stray_bits(&mut sextets);
+    STANDARD_NO_PAD
         .decode(sextets)
         .map_err(|source| SecretError::Decode { source })
 }
@@ -101,7 +109,8 @@ pub(crate) fn decode_strict(encoded: &str) -> Result<Vec<u8>, SecretError> {
     while !padded.len().is_multiple_of(4) {
         padded.push('=');
     }
-    STRICT
+    clear_stray_bits(&mut padded);
+    STANDARD
         .decode(padded)
         .map_err(|source| SecretError::Decode { source })
 }
