@@ -1,5 +1,4 @@
 use reqwest::blocking::Client;
-use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
 use std::io::{self, Write as _};
@@ -21,14 +20,29 @@ use crate::routing_mock_scripts::MockScript;
 
 mod config;
 mod fixtures;
+
+#[derive(Debug, clap::Parser)]
+pub(crate) struct DatabaseEnvironment {
+    #[arg(long, hide = true, env = "POSTGRES_TEST_URL")]
+    pub(crate) postgres_test_url: Option<SecretString>,
+}
+
+#[cfg(test)]
 pub(crate) fn run_cases(
     options: &Options,
     cases: Vec<LoadedCase>,
 ) -> Result<ExitCode, OracleError> {
+    run_cases_with_url(options, cases, None)
+}
+
+pub(crate) fn run_cases_with_url(
+    options: &Options,
+    cases: Vec<LoadedCase>,
+    configured_url: Option<&SecretString>,
+) -> Result<ExitCode, OracleError> {
     if cases.is_empty() {
         return Err(OracleError::MissingCapture(0));
     }
-    let configured_url = options.postgres_test_url.as_ref();
     let mut groups = BTreeMap::<String, Vec<Case>>::new();
     let mut helper_outcome = helpers::HelperRun::Match;
     for loaded_case in cases {
@@ -69,9 +83,6 @@ pub(crate) fn run_group(
     root: &Path,
     cases: &[Case],
 ) -> Result<Vec<bool>, OracleError> {
-    if cases.is_empty() {
-        return Err(OracleError::MissingCapture(0));
-    }
     run_group_with_url(options, root, cases, None)
 }
 
@@ -131,7 +142,7 @@ fn run_group_capture(input: GroupCaptureInput<'_>) -> Result<Vec<bool>, OracleEr
         mock,
     } = input;
     let (group_dir, first_config, second_config) =
-        prepare_gateway_configs(root, first_case, fixtures, &mock.base_url)?;
+        config::prepare_gateway_configs(root, first_case, fixtures, &mock.base_url)?;
     let first_input = GatewayInput {
         options,
         group_dir: &group_dir,
@@ -147,29 +158,6 @@ fn run_group_capture(input: GroupCaptureInput<'_>) -> Result<Vec<bool>, OracleEr
     let client = http::client()?;
     let captures = capture_gateways(&first_input, &second_input, cases, &client, mock)?;
     compare_group(root, cases, &captures)
-}
-fn prepare_gateway_configs(
-    root: &Path,
-    first_case: &Case,
-    fixtures: &fixtures::FixtureGuard,
-    upstream: &str,
-) -> Result<(PathBuf, PathBuf, PathBuf), OracleError> {
-    if let Some((first, second)) = &fixtures.databases {
-        let first_url = first.options.database_url();
-        let second_url = second.options.database_url();
-        let (group_dir, base_config) = artifacts::prepare(root, first_case, upstream)?;
-        let first_config =
-            config::with_database(&base_config, first_url.expose_secret(), "config-first.yaml")?;
-        let second_config = config::with_database(
-            &base_config,
-            second_url.expose_secret(),
-            "config-second.yaml",
-        )?;
-        Ok((group_dir, first_config, second_config))
-    } else {
-        let (group_dir, config) = artifacts::prepare(root, first_case, upstream)?;
-        Ok((group_dir, config.clone(), config))
-    }
 }
 
 fn capture_gateways(

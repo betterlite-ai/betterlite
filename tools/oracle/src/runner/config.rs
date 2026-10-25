@@ -2,7 +2,11 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::fixtures::FixtureGuard;
 use crate::OracleError;
+use crate::artifacts;
+use crate::case::Case;
+use secrecy::ExposeSecret as _;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -23,7 +27,31 @@ struct GeneralSettings {
     other: BTreeMap<String, serde_json::Value>,
 }
 
-pub(super) fn with_database(
+pub(super) fn prepare_gateway_configs(
+    root: &Path,
+    first_case: &Case,
+    fixtures: &FixtureGuard,
+    upstream: &str,
+) -> Result<(PathBuf, PathBuf, PathBuf), OracleError> {
+    if let Some((first, second)) = &fixtures.databases {
+        let first_url = first.options.database_url();
+        let second_url = second.options.database_url();
+        let (group_dir, base_config) = artifacts::prepare(root, first_case, upstream)?;
+        let first_config =
+            with_database(&base_config, first_url.expose_secret(), "config-first.yaml")?;
+        let second_config = with_database(
+            &base_config,
+            second_url.expose_secret(),
+            "config-second.yaml",
+        )?;
+        Ok((group_dir, first_config, second_config))
+    } else {
+        let (group_dir, config) = artifacts::prepare(root, first_case, upstream)?;
+        Ok((group_dir, config.clone(), config))
+    }
+}
+
+fn with_database(
     base_path: &Path,
     database_url: &str,
     filename: &str,

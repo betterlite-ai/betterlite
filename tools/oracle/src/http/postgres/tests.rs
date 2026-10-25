@@ -3,12 +3,26 @@ use crate::case::Compare;
 use crate::case::decode_http_case;
 use crate::compare::compare;
 use crate::http::Response;
+use crate::runner::DatabaseEnvironment;
+use secrecy::ExposeSecret as _;
 use std::collections::BTreeMap;
 use std::{fs, path::Path};
 
 #[test]
 fn legacy_case_without_database() {
     decode_http_case(b"name: legacy\nconfig: config\nenv: {}\nrequest: {method: GET, path: /health/liveliness, headers: {}, body: null}\nupstream: []\ncompare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}\n").unwrap();
+}
+
+#[test]
+fn empty_configured_url_is_kept_for_the_fixture() {
+    let environment = <DatabaseEnvironment as clap::Parser>::try_parse_from([
+        "oracle",
+        "--postgres-test-url",
+        "",
+    ])
+    .unwrap();
+    let url = environment.postgres_test_url.unwrap();
+    assert_eq!(url.expose_secret(), "");
 }
 
 #[test]

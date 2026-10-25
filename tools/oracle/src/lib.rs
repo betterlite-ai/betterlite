@@ -59,11 +59,6 @@ pub enum OracleError {
         #[source]
         source: Utf8Error,
     },
-    #[error("cannot parse HTTP case: {source}")]
-    HttpCaseParse {
-        #[source]
-        source: Box<serde_saphyr::Error>,
-    },
     #[error("HTTP case fixture is invalid: {source}")]
     HttpCaseFixture {
         #[source]
@@ -193,10 +188,6 @@ pub enum OracleError {
         operation: Box<Self>,
         cleanup: FixtureError,
     },
-    #[error("cannot read POSTGRES_TEST_URL from the oracle environment: {0}")]
-    Environment(#[source] io::Error),
-    #[error("POSTGRES_TEST_URL is not valid UTF-8: {0}")]
-    EnvironmentText(#[source] Utf8Error),
     #[error("cannot parse generated gateway config: {0}")]
     GeneratedConfig(#[source] Box<serde_saphyr::Error>),
     #[error("cannot serialize generated gateway config: {0}")]
@@ -207,6 +198,8 @@ pub enum OracleError {
 
 pub fn run() -> Result<ExitCode, OracleError> {
     let options = <cli::Options as clap::Parser>::try_parse()?;
+    let environment =
+        <runner::DatabaseEnvironment as clap::Parser>::try_parse_from([env!("CARGO_PKG_NAME")])?;
     let cases = case::load_cases(&options.paths)?;
-    runner::run_cases(&options, cases)
+    runner::run_cases_with_url(&options, cases, environment.postgres_test_url.as_ref())
 }
