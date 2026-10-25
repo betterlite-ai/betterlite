@@ -1,11 +1,11 @@
 #![cfg(test)]
 use crate::case::Compare;
-use crate::case::{LoadedCase, decode_http_case};
+use crate::case::decode_http_case;
 use crate::cli::Options;
 use crate::compare::compare;
 use crate::http::Response;
 use crate::runner::DatabaseEnvironment;
-use crate::runner::run_cases_with_url;
+use crate::runner::run_group;
 use secrecy::ExposeSecret as _;
 use std::collections::BTreeMap;
 use std::{fs, path::Path};
@@ -17,8 +17,9 @@ fn legacy_case_without_database() {
         self_check: true,
         paths: Vec::new(),
     };
-    let result = run_cases_with_url(&options, vec![LoadedCase::Http(case)], None).unwrap();
-    assert_eq!(result, std::process::ExitCode::SUCCESS);
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/oracle");
+    let result = run_group(&options, &root, &[case]).unwrap();
+    assert_eq!(result, [false]);
 }
 
 #[test]
@@ -33,8 +34,9 @@ fn public_route_without_key() {
         self_check: true,
         paths: Vec::new(),
     };
-    let result = run_cases_with_url(&options, vec![LoadedCase::Http(case)], None).unwrap();
-    assert_eq!(result, std::process::ExitCode::SUCCESS);
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/oracle");
+    let result = run_group(&options, &root, &[case]).unwrap();
+    assert_eq!(result, [false]);
 }
 
 #[test]

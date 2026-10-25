@@ -66,12 +66,23 @@ pub(super) async fn connect(
     }
 }
 
-pub(super) async fn create_database(client: &Client, database: &str) -> Result<(), FixtureError> {
+pub(super) async fn create_database(
+    options: &ConnectionOptions,
+    database: &str,
+) -> Result<(), FixtureError> {
+    let mut drivers = JoinSet::new();
+    let client = connect(options, &mut drivers).await?;
     let statement = format!("CREATE DATABASE {}", quote_identifier(database));
-    client
-        .batch_execute(&statement)
+    let created = timed("create database", client.batch_execute(&statement))
         .await
-        .map_err(FixtureError::Database)
+        .and_then(|result| result.map_err(FixtureError::Database));
+    drop(client);
+    let driver_result = drain_drivers(&mut drivers).await;
+    created?;
+    if let Err(error) = driver_result {
+        return Err(cleanup_setup_driver(error, Ok(()), options, database).await);
+    }
+    Ok(())
 }
 
 pub(super) async fn run_fixture_operation<F>(

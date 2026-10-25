@@ -1,28 +1,25 @@
 use std::fmt;
-use std::future::Future;
-use std::pin::Pin;
 use std::str::FromStr as _;
 use std::time::Duration;
 
 use secrecy::{ExposeSecret as _, SecretString};
 use testcontainers::{ContainerAsync, GenericImage};
 use tokio::runtime::Builder;
-use tokio::sync::oneshot;
 use tokio::task::JoinSet;
-use tokio::time;
 use tokio_postgres::{Config, config::SslMode};
 use url::Url;
 use uuid::Uuid;
 
 use crate::error::FixtureError;
 use crate::seed::{DatabaseFixture, FixtureSeed};
-use crate::seed_sql;
 
 mod cleanup;
 mod operations;
+pub mod provision;
+use provision::ProvisionTask;
 mod tls;
-use cleanup::{cleanup_database, combine_errors, drain_drivers, timed};
-use operations::{create_database, run_fixture_operation, source_connection};
+use cleanup::{cleanup_database, combine_errors, drain_drivers};
+
 use tls::{TlsMode, query_value, tls_mode};
 
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
@@ -152,35 +149,26 @@ impl PostgresFixture {
             .map_err(FixtureError::Runtime)?;
         let mut generator = RandomDatabaseName;
         let _runtime_guard = runtime.enter();
-        runtime.block_on(Self::provision_with_name_generator(
-            configured_url,
-            &fixture.seed,
-            &mut generator,
-        ))
+        let mut task =
+            Self::provision_with_name_generator(configured_url, &fixture.seed, &mut generator);
+        runtime.block_on(task.resolve())
     }
 
     pub fn provision_with_name_generator<G>(
         configured_url: Option<&SecretString>,
         seed: &FixtureSeed,
         generator: &mut G,
-    ) -> ProvisionFuture
+    ) -> ProvisionTask
     where
         G: DatabaseNameGenerator,
     {
-        let database = generator.next_name();
-        let seed = seed.clone();
-        let configured_url = configured_url.map(SecretString::clone);
-        let (cancel, cancellation) = oneshot::channel();
-        let task = tokio::spawn(provision_inner(
-            configured_url,
-            seed,
-            database,
-            cancellation,
+        let mut tasks = JoinSet::new();
+        tasks.spawn(provision::provision_inner(
+            configured_url.cloned(),
+            seed.clone(),
+            generator.next_name(),
         ));
-        ProvisionFuture {
-            task: Some(task),
-            cancel: Some(cancel),
-        }
+        ProvisionTask { tasks }
     }
 
     pub fn close(self) -> Result<(), FixtureError> {
@@ -201,113 +189,6 @@ impl PostgresFixture {
         };
         combine_errors(combine_errors(driver_error, cleanup), container_cleanup)
     }
-}
-
-pub struct ProvisionFuture {
-    task: Option<tokio::task::JoinHandle<Result<PostgresFixture, FixtureError>>>,
-    cancel: Option<oneshot::Sender<()>>,
-}
-
-impl Future for ProvisionFuture {
-    type Output = Result<PostgresFixture, FixtureError>;
-
-    fn poll(
-        mut self: Pin<&mut Self>,
-        context: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        let Some(task) = self.task.as_mut() else {
-            return std::task::Poll::Ready(Err(FixtureError::Runtime(std::io::Error::other(
-                "provision future polled after completion",
-            ))));
-        };
-        Pin::new(task)
-            .poll(context)
-            .map(|result| result.unwrap_or_else(|source| Err(FixtureError::DriverJoin(source))))
-    }
-}
-
-impl Drop for ProvisionFuture {
-    fn drop(&mut self) {
-        self.cancel.take();
-        if let Some(task) = self.task.take() {
-            std::mem::forget(task);
-        }
-    }
-}
-
-async fn provision_inner(
-    configured_url: Option<SecretString>,
-    seed: FixtureSeed,
-    database: String,
-    mut cancellation: oneshot::Receiver<()>,
-) -> Result<PostgresFixture, FixtureError> {
-    seed.validate()?;
-    let source = select_source(configured_url.as_ref())?;
-    let (admin, container) = source_connection(source).await?;
-    let admin_url = admin.with_database("postgres");
-    let create_database_name = database.clone();
-    {
-        let create = run_fixture_operation(&admin_url, &admin, &database, move |client| {
-            Box::pin(async move {
-                timed(
-                    "create database",
-                    create_database(client, &create_database_name),
-                )
-                .await?
-            })
-        });
-        tokio::pin!(create);
-        tokio::select! {
-            result = &mut create => result?,
-            _ = &mut cancellation => {
-                cleanup_cancelled(&admin, &database, container).await?;
-                return Err(FixtureError::Runtime(std::io::Error::other("provisioning cancelled")));
-            }
-        }
-    }
-    let options = admin.with_database(&database);
-    tokio::select! {
-        _ = time::sleep(Duration::from_millis(100)) => {}
-        _ = &mut cancellation => {
-            cleanup_cancelled(&admin, &database, container).await?;
-            return Err(FixtureError::Runtime(std::io::Error::other("provisioning cancelled")));
-        }
-    }
-    let seed_copy = seed.clone();
-    {
-        let seed_operation = run_fixture_operation(&options, &admin, &database, move |client| {
-            Box::pin(async move {
-                timed("seed database", seed_sql::seed_database(client, &seed_copy)).await?
-            })
-        });
-        tokio::pin!(seed_operation);
-        tokio::select! {
-            result = &mut seed_operation => result?,
-            _ = &mut cancellation => {
-                cleanup_cancelled(&admin, &database, container).await?;
-                return Err(FixtureError::Runtime(std::io::Error::other("provisioning cancelled")));
-            }
-        }
-    }
-    Ok(PostgresFixture {
-        options,
-        database,
-        container,
-        drivers: JoinSet::new(),
-    })
-}
-
-async fn cleanup_cancelled(
-    admin: &ConnectionOptions,
-    database: &str,
-    container: Option<ContainerAsync<GenericImage>>,
-) -> Result<(), FixtureError> {
-    let database_result = cleanup_database(admin, database).await;
-    let container_result = match container {
-        Some(container) => container.rm().await.map_err(FixtureError::Container),
-        None => Ok(()),
-    };
-    combine_errors(database_result, container_result)
 }
 
 pub(crate) fn quote_identifier(value: &str) -> String {

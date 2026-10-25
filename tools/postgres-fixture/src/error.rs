@@ -9,6 +9,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum FixtureError {
+    #[error("fixture provisioning task has already completed")]
+    TaskCompleted,
     #[error("POSTGRES_TEST_URL is set but empty")]
     EmptyConfiguredUrl,
     #[error("POSTGRES_TEST_URL is not a PostgreSQL URL: {source}")]
