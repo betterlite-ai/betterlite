@@ -23,6 +23,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/response_id_traversal.rs
   - crates/betterlite-core/src/api/response_id_traversal/**
   - tools/oracle/Cargo.toml

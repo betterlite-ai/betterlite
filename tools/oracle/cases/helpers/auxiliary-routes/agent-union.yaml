@@ -1,0 +1,8 @@
+kind: helper
+name: agent-union
+call:
+  auxiliary_routes:
+    group: agent_routes
+env: {}
+compare:
+  ignore: []

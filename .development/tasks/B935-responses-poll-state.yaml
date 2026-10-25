@@ -34,12 +34,14 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_poll_state.rs
   - crates/betterlite-core/src/api/responses_poll_state/**
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/responses_poll_state.rs
   - crates/betterlite-core/fuzz/corpus/responses_poll_state/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/responses_poll_state.rs
   - crates/betterlite-config/src/api/responses_poll_state/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-poll-state-*

@@ -1,0 +1,10 @@
+#[path = "vocabulary/constants.rs"]
+pub mod constants;
+#[path = "vocabulary/registry.rs"]
+pub mod registry;
+#[path = "vocabulary/resolvers.rs"]
+pub mod resolvers;
+#[path = "vocabulary/semconv.rs"]
+pub mod semconv;
+#[path = "vocabulary/span_names.rs"]
+pub mod span_names;

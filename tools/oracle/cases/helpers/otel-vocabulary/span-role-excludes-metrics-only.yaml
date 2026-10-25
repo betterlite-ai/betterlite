@@ -1,0 +1,8 @@
+kind: helper
+name: span-role-excludes-metrics-only
+call:
+  otel_vocabulary:
+    function: SpanRole
+    values: [self, router, proxy_pre_call, auth, redis, postgres, batch_write_to_db, redis_spend_update_queue, reset_budget_job, Router, ""]
+env: {}
+compare: {ignore: []}

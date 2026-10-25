@@ -1,0 +1,5 @@
+kind: helper
+name: o-series-routing
+call: {openai_base_config: {o_series_routing: {model: openai/o3, chat_models: [o3]}}}
+env: {}
+compare: {ignore: []}
