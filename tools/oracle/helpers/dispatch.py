@@ -362,6 +362,7 @@ OPERATIONS: frozenset[str] = frozenset(
         "database_tokens",
         "database_url_policy",
         "database_urls",
+        "datadog_tags",
         "dataforseo_search",
         "deepgram_listen_metadata",
         "deepgram_transcription",
