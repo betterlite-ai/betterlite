@@ -420,6 +420,7 @@ name = "betterlite-postgres-fixture"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "rstest",
  "rust_decimal",
  "rustls",
  "rustls-native-certs",

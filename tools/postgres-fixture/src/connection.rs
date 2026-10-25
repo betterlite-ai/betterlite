@@ -15,10 +15,12 @@ use crate::seed::{DatabaseFixture, FixtureSeed};
 
 mod cleanup;
 mod operations;
+pub mod resource;
+use resource::Resource;
 pub mod provision;
 use provision::ProvisionTask;
 mod tls;
-use cleanup::{cleanup_database, combine_errors, drain_drivers};
+use cleanup::{cleanup_resource, combine_errors};
 
 use tls::{TlsMode, query_value, tls_mode};
 
@@ -56,14 +58,6 @@ impl fmt::Debug for ConnectionOptions {
 
 impl ConnectionOptions {
     #[must_use]
-    pub const fn uses_tls(&self) -> bool {
-        match self.tls_mode {
-            TlsMode::Disable | TlsMode::Prefer => false,
-            TlsMode::Require | TlsMode::VerifyCa | TlsMode::VerifyFull => true,
-        }
-    }
-
-    #[must_use]
     pub fn database_url(&self) -> SecretString {
         let secret_url = self.url.expose_secret();
         SecretString::from(secret_url.to_owned())
@@ -90,18 +84,11 @@ impl ConnectionOptions {
     }
 
     fn with_database(&self, database: &str) -> Self {
-        let mut config = self.config.clone();
-        config.dbname(database);
-        let mut parsed = self.parsed_url.clone();
-        parsed.set_path(&format!("/{database}"));
-        let url = parsed.to_string();
-        Self {
-            config,
-            url: SecretString::from(url),
-            parsed_url: parsed,
-            root_certificate: self.root_certificate.clone(),
-            tls_mode: self.tls_mode,
-        }
+        let mut options = self.clone();
+        options.config.dbname(database);
+        options.parsed_url.set_path(&format!("/{database}"));
+        options.url = SecretString::from(options.parsed_url.to_string());
+        options
     }
 }
 
@@ -123,16 +110,16 @@ pub fn select_source(configured_url: Option<&SecretString>) -> Result<FixtureSou
 
 pub struct PostgresFixture {
     pub options: ConnectionOptions,
-    pub database: String,
+    pub resource: Resource,
+    pub admin: Box<ConnectionOptions>,
     pub container: Option<ContainerAsync<GenericImage>>,
-    pub drivers: JoinSet<Result<(), FixtureError>>,
 }
 
 impl fmt::Debug for PostgresFixture {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PostgresFixture")
             .field("options", &self.options)
-            .field("database", &self.database)
+            .field("resource", &self.resource)
             .finish_non_exhaustive()
     }
 }
@@ -166,7 +153,17 @@ impl PostgresFixture {
         tasks.spawn(provision::provision_inner(
             configured_url.cloned(),
             seed.clone(),
-            generator.next_name(),
+            Resource::Database(generator.next_name()),
+        ));
+        ProvisionTask { tasks }
+    }
+
+    pub fn provision_schema(configured_url: Option<&SecretString>) -> ProvisionTask {
+        let mut tasks = JoinSet::new();
+        tasks.spawn(provision::provision_inner(
+            configured_url.cloned(),
+            FixtureSeed::default(),
+            Resource::Schema(RandomDatabaseName.next_name()),
         ));
         ProvisionTask { tasks }
     }
@@ -179,15 +176,13 @@ impl PostgresFixture {
         runtime.block_on(self.close_async())
     }
 
-    pub async fn close_async(mut self) -> Result<(), FixtureError> {
-        let driver_error = drain_drivers(&mut self.drivers).await;
-        let admin = self.options.with_database("postgres");
-        let cleanup = cleanup_database(&admin, &self.database).await;
+    pub async fn close_async(self) -> Result<(), FixtureError> {
+        let cleanup = cleanup_resource(&self.admin, &self.resource).await;
         let container_cleanup = match self.container {
             Some(container) => container.rm().await.map_err(FixtureError::Container),
             None => Ok(()),
         };
-        combine_errors(combine_errors(driver_error, cleanup), container_cleanup)
+        combine_errors(cleanup, container_cleanup)
     }
 }
 

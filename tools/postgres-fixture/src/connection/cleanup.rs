@@ -3,17 +3,17 @@ use std::future::Future;
 use tokio::task::JoinSet;
 use tokio::time;
 
-use super::{ConnectionOptions, OPERATION_TIMEOUT, operations::connect, quote_identifier};
+use super::{ConnectionOptions, OPERATION_TIMEOUT, operations::connect, resource::Resource};
 use crate::error::FixtureError;
 
-pub(super) async fn cleanup_database(
+pub(super) async fn cleanup_resource(
     options: &ConnectionOptions,
-    database: &str,
+    resource: &Resource,
 ) -> Result<(), FixtureError> {
     let mut drivers = JoinSet::new();
     let client = connect(options, &mut drivers).await?;
-    let statement = format!("DROP DATABASE IF EXISTS {}", quote_identifier(database));
-    let query = timed("drop database", client.batch_execute(&statement))
+    let statement = resource.drop_statement();
+    let query = timed("drop resource", client.batch_execute(&statement))
         .await
         .and_then(|result| result.map_err(FixtureError::Database));
     drop(client);
@@ -22,11 +22,10 @@ pub(super) async fn cleanup_database(
 
 pub(super) async fn cleanup_setup_driver(
     setup: FixtureError,
-    driver: Result<(), FixtureError>,
     admin: &ConnectionOptions,
-    database: &str,
+    resource: &Resource,
 ) -> FixtureError {
-    let cleanup_result = combine_errors(driver, cleanup_database(admin, database).await);
+    let cleanup_result = cleanup_resource(admin, resource).await;
     match cleanup_result {
         Ok(()) => setup,
         Err(cleanup_error) => FixtureError::SetupCleanup {
@@ -39,18 +38,16 @@ pub(super) async fn cleanup_setup_driver(
 pub(super) async fn drain_drivers(
     drivers: &mut JoinSet<Result<(), FixtureError>>,
 ) -> Result<(), FixtureError> {
-    let mut first = None;
+    let mut outcome = Ok(());
     while let Some(result) = drivers.join_next().await {
-        let error = match result {
-            Ok(Ok(())) => continue,
-            Ok(Err(error)) => error,
-            Err(error) => FixtureError::DriverJoin(error),
-        };
-        if first.is_none() {
-            first = Some(error);
-        }
+        outcome = combine_errors(
+            outcome,
+            result
+                .map_err(FixtureError::DriverJoin)
+                .and_then(|value| value),
+        );
     }
-    first.map_or(Ok(()), Err)
+    outcome
 }
 
 pub(super) async fn timed<F, T>(operation: &'static str, future: F) -> Result<T, FixtureError>

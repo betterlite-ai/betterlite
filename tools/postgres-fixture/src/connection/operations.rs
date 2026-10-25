@@ -1,15 +1,13 @@
-use std::future::Future;
-use std::pin::Pin;
-
 use testcontainers::core::{IntoContainerPort as _, WaitFor};
 use testcontainers::{ContainerAsync, GenericImage, ImageExt as _, runners::AsyncRunner as _};
 use tokio::task::JoinSet;
 use tokio_postgres::{Client, NoTls};
 
-use super::{ConnectionOptions, FixtureSource, quote_identifier};
-use crate::connection::cleanup::{cleanup_setup_driver, drain_drivers, timed};
+use super::{ConnectionOptions, FixtureSource, resource::Resource};
+use crate::connection::cleanup::{cleanup_setup_driver, combine_errors, drain_drivers, timed};
 use crate::connection::tls::{TlsMode, tls_connector};
 use crate::error::FixtureError;
+use crate::{seed::FixtureSeed, seed_sql};
 
 pub(super) async fn source_connection(
     source: FixtureSource,
@@ -66,53 +64,44 @@ pub(super) async fn connect(
     }
 }
 
-pub(super) async fn create_database(
+pub(super) async fn create_resource(
     options: &ConnectionOptions,
-    database: &str,
+    resource: &Resource,
 ) -> Result<(), FixtureError> {
     let mut drivers = JoinSet::new();
     let client = connect(options, &mut drivers).await?;
-    let statement = format!("CREATE DATABASE {}", quote_identifier(database));
-    let created = timed("create database", client.batch_execute(&statement))
+    let statement = resource.create_statement();
+    let created = timed("create resource", client.batch_execute(&statement))
         .await
         .and_then(|result| result.map_err(FixtureError::Database));
     drop(client);
     let driver_result = drain_drivers(&mut drivers).await;
     created?;
     if let Err(error) = driver_result {
-        return Err(cleanup_setup_driver(error, Ok(()), options, database).await);
+        return Err(cleanup_setup_driver(error, options, resource).await);
     }
     Ok(())
 }
 
-pub(super) async fn run_fixture_operation<F>(
+pub(super) async fn seed_fixture(
     options: &ConnectionOptions,
     admin: &ConnectionOptions,
-    database: &str,
-    operation: F,
-) -> Result<(), FixtureError>
-where
-    F: Send
-        + for<'client> FnOnce(
-            &'client Client,
-        ) -> Pin<
-            Box<dyn Future<Output = Result<(), FixtureError>> + Send + 'client>,
-        >,
-{
+    resource: &Resource,
+    seed: &FixtureSeed,
+) -> Result<(), FixtureError> {
     let mut drivers = JoinSet::new();
     let connection_result = connect(options, &mut drivers).await;
     let client = match connection_result {
         Ok(client) => client,
-        Err(error) => return Err(cleanup_setup_driver(error, Ok(()), admin, database).await),
+        Err(error) => return Err(cleanup_setup_driver(error, admin, resource).await),
     };
-    let operation_result = operation(&client).await;
+    let operation_result = timed("seed database", seed_sql::seed_database(&client, seed))
+        .await
+        .and_then(|result| result);
     drop(client);
     let driver_error = drain_drivers(&mut drivers).await;
-    if let Err(error) = operation_result {
-        return Err(cleanup_setup_driver(error, Ok(()), admin, database).await);
-    }
-    if let Err(error) = driver_error {
-        return Err(cleanup_setup_driver(error, Ok(()), admin, database).await);
+    if let Err(error) = combine_errors(operation_result, driver_error) {
+        return Err(cleanup_setup_driver(error, admin, resource).await);
     }
     Ok(())
 }

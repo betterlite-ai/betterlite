@@ -4,10 +4,12 @@ use std::future::{Future as _, poll_fn};
 use std::task::Poll;
 use std::{path::Path, time::Duration};
 
+use rstest::rstest;
 use testcontainers::core::{IntoContainerPort as _, WaitFor};
 use testcontainers::{
     ContainerRequest, CopyTargetOptions, GenericImage, ImageExt as _, runners::AsyncRunner as _,
 };
+use tokio::process::Command;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 use tokio_postgres::{Client, NoTls, types::FromSqlOwned};
@@ -16,7 +18,7 @@ use crate::connection::{
     DatabaseNameGenerator, FixtureSource, PostgresFixture, RandomDatabaseName, select_source,
 };
 use crate::error::FixtureError;
-use crate::seed::{FixtureSeed, KeyRow, Membership, TeamRow, UserRow};
+use crate::seed::{CallerRole, FixtureSeed, KeyRow, Membership, TeamRow, UserRow};
 use secrecy::{ExposeSecret as _, SecretString};
 
 fn url(value: &str) -> SecretString {
@@ -68,22 +70,18 @@ async fn database_exists(admin: &Client, database: &str) -> bool {
 }
 
 fn fixture_seed(user_id: &str, token: &str) -> FixtureSeed {
-    FixtureSeed {
-        users: vec![UserRow {
-            user_id: user_id.to_owned(),
-            user_email: None,
-        }],
-        keys: vec![KeyRow {
-            token: SecretString::from(token.to_owned()),
-            user_id: user_id.to_owned(),
-            team_id: None,
-            role: None,
-        }],
-        teams: Vec::new(),
-        memberships: Vec::new(),
-        budgets: Vec::new(),
-        jwt_mappings: Vec::new(),
-    }
+    let mut seed = FixtureSeed::default();
+    seed.users.push(UserRow {
+        user_id: user_id.to_owned(),
+        user_email: None,
+    });
+    seed.keys.push(KeyRow {
+        token: url(token),
+        user_id: user_id.to_owned(),
+        team_id: None,
+        role: None,
+    });
+    seed
 }
 
 #[test]
@@ -112,12 +110,6 @@ fn empty_configured_url_fails() {
         select_source(Some(&url("not-postgres"))),
         Err(FixtureError::InvalidConfiguredUrl { .. })
     ));
-    let FixtureSource::Configured(options) =
-        select_source(Some(&url("postgresql://u:secret@localhost/db"))).unwrap()
-    else {
-        panic!("configured source")
-    };
-    assert!(!format!("{options:?}").contains("secret"));
 }
 
 #[tokio::test]
@@ -148,41 +140,132 @@ async fn createdb_privilege_failure() {
 #[tokio::test]
 async fn isolated_schemas() {
     let (_server, admin_url) = postgres_server().await;
-    let (client, _driver) = connect_client(&admin_url).await;
-    client.batch_execute("CREATE SCHEMA first_schema; CREATE SCHEMA second_schema; CREATE TABLE first_schema.rows (value TEXT); INSERT INTO first_schema.rows VALUES ('first');").await.unwrap();
-    let second_rows = client
-        .query("SELECT value FROM second_schema.rows", &[])
-        .await;
-    second_rows.unwrap_err();
-    let visible = client
-        .query("SELECT value FROM first_schema.rows", &[])
+    let first = PostgresFixture::provision_schema(Some(&admin_url))
+        .resolve()
         .await
         .unwrap();
-    assert_eq!(visible.len(), 1);
+    let second = PostgresFixture::provision_schema(Some(&admin_url))
+        .resolve()
+        .await
+        .unwrap();
+    let (writer, mut first_driver) = connect_client(&first.options.database_url()).await;
+    let (reader, mut second_driver) = connect_client(&second.options.database_url()).await;
+    writer
+        .batch_execute("CREATE TABLE rows (value TEXT); INSERT INTO rows VALUES ('first')")
+        .await
+        .unwrap();
+    reader
+        .batch_execute("CREATE TABLE rows (value TEXT)")
+        .await
+        .unwrap();
+    assert_eq!(
+        fixture_scalar::<String>(&first, "SELECT value FROM rows").await,
+        "first"
+    );
+    assert_eq!(
+        fixture_scalar::<i64>(&second, "SELECT count(*) FROM rows").await,
+        0
+    );
+    drop(writer);
+    drop(reader);
+    first_driver.join_next().await.unwrap().unwrap();
+    second_driver.join_next().await.unwrap().unwrap();
+    first.close_async().await.unwrap();
+    second.close_async().await.unwrap();
+    let (admin, _driver) = connect_client(&admin_url).await;
+    let schemas = admin
+        .query(
+            "SELECT 1 FROM pg_namespace WHERE nspname LIKE 'betterlite_fixture_%'",
+            &[],
+        )
+        .await
+        .unwrap();
+    assert!(schemas.is_empty());
+}
+
+#[tokio::test]
+async fn container_removed_on_drop() {
+    let fixture = PostgresFixture::provision_with_name_generator(
+        None,
+        &FixtureSeed::default(),
+        &mut RandomDatabaseName,
+    )
+    .resolve()
+    .await
+    .unwrap();
+    let id = fixture.container.as_ref().unwrap().id().to_owned();
+    assert!(docker_containers(&id).await.contains(&id));
+    drop(fixture);
+    timeout(Duration::from_secs(10), async {
+        while docker_containers(&id).await.contains(&id) {
+            sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(docker_containers(&id).await.is_empty());
+}
+
+async fn docker_containers(id: &str) -> String {
+    let output = timeout(
+        Duration::from_secs(5),
+        Command::new("docker")
+            .args([
+                "ps",
+                "--all",
+                "--quiet",
+                "--no-trunc",
+                "--filter",
+                &format!("id={id}"),
+            ])
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(output.status.success());
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
+
+#[rstest]
+#[case::underscore("verify_full")]
+#[case::allow("allow")]
+fn rejects_unknown_tls_mode(#[case] value: &str) {
+    let configured = url(&format!("postgresql://u:p@localhost/db?sslmode={value}"));
+    assert!(
+        matches!(select_source(Some(&configured)), Err(FixtureError::UnknownTlsMode { value: actual }) if actual == value)
+    );
+}
+
+#[rstest]
+#[case::conflicting(CallerRole::ProxyAdmin)]
+#[case::matching(CallerRole::InternalUser)]
+fn validates_user_roles(#[case] second_role: CallerRole) {
+    let mut seed = fixture_seed("user", "first-token");
+    seed.keys.first_mut().unwrap().role = Some(CallerRole::InternalUser);
+    seed.keys.push(KeyRow {
+        token: url("second-token"),
+        user_id: "user".to_owned(),
+        team_id: None,
+        role: Some(second_role),
+    });
+    let result = seed.validate();
+    if second_role == CallerRole::InternalUser {
+        result.unwrap();
+    } else {
+        assert!(
+            matches!(result, Err(FixtureError::ConflictingUserRole { user_id }) if user_id == "user")
+        );
+    }
 }
 
 #[tokio::test]
 async fn independent_databases_have_all_baseline_foreign_keys() {
     let seed = membership_seed();
     let (_server, admin_url) = postgres_server().await;
-    let mut first_generator = RandomDatabaseName;
-    let mut second_generator = RandomDatabaseName;
-    let first = PostgresFixture::provision_with_name_generator(
-        Some(&admin_url),
-        &seed,
-        &mut first_generator,
-    )
-    .resolve()
-    .await
-    .unwrap();
-    let second = PostgresFixture::provision_with_name_generator(
-        Some(&admin_url),
-        &seed,
-        &mut second_generator,
-    )
-    .resolve()
-    .await
-    .unwrap();
+    let first = configured_fixture(&admin_url, &seed).await;
+    let second = configured_fixture(&admin_url, &seed).await;
     let statement = "SELECT count(*) FROM pg_constraint WHERE contype = 'f'";
     assert_eq!(fixture_scalar::<i64>(&first, statement).await, 14);
     assert_eq!(fixture_scalar::<i64>(&second, statement).await, 14);
@@ -199,27 +282,9 @@ async fn existing_database_never_dropped() {
         .batch_execute("CREATE DATABASE existing")
         .await
         .unwrap();
-    let mut generator = RandomDatabaseName;
-    let fixture = PostgresFixture::provision_with_name_generator(
-        Some(&configured),
-        &FixtureSeed::default(),
-        &mut generator,
-    )
-    .resolve()
-    .await
-    .unwrap();
+    let fixture = configured_fixture(&configured, &FixtureSeed::default()).await;
     fixture.close_async().await.unwrap();
     assert!(database_exists(&admin, "existing").await);
-}
-
-#[tokio::test]
-async fn database_name_collision_preserves_existing() {
-    let (_server, admin_url) = postgres_server().await;
-    let (admin, _driver) = connect_client(&admin_url).await;
-    admin
-        .batch_execute("CREATE DATABASE existing")
-        .await
-        .unwrap();
     let result = PostgresFixture::provision_with_name_generator(
         Some(&admin_url),
         &FixtureSeed::default(),
@@ -233,17 +298,8 @@ async fn database_name_collision_preserves_existing() {
 
 #[tokio::test]
 async fn cleanup_after_failure() {
-    let seed = FixtureSeed {
-        users: vec![UserRow {
-            user_id: "contains\0nul".to_owned(),
-            user_email: None,
-        }],
-        keys: Vec::new(),
-        teams: Vec::new(),
-        memberships: Vec::new(),
-        budgets: Vec::new(),
-        jwt_mappings: Vec::new(),
-    };
+    let mut seed = fixture_seed("contains\0nul", "token");
+    seed.keys.clear();
     let (_server, admin_url) = postgres_server().await;
     let mut generator = FixedName("failed_fixture");
     let result =
@@ -327,6 +383,19 @@ async fn concurrent_fixture_roles_do_not_leak() {
     second.close_async().await.unwrap();
 }
 
+async fn configured_fixture(admin_url: &SecretString, seed: &FixtureSeed) -> PostgresFixture {
+    let fixture = PostgresFixture::provision_with_name_generator(
+        Some(admin_url),
+        seed,
+        &mut RandomDatabaseName,
+    )
+    .resolve()
+    .await
+    .unwrap();
+    assert!(fixture.container.is_none());
+    fixture
+}
+
 async fn fixture_scalar<T>(fixture: &PostgresFixture, statement: &str) -> T
 where
     T: FromSqlOwned,
@@ -370,154 +439,52 @@ async fn unreachable_configured_url_fails() {
     result.unwrap_err();
 }
 
-#[test]
-fn duplicate_identity_fails_before_connection() {
-    let seed = FixtureSeed {
-        users: vec![
-            UserRow {
-                user_id: "same".to_owned(),
-                user_email: None,
-            },
-            UserRow {
-                user_id: "same".to_owned(),
-                user_email: None,
-            },
-        ],
-        keys: Vec::new(),
-        teams: Vec::new(),
-        memberships: Vec::new(),
-        budgets: Vec::new(),
-        jwt_mappings: Vec::new(),
-    };
-    assert!(seed.validate().is_err());
+#[rstest]
+#[case::user("user")]
+#[case::key("key")]
+#[case::membership("membership")]
+fn duplicate_identity_fails_before_connection(#[case] kind: &str) {
+    let mut seed = membership_seed();
+    match kind {
+        "user" => seed.users.extend_from_within(..),
+        "key" => seed.keys.extend_from_within(..),
+        "membership" => seed.memberships.extend_from_within(..),
+        _ => panic!("unknown identity"),
+    }
+    assert!(matches!(
+        seed.validate(),
+        Err(FixtureError::DuplicateIdentity { .. })
+    ));
 }
 
-#[test]
-fn duplicate_key_identity_fails_before_connection() {
-    let seed = FixtureSeed {
-        users: vec![UserRow {
-            user_id: "user".to_owned(),
-            user_email: None,
-        }],
-        keys: vec![
-            KeyRow {
-                token: SecretString::from("same"),
-                user_id: "user".to_owned(),
-                team_id: None,
-                role: None,
-            },
-            KeyRow {
-                token: SecretString::from("same"),
-                user_id: "user".to_owned(),
-                team_id: None,
-                role: None,
-            },
-        ],
-        teams: Vec::new(),
-        memberships: Vec::new(),
-        budgets: Vec::new(),
-        jwt_mappings: Vec::new(),
-    };
-    assert!(seed.validate().is_err());
-}
-
-#[test]
-fn duplicate_membership_identity_fails_before_connection() {
-    let seed = FixtureSeed {
-        users: vec![UserRow {
-            user_id: "user".to_owned(),
-            user_email: None,
-        }],
-        teams: vec![TeamRow {
-            team_id: "team".to_owned(),
-            team_alias: None,
-        }],
-        memberships: vec![
-            Membership {
-                user_id: "user".to_owned(),
-                team_id: "team".to_owned(),
-            },
-            Membership {
-                user_id: "user".to_owned(),
-                team_id: "team".to_owned(),
-            },
-        ],
-        keys: Vec::new(),
-        budgets: Vec::new(),
-        jwt_mappings: Vec::new(),
-    };
-    assert!(seed.validate().is_err());
-}
-
+#[rstest]
+#[case::trusted_ca_matching_hostname(ca_path(), "localhost", true)]
+#[case::untrusted_ca_rejected(server_path(), "localhost", false)]
+#[case::wrong_hostname_rejected(ca_path(), "127.0.0.1", false)]
 #[tokio::test]
-async fn trusted_ca_matching_hostname() {
+async fn verifies_tls_server(
+    #[case] certificate: &Path,
+    #[case] hostname: &str,
+    #[case] trusted: bool,
+) {
     let (_server, fixture_url) = tls_postgres().await;
     let connection_url = format!(
         "{fixture_url}?sslmode=verify-full&sslrootcert={}",
-        ca_path().display()
-    );
-    let FixtureSource::Configured(options) = select_source(Some(&url(&connection_url))).unwrap()
-    else {
-        panic!("configured source")
-    };
-    assert!(options.uses_tls());
-    let mut generator = FixedName("trusted_tls_fixture");
-    let fixture = PostgresFixture::provision_with_name_generator(
-        Some(&url(&connection_url)),
-        &FixtureSeed::default(),
-        &mut generator,
+        certificate.display()
     )
-    .resolve()
-    .await
-    .unwrap();
-    fixture.close_async().await.unwrap();
-}
-
-#[tokio::test]
-async fn untrusted_ca_rejected() {
-    let (_server, fixture_url) = tls_postgres().await;
-    let connection_url = format!(
-        "{fixture_url}?sslmode=verify-ca&sslrootcert={}",
-        server_path().display()
-    );
-    let FixtureSource::Configured(options) = select_source(Some(&url(&connection_url))).unwrap()
-    else {
-        panic!("configured source")
-    };
-    assert!(options.uses_tls());
-    let mut generator = FixedName("untrusted_tls_fixture");
+    .replace("localhost", hostname);
     let result = PostgresFixture::provision_with_name_generator(
         Some(&url(&connection_url)),
         &FixtureSeed::default(),
-        &mut generator,
+        &mut RandomDatabaseName,
     )
     .resolve()
     .await;
-    result.unwrap_err();
-}
-
-#[tokio::test]
-async fn wrong_hostname_rejected() {
-    let (_server, fixture_url) = tls_postgres().await;
-    let connection_url = format!(
-        "{fixture_url}?sslmode=verify-full&sslrootcert={}",
-        ca_path().display()
-    )
-    .replace("localhost", "127.0.0.1");
-    let FixtureSource::Configured(options) = select_source(Some(&url(&connection_url))).unwrap()
-    else {
-        panic!("configured source")
-    };
-    assert!(options.uses_tls());
-    let mut generator = FixedName("wrong_hostname_fixture");
-    let result = PostgresFixture::provision_with_name_generator(
-        Some(&url(&connection_url)),
-        &FixtureSeed::default(),
-        &mut generator,
-    )
-    .resolve()
-    .await;
-    result.unwrap_err();
+    if trusted {
+        result.unwrap().close_async().await.unwrap();
+    } else {
+        result.unwrap_err();
+    }
 }
 
 fn ca_path() -> &'static Path {

@@ -33,8 +33,6 @@ pub enum FixtureError {
     Database(#[source] tokio_postgres::Error),
     #[error("fixture connection driver failed: {0}")]
     Driver(#[source] tokio_postgres::Error),
-    #[error("fixture TLS certificate file failed: {0}")]
-    TlsIo(#[source] io::Error),
     #[error("fixture TLS certificate PEM failed: {0}")]
     TlsPem(#[source] PemError),
     #[error("fixture TLS certificate was rejected: {0}")]
@@ -74,8 +72,6 @@ pub enum FixtureError {
         first: Box<Self>,
         second: Box<Self>,
     },
-    #[error("fixture database name was not created by this fixture")]
-    ForeignDatabase,
     #[error("user {user_id} has conflicting roles")]
     ConflictingUserRole { user_id: String },
 }

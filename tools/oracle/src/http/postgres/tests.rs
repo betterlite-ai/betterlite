@@ -4,6 +4,7 @@ use crate::case::decode_http_case;
 use crate::cli::Options;
 use crate::compare::compare;
 use crate::http::Response;
+use crate::paths::unique_id;
 use crate::runner::DatabaseEnvironment;
 use crate::runner::run_group;
 use secrecy::ExposeSecret as _;
@@ -34,9 +35,24 @@ fn public_route_without_key() {
         self_check: true,
         paths: Vec::new(),
     };
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/oracle");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/oracle")
+        .join(unique_id().unwrap());
     let result = run_group(&options, &root, &[case]).unwrap();
     assert_eq!(result, [false]);
+    let captures = fs::read_dir(root.join("public"))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(captures.len(), 1);
+    let directory = captures.first().unwrap().path();
+    let first: Response =
+        serde_json::from_slice(&fs::read(directory.join("client-litellm.json")).unwrap()).unwrap();
+    let second: Response =
+        serde_json::from_slice(&fs::read(directory.join("client-betterlite.json")).unwrap())
+            .unwrap();
+    assert_eq!(first.status, 200);
+    assert_eq!(second.status, 200);
 }
 
 #[test]

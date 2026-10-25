@@ -1,5 +1,8 @@
 Postgres fixtures own independent databases and never seed through product repositories.
-An explicit server URL takes precedence over testcontainers; its role must have CREATEDB.
+An explicit server URL takes precedence over testcontainers; database mode needs CREATEDB.
+`PostgresFixture::provision_schema` instead creates an empty schema in that database.
+Its connection options set search_path; it shares ProvisionTask cancellation and close semantics.
+Use database mode for the pinned baseline, whose constraint guards are database-wide.
 
 Async callers retain the `ProvisionTask` returned by `provision_with_name_generator`
 and await `resolve()` to claim the fixture. If that future is cancelled, await

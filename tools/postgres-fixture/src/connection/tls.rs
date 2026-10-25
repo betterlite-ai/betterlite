@@ -8,6 +8,8 @@ use url::Url;
 use super::ConnectionOptions;
 use crate::error::FixtureError;
 
+mod tests;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TlsMode {
     Disable,

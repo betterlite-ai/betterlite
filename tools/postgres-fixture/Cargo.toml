@@ -22,5 +22,8 @@ tokio-postgres-rustls-improved.workspace = true
 url = "2.5.8"
 uuid.workspace = true
 
+[dev-dependencies]
+rstest = "=0.27.0"
+
 [lints]
 workspace = true
