@@ -515,6 +515,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "subtle",
  "thiserror",
  "tokio",
