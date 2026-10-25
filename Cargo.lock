@@ -368,6 +368,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-paths",
+ "chrono",
  "clap",
  "futures-util",
  "indexmap",

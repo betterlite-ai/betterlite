@@ -2,7 +2,80 @@ kind: helper
 name: key-page-lateral-count
 call:
   daily_activity_sql:
-    function: where
-    scope: {table: litellm_dailyagentspend, entity_id_field: agent_id, entity_ids: null, exclude_entity_ids: [], api_keys: [key], start_date: '2026-01-01', end_date: '2026-01-31', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
+    cases:
+      key_page_limit_one_and_hundred:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "page"
+        limit: 1
+        offset: 0
+      key_page_limit_hundred:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "page"
+        limit: 100
+        offset: 0
+      limit_error_before_offset_error:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "page"
+        limit: 0
+        offset: -1
+      key_page_limit_excess:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "page"
+        limit: 101
+        offset: 0
+      negative_offset_rejected:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "page"
+        offset: -1
+        limit: 1
+      page_parameter_order:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": ["same", "same"], "exclude_entity_ids": ["x", "x"], "api_keys": ["key", "key"], "start_date": "2026-08-01", "end_date": "2026-08-05", "model": "model' OR TRUE", "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "page"
+        offset: 12
+        limit: 1
+      key_metrics_nulls_zero:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "key_metrics"
+      total_tokens_prompt_plus_completion:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "key_metrics"
+      key_page_numeric_rank_tie:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "page"
+        limit: 1
+        offset: 0
+      empty_page_preserves_count_row:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": [], "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "page"
+        limit: 1
+        offset: 0
+      offset_past_end_preserves_count_row:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "page"
+        offset: 999999
+        limit: 1
+      page_validation_before_clock:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": 9223372036854775807, "include_current_utc_day": true}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "page"
+        limit: 0
+        offset: 0
+      page_clock_injected:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": ["same", "same"], "exclude_entity_ids": ["x", "x"], "api_keys": ["key", "key"], "start_date": "2026-08-01", "end_date": "2026-08-05", "model": "model' OR TRUE", "timezone_offset_minutes": 60, "include_current_utc_day": true}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "page"
+        limit: 1
+        offset: 0
 env: {}
 compare: {ignore: []}
