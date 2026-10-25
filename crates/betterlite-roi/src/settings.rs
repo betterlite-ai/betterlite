@@ -47,16 +47,18 @@ pub enum SettingsError {
 }
 pub fn normalize_login(value: &str) -> Result<String, SettingsError> {
     let login = caseless::default_case_fold_str(value.trim_matches(PYTHON_SPACE));
-    let allowed = |character: char| character.is_ascii_alphanumeric() || "_[]-".contains(character);
-    if login.is_empty() || !login.chars().all(allowed) {
+    if login.is_empty()
+        || !login
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "_[]-".contains(character))
+    {
         return Err(SettingsError::Login);
     }
     Ok(login)
 }
 #[must_use]
-pub fn normalize_email(value: Option<&str>) -> String {
-    let normalized =
-        caseless::default_case_fold_str(value.unwrap_or_default().trim_matches(PYTHON_SPACE));
+pub fn normalize_email(value: &str) -> String {
+    let normalized = caseless::default_case_fold_str(value.trim_matches(PYTHON_SPACE));
     let Some((local, domain)) = normalized.split_once('@') else {
         return String::new();
     };
@@ -154,7 +156,7 @@ pub fn normalize_identity_map(
 ) -> Result<IndexMap<String, String>, SettingsError> {
     let mut normalized = IndexMap::new();
     for (login, address) in values {
-        let email = normalize_email(Some(address));
+        let email = normalize_email(address);
         if !email.is_empty() {
             normalized.insert(normalize_login(login)?, email);
         }

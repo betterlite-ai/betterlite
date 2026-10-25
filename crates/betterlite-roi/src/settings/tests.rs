@@ -77,21 +77,21 @@ fn login_normalization(#[case] value: &str, #[case] expected: Result<&str, Setti
 }
 
 #[rstest]
-#[case::casefolds(Some(" Dev@Example.COM\u{3000}"), "dev@example.com")]
-#[case::folds_non_ascii(Some("STRA\u{1e9e}E@Example.com"), "strasse@example.com")]
-#[case::dot_anywhere_inside_domain(Some("a@.b.c"), "a@.b.c")]
-#[case::none(None, "")]
-#[case::empty(Some(""), "")]
-#[case::no_at(Some("dev.example.com"), "")]
-#[case::two_ats(Some("a@b@c.com"), "")]
-#[case::no_dot(Some("a@localhost"), "")]
-#[case::trailing_dot(Some("a@b."), "")]
-#[case::leading_dot_only(Some("a@.b"), "")]
-#[case::inner_space(Some("a b@c.com"), "")]
-#[case::noreply(Some("1+octo@users.noreply.github.com"), "")]
-#[case::bare_noreply(Some("x@noreply.github.com"), "")]
-#[case::noreply_lookalike(Some("x@noreply.github.community"), "x@noreply.github.community")]
-fn email_normalization(#[case] value: Option<&str>, #[case] expected: &str) {
+#[case::casefolds(" Dev@Example.COM\u{3000}", "dev@example.com")]
+#[case::folds_non_ascii("STRA\u{1e9e}E@Example.com", "strasse@example.com")]
+#[case::dot_anywhere_inside_domain("a@.b.c", "a@.b.c")]
+#[case::empty("", "")]
+#[case::whitespace(" \t\u{3000}", "")]
+#[case::no_at("dev.example.com", "")]
+#[case::two_ats("a@b@c.com", "")]
+#[case::no_dot("a@localhost", "")]
+#[case::trailing_dot("a@b.", "")]
+#[case::leading_dot_only("a@.b", "")]
+#[case::inner_space("a b@c.com", "")]
+#[case::noreply("1+octo@users.noreply.github.com", "")]
+#[case::bare_noreply("x@noreply.github.com", "")]
+#[case::noreply_lookalike("x@noreply.github.community", "x@noreply.github.community")]
+fn email_normalization(#[case] value: &str, #[case] expected: &str) {
     assert_eq!(normalize_email(value), expected);
 }
 
