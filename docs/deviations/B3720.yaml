@@ -1,5 +1,5 @@
 task: B3720
 deviations:
-  - {what: "Empty content splitting returns None instead of raising IndexError.", why: "The existing implementation safely handles empty input; architect acceptance is pending.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1488-L1493"}
-  - {what: "Usage sums saturate at i64 bounds instead of preserving arbitrary-size integers.", why: "Overflow handling remains unfinished in this blocked implementation.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1648-L1656"}
-  - {what: "Explicit null values in optional modeled fields serialize as absent.", why: "The inherited Option representation does not distinguish missing from null; this remains unfinished.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1-L209"}
+  - what: "A usage counter that does not fit in i64, or a summed total past i64::MAX, is a ChunkingError::UsageOverflow naming the counter, where LiteLLM sums Python ints without a bound."
+    why: "AWS reports text units per request, so a total past 9.2e18 can't come from a real response; refusing it beats returning a wrong total, and an unbounded integer type would cost a new dependency for a case that can't happen."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1648-L1656"
