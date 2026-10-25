@@ -54,7 +54,9 @@ pub(crate) enum IteratorCall {
     Async,
 }
 
-pub(crate) fn invoke(input: &BedrockRequestPolicyInput) -> Result<Value, Box<crate::helpers::HelperError>> {
+pub(crate) fn invoke(
+    input: &BedrockRequestPolicyInput,
+) -> Result<Value, Box<crate::helpers::HelperError>> {
     let policy = BedrockRequestPolicy::from_fields(&input.fields);
     let failure = |class: &str, status: Option<u16>, message: String| {
         Box::new(crate::helpers::HelperError {
@@ -193,7 +195,6 @@ fn json_value(value: &RequestValue) -> Result<Value, serde_json::Error> {
             .map(Value::Object),
     }
 }
-
 
 pub(crate) struct Op;
 

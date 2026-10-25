@@ -44,7 +44,8 @@ fn oracle_cases_project_through_invoke() {
         .filter_map(|entry| {
             let source = fs::read_to_string(entry.unwrap().path()).unwrap();
             let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-            let input: super::BedrockRequestPolicyInput = (case.call.operation == "bedrock_request_policy")
+            let input: super::BedrockRequestPolicyInput = (case.call.operation
+                == "bedrock_request_policy")
                 .then(|| serde_json::from_value(case.call.input.clone()).unwrap())?;
             Some((case.name, super::invoke(&input).unwrap()))
         })
