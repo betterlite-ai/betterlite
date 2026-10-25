@@ -1,0 +1,13 @@
+kind: helper
+name: model-path-multisegment-unicode
+call:
+  management_oracle:
+    domain: models
+    operation:
+      path_encoding:
+        function: segments
+        value: "α/β café"
+        field_name: model_path
+env: {}
+compare:
+  ignore: []
