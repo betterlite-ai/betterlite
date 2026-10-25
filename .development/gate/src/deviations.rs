@@ -45,16 +45,14 @@ pub(crate) fn mismatch(
         problems.push(format!("{file} names task {}, not {task_id}", log.task));
     }
     let found = entries(&log.deviations);
-    problems.extend(
-        wanted
-            .difference(&found)
-            .map(|(what, _, _)| format!("{file} is missing the report's deviation: {what}")),
-    );
-    problems.extend(
-        found
-            .difference(&wanted)
-            .map(|(what, _, _)| format!("{file} has a deviation the report doesn't list: {what}")),
-    );
+    problems.extend(wanted.difference(&found).map(|(what, why, link)| {
+        format!("{file} is missing the report's deviation: what: {what}; why: {why}; link: {link}")
+    }));
+    problems.extend(found.difference(&wanted).map(|(what, why, link)| {
+        format!(
+            "{file} has a deviation the report doesn't list: what: {what}; why: {why}; link: {link}"
+        )
+    }));
     problems
 }
 
