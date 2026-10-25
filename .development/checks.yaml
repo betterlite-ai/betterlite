@@ -52,6 +52,7 @@ settings:
     - "**/fuzz/corpus/**"
     - tools/oracle/cases/**
     - tools/oracle/litellm/uv.lock
+  scope_roots: [crates, docs, packaging, tools, ui]
   file_size:
     roots: [crates, tools]
     src_max_lines: 300
