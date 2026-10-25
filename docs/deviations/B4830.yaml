@@ -24,6 +24,6 @@ deviations:
   - what: "Usage::total_tokens returns TokenOverflow past u64::MAX."
     why: "Rust avoids unchecked arithmetic; Python integers do not overflow."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py#L47-L55"
-  - what: "Session setup and turn request environment values use SecretString."
+  - what: "Session setup, turn request and sandbox command environment values use SecretString."
     why: "Per-session endpoint tokens must stay secret in memory and in Debug output."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/transformation.py#L43-L70"
