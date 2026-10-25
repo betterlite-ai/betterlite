@@ -32,10 +32,6 @@ pub fn adjust_dates_for_timezone(
 }
 
 #[must_use]
-pub fn build_where_clause(scope: &DailyActivityScope) -> (String, Vec<SqlParameter>) {
-    build_where_clause_at(scope, 1, None)
-}
-
 #[must_use]
 pub fn build_where_clause_at(
     scope: &DailyActivityScope,

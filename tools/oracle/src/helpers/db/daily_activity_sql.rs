@@ -1,5 +1,5 @@
 use betterlite_db::daily_activity_contracts::{DailyActivityScope, DailyActivityScopeInput};
-use betterlite_db::daily_activity_sql::filters::build_where_clause;
+use betterlite_db::daily_activity_sql::filters::build_where_clause_at;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -34,7 +34,7 @@ impl crate::helpers::Helper for Op {
                 message: "unknown function".to_owned(),
             }));
         }
-        let (sql, params) = build_where_clause(&scope);
+        let (sql, params) = build_where_clause_at(&scope, 1, None);
         serde_json::to_value(serde_json::json!({"sql": sql, "params": params})).map_err(|error| {
             Box::new(crate::helpers::HelperError {
                 class: "ValueError".to_owned(),

@@ -37,13 +37,6 @@ fn next_index(value: usize) -> i64 {
     i64::try_from(value).map_or(i64::MAX, |index| index.saturating_add(1))
 }
 
-pub fn build_aggregated_sql(
-    scope: &DailyActivityScope,
-    api_key_limit: i64,
-) -> Result<SqlQuery, DailyActivitySqlError> {
-    build_aggregated_sql_at(scope, api_key_limit, None)
-}
-
 pub fn build_aggregated_sql_at(
     scope: &DailyActivityScope,
     api_key_limit: i64,
@@ -64,13 +57,6 @@ pub fn build_aggregated_sql_at(
     params.push(SqlParameter::Text(PTU_SENTINEL_API_KEY.to_owned()));
     params.push(SqlParameter::Integer(api_key_limit));
     Ok(SqlQuery { sql, params })
-}
-
-pub fn build_entity_rollup_sql(
-    scope: &DailyActivityScope,
-    api_key_limit: i64,
-) -> Result<SqlQuery, DailyActivitySqlError> {
-    build_entity_rollup_sql_at(scope, api_key_limit, None)
 }
 
 pub fn build_entity_rollup_sql_at(
@@ -94,14 +80,6 @@ pub fn build_entity_rollup_sql_at(
     params.push(SqlParameter::Text(PTU_SENTINEL_API_KEY.to_owned()));
     params.push(SqlParameter::Integer(api_key_limit));
     Ok(SqlQuery { sql, params })
-}
-
-pub fn build_key_page_sql(
-    scope: &DailyActivityScope,
-    offset: i64,
-    limit: i64,
-) -> Result<SqlQuery, DailyActivitySqlError> {
-    build_key_page_sql_at(scope, offset, limit, None)
 }
 
 pub fn build_key_page_sql_at(
