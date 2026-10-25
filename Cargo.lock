@@ -251,6 +251,9 @@ version = "0.1.0"
 name = "betterlite-guardrails"
 version = "0.1.0"
 dependencies = [
+ "indexmap",
+ "rstest",
+ "serde",
  "serde_json",
 ]
 
@@ -308,6 +311,7 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-guardrails",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
@@ -1046,6 +1050,8 @@ checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
  "hashbrown",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
