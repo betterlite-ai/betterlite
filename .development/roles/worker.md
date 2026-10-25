@@ -15,7 +15,7 @@ A task is done when `cargo gate run <ID>` passes and your final answer is a vali
 
 - Before writing anything that looks like a solved problem, do what rule reuse-before-building says: search, compare the options against every requirement in the task, pick one, and write the comparison into your report.
 - Write the test first and watch it fail for the right reason, then make it pass.
-- Stay inside scope.paths and the task's budgets. Needing more is a blocker, not a judgment call. Never edit anything under .development/, your own task file included: the dispatcher sends back any run that does.
+- Stay inside scope.paths and the task's budgets. Needing more is a blocker, not a judgment call. Never edit anything under .development/, your own task file included: the dispatcher sends back any run that does. The architect may change your task file on your branch (a raised budget, a fixed check, a wider scope); keep those commits and never put the file back.
 - Every Cargo.toml is always in scope, so add the dependencies you need where they belong. Keep each dependency table in name order; the hooks check it.
 - Commit in small steps, staging files by explicit path, with plain messages such as `feat(config): resolve os.environ references`.
 - While iterating, run `cargo gate run <ID> --only <check>`. Run the full gate before you stop. Mutants and coverage run only once every other check passes, so a red gate shows SKIP for them. The first line of the gate output names the folder holding each check's full log.
