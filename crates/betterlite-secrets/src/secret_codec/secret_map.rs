@@ -27,9 +27,10 @@ where
         .iter()
         .map(|(name, value)| (name.as_str(), value.expose_secret()))
         .collect();
-    let plaintext =
-        serde_json::to_string(&exposed).map_err(|source| SecretError::MapEncode { source })?;
-    let ciphertext = cipher.encrypt_text(&plaintext, override_key)?;
+    let plaintext = SecretString::from(
+        serde_json::to_string(&exposed).map_err(|source| SecretError::MapEncode { source })?,
+    );
+    let ciphertext = cipher.encrypt_text(plaintext.expose_secret(), override_key)?;
     serde_json::to_string(&ciphertext).map_err(|source| SecretError::MapEncode { source })
 }
 

@@ -31,6 +31,11 @@ call:
       - {op: decrypt_with, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj", signing_key: other-master}
       - {op: decrypt_with, value: "v2:gcm:AAECAwQFBgcICQoLu13Sfnjzb3vLfCPO7ClYdksHnW1L", signing_key: salt-one}
       - {op: decrypt_with, value: "AAAA-", signing_key: salt-one}
+      - {op: decrypt_value, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXEHhsXXGE41XMBOZQ9MNoYCQDmMAgx/StIWW/bAyTWAHjflBfc16NcjLyZVRCThkL9tn/hno", field: api_key, report: error, keep_original: false}
+      - {op: decrypt_with, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXEHhsXXGE41XMBOZQ9MNoYCQDmMAgx/StIWW/bAyTWAHjflBfc16NcjLyZVRCThkL9tn/hno", signing_key: salt-one}
+      - {op: decrypt_value, value: "v2:gcm:AAECAwQFBgcICQoLqBrfMC0Q6wYQjNwMNTf7eipqg70QyiuAwg", field: api_key, report: error, keep_original: false}
+      - {op: decrypt_with, value: "v2:gcm:AAECAwQFBgcICQoLqBrfMC0Q6wYQjNwMNTf7eipqg70QyiuAwg", signing_key: salt-one}
+      - {op: decode_map, value: "v2:gcm:AAECAwQFBgcICQoLqBrfMC0Q6wYQjNwMNTf7eipqg70QyiuAwg", field: headers}
 env: {}
 compare:
   ignore: []

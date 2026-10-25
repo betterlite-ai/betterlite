@@ -33,18 +33,28 @@ const STRICT: GeneralPurpose = GeneralPurpose::new(
         .with_decode_padding_mode(DecodePaddingMode::RequireCanonical),
 );
 
-// Python 3.13's non-validating decoder skips padding and nonalphabet bytes before decoding.
+// Python 3.13 ignores interior padding but requires padding for a final partial group.
 pub(crate) fn decode_lenient(text: &str, url_alphabet: bool) -> Result<Vec<u8>, SecretError> {
     bounded_ascii(text)?;
     let mut sextets = String::with_capacity(text.len());
+    let mut trailing_pads = 0_usize;
     for byte in text.bytes() {
         let normalized = match (byte, url_alphabet) {
             (b'-', true) => '+',
             (b'_', true) => '/',
             (b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'+' | b'/', _) => char::from(byte),
+            (b'=', _) => {
+                trailing_pads = trailing_pads.saturating_add(1);
+                continue;
+            }
             _ => continue,
         };
+        trailing_pads = 0;
         sextets.push(normalized);
+    }
+    let remainder = sextets.len() & 3;
+    if matches!(remainder, 2 | 3) && remainder.saturating_add(trailing_pads) < 4 {
+        return Err(SecretError::Base64);
     }
     LENIENT
         .decode(sextets)

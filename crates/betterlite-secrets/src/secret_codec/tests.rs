@@ -17,7 +17,7 @@ use tracing::subscriber::with_default;
 use crate::error::SecretError;
 use crate::secret_codec::bearer::{decrypt_bearer_token, encrypt_bearer_token};
 use crate::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent, TracingDiagnostics};
-use crate::secret_codec::python_base64::decode_strict;
+use crate::secret_codec::python_base64::{decode_lenient, decode_strict};
 use crate::secret_codec::sealing::{open, seal, seal_legacy};
 use crate::secret_codec::secret_map::{decode_secret_map, encrypt_secret_map};
 use crate::secret_codec::{
@@ -40,6 +40,22 @@ const SALT: Option<&str> = Some("salt-one");
 const LEGACY: Algorithm = Algorithm::XSalsa20Poly1305;
 const AES: Algorithm = Algorithm::Aes256Gcm;
 const REJECTED: &str = "error: Cannot decode encrypted MCP headers; check LITELLM_SALT_KEY";
+
+#[rstest]
+#[case::missing_two_pads("Zg", None)]
+#[case::insufficient_padding("Zg=", None)]
+#[case::padded_one_byte("Zg==", Some("f"))]
+#[case::padded_two_bytes("aGk=", Some("hi"))]
+#[case::ignored_characters("Zg=\n*=", Some("f"))]
+#[case::excess_padding("Zg====", Some("f"))]
+#[case::leading_padding("===Zg", None)]
+#[case::interrupted_padding("Zg==ZgZg", None)]
+#[case::reset_padding_count("Zg==Z", None)]
+#[case::interrupted_but_complete("Zg==Z=", Some("f\u{6}"))]
+fn stored_base64_padding(#[case] input: &str, #[case] expected: Option<&str>) {
+    let decoded = decode_lenient(input, true).ok();
+    assert_eq!(decoded.as_deref(), expected.map(str::as_bytes));
+}
 
 #[rstest]
 #[case::four_trailing_bits("Zh==", Some("f"))]
@@ -182,6 +198,10 @@ fn passthrough(cipher: &Cipher) -> String {
 #[case::empty_override_falls_back(SALT, LEGACY, |cipher: &Cipher| encrypt(cipher, "hello", Some("")), Some(LEGACY_HELLO), &[])]
 #[case::override_reads_back(Some("override-key"), LEGACY, |cipher: &Cipher| loud(cipher, OVERRIDE_HELLO), Some("hello"), &[])]
 #[case::legacy_standard_base64(SALT, LEGACY, |cipher: &Cipher| loud(cipher, LONG_STANDARD), Some("h\u{e9}llo w\u{f6}rld, a longer secret value!"), &[])]
+#[case::legacy_missing_padding(SALT, LEGACY, |cipher: &Cipher| loud(cipher, LONG_STANDARD.trim_end_matches('=')), None, &[Level::Debug, Level::Error])]
+#[case::aes_missing_padding(SALT, AES, |cipher: &Cipher| loud(cipher, MAP_AES.trim_matches('"').trim_end_matches('=')), None, &[Level::Debug, Level::Error])]
+#[case::probe_legacy_missing_padding(SALT, LEGACY, |_: &Cipher| probe_with(LONG_STANDARD.trim_end_matches('='), "salt-one"), None, &[])]
+#[case::probe_aes_missing_padding(SALT, AES, |_: &Cipher| probe_with(MAP_AES.trim_matches('"').trim_end_matches('='), "salt-one"), None, &[])]
 #[case::permissive_legacy_decode(SALT, LEGACY, |cipher: &Cipher| loud(cipher, "AAEC*AwQFBgc\nICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj"), Some("hello"), &[])]
 #[case::permissive_standard_fallback(SALT, LEGACY, |cipher: &Cipher| loud(cipher, &format!("{LEGACY_HELLO}-")), Some("hello"), &[])]
 #[case::permissive_stray_pad_rejected(SALT, LEGACY, |cipher: &Cipher| loud(cipher, &format!("{LEGACY_HELLO}=x=")), None, &[Level::Debug, Level::Error])]
@@ -231,6 +251,7 @@ fn wire_interop(
 #[rstest]
 #[case::empty_map_unencrypted(LEGACY, |cipher: &Cipher| encrypt_secret_map(cipher, &BTreeMap::new(), None).unwrap(), "{}", 0)]
 #[case::whole_map_encrypted_once(AES, |cipher: &Cipher| encrypt_secret_map(cipher, &BTreeMap::from([("a".to_owned(), SecretString::from("1"))]), None).unwrap(), MAP_AES, 0)]
+#[case::map_missing_padding(AES, |cipher: &Cipher| decode_text(cipher, MAP_AES.trim_matches('"').trim_end_matches('=')), REJECTED, 1)]
 #[case::python_ordered_map(LEGACY, |cipher: &Cipher| decode_text(cipher, MAP_PYTHON_ORDER), r#"{"a":"1","b":"2"}"#, 0)]
 #[case::plaintext_map(LEGACY, |cipher: &Cipher| decode(cipher, Some(r#"{"a":"1"}"#)), r#"{"a":"1"}"#, 0)]
 #[case::json_plaintext_map(LEGACY, |cipher: &Cipher| decode_text(cipher, r#"{"a":"1"}"#), r#"{"a":"1"}"#, 0)]
@@ -387,7 +408,7 @@ fn replays_the_secret_value_corpus() {
                 | scalar.is_some()
                 | probe_with(value, "salt-one").is_some()
         });
-    assert_eq!((seeds.len(), opened.count()), (10, 5));
+    assert_eq!((seeds.len(), opened.count()), (12, 5));
 }
 
 #[rstest]
