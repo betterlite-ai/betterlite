@@ -1,5 +1,3 @@
-# pyright: reportAny=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
-# ruff: noqa: ANN401, N815
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator

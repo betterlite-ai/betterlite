@@ -1,7 +1,9 @@
 #![cfg(test)]
 
-use super::{decode_scim_resource, models::DecodedScimResource, models::ResourceKind};
-use std::fs;
+use crate::scim_records::{
+    decode_scim_resource,
+    models::{DecodedScimResource, PATCH_SCHEMA, ResourceKind},
+};
 
 #[test]
 fn omitted_active_defaults_but_is_not_present() {
@@ -32,7 +34,7 @@ fn patch_operation_lowercases_without_trimming() {
         panic!("wrong resource")
     };
     assert_eq!(patch.operations[0].op, "replace");
-    assert_eq!(patch.schemas, vec![super::models::PATCH_SCHEMA]);
+    assert_eq!(patch.schemas, vec![PATCH_SCHEMA]);
     let result = decode_scim_resource(br#"{"Operations":[{"op":" add"}]}"#, ResourceKind::Patch);
     result.unwrap_err();
 }
@@ -70,11 +72,12 @@ fn enterprise_ref_accepts_both_names() {
 
 #[test]
 fn replays_the_scim_resource_corpus() {
-    for entry in fs::read_dir("fuzz/corpus/scim_resource").unwrap() {
-        let path = entry.unwrap().path();
-        let bytes = fs::read(path).unwrap();
-        for kind in [ResourceKind::User, ResourceKind::Group, ResourceKind::Patch] {
-            drop(decode_scim_resource(&bytes, kind));
-        }
-    }
+    let empty = include_bytes!("../../fuzz/corpus/scim_resource/empty.json");
+    let user = include_bytes!("../../fuzz/corpus/scim_resource/user.json");
+    drop(decode_scim_resource(empty, ResourceKind::User));
+    drop(decode_scim_resource(empty, ResourceKind::Group));
+    drop(decode_scim_resource(empty, ResourceKind::Patch));
+    drop(decode_scim_resource(user, ResourceKind::User));
+    drop(decode_scim_resource(user, ResourceKind::Group));
+    drop(decode_scim_resource(user, ResourceKind::Patch));
 }

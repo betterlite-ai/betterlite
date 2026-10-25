@@ -1,8 +1,9 @@
 pub(crate) struct Op;
 
 fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
+    let class_name = class.to_owned();
     Box::new(crate::helpers::HelperError {
-        class: class.to_owned(),
+        class: class_name,
         status: None,
         error_type: None,
         param: None,
