@@ -5,22 +5,41 @@ use betterlite_logging::otel::vocabulary::resolvers::{
 };
 use betterlite_logging::otel::vocabulary::semconv::parse_semconv_opt_in;
 use betterlite_logging::otel::vocabulary::span_names::NamedSpan;
-use serde_with::{As, DisplayFromStr};
+use serde_with::{As, DefaultOnNull, DisplayFromStr};
 
 #[path = "otel_vocabulary/tests.rs"]
 mod tests;
 
+// LiteLLM treats a None call type or provider like an empty string, so null decodes to ""
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "function", deny_unknown_fields)]
 pub(crate) enum Input {
-    Provider { values: Vec<Option<String>> },
-    Operation { values: Vec<Option<String>> },
-    OutputType { values: Vec<Option<String>> },
-    DbSystem { values: Vec<String> },
-    SpanRole { values: Vec<String> },
+    Provider {
+        #[serde(with = "As::<Vec<DefaultOnNull>>")]
+        values: Vec<String>,
+    },
+    Operation {
+        #[serde(with = "As::<Vec<DefaultOnNull>>")]
+        values: Vec<String>,
+    },
+    OutputType {
+        #[serde(with = "As::<Vec<DefaultOnNull>>")]
+        values: Vec<String>,
+    },
+    DbSystem {
+        values: Vec<String>,
+    },
+    SpanRole {
+        values: Vec<String>,
+    },
     Registry,
-    SpanName { spans: Vec<SpanInput> },
-    Semconv { values: Vec<Option<String>> },
+    SpanName {
+        spans: Vec<SpanInput>,
+    },
+    Semconv {
+        #[serde(with = "As::<Vec<DefaultOnNull>>")]
+        values: Vec<String>,
+    },
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -59,59 +78,41 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Input) -> crate::helpers::HelperResult {
         let output = match input {
-            Input::Provider { values } => serde_json::json!(
-                values
-                    .iter()
-                    .map(|value| resolve_provider(value.as_deref().unwrap_or_default()))
-                    .collect::<Vec<_>>()
-            ),
-            Input::Operation { values } => serde_json::json!(
-                values
-                    .iter()
-                    .map(
-                        |value| resolve_operation(value.as_deref().unwrap_or_default()).to_string()
-                    )
-                    .collect::<Vec<_>>()
-            ),
-            Input::OutputType { values } => serde_json::json!(
-                values
-                    .iter()
-                    .map(
-                        |value| resolve_output_type(value.as_deref().unwrap_or_default())
-                            .map(|output| output.to_string())
-                    )
-                    .collect::<Vec<_>>()
-            ),
-            Input::DbSystem { values } => serde_json::json!(
-                values
-                    .iter()
-                    .map(|value| db_system(value))
-                    .collect::<Vec<_>>()
-            ),
-            Input::SpanRole { values } => serde_json::json!(
-                values
-                    .iter()
-                    .map(|value| span_role_for_service(value).map(|role| role.to_string()))
-                    .collect::<Vec<_>>()
-            ),
+            Input::Provider { values } => {
+                resolve_each(values, |value| resolve_provider(value).to_owned())
+            }
+            Input::Operation { values } => {
+                resolve_each(values, |value| resolve_operation(value).to_string())
+            }
+            Input::OutputType { values } => resolve_each(values, |value| {
+                resolve_output_type(value).map(|output| output.to_string())
+            }),
+            Input::DbSystem { values } => resolve_each(values, db_system),
+            Input::SpanRole { values } => resolve_each(values, |value| {
+                span_role_for_service(value).map(|role| role.to_string())
+            }),
             Input::Registry => registry(),
             Input::SpanName { spans } => {
                 serde_json::json!(spans.iter().map(span_name).collect::<Vec<_>>())
             }
-            Input::Semconv { values } => serde_json::json!(
-                values
+            Input::Semconv { values } => resolve_each(values, |value| {
+                let categories = parse_semconv_opt_in(value);
+                categories
                     .iter()
-                    .map(
-                        |value| parse_semconv_opt_in(value.as_deref().unwrap_or_default())
-                            .iter()
-                            .map(ToString::to_string)
-                            .collect::<Vec<_>>()
-                    )
+                    .map(ToString::to_string)
                     .collect::<Vec<_>>()
-            ),
+            }),
         };
         Ok(output)
     }
+}
+
+fn resolve_each<T>(values: &[String], resolve: fn(&str) -> T) -> serde_json::Value
+where
+    T: serde::Serialize,
+{
+    let resolved: Vec<T> = values.iter().map(|value| resolve(value)).collect();
+    serde_json::json!(resolved)
 }
 
 fn registry() -> serde_json::Value {
