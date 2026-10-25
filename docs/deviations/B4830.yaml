@@ -1,1 +1,8 @@
-{task: B4830, deviations: [{what: "SessionContext.endpoint uses a local opaque ModelEndpoint declaration until B4841 owns the concrete endpoint type.", why: "B4841 owns the concrete endpoint implementation; B4830 only exposes the forward-reference field.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/context.py"}]}
+task: B4830
+deviations:
+  - what: SessionContext.endpoint uses a local opaque ModelEndpoint declaration.
+    why: B4830 exposes the forward-reference field, while the concrete endpoint type is owned by B4841.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/context.py
+  - what: String harness parsing and normalization hints are not exposed; require_harness accepts only Harness.
+    why: The Rust contract preserves enum-only harness selection, so callers must provide a Harness member instead of a string name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py
