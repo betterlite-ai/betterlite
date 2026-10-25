@@ -1,0 +1,8 @@
+kind: helper
+name: subset-registries
+call:
+  owned_parameter_names:
+    function: subset_registries
+env: {}
+compare:
+  ignore: []
