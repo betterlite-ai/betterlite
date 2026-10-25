@@ -233,7 +233,7 @@ impl From<ScimMemberInput> for ScimMember {
             value,
             display,
             kind: match kind {
-                Some(ScimValue::String(value)) => Some(value),
+                Some(ScimValue::String(kind_value)) => Some(kind_value),
                 _ => None,
             },
         }
