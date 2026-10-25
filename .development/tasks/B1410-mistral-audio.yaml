@@ -40,8 +40,11 @@ scope:
     - crates/betterlite-openai/fuzz/corpus/voxtral_reply/**
     - crates/betterlite-config/src/{lib,config,settings,model,env,providers,tests}.rs
     - crates/betterlite-config/src/providers/mistral.rs
+    - crates/betterlite-config/src/providers/mistral/**
     - crates/betterlite-config/src/providers/mistral/resources.rs
+    - crates/betterlite-config/src/providers/mistral/resources/**
     - crates/betterlite-config/src/tests/mistral_resources.rs
+    - crates/betterlite-config/src/tests/mistral_resources/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/mistral_resources*
     - tools/oracle/src/helpers/openai/voxtral_speech.rs
     - tools/oracle/src/helpers/openai/voxtral_speech/**

@@ -27,8 +27,11 @@ scope:
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/router_preview_validation.rs
   - crates/betterlite-server/src/routing/router_preview_validation/**
   - tools/oracle/src/router_probes/router_preview_validation.rs

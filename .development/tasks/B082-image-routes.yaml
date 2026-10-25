@@ -33,16 +33,22 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/image_routes.rs
   - crates/betterlite-server/src/api/image_routes/**
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/error.rs
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/image_routes.rs
   - crates/betterlite-core/src/api/image_routes/**
   - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/dispatch/**
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/image_routes.rs
   - crates/betterlite-server/fuzz/corpus/image_routes/**

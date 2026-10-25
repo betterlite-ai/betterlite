@@ -1,0 +1,5 @@
+kind: helper
+name: openai-base-config-seed-routing
+call: {openai_base_config: {gpt5_routing: {model: gpt-5, chat_models: []}}}
+env: {}
+compare: {ignore: []}

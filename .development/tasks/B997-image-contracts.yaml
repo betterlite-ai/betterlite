@@ -22,15 +22,20 @@ scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/image_contracts.rs
   - crates/betterlite-provider/src/api/image_contracts/**
   - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/provider/**
   - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/**
   - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-provider/src/prepared/**
   - crates/betterlite-openai/Cargo.toml
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/api.rs
+  - crates/betterlite-openai/src/api/**
   - crates/betterlite-openai/src/api/image_contracts.rs
   - crates/betterlite-openai/src/api/image_contracts/**
   - Cargo.toml

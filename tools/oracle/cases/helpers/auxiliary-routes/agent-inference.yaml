@@ -1,0 +1,8 @@
+kind: helper
+name: agent-inference
+call:
+  auxiliary_routes:
+    group: agent_inference_routes
+env: {}
+compare:
+  ignore: []

@@ -34,7 +34,9 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/deepgram.rs
+    - crates/betterlite-core/src/api/deepgram/**
     - crates/betterlite-core/src/api/deepgram/{common,listen_metadata}.rs
     - crates/betterlite-core/src/api/deepgram/listen_metadata.rs
     - crates/betterlite-core/src/api/deepgram/listen_metadata/**

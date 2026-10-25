@@ -1,0 +1,8 @@
+kind: helper
+name: output-type-only-modality-routes
+call:
+  otel_vocabulary:
+    function: OutputType
+    values: [image_generation, aimage_generation, speech, aspeech, transcription, atranscription, ocr, aocr, OCR, completion, embedding, "", null]
+env: {}
+compare: {ignore: []}

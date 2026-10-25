@@ -1,0 +1,5 @@
+kind: helper
+name: base-projection-forwarding-invalid
+call: {openai_base_config: {base_projection_forwarding: {raw_text: not-json, raw_headers: {x-id: abc}}}}
+env: {}
+compare: {ignore: []}

@@ -42,10 +42,13 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/api/search_providers.rs
+    - crates/betterlite-core/src/api/search_providers/**
     - crates/betterlite-core/src/api/search_providers/brave.rs
     - crates/betterlite-core/src/api/search_providers/brave/**
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/brave.rs
+    - crates/betterlite-config/src/providers/brave/**
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/brave_search.rs
     - crates/betterlite-core/fuzz/corpus/brave_search/**
