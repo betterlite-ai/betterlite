@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-pub(super) type AgentFlag = bool;
-pub(super) type SecurityRequirements = Vec<BTreeMap<String, Vec<String>>>;
+pub type SecurityRequirements = Vec<BTreeMap<String, Vec<String>>>;
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct AgentBoolean(pub bool);
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum AgentJson {
