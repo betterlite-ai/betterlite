@@ -120,11 +120,11 @@ mod bedrock_request_policy_config;
 )]
 #[case::outermost_path_only("a a.b | a", "a")]
 #[case::nothing_ignored(" | model_list", "")]
-fn a_key_is_unknown_only_when_every_view_ignores_it(#[case] views: &str, #[case] expected: &str) {
+fn a_key_is_unknown_only_when_every_view_ignores_it(#[case] views: &str, #[case] unknown: &str) {
     let sets: Vec<BTreeSet<String>> = views
         .split('|')
         .map(|view| view.split_whitespace().map(str::to_owned).collect())
         .collect();
-    let expected: Vec<&str> = expected.split_whitespace().collect();
+    let expected: Vec<&str> = unknown.split_whitespace().collect();
     assert_eq!(super::loader::unknown_paths(&sets), expected);
 }
