@@ -127,7 +127,7 @@ pub(super) fn lookbacks(
     ttl: u32,
     scoped: bool,
 ) -> Vec<String> {
-    groups
+    let result = groups
         .iter()
         .filter(|group| group[0] <= index)
         .rev()
@@ -145,7 +145,8 @@ pub(super) fn lookbacks(
                     }
                 })
         })
-        .collect()
+        .collect();
+    result
 }
 pub(super) fn prefix_body(body: &JsonObject, positions: &[Position], last: usize) -> JsonObject {
     let mut result = Map::new();
@@ -202,11 +203,12 @@ pub(super) fn message(role: &str, content: Vec<Value>) -> Value {
     Value::Object(result)
 }
 pub(super) fn entry_fingerprint(fingerprint: &str, ttl: u32) -> String {
-    digest(&Value::Array(vec![
+    let result = digest(&Value::Array(vec![
         Value::String("native-cache-prefix-v2".to_owned()),
         Value::String(fingerprint.to_owned()),
         Value::Number(Number::from(ttl)),
-    ]))
+    ]));
+    result
 }
 pub(super) fn digest(value: &Value) -> String {
     let bytes = serde_json::to_vec(value).unwrap_or_default();

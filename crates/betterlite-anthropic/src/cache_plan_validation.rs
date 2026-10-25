@@ -217,19 +217,22 @@ fn valid_block(value: &Value, plan: bool, system: bool) -> bool {
 }
 
 fn valid_result_text(value: &Value) -> bool {
-    value.as_object().is_some_and(|item| {
+    let result = value.as_object().is_some_and(|item| {
         fields(item, &["type", "text"])
             && item.get("type").and_then(Value::as_str) == Some("text")
             && item.get("text").is_some_and(Value::is_string)
-    })
+    });
+    result
 }
 fn fields(object: &JsonObject, allowed: &[&str]) -> bool {
-    object.keys().all(|key| allowed.contains(&key.as_str()))
+    let result = object.keys().all(|key| allowed.contains(&key.as_str()));
+    result
 }
 fn valid_marker(object: &JsonObject) -> bool {
-    object
+    let result = object
         .get("cache_control")
-        .is_none_or(|item| cache_ttl(item).is_some())
+        .is_none_or(|item| cache_ttl(item).is_some());
+    result
 }
 pub(super) fn cache_ttl(value: &Value) -> Option<u32> {
     let object = value.as_object()?;
@@ -245,11 +248,14 @@ pub(super) fn cache_ttl(value: &Value) -> Option<u32> {
     }
 }
 pub(super) fn nonempty(value: &str) -> bool {
-    !value.is_empty() && !value.trim().is_empty()
+    let result = !value.is_empty() && !value.trim().is_empty();
+    result
 }
 fn integer(value: &Value) -> bool {
-    value.as_i64().is_some() || value.as_u64().is_some()
+    let result = value.as_i64().is_some() || value.as_u64().is_some();
+    result
 }
 fn number(value: &Value) -> bool {
-    value.as_f64().is_some() && !value.is_boolean()
+    let result = value.as_f64().is_some() && !value.is_boolean();
+    result
 }
