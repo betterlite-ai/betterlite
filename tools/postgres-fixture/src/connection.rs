@@ -19,7 +19,7 @@ pub mod resource;
 use resource::{Ownership, Resource};
 pub mod provision;
 use provision::ProvisionTask;
-mod tls;
+pub mod tls;
 use cleanup::{cleanup_resource, combine_errors};
 
 use tls::{TlsMode, query_value, tls_mode};
@@ -41,11 +41,10 @@ impl DatabaseNameGenerator for RandomDatabaseName {
 
 #[derive(Clone)]
 pub struct ConnectionOptions {
-    config: Config,
-    url: SecretString,
-    parsed_url: Url,
-    root_certificate: Option<String>,
-    tls_mode: TlsMode,
+    pub config: Config,
+    pub url: SecretString,
+    pub root_certificate: Option<String>,
+    pub tls_mode: TlsMode,
 }
 
 impl fmt::Debug for ConnectionOptions {
@@ -57,12 +56,6 @@ impl fmt::Debug for ConnectionOptions {
 }
 
 impl ConnectionOptions {
-    #[must_use]
-    pub fn database_url(&self) -> SecretString {
-        let secret_url = self.url.expose_secret();
-        SecretString::from(secret_url.to_owned())
-    }
-
     fn from_url(raw: &str) -> Result<Self, FixtureError> {
         let tls_mode = tls_mode(raw)?;
         let config_source = tls::normalized_config_source(raw, tls_mode);
@@ -70,25 +63,25 @@ impl ConnectionOptions {
             .map_err(|source| FixtureError::InvalidConfiguredUrl { source })?;
         config.ssl_mode(match tls_mode {
             TlsMode::Disable => SslMode::Disable,
-            TlsMode::Prefer => SslMode::Prefer,
             TlsMode::Require | TlsMode::VerifyCa | TlsMode::VerifyFull => SslMode::Require,
         });
-        let parsed_url = Url::parse(raw).map_err(|source| FixtureError::InvalidUrl { source })?;
+        Url::parse(raw).map_err(|source| FixtureError::InvalidUrl { source })?;
         Ok(Self {
             config,
             url: SecretString::from(raw.to_owned()),
-            parsed_url,
             root_certificate: query_value(raw, "sslrootcert"),
             tls_mode,
         })
     }
 
-    fn with_database(&self, database: &str) -> Self {
+    fn with_database(&self, database: &str) -> Result<Self, FixtureError> {
         let mut options = self.clone();
         options.config.dbname(database);
-        options.parsed_url.set_path(&format!("/{database}"));
-        options.url = SecretString::from(options.parsed_url.to_string());
-        options
+        let mut parsed = Url::parse(self.url.expose_secret())
+            .map_err(|source| FixtureError::InvalidUrl { source })?;
+        parsed.set_path(&format!("/{database}"));
+        options.url = SecretString::from(parsed.to_string());
+        Ok(options)
     }
 }
 

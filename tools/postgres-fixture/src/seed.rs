@@ -138,6 +138,9 @@ impl CallerRole {
 
 impl FixtureSeed {
     pub fn validate(&self) -> Result<(), FixtureError> {
+        if !self.jwt_mappings.is_empty() {
+            return Err(FixtureError::UnsupportedJwtMappings);
+        }
         unique(self.users.iter().map(|row| row.user_id.as_str()), "user")?;
         unique(self.keys.iter().map(|row| row.token.expose_secret()), "key")?;
         unique(self.teams.iter().map(|row| row.team_id.as_str()), "team")?;

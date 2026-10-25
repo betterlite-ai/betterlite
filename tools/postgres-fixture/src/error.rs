@@ -25,6 +25,10 @@ pub enum FixtureError {
     },
     #[error("configured PostgreSQL URL has unknown sslmode {value}")]
     UnknownTlsMode { value: String },
+    #[error("configured PostgreSQL URL explicitly requests unsupported sslmode=prefer")]
+    ExplicitPreferTls,
+    #[error("fixture field jwt_mappings is not supported")]
+    UnsupportedJwtMappings,
     #[error("configured PostgreSQL server is unreachable: {0}")]
     Connect(#[source] tokio_postgres::Error),
     #[error("testcontainers could not start PostgreSQL: {0}")]

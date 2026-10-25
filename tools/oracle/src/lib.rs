@@ -194,6 +194,8 @@ pub enum OracleError {
     GeneratedConfigSerialize(#[source] serde_saphyr::SerializeError),
     #[error("gateway config already sets general_settings.database_url")]
     DatabaseUrlConflict,
+    #[error("gateway config already sets general_settings.disable_prisma_schema_update")]
+    DisableSchemaUpdateConflict,
 }
 
 pub fn run() -> Result<ExitCode, OracleError> {

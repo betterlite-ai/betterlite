@@ -2,8 +2,9 @@
 
 use std::future::{Future as _, poll_fn};
 use std::task::Poll;
-use std::{env::split_paths, fs::read, path::Path, str::from_utf8, time::Duration};
+use std::{env::split_paths, ffi::OsString, path::Path, time::Duration};
 
+use clap::Parser;
 use rstest::rstest;
 use testcontainers::core::{IntoContainerPort as _, WaitFor};
 use testcontainers::{
@@ -37,7 +38,7 @@ async fn postgres_server() -> (
     Option<testcontainers::ContainerAsync<GenericImage>>,
     SecretString,
 ) {
-    if let Some(configured_url) = environment_value("POSTGRES_TEST_URL") {
+    if let Some(configured_url) = test_environment().postgres_test_url {
         return (None, url(&configured_url));
     }
     let server = postgres_image(GenericImage::new("postgres", "17"))
@@ -47,28 +48,26 @@ async fn postgres_server() -> (
     let connection_url = server_url(&server).await;
     (Some(server), url(&connection_url))
 }
-fn environment_value(name: &str) -> Option<String> {
-    let prefix = format!("{name}=");
-    read("/proc/self/environ")
-        .ok()?
-        .split(|byte| *byte == 0)
-        .find_map(|entry| {
-            entry
-                .strip_prefix(prefix.as_bytes())
-                .and_then(|value| from_utf8(value).ok())
-                .map(str::to_owned)
-        })
+#[derive(Parser)]
+struct TestEnvironment {
+    #[arg(long, env = "POSTGRES_TEST_URL")]
+    postgres_test_url: Option<String>,
+    #[arg(long, env = "PATH")]
+    path: Option<OsString>,
+}
+fn test_environment() -> TestEnvironment {
+    TestEnvironment::parse_from(["postgres-fixture-tests"])
 }
 // CI has no docker binary, so configured-URL tests must not try to start one.
 fn docker_available() -> bool {
-    let Some(path) = environment_value("PATH") else {
+    let Some(path) = test_environment().path else {
         return false;
     };
     split_paths(Path::new(&path).as_os_str()).any(|directory| directory.join("docker").is_file())
 }
 macro_rules! skip_without_postgres {
     () => {
-        if !(environment_value("POSTGRES_TEST_URL").is_some() || docker_available()) {
+        if !(test_environment().postgres_test_url.is_some() || docker_available()) {
             return;
         }
     };
@@ -178,8 +177,8 @@ async fn isolated_schemas() {
         .resolve()
         .await
         .unwrap();
-    let (writer, mut first_driver) = connect_client(&first.options.database_url()).await;
-    let (reader, mut second_driver) = connect_client(&second.options.database_url()).await;
+    let (writer, mut first_driver) = connect_client(&first.options.url).await;
+    let (reader, mut second_driver) = connect_client(&second.options.url).await;
     writer
         .batch_execute("CREATE TABLE rows (value TEXT); INSERT INTO rows VALUES ('first')")
         .await
@@ -315,7 +314,7 @@ async fn existing_database_never_dropped() {
     )
     .resolve()
     .await;
-    result.unwrap_err();
+    assert!(matches!(result, Err(FixtureError::Database(_))));
     assert!(database_exists(&admin, "existing").await);
 }
 #[tokio::test]
@@ -421,7 +420,7 @@ async fn fixture_scalar<T>(fixture: &PostgresFixture, statement: &str) -> T
 where
     T: FromSqlOwned,
 {
-    let (client, mut driver) = connect_client(&fixture.options.database_url()).await;
+    let (client, mut driver) = connect_client(&fixture.options.url).await;
     let row = client.query_one(statement, &[]).await.unwrap();
     drop(client);
     driver.join_next().await.unwrap().unwrap();
@@ -455,7 +454,7 @@ async fn unreachable_configured_url_fails() {
     )
     .resolve()
     .await;
-    result.unwrap_err();
+    assert!(matches!(result, Err(FixtureError::Connect(_))));
 }
 
 #[rstest]
@@ -503,7 +502,7 @@ async fn verifies_tls_server(
     if trusted {
         result.unwrap().close_async().await.unwrap();
     } else {
-        result.unwrap_err();
+        assert!(matches!(result, Err(FixtureError::Connect(_))));
     }
 }
 

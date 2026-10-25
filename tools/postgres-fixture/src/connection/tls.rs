@@ -11,9 +11,8 @@ use crate::error::FixtureError;
 mod tests;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum TlsMode {
+pub enum TlsMode {
     Disable,
-    Prefer,
     Require,
     VerifyCa,
     VerifyFull,
@@ -21,8 +20,8 @@ pub(super) enum TlsMode {
 
 pub(super) fn tls_mode(raw: &str) -> Result<TlsMode, FixtureError> {
     match query_value(raw, "sslmode").as_deref() {
-        None | Some("prefer") => Ok(TlsMode::Prefer),
-        Some("disable") => Ok(TlsMode::Disable),
+        None | Some("disable") => Ok(TlsMode::Disable),
+        Some("prefer") => Err(FixtureError::ExplicitPreferTls),
         Some("require") => Ok(TlsMode::Require),
         Some("verify-ca") => Ok(TlsMode::VerifyCa),
         Some("verify-full") => Ok(TlsMode::VerifyFull),

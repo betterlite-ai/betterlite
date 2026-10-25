@@ -44,7 +44,7 @@ pub(super) async fn connect(
     drivers: &mut JoinSet<Result<(), FixtureError>>,
 ) -> Result<Client, FixtureError> {
     match options.tls_mode {
-        TlsMode::Disable | TlsMode::Prefer => {
+        TlsMode::Disable => {
             let connected = timed("connect", options.config.connect(NoTls))
                 .await?
                 .map_err(FixtureError::Connect)?;

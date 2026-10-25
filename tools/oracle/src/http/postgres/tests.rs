@@ -1,4 +1,5 @@
 #![cfg(test)]
+use crate::OracleError;
 use crate::case::Compare;
 use crate::case::decode_http_case;
 use crate::cli::Options;
@@ -6,7 +7,8 @@ use crate::compare::compare;
 use crate::http::Response;
 use crate::paths::unique_id;
 use crate::runner::DatabaseEnvironment;
-use crate::runner::run_group;
+use crate::runner::run_group_with_url;
+use betterlite_postgres_fixture::error::FixtureError;
 use secrecy::ExposeSecret as _;
 use std::collections::BTreeMap;
 use std::{fs, path::Path};
@@ -19,7 +21,7 @@ fn legacy_case_without_database() {
         paths: Vec::new(),
     };
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/oracle");
-    let result = run_group(&options, &root, &[case]).unwrap();
+    let result = run_group_with_url(&options, &root, &[case], None).unwrap();
     assert_eq!(result, [false]);
 }
 
@@ -38,7 +40,7 @@ fn public_route_without_key() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/oracle")
         .join(unique_id().unwrap());
-    let result = run_group(&options, &root, &[case]).unwrap();
+    let result = run_group_with_url(&options, &root, &[case], None).unwrap();
     assert_eq!(result, [false]);
     let captures = fs::read_dir(root.join("public"))
         .unwrap()
@@ -57,42 +59,52 @@ fn public_route_without_key() {
 
 #[test]
 fn fixture_unknown_field() {
-    decode_http_case(include_bytes!(
+    let result = decode_http_case(include_bytes!(
         "../../../fuzz/corpus/http_case/postgres-unknown-field.yaml"
-    ))
-    .unwrap_err();
+    ));
+    assert!(matches!(result, Err(OracleError::CaseParse { .. })));
 }
 
 #[test]
 fn duplicate_identity() {
-    decode_http_case(include_bytes!(
+    let result = decode_http_case(include_bytes!(
         "../../../fuzz/corpus/http_case/postgres-duplicate-identity.yaml"
-    ))
-    .unwrap_err();
+    ));
+    assert!(matches!(
+        result,
+        Err(OracleError::HttpCaseFixture {
+            source: FixtureError::DuplicateIdentity { .. }
+        })
+    ));
 }
 
 #[test]
 fn missing_principal() {
-    decode_http_case(include_bytes!(
+    let result = decode_http_case(include_bytes!(
         "../../../fuzz/corpus/http_case/postgres-missing-principal.yaml"
-    ))
-    .unwrap_err();
+    ));
+    assert!(matches!(
+        result,
+        Err(OracleError::HttpCaseFixture {
+            source: FixtureError::MissingReference { .. }
+        })
+    ));
 }
 
 #[test]
 fn malformed_yaml() {
-    decode_http_case(include_bytes!(
+    let result = decode_http_case(include_bytes!(
         "../../../fuzz/corpus/http_case/postgres-malformed.yaml"
-    ))
-    .unwrap_err();
+    ));
+    assert!(matches!(result, Err(OracleError::CaseParse { .. })));
 }
 
 #[test]
 fn truncated_rows() {
-    decode_http_case(include_bytes!(
+    let result = decode_http_case(include_bytes!(
         "../../../fuzz/corpus/http_case/postgres-truncated-rows.yaml"
-    ))
-    .unwrap_err();
+    ));
+    assert!(matches!(result, Err(OracleError::CaseParse { .. })));
 }
 
 #[test]
@@ -121,10 +133,26 @@ fn replays_the_http_case_corpus() {
             let bytes = fs::read(path.as_path()).unwrap();
             let result = decode_http_case(&bytes);
             let name = path.file_name().and_then(|value| value.to_str()).unwrap();
-            if name == "postgres-valid.yaml" {
-                result.unwrap();
-            } else {
-                assert!(result.is_err(), "{} should be rejected", path.display());
+            match name {
+                "postgres-valid.yaml" => assert!(result.is_ok()),
+                "postgres-unknown-field.yaml"
+                | "postgres-malformed.yaml"
+                | "postgres-truncated-rows.yaml" => {
+                    assert!(matches!(result, Err(OracleError::CaseParse { .. })));
+                }
+                "postgres-duplicate-identity.yaml" => assert!(matches!(
+                    result,
+                    Err(OracleError::HttpCaseFixture {
+                        source: FixtureError::DuplicateIdentity { .. }
+                    })
+                )),
+                "postgres-missing-principal.yaml" => assert!(matches!(
+                    result,
+                    Err(OracleError::HttpCaseFixture {
+                        source: FixtureError::MissingReference { .. }
+                    })
+                )),
+                _ => assert!(result.is_err(), "{} should be rejected", path.display()),
             }
             Ok::<(), ()>(())
         })

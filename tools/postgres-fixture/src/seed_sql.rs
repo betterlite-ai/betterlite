@@ -15,65 +15,24 @@ macro_rules! insert_rows {
 }
 
 pub(crate) async fn seed_database(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
+    baseline(client).await?;
+    seed_rows(client, seed).await?;
+    Ok(())
+}
+
+async fn baseline(client: &Client) -> Result<(), FixtureError> {
     client
         .batch_execute(BASELINE)
         .await
         .map_err(FixtureError::Database)?;
-    if !seed.jwt_mappings.is_empty() {
-        client
-            .batch_execute(
-                "CREATE TABLE IF NOT EXISTS \"LiteLLM_JWTMapping\" (\"subject\" TEXT PRIMARY KEY, \"user_id\" TEXT NOT NULL REFERENCES \"LiteLLM_UserTable\"(\"user_id\"))",
-            )
-            .await
-            .map_err(FixtureError::Database)?;
-    }
-    seed_rows(client, seed).await?;
-    keys(client, seed).await?;
     Ok(())
 }
 
 async fn seed_rows(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
-    insert_rows!(
-        client,
-        &seed.users,
-        "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\",\"user_email\") VALUES ($1,$2)",
-        user_id,
-        user_email
-    );
-    insert_rows!(
-        client,
-        &seed.teams,
-        "INSERT INTO \"LiteLLM_TeamTable\" (\"team_id\",\"team_alias\") VALUES ($1,$2)",
-        team_id,
-        team_alias
-    );
-    insert_rows!(
-        client,
-        &seed.memberships,
-        "INSERT INTO \"LiteLLM_TeamMembership\" (\"user_id\",\"team_id\") VALUES ($1,$2)",
-        user_id,
-        team_id
-    );
-    insert_rows!(
-        client,
-        &seed.budgets,
-        "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\",\"max_budget\",\"created_by\",\"updated_by\") VALUES ($1,$2,$3,$4)",
-        budget_id,
-        max_budget,
-        user_id,
-        user_id
-    );
-    insert_rows!(
-        client,
-        &seed.jwt_mappings,
-        "INSERT INTO \"LiteLLM_JWTMapping\" VALUES ($1,$2)",
-        subject,
-        user_id
-    );
-    Ok(())
-}
-
-async fn keys(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
+    users(client, seed).await?;
+    teams(client, seed).await?;
+    memberships(client, seed).await?;
+    budgets(client, seed).await?;
     for row in &seed.keys {
         let hash = FixtureSeed::key_hash(row.token.expose_secret());
         let params: &[&(dyn ToSql + Sync)] = &[&hash, &row.user_id, &row.team_id];
@@ -95,5 +54,55 @@ async fn keys(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
                 .map_err(FixtureError::Database)?;
         }
     }
+    Ok(())
+}
+
+async fn users(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
+    let rows = &seed.users;
+    insert_rows!(
+        client,
+        rows,
+        "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\",\"user_email\") VALUES ($1,$2)",
+        user_id,
+        user_email
+    );
+    Ok(())
+}
+
+async fn teams(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
+    let rows = &seed.teams;
+    insert_rows!(
+        client,
+        rows,
+        "INSERT INTO \"LiteLLM_TeamTable\" (\"team_id\",\"team_alias\") VALUES ($1,$2)",
+        team_id,
+        team_alias
+    );
+    Ok(())
+}
+
+async fn memberships(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
+    let rows = &seed.memberships;
+    insert_rows!(
+        client,
+        rows,
+        "INSERT INTO \"LiteLLM_TeamMembership\" (\"user_id\",\"team_id\") VALUES ($1,$2)",
+        user_id,
+        team_id
+    );
+    Ok(())
+}
+
+async fn budgets(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
+    let rows = &seed.budgets;
+    insert_rows!(
+        client,
+        rows,
+        "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\",\"max_budget\",\"created_by\",\"updated_by\") VALUES ($1,$2,$3,$4)",
+        budget_id,
+        max_budget,
+        user_id,
+        user_id
+    );
     Ok(())
 }

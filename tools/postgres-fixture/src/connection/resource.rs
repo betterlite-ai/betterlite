@@ -1,5 +1,7 @@
 use super::{ConnectionOptions, quote_identifier};
 use crate::error::FixtureError;
+use secrecy::ExposeSecret as _;
+use url::Url;
 
 #[derive(Debug)]
 pub struct Ownership {
@@ -35,9 +37,10 @@ impl Resource {
         admin: &ConnectionOptions,
     ) -> Result<ConnectionOptions, FixtureError> {
         match self {
-            Self::Database(name) => Ok(admin.with_database(name)),
+            Self::Database(name) => admin.with_database(name),
             Self::Schema(name) => {
-                let mut parsed = admin.parsed_url.clone();
+                let mut parsed = Url::parse(admin.url.expose_secret())
+                    .map_err(|source| FixtureError::InvalidUrl { source })?;
                 let parameters = parsed
                     .query_pairs()
                     .filter(|(key, _)| key != "options")

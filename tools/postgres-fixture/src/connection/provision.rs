@@ -46,8 +46,8 @@ pub(super) async fn provision_inner(
     let source = select_source(configured_url.as_ref())?;
     let (admin, container) = source_connection(source).await?;
     let admin_url = match &resource {
-        Resource::Database(_) => admin.with_database("postgres"),
-        Resource::Schema(_) => admin,
+        Resource::Database(_) => admin.with_database("postgres")?,
+        Resource::Schema(_) => admin.clone(),
     };
     let options = resource.connection(&admin_url)?;
     create_resource(&admin_url, &resource).await?;

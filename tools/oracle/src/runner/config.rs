@@ -22,7 +22,7 @@ struct GeneralSettings {
     #[serde(default)]
     database_url: Option<String>,
     #[serde(default)]
-    disable_prisma_schema_update: bool,
+    disable_prisma_schema_update: Option<bool>,
     #[serde(flatten)]
     other: BTreeMap<String, serde_json::Value>,
 }
@@ -34,16 +34,11 @@ pub(super) fn prepare_gateway_configs(
     upstream: &str,
 ) -> Result<(PathBuf, PathBuf, PathBuf), OracleError> {
     if let Some((first, second)) = &fixtures.databases {
-        let first_url = first.options.database_url();
-        let second_url = second.options.database_url();
+        let first_url = first.options.url.expose_secret();
+        let second_url = second.options.url.expose_secret();
         let (group_dir, base_config) = artifacts::prepare(root, first_case, upstream)?;
-        let first_config =
-            with_database(&base_config, first_url.expose_secret(), "config-first.yaml")?;
-        let second_config = with_database(
-            &base_config,
-            second_url.expose_secret(),
-            "config-second.yaml",
-        )?;
+        let first_config = with_database(&base_config, first_url, "config-first.yaml")?;
+        let second_config = with_database(&base_config, second_url, "config-second.yaml")?;
         Ok((group_dir, first_config, second_config))
     } else {
         let (group_dir, config) = artifacts::prepare(root, first_case, upstream)?;
@@ -65,10 +60,17 @@ fn with_database(
     if config_document.general_settings.database_url.is_some() {
         return Err(OracleError::DatabaseUrlConflict);
     }
+    if config_document
+        .general_settings
+        .disable_prisma_schema_update
+        .is_some()
+    {
+        return Err(OracleError::DisableSchemaUpdateConflict);
+    }
     config_document.general_settings.database_url = Some(database_url.to_owned());
     config_document
         .general_settings
-        .disable_prisma_schema_update = true;
+        .disable_prisma_schema_update = Some(true);
     let rendered_config =
         serde_saphyr::to_string(&config_document).map_err(OracleError::GeneratedConfigSerialize)?;
     let path = base_path.with_file_name(filename);
