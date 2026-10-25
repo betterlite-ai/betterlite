@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use rstest::rstest;
 use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
@@ -57,17 +58,10 @@ fn prompt_view_rejects_thinking_and_multiple_breakpoints() {
     assert!(parse_prompt(multiple.as_object().expect("object")).is_none());
 }
 
-#[test]
-fn replays_the_cache_plan_corpus() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/cache_plan_decoder");
-    let entries = fs::read_dir(root).expect("corpus directory");
-    for entry in entries {
-        let path = entry.expect("corpus entry").path();
-        if path.is_file() {
-            let bytes = fs::read(path).expect("corpus file");
-            let body: serde_json::Value = serde_json::from_slice(&bytes).expect("corpus JSON");
-            let body = body.as_object().expect("corpus object");
-            drop(parse_cache_plan(body));
-        }
-    }
+#[rstest]
+fn replays_the_cache_plan_corpus(#[files("fuzz/corpus/cache_plan_decoder/*")] path: PathBuf) {
+    let bytes = fs::read(path).expect("corpus file");
+    let value: serde_json::Value = serde_json::from_slice(&bytes).expect("corpus JSON");
+    let body = value.as_object().expect("corpus object");
+    drop(parse_cache_plan(body));
 }
