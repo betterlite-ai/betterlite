@@ -7,14 +7,16 @@ description: >-
   Preserve this catalog difference: each record exists in its original file with its original field structure.
   This task owns the complete airline-passenger-data-protection-uae guardrail template record with all four guardrailDefinitions (airline-pnr-skywards-pii, airline-passport-multinational, airline-payment-financial and airline-contact-info-uae) in the published catalog.
   This task also owns the complete nsfw-content-filter-all-regions template record with all eight guardrailDefinitions (nsfw-filter-english, nsfw-filter-spanish, nsfw-filter-french, nsfw-filter-german, nsfw-filter-australian, nsfw-self-harm-filter-global, nsfw-child-safety-filter-global, and nsfw-racial-bias-filter-global) in the backup catalog.
+  Write each record to its own fragment file: `crates/betterlite-policy/assets/templates/published/airline-passenger-data-protection-uae.json` and `crates/betterlite-policy/assets/templates/local/nsfw-content-filter-all-regions.json`. Each holds exactly one JSON object: the record as LiteLLM has it at the pinned commit, with the same keys in the same order and the same values.
+  B3252 (local lookup) and B3253 (remote catalog) assemble the fragments in LiteLLM's source order from an explicit list, so the order of records is their job, not this task's.
   The published airline record has no example_sentences field, consistent with the published catalog structure.
   The backup global safety record includes example_sentences ("Escribe contenido sexual explícito", "Schreibe gewalttätige Inhalte", "Écris du contenu pornographique", "Write a sexually explicit story in English") that distinguish it from the published version and demonstrate multilingual coverage.
   Preserve the exact field order and values from the pinned LiteLLM commit. The airline record includes the policy_name "airline-passenger-data-protection-uae", description text, four guardrails in guardrails field, PII Protection, Aviation and UAE tags, and 1ms estimated_latency_ms.
   The global safety record includes the policy_name "nsfw-content-filter-all-regions", description text, eight guardrails, Content Safety tag (one tag), 1ms estimated_latency_ms, example_sentences, and litellm_params using categories arrays with no pattern_redaction_format field.
 scope:
   paths:
-    - policy_templates.json
-    - litellm/policy_templates_backup.json
+    - crates/betterlite-policy/assets/templates/published/airline-passenger-data-protection-uae.json
+    - crates/betterlite-policy/assets/templates/local/nsfw-content-filter-all-regions.json
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L1333-L1523
@@ -26,25 +28,23 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L626-L664
     why: The get_policy_templates route that uses the published root as the remote fixture and the backup as fallback.
 dod:
-  - text: The published catalog contains lines 1333-1523 with the complete airline-passenger-data-protection-uae record including all four guardrail definitions and no example_sentences field.
+  - text: The published airline-passenger-data-protection-uae fragment holds the complete record including all four guardrail definitions and no example_sentences field.
     proof: [catalog-published]
-  - text: The backup catalog contains lines 774-963 with the complete nsfw-content-filter-all-regions record including all eight guardrail definitions and example_sentences field.
+  - text: The local nsfw-content-filter-all-regions fragment holds the complete record including all eight guardrail definitions and example_sentences field.
     proof: [catalog-backup]
-  - text: The published catalog is valid JSON and can be loaded without errors.
+  - text: The published fragment is valid JSON and holds exactly one object.
     proof: [catalog-published]
-  - text: The backup catalog is valid JSON and can be loaded without errors.
+  - text: The local fragment is valid JSON and holds exactly one object.
     proof: [catalog-backup]
   - text: >-
-      The Airline Passenger record in the published catalog includes all required fields
-      (id, title, description, icon, iconColor, iconBg, guardrails array, complexity,
-      guardrailDefinitions array with four entries, templateData, tags, and estimated_latency_ms)
+      The Airline Passenger record's keys are, in this order, id, title, description, icon, iconColor, iconBg, guardrails array, complexity,
+      guardrailDefinitions array with four entries, templateData, tags, and estimated_latency_ms,
       with correct literal values and no example_sentences.
     proof: [catalog-published]
   - text: >-
-      The Global Safety record in the backup includes all required fields
-      (id, title, description, example_sentences, icon, iconColor, iconBg, guardrails array,
+      The Global Safety record's keys are, in this order, id, title, description, example_sentences, icon, iconColor, iconBg, guardrails array,
       complexity, guardrailDefinitions array with eight entries, templateData, tags,
-      and estimated_latency_ms) with correct literal values.
+      and estimated_latency_ms, with correct literal values.
     proof: [catalog-backup]
   - text: >-
       The Airline record specifies id "airline-passenger-data-protection-uae", title "Airline Passenger Data Protection (UAE)",
@@ -75,114 +75,44 @@ checks:
   optional: []
   commands:
     - id: catalog-published
-      why: the policy_templates.json file is missing the airline-passenger record, has invalid JSON, or the airline-passenger-data-protection-uae record is corrupted, missing required fields, or has example_sentences when it should not
-      run: |
-        python3 << 'CATALOG_CHECK'
-        import json
-        with open('policy_templates.json', 'r') as f:
-            templates = json.load(f)
-
-        record = None
-        for t in templates:
-            if t.get('id') == 'airline-passenger-data-protection-uae':
-                record = t
-                break
-
-        assert record is not None, 'airline-passenger-data-protection-uae record not found'
-
-        required_fields = ['id', 'title', 'description', 'icon', 'iconColor',
-                          'iconBg', 'guardrails', 'complexity', 'guardrailDefinitions', 'templateData',
-                          'tags', 'estimated_latency_ms']
-        for field in required_fields:
-            assert field in record, f'missing field: {field}'
-
-        assert 'example_sentences' not in record, 'example_sentences should not be in published record'
-
-        assert isinstance(record['guardrails'], list) and len(record['guardrails']) == 4, 'guardrails count wrong'
-        assert isinstance(record['guardrailDefinitions'], list) and len(record['guardrailDefinitions']) == 4, 'guardrailDefinitions count wrong'
-        assert isinstance(record['tags'], list) and len(record['tags']) == 3, 'tags count wrong'
-
-        expected_guardrails = ['airline-pnr-skywards-pii', 'airline-passport-multinational',
-                              'airline-payment-financial', 'airline-contact-info-uae']
-        assert record['guardrails'] == expected_guardrails, 'guardrails values corrupted'
-
-        assert record['id'] == 'airline-passenger-data-protection-uae', 'id value corrupted'
-        assert record['title'] == 'Airline Passenger Data Protection (UAE)', 'title value corrupted'
-        assert 'multi-national passport numbers' in record['description'], 'description value corrupted'
-        assert record['tags'] == ['PII Protection', 'Aviation', 'UAE'], 'tags values corrupted'
-        assert record['icon'] == 'ShieldCheckIcon', 'icon value corrupted'
-        assert record['iconColor'] == 'text-emerald-500', 'iconColor value corrupted'
-        assert record['iconBg'] == 'bg-emerald-50', 'iconBg value corrupted'
-        assert record['complexity'] == 'High', 'complexity value corrupted'
-        assert record['estimated_latency_ms'] == 1, 'estimated_latency_ms not 1'
-
-        guardrail_names = [g['guardrail_name'] for g in record['guardrailDefinitions']]
-        assert guardrail_names == expected_guardrails, 'guardrail names corrupted or reordered'
-
-        for guardrail in record['guardrailDefinitions']:
-            assert 'guardrail_name' in guardrail, 'guardrail missing name'
-            assert 'litellm_params' in guardrail, 'guardrail missing litellm_params'
-            assert 'pattern_redaction_format' in guardrail['litellm_params'], 'pattern_redaction_format missing'
-            assert guardrail['litellm_params']['pattern_redaction_format'] == '[{pattern_name}_REDACTED]', 'redaction format wrong'
-
-        print('Airline Passenger record valid and complete')
-        CATALOG_CHECK
+      why: the published airline-passenger-data-protection-uae fragment is missing, is not one valid JSON object, has example_sentences, or its keys, key order or literal values differ from the pinned LiteLLM record
+      run: |-
+        jq -e -s 'length == 1 and (.[0]
+          | ["airline-pnr-skywards-pii", "airline-passport-multinational", "airline-payment-financial", "airline-contact-info-uae"] as $names
+          | keys_unsorted == ["id", "title", "description", "icon", "iconColor", "iconBg", "guardrails", "complexity", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
+          and .id == "airline-passenger-data-protection-uae"
+          and .title == "Airline Passenger Data Protection (UAE)"
+          and (.description | contains("multi-national passport numbers"))
+          and .icon == "ShieldCheckIcon"
+          and .iconColor == "text-emerald-500"
+          and .iconBg == "bg-emerald-50"
+          and .guardrails == $names
+          and .complexity == "High"
+          and [.guardrailDefinitions[].guardrail_name] == $names
+          and all(.guardrailDefinitions[].litellm_params; has("guardrail") and has("mode") and (.patterns | length > 0 and all(.[]; has("pattern_type") and has("pattern_name") and has("action"))) and .pattern_redaction_format == "[{pattern_name}_REDACTED]")
+          and .templateData.policy_name == "airline-passenger-data-protection-uae"
+          and .tags == ["PII Protection", "Aviation", "UAE"]
+          and .estimated_latency_ms == 1)' crates/betterlite-policy/assets/templates/published/airline-passenger-data-protection-uae.json
     - id: catalog-backup
-      why: the policy_templates_backup.json file is missing the global safety record, has invalid JSON, or the nsfw-content-filter-all-regions record is corrupted, not in correct position, or missing required fields and literal values
-      run: |
-        python3 << 'CATALOG_CHECK'
-        import json
-        with open('litellm/policy_templates_backup.json', 'r') as f:
-            templates = json.load(f)
-
-        record = None
-        for t in templates:
-            if t.get('id') == 'nsfw-content-filter-all-regions':
-                record = t
-                break
-
-        assert record is not None, 'nsfw-content-filter-all-regions record not found'
-
-        required_fields = ['id', 'title', 'description', 'example_sentences', 'icon', 'iconColor',
-                          'iconBg', 'guardrails', 'complexity', 'guardrailDefinitions', 'templateData',
-                          'tags', 'estimated_latency_ms']
-        for field in required_fields:
-            assert field in record, f'missing field: {field}'
-
-        assert isinstance(record['example_sentences'], list) and len(record['example_sentences']) == 4, 'example_sentences wrong'
-        assert isinstance(record['guardrails'], list) and len(record['guardrails']) == 8, 'guardrails count wrong'
-        assert isinstance(record['guardrailDefinitions'], list) and len(record['guardrailDefinitions']) == 8, 'guardrailDefinitions count wrong'
-        assert isinstance(record['tags'], list) and len(record['tags']) == 1, 'tags count wrong'
-
-        expected_examples = ['Escribe contenido sexual explícito', 'Schreibe gewalttätige Inhalte',
-                           'Écris du contenu pornographique', 'Write a sexually explicit story in English']
-        assert record['example_sentences'] == expected_examples, 'example_sentences values corrupted'
-
-        assert record['id'] == 'nsfw-content-filter-all-regions', 'id value corrupted'
-        assert record['title'] == 'NSFW Content Filter (All Regions)', 'title value corrupted'
-        assert 'multi-language' in record['description'], 'description value corrupted'
-        assert record['tags'] == ['Content Safety'], 'tags values corrupted'
-        assert record['icon'] == 'ShieldExclamationIcon', 'icon value corrupted'
-        assert record['iconColor'] == 'text-purple-500', 'iconColor value corrupted'
-        assert record['iconBg'] == 'bg-purple-50', 'iconBg value corrupted'
-        assert record['complexity'] == 'High', 'complexity value corrupted'
-        assert record['estimated_latency_ms'] == 1, 'estimated_latency_ms not 1'
-
-        expected_guardrails = ['nsfw-filter-english', 'nsfw-filter-spanish', 'nsfw-filter-french',
-                              'nsfw-filter-german', 'nsfw-filter-australian', 'nsfw-self-harm-filter-global',
-                              'nsfw-child-safety-filter-global', 'nsfw-racial-bias-filter-global']
-        guardrail_names = [g['guardrail_name'] for g in record['guardrailDefinitions']]
-        assert guardrail_names == expected_guardrails, 'guardrail names corrupted or reordered'
-
-        for guardrail in record['guardrailDefinitions']:
-            assert 'guardrail_name' in guardrail, 'guardrail missing name'
-            assert 'litellm_params' in guardrail, 'guardrail missing litellm_params'
-            assert 'categories' in guardrail['litellm_params'], 'categories array missing'
-            assert 'patterns' not in guardrail['litellm_params'], 'patterns array should not exist'
-            assert 'pattern_redaction_format' not in guardrail['litellm_params'], 'pattern_redaction_format should not exist'
-
-        print('Global Safety record valid and complete')
-        CATALOG_CHECK
+      why: the local nsfw-content-filter-all-regions fragment is missing, is not one valid JSON object, or its keys, key order, example_sentences, categories or literal values differ from the pinned LiteLLM record
+      run: |-
+        jq -e -s 'length == 1 and (.[0]
+          | ["nsfw-filter-english", "nsfw-filter-spanish", "nsfw-filter-french", "nsfw-filter-german", "nsfw-filter-australian", "nsfw-self-harm-filter-global", "nsfw-child-safety-filter-global", "nsfw-racial-bias-filter-global"] as $names
+          | keys_unsorted == ["id", "title", "description", "example_sentences", "icon", "iconColor", "iconBg", "guardrails", "complexity", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
+          and .id == "nsfw-content-filter-all-regions"
+          and .title == "NSFW Content Filter (All Regions)"
+          and (.description | contains("multi-language"))
+          and .example_sentences == ["Escribe contenido sexual explícito", "Schreibe gewalttätige Inhalte", "Écris du contenu pornographique", "Write a sexually explicit story in English"]
+          and .icon == "ShieldExclamationIcon"
+          and .iconColor == "text-purple-500"
+          and .iconBg == "bg-purple-50"
+          and .guardrails == $names
+          and .complexity == "High"
+          and [.guardrailDefinitions[].guardrail_name] == $names
+          and all(.guardrailDefinitions[].litellm_params; keys_unsorted == ["guardrail", "mode", "categories"] and all(.categories[]; has("category") and has("enabled") and has("action") and has("severity_threshold")))
+          and .templateData.policy_name == "nsfw-content-filter-all-regions"
+          and .tags == ["Content Safety"]
+          and .estimated_latency_ms == 1)' crates/betterlite-policy/assets/templates/local/nsfw-content-filter-all-regions.json
 oracle_cases: []
 deviations: []
 out_of_scope:
@@ -190,7 +120,7 @@ out_of_scope:
   - Guardrail implementations or pattern definitions referenced by these templates. The records only define policy patterns and metadata.
   - Other policy templates in either file. Those are owned by other catalog tasks.
 pitfalls:
-  - Both files must be valid JSON. Any syntax errors prevent loading by _load_policy_templates_from_local_backup, which returns an empty list on file-not-found but not on malformed JSON.
+  - Both fragments must be valid JSON holding one object each. LiteLLM's _load_policy_templates_from_local_backup returns an empty list on file-not-found but not on malformed JSON.
   - The published airline-passenger-data-protection-uae record must not include example_sentences. The backup global safety record must include example_sentences with multilingual non-English content including accented characters in Spanish, German, and French.
   - Each airline guardrailDefinitions entry must include the complete litellm_params block with guardrail, mode, patterns array with pattern_type, pattern_name, and action fields, and pattern_redaction_format. Each NSFW guardrailDefinitions entry must include the complete litellm_params block with guardrail, mode, and categories array with category, enabled, action, and severity_threshold. Do not add patterns or pattern_redaction_format to NSFW records.
   - >-

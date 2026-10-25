@@ -42,10 +42,10 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/cohere_embeddings.rs
     - crates/betterlite-openai/fuzz/corpus/cohere_embeddings/**
-    - tools/oracle/src/helpers/openai/cohere_embedding_v2.rs
-    - tools/oracle/src/helpers/openai/cohere_embedding_v2/**
-    - tools/oracle/helpers/cohere_embedding_v2.py
-    - tools/oracle/helpers/cohere_embedding_v2/**
+    - tools/oracle/src/helpers/openai/cohere_embedding.rs
+    - tools/oracle/src/helpers/openai/cohere_embedding/**
+    - tools/oracle/helpers/cohere_embedding.py
+    - tools/oracle/helpers/cohere_embedding/**
     - tools/oracle/cases/helpers/cohere-embedding/**
     - tools/oracle/fuzz/corpus/helper_case/cohere_embedding*
   lint_tables: false
@@ -74,7 +74,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/cohere_embeddings.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/cohere_embeddings)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_cohere_embeddings_corpus)'
       why: The parser must reject malformed grouping safely without using only old embedding fixtures.
     - id: cohere-embed-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_embedding*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::cohere_embedding::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_embedding*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::cohere_embedding::/)'
       why: A nonzero collection of new seeds must select cohere_embedding.
 oracle_cases:
   - tools/oracle/cases/helpers/cohere-embedding/mixed-last-image.yaml
@@ -87,7 +87,7 @@ out_of_scope:
   - CohereEmbeddingConfig._is_v3_model has no caller at the pin; B1418 owns legacy v1 response typing and execution.
   - B627 owns Bedrock's input_type assertion and model removal; B037 owns direct Cohere embedding routing and key precedence.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as cohere_embedding_v2 in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/cohere_embedding_v2.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cohere_embedding_v2.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as cohere_embedding in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/cohere_embedding.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cohere_embedding.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An image at the beginning of a mixed list does not determine the request modality.
   - Two embedding type groups can legitimately produce repeated index values.
   - Billed usage does not bypass the preliminary tokenizer loop in the v2 response method.

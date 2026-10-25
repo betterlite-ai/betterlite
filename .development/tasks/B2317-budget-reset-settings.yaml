@@ -75,8 +75,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/Cargo.toml
-    - crates/betterlite-core/src/lib.rs
-    - crates/betterlite-core/src/error.rs
     - crates/betterlite-core/src/budget_reset.rs
     - crates/betterlite-core/src/budget_reset/**
     - crates/betterlite-core/fuzz/Cargo.toml
@@ -92,10 +90,10 @@ scope:
     - crates/betterlite-config/src/budget_reset.rs
     - crates/betterlite-config/src/budget_reset/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/budget-reset-*
-    - tools/oracle/src/helpers/core_ops/budget_reset_settings.rs
-    - tools/oracle/src/helpers/core_ops/budget_reset_settings/**
-    - tools/oracle/helpers/budget_reset_settings.py
-    - tools/oracle/helpers/budget_reset_settings/**
+    - tools/oracle/src/helpers/core_ops/budget_reset.rs
+    - tools/oracle/src/helpers/core_ops/budget_reset/**
+    - tools/oracle/helpers/budget_reset.py
+    - tools/oracle/helpers/budget_reset/**
     - tools/oracle/cases/helpers/budget-reset/**
     - tools/oracle/fuzz/corpus/helper_case/budget-reset-*
   lint_tables: false
@@ -165,7 +163,7 @@ out_of_scope:
   - B199 owns duration parsing, word aliases, timezone fallback and calendar/DST arithmetic; this task composes them with validated settings.
   - B124 installs settings and schedules jobs; B071 owns budget reset persistence, not this shared calculation.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as budget_reset_settings in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/budget_reset_settings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/budget_reset_settings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as budget_reset in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/budget_reset.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/budget_reset.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A duration accepted by duration_in_seconds can still fail the monthly reset calculator.
   - The parser accepts 1:2 even though its error examples spell HH:MM with padding.
 budget:

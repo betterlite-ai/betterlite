@@ -76,7 +76,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/team_budget_admission.rs
     - crates/betterlite-auth/src/team_budget_admission/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/team_budget_admission.rs
     - tools/oracle/src/helpers/server/team_budget_admission/**

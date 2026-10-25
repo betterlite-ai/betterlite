@@ -17,7 +17,6 @@ description: >-
   and 35 wiring lines, 720 total.
 scope:
   paths:
-  - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_http_metadata.rs
   - crates/betterlite-core/src/api/file_http_metadata/**

@@ -31,6 +31,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,vertex_batch_download}.rs
+    - crates/betterlite-vertex/src/vertex_batch_download.rs
     - crates/betterlite-vertex/src/vertex_batch_download/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_download.rs
@@ -39,10 +40,10 @@ scope:
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/tests/vertex_batch_download_settings.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_batch_download*
-    - tools/oracle/src/helpers/vertex/batch_download_stream.rs
-    - tools/oracle/src/helpers/vertex/batch_download_stream/**
-    - tools/oracle/helpers/vertex_batch_download_stream.py
-    - tools/oracle/helpers/vertex_batch_download_stream/**
+    - tools/oracle/src/helpers/vertex/batch_download.rs
+    - tools/oracle/src/helpers/vertex/batch_download/**
+    - tools/oracle/helpers/vertex_batch_download.py
+    - tools/oracle/helpers/vertex_batch_download/**
     - tools/oracle/cases/helpers/vertex-batch-download/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_batch_download*
   lint_tables: false
@@ -81,7 +82,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_download.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_batch_download)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_batch_download_corpus)'
       why: New split and malformed downloads enter decode_vertex_batch_download_chunk.
     - id: download-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_download*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_batch_download::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_download*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::batch_download::/)'
       why: Shared-parser replay checks the call.vertex_batch_download tag on every added fixture.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-batch-download/unknown-binary.yaml
@@ -96,7 +97,7 @@ out_of_scope:
   - B1374 defines row detection, correlation and embedding groups; B1375 defines input/line sources and JSONL upload formatting.
   - File authentication, object targets and metadata stay B1376/B1393; B1383 owns concrete native handler calls.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_batch_download_stream in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/batch_download_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_batch_download_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_batch_download in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/batch_download.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_batch_download.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A generation conversion exception caught inside the single-row mapper is emitted as an error row, not treated as a whole-file failure.
   - The first complete line can be accepted from a chunk that already pushes the buffered prefix beyond 32 MiB.
   - Streamed embedding regrouping changes content-length even if conversion returns the original bytes.

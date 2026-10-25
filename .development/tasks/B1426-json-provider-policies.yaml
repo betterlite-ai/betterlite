@@ -53,16 +53,21 @@ scope:
     - crates/betterlite-openai/src/{lib,json_provider_policy}.rs
     - crates/betterlite-openai/src/json_provider_policy/**
     - crates/betterlite-core/src/{lib,json_messages_policy}.rs
+    - crates/betterlite-core/src/json_messages_policy.rs
     - crates/betterlite-core/src/json_messages_policy/**
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-config/src/{settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,json_providers}.rs
     - crates/betterlite-config/tests/{openai_like_settings,json_messages_settings}.rs
     - Cargo.lock
-    - tools/oracle/src/helpers/core_ops/json_provider_policies.rs
-    - tools/oracle/src/helpers/core_ops/json_provider_policies/**
-    - tools/oracle/helpers/json_provider_policies.py
-    - tools/oracle/helpers/json_provider_policies/**
+    - tools/oracle/src/helpers/core_ops/json_chat_policy.rs
+    - tools/oracle/src/helpers/core_ops/json_chat_policy/**
+    - tools/oracle/helpers/json_chat_policy.py
+    - tools/oracle/helpers/json_chat_policy/**
+    - tools/oracle/src/helpers/core_ops/json_native_api_policy.rs
+    - tools/oracle/src/helpers/core_ops/json_native_api_policy/**
+    - tools/oracle/helpers/json_native_api_policy.py
+    - tools/oracle/helpers/json_native_api_policy/**
     - tools/oracle/cases/helpers/{json-chat-policy,json-native-api-policy}/**
     - tools/oracle/fuzz/corpus/helper_case/{json_chat_policy,json_native_api_policy}*
   lint_tables: false
@@ -93,7 +98,7 @@ checks:
       run: test -f tools/oracle/helpers/json_chat_policy.py && test -f tools/oracle/helpers/json_native_api_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Generated source classes must run with isolated cache state and actual parent methods.
     - id: json-policy-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/json_chat_policy*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/json_native_api_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::json_chat_policy::/) | test(/^helpers::json_native_api_policy::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/json_chat_policy*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/json_native_api_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::json_chat_policy::/) | test(/^helpers::core_ops::json_native_api_policy::/)'
       why: Each seed group must contain its own externally tagged helper operation.
 oracle_cases:
   - tools/oracle/cases/helpers/json-chat-policy/remap-before-capabilities.yaml
@@ -108,7 +113,7 @@ out_of_scope:
   - B1424 owns registry loading and environment table data; B038 owns API-family selection and provider execution bindings.
   - B503, B508 and B960–B962 retain the inherited native request/response algorithms and byte parsers; package __init__ files here only re-export the owned policies.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as json_provider_policies in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/json_provider_policies.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/json_provider_policies.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as json_chat_policy and json_native_api_policy in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/json_chat_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/json_chat_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A parameter explicitly listed in param_mappings survives even when model capabilities removed it from the supported list.
   - Responses caches by slug alone, so recreating a descriptor does not change that slug's first cached policy.
   - Native Messages accepts an existing X-Api-Key without injecting a second authorization method.

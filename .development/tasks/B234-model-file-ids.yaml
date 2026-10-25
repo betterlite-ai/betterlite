@@ -8,14 +8,11 @@ description: >-
   Budget 260 mapping/types, 100 adapters, 300 tests/fuzz and 60 wiring (720 total). Add the model_file_ids cargo-fuzz
   target, call the production parser, and commit/replay malformed and boundary seeds. Write the behavior rstest
   functions model_file_ids_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
-  in the DoD; corpus replay tests have separate names. Register helper operations model_file_ids in tools/oracle/src/helpers/mod.rs
-  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  in the DoD; corpus replay tests have separate names. The helper operation model_file_ids is already registered; each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
   - crates/betterlite-prompts/Cargo.toml
-  - crates/betterlite-prompts/src/lib.rs
-  - crates/betterlite-prompts/src/error.rs
   - crates/betterlite-prompts/src/file_ids.rs
   - crates/betterlite-prompts/src/file_ids/**
   - tools/oracle/Cargo.toml

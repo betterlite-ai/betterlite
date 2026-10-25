@@ -76,7 +76,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/identity_store.rs
     - crates/betterlite-auth/src/identity_store/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/identity_store.rs
     - tools/oracle/src/helpers/server/identity_store/**

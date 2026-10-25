@@ -94,7 +94,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/budget_admission_handoff.rs
     - crates/betterlite-auth/src/budget_admission_handoff/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/budget_admission_handoff.rs
     - tools/oracle/src/helpers/server/budget_admission_handoff/**

@@ -50,10 +50,10 @@ scope:
     - crates/betterlite-config/src/config_override/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/config-override-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/server/config_override_support.rs
-    - tools/oracle/src/helpers/server/config_override_support/**
-    - tools/oracle/helpers/config_override_support.py
-    - tools/oracle/helpers/config_override_support/**
+    - tools/oracle/src/helpers/server/override_projection.rs
+    - tools/oracle/src/helpers/server/override_projection/**
+    - tools/oracle/helpers/override_projection.py
+    - tools/oracle/helpers/override_projection/**
     - tools/oracle/cases/helpers/override-projection/**
     - tools/oracle/fuzz/corpus/helper_case/override-projection-*
   lint_tables: false
@@ -98,7 +98,7 @@ out_of_scope:
   - B1648 owns update_cyberark_config, get_cyberark_config, delete_cyberark_config and test_cyberark_connection at L650-L932.
   - B129 supplies the Vault/CyberArk clients; B124 owns their startup/reload integration and the generic per-value encryption facade.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as config_override_support in the server group. Replace the stub Op in tools/oracle/src/helpers/server/config_override_support.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/config_override_support.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as override_projection in the server group. Replace the stub Op in tools/oracle/src/helpers/server/override_projection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/override_projection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A valid non-object JSON config_value is not the same case as malformed JSON falling back to an empty mapping.
   - CyberArk rollback may reactivate Vault only after dropping an active CyberArk manager, not after every failed restore attempt.
 budget:

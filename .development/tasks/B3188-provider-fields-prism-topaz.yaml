@@ -45,508 +45,135 @@ dod:
     proof: [provider-records-preserved, topaz-field-values]
   - text: Sail has litellm_provider "sail", provider_display_name "Sail", default_model_placeholder "sail/openai/gpt-oss-120b", api_key required with label "Sail API Key", and api_base optional.
     proof: [provider-records-preserved, sail-key-label, sail-provider-metadata]
-  - text: The JSON file parses correctly with serde_json and yields fifteen provider records in the expected order.
+  - text: The JSON file is a JSON array of fifteen provider records in the expected order.
     proof: [provider-json-parses]
 checks:
   optional: []
   commands:
     - id: provider-records-preserved
       why: the provider records differ from LiteLLM or a record is missing
-      run: |
-        cat > /tmp/check_providers.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        expected = ['PRISM', 'RECRAFT', 'REPLICATE', 'RUNWAYML', 'SAGEMAKER', 'Sail', 'Sambanova', 'SAP', 'SCX_AI', 'Snowflake', 'Soniox', 'StrandsDecider', 'TEXT_COMPLETION_CODESTRAL', 'TogetherAI', 'TOPAZ']
-        actual = [p.get('provider') for p in data]
-        if actual != expected:
-            print(f"Provider mismatch: expected {expected}, got {actual}")
-            exit(1)
-        if len(data) != 15:
-            print(f"Expected 15 providers, got {len(data)}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_providers.py
+      run: >-
+        jq -e '[.[].provider] == ["PRISM", "RECRAFT", "REPLICATE", "RUNWAYML", "SAGEMAKER", "Sail", "Sambanova", "SAP", "SCX_AI", "Snowflake", "Soniox", "StrandsDecider", "TEXT_COMPLETION_CODESTRAL", "TogetherAI", "TOPAZ"]'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: sap-textarea-field
       why: SAP's api_key field is not a textarea or missing the correct label and tooltip
-      run: |
-        cat > /tmp/check_sap.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        sap = next(p for p in data if p['provider'] == 'SAP')
-        api_key_field = next((f for f in sap['credential_fields'] if f['key'] == 'api_key'), None)
-        if not api_key_field or api_key_field.get('field_type') != 'textarea':
-            print(f"SAP api_key field_type should be textarea, got {api_key_field.get('field_type') if api_key_field else 'not found'}")
-            exit(1)
-        if api_key_field.get('label') != 'SAP AI Core Service Key (JSON)':
-            print(f"SAP api_key label mismatch: {api_key_field.get('label')}")
-            exit(1)
-        if 'JSON' not in (api_key_field.get('tooltip') or ''):
-            print(f"SAP api_key tooltip missing JSON reference")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_sap.py
+      run: >-
+        jq -e '.[] | select(.provider == "SAP") | .credential_fields[] | select(.key == "api_key") | .field_type == "textarea" and .label == "SAP AI Core Service Key (JSON)" and (.tooltip | contains("JSON"))'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: snowflake-full-endpoint
       why: Snowflake's api_base field is not required or does not have the full endpoint URL placeholder and tooltip
-      run: |
-        cat > /tmp/check_snowflake.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        snowflake = next(p for p in data if p['provider'] == 'Snowflake')
-        api_base_field = next((f for f in snowflake['credential_fields'] if f['key'] == 'api_base'), None)
-        if not api_base_field or not api_base_field.get('required'):
-            print(f"Snowflake api_base should be required")
-            exit(1)
-        if 'inference:complete' not in (api_base_field.get('placeholder') or ''):
-            print(f"Snowflake api_base placeholder missing inference:complete")
-            exit(1)
-        if 'full endpoint' not in (api_base_field.get('tooltip') or '').lower():
-            print(f"Snowflake api_base tooltip missing 'full endpoint' reference")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_snowflake.py
+      run: >-
+        jq -e '.[] | select(.provider == "Snowflake") | .credential_fields[] | select(.key == "api_base") | .required == true and (.placeholder | contains("inference:complete")) and (.tooltip | ascii_downcase | contains("full endpoint"))'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: snowflake-api-key-label
       why: Snowflake's api_key field does not have the correct label or is not required
-      run: |
-        cat > /tmp/check_snowflake_key.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        snowflake = next(p for p in data if p['provider'] == 'Snowflake')
-        api_key_field = next((f for f in snowflake['credential_fields'] if f['key'] == 'api_key'), None)
-        if not api_key_field or not api_key_field.get('required'):
-            print(f"Snowflake api_key should be required")
-            exit(1)
-        if api_key_field.get('label') != 'Snowflake API Key / JWT Key for Authentication':
-            print(f"Snowflake api_key label mismatch: {api_key_field.get('label')}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_snowflake_key.py
+      run: >-
+        jq -e '.[] | select(.provider == "Snowflake") | .credential_fields[] | select(.key == "api_key") | .required == true and .label == "Snowflake API Key / JWT Key for Authentication"'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: scxai-placeholders
       why: SCX.ai api_base placeholder or model placeholder does not match
-      run: |
-        cat > /tmp/check_scxai.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        scxai = next(p for p in data if p['provider'] == 'SCX_AI')
-        if scxai.get('default_model_placeholder') != 'scx-ai/GLM-5.2':
-            print(f"SCX_AI model placeholder mismatch: {scxai.get('default_model_placeholder')}")
-            exit(1)
-        api_base_field = next((f for f in scxai['credential_fields'] if f['key'] == 'api_base'), None)
-        if not api_base_field or api_base_field.get('placeholder') != 'https://api.scx.ai/v1':
-            print(f"SCX_AI api_base placeholder mismatch: {api_base_field.get('placeholder') if api_base_field else 'not found'}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_scxai.py
+      run: >-
+        jq -e '.[] | select(.provider == "SCX_AI") | .default_model_placeholder == "scx-ai/GLM-5.2" and (.credential_fields[] | select(.key == "api_base") | .placeholder == "https://api.scx.ai/v1")'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: strands-required-base
       why: StrandsDecider api_base is not required or missing localhost placeholder and tooltip
-      run: |
-        cat > /tmp/check_strands.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        strands = next(p for p in data if p['provider'] == 'StrandsDecider')
-        api_base_field = next((f for f in strands['credential_fields'] if f['key'] == 'api_base'), None)
-        if not api_base_field or not api_base_field.get('required'):
-            print(f"StrandsDecider api_base should be required")
-            exit(1)
-        if api_base_field.get('placeholder') != 'http://localhost:8000':
-            print(f"StrandsDecider api_base placeholder mismatch: {api_base_field.get('placeholder')}")
-            exit(1)
-        if 'self-hosted' not in (api_base_field.get('tooltip') or '').lower():
-            print(f"StrandsDecider api_base tooltip missing 'self-hosted' reference")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_strands.py
+      run: >-
+        jq -e '.[] | select(.provider == "StrandsDecider") | .credential_fields[] | select(.key == "api_base") | .required == true and .placeholder == "http://localhost:8000" and (.tooltip | ascii_downcase | contains("self-hosted"))'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: sail-key-label
       why: Sail api_key field does not have the "Sail API Key" label or is not required
-      run: |
-        cat > /tmp/check_sail.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        sail = next(p for p in data if p['provider'] == 'Sail')
-        api_key_field = next((f for f in sail['credential_fields'] if f['key'] == 'api_key'), None)
-        if not api_key_field or api_key_field.get('label') != 'Sail API Key':
-            print(f"Sail api_key label mismatch: {api_key_field.get('label') if api_key_field else 'not found'}")
-            exit(1)
-        if not api_key_field.get('required'):
-            print(f"Sail api_key should be required")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_sail.py
+      run: >-
+        jq -e '.[] | select(.provider == "Sail") | .credential_fields[] | select(.key == "api_key") | .label == "Sail API Key" and .required == true'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: soniox-api-support-tooltip
       why: Soniox api_key tooltip does not document async Speech-to-Text REST API limitations
-      run: |
-        cat > /tmp/check_soniox.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        soniox = next(p for p in data if p['provider'] == 'Soniox')
-        api_key_field = next((f for f in soniox['credential_fields'] if f['key'] == 'api_key'), None)
-        tooltip = api_key_field.get('tooltip', '') if api_key_field else ''
-        if 'async Speech-to-Text' not in tooltip or 'REST API' not in tooltip:
-            print(f"Soniox api_key tooltip missing async Speech-to-Text REST API reference")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_soniox.py
+      run: >-
+        jq -e '.[] | select(.provider == "Soniox") | .credential_fields[] | select(.key == "api_key") | .tooltip | contains("async Speech-to-Text") and contains("REST API")'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: togetherai-single-field
       why: TogetherAI does not have exactly one credential field (api_key)
-      run: |
-        cat > /tmp/check_togetherai.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        togetherai = next(p for p in data if p['provider'] == 'TogetherAI')
-        fields = togetherai['credential_fields']
-        if len(fields) != 1:
-            print(f"TogetherAI should have exactly 1 credential field, got {len(fields)}")
-            exit(1)
-        if fields[0]['key'] != 'api_key' or not fields[0].get('required'):
-            print(f"TogetherAI field should be required api_key")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_togetherai.py
+      run: >-
+        jq -e '.[] | select(.provider == "TogetherAI") | .credential_fields | length == 1 and .[0].key == "api_key" and .[0].required == true'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: prism-field-values
       why: "PRISM fields or metadata do not match LiteLLM: api_base optional, api_key required,\
         \ default_model_placeholder missing prism/deepseek-v4.1-flash, litellm_provider not prism, or provider_display_name not Prism"
-      run: |
-        cat > /tmp/check_prism.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        prism = next(p for p in data if p['provider'] == 'PRISM')
-        if prism.get('litellm_provider') != 'prism':
-            print(f"PRISM litellm_provider mismatch: {prism.get('litellm_provider')}")
-            exit(1)
-        if prism.get('provider_display_name') != 'Prism':
-            print(f"PRISM provider_display_name mismatch: {prism.get('provider_display_name')}")
-            exit(1)
-        if prism.get('default_model_placeholder') != 'prism/deepseek-v4.1-flash':
-            print(f"PRISM default_model_placeholder mismatch: {prism.get('default_model_placeholder')}")
-            exit(1)
-        fields = {f['key']: f for f in prism['credential_fields']}
-        if not fields.get('api_base') or fields['api_base'].get('required'):
-            print(f"PRISM api_base should be optional")
-            exit(1)
-        if not fields.get('api_key') or not fields['api_key'].get('required'):
-            print(f"PRISM api_key should be required")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_prism.py
+      run: >-
+        jq -e '.[] | select(.provider == "PRISM") | .litellm_provider == "prism" and .provider_display_name == "Prism" and .default_model_placeholder == "prism/deepseek-v4.1-flash" and any(.credential_fields[]; .key == "api_base" and .required == false) and any(.credential_fields[]; .key == "api_key" and .required == true)'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: recraft-field-values
       why: RECRAFT does not have both api_base and api_key optional with default_model_placeholder gpt-3.5-turbo, litellm_provider not recraft, or provider_display_name not Recraft
-      run: |
-        cat > /tmp/check_recraft.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        recraft = next(p for p in data if p['provider'] == 'RECRAFT')
-        if recraft.get('litellm_provider') != 'recraft':
-            print(f"RECRAFT litellm_provider mismatch: {recraft.get('litellm_provider')}")
-            exit(1)
-        if recraft.get('provider_display_name') != 'Recraft':
-            print(f"RECRAFT provider_display_name mismatch: {recraft.get('provider_display_name')}")
-            exit(1)
-        if recraft.get('default_model_placeholder') != 'gpt-3.5-turbo':
-            print(f"RECRAFT default_model_placeholder mismatch: {recraft.get('default_model_placeholder')}")
-            exit(1)
-        fields = {f['key']: f for f in recraft['credential_fields']}
-        for field_key in ['api_base', 'api_key']:
-            if not fields.get(field_key) or fields[field_key].get('required'):
-                print(f"RECRAFT {field_key} should exist and be optional")
-                exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_recraft.py
+      run: >-
+        jq -e '.[] | select(.provider == "RECRAFT") | .litellm_provider == "recraft" and .provider_display_name == "Recraft" and .default_model_placeholder == "gpt-3.5-turbo" and any(.credential_fields[]; .key == "api_base" and .required == false) and any(.credential_fields[]; .key == "api_key" and .required == false)'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: replicate-field-values
       why: REPLICATE does not have both api_base and api_key optional with default_model_placeholder gpt-3.5-turbo, litellm_provider not replicate, or provider_display_name not Replicate
-      run: |
-        cat > /tmp/check_replicate.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        replicate = next(p for p in data if p['provider'] == 'REPLICATE')
-        if replicate.get('litellm_provider') != 'replicate':
-            print(f"REPLICATE litellm_provider mismatch: {replicate.get('litellm_provider')}")
-            exit(1)
-        if replicate.get('provider_display_name') != 'Replicate':
-            print(f"REPLICATE provider_display_name mismatch: {replicate.get('provider_display_name')}")
-            exit(1)
-        if replicate.get('default_model_placeholder') != 'gpt-3.5-turbo':
-            print(f"REPLICATE default_model_placeholder mismatch: {replicate.get('default_model_placeholder')}")
-            exit(1)
-        fields = {f['key']: f for f in replicate['credential_fields']}
-        for field_key in ['api_base', 'api_key']:
-            if not fields.get(field_key) or fields[field_key].get('required'):
-                print(f"REPLICATE {field_key} should exist and be optional")
-                exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_replicate.py
+      run: >-
+        jq -e '.[] | select(.provider == "REPLICATE") | .litellm_provider == "replicate" and .provider_display_name == "Replicate" and .default_model_placeholder == "gpt-3.5-turbo" and any(.credential_fields[]; .key == "api_base" and .required == false) and any(.credential_fields[]; .key == "api_key" and .required == false)'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: runwayml-field-values
       why: RUNWAYML does not have both api_base and api_key optional with default_model_placeholder gpt-3.5-turbo, litellm_provider not runwayml, or provider_display_name not Runwayml
-      run: |
-        cat > /tmp/check_runwayml.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        runwayml = next(p for p in data if p['provider'] == 'RUNWAYML')
-        if runwayml.get('litellm_provider') != 'runwayml':
-            print(f"RUNWAYML litellm_provider mismatch: {runwayml.get('litellm_provider')}")
-            exit(1)
-        if runwayml.get('provider_display_name') != 'Runwayml':
-            print(f"RUNWAYML provider_display_name mismatch: {runwayml.get('provider_display_name')}")
-            exit(1)
-        if runwayml.get('default_model_placeholder') != 'gpt-3.5-turbo':
-            print(f"RUNWAYML default_model_placeholder mismatch: {runwayml.get('default_model_placeholder')}")
-            exit(1)
-        fields = {f['key']: f for f in runwayml['credential_fields']}
-        for field_key in ['api_base', 'api_key']:
-            if not fields.get(field_key) or fields[field_key].get('required'):
-                print(f"RUNWAYML {field_key} should exist and be optional")
-                exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_runwayml.py
+      run: >-
+        jq -e '.[] | select(.provider == "RUNWAYML") | .litellm_provider == "runwayml" and .provider_display_name == "Runwayml" and .default_model_placeholder == "gpt-3.5-turbo" and any(.credential_fields[]; .key == "api_base" and .required == false) and any(.credential_fields[]; .key == "api_key" and .required == false)'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: sagemaker-field-values
       why: SAGEMAKER does not have both api_base and api_key optional with default_model_placeholder gpt-3.5-turbo, litellm_provider not sagemaker, or provider_display_name not Sagemaker
-      run: |
-        cat > /tmp/check_sagemaker.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        sagemaker = next(p for p in data if p['provider'] == 'SAGEMAKER')
-        if sagemaker.get('litellm_provider') != 'sagemaker':
-            print(f"SAGEMAKER litellm_provider mismatch: {sagemaker.get('litellm_provider')}")
-            exit(1)
-        if sagemaker.get('provider_display_name') != 'Sagemaker':
-            print(f"SAGEMAKER provider_display_name mismatch: {sagemaker.get('provider_display_name')}")
-            exit(1)
-        if sagemaker.get('default_model_placeholder') != 'gpt-3.5-turbo':
-            print(f"SAGEMAKER default_model_placeholder mismatch: {sagemaker.get('default_model_placeholder')}")
-            exit(1)
-        fields = {f['key']: f for f in sagemaker['credential_fields']}
-        for field_key in ['api_base', 'api_key']:
-            if not fields.get(field_key) or fields[field_key].get('required'):
-                print(f"SAGEMAKER {field_key} should exist and be optional")
-                exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_sagemaker.py
+      run: >-
+        jq -e '.[] | select(.provider == "SAGEMAKER") | .litellm_provider == "sagemaker" and .provider_display_name == "Sagemaker" and .default_model_placeholder == "gpt-3.5-turbo" and any(.credential_fields[]; .key == "api_base" and .required == false) and any(.credential_fields[]; .key == "api_key" and .required == false)'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: sambanova-field-values
       why: Sambanova does not have a single required api_key field or default_model_placeholder gpt-3.5-turbo, litellm_provider not sambanova, or provider_display_name not Sambanova
-      run: |
-        cat > /tmp/check_sambanova.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        sambanova = next(p for p in data if p['provider'] == 'Sambanova')
-        if sambanova.get('litellm_provider') != 'sambanova':
-            print(f"Sambanova litellm_provider mismatch: {sambanova.get('litellm_provider')}")
-            exit(1)
-        if sambanova.get('provider_display_name') != 'Sambanova':
-            print(f"Sambanova provider_display_name mismatch: {sambanova.get('provider_display_name')}")
-            exit(1)
-        if sambanova.get('default_model_placeholder') != 'gpt-3.5-turbo':
-            print(f"Sambanova default_model_placeholder mismatch: {sambanova.get('default_model_placeholder')}")
-            exit(1)
-        fields = sambanova['credential_fields']
-        if len(fields) != 1:
-            print(f"Sambanova should have exactly 1 credential field, got {len(fields)}")
-            exit(1)
-        if fields[0]['key'] != 'api_key' or not fields[0].get('required'):
-            print(f"Sambanova field should be required api_key")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_sambanova.py
+      run: >-
+        jq -e '.[] | select(.provider == "Sambanova") | .litellm_provider == "sambanova" and .provider_display_name == "Sambanova" and .default_model_placeholder == "gpt-3.5-turbo" and (.credential_fields | length == 1 and .[0].key == "api_key" and .[0].required == true)'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: sap-provider-metadata
       why: SAP metadata fields (litellm_provider, provider_display_name, default_model_placeholder) do not match LiteLLM
-      run: |
-        cat > /tmp/check_sap_meta.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        sap = next(p for p in data if p['provider'] == 'SAP')
-        if sap.get('litellm_provider') != 'sap':
-            print(f"SAP litellm_provider mismatch: {sap.get('litellm_provider')}")
-            exit(1)
-        if sap.get('provider_display_name') != 'SAP Generative AI Hub':
-            print(f"SAP provider_display_name mismatch: {sap.get('provider_display_name')}")
-            exit(1)
-        if sap.get('default_model_placeholder') != 'sap/gpt-4':
-            print(f"SAP default_model_placeholder mismatch: {sap.get('default_model_placeholder')}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_sap_meta.py
+      run: >-
+        jq -e '.[] | select(.provider == "SAP") | .litellm_provider == "sap" and .provider_display_name == "SAP Generative AI Hub" and .default_model_placeholder == "sap/gpt-4"'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: scxai-provider-metadata
       why: SCX.ai metadata fields (litellm_provider, provider_display_name) do not match LiteLLM
-      run: |
-        cat > /tmp/check_scxai_meta.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        scxai = next(p for p in data if p['provider'] == 'SCX_AI')
-        if scxai.get('litellm_provider') != 'scx-ai':
-            print(f"SCX_AI litellm_provider mismatch: {scxai.get('litellm_provider')}")
-            exit(1)
-        if scxai.get('provider_display_name') != 'SCX.ai':
-            print(f"SCX_AI provider_display_name mismatch: {scxai.get('provider_display_name')}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_scxai_meta.py
+      run: >-
+        jq -e '.[] | select(.provider == "SCX_AI") | .litellm_provider == "scx-ai" and .provider_display_name == "SCX.ai"'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: snowflake-provider-metadata
       why: Snowflake metadata fields (litellm_provider, provider_display_name, default_model_placeholder) do not match LiteLLM
-      run: |
-        cat > /tmp/check_snowflake_meta.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        snowflake = next(p for p in data if p['provider'] == 'Snowflake')
-        if snowflake.get('litellm_provider') != 'snowflake':
-            print(f"Snowflake litellm_provider mismatch: {snowflake.get('litellm_provider')}")
-            exit(1)
-        if snowflake.get('provider_display_name') != 'Snowflake':
-            print(f"Snowflake provider_display_name mismatch: {snowflake.get('provider_display_name')}")
-            exit(1)
-        if snowflake.get('default_model_placeholder') != 'snowflake/mistral-7b':
-            print(f"Snowflake default_model_placeholder mismatch: {snowflake.get('default_model_placeholder')}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_snowflake_meta.py
+      run: >-
+        jq -e '.[] | select(.provider == "Snowflake") | .litellm_provider == "snowflake" and .provider_display_name == "Snowflake" and .default_model_placeholder == "snowflake/mistral-7b"'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: soniox-provider-metadata
       why: Soniox metadata fields (litellm_provider, provider_display_name, default_model_placeholder) do not match LiteLLM
-      run: |
-        cat > /tmp/check_soniox_meta.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        soniox = next(p for p in data if p['provider'] == 'Soniox')
-        if soniox.get('litellm_provider') != 'soniox':
-            print(f"Soniox litellm_provider mismatch: {soniox.get('litellm_provider')}")
-            exit(1)
-        if soniox.get('provider_display_name') != 'Soniox':
-            print(f"Soniox provider_display_name mismatch: {soniox.get('provider_display_name')}")
-            exit(1)
-        if soniox.get('default_model_placeholder') != 'soniox/stt-async-v5':
-            print(f"Soniox default_model_placeholder mismatch: {soniox.get('default_model_placeholder')}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_soniox_meta.py
+      run: >-
+        jq -e '.[] | select(.provider == "Soniox") | .litellm_provider == "soniox" and .provider_display_name == "Soniox" and .default_model_placeholder == "soniox/stt-async-v5"'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: strands-provider-metadata
       why: StrandsDecider metadata fields (litellm_provider, provider_display_name, default_model_placeholder) do not match LiteLLM
-      run: |
-        cat > /tmp/check_strands_meta.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        strands = next(p for p in data if p['provider'] == 'StrandsDecider')
-        if strands.get('litellm_provider') != 'strands_decider':
-            print(f"StrandsDecider litellm_provider mismatch: {strands.get('litellm_provider')}")
-            exit(1)
-        if strands.get('provider_display_name') != 'Strands Decider':
-            print(f"StrandsDecider provider_display_name mismatch: {strands.get('provider_display_name')}")
-            exit(1)
-        if strands.get('default_model_placeholder') != 'strands_decider/strands-decider-2B-hobson-v19':
-            print(f"StrandsDecider default_model_placeholder mismatch: {strands.get('default_model_placeholder')}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_strands_meta.py
+      run: >-
+        jq -e '.[] | select(.provider == "StrandsDecider") | .litellm_provider == "strands_decider" and .provider_display_name == "Strands Decider" and .default_model_placeholder == "strands_decider/strands-decider-2B-hobson-v19"'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: codestral-field-values
       why: TEXT_COMPLETION_CODESTRAL does not have both api_base and api_key optional with default_model_placeholder gpt-3.5-turbo, litellm_provider not text-completion-codestral, or provider_display_name not Text-Completion-Codestral
-      run: |
-        cat > /tmp/check_codestral.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        codestral = next(p for p in data if p['provider'] == 'TEXT_COMPLETION_CODESTRAL')
-        if codestral.get('litellm_provider') != 'text-completion-codestral':
-            print(f"TEXT_COMPLETION_CODESTRAL litellm_provider mismatch: {codestral.get('litellm_provider')}")
-            exit(1)
-        if codestral.get('provider_display_name') != 'Text-Completion-Codestral':
-            print(f"TEXT_COMPLETION_CODESTRAL provider_display_name mismatch: {codestral.get('provider_display_name')}")
-            exit(1)
-        if codestral.get('default_model_placeholder') != 'gpt-3.5-turbo':
-            print(f"TEXT_COMPLETION_CODESTRAL default_model_placeholder mismatch: {codestral.get('default_model_placeholder')}")
-            exit(1)
-        fields = {f['key']: f for f in codestral['credential_fields']}
-        for field_key in ['api_base', 'api_key']:
-            if not fields.get(field_key) or fields[field_key].get('required'):
-                print(f"TEXT_COMPLETION_CODESTRAL {field_key} should exist and be optional")
-                exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_codestral.py
+      run: >-
+        jq -e '.[] | select(.provider == "TEXT_COMPLETION_CODESTRAL") | .litellm_provider == "text-completion-codestral" and .provider_display_name == "Text-Completion-Codestral" and .default_model_placeholder == "gpt-3.5-turbo" and any(.credential_fields[]; .key == "api_base" and .required == false) and any(.credential_fields[]; .key == "api_key" and .required == false)'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: togetherai-provider-metadata
       why: TogetherAI metadata fields (litellm_provider, provider_display_name) do not match LiteLLM
-      run: |
-        cat > /tmp/check_togetherai_meta.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        togetherai = next(p for p in data if p['provider'] == 'TogetherAI')
-        if togetherai.get('litellm_provider') != 'together_ai':
-            print(f"TogetherAI litellm_provider mismatch: {togetherai.get('litellm_provider')}")
-            exit(1)
-        if togetherai.get('provider_display_name') != 'TogetherAI':
-            print(f"TogetherAI provider_display_name mismatch: {togetherai.get('provider_display_name')}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_togetherai_meta.py
+      run: >-
+        jq -e '.[] | select(.provider == "TogetherAI") | .litellm_provider == "together_ai" and .provider_display_name == "TogetherAI"'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: topaz-field-values
       why: TOPAZ does not have both api_base and api_key optional with default_model_placeholder gpt-3.5-turbo, litellm_provider not topaz, or provider_display_name not Topaz
-      run: |
-        cat > /tmp/check_topaz.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        topaz = next(p for p in data if p['provider'] == 'TOPAZ')
-        if topaz.get('litellm_provider') != 'topaz':
-            print(f"TOPAZ litellm_provider mismatch: {topaz.get('litellm_provider')}")
-            exit(1)
-        if topaz.get('provider_display_name') != 'Topaz':
-            print(f"TOPAZ provider_display_name mismatch: {topaz.get('provider_display_name')}")
-            exit(1)
-        if topaz.get('default_model_placeholder') != 'gpt-3.5-turbo':
-            print(f"TOPAZ default_model_placeholder mismatch: {topaz.get('default_model_placeholder')}")
-            exit(1)
-        fields = {f['key']: f for f in topaz['credential_fields']}
-        for field_key in ['api_base', 'api_key']:
-            if not fields.get(field_key) or fields[field_key].get('required'):
-                print(f"TOPAZ {field_key} should exist and be optional")
-                exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_topaz.py
+      run: >-
+        jq -e '.[] | select(.provider == "TOPAZ") | .litellm_provider == "topaz" and .provider_display_name == "Topaz" and .default_model_placeholder == "gpt-3.5-turbo" and any(.credential_fields[]; .key == "api_base" and .required == false) and any(.credential_fields[]; .key == "api_key" and .required == false)'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: sail-provider-metadata
       why: Sail metadata fields (litellm_provider, provider_display_name, default_model_placeholder) do not match LiteLLM
-      run: |
-        cat > /tmp/check_sail_meta.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_prism_topaz.json') as f:
-            data = json.load(f)
-        sail = next(p for p in data if p['provider'] == 'Sail')
-        if sail.get('litellm_provider') != 'sail':
-            print(f"Sail litellm_provider mismatch: {sail.get('litellm_provider')}")
-            exit(1)
-        if sail.get('provider_display_name') != 'Sail':
-            print(f"Sail provider_display_name mismatch: {sail.get('provider_display_name')}")
-            exit(1)
-        if sail.get('default_model_placeholder') != 'sail/openai/gpt-oss-120b':
-            print(f"Sail default_model_placeholder mismatch: {sail.get('default_model_placeholder')}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_sail_meta.py
+      run: >-
+        jq -e '.[] | select(.provider == "Sail") | .litellm_provider == "sail" and .provider_display_name == "Sail" and .default_model_placeholder == "sail/openai/gpt-oss-120b"'
+        crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
     - id: provider-json-parses
       why: the JSON file does not parse or does not yield fifteen records
-      run: |
-        cat > /tmp/check_parse.rs << 'CHECKER'
-        use std::fs;
-        fn main() {
-            let content = fs::read_to_string("crates/betterlite-server/assets/provider_create_fields_prism_topaz.json")
-                .expect("failed to read json file");
-            let _: Vec<serde_json::Value> = serde_json::from_str(&content)
-                .expect("failed to parse json");
-        }
-        CHECKER
-        rustc /tmp/check_parse.rs -o /tmp/check_parse && /tmp/check_parse
+      run: jq -e 'type == "array" and length == 15' crates/betterlite-server/assets/provider_create_fields_prism_topaz.json
 oracle_cases: []
 deviations: []
 out_of_scope:

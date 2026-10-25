@@ -22,6 +22,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,gemma_envelope}.rs
+    - crates/betterlite-vertex/src/gemma_envelope.rs
     - crates/betterlite-vertex/src/gemma_envelope/**
     - tools/oracle/src/helpers/vertex/gemma_envelope.rs
     - tools/oracle/src/helpers/vertex/gemma_envelope/**
@@ -52,10 +53,10 @@ checks:
       run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemma_envelope::tests::client_timeout/)'
       why: Raw-client defaults differ from an explicit None passed to the HTTPHandler seam.
     - id: gemma-envelope-python
-      run: test -f tools/oracle/helpers/gemma_envelope.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      run: test -f tools/oracle/helpers/vertex_gemma_envelope.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Pydantic error coercion must be compared against the pinned record validator.
     - id: gemma-envelope-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemma_envelope*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemma_envelope::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemma_envelope*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemma_envelope::/)'
       why: Shared parser tests must identify the Gemma envelope call tag.
 oracle_cases:
   - tools/oracle/cases/helpers/gemma-envelope/wrapper-keys.yaml

@@ -25,10 +25,10 @@ scope:
   - crates/betterlite-core/src/api/realtime_setup_buffer/**
   - tools/oracle/src/websocket_driver.rs
   - tools/oracle/src/websocket_driver/realtime_setup_buffer.rs
-  - tools/oracle/src/helpers/core_ops/realtime_setup_buffer.rs
-  - tools/oracle/src/helpers/core_ops/realtime_setup_buffer/**
-  - tools/oracle/helpers/realtime_setup_buffer.py
-  - tools/oracle/helpers/realtime_setup_buffer/**
+  - tools/oracle/src/helpers/core_ops/setup_buffer_websocket.rs
+  - tools/oracle/src/helpers/core_ops/setup_buffer_websocket/**
+  - tools/oracle/helpers/realtime_setup_buffer_websocket.py
+  - tools/oracle/helpers/realtime_setup_buffer_websocket/**
   - tools/oracle/cases/websocket/realtime-setup-buffer/**
   - tools/oracle/fuzz/corpus/websocket_oracle/realtime-setup-buffer-*
   lint_tables: false
@@ -92,7 +92,7 @@ out_of_scope:
 - B1008 changes setup-complete/flushing flags on backend session.created; B1009 decides when nonaudio client frames join an existing backlog.
 - Other realtime_streaming.py callables belong to B1004 contracts, B1005 beta, B1006 storage, B1110 sending, B2455 policy and B1007 guardrail execution. _has_realtime_guardrails has no caller at the pin.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as realtime_setup_buffer in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/realtime_setup_buffer.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/realtime_setup_buffer.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as realtime_setup_buffer_websocket in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/setup_buffer_websocket.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/realtime_setup_buffer_websocket.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - clear bypasses the capacity test because it can free the queue; rejecting it at capacity would trap buffered audio.
 - Flush failure restores unsent frames ahead of new arrivals without restoring the successfully sent prefix.
 - The count cap is strict less than 200 before insertion; the byte cap accepts equality at 10485760.

@@ -23,9 +23,8 @@ description: >-
 
 scope:
   paths:
-    - litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py
-    - crates/betterlite/src/mcp_token_claims.rs
-    - crates/betterlite/src/mcp_token_claims/**
+    - crates/betterlite-guardrails/src/mcp_token_claims.rs
+    - crates/betterlite-guardrails/src/mcp_token_claims/**
   lint_tables: false
 
 references:
@@ -77,28 +76,28 @@ checks:
   commands:
     - id: claim-validation-tests
       why: Required claims validation fails when required claim is absent, or passes when list is empty.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::validate_required_claims::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_token_claims::validate_required_claims::/)'
     - id: identity-resolution-tests
       why: Identity resolves from configured sources in order, falls back to API-key hash, and warns on unknown sources.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::resolve_end_user_identity::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_token_claims::resolve_end_user_identity::/)'
     - id: scope-building-tests
       why: Scope generation follows least-privilege rules, sanitizes tool names, and respects configured allowed_scopes.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::build_scope::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_token_claims::build_scope::/)'
     - id: claim-operations-tests
       why: Add/set/remove operations apply in correct order with correct semantics.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::apply_claim_operations::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_token_claims::apply_claim_operations::/)'
     - id: optional-claims-tests
       why: Optional claims pass through from incoming JWT when absent in outbound claims.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::passthrough_optional_claims::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_token_claims::passthrough_optional_claims::/)'
     - id: claims-builder-tests
       why: Core builder combines all claim sources, timestamps, identity and scope correctly.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::build_claims::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_token_claims::build_claims::/)'
     - id: channel-token-tests
       why: Channel token claims inherit access token claims and apply separate audience/TTL.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::build_channel_token_claims::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_token_claims::build_channel_token_claims::/)'
     - id: debug-header-tests
       why: Debug header formats correctly and truncates scope at 77 characters plus "...".
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::build_debug_header::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_token_claims::build_debug_header::/)'
 
 oracle_cases: []
 

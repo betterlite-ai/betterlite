@@ -70,7 +70,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/model_grant_intersection.rs
     - crates/betterlite-auth/src/model_grant_intersection/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/model_grant_intersection.rs
     - tools/oracle/src/helpers/server/model_grant_intersection/**

@@ -1,8 +1,10 @@
 #![cfg(test)]
 
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::Cursor;
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
@@ -100,4 +102,39 @@ fn dot_paths_adapter_reports_path_errors(#[case] prefix: &str, #[case] message: 
     let error = super::invoke(&call).error.unwrap();
     assert_eq!(error.class, "PathError");
     assert!(error.message.starts_with(message));
+}
+
+#[test]
+fn dispatch_py_lists_exactly_the_registered_operations() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dispatch = fs::read_to_string(root.join("helpers/dispatch.py")).unwrap();
+    let (_, listed) = dispatch
+        .split_once("OPERATIONS: frozenset[str] = frozenset(")
+        .unwrap();
+    let (operations, _) = listed.split_once(')').unwrap();
+    let python: BTreeSet<String> = operations
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix('"')?.strip_suffix("\","))
+        .map(str::to_owned)
+        .collect();
+    let group_files = fs::read_dir(root.join("src/helpers"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension() == Some(OsStr::new("rs")))
+        .filter(|path| {
+            !["mod.rs", "python.rs", "tests.rs"]
+                .iter()
+                .any(|name| path.ends_with(name))
+        });
+    let rust: BTreeSet<String> = group_files
+        .flat_map(|path| {
+            fs::read_to_string(path)
+                .unwrap()
+                .lines()
+                .filter_map(|line| line.trim().strip_prefix('"')?.split_once("\" => "))
+                .map(|(operation, _)| operation.to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(rust, python);
 }

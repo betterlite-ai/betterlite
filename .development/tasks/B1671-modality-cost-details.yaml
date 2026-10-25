@@ -39,15 +39,14 @@ description: >-
   capped at 750 including the CostUsage projection additions.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/cost_usage.rs
     - crates/betterlite-models/src/cost_usage/**
     - crates/betterlite-models/src/modality_cost.rs
     - crates/betterlite-models/src/modality_cost/**
-    - tools/oracle/src/helpers/models/modality_cost_details.rs
-    - tools/oracle/src/helpers/models/modality_cost_details/**
-    - tools/oracle/helpers/modality_cost_details.py
-    - tools/oracle/helpers/modality_cost_details/**
+    - tools/oracle/src/helpers/models/modality_cost.rs
+    - tools/oracle/src/helpers/models/modality_cost/**
+    - tools/oracle/helpers/modality_cost.py
+    - tools/oracle/helpers/modality_cost/**
     - tools/oracle/cases/helpers/modality-cost/**
     - tools/oracle/fuzz/corpus/helper_case/modality-cost-*
   lint_tables: false
@@ -96,7 +95,7 @@ out_of_scope:
   - B1670 supplies utils.py threshold/base/reasoning selectors; B1669 supplies its off-peak window/rate functions. Generic totals and uplift are B1672; billed token rates, breakdowns and cache savings are B1673; B1674 owns image arithmetic, B1675 the two web-search counters, B1676 character metrics, and B1687 requested-image accessors and CostCalculatorUtils dispatch.
   - Public Usage construction and response serialization retain their existing owners; callers project those records into CostUsage before entering this module.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as modality_cost_details in the models group. Replace the stub Op in tools/oracle/src/helpers/models/modality_cost_details.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/modality_cost_details.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as modality_cost in the models group. Replace the stub Op in tools/oracle/src/helpers/models/modality_cost.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/modality_cost.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty TTL detail object means zero write cost rather than permission to charge the aggregate cache_creation_tokens again.
   - Missing audio-token pricing yields zero for that component, whereas missing image/video token pricing falls back to input_cost_per_token.
 budget:

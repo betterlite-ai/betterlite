@@ -33,7 +33,6 @@ scope:
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-server/src/api/batch_routes.rs
   - crates/betterlite-server/src/api/batch_routes/**
-  - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/batch_routes.rs
   - crates/betterlite-core/src/api/batch_routes/**

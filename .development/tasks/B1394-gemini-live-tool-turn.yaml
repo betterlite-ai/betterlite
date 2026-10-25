@@ -31,6 +31,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,gemini_live_tool_turn}.rs
+    - crates/betterlite-vertex/src/gemini_live_tool_turn.rs
     - crates/betterlite-vertex/src/gemini_live_tool_turn/**
     - tools/oracle/src/helpers/vertex/gemini_live_tool_turn.rs
     - tools/oracle/src/helpers/vertex/gemini_live_tool_turn/**
@@ -59,7 +60,7 @@ checks:
       run: test -f tools/oracle/helpers/gemini_live_tool_turn.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Python delegates to the pinned transform with tool-only inputs and a projection-only adapter.
     - id: live-tool-turn-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_tool_turn*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_live_tool_turn::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_tool_turn*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_live_tool_turn::/)'
       why: Added envelopes must be recognized as call.gemini_live_tool_turn.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-live-tool-turn/empty-calls-handled.yaml

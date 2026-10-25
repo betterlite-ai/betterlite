@@ -23,7 +23,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_upload_routing.rs
   - crates/betterlite-core/src/api/file_upload_routing/**
@@ -40,10 +39,10 @@ scope:
   - crates/betterlite-config/src/api/file_upload_routing.rs
   - crates/betterlite-config/src/api/file_upload_routing/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-routing-*
-  - tools/oracle/src/helpers/core_ops/file_upload_routing.rs
-  - tools/oracle/src/helpers/core_ops/file_upload_routing/**
-  - tools/oracle/helpers/file_upload_routing.py
-  - tools/oracle/helpers/file_upload_routing/**
+  - tools/oracle/src/helpers/core_ops/file_upload_policy.rs
+  - tools/oracle/src/helpers/core_ops/file_upload_policy/**
+  - tools/oracle/helpers/file_upload_policy.py
+  - tools/oracle/helpers/file_upload_policy/**
   - tools/oracle/cases/helpers/file-upload-policy/**
   - tools/oracle/fuzz/corpus/helper_case/file_upload_policy-*
   - tools/oracle/src/sdk_http.rs
@@ -171,7 +170,7 @@ out_of_scope:
 - B1032 owns create_file; B1033 get_file_content; B1034 get_file/list_files/_as_file_list_page; B087 delete_file.
 - The managed-hook continuation L481-L498 cannot run in the MIT checkout. Its router/type checks and managed upload belong to the excluded enterprise capability, not fabricated test doubles.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as file_upload_routing in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/file_upload_routing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/file_upload_routing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as file_upload_policy in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/file_upload_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/file_upload_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Explicit storage still follows executed-provider authorization; it is not a bypass for a forbidden model.
 - files_settings is merged after team credentials, so its matching record can replace them.
 - First-record JSON selection accepts values other than objects despite its annotation.

@@ -88,8 +88,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/api/batch_records.rs
   - crates/betterlite-core/src/api/batch_records/**
   - crates/betterlite-core/src/api.rs
@@ -100,8 +98,6 @@ scope:
   - crates/betterlite-openai/src/api/batch_records/**
   - crates/betterlite-openai/src/api.rs
   - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
   - crates/betterlite-provider/src/api/batch_records.rs
   - crates/betterlite-provider/src/api/batch_records/**
   - crates/betterlite-provider/src/api.rs

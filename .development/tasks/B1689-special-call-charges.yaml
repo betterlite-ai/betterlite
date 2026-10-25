@@ -55,7 +55,6 @@ scope:
     - crates/betterlite-core/src/cost.rs
     - crates/betterlite-core/src/cost/special.rs
     - crates/betterlite-core/src/cost/special/**
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/protocol_cost.rs
     - crates/betterlite-models/src/protocol_cost/**
     - crates/betterlite-provider/src/pricing.rs
@@ -66,10 +65,10 @@ scope:
     - crates/betterlite-config/fuzz/Cargo.toml
     - crates/betterlite-config/fuzz/fuzz_targets/replicate_price.rs
     - crates/betterlite-config/fuzz/corpus/replicate_price/**
-    - tools/oracle/src/helpers/core_ops/special_call_charges.rs
-    - tools/oracle/src/helpers/core_ops/special_call_charges/**
-    - tools/oracle/helpers/special_call_charges.py
-    - tools/oracle/helpers/special_call_charges/**
+    - tools/oracle/src/helpers/core_ops/protocol_charge.rs
+    - tools/oracle/src/helpers/core_ops/protocol_charge/**
+    - tools/oracle/helpers/protocol_charge.py
+    - tools/oracle/helpers/protocol_charge/**
     - tools/oracle/cases/helpers/protocol-charge/**
     - tools/oracle/fuzz/corpus/helper_case/protocol-charge-*
   lint_tables: false
@@ -130,7 +129,7 @@ out_of_scope:
   - B041 owns has_together_registry_pricing/get_model_params_and_category and its embedding category helper; the price-policy interface invokes them without importing a provider umbrella into core.
   - B068 assembles ordinary token/tool fees and public cost entry points; B1688 owns preparation, and the remaining cost_calculator.py helper ranges retain their B1666-B1687 owners.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as special_call_charges in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/special_call_charges.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/special_call_charges.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as protocol_charge in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/protocol_charge.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/protocol_charge.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A dictionary video response with a usage key does not satisfy the attribute access used by the video branch.
   - Search with query=[] bills zero queries here, whereas direct cost_per_token replaces a falsey count with one.
   - Replicate's timestamp fallback is also divided by 1000 even though subtracting timestamps already produced seconds.

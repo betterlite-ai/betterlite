@@ -40,7 +40,6 @@ description: >-
   implementation used by tests and oracle adapters.
 
 
-  Register helper operation provider_metadata_factory in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
   The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
   transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
   model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
@@ -72,8 +71,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-models/Cargo.toml
-  - crates/betterlite-models/src/lib.rs
-  - crates/betterlite-models/src/error.rs
   - crates/betterlite-models/src/provider_metadata_factory.rs
   - crates/betterlite-models/src/provider_metadata_factory/**
   - tools/oracle/Cargo.toml

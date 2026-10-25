@@ -45,6 +45,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-models/src/{lib,error,json_provider_registry}.rs
+    - crates/betterlite-models/src/json_provider_registry.rs
     - crates/betterlite-models/src/json_provider_registry/**
     - crates/betterlite-models/src/json_providers.json
     - crates/betterlite-models/fuzz/Cargo.toml
@@ -90,7 +91,7 @@ checks:
       run: test -f crates/betterlite-models/fuzz/fuzz_targets/json_provider_registry.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/json_provider_registry)" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_json_provider_registry_corpus)'
       why: Malformed descriptor input needs new bounded asset-decoder seeds.
     - id: json-registry-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/json_provider_registry*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::json_provider_registry::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/json_provider_registry*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::models::json_provider_registry::/)'
       why: Seed tests assert a nonempty set of json_provider_registry call variants.
 oracle_cases:
   - tools/oracle/cases/helpers/json-provider-registry/all-pinned-descriptors.yaml

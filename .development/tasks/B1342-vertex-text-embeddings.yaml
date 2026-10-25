@@ -23,6 +23,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_text_embeddings}.rs
+    - crates/betterlite-vertex/src/vertex_text_embeddings.rs
     - crates/betterlite-vertex/src/vertex_text_embeddings/**
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/embeddings.rs
@@ -61,7 +62,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_text_embeddings.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The reference adapter exposes actual TypedDict runtime parameters and response shapes.
     - id: text-embedding-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_text_embeddings*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_text_embeddings::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_text_embeddings*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::text_embeddings::/)'
       why: The shared parser must identify new standard, BGE and tuned embedding calls.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-text-embeddings/numeric-before-bge.yaml

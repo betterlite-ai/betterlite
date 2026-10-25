@@ -74,7 +74,7 @@ checks:
       run: test -f tools/oracle/helpers/mistral_options.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The reference must call the pinned sanitizer instead of encoding its misleading docstring.
     - id: mistral-options-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mistral_options*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mistral_options::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mistral_options*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::mistral_options::/)'
       why: New parser seeds must select this option mapper explicitly.
 oracle_cases:
   - tools/oracle/cases/helpers/mistral-options/absent-class-defaults.yaml

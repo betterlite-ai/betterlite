@@ -92,7 +92,6 @@ scope:
   paths:
     - crates/betterlite-db/src/daily_activity_repository.rs
     - crates/betterlite-db/src/daily_activity_repository/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - tools/oracle/src/helpers/db/daily_activity_repository.rs
     - tools/oracle/src/helpers/db/daily_activity_repository/**

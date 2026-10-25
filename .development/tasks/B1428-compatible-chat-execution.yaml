@@ -42,13 +42,14 @@ description: >-
 scope:
   paths:
     - crates/betterlite-provider/src/{lib,error,compatible_chat_call}.rs
+    - crates/betterlite-provider/src/compatible_chat_call.rs
     - crates/betterlite-provider/src/compatible_chat_call/**
     - crates/betterlite-provider/Cargo.toml
     - Cargo.lock
-    - tools/oracle/src/helpers/provider/compatible_chat_execution.rs
-    - tools/oracle/src/helpers/provider/compatible_chat_execution/**
-    - tools/oracle/helpers/compatible_chat_execution.py
-    - tools/oracle/helpers/compatible_chat_execution/**
+    - tools/oracle/src/helpers/provider/compatible_chat_plan.rs
+    - tools/oracle/src/helpers/provider/compatible_chat_plan/**
+    - tools/oracle/helpers/compatible_chat_plan.py
+    - tools/oracle/helpers/compatible_chat_plan/**
     - tools/oracle/cases/helpers/compatible-chat-plan/**
     - tools/oracle/fuzz/corpus/helper_case/compatible_chat_plan*
   lint_tables: false
@@ -74,7 +75,7 @@ checks:
       run: test -f tools/oracle/helpers/compatible_chat_plan.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The fixture send seam must capture actual source preparation without reimplementing its body merge.
     - id: compatible-plan-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_chat_plan*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::compatible_chat_plan::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_chat_plan*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::provider::compatible_chat_plan::/)'
       why: Added plan seeds must parse to compatible_chat_plan and cannot be an empty set.
 oracle_cases:
   - tools/oracle/cases/helpers/compatible-chat-plan/custom-endpoint-short-circuit.yaml
@@ -87,7 +88,7 @@ out_of_scope:
   - B038 supplies provider bindings; Groq, WatsonX and SageMaker retain their own subclasses and signed/custom-decoder setup in B041/B042 leaves.
   - B609 owns the fake iterator's chunk semantics; B1427 owns legacy line parsing and B005 stream cancellation/backpressure primitives.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as compatible_chat_execution in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/compatible_chat_execution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/compatible_chat_execution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as compatible_chat_plan in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/compatible_chat_plan.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/compatible_chat_plan.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The async streaming wrapper accepts fake_stream but never passes it to make_call.
   - A truthy explicit custom_endpoint leaves optional_params.custom_endpoint in the eventual body.
   - Only the synchronous streaming helper explicitly rejects a non-200 response here.

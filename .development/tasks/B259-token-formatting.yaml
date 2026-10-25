@@ -10,14 +10,12 @@ description: >-
   260 tests, 70 fuzz/replay and 50 wiring (700 total). Add the token_tool_format cargo-fuzz target, call the production
   parser, and commit/replay malformed and boundary seeds. Write the behavior rstest functions token_formatting_behavior_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
-  separate names. Register helper operations token_formatting in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  separate names. The helper operation token_formatting is already registered;
   each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
   - crates/betterlite-tokenizer/Cargo.toml
-  - crates/betterlite-tokenizer/src/lib.rs
-  - crates/betterlite-tokenizer/src/error.rs
   - crates/betterlite-tokenizer/src/tools.rs
   - crates/betterlite-tokenizer/src/tools/**
   - tools/oracle/Cargo.toml

@@ -87,8 +87,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_invalidation.rs
     - crates/betterlite-auth/src/auth_invalidation/**
-    - crates/betterlite-auth/src/lib.rs
-    - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/invalidation.rs
     - tools/oracle/src/helpers/auth/invalidation/**

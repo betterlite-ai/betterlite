@@ -15,8 +15,7 @@ description: >-
   formatting. B012 also wires LOGGING_WORKER_MAX_QUEUE_SIZE=50000, LOGGING_WORKER_CONCURRENCY=100 and LOGGING_WORKER_MAX_TIME_PER_COROUTINE=20
   into B191. Request Logging dispatch is supplied by the split B190 lifecycle tasks, not invented in this integration.
   Write the behavior rstest functions logging_pipeline_logging_integration_tests_behavior in adjacent tests.rs files, with a
-  named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper
-  operations service_logging in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation
+  named case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation service_logging is already registered; each operation
   has its own Rust and Python adapter file and corpus seed. Budget 260 pipeline, 100 adapters, 250 tests and 120
   config/wiring (730 total).
 scope:

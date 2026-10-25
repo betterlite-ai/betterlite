@@ -44,10 +44,10 @@ scope:
     - crates/betterlite-core/fuzz/corpus/riva_audio/**
     - tools/oracle/litellm/pyproject.toml
     - tools/oracle/litellm/uv.lock
-    - tools/oracle/src/helpers/core_ops/riva_audio_decoding.rs
-    - tools/oracle/src/helpers/core_ops/riva_audio_decoding/**
-    - tools/oracle/helpers/riva_audio_decoding.py
-    - tools/oracle/helpers/riva_audio_decoding/**
+    - tools/oracle/src/helpers/core_ops/riva_audio.rs
+    - tools/oracle/src/helpers/core_ops/riva_audio/**
+    - tools/oracle/helpers/riva_audio.py
+    - tools/oracle/helpers/riva_audio/**
     - tools/oracle/cases/helpers/riva-audio/**
     - tools/oracle/fixtures/riva-audio/**
     - tools/oracle/fuzz/corpus/helper_case/riva_audio*
@@ -93,7 +93,7 @@ deviations:
 out_of_scope:
   - B1547 owns Riva gRPC requests; this module ends at PCM output and never opens a provider connection.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as riva_audio_decoding in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/riva_audio_decoding.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/riva_audio_decoding.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as riva_audio in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/riva_audio.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/riva_audio.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Negative full scale becomes -32767 because the final conversion multiplies by 32767 rather than 32768.
   - A soxr runtime error propagates instead of selecting scipy or linear interpolation.
   - The audioread temporary file must be removed on both decode errors and successful conversion.

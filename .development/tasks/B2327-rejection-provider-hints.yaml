@@ -30,12 +30,11 @@ scope:
   paths:
     - crates/betterlite-auth/src/rejection_provider.rs
     - crates/betterlite-auth/src/rejection_provider/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth/rejection_provider_hints.rs
-    - tools/oracle/src/helpers/auth/rejection_provider_hints/**
-    - tools/oracle/helpers/rejection_provider_hints.py
-    - tools/oracle/helpers/rejection_provider_hints/**
+    - tools/oracle/src/helpers/auth/rejection_provider.rs
+    - tools/oracle/src/helpers/auth/rejection_provider/**
+    - tools/oracle/helpers/rejection_provider.py
+    - tools/oracle/helpers/rejection_provider/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/rejection-provider/**
     - tools/oracle/fuzz/corpus/helper_case/rejection-provider-*
@@ -68,7 +67,7 @@ deviations: []
 out_of_scope:
   - B072 retains convert_priority_to_percent and rate-limiter hooks; B757 attaches this result to budget exceptions.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as rejection_provider_hints in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/rejection_provider_hints.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/rejection_provider_hints.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as rejection_provider in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/rejection_provider.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/rejection_provider.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The direct resolver returning an empty provider is success and does not trigger the alias scan.
 budget:
   max_changed_lines: 400

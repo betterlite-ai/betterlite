@@ -13,7 +13,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/spend_reads.rs
     - crates/betterlite-auth/src/spend_reads/**
-    - crates/betterlite-auth/src/lib.rs
   lint_tables: false
 references:
   - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2771-L2771"

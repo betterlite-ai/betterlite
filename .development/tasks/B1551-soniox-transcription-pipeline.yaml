@@ -35,10 +35,10 @@ scope:
     - crates/betterlite-core/src/api/soniox.rs
     - crates/betterlite-core/src/api/soniox/pipeline.rs
     - crates/betterlite-core/src/api/soniox/pipeline/**
-    - tools/oracle/src/helpers/core_ops/soniox_transcription_pipeline.rs
-    - tools/oracle/src/helpers/core_ops/soniox_transcription_pipeline/**
-    - tools/oracle/helpers/soniox_transcription_pipeline.py
-    - tools/oracle/helpers/soniox_transcription_pipeline/**
+    - tools/oracle/src/helpers/core_ops/soniox_pipeline.rs
+    - tools/oracle/src/helpers/core_ops/soniox_pipeline/**
+    - tools/oracle/helpers/soniox_pipeline.py
+    - tools/oracle/helpers/soniox_pipeline/**
     - tools/oracle/cases/helpers/soniox-pipeline/**
     - tools/oracle/fuzz/corpus/helper_case/soniox_pipeline*
   lint_tables: false
@@ -74,7 +74,7 @@ deviations: []
 out_of_scope:
   - Public Soniox mode dispatch at 111-172 stays in B047; handler records/shared helpers at 61-102 and 173-357 are B1549, and upload/poll/cleanup pairs at 482-588 and 716-816 are B1550.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as soniox_transcription_pipeline in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/soniox_transcription_pipeline.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/soniox_transcription_pipeline.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as soniox_pipeline in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/soniox_pipeline.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/soniox_pipeline.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The job may be created remotely before a malformed response prevents learning its cleanup ID.
   - A caller-supplied file_id is never substituted into uploaded_file_id for cleanup.
   - Invalid audio_duration_ms can fail after post_call already ran.

@@ -32,12 +32,14 @@ scope:
   paths:
     - crates/betterlite-core/src/api/bfl.rs
     - crates/betterlite-core/src/api/bfl/{generation_call,poll}.rs
+    - crates/betterlite-core/src/api/bfl/generation_call.rs
     - crates/betterlite-core/src/api/bfl/generation_call/**
+    - crates/betterlite-core/src/api/bfl/poll.rs
     - crates/betterlite-core/src/api/bfl/poll/**
-    - tools/oracle/src/helpers/core_ops/bfl_generation_polling.rs
-    - tools/oracle/src/helpers/core_ops/bfl_generation_polling/**
-    - tools/oracle/helpers/bfl_generation_polling.py
-    - tools/oracle/helpers/bfl_generation_polling/**
+    - tools/oracle/src/helpers/core_ops/bfl_jobs.rs
+    - tools/oracle/src/helpers/core_ops/bfl_jobs/**
+    - tools/oracle/helpers/bfl_jobs.py
+    - tools/oracle/helpers/bfl_jobs/**
     - tools/oracle/cases/helpers/bfl-jobs/**
     - tools/oracle/fuzz/corpus/helper_case/bfl_jobs*
   lint_tables: false
@@ -70,7 +72,7 @@ deviations: []
 out_of_scope:
   - B046 connects the prepared generation executor to ImageGenerationPlan; B1517 controls result parsing and the hostname allowlist.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as bfl_generation_polling in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/bfl_generation_polling.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bfl_generation_polling.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as bfl_jobs in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/bfl_jobs.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bfl_jobs.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Submission accepts a non-error 201, but a poll returning 201 fails.
   - The presence of errors is sufficient to reject a submission even when its value is an empty list.
   - Extra authentication headers used for submission must not accompany polling GETs.

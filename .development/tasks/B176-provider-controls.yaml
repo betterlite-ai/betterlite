@@ -14,8 +14,7 @@ description: >-
   as affinity inputs. _ensure_extra_body_is_safe is identity for JSON; Python object conversion belongs to SDK tasks.
   Budget 280 controls/affinity/header logic, 90 config/wire, 110 adapters and 290 tests (770 total). Write the behavior
   rstest functions provider_controls_tests_behavior in adjacent tests.rs files, with a named case for each
-  behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations provider_controls,
-  provider_affinity, multipart_fields, provider_headers in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  behavior and failure in the DoD; corpus replay tests have separate names. The helper operations provider_controls, provider_affinity, multipart_fields, provider_headers are already registered;
   each operation has its own Rust and Python adapter file and corpus seed.
 
 
@@ -26,8 +25,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-models/Cargo.toml
-  - crates/betterlite-models/src/lib.rs
-  - crates/betterlite-models/src/error.rs
   - crates/betterlite-models/src/controls.rs
   - crates/betterlite-models/src/controls/**
   - crates/betterlite-models/src/headers.rs
@@ -40,6 +37,18 @@ scope:
   - tools/oracle/src/helpers/models/provider_controls/**
   - tools/oracle/helpers/provider_controls.py
   - tools/oracle/helpers/provider_controls/**
+  - tools/oracle/src/helpers/models/provider_headers.rs
+  - tools/oracle/src/helpers/models/provider_headers/**
+  - tools/oracle/helpers/provider_headers.py
+  - tools/oracle/helpers/provider_headers/**
+  - tools/oracle/src/helpers/models/multipart_fields.rs
+  - tools/oracle/src/helpers/models/multipart_fields/**
+  - tools/oracle/helpers/multipart_fields.py
+  - tools/oracle/helpers/multipart_fields/**
+  - tools/oracle/src/helpers/models/provider_affinity.rs
+  - tools/oracle/src/helpers/models/provider_affinity/**
+  - tools/oracle/helpers/provider_affinity.py
+  - tools/oracle/helpers/provider_affinity/**
   - tools/oracle/cases/helpers/provider-controls/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -120,7 +129,7 @@ out_of_scope:
 - dot_notation_indexing.py is B213 (shared with JWT auth); pick_cheapest_chat_models_from_llm_provider is B019;
   get_proxy_server_request_headers is B206; non-JSON Langfuse object conversion is B164.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as provider_controls in the models group. Replace the stub Op in tools/oracle/src/helpers/models/provider_controls.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/provider_controls.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as provider_controls and provider_affinity and multipart_fields and provider_headers in the models group. Replace the stub Op in tools/oracle/src/helpers/models/provider_controls.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/provider_controls.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A generated session identifier is not a stable affinity key.
 - Header names are case insensitive, including duplicate detection.
 - Dot-path reads and deletes use different grammars in LiteLLM; do not silently treat them as the same operation.

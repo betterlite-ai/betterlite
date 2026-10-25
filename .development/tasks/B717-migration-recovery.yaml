@@ -102,7 +102,6 @@ scope:
   paths:
     - crates/betterlite-db/src/migration_recovery.rs
     - crates/betterlite-db/src/migration_recovery/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-config/src/migration_recovery.rs
     - crates/betterlite-config/src/migration_recovery/**

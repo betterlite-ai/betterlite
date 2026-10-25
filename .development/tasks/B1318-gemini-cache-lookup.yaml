@@ -22,14 +22,15 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,cache_lookup}.rs
+    - crates/betterlite-vertex/src/cache_lookup.rs
     - crates/betterlite-vertex/src/cache_lookup/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/cache_page.rs
     - crates/betterlite-vertex/fuzz/corpus/cache_page/**
-    - tools/oracle/src/helpers/vertex/gemini_cache_lookup.rs
-    - tools/oracle/src/helpers/vertex/gemini_cache_lookup/**
-    - tools/oracle/helpers/gemini_cache_lookup.py
-    - tools/oracle/helpers/gemini_cache_lookup/**
+    - tools/oracle/src/helpers/vertex/cache_lookup.rs
+    - tools/oracle/src/helpers/vertex/cache_lookup/**
+    - tools/oracle/helpers/vertex_cache_lookup.py
+    - tools/oracle/helpers/vertex_cache_lookup/**
     - tools/oracle/cases/helpers/vertex-cache-lookup/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_cache_lookup*
   lint_tables: false
@@ -55,7 +56,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_cache_lookup.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The adapter calls the target builder with resolved tokens and performs no network operation.
     - id: lookup-corpora
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/cache_page)" && test -f crates/betterlite-vertex/fuzz/fuzz_targets/cache_page.rs && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_cache_page_corpus)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_cache_lookup*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_cache_lookup::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/cache_page)" && test -f crates/betterlite-vertex/fuzz/fuzz_targets/cache_page.rs && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_cache_page_corpus)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_cache_lookup*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::cache_lookup::/)'
       why: Cache-page parsing and helper selection each require newly added corpus inputs.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-cache-lookup/provider-cache-targets.yaml
@@ -68,7 +69,7 @@ out_of_scope:
   - check_and_create_cache and async_check_and_create_cache are B1324; prefix and request transformations are B1317.
   - get_cache and async_get_cache at L592-L597 have no caller at the pin and contain only pass.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as gemini_cache_lookup in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_cache_lookup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_cache_lookup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_cache_lookup in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/cache_lookup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_cache_lookup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A 403 cache list response permits the later create path instead of failing inference immediately.
   - A matching displayName with no name stops the search with no usable cache name.
   - Cache list pagination is bounded at 100 even if the provider repeats its nextPageToken forever.

@@ -41,10 +41,10 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/oauth_reply.rs
     - crates/betterlite-openai/fuzz/corpus/oauth_reply/**
-    - tools/oracle/src/helpers/openai/chatgpt_device_login.rs
-    - tools/oracle/src/helpers/openai/chatgpt_device_login/**
-    - tools/oracle/helpers/chatgpt_device_login.py
-    - tools/oracle/helpers/chatgpt_device_login/**
+    - tools/oracle/src/helpers/openai/chatgpt_login.rs
+    - tools/oracle/src/helpers/openai/chatgpt_login/**
+    - tools/oracle/helpers/chatgpt_login.py
+    - tools/oracle/helpers/chatgpt_login/**
     - tools/oracle/cases/helpers/chatgpt-login/**
     - tools/oracle/fuzz/corpus/helper_case/chatgpt_login*
   lint_tables: false
@@ -82,7 +82,7 @@ deviations: []
 out_of_scope:
   - B1508 owns the remaining authenticator methods, including claim decoding, record writes and _wait_for_access_token; the shared file's imports/constants do not create another authenticator implementation.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as chatgpt_device_login in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/chatgpt_device_login.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/chatgpt_device_login.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as chatgpt_login in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/chatgpt_login.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/chatgpt_login.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - code_challenge is mandatory in an authorized polling response even though the token exchange sends only code_verifier.
   - HTTP 403 and 404 mean pending here, whereas other non-success statuses fail immediately.
   - Refresh uses JSON but authorization-code exchange assembles an unescaped form body.

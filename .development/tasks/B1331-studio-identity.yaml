@@ -23,6 +23,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,studio_identity}.rs
+    - crates/betterlite-vertex/src/studio_identity.rs
     - crates/betterlite-vertex/src/studio_identity/**
     - crates/betterlite-config/src/{lib,config,model,settings,env,providers}.rs
     - crates/betterlite-config/src/providers/{vertex,gemini}.rs
@@ -70,7 +71,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/studio_models.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/studio_models)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_studio_models_corpus)'
       why: Model-list JSON parsing must withstand malformed and oversized names.
     - id: identity-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_identity*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_identity::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_identity*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::studio_identity::/)'
       why: Identity corpus records must reach the newly registered helper.
 oracle_cases:
   - tools/oracle/cases/helpers/studio-identity/google-key-first.yaml

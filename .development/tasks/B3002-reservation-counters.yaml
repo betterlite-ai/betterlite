@@ -25,7 +25,6 @@ description: >-
   team's organization_id. Project counters skip if budget is infinite (math.isfinite check).
 scope:
   paths:
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/reservation_counters.rs
     - crates/betterlite-auth/src/reservation_counters/**
   lint_tables: false

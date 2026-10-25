@@ -115,7 +115,7 @@ pub(crate) fn validate(root: &Path) -> Result<Vec<String>, GateError> {
             let parsed: Option<Task> = load(&folder.join(file), &mut problems);
             problems.extend(
                 parsed
-                    .map(|spec| task::problems(&catalog, entry, &spec))
+                    .map(|spec| task::problems(root, &catalog, entry, &spec))
                     .unwrap_or_default(),
             );
         }

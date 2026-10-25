@@ -149,3 +149,13 @@ jobs:
         env:
           GATE_BASE: ${{ steps.find.outputs.base }}
         run: cargo gate run B000 --only fmt --only clippy --only tests --only doctests --only deny --only shear --only hooks --only similarity --only file-size --only workflows
+
+      - name: Keep the gate logs of a failed run
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-logs
+          path: .git/betterlite/*/gate/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7

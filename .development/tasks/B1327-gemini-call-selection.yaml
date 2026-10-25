@@ -21,6 +21,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,gemini_call}.rs
+    - crates/betterlite-vertex/src/gemini_call.rs
     - crates/betterlite-vertex/src/gemini_call/**
   lint_tables: false
 references:

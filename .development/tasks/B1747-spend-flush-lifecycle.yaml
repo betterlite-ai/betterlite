@@ -35,7 +35,6 @@ description: >-
   are covered, with an 800-line limit including config tests and lifecycle fault cases.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/spend_flush.rs
     - crates/betterlite-db/src/spend_flush/**
     - crates/betterlite-config/src/spend_storage.rs

@@ -21,8 +21,7 @@ description: >-
   SkillArchive::content (bytes), digest (str), declared_name and declared_description (both str | None).
 
   Add independent helper-oracle comparisons through B171's HelperCall dispatch with build_skill_archive
-  as a pure helper operation. Register the operation in tools/oracle/src/helpers/mod.rs and
-  tools/oracle/helpers/dispatch.py with Rust and Python adapters, a new corpus seed directory,
+  as a pure helper operation. The operation is already registered with Rust and Python adapters, a new corpus seed directory,
   and cases covering ZIP structure validation, frontmatter parsing, path flattening and digest
   reproducibility. Add a production ZIP/frontmatter fuzz target to crates/betterlite-http/fuzz
   and replay its corpus through the archive builder.

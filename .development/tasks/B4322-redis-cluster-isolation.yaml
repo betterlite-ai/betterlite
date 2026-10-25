@@ -16,12 +16,11 @@ scope:
   paths:
   - crates/betterlite-redis/src/redis_cluster_node_isolation.rs
   - crates/betterlite-redis/src/redis_cluster_node_isolation/tests.rs
-  - crates/betterlite-redis/src/lib.rs
   - crates/betterlite-redis/Cargo.toml
-  - tools/oracle/src/helpers/redis/cluster_isolation.rs
-  - tools/oracle/src/helpers/redis/cluster_isolation/**
-  - tools/oracle/helpers/redis_cluster_isolation.py
-  - tools/oracle/helpers/redis_cluster_isolation/**
+  - tools/oracle/src/helpers/redis/cluster_node_isolation.rs
+  - tools/oracle/src/helpers/redis/cluster_node_isolation/**
+  - tools/oracle/helpers/redis_cluster_node_isolation.py
+  - tools/oracle/helpers/redis_cluster_node_isolation/**
   - tools/oracle/cases/helpers/redis-cluster-node-isolation/**
   - Cargo.toml
   - deny.toml
@@ -34,7 +33,7 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cluster_node_isolation.py#L31-L76
   why: Protocol definitions and imports for typing cluster/node behavior.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as redis_cluster_isolation in the redis group. Replace the stub Op in tools/oracle/src/helpers/redis/cluster_isolation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/redis_cluster_isolation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as redis_cluster_node_isolation in the redis group. Replace the stub Op in tools/oracle/src/helpers/redis/cluster_node_isolation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/redis_cluster_node_isolation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The timeout-tolerant wrapper always re-raises every TimeoutError; what it suppresses
   is only the shared cluster-wide _initialize reinit flag for the first two consecutive
   timeouts per node (tracked in _litellm_consecutive_timeouts). The third and later consecutive

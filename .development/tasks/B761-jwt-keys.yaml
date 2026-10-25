@@ -131,7 +131,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/jwt_keys.rs
     - crates/betterlite-auth/src/jwt_keys/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/jwt_keys.rs
     - tools/oracle/src/helpers/auth/jwt_keys/**

@@ -85,7 +85,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_key_lookup.rs
     - crates/betterlite-auth/src/auth_key_lookup/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - Cargo.toml
     - deny.toml

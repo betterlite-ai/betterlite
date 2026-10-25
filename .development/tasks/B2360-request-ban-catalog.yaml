@@ -89,7 +89,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/request_ban_catalog.rs
     - crates/betterlite-auth/src/request_ban_catalog/**
-    - crates/betterlite-auth/src/lib.rs
     - tools/oracle/src/helpers/auth/request_ban_catalog.rs
     - tools/oracle/src/helpers/auth/request_ban_catalog/**
     - tools/oracle/helpers/request_ban_catalog.py

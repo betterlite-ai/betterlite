@@ -8,14 +8,12 @@ description: >-
   inline media. Add prompt_anthropic fuzzing for typed provider blocks, not XML. Budget 280 assistant/assembly,
   100 adapters, 320 tests/fuzz and 50 wiring (750 total). Write the behavior rstest functions anthropic_prompts_anthropic_prompt_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
-  separate names. Register helper operations anthropic_prompt in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  separate names. The helper operation anthropic_prompt is already registered;
   each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
   - crates/betterlite-prompts/Cargo.toml
-  - crates/betterlite-prompts/src/lib.rs
-  - crates/betterlite-prompts/src/error.rs
   - crates/betterlite-prompts/src/anthropic.rs
   - crates/betterlite-prompts/src/anthropic/**
   - crates/betterlite-prompts/fuzz/**

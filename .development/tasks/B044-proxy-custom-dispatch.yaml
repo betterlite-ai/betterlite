@@ -43,7 +43,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/lib.rs
     - crates/betterlite-provider/src/provider.rs
     - crates/betterlite-provider/src/operation.rs
     - crates/betterlite-provider/src/legacy_dispatch.rs
@@ -65,10 +64,10 @@ scope:
     - crates/betterlite-config/src/resolve.rs
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/legacy_provider*
-    - tools/oracle/src/helpers/provider/proxy_custom_dispatch.rs
-    - tools/oracle/src/helpers/provider/proxy_custom_dispatch/**
-    - tools/oracle/helpers/proxy_custom_dispatch.py
-    - tools/oracle/helpers/proxy_custom_dispatch/**
+    - tools/oracle/src/helpers/provider/custom_method.rs
+    - tools/oracle/src/helpers/provider/custom_method/**
+    - tools/oracle/helpers/custom_method.py
+    - tools/oracle/helpers/custom_method/**
     - tools/oracle/cases/helpers/custom-method/**
     - tools/oracle/fuzz/corpus/helper_case/custom_method*
     - tools/oracle/cases/providers/proxy-custom/**
@@ -147,7 +146,7 @@ out_of_scope:
   - B500 owns main.py _is_openai_backed_api_base/_resolve_openai_api_base; B198 owns _provider_config_items/_locals_snapshot/_dispatch_metadata/_dispatch_client_http/_dispatch_client_azure/_dispatch_client_openai; B195 owns _load_default_encoding; B196 owns _load_module_encoding/_get_encoding; B2239 owns print_verbose.
   - B2227 owns main.py stream_chunk_builder, stream_chunk_builder_text_completion, _reported_cost_is_priced_by_calculator, _stream_builder_response_cost, _joined_streamed_citations, _stream_builder_model_map_cost, _set_stream_builder_response_cost, _stamp_streaming_usage_cost, _stream_choice_delta, _delta_carries_more_than_text and _simple_text_part.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as proxy_custom_dispatch in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/proxy_custom_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/proxy_custom_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as custom_method in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/custom_method.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/custom_method.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Aleph Alpha's global generic api_key comes after both provider environment spellings.
   - _complete_custom gives the global base priority over its explicit argument, unlike the neighboring providers.
   - Aiohttp's dispatcher adds /v1 through its fallback base even though the bare config's default base omits it.

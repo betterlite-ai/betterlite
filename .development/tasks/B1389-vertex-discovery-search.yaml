@@ -42,6 +42,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_discovery_search}.rs
+    - crates/betterlite-vertex/src/vertex_discovery_search.rs
     - crates/betterlite-vertex/src/vertex_discovery_search/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_search_payload.rs
@@ -90,7 +91,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_search_payload.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_search_payload)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_search_payload_corpus)'
       why: decode_vertex_search_payload receives malformed nested result and numeric-field cases.
     - id: discovery-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_discovery_search*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_discovery_search::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_discovery_search*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::discovery_search::/)'
       why: Shared HelperCase decoding must select call.vertex_discovery_search on each added fixture.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-discovery-search/engine-target.yaml

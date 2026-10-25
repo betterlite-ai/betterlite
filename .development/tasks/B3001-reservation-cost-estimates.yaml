@@ -34,7 +34,6 @@ description: >-
   and cancellation-window behavior.
 scope:
   paths:
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/reservation_cost.rs
     - crates/betterlite-auth/src/reservation_cost/**
     - crates/betterlite-auth/src/tiering.rs

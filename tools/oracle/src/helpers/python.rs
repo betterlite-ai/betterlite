@@ -22,7 +22,7 @@ pub(super) fn run_python(
         .env_clear();
     configure_environment(&mut command, case_env);
     let bytes = serde_json::to_vec(input).map_err(OracleError::Json)?;
-    let stdout_output = run_bounded(&mut command, bytes, Duration::from_secs(15))?;
+    let stdout_output = run_bounded(&mut command, bytes, Duration::from_secs(60))?;
     serde_json::from_slice(&stdout_output).map_err(OracleError::HelperJson)
 }
 

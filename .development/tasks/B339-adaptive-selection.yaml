@@ -32,8 +32,6 @@ scope:
   paths:
   - crates/betterlite-router/src/adaptive_selection.rs
   - crates/betterlite-router/src/adaptive_selection/**
-  - crates/betterlite-router/src/lib.rs
-  - crates/betterlite-router/src/error.rs
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/state.rs
