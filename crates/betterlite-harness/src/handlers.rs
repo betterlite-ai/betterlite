@@ -5,11 +5,10 @@ use futures_core::Stream;
 
 use crate::context::SessionContext;
 use crate::errors::HarnessError;
-use crate::transformation::HarnessConfigView;
-use crate::types::Event;
+use crate::types::{Event, Harness};
 
 pub trait BaseHarnessHandler: Send {
-    fn config(&self) -> &dyn HarnessConfigView;
+    fn harness(&self) -> Harness;
     fn start(
         &mut self,
         context: &mut SessionContext,
@@ -33,7 +32,12 @@ pub trait BaseHarnessHandler: Send {
         Err(HarnessError::CapabilityUnsupported {
             message: format!(
                 "Harness.{} does not expose history",
-                self.config().harness().name()
+                match self.harness() {
+                    Harness::ClaudeCode => "CLAUDE_CODE",
+                    Harness::Codex => "CODEX",
+                    Harness::OpenCode => "OPENCODE",
+                    Harness::DeepAgents => "DEEPAGENTS",
+                }
             ),
         })
     }

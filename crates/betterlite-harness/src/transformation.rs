@@ -32,21 +32,17 @@ option_impl!(CodexOptions, Codex);
 option_impl!(OpenCodeOptions, OpenCode);
 option_impl!(DeepAgentsOptions, DeepAgents);
 
+#[rustfmt::skip]
 pub struct HarnessSessionSetup {
-    pub files: BTreeMap<String, Vec<u8>>,
-    pub persisted_dirs: Vec<(String, String)>,
-    pub skills_dir: Option<String>,
-    pub env: BTreeMap<String, String>,
+    pub files: BTreeMap<String, Vec<u8>>, pub persisted_dirs: Vec<(String, String)>, pub skills_dir: Option<String>, pub env: BTreeMap<String, String>,
 }
+#[rustfmt::skip]
 pub struct HarnessTurnRequest {
-    pub argv: Vec<String>,
-    pub env: BTreeMap<String, String>,
-    pub stdin: String,
-    pub cwd: Option<String>,
+    pub argv: Vec<String>, pub env: BTreeMap<String, String>, pub stdin: String, pub cwd: Option<String>,
 }
+#[rustfmt::skip]
 pub struct HarnessTurnResponse {
-    pub final_text: String,
-    pub output_json: Option<String>,
+    pub final_text: String, pub output_json: Option<String>,
 }
 
 pub trait BaseHarnessConfig: Send + Sync {
@@ -67,14 +63,6 @@ pub trait BaseHarnessConfig: Send + Sync {
     }
     fn validate_environment(&self, context: &SessionContext) -> Result<(), HarnessError> {
         self.get_options(context).map(|_| ())
-    }
-}
-pub trait HarnessConfigView: Send + Sync {
-    fn harness(&self) -> Harness;
-}
-impl<T: BaseHarnessConfig> HarnessConfigView for T {
-    fn harness(&self) -> Harness {
-        BaseHarnessConfig::harness(self)
     }
 }
 pub trait BaseCLIHarnessConfig: BaseHarnessConfig {

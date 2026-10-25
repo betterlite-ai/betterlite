@@ -2,24 +2,18 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+#[rustfmt::skip]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ClaudeCodeOptions {
-    pub config: BTreeMap<String, serde_json::Value>,
-    pub env: BTreeMap<String, String>,
-}
+    pub config: BTreeMap<String, serde_json::Value>, pub env: BTreeMap<String, String> }
+#[rustfmt::skip]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CodexOptions {
-    pub reasoning_effort: Option<String>,
-    pub web_search: bool,
-    pub config: BTreeMap<String, serde_json::Value>,
-    pub env: BTreeMap<String, String>,
-}
+    pub reasoning_effort: Option<String>, pub web_search: bool, pub config: BTreeMap<String, serde_json::Value>, pub env: BTreeMap<String, String> }
+#[rustfmt::skip]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OpenCodeOptions {
-    pub agent: String,
-    pub config: BTreeMap<String, serde_json::Value>,
-    pub env: BTreeMap<String, String>,
-}
+    pub agent: String, pub config: BTreeMap<String, serde_json::Value>, pub env: BTreeMap<String, String> }
 impl Default for OpenCodeOptions {
     fn default() -> Self {
         Self {
@@ -29,11 +23,10 @@ impl Default for OpenCodeOptions {
         }
     }
 }
+#[rustfmt::skip]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DeepAgentsOptions {
-    pub subagents: Vec<serde_json::Value>,
-    pub recursion_limit: Option<u32>,
-}
+    pub subagents: Vec<serde_json::Value>, pub recursion_limit: Option<u32> }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum HarnessOptions {
     ClaudeCode(ClaudeCodeOptions),

@@ -11,7 +11,6 @@
     clippy::needless_match,
     reason = "the public harness wire contract contains required passthrough JSON and LiteLLM-shaped records"
 )]
-
 pub mod context;
 pub mod errors;
 pub mod handlers;

@@ -22,14 +22,6 @@ pub enum Harness {
     DeepAgents,
 }
 impl Harness {
-    pub const fn value(self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "claude_code",
-            Self::Codex => "codex",
-            Self::OpenCode => "opencode",
-            Self::DeepAgents => "deepagents",
-        }
-    }
     pub const fn name(self) -> &'static str {
         match self {
             Self::ClaudeCode => "CLAUDE_CODE",
@@ -47,31 +39,6 @@ pub fn require_harness(harness: Harness) -> Harness {
         Harness::DeepAgents => Harness::DeepAgents,
     }
 }
-pub fn parse_harness(input: &str) -> std::result::Result<Harness, HarnessError> {
-    let normalized = input.trim().to_ascii_lowercase().replace('-', "_");
-    match normalized.as_str() {
-        "claude_code" => Err(HarnessError::InvalidHarness {
-            input: format!("str {input:?}"),
-            hint: ". Did you mean Harness.CLAUDE_CODE?".to_owned(),
-        }),
-        "codex" => Err(HarnessError::InvalidHarness {
-            input: format!("str {input:?}"),
-            hint: ". Did you mean Harness.CODEX?".to_owned(),
-        }),
-        "opencode" => Err(HarnessError::InvalidHarness {
-            input: format!("str {input:?}"),
-            hint: ". Did you mean Harness.OPENCODE?".to_owned(),
-        }),
-        "deepagents" => Err(HarnessError::InvalidHarness {
-            input: format!("str {input:?}"),
-            hint: ". Did you mean Harness.DEEPAGENTS?".to_owned(),
-        }),
-        _ => Err(HarnessError::InvalidHarness {
-            input: format!("str {input:?}"),
-            hint: String::new(),
-        }),
-    }
-}
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Usage {
     pub input_tokens: u64,
@@ -87,45 +54,36 @@ impl Usage {
         }
     }
 }
+#[rustfmt::skip]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Text {
-    pub delta: String,
-}
+    pub delta: String }
+#[rustfmt::skip]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Reasoning {
-    pub delta: String,
-}
+    pub delta: String }
+#[rustfmt::skip]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ToolCall {
-    pub id: String,
-    pub name: String,
-    pub native_name: String,
-    pub input: JsonMap,
-    pub builtin: bool,
-}
+    pub id: String, pub name: String, pub native_name: String, pub input: JsonMap, pub builtin: bool }
+#[rustfmt::skip]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ToolResult {
-    pub id: String,
-    pub output: String,
-    pub is_error: bool,
-}
+    pub id: String, pub output: String, pub is_error: bool }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum FileChangeKind {
     Created,
     Modified,
     Deleted,
 }
+#[rustfmt::skip]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FileChange {
-    pub path: String,
-    pub kind: FileChangeKind,
-    pub diff: Option<String>,
-}
+    pub path: String, pub kind: FileChangeKind, pub diff: Option<String> }
+#[rustfmt::skip]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Compaction {
-    pub tokens_before: Option<u64>,
-    pub tokens_after: Option<u64>,
-}
+    pub tokens_before: Option<u64>, pub tokens_after: Option<u64> }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum StopReason {
     Done,
@@ -134,17 +92,10 @@ pub enum StopReason {
     Cancelled,
     RuntimeError,
 }
+#[rustfmt::skip]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Result {
-    pub text: String,
-    pub output: Option<serde_json::Value>,
-    pub files: Vec<FileChange>,
-    pub events: Vec<Event>,
-    pub usage: Usage,
-    pub cost: Decimal,
-    pub stop_reason: StopReason,
-    pub session_id: String,
-}
+    pub text: String, pub output: Option<serde_json::Value>, pub files: Vec<FileChange>, pub events: Vec<Event>, pub usage: Usage, pub cost: Decimal, pub stop_reason: StopReason, pub session_id: String }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Done {
     pub result: Result,
@@ -180,17 +131,10 @@ pub enum Event {
     Approval(Approval),
     Done(Done),
 }
+#[rustfmt::skip]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Capabilities {
-    pub structured_output: bool,
-    pub tool_approval: bool,
-    pub tool_filtering: bool,
-    pub history: bool,
-    pub custom_tools: bool,
-    pub skills: bool,
-    pub resume: bool,
-    pub permission_modes: Vec<PermissionMode>,
-}
+    pub structured_output: bool, pub tool_approval: bool, pub tool_filtering: bool, pub history: bool, pub custom_tools: bool, pub skills: bool, pub resume: bool, pub permission_modes: Vec<PermissionMode> }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PermissionMode {
@@ -199,14 +143,10 @@ pub enum PermissionMode {
     Edit,
     Full,
 }
+#[rustfmt::skip]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct State {
-    pub harness: Harness,
-    pub native_session_id: Option<String>,
-    pub workdir: String,
-    pub model: Option<String>,
-    pub version: u32,
-}
+    pub harness: Harness, pub native_session_id: Option<String>, pub workdir: String, pub model: Option<String>, pub version: u32 }
 impl State {
     pub fn dumps(&self) -> std::result::Result<Vec<u8>, serde_json::Error> {
         match serde_json::to_vec(self) {

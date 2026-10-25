@@ -33,6 +33,4 @@ pub enum HarnessError {
     },
     #[error("harness turn failed: {message}")]
     TurnFailed { message: String },
-    #[error("harness must be a Harness member, got {input}{hint}")]
-    InvalidHarness { input: String, hint: String },
 }
