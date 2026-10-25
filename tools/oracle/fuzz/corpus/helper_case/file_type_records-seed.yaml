@@ -1,5 +1,6 @@
 kind: helper
 name: file-type-records-seed
-call: {file_type_records: {function: mime_extension_table, extensions: [png, mpga, webp], mimes: [], file_types: []}}
+call:
+  file_type_records: {function: mime_extension_table, extensions: [png, mpga, webp], mimes: [], file_types: []}
 env: {}
 compare: {ignore: []}

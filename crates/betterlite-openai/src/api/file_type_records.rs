@@ -102,10 +102,10 @@ pub fn type_from_extension(extension: &str) -> Result<FileType, FileTypeError> {
 }
 #[must_use]
 pub fn extension_from_type(file_type: FileType) -> &'static str {
-    for (kind, values) in EXTENSIONS {
-        if *kind == file_type {
-            return values.first().copied().unwrap_or("");
-        }
+    if let Some(extension) = EXTENSIONS.iter().find_map(|(kind, values)| {
+        (*kind == file_type).then(|| values.first().copied().unwrap_or(""))
+    }) {
+        return extension;
     }
     ""
 }
