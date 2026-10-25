@@ -42,6 +42,10 @@ scope:
   - crates/betterlite-core/src/api/batch_routes/**
   - tools/oracle/cases/api/batch-routes/**
   - tools/oracle/fixtures/http-scenarios/batch-routes/**
+  - tools/oracle/helpers/b086.py
+  - tools/oracle/helpers/b086/**
+  - tools/oracle/src/helpers/server/b086.rs
+  - tools/oracle/src/helpers/server/b086/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L1017-L1256

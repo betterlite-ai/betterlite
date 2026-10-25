@@ -40,6 +40,10 @@ scope:
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/router_read.rs
   - crates/betterlite-server/fuzz/corpus/router_read/benchmark-aggregates-*
+  - tools/oracle/helpers/b387.py
+  - tools/oracle/helpers/b387/**
+  - tools/oracle/src/helpers/server/b387.rs
+  - tools/oracle/src/helpers/server/b387/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L618-L837

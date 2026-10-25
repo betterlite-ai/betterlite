@@ -25,6 +25,10 @@ scope:
     - crates/betterlite-server/src/api/ocr_request.rs
     - crates/betterlite-server/src/api/ocr_request/**
     - tools/oracle/cases/helpers/ocr/**
+    - tools/oracle/helpers/b3300.py
+    - tools/oracle/helpers/b3300/**
+    - tools/oracle/src/helpers/server/b3300.rs
+    - tools/oracle/src/helpers/server/b3300/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/ocr/transformation.py#L1-102

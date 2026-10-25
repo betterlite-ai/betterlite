@@ -23,6 +23,10 @@ scope:
   - crates/betterlite-http/**
   - crates/betterlite-openai/**
   - tools/oracle/cases/chat/**
+  - tools/oracle/helpers/b005.py
+  - tools/oracle/helpers/b005/**
+  - tools/oracle/src/helpers/oracle/b005.rs
+  - tools/oracle/src/helpers/oracle/b005/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py

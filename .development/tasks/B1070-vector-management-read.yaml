@@ -22,6 +22,10 @@ scope:
   - crates/betterlite-server/src/api/vector_management_read/**
   - crates/betterlite-server/fuzz/corpus/management_json/info-*
   - tools/oracle/cases/api/vector-management-read/**
+  - tools/oracle/helpers/b1070.py
+  - tools/oracle/helpers/b1070/**
+  - tools/oracle/src/helpers/server/b1070.rs
+  - tools/oracle/src/helpers/server/b1070/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L344-L450

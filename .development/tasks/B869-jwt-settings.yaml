@@ -105,9 +105,6 @@ description: >-
   330 focused tests, 90 adapters and 50 loader/dispatch/corpus wiring lines, 750 within 800.
 scope:
   paths:
-    - crates/betterlite-config/src/jwt_settings.rs
-    - crates/betterlite-config/src/jwt_settings/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/Cargo.toml
     - tools/oracle/src/helpers/config/jwt_settings.rs
     - tools/oracle/src/helpers/config/jwt_settings/**
@@ -116,16 +113,9 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/jwt-settings/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-settings-*
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-settings-*
+    - crates/betterlite-config/src/sections/jwt_settings.rs
+    - crates/betterlite-config/src/sections/jwt_settings/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5193-L5208
@@ -294,7 +284,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^jwt_settings::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::jwt_settings::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
@@ -308,7 +298,7 @@ checks:
         run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^jwt_settings::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::jwt_settings::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.

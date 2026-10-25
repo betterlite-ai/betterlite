@@ -48,6 +48,10 @@ scope:
     - tools/oracle/src/runner/**
     - tools/oracle/cases/management/coordination-redis/**
     - tools/oracle/fuzz/corpus/http_case/coordination-redis-*
+    - tools/oracle/helpers/b1653.py
+    - tools/oracle/helpers/b1653/**
+    - tools/oracle/src/helpers/server/b1653.rs
+    - tools/oracle/src/helpers/server/b1653/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/coordination_redis_endpoints.py#L228-L441

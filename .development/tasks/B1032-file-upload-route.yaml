@@ -81,6 +81,10 @@ scope:
   - Cargo.lock
   - tools/oracle/cases/api/file-upload-route/**
   - tools/oracle/fixtures/http-scenarios/file-upload-route/**
+  - tools/oracle/helpers/b1032.py
+  - tools/oracle/helpers/b1032/**
+  - tools/oracle/src/helpers/server/b1032.rs
+  - tools/oracle/src/helpers/server/b1032/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L530-L927

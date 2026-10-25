@@ -84,6 +84,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/customer-create/**
+    - tools/oracle/helpers/b830.py
+    - tools/oracle/helpers/b830/**
+    - tools/oracle/src/helpers/server/b830.rs
+    - tools/oracle/src/helpers/server/b830/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L98-L305

@@ -45,6 +45,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/fallback_attempts.py
   - tools/oracle/cases/routing/fallback-attempts/**
+  - tools/oracle/helpers/b310.py
+  - tools/oracle/helpers/b310/**
+  - tools/oracle/src/helpers/router/b310.rs
+  - tools/oracle/src/helpers/router/b310/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/fallback_event_handlers.py#L498-L719

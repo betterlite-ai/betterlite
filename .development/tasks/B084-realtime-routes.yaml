@@ -34,6 +34,10 @@ scope:
   - crates/betterlite-server/src/state/**
   - tools/oracle/cases/api/realtime-routes/**
   - tools/oracle/fixtures/realtime-routes/**
+  - tools/oracle/helpers/b084.py
+  - tools/oracle/helpers/b084/**
+  - tools/oracle/src/helpers/server/b084.rs
+  - tools/oracle/src/helpers/server/b084/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/realtime_endpoints/endpoints.py#L362-L518
