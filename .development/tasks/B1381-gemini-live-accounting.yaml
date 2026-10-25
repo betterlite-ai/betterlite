@@ -66,7 +66,7 @@ checks:
       run: test -f tools/oracle/helpers/gemini_live_accounting.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Pinned accounting methods provide the oracle, including destructive frame consumption and repeated close.
     - id: live-accounting-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_accounting*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_live_accounting::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_accounting*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_live_accounting::/)'
       why: Shared-parser tests require call.gemini_live_accounting in the new seed set.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-live-accounting/generated-call-id.yaml

@@ -27,29 +27,28 @@ description: >-
   passed to it or the operation.
 
 
-  Implement crates/betterlite-azure/src/files.rs with adjacent tests under files/. Keep each Rust module at most
+  Implement crates/betterlite-azure/src/batches.rs with adjacent tests under batches/. Keep each Rust module at most
   300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
   betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
   and oracle adapters.
 
 
-  Register helper operation azure_files in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
   The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
   transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
   model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
   above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
 
 
-  Write rstest function files_cases in betterlite-azure with these exact named cases (one per oracle file): batch_create,
+  Write rstest function batches_cases in betterlite-azure with these exact named cases (one per oracle file): batch_create,
   batch_retrieve_cancel_list, resource_api_version, list_after_limit, sdk_client_missing, sdk_client_wrong_async,
   cancel_sync_client_type, sdk_error_passthrough. Each case exercises its named outcome independently; use stable
   supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
   a duplicate axum route.
 
 
-  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_files* using HelperCase: kind: helper and
-  the externally tagged azure_files variant inside call. Do not put the Python stdin operation field in a HelperCase.
-  Add oracle test helper_seeds_select_azure_files that parses every prefixed seed with the production HelperCase
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_batches* using HelperCase: kind: helper and
+  the externally tagged azure_batches variant inside call. Do not put the Python stdin operation field in a HelperCase.
+  Add oracle test helper_seeds_select_azure_batches that parses every prefixed seed with the production HelperCase
   parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
 
 
@@ -67,15 +66,15 @@ scope:
   - crates/betterlite-azure/Cargo.toml
   - crates/betterlite-azure/src/lib.rs
   - crates/betterlite-azure/src/error.rs
-  - crates/betterlite-azure/src/files.rs
-  - crates/betterlite-azure/src/files/**
+  - crates/betterlite-azure/src/batches.rs
+  - crates/betterlite-azure/src/batches/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/azure/batches.rs
   - tools/oracle/src/helpers/azure/batches/**
   - tools/oracle/helpers/azure_batches.py
   - tools/oracle/helpers/azure_batches/**
-  - tools/oracle/cases/helpers/providers/azure-files/**
-  - tools/oracle/fuzz/corpus/helper_case/azure_files*
+  - tools/oracle/cases/helpers/providers/azure-batches/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_batches*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/batches/handler.py#L31-L208
@@ -89,17 +88,17 @@ dod:
   - case-batch-create
   - oracle
   - helper-python
-- text: 'batch retrieve cancel list: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-files/batch-retrieve-cancel-list.yaml.'
+- text: 'batch retrieve cancel list: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-batches/batch-retrieve-cancel-list.yaml.'
   proof:
   - case-batch-retrieve-cancel-list
   - oracle
   - helper-python
-- text: 'resource api version: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-files/resource-api-version.yaml.'
+- text: 'resource api version: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-batches/resource-api-version.yaml.'
   proof:
   - case-resource-api-version
   - oracle
   - helper-python
-- text: New azure_files seeds parse as the intended call variant and replay through the shared production parser.
+- text: New azure_batches seeds parse as the intended call variant and replay through the shared production parser.
   proof:
   - helper-case-corpus
 - text: 'list_after_limit: List always passes after=None and limit=None by default, forwards explicit values and
@@ -142,54 +141,54 @@ checks:
   - id: case-batch-create
     why: Forward every create/retrieve/cancel request key unchanged to the SDK; validate model_dump into LiteLLMBatch.
       _is_async must be True for async and both standard/v1 and Azure SDK client classes are accepted.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::files_cases::case_[0-9]+_batch_create$/)'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_batch_create$/)'
   - id: case-batch-retrieve-cancel-list
-    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-files/batch-retrieve-cancel-list.yaml.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::files_cases::case_[0-9]+_batch_retrieve_cancel_list$/)'
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-batches/batch-retrieve-cancel-list.yaml.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_batch_retrieve_cancel_list$/)'
   - id: case-resource-api-version
-    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-files/resource-api-version.yaml.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::files_cases::case_[0-9]+_resource_api_version$/)'
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-batches/resource-api-version.yaml.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_resource_api_version$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_files.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_batches.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_files*")"
-      && grep -lq 'azure_files' tools/oracle/fuzz/corpus/helper_case/azure_files* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_files$/)' && cargo nextest run
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_batches*")"
+      && grep -lq 'azure_batches' tools/oracle/fuzz/corpus/helper_case/azure_batches* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_batches$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-list-after-limit
     why: List always passes after=None and limit=None by default, forwards explicit values and returns the SDK page
       unchanged, matching B517.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::files_cases::case_[0-9]+_list_after_limit$/)'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_list_after_limit$/)'
   - id: case-sdk-client-missing
     why: Every operation raises ValueError OpenAI client is not initialized. Make sure api_key is passed or OPENAI_API_KEY
       is set in the environment. when B531 returns None, despite being an Azure wrapper.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::files_cases::case_[0-9]+_sdk_client_missing$/)'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_sdk_client_missing$/)'
   - id: case-sdk-client-wrong-async
     why: Create/retrieve/list reject wrong async client with ValueError OpenAI client is not an instance of AsyncOpenAI.
       Make sure you passed an AsyncOpenAI client. Cancel instead says Azure client is not an instance of AsyncAzureOpenAI
       or AsyncOpenAI. Make sure you passed an async client.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::files_cases::case_[0-9]+_sdk_client_wrong_async$/)'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_sdk_client_wrong_async$/)'
   - id: case-cancel-sync-client-type
     why: Only sync cancel checks AzureOpenAI/OpenAI explicitly and raises ValueError Azure client is not an instance
       of AzureOpenAI or OpenAI. Make sure you passed a sync client. Other sync methods cast or call directly.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::files_cases::case_[0-9]+_cancel_sync_client_type$/)'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_cancel_sync_client_type$/)'
   - id: case-sdk-error-passthrough
     why: No lifecycle catch rewrites upstream errors. B531 receives litellm_params or {}, key/base/version/client/is_async;
       the separate timeout and max_retries arguments are accepted but never passed to it or the operation.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::files_cases::case_[0-9]+_sdk_error_passthrough$/)'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_sdk_error_passthrough$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/providers/azure-files/batch-create.yaml
-- tools/oracle/cases/helpers/providers/azure-files/batch-retrieve-cancel-list.yaml
-- tools/oracle/cases/helpers/providers/azure-files/resource-api-version.yaml
-- tools/oracle/cases/helpers/providers/azure-files/list-after-limit.yaml
-- tools/oracle/cases/helpers/providers/azure-files/sdk-client-missing.yaml
-- tools/oracle/cases/helpers/providers/azure-files/sdk-client-wrong-async.yaml
-- tools/oracle/cases/helpers/providers/azure-files/cancel-sync-client-type.yaml
-- tools/oracle/cases/helpers/providers/azure-files/sdk-error-passthrough.yaml
+- tools/oracle/cases/helpers/providers/azure-batches/batch-create.yaml
+- tools/oracle/cases/helpers/providers/azure-batches/batch-retrieve-cancel-list.yaml
+- tools/oracle/cases/helpers/providers/azure-batches/resource-api-version.yaml
+- tools/oracle/cases/helpers/providers/azure-batches/list-after-limit.yaml
+- tools/oracle/cases/helpers/providers/azure-batches/sdk-client-missing.yaml
+- tools/oracle/cases/helpers/providers/azure-batches/sdk-client-wrong-async.yaml
+- tools/oracle/cases/helpers/providers/azure-batches/cancel-sync-client-type.yaml
+- tools/oracle/cases/helpers/providers/azure-batches/sdk-error-passthrough.yaml
 deviations: []
 out_of_scope:
 - B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers

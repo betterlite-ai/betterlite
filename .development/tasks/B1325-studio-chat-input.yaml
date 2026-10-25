@@ -57,7 +57,7 @@ checks:
       run: test -f tools/oracle/helpers/studio_chat_input.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Studio cases require an independently invoked subclass adapter.
     - id: studio-input-seed
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_chat_input*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_chat_input::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_chat_input*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::studio_chat_input::/)'
       why: Studio helper seeds must parse under their own externally tagged operation.
 oracle_cases:
   - tools/oracle/cases/helpers/studio-chat-input/tts-audio.yaml

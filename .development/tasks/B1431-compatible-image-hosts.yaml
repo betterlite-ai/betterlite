@@ -53,10 +53,10 @@ scope:
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,compatible_images}.rs
     - crates/betterlite-config/tests/compatible_image_settings.rs
-    - tools/oracle/src/helpers/openai/compatible_image_hosts.rs
-    - tools/oracle/src/helpers/openai/compatible_image_hosts/**
-    - tools/oracle/helpers/compatible_image_hosts.py
-    - tools/oracle/helpers/compatible_image_hosts/**
+    - tools/oracle/src/helpers/openai/compatible_image_record.rs
+    - tools/oracle/src/helpers/openai/compatible_image_record/**
+    - tools/oracle/helpers/compatible_image_record.py
+    - tools/oracle/helpers/compatible_image_record/**
     - tools/oracle/cases/helpers/compatible-image-record/**
     - tools/oracle/fuzz/corpus/helper_case/compatible_image_record*
   lint_tables: false
@@ -94,7 +94,7 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/compatible_image_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_compatible_image_corpus)'
       why: Replay newly added malformed and overlapping reply layouts through the host-tagged decoder.
     - id: image-host-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_image_record*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::compatible_image_record::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_image_record*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::compatible_image_record::/)'
       why: Seed tests require the compatible_image_record variant and at least one fixture per host.
 oracle_cases:
   - tools/oracle/cases/helpers/compatible-image-record/aiml-openai-and-flux-options.yaml
@@ -108,7 +108,7 @@ out_of_scope:
   - B038 supplies image provider selection and existing HTTP image-route coverage; B997 retains shared image exceptions and records.
   - AIML chat identity belongs to B038; these image credentials intentionally accept the extra AIMLAPI_KEY alias.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as compatible_image_hosts in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/compatible_image_hosts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/compatible_image_hosts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as compatible_image_record in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/compatible_image_record.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/compatible_image_record.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty AIML data array suppresses otherwise usable output.choices images.
   - Supplying a CometAPI base ending in /v1 produces /v1/v1/images/generations.
   - Flux AIML's duplicate model or prompt options fail during TypedDict construction instead of overriding the argument.

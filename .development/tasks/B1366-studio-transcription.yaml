@@ -62,7 +62,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/studio_transcription.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/studio_transcription)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_studio_transcription_corpus)'
       why: Invalid annotation and usage shapes must reach decode_studio_transcription during replay.
     - id: studio-transcription-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_transcription*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_transcription::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_transcription*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::studio_transcription::/)'
       why: New call.studio_transcription inputs exercise the shared helper parser.
 oracle_cases:
   - tools/oracle/cases/helpers/studio-transcription/bare-audio-request.yaml

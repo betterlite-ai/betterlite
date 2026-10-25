@@ -52,13 +52,13 @@ checks:
       run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_lyria::/) - test(replays_the_lyria_audio_corpus)'
       why: Predict and interactions paths must each assert URL, request and audio selection.
     - id: lyria-python
-      run: test -f tools/oracle/helpers/lyria_speech.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      run: test -f tools/oracle/helpers/vertex_lyria_speech.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Catalog-backed pure Lyria methods run with fixed credential and MIME inputs.
     - id: lyria-audio-corpus
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/lyria_audio.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/lyria_audio)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_lyria_audio_corpus)'
       why: Added prediction and interaction envelopes exercise the same audio decoder as production.
     - id: lyria-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/lyria_speech*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::lyria_speech::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/lyria_speech*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::lyria_speech::/)'
       why: The lyria_speech fixture variant is required alongside the provider implementation.
 oracle_cases:
   - tools/oracle/cases/helpers/lyria-speech/unsupported-speed-drop.yaml

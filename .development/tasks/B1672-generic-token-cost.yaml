@@ -47,10 +47,10 @@ scope:
     - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/token_cost.rs
     - crates/betterlite-models/src/token_cost/**
-    - tools/oracle/src/helpers/models/generic_token_cost.rs
-    - tools/oracle/src/helpers/models/generic_token_cost/**
-    - tools/oracle/helpers/generic_token_cost.py
-    - tools/oracle/helpers/generic_token_cost/**
+    - tools/oracle/src/helpers/models/token_cost.rs
+    - tools/oracle/src/helpers/models/token_cost/**
+    - tools/oracle/helpers/token_cost.py
+    - tools/oracle/helpers/token_cost/**
     - tools/oracle/cases/helpers/token-cost/**
     - tools/oracle/fuzz/corpus/helper_case/token-cost-*
   lint_tables: false
@@ -98,7 +98,7 @@ out_of_scope:
   - B041 retains Fireworks transport and transforms, but its future task must consume this task's cache_pricing.py policy rather than create a provider-to-billing dependency cycle.
   - Generic pricing consumes B1670's rate selection and B1671's modality arithmetic; their utils.py functions stay there, and off-peak evaluation stays B1669. The remaining functions implement billed breakdowns/cache savings (B1673), image arithmetic (B1674), server-tool usage counters (B1675), character metrics (B1676), and requested-image fields plus image/tool dispatch (B1687).
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as generic_token_cost in the models group. Replace the stub Op in tools/oracle/src/helpers/models/generic_token_cost.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/generic_token_cost.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as token_cost in the models group. Replace the stub Op in tools/oracle/src/helpers/models/token_cost.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/token_cost.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A positive image_count prevents inferred prompt text even when all supplied modality token counters are zero.
   - Provider-specific inference_geo is intentionally absent from generic totals even though billed-rate reporting uses it.
 budget:

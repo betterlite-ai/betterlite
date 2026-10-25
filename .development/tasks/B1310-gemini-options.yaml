@@ -67,7 +67,7 @@ checks:
       run: test -f tools/oracle/helpers/gemini_options.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Class state and warning capture must be reset independently for each oracle execution.
     - id: option-seed
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_options*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_options::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_options*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_options::/)'
       why: Option helper registration needs a nonempty seed set selected through call.gemini_options.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-options/sampling-once.yaml

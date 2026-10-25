@@ -40,10 +40,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_frames.rs
     - crates/betterlite-vertex/fuzz/corpus/gemini_live_frames/**
-    - tools/oracle/src/helpers/vertex/gemini_live_server_frames.rs
-    - tools/oracle/src/helpers/vertex/gemini_live_server_frames/**
-    - tools/oracle/helpers/gemini_live_server_frames.py
-    - tools/oracle/helpers/gemini_live_server_frames/**
+    - tools/oracle/src/helpers/vertex/gemini_live_frames.rs
+    - tools/oracle/src/helpers/vertex/gemini_live_frames/**
+    - tools/oracle/helpers/gemini_live_frames.py
+    - tools/oracle/helpers/gemini_live_frames/**
     - tools/oracle/cases/helpers/gemini-live-frames/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_live_frames*
   lint_tables: false
@@ -72,7 +72,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_frames.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/gemini_live_frames)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_gemini_live_frames_corpus)'
       why: decode_gemini_live_frame and its production transition consume malformed, reordered and sequential server frames.
     - id: live-frame-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_frames*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_live_frames::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_frames*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_live_frames::/)'
       why: Shared-reader tests require call.gemini_live_frames on each new sequence fixture.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-live-frames/standalone-usage.yaml
@@ -90,7 +90,7 @@ out_of_scope:
   - B1394 owns the extracted tool-turn branch; B1378 through B1381 own setup, client state, content events and accounting primitives.
   - B033 and B035 attach these transforms to B1008's websocket relay; this task adds no network handler or route.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as gemini_live_server_frames in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_live_server_frames.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_live_server_frames.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as gemini_live_frames in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_live_frames.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_live_frames.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Top-level key sorting would change mixed toolCall/serverContent behavior.
   - Ordinary turn completion passes a shallow frame copy and always supplies output_items=None.
   - Usage accompanying an emitted transcription event is not buffered by the final empty-event branch.

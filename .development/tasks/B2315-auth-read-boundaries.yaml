@@ -65,10 +65,10 @@ scope:
     - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/src/auth_read.rs
     - crates/betterlite-auth/src/auth_read/**
-    - tools/oracle/src/helpers/auth/read_boundaries.rs
-    - tools/oracle/src/helpers/auth/read_boundaries/**
-    - tools/oracle/helpers/auth_read_boundaries.py
-    - tools/oracle/helpers/auth_read_boundaries/**
+    - tools/oracle/src/helpers/auth/read.rs
+    - tools/oracle/src/helpers/auth/read/**
+    - tools/oracle/helpers/auth_read.py
+    - tools/oracle/helpers/auth_read/**
     - tools/oracle/cases/helpers/auth-read/**
     - tools/oracle/fuzz/corpus/helper_case/auth-read-*
   lint_tables: false
@@ -124,7 +124,7 @@ out_of_scope:
   - B734 owns the shared membership-load registry at L398-L399; B736 owns last_db_access_time and db_cache_expiry; B2318 owns membership cache-miss state.
   - B715 owns bounded_db_lookup and its settings; B192 owns safe_json_loads bytes and B888 owns the guardrail call site.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as auth_read_boundaries in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/read_boundaries.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_read_boundaries.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as auth_read in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/read.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_read.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The end-user registry adapter is unwrapped even though an end-user lookup through _dictable_table is bounded.
   - A dictionary shaped like a membership is deliberately rejected by the shared-load projection.
 budget:

@@ -59,7 +59,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_claude_chat.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Reference adapters compare parent-composed Vertex requests and stable beta sets.
     - id: claude-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_claude_chat*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_claude_chat::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_claude_chat*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::claude_chat::/)'
       why: Claude fixtures must carry the registered override variant under call.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-claude-chat/effort-haiku.yaml

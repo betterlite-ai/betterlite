@@ -43,10 +43,10 @@ scope:
     - crates/betterlite-logging/src/spend_sanitize.rs
     - crates/betterlite-logging/src/spend_sanitize/**
     - crates/betterlite-logging/fuzz/{Cargo.toml,fuzz_targets/spend_error_text.rs,corpus/spend_error_text/**}
-    - tools/oracle/src/helpers/logging/spend_content_sanitizing.rs
-    - tools/oracle/src/helpers/logging/spend_content_sanitizing/**
-    - tools/oracle/helpers/spend_content_sanitizing.py
-    - tools/oracle/helpers/spend_content_sanitizing/**
+    - tools/oracle/src/helpers/logging/spend_sanitize.rs
+    - tools/oracle/src/helpers/logging/spend_sanitize/**
+    - tools/oracle/helpers/spend_sanitize.py
+    - tools/oracle/helpers/spend_sanitize/**
     - tools/oracle/cases/helpers/spend-sanitize/**
     - tools/oracle/fuzz/corpus/helper_case/spend-sanitize-*
   lint_tables: false
@@ -89,7 +89,7 @@ deviations:
 out_of_scope:
   - B1714 resolves body-storage settings and builds request/response/session projections; B1715 owns identity/metadata attribution and B1716 composes get_logging_payload.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as spend_content_sanitizing in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/spend_content_sanitizing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_content_sanitizing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as spend_sanitize in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/spend_sanitize.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_sanitize.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Credential-looking keys inside function arguments are user content, but nested secret_fields must still disappear.
   - A malformed echoed prompt must redact the remaining string rather than leave its unterminated body visible.
 budget:

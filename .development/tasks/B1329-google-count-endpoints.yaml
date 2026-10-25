@@ -26,10 +26,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/google_count.rs
     - crates/betterlite-vertex/fuzz/corpus/google_count/**
-    - tools/oracle/src/helpers/vertex/google_count_endpoints.rs
-    - tools/oracle/src/helpers/vertex/google_count_endpoints/**
-    - tools/oracle/helpers/google_count_endpoints.py
-    - tools/oracle/helpers/google_count_endpoints/**
+    - tools/oracle/src/helpers/vertex/google_count.rs
+    - tools/oracle/src/helpers/vertex/google_count/**
+    - tools/oracle/helpers/google_count.py
+    - tools/oracle/helpers/google_count/**
     - tools/oracle/cases/helpers/google-count/**
     - tools/oracle/fuzz/corpus/helper_case/google_count*
   lint_tables: false
@@ -61,7 +61,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/google_count.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/google_count)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_google_count_corpus)'
       why: External count JSON must replay through the bounded production decoder.
     - id: count-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_count*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::google_count::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_count*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::google_count::/)'
       why: Shared-parser count fixtures must select the new variant.
 oracle_cases:
   - tools/oracle/cases/helpers/google-count/function-response-id.yaml
@@ -72,7 +72,7 @@ deviations: []
 out_of_scope:
   - B1330 owns proxy-facing token-counter selection and response wrapping; B1332 owns partner rawPredict counts.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as google_count_endpoints in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/google_count_endpoints.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/google_count_endpoints.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as google_count in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/google_count.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/google_count.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The Vertex counter's api_base argument is not a custom-endpoint escape hatch at this pin.
   - Even Vertex countTokens transport errors identify the inherited gemini provider.
   - Passing the accepted timeout through to POST would add behavior the pinned implementation lacks.

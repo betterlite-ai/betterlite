@@ -59,10 +59,10 @@ scope:
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/available-models-*
-    - tools/oracle/src/helpers/models/provider_model_enumeration.rs
-    - tools/oracle/src/helpers/models/provider_model_enumeration/**
-    - tools/oracle/helpers/provider_model_enumeration.py
-    - tools/oracle/helpers/provider_model_enumeration/**
+    - tools/oracle/src/helpers/models/available_models.rs
+    - tools/oracle/src/helpers/models/available_models/**
+    - tools/oracle/helpers/available_models.py
+    - tools/oracle/helpers/available_models/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/available-models/**
     - tools/oracle/fuzz/corpus/helper_case/available-models-*
@@ -113,7 +113,7 @@ out_of_scope:
   - B157 retains other utils.py exports; B2220 selects model-info adapters and their provider tasks implement listing transports.
   - B759 owns wildcard expansion and credential-name hydration; B2226 owns memory-cache eviction, expiry and stored-value decoding.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as provider_model_enumeration in the models group. Replace the stub Op in tools/oracle/src/helpers/models/provider_model_enumeration.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/provider_model_enumeration.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as available_models in the models group. Replace the stub Op in tools/oracle/src/helpers/models/available_models.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/available_models.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The source constructor's positional arguments make the default capacity 300 and TTL 1000 despite their parameter names.
 budget:
   max_changed_lines: 700

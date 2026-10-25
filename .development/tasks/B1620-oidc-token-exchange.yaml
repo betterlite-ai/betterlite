@@ -33,10 +33,10 @@ scope:
     - crates/betterlite-auth/fuzz/fuzz_targets/oidc_token_response.rs
     - crates/betterlite-auth/fuzz/corpus/oidc_token_response/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/auth/oidc_token_exchange.rs
-    - tools/oracle/src/helpers/auth/oidc_token_exchange/**
-    - tools/oracle/helpers/oidc_token_exchange.py
-    - tools/oracle/helpers/oidc_token_exchange/**
+    - tools/oracle/src/helpers/auth/oidc_token_response.rs
+    - tools/oracle/src/helpers/auth/oidc_token_response/**
+    - tools/oracle/helpers/oidc_token_response.py
+    - tools/oracle/helpers/oidc_token_response/**
     - tools/oracle/cases/helpers/oidc-token-response/**
     - tools/oracle/fuzz/corpus/helper_case/oidc-token-response-*
   lint_tables: false
@@ -75,7 +75,7 @@ out_of_scope:
   - B1610 resolves endpoints and secrets, B1619 owns verifier lifecycle and B1623 maps exchange output into the generic SSO identity.
   - All other ui_sso.py call sites and helpers are assigned in B063's ownership inventory.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as oidc_token_exchange in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/oidc_token_exchange.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/oidc_token_exchange.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as oidc_token_response in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/oidc_token_response.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/oidc_token_response.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Explicit null from the token endpoint removes a userinfo id_token instead of allowing it to become the retained assertion.
   - A userinfo HTTP 200 with an empty object still triggers ID-token fallback.
 budget:

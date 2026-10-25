@@ -33,10 +33,10 @@ scope:
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/chirp_backend_event.rs
     - crates/betterlite-core/fuzz/corpus/chirp_backend_event/**
-    - tools/oracle/src/helpers/core_ops/chirp_realtime_adapter.rs
-    - tools/oracle/src/helpers/core_ops/chirp_realtime_adapter/**
-    - tools/oracle/helpers/chirp_realtime_adapter.py
-    - tools/oracle/helpers/chirp_realtime_adapter/**
+    - tools/oracle/src/helpers/core_ops/chirp_adapter.rs
+    - tools/oracle/src/helpers/core_ops/chirp_adapter/**
+    - tools/oracle/helpers/chirp_adapter.py
+    - tools/oracle/helpers/chirp_adapter/**
     - tools/oracle/cases/helpers/chirp-adapter/**
     - tools/oracle/fuzz/corpus/helper_case/chirp_adapter*
   lint_tables: false
@@ -63,7 +63,7 @@ checks:
       run: test -f crates/betterlite-core/fuzz/fuzz_targets/chirp_backend_event.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/chirp_backend_event)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_chirp_backend_event_corpus)'
       why: Sparse and malformed streaming event records must traverse decode_chirp_backend_event.
     - id: chirp-adapter-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/chirp_adapter*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::chirp_adapter::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/chirp_adapter*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::chirp_adapter::/)'
       why: Shared fixture parsing dispatches the new command-transform traces.
 oracle_cases:
   - tools/oracle/cases/helpers/chirp-adapter/repeat-update-ignored.yaml
@@ -78,7 +78,7 @@ out_of_scope:
   - B1356 covers the session policy and event transformer at L60-L317 except SpeechStreamingTarget, which B1358 defines.
   - B1359 implements backend send/recv/close, and B033/B084 compose the public realtime route with this adapter.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as chirp_realtime_adapter in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/chirp_realtime_adapter.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/chirp_realtime_adapter.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as chirp_adapter in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/chirp_adapter.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/chirp_adapter.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An update after successful configuration is ignored even if it would now be invalid.
   - Empty PCM input yields no audio chunks rather than a single empty message.
   - The custom endpoint transformation drops its path and scheme before the speech SDK sees it.

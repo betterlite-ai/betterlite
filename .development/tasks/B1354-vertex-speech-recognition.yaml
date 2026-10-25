@@ -30,10 +30,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_recognition.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_recognition/**
-    - tools/oracle/src/helpers/vertex/speech_recognition.rs
-    - tools/oracle/src/helpers/vertex/speech_recognition/**
-    - tools/oracle/helpers/vertex_speech_recognition.py
-    - tools/oracle/helpers/vertex_speech_recognition/**
+    - tools/oracle/src/helpers/vertex/recognition.rs
+    - tools/oracle/src/helpers/vertex/recognition/**
+    - tools/oracle/helpers/vertex_recognition.py
+    - tools/oracle/helpers/vertex_recognition/**
     - tools/oracle/cases/helpers/vertex-recognition/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_recognition*
   lint_tables: false
@@ -62,7 +62,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_recognition.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_recognition)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_recognition_corpus)'
       why: Malformed duration and response inputs cannot bypass decode_vertex_recognition.
     - id: recognition-case-parser
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_recognition*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_recognition::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_recognition*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::recognition::/)'
       why: Shared corpus parsing must recognize the vertex_recognition input record.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-recognition/default-us-auto.yaml
@@ -77,7 +77,7 @@ out_of_scope:
   - Every function in audio_transcription/transformation.py is implemented here; streaming speech types beginning at L45 belong to B1356 and B1358.
   - B1001 processes uploaded audio and language aliases; B033 binds those functions and B1122's transcription contract to this leaf adapter.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_speech_recognition in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/speech_recognition.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_speech_recognition.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_recognition in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/recognition.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_recognition.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A later alternative never substitutes for an empty first alternative.
   - The default Speech-to-Text location is us rather than the general Vertex default.
   - x-goog-user-project is the resolved credential project even when caller headers supplied another value.

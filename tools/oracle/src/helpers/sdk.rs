@@ -1,3 +1,3 @@
 helper_group! {
-    "sdk_proxy_credentials" => proxy_credentials,
+    "proxy_auth" => proxy_auth,
 }

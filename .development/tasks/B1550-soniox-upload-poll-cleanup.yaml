@@ -35,10 +35,10 @@ scope:
     - crates/betterlite-core/src/api/soniox.rs
     - crates/betterlite-core/src/api/soniox/remote.rs
     - crates/betterlite-core/src/api/soniox/remote/**
-    - tools/oracle/src/helpers/core_ops/soniox_upload_poll_cleanup.rs
-    - tools/oracle/src/helpers/core_ops/soniox_upload_poll_cleanup/**
-    - tools/oracle/helpers/soniox_upload_poll_cleanup.py
-    - tools/oracle/helpers/soniox_upload_poll_cleanup/**
+    - tools/oracle/src/helpers/core_ops/soniox_remote.rs
+    - tools/oracle/src/helpers/core_ops/soniox_remote/**
+    - tools/oracle/helpers/soniox_remote.py
+    - tools/oracle/helpers/soniox_remote/**
     - tools/oracle/cases/helpers/soniox-remote/**
     - tools/oracle/fuzz/corpus/helper_case/soniox_remote*
   lint_tables: false
@@ -73,7 +73,7 @@ deviations: []
 out_of_scope:
   - Record definitions and preparation/logging/error helpers at 61-102 and 173-357 are B1549; B1551 owns pipeline bodies at 358-481 and 589-715; B047 owns public audio_transcriptions at 111-172.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as soniox_upload_poll_cleanup in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/soniox_upload_poll_cleanup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/soniox_upload_poll_cleanup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as soniox_remote in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/soniox_remote.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/soniox_remote.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Cleanup never inspects DELETE response status, so a returned 500 is ignored just like a successful response.
   - max_attempts=1 with an unfinished job still performs one sleep before returning 504.
   - The allowed 6000 attempts and 60-second interval can exceed the misleading fifty-minute source comment.

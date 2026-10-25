@@ -68,11 +68,11 @@ checks:
   commands:
     - id: behavior-tests
       why: Management dispatch comparison tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::management::tests::/)
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::oracle::management_oracle::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The management dispatcher is missing or fails strict Python checks.
-      run: test -f tools/oracle/helpers/management/__init__.py && uv run --locked --project tools/oracle/litellm
+      run: test -f tools/oracle/helpers/management_oracle.py && uv run --locked --project tools/oracle/litellm
         ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
         --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus

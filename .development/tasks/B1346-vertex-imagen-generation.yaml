@@ -55,7 +55,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/imagen_generation.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/imagen_generation)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_imagen_generation_corpus)'
       why: New prediction byte inputs must replay through decode_imagen_generation.
     - id: imagen-generation-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_imagen_generation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_imagen_generation::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_imagen_generation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::imagen_generation::/)'
       why: Helper fixture records must invoke the installed Imagen generation variant.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-imagen-generation/default-sample-count.yaml

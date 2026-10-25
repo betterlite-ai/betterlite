@@ -49,10 +49,10 @@ scope:
     - crates/betterlite-config/src/spend/**
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/spend_statement_limits.rs,corpus/spend_statement_limits/**}
-    - tools/oracle/src/helpers/models/tool_spend_batches.rs
-    - tools/oracle/src/helpers/models/tool_spend_batches/**
-    - tools/oracle/helpers/tool_spend_batches.py
-    - tools/oracle/helpers/tool_spend_batches/**
+    - tools/oracle/src/helpers/models/tool_spend.rs
+    - tools/oracle/src/helpers/models/tool_spend/**
+    - tools/oracle/helpers/tool_spend.py
+    - tools/oracle/helpers/tool_spend/**
     - tools/oracle/cases/helpers/tool-spend/**
     - tools/oracle/fuzz/corpus/helper_case/tool-spend-*
   lint_tables: false
@@ -94,7 +94,7 @@ deviations: []
 out_of_scope:
   - B070 wires queue draining and flush-error reporting; B226 retains response-family tool extraction and B726 the pinned tool index/daily repositories.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as tool_spend_batches in the models group. Replace the stub Op in tools/oracle/src/helpers/models/tool_spend_batches.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/tool_spend_batches.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as tool_spend in the models group. Replace the stub Op in tools/oracle/src/helpers/models/tool_spend.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/tool_spend.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Retrying a post-send rollup error can charge the same request twice even though index inserts are idempotent.
   - A Unicode row's serialized byte budget differs from the number of visible characters.
 budget:

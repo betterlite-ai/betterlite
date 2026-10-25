@@ -23,10 +23,10 @@ scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_image_policy}.rs
     - crates/betterlite-vertex/src/vertex_image_policy/**
-    - tools/oracle/src/helpers/vertex/image_selection_cost.rs
-    - tools/oracle/src/helpers/vertex/image_selection_cost/**
-    - tools/oracle/helpers/vertex_image_selection_cost.py
-    - tools/oracle/helpers/vertex_image_selection_cost/**
+    - tools/oracle/src/helpers/vertex/image_policy.rs
+    - tools/oracle/src/helpers/vertex/image_policy/**
+    - tools/oracle/helpers/vertex_image_policy.py
+    - tools/oracle/helpers/vertex_image_policy/**
     - tools/oracle/cases/helpers/vertex-image-policy/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_image_policy*
   lint_tables: false
@@ -58,7 +58,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_image_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Catalog and generic pricing inputs are fixtures for these pure policy functions.
     - id: image-policy-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_image_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_image_policy::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_image_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::image_policy::/)'
       why: New seed files must select vertex_image_policy under call.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-image-policy/non-gemini-uses-imagen.yaml
@@ -73,7 +73,7 @@ out_of_scope:
   - image_generation_handler.py image_generation has no caller at the pin; aimage_generation, transform_optional_params and its nested snake_to_camel are reachable only from that dead method and are not implemented.
   - B1345 through B1348 implement the selected adapters; B068 owns generic image cost utilities and B091 owns passthrough logging consumers.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_image_selection_cost in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/image_selection_cost.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_image_selection_cost.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_image_policy in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/image_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_image_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A present token cost of zero suppresses the per-image fallback.
   - The legacy prediction detector inspects only element zero and does not scan later predictions.
   - Vertex edit billing ignores both usageMetadata and web-search charges.

@@ -31,10 +31,10 @@ scope:
     - crates/betterlite-core/src/skills/operations.rs
     - crates/betterlite-core/src/skills/operations/**
     - crates/betterlite-core/Cargo.toml
-    - tools/oracle/src/helpers/core_ops/hosted_skill_operations.rs
-    - tools/oracle/src/helpers/core_ops/hosted_skill_operations/**
-    - tools/oracle/helpers/hosted_skill_operations.py
-    - tools/oracle/helpers/hosted_skill_operations/**
+    - tools/oracle/src/helpers/core_ops/hosted_skill_ops.rs
+    - tools/oracle/src/helpers/core_ops/hosted_skill_ops/**
+    - tools/oracle/helpers/hosted_skill_ops.py
+    - tools/oracle/helpers/hosted_skill_ops/**
     - tools/oracle/cases/helpers/hosted-skill-ops/**
     - tools/oracle/fuzz/corpus/helper_case/hosted_skill_ops*
   lint_tables: false
@@ -70,7 +70,7 @@ out_of_scope:
   - B1502 owns _prisma_skill_to_litellm and every database/cache operation; no database access is duplicated here.
   - Skills HTTP handlers and multipart decoding are B095; B161 exports the public sync and async functions.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as hosted_skill_operations in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/hosted_skill_operations.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/hosted_skill_operations.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as hosted_skill_ops in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/hosted_skill_ops.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/hosted_skill_ops.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty file_content value permits the first files tuple to replace explicitly supplied filename and MIME type.
   - has_more is computed from page length without fetching an extra row or producing a continuation cursor.
   - source falls back on empty text as well as null, whereas description is copied unchanged.

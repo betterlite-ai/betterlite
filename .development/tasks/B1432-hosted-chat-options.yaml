@@ -86,7 +86,7 @@ checks:
       run: test -f tools/oracle/helpers/hosted_chat_options.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Isolate class defaults between source invocations so one case cannot alter later capabilities.
     - id: host-options-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/hosted_chat_options*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::hosted_chat_options::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/hosted_chat_options*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::models::hosted_chat_options::/)'
       why: The new operation must parse fixtures for both a positive capability and a mapped failure.
 oracle_cases:
   - tools/oracle/cases/helpers/hosted-chat-options/baseten-eight-character-id.yaml
