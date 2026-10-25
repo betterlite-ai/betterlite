@@ -218,8 +218,7 @@ impl fmt::Debug for FileContentStreamingResult {
             .finish_non_exhaustive()
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamingMediaUploadConfig {
-    pub body_stream: Vec<Vec<u8>>,
+    pub body_stream: ByteStream,
     pub content_type: Option<String>,
 }
