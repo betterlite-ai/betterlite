@@ -376,6 +376,6 @@ pitfalls:
   - Whitespace around a nonblank unavailable message is retained, unlike whitespace used only to detect emptiness.
   - Invalid callback results are 503; a valid result saying valid=false is 400.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

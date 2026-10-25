@@ -138,6 +138,6 @@ pitfalls:
   - Clearing only callback_settings leaves metadata.logging active; disable must clear both slots before encrypting.
   - Omitting object_permission from the updated row would replace a valid cached relation with null during refresh.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -393,6 +393,6 @@ pitfalls:
 - An existing output_config.effort=None overrides the effort inferred from a legacy budget.
 - The sampling drop is silent; forced-tool and disabled-thinking drops each log their own warning.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

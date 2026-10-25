@@ -599,6 +599,6 @@ pitfalls:
   - _build_model_id_to_deployment_index_map resets the row list but relies on its caller for map clearing.
   - Unconstrained alias expansion can return team rows because that call omits team_id.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

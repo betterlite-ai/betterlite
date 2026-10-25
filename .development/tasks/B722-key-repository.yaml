@@ -141,6 +141,6 @@ pitfalls:
   - An empty org_id wins over organization_id because precedence checks None, not truthiness.
   - Raw table access bypasses the repository's JSON conversion and does not hash a supplied identifier.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

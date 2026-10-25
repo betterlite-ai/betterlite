@@ -155,6 +155,6 @@ pitfalls:
   - A regular organization member may see it in list but still receives 403 from info, which requires org_admin.
   - POST includes only budget relations and omits missing organizations; synthesizing GET responses changes its wire shape.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

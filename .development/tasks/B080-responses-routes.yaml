@@ -228,5 +228,5 @@ pitfalls:
 - Every create alias enables responses_stream_errors on the data generator; omitting it loses response.failed framing.
 review_level: security
 budget:
-  max_changed_lines: 830
+  max_changed_lines: 1000
   max_new_expects: 0

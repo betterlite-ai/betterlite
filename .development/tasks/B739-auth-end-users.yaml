@@ -385,6 +385,6 @@ pitfalls:
   - A default end-user cache-write failure returns None, but the equivalent team-member write failure escapes.
   - A cache hit can receive a key-specific budget only on a copy; caching that copy leaks one key's policy to another.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -89,6 +89,6 @@ pitfalls:
   - A valid empty regional guardrail price map blocks global fallback, leaving every counter unpriced.
   - The breakdown helper overwrites guardrail_cost but adds to total_cost without removing a previously recorded guardrail amount.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

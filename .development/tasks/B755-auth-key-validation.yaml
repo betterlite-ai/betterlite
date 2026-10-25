@@ -276,6 +276,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as auth_key_validation in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_key_validation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_key_validation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Expiry equal to now must retain the pinned comparison rather than an intuitive inclusive expiration.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

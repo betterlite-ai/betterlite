@@ -160,5 +160,5 @@ pitfalls:
 - Streaming starts with empty custom headers and returns before the success-status block below it.
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0

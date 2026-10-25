@@ -375,6 +375,6 @@ pitfalls:
 - The CountTokens POST timeout is the literal 30.0, not a deployment override.
 - Model normalization occurs before the counter's catch block and can escape without a failure record.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

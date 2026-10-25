@@ -135,5 +135,5 @@ pitfalls:
 - The local-only flag does not trim spaces and is not a general boolean parser.
 review_level: standard
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0

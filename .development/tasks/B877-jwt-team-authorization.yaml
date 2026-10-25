@@ -221,6 +221,6 @@ pitfalls:
   - The header fallback predicate is broader than claimless DB fallback; a JWT with team claims can still select another DB membership when no RBAC team was assigned.
   - The second passthrough check follows DB fallback because the earlier check had no selected team to authorize.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

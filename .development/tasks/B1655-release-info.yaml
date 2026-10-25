@@ -94,6 +94,6 @@ pitfalls:
   - A GitHub failure is cached for five minutes and returned as null, not raised as a failed management request.
   - The first-contributor exclusion runs before the generic bullet counter, so those entries never inflate other_updates.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

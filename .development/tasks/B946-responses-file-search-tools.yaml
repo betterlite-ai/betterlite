@@ -245,5 +245,5 @@ pitfalls:
 - 'Hidden response_cost is added only when the original object exposes _hidden_params; a missing current cost contributes zero, and an object without that attribute receives no synthesized hidden mapping.'
 review_level: standard
 budget:
-  max_changed_lines: 560
+  max_changed_lines: 1000
   max_new_expects: 1

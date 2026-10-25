@@ -89,5 +89,5 @@ pitfalls:
   - A 51-character multibyte title truncates by characters rather than UTF-8 byte positions.
 review_level: standard
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

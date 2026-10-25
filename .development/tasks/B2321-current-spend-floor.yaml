@@ -120,6 +120,6 @@ pitfalls:
   - Strict mode still returns a higher caller fallback when no authoritative floor is available.
   - A floor read racing a reset must recheck the marker before storing its old value.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

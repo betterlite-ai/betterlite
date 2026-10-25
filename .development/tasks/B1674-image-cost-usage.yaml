@@ -111,6 +111,6 @@ pitfalls:
   - Azure's zero output_cost_per_image falls through to pixels, but the default calculator treats that same nonnull zero as a winning price.
   - The default quality fallback is high, regardless of the adjacent comment claiming medium.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

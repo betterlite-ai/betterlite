@@ -118,5 +118,5 @@ pitfalls:
 - Bedrock's zero timeout is retained while other edit handlers replace zero with REQUEST_TIMEOUT.
 review_level: security
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 1

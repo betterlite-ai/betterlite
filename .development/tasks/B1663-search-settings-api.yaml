@@ -95,6 +95,6 @@ pitfalls:
   - A stored enabled=false must stay false even when this pod still has the web-search callback registered.
   - Native tool-search has top_k=5 and no enabled field; semantic filtering has top_k=10 and its own enabled switch.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security
