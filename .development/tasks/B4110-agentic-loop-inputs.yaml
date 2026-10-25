@@ -11,8 +11,10 @@ scope:
   - crates/betterlite-config/Cargo.toml
   - crates/betterlite-config/src/lib.rs
   - crates/betterlite-config/src/agentic_loop_ceiling.rs
+  - crates/betterlite-config/src/agentic_loop_ceiling/**
   - crates/betterlite-context/Cargo.toml
   - crates/betterlite-context/src/agentic_followup_kwargs.rs
+  - crates/betterlite-context/src/agentic_followup_kwargs/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/agentic_loop_settings.py#L27-L59

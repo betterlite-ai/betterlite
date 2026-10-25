@@ -22,12 +22,14 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_stream_primitives.rs
   - crates/betterlite-core/src/api/responses_stream_primitives/**
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/responses_stream_value.rs
   - crates/betterlite-core/fuzz/corpus/responses_stream_value/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/responses_stream_primitives.rs
   - crates/betterlite-config/src/api/responses_stream_primitives/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-stream-duration-*

@@ -34,9 +34,11 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/**
     - crates/betterlite-core/src/api/fal/pricing.rs
     - crates/betterlite-core/src/api/fal/pricing/**
     - crates/betterlite-config/src/providers/fal.rs
+    - crates/betterlite-config/src/providers/fal/**
     - tools/oracle/src/helpers/core_ops/fal_pricing.rs
     - tools/oracle/src/helpers/core_ops/fal_pricing/**
     - tools/oracle/helpers/fal_pricing.py

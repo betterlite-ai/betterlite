@@ -50,6 +50,7 @@ scope:
     - crates/betterlite-config/src/{config,settings,model,providers,tests}.rs
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/tests/vertex_search_settings.rs
+    - crates/betterlite-config/src/tests/vertex_search_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_search*
     - tools/oracle/src/helpers/vertex/discovery_search.rs
     - tools/oracle/src/helpers/vertex/discovery_search/**

@@ -21,9 +21,11 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_store_contracts.rs
   - crates/betterlite-core/src/api/vector_store_contracts/**
   - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/vector_store_contracts.rs
   - crates/betterlite-provider/src/api/vector_store_contracts/**
   - tools/oracle/src/helpers/core_ops/vector_store_contracts.rs

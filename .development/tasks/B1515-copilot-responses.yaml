@@ -33,10 +33,12 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/copilot_responses.rs
     - crates/betterlite-core/src/api/copilot_responses/**
     - crates/betterlite-config/src/providers/copilot.rs
     - crates/betterlite-config/src/providers/copilot/responses.rs
+    - crates/betterlite-config/src/providers/copilot/responses/**
     - tools/oracle/src/helpers/core_ops/copilot_responses.rs
     - tools/oracle/src/helpers/core_ops/copilot_responses/**
     - tools/oracle/helpers/copilot_responses.py

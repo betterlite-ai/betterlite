@@ -29,6 +29,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/runway.rs
+    - crates/betterlite-core/src/api/runway/**
     - crates/betterlite-core/src/api/runway/images.rs
     - crates/betterlite-core/src/api/runway/images/**
     - tools/oracle/src/helpers/core_ops/runway_images.rs
