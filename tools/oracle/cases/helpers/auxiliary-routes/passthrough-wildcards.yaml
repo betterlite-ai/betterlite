@@ -1,0 +1,8 @@
+kind: helper
+name: passthrough-wildcards
+call:
+  auxiliary_routes:
+    group: passthrough_routes_wildcard
+env: {}
+compare:
+  ignore: []

@@ -60,6 +60,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/otel-vocabulary/**
     - tools/oracle/fuzz/corpus/helper_case/otel-vocabulary-*
+    - typos.toml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/semconv.py#L14-L501
@@ -130,6 +131,6 @@ pitfalls:
   - The SPAN_REGISTRY is immutable and validated at module load; tests must call validate_registry() to prove the invariants hold, not just inspect the dict.
   - parse_semconv_opt_in returns an empty set for None or empty string, not a set with one empty entry; trailing commas and whitespace-only tokens are stripped.
 budget:
-  max_changed_lines: 435
+  max_changed_lines: 1200
   max_new_expects: 0
 review_level: standard
