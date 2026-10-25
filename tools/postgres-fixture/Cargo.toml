@@ -7,9 +7,10 @@ publish.workspace = true
 
 [dependencies]
 hex.workspace = true
-openssl.workspace = true
-postgres-openssl.workspace = true
 rust_decimal = { workspace = true, features = ["db-tokio-postgres"] }
+rustls.workspace = true
+rustls-native-certs.workspace = true
+rustls-pemfile.workspace = true
 secrecy.workspace = true
 serde = { workspace = true, features = ["derive"] }
 sha2.workspace = true
@@ -17,6 +18,7 @@ testcontainers.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-postgres.workspace = true
+tokio-postgres-rustls-improved.workspace = true
 uuid.workspace = true
 
 [lints]

@@ -13,10 +13,11 @@ publish = false
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 hex = "0.4.3"
 hyper-util = "0.1.21"
-openssl = "0.10.75"
 percent-encoding = "2.3.2"
-postgres-openssl = "0.5.3"
 regex = "1.13.1"
+rustls = { version = "0.23.46", default-features = false, features = ["ring"] }
+rustls-native-certs = "0.8.5"
+rustls-pemfile = "2.2.0"
 rust_decimal = "1.43.0"
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
@@ -28,6 +29,7 @@ testcontainers = "0.28.0"
 thiserror = "2.0.17"
 tokio = { version = "=1.53.3", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync"] }
 tokio-postgres = "0.7.18"
+tokio-postgres-rustls-improved = { version = "0.17.1", default-features = false, features = ["ring"] }
 tower = "0.5.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["json"] }

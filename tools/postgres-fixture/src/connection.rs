@@ -1,17 +1,12 @@
 use std::fmt;
-use std::future::Future;
-use std::pin::Pin;
 use std::str::FromStr as _;
 use std::time::Duration;
 
-use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
-use postgres_openssl::MakeTlsConnector;
 use secrecy::{ExposeSecret as _, SecretString};
-use testcontainers::core::{IntoContainerPort as _, WaitFor};
-use testcontainers::{ContainerAsync, GenericImage, ImageExt as _, runners::AsyncRunner as _};
+use testcontainers::{ContainerAsync, GenericImage};
 use tokio::runtime::Builder;
 use tokio::task::JoinSet;
-use tokio_postgres::{Client, Config, NoTls};
+use tokio_postgres::Config;
 use uuid::Uuid;
 
 use crate::error::FixtureError;
@@ -19,7 +14,11 @@ use crate::seed::{DatabaseFixture, FixtureSeed};
 use crate::seed_sql;
 
 mod cleanup;
-use cleanup::{cleanup_database, cleanup_setup_driver, combine_errors, drain_drivers, timed};
+mod operations;
+mod tls;
+use cleanup::{cleanup_database, combine_errors, drain_drivers, timed};
+use operations::{create_database, run_fixture_operation, source_connection};
+use tls::{TlsMode, query_value, tls_mode};
 
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -42,15 +41,6 @@ pub struct ConnectionOptions {
     url: SecretString,
     root_certificate: Option<String>,
     tls_mode: TlsMode,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TlsMode {
-    Disable,
-    Prefer,
-    Require,
-    VerifyCa,
-    VerifyFull,
 }
 
 impl fmt::Debug for ConnectionOptions {
@@ -86,7 +76,7 @@ impl ConnectionOptions {
 
     fn from_url(raw: &str) -> Result<Self, FixtureError> {
         let tls_mode = tls_mode(raw);
-        let config_source = normalized_config_source(raw, tls_mode);
+        let config_source = tls::normalized_config_source(raw, tls_mode);
         let config = Config::from_str(&config_source)
             .map_err(|source| FixtureError::InvalidConfiguredUrl { source })?;
         Ok(Self {
@@ -239,159 +229,6 @@ impl PostgresFixture {
         combine_errors(driver_error, cleanup)
     }
 }
-
-async fn source_connection(
-    source: FixtureSource,
-) -> Result<(ConnectionOptions, Option<ContainerAsync<GenericImage>>), FixtureError> {
-    match source {
-        FixtureSource::Configured(options) => Ok((*options, None)),
-        FixtureSource::Testcontainers => {
-            let image = GenericImage::new("postgres", "16.6")
-                .with_wait_for(WaitFor::message_on_stdout("database system is ready"))
-                .with_exposed_port(5432.tcp())
-                .with_env_var("POSTGRES_USER", "fixture")
-                .with_env_var("POSTGRES_PASSWORD", "fixture")
-                .with_env_var("POSTGRES_DB", "postgres");
-            let container = image.start().await.map_err(FixtureError::Container)?;
-            let host = container
-                .get_host()
-                .await
-                .map_err(FixtureError::Container)?;
-            let port = container
-                .get_host_port_ipv4(5432.tcp())
-                .await
-                .map_err(FixtureError::Container)?;
-            let options = ConnectionOptions::from_url(&format!(
-                "postgresql://fixture:fixture@{host}:{port}/postgres"
-            ))?;
-            Ok((options, Some(container)))
-        }
-    }
-}
-
-async fn connect(
-    options: &ConnectionOptions,
-    drivers: &mut JoinSet<Result<(), FixtureError>>,
-) -> Result<Client, FixtureError> {
-    match options.tls_mode {
-        TlsMode::Disable | TlsMode::Prefer => {
-            let connected = timed("connect", options.config.connect(NoTls))
-                .await?
-                .map_err(FixtureError::Connect)?;
-            let (client, connection) = connected;
-            drivers.spawn(async move { connection.await.map_err(FixtureError::Driver) });
-            Ok(client)
-        }
-        TlsMode::Require | TlsMode::VerifyCa | TlsMode::VerifyFull => {
-            let connector = tls_connector(options)?;
-            let connected = timed("connect", options.config.connect(connector))
-                .await?
-                .map_err(FixtureError::Connect)?;
-            let (client, connection) = connected;
-            drivers.spawn(async move { connection.await.map_err(FixtureError::Driver) });
-            Ok(client)
-        }
-    }
-}
-
-fn tls_connector(options: &ConnectionOptions) -> Result<MakeTlsConnector, FixtureError> {
-    let mut builder = SslConnector::builder(SslMethod::tls()).map_err(FixtureError::Tls)?;
-    if let Some(root_certificate) = &options.root_certificate {
-        builder
-            .set_ca_file(root_certificate)
-            .map_err(FixtureError::Tls)?;
-    }
-    if options.tls_mode == TlsMode::Require {
-        builder.set_verify(SslVerifyMode::NONE);
-    } else {
-        builder.set_verify(SslVerifyMode::PEER);
-    }
-    Ok(MakeTlsConnector::new(builder.build()))
-}
-
-fn tls_mode(raw: &str) -> TlsMode {
-    match query_value(raw, "sslmode").as_deref() {
-        Some("disable") => TlsMode::Disable,
-        Some("require") => TlsMode::Require,
-        Some("verify-ca") => TlsMode::VerifyCa,
-        Some("verify-full") => TlsMode::VerifyFull,
-        _ => TlsMode::Prefer,
-    }
-}
-
-fn query_value(raw: &str, key: &str) -> Option<String> {
-    raw.split_once('?')?.1.split('&').find_map(|part| {
-        let (name, value) = part.split_once('=')?;
-        (name == key).then(|| value.to_owned())
-    })
-}
-
-fn normalized_config_source(raw: &str, tls_mode: TlsMode) -> String {
-    let Some((base, query)) = raw.split_once('?') else {
-        return raw.to_owned();
-    };
-    let parameters = query
-        .split('&')
-        .filter_map(|parameter| {
-            let (name, configured_value) = parameter.split_once('=')?;
-            if name == "sslrootcert" {
-                return None;
-            }
-            let normalized_value = if name == "sslmode" && tls_mode != TlsMode::Disable {
-                "require"
-            } else {
-                configured_value
-            };
-            Some(format!("{name}={normalized_value}"))
-        })
-        .collect::<Vec<_>>();
-    if parameters.is_empty() {
-        base.to_owned()
-    } else {
-        format!("{base}?{}", parameters.join("&"))
-    }
-}
-
-async fn create_database(client: &Client, database: &str) -> Result<(), FixtureError> {
-    let statement = format!("CREATE DATABASE {}", quote_identifier(database));
-    client
-        .batch_execute(&statement)
-        .await
-        .map_err(FixtureError::Database)
-}
-
-async fn run_fixture_operation<F>(
-    options: &ConnectionOptions,
-    admin: &ConnectionOptions,
-    database: &str,
-    operation: F,
-) -> Result<(), FixtureError>
-where
-    F: Send
-        + for<'client> FnOnce(
-            &'client Client,
-        ) -> Pin<
-            Box<dyn Future<Output = Result<(), FixtureError>> + Send + 'client>,
-        >,
-{
-    let mut drivers = JoinSet::new();
-    let connection_result = connect(options, &mut drivers).await;
-    let client = match connection_result {
-        Ok(client) => client,
-        Err(error) => return Err(cleanup_setup_driver(error, Ok(()), admin, database).await),
-    };
-    let operation_result = operation(&client).await;
-    drop(client);
-    let driver_error = drain_drivers(&mut drivers).await;
-    if let Err(error) = operation_result {
-        return Err(cleanup_setup_driver(error, Ok(()), admin, database).await);
-    }
-    if let Err(error) = driver_error {
-        return Err(cleanup_setup_driver(error, Ok(()), admin, database).await);
-    }
-    Ok(())
-}
-
 pub(crate) fn quote_identifier(value: &str) -> String {
     let escaped = value.replace('"', "\"\"");
     format!("\"{escaped}\"")

@@ -3,7 +3,7 @@ use std::future::Future;
 use tokio::task::JoinSet;
 use tokio::time;
 
-use super::{ConnectionOptions, OPERATION_TIMEOUT, connect, quote_identifier};
+use super::{ConnectionOptions, OPERATION_TIMEOUT, operations::connect, quote_identifier};
 use crate::error::FixtureError;
 
 pub(super) async fn cleanup_database(

@@ -1,7 +1,6 @@
 use std::io;
 use std::time::Duration;
 
-use openssl::error::ErrorStack;
 use tokio::task::JoinError;
 use tokio::time::error::Elapsed;
 
@@ -24,8 +23,12 @@ pub enum FixtureError {
     Database(#[source] tokio_postgres::Error),
     #[error("fixture connection driver failed: {0}")]
     Driver(#[source] tokio_postgres::Error),
-    #[error("fixture TLS configuration failed: {0}")]
-    Tls(#[source] ErrorStack),
+    #[error("fixture TLS certificate file failed: {0}")]
+    TlsIo(#[source] io::Error),
+    #[error("fixture TLS certificate was rejected: {0}")]
+    TlsCertificate(#[source] rustls::Error),
+    #[error("fixture TLS has no trusted root certificates")]
+    TlsNoRoots,
     #[error("fixture {operation} timed out after {duration:?}")]
     Timeout {
         operation: &'static str,
