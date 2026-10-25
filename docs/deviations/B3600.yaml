@@ -1,0 +1,5 @@
+task: B3600
+deviations:
+  - what: "Path joining normalizes .. segments and falls back to the configured base on climb-out."
+    why: "This is the pinned LiteLLM behavior and prevents an untrusted subpath escaping the base URL."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L697-L705"

@@ -214,6 +214,7 @@ dependencies = [
  "reqwest",
  "rstest",
  "secrecy",
+ "serde_json",
  "thiserror",
  "tokio",
  "tracing",
