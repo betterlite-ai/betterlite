@@ -28,9 +28,8 @@ pub fn resolve_provider(custom_llm_provider: &str) -> &str {
     <&str>::from(provider)
 }
 
-// typos flags the async send_message names as misspellings, and typos.toml is outside this task
-const ASYNC_SEND_MESSAGE: &str = concat!("a", "send_message");
-const ASYNC_SEND_STREAMING: &str = concat!("a", "send_message_streaming");
+const ASYNC_SEND_MESSAGE: &str = "asend_message";
+const ASYNC_SEND_STREAMING: &str = "asend_message_streaming";
 
 #[must_use]
 pub fn resolve_operation(call_type: &str) -> GenAIOperation {
