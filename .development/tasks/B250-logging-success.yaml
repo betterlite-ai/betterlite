@@ -8,8 +8,7 @@ description: >-
   batch-specific handling is B086, background interactions B098. No callback error may alter a successful response.
   Budget 280 logic/types, 120 Rust/Python adapters, 300 tests and 60 wiring (760 total). Write the behavior rstest
   functions logging_success_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
-  in the DoD; corpus replay tests have separate names. Register helper operations logging_success in tools/oracle/src/helpers/mod.rs
-  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  in the DoD; corpus replay tests have separate names. The helper operation logging_success is already registered; each operation has its own Rust and Python adapter file and corpus seed.
   Own recognized-call-type checks 2579-2620 and success emission deduplication 2678-2701; interaction detection/dispatch
   2622-2676 is B098.
 scope:

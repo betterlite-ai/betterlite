@@ -49,10 +49,10 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/rollup_inputs.rs
     - crates/betterlite-db/fuzz/corpus/rollup_inputs/**
-    - tools/oracle/src/helpers/db/window_and_model_queues.rs
-    - tools/oracle/src/helpers/db/window_and_model_queues/**
-    - tools/oracle/helpers/window_and_model_queues.py
-    - tools/oracle/helpers/window_and_model_queues/**
+    - tools/oracle/src/helpers/db/queue_rollup.rs
+    - tools/oracle/src/helpers/db/queue_rollup/**
+    - tools/oracle/helpers/queue_rollup.py
+    - tools/oracle/helpers/queue_rollup/**
     - tools/oracle/cases/helpers/queue-rollup/**
     - tools/oracle/fuzz/corpus/helper_case/queue-rollup-*
   lint_tables: false
@@ -102,7 +102,7 @@ out_of_scope:
   - B1733 owns entity/daily queues, B1706 tool usage writes, and earlier _types.py owners retain unrelated records.
   - ModelInsightTask is the only extracted insights type; B075 keeps the metrics, totals, summaries and HTTP response records in model_insights.py.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as window_and_model_queues in the db group. Replace the stub Op in tools/oracle/src/helpers/db/window_and_model_queues.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/window_and_model_queues.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as queue_rollup in the db group. Replace the stub Op in tools/oracle/src/helpers/db/queue_rollup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/queue_rollup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Window transaction identity includes the original window_start string, so two different windows never collapse by entity alone.
   - Model usage accepts a ten-character date prefix without checking whether it is a calendar date.
 budget:

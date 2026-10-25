@@ -35,10 +35,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_file_metadata.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_file_metadata/**
-    - tools/oracle/src/helpers/vertex/native_files.rs
-    - tools/oracle/src/helpers/vertex/native_files/**
-    - tools/oracle/helpers/vertex_native_files.py
-    - tools/oracle/helpers/vertex_native_files/**
+    - tools/oracle/src/helpers/vertex/files.rs
+    - tools/oracle/src/helpers/vertex/files/**
+    - tools/oracle/helpers/vertex_files.py
+    - tools/oracle/helpers/vertex_files/**
     - tools/oracle/cases/helpers/vertex-files/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_files*
   lint_tables: false
@@ -72,7 +72,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_file_metadata.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_file_metadata)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_file_metadata_corpus)'
       why: The production metadata decoder receives missing, malformed and oversized field fixtures.
     - id: vertex-file-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_files*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_files::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_files*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::files::/)'
       why: Helper seeds must decode as call.vertex_files before oracle execution.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-files/deployment-model-wins.yaml
@@ -91,7 +91,7 @@ out_of_scope:
   - B1374 owns label/embedding records at L110-L156 and row helpers; B1377 owns response content conversion and its context.
   - B1383 owns the older concrete FilesHandler entry points, while B034 binds native file operations into existing API execution.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_native_files in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/native_files.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_native_files.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_files in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/files.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_files.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Supplying api_key does not itself add Authorization in this file configuration.
   - Upload purpose is read at the metadata root while retrieval purpose is nested under metadata.
   - A malformed-looking final component of a GCS id is still stripped as a generation suffix.

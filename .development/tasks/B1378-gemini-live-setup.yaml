@@ -90,7 +90,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_setup.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/gemini_live_setup)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_gemini_live_setup_corpus)'
       why: decode_gemini_live_setup sees missing setup, invalid JSON and nested generation/VAD values.
     - id: live-setup-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_setup*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_live_setup::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_setup*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_live_setup::/)'
       why: Newly added HelperCases must decode the gemini_live_setup call variant.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-live-setup/ga-aliases.yaml

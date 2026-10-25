@@ -69,7 +69,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/mistral_resource.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/mistral_resource)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_mistral_resource_corpus)'
       why: Invalid status literals and missing native IDs must not bypass bounded decoding.
     - id: mistral-resource-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mistral_resources*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mistral_resources::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mistral_resources*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::mistral_resources::/)'
       why: Added seeds must parse as the mistral_resources operation.
 oracle_cases:
   - tools/oracle/cases/helpers/mistral-resources/ocr-user-data-round-trip.yaml

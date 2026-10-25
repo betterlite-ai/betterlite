@@ -59,7 +59,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/imagen_edit_input.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/imagen_edit_input)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_imagen_edit_input_corpus)'
       why: The byte decoder must reject over-depth inputs without unbounded recursion.
     - id: imagen-edit-helper-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_imagen_edit*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_imagen_edit::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_imagen_edit*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::imagen_edit::/)'
       why: Shared HelperCase decoding recognizes the new Imagen edit records.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-imagen-edit/mask-id-gap.yaml

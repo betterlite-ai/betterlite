@@ -28,10 +28,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_rerank.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_rerank/**
-    - tools/oracle/src/helpers/vertex/discovery_rerank.rs
-    - tools/oracle/src/helpers/vertex/discovery_rerank/**
-    - tools/oracle/helpers/vertex_discovery_rerank.py
-    - tools/oracle/helpers/vertex_discovery_rerank/**
+    - tools/oracle/src/helpers/vertex/rerank.rs
+    - tools/oracle/src/helpers/vertex/rerank/**
+    - tools/oracle/helpers/vertex_rerank.py
+    - tools/oracle/helpers/vertex_rerank/**
     - tools/oracle/cases/helpers/vertex-rerank/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_rerank*
   lint_tables: false
@@ -60,7 +60,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_rerank.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_rerank)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_rerank_corpus)'
       why: Invalid IDs, scores and envelopes replay through decode_vertex_rerank.
     - id: discovery-rerank-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_rerank*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_rerank::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_rerank*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::rerank::/)'
       why: Vertex rerank records must be accepted as a distinct helper call variant.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-rerank/ignored-custom-base.yaml
@@ -75,7 +75,7 @@ out_of_scope:
   - All rerank configuration functions are assigned here; B1014 owns generic execution and B033 binds B1013 records to this adapter.
   - B085 registers rerank route aliases and B1306 handles Vertex label extraction.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_discovery_rerank in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/discovery_rerank.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_discovery_rerank.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_rerank in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/rerank.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_rerank.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - return_documents controls provider details but the transformed result still omits document content.
   - A missing score means relevance_score 1 rather than zero.
   - Search units count the submitted records, so top_n does not reduce billed units.

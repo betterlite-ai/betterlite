@@ -31,10 +31,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/studio_veo_operation.rs
     - crates/betterlite-vertex/fuzz/corpus/studio_veo_operation/**
-    - tools/oracle/src/helpers/vertex/studio_veo_results.rs
-    - tools/oracle/src/helpers/vertex/studio_veo_results/**
-    - tools/oracle/helpers/studio_veo_results.py
-    - tools/oracle/helpers/studio_veo_results/**
+    - tools/oracle/src/helpers/vertex/studio_veo_operation.rs
+    - tools/oracle/src/helpers/vertex/studio_veo_operation/**
+    - tools/oracle/helpers/studio_veo_operation.py
+    - tools/oracle/helpers/studio_veo_operation/**
     - tools/oracle/cases/helpers/studio-veo-operation/**
     - tools/oracle/fuzz/corpus/helper_case/studio_veo_operation*
   lint_tables: false
@@ -68,7 +68,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/studio_veo_operation.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/studio_veo_operation)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_studio_veo_operation_corpus)'
       why: Newly committed provider envelopes must traverse decode_studio_veo_operation.
     - id: studio-veo-result-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_veo_operation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_veo_operation::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_veo_operation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::studio_veo_operation::/)'
       why: The added Studio operation variant is exercised by real HelperCase bytes.
 oracle_cases:
   - tools/oracle/cases/helpers/studio-veo-operation/missing-name.yaml
@@ -81,7 +81,7 @@ out_of_scope:
   - B1363 implements every create-input and identity method, including the local image converter; B1362 provides shared duration configuration and valid sample-count extraction.
   - B093 owns video HTTP route registration and generic operation execution; B035 supplies the Studio adapter binding.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as studio_veo_results in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/studio_veo_results.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/studio_veo_results.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as studio_veo_operation in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/studio_veo_operation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/studio_veo_operation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A done operation with an error still becomes completed in Studio's status transformation.
   - Whitespace-only resolution survives usage mapping as an empty string.
   - Status retrieval encodes provider IDs without preserving the creation model.

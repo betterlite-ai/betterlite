@@ -7,8 +7,7 @@ description: >-
   predicate, including combinations and unmatched inputs. Never combine two families in one call. Do not instantiate
   cloud SDK clients. Budget 280 classifiers, 110 adapters, 320 tests and 50 wiring (760 total). Write the behavior
   rstest functions vertex_errors_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior
-  and failure in the DoD; corpus replay tests have separate names. Register helper operations vertex_errors in tools/oracle/src/helpers/mod.rs
-  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  and failure in the DoD; corpus replay tests have separate names. The helper operation vertex_errors is already registered; each operation has its own Rust and Python adapter file and corpus seed.
   Every error case ignores /error/message with reason betterlite writes its own message; never copy AnthropicError
   or other LiteLLM branding prefixes.
 scope:

@@ -46,10 +46,10 @@ scope:
   - tools/oracle/sdk_http/responses_poll_stream.py
   - tools/oracle/cases/sdk-http/responses-poll-stream/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-poll-stream-*
-  - tools/oracle/src/helpers/core_ops/responses_poll_stream.rs
-  - tools/oracle/src/helpers/core_ops/responses_poll_stream/**
-  - tools/oracle/helpers/responses_poll_stream.py
-  - tools/oracle/helpers/responses_poll_stream/**
+  - tools/oracle/src/helpers/core_ops/responses_poll_frame.rs
+  - tools/oracle/src/helpers/core_ops/responses_poll_frame/**
+  - tools/oracle/helpers/responses_poll_frame.py
+  - tools/oracle/helpers/responses_poll_frame/**
   - tools/oracle/cases/helpers/responses-poll-frame/**
   - tools/oracle/fuzz/corpus/helper_case/responses_poll_frame-*
   - Cargo.lock
@@ -149,7 +149,7 @@ out_of_scope:
 - B080 owns initial polling admission and the create route; B938 owns cancellation HTTP and polling owner authorization.
 - B935 owns serialization, TTL, private owners and patch truthiness; B004 owns provider dispatch and pre-call processing.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as responses_poll_stream in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_poll_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_poll_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as responses_poll_frame in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_poll_frame.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_poll_frame.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Terminal output is merged by ID, so stale accumulated items survive an empty final output list.
 - There is no cancellation-state read anywhere in the worker; cached cancellation can be overwritten.
 - The 150ms interval is checked after events, not by a background timer.

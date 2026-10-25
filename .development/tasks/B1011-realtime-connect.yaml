@@ -37,10 +37,10 @@ scope:
   - crates/betterlite-config/fuzz/corpus/config_yaml/realtime-connect-*
   - tools/oracle/src/websocket_driver.rs
   - tools/oracle/src/websocket_driver/realtime_connect.rs
-  - tools/oracle/src/helpers/core_ops/realtime_connect.rs
-  - tools/oracle/src/helpers/core_ops/realtime_connect/**
-  - tools/oracle/helpers/realtime_connect.py
-  - tools/oracle/helpers/realtime_connect/**
+  - tools/oracle/src/helpers/core_ops/realtime_connect_websocket.rs
+  - tools/oracle/src/helpers/core_ops/realtime_connect_websocket/**
+  - tools/oracle/helpers/realtime_connect_websocket.py
+  - tools/oracle/helpers/realtime_connect_websocket/**
   - tools/oracle/cases/websocket/realtime-connect/**
   - tools/oracle/fuzz/corpus/websocket_oracle/realtime-connect-*
   lint_tables: false
@@ -126,7 +126,7 @@ out_of_scope:
 - B1010 owns HTTP config resolution and the three HTTP SDK calls plus _with_resolved_session_model; B1127 owns stored credential merge and all health probe helpers in realtime_api/main.py.
 - B528/B545/B666/B036 own direct provider transports, B1303 credential refresh, B1365 Vertex config, B1378/B1382 Gemini config and B039 Meta config. B2457 owns generic WebSocket execution.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as realtime_connect in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/realtime_connect.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/realtime_connect.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as realtime_connect_websocket in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/realtime_connect_websocket.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/realtime_connect_websocket.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Generic configs receive original api_base/key, while later provider branches often use dynamic resolved values.
 - Azure and OpenAI direct connectors discard the merged headers and force client=None.
 - A transcription-only URL intentionally has no model key; normalizing the route model must not insert one.

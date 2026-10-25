@@ -76,7 +76,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_gcs_id.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_gcs_id)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_gcs_id_corpus)'
       why: Encoded separators and invalid path bytes are replayed through decode_vertex_gcs_id.
     - id: gcs-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_gcs_access*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_gcs_access::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_gcs_access*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gcs_access::/)'
       why: Each helper seed selects call.vertex_gcs_access and reaches the shared decoder.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-gcs-access/configured-prefix.yaml

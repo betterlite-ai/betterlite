@@ -7,8 +7,7 @@ description: >-
   and absent/null/string distinctions. Budget 270 extraction/status, 100 adapters, 300 tests/fuzz and 50 wiring
   (720 total). Add the provider_error cargo-fuzz target, call the production parser, and commit/replay malformed
   and boundary seeds. Write the behavior rstest functions error_facts_behavior_tests_behavior in adjacent tests.rs files,
-  with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
-  helper operations error_facts in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation
+  with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation error_facts is already registered; each operation
   has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:

@@ -67,7 +67,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/studio_file_search.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/studio_file_search)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_studio_file_search_corpus)'
       why: decode_studio_file_search receives malformed candidates, supports and create times.
     - id: studio-search-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_file_search*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_file_search::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_file_search*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::studio_file_search::/)'
       why: Added fixtures assert call.studio_file_search before shared corpus replay.
 oracle_cases:
   - tools/oracle/cases/helpers/studio-file-search/no-params-auth.yaml

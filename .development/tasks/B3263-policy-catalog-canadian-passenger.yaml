@@ -3,18 +3,20 @@ title: Canadian PII and local airline passenger catalog records
 description: >-
   Retain the published Canadian PII record and the local airline passenger data protection record.
   The Canadian PII Protection (PIPEDA) record appears only in the published `policy_templates.json` root catalog and has no counterpart in the backup.
-  The Airline Passenger Data Protection (UAE) record appears only in the backup `litellm/policy_templates_backup.json` file and has no published counterpart.
-  Preserve this catalog difference: each record exists in only its original file.
+  This task owns the Airline Passenger Data Protection (UAE) record from the backup `litellm/policy_templates_backup.json` file; its published counterpart in `policy_templates.json` is owned by B3264.
+  Preserve this catalog difference: the Canadian record exists only in the published catalog.
   This task owns the complete canadian-pii-protection guardrail template record with all six guardrailDefinitions (ca-pii-government-identifiers, ca-pii-health-drivers, ca-pii-immigration, ca-pii-financial, ca-pii-contact-information and ca-pii-institutional-ids) in the published catalog.
   This task also owns the complete airline-passenger-data-protection-uae template record with all four guardrailDefinitions (airline-pnr-skywards-pii, airline-passport-multinational, airline-payment-financial and airline-contact-info-uae) in the backup catalog.
+  Write each record to its own fragment file: `crates/betterlite-policy/assets/templates/published/canadian-pii-protection.json` and `crates/betterlite-policy/assets/templates/local/airline-passenger-data-protection-uae.json`. Each holds exactly one JSON object: the record as LiteLLM has it at the pinned commit, with the same keys in the same order and the same values.
+  B3252 (local lookup) and B3253 (remote catalog) assemble the fragments in LiteLLM's source order from an explicit list, so the order of records is their job, not this task's.
   The backup airline record includes example_sentences ("Look up PNR ABC123 for passenger Ahmed Al Maktoum", "My Skywards number is EK123456789", "Booking reference XY7890 with Emirates ID 784-1985-1234567-1", "Passenger passport number is A12345678") that distinguish it from any published version.
   The Canadian record does not include example_sentences, consistent with the published catalog structure.
   Preserve the exact field order and values from the pinned LiteLLM commit. The Canadian record includes the policy_name "canadian-pii-protection", description text, six guardrails in guardrails field, PII Protection, Canada, PIPEDA and FIPPA tags, and 1ms estimated_latency_ms.
   The airline record includes the policy_name "airline-passenger-data-protection-uae", description text, four guardrails, PII Protection, Aviation and UAE tags, 1ms estimated_latency_ms, and example_sentences.
 scope:
   paths:
-    - policy_templates.json
-    - litellm/policy_templates_backup.json
+    - crates/betterlite-policy/assets/templates/published/canadian-pii-protection.json
+    - crates/betterlite-policy/assets/templates/local/airline-passenger-data-protection-uae.json
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L2510-L2711
@@ -26,25 +28,23 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L626-L664
     why: The get_policy_templates route that uses the published root as the remote fixture and the backup as fallback.
 dod:
-  - text: The published catalog contains lines 2510-2711 with the complete canadian-pii-protection record including all six guardrail definitions and no example_sentences field.
+  - text: The published canadian-pii-protection fragment holds the complete record including all six guardrail definitions and no example_sentences field.
     proof: [catalog-published]
-  - text: The backup catalog contains lines 1380-1576 with the complete airline-passenger-data-protection-uae record including all four guardrail definitions and example_sentences field.
+  - text: The local airline-passenger-data-protection-uae fragment holds the complete record including all four guardrail definitions and example_sentences field.
     proof: [catalog-backup]
-  - text: The published catalog is valid JSON and can be loaded without errors.
+  - text: The published fragment is valid JSON and holds exactly one object.
     proof: [catalog-published]
-  - text: The backup catalog is valid JSON and can be loaded without errors.
+  - text: The local fragment is valid JSON and holds exactly one object.
     proof: [catalog-backup]
   - text: >-
-      The Canadian PII record in the published catalog includes all required fields
-      (id, title, description, icon, iconColor, iconBg, guardrails array, complexity,
-      guardrailDefinitions array with six entries, templateData, tags, and estimated_latency_ms)
+      The Canadian PII record's keys are, in this order, id, title, description, icon, iconColor, iconBg, guardrails array, complexity,
+      guardrailDefinitions array with six entries, templateData, tags, and estimated_latency_ms,
       with correct literal values.
     proof: [catalog-published]
   - text: >-
-      The Airline Passenger record in the backup includes all required fields
-      (id, title, description, example_sentences, icon, iconColor, iconBg, guardrails array,
+      The Airline Passenger record's keys are, in this order, id, title, description, example_sentences, icon, iconColor, iconBg, guardrails array,
       complexity, guardrailDefinitions array with four entries, templateData, tags,
-      and estimated_latency_ms) with correct literal values.
+      and estimated_latency_ms, with correct literal values.
     proof: [catalog-backup]
   - text: >-
       The Canadian record specifies id "canadian-pii-protection", title "Canadian PII Protection (PIPEDA)",
@@ -74,130 +74,59 @@ checks:
   optional: []
   commands:
     - id: catalog-published
-      why: the policy_templates.json file is missing the Canadian record, has invalid JSON, or the canadian-pii-protection record is corrupted or missing required fields and literal values
-      run: |
-        python3 << 'CATALOG_CHECK'
-        import json
-        with open('policy_templates.json', 'r') as f:
-            templates = json.load(f)
-
-        record = None
-        for t in templates:
-            if t.get('id') == 'canadian-pii-protection':
-                record = t
-                break
-
-        assert record is not None, 'canadian-pii-protection record not found'
-
-        required_fields = ['id', 'title', 'description', 'icon', 'iconColor',
-                          'iconBg', 'guardrails', 'complexity', 'guardrailDefinitions', 'templateData',
-                          'tags', 'estimated_latency_ms']
-        for field in required_fields:
-            assert field in record, f'missing field: {field}'
-
-        assert 'example_sentences' not in record, 'example_sentences should not be in published record'
-
-        assert isinstance(record['guardrails'], list) and len(record['guardrails']) == 6, 'guardrails count wrong'
-        assert isinstance(record['guardrailDefinitions'], list) and len(record['guardrailDefinitions']) == 6, 'guardrailDefinitions count wrong'
-        assert isinstance(record['tags'], list) and len(record['tags']) == 4, 'tags count wrong'
-
-        assert record['id'] == 'canadian-pii-protection', 'id value corrupted'
-        assert record['title'] == 'Canadian PII Protection (PIPEDA)', 'title value corrupted'
-        assert 'PIPEDA' in record['description'], 'description value corrupted'
-        assert record['tags'] == ['PII Protection', 'Canada', 'PIPEDA', 'FIPPA'], 'tags values corrupted'
-        assert record['icon'] == 'ShieldCheckIcon', 'icon value corrupted'
-        assert record['iconColor'] == 'text-red-500', 'iconColor value corrupted'
-        assert record['iconBg'] == 'bg-red-50', 'iconBg value corrupted'
-        assert record['complexity'] == 'Medium', 'complexity value corrupted'
-        assert record['estimated_latency_ms'] == 1, 'estimated_latency_ms not 1'
-        assert record['templateData']['policy_name'] == 'canadian-pii-protection', 'policy_name corrupted'
-
-        guardrail_names = [g['guardrail_name'] for g in record['guardrailDefinitions']]
-        expected_names = ['ca-pii-government-identifiers', 'ca-pii-health-drivers', 'ca-pii-immigration',
-                         'ca-pii-financial', 'ca-pii-contact-information', 'ca-pii-institutional-ids']
-        assert guardrail_names == expected_names, f'guardrail names corrupted or reordered: {guardrail_names}'
-
-        for guardrail in record['guardrailDefinitions']:
-            assert 'guardrail_name' in guardrail, 'guardrail missing name'
-            assert 'litellm_params' in guardrail, 'guardrail missing litellm_params'
-            assert 'pattern_redaction_format' in guardrail['litellm_params'], 'pattern_redaction_format missing'
-            assert guardrail['litellm_params']['pattern_redaction_format'] == '[{pattern_name}_REDACTED]', 'redaction format wrong'
-
-        print('Canadian PII record valid and complete')
-        CATALOG_CHECK
+      why: the published canadian-pii-protection fragment is missing, is not one valid JSON object, or its keys, key order or literal values differ from the pinned LiteLLM record
+      run: |-
+        jq -e -s 'length == 1 and (.[0]
+          | ["ca-pii-government-identifiers", "ca-pii-health-drivers", "ca-pii-immigration", "ca-pii-financial", "ca-pii-contact-information", "ca-pii-institutional-ids"] as $names
+          | keys_unsorted == ["id", "title", "description", "icon", "iconColor", "iconBg", "guardrails", "complexity", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
+          and .id == "canadian-pii-protection"
+          and .title == "Canadian PII Protection (PIPEDA)"
+          and (.description | contains("PIPEDA"))
+          and .icon == "ShieldCheckIcon"
+          and .iconColor == "text-red-500"
+          and .iconBg == "bg-red-50"
+          and .guardrails == $names
+          and .complexity == "Medium"
+          and [.guardrailDefinitions[].guardrail_name] == $names
+          and all(.guardrailDefinitions[].litellm_params; has("guardrail") and has("mode") and (.patterns | length > 0 and all(.[]; has("pattern_type") and has("pattern_name") and has("action"))) and .pattern_redaction_format == "[{pattern_name}_REDACTED]")
+          and .templateData.policy_name == "canadian-pii-protection"
+          and .tags == ["PII Protection", "Canada", "PIPEDA", "FIPPA"]
+          and .estimated_latency_ms == 1)' crates/betterlite-policy/assets/templates/published/canadian-pii-protection.json
     - id: catalog-backup
-      why: the litellm/policy_templates_backup.json file is missing the Airline record, has invalid JSON, or the airline-passenger-data-protection-uae record is corrupted or missing required fields and literal values
-      run: |
-        python3 << 'CATALOG_CHECK'
-        import json
-        with open('litellm/policy_templates_backup.json', 'r') as f:
-            templates = json.load(f)
-
-        record = None
-        for t in templates:
-            if t.get('id') == 'airline-passenger-data-protection-uae':
-                record = t
-                break
-
-        assert record is not None, 'airline-passenger-data-protection-uae record not found'
-
-        required_fields = ['id', 'title', 'description', 'example_sentences', 'icon', 'iconColor',
-                          'iconBg', 'guardrails', 'complexity', 'guardrailDefinitions', 'templateData',
-                          'tags', 'estimated_latency_ms']
-        for field in required_fields:
-            assert field in record, f'missing field: {field}'
-
-        assert isinstance(record['example_sentences'], list) and len(record['example_sentences']) == 4, 'example_sentences wrong'
-        assert isinstance(record['guardrails'], list) and len(record['guardrails']) == 4, 'guardrails count wrong'
-        assert isinstance(record['guardrailDefinitions'], list) and len(record['guardrailDefinitions']) == 4, 'guardrailDefinitions count wrong'
-        assert isinstance(record['tags'], list) and len(record['tags']) == 3, 'tags count wrong'
-
-        assert record['id'] == 'airline-passenger-data-protection-uae', 'id value corrupted'
-        assert record['title'] == 'Airline Passenger Data Protection (UAE)', 'title value corrupted'
-        assert 'passenger' in record['description'].lower(), 'description value corrupted'
-        assert record['tags'] == ['PII Protection', 'Aviation', 'UAE'], 'tags values corrupted'
-        assert record['icon'] == 'ShieldCheckIcon', 'icon value corrupted'
-        assert record['iconColor'] == 'text-emerald-500', 'iconColor value corrupted'
-        assert record['iconBg'] == 'bg-emerald-50', 'iconBg value corrupted'
-        assert record['complexity'] == 'High', 'complexity value corrupted'
-        assert record['estimated_latency_ms'] == 1, 'estimated_latency_ms not 1'
-        assert record['templateData']['policy_name'] == 'airline-passenger-data-protection-uae', 'policy_name corrupted'
-
-        expected_examples = ['Look up PNR ABC123 for passenger Ahmed Al Maktoum',
-                           'My Skywards number is EK123456789',
-                           'Booking reference XY7890 with Emirates ID 784-1985-1234567-1',
-                           'Passenger passport number is A12345678']
-        assert record['example_sentences'] == expected_examples, 'example_sentences values corrupted'
-
-        guardrail_names = [g['guardrail_name'] for g in record['guardrailDefinitions']]
-        expected_names = ['airline-pnr-skywards-pii', 'airline-passport-multinational',
-                         'airline-payment-financial', 'airline-contact-info-uae']
-        assert guardrail_names == expected_names, f'guardrail names corrupted or reordered: {guardrail_names}'
-
-        for guardrail in record['guardrailDefinitions']:
-            assert 'guardrail_name' in guardrail, 'guardrail missing name'
-            assert 'litellm_params' in guardrail, 'guardrail missing litellm_params'
-            assert 'pattern_redaction_format' in guardrail['litellm_params'], 'pattern_redaction_format missing'
-            assert guardrail['litellm_params']['pattern_redaction_format'] == '[{pattern_name}_REDACTED]', 'redaction format wrong'
-
-        print('Airline Passenger record valid and complete')
-        CATALOG_CHECK
+      why: the local airline-passenger-data-protection-uae fragment is missing, is not one valid JSON object, or its keys, key order, example_sentences or literal values differ from the pinned LiteLLM record
+      run: |-
+        jq -e -s 'length == 1 and (.[0]
+          | ["airline-pnr-skywards-pii", "airline-passport-multinational", "airline-payment-financial", "airline-contact-info-uae"] as $names
+          | keys_unsorted == ["id", "title", "description", "example_sentences", "icon", "iconColor", "iconBg", "guardrails", "complexity", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
+          and .id == "airline-passenger-data-protection-uae"
+          and .title == "Airline Passenger Data Protection (UAE)"
+          and (.description | ascii_downcase | contains("passenger"))
+          and .example_sentences == ["Look up PNR ABC123 for passenger Ahmed Al Maktoum", "My Skywards number is EK123456789", "Booking reference XY7890 with Emirates ID 784-1985-1234567-1", "Passenger passport number is A12345678"]
+          and .icon == "ShieldCheckIcon"
+          and .iconColor == "text-emerald-500"
+          and .iconBg == "bg-emerald-50"
+          and .guardrails == $names
+          and .complexity == "High"
+          and [.guardrailDefinitions[].guardrail_name] == $names
+          and all(.guardrailDefinitions[].litellm_params; has("guardrail") and has("mode") and (.patterns | length > 0 and all(.[]; has("pattern_type") and has("pattern_name") and has("action"))) and .pattern_redaction_format == "[{pattern_name}_REDACTED]")
+          and .templateData.policy_name == "airline-passenger-data-protection-uae"
+          and .tags == ["PII Protection", "Aviation", "UAE"]
+          and .estimated_latency_ms == 1)' crates/betterlite-policy/assets/templates/local/airline-passenger-data-protection-uae.json
 oracle_cases: []
 deviations: []
 out_of_scope:
   - The loading code for these records. B3252 loads the airline passenger record from the backup via _load_policy_templates_from_local_backup; B3253 fetches the Canadian record from the remote published catalog via get_policy_templates. Each task owns the loading path for its record ownership.
   - Guardrail implementations or pattern definitions referenced by these templates. The records define policy patterns and metadata only.
   - Other policy templates in either catalog file. Those are owned by other catalog tasks.
-  - The catalog difference itself (Canadian in published only, airline in backup only) is preserved as-is, not normalized or reconciled across files.
+  - The catalog difference itself (Canadian in published only) is preserved as-is, not normalized or reconciled across files. The published airline passenger record is owned by B3264.
 pitfalls:
-  - >-
-    The catalog split is permanent: canadian-pii-protection belongs exclusively in policy_templates.json and must not be added to the backup file; airline-passenger-data-protection-uae belongs exclusively in litellm/policy_templates_backup.json and must not be added to the published root.
-  - The Airline record in the backup includes example_sentences (four sentences for PNR/Skywards/booking reference/passport lookups). The Canadian record in the published catalog does not include this field—a structural difference between backup and published, not a missing value to add.
+  - This task writes only the published Canadian fragment and the local airline fragment. Do not add a local Canadian fragment; the published airline fragment belongs to B3264.
+  - The Airline record in the backup includes example_sentences (four sentences for PNR/Skywards/booking reference/passport lookups). The Canadian record in the published catalog does not include this field. That is a structural difference between backup and published, not a missing value to add.
   - >-
     Each guardrailDefinitions entry must include the complete litellm_params block with guardrail, mode, patterns array with pattern_type, pattern_name and action, and pattern_redaction_format. Do not omit or shorten these.
   - The Canadian record has six guardrails; the Airline record has four. Preserve the correct count for each.
   - >-
-    Both catalog files must be valid JSON; B3252 returns an empty list when the backup is not found but raises on malformed JSON, while B3253 falls back to the local backup if the remote fetch fails.
+    Both fragments must be valid JSON; B3252 returns an empty list when the backup is not found but raises on malformed JSON, while B3253 falls back to the local backup if the remote fetch fails.
 review_level: standard
 budget:
   max_changed_lines: 400

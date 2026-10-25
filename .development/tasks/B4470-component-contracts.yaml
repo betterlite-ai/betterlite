@@ -48,7 +48,7 @@ dod:
     proof: [routes-tests]
   - text: crates/betterlite-routes/src/lib.rs exports BACKEND_PATH_PREFIXES, BACKEND_EXACT_PATHS, and BACKEND_MOUNT_PATHS as public const with their exact string values from LiteLLM.
     proof: [routes-tests]
-  - text: Every prefix in both lists ends without a trailing slash, except for path templates like "/{provider}/" and "/{mcp_server_name}/" which are included verbatim.
+  - text: Every prefix in both lists keeps LiteLLM's exact text, trailing slash included, and the path templates "/{provider}/" and "/{mcp_server_name}/" are included verbatim.
     proof: [routes-tests]
   - text: Mount paths match exactly what the source declares, with /metrics for gateway and /swagger, /mcp for backend.
     proof: [routes-tests]
@@ -72,41 +72,35 @@ checks:
     - id: routes-copy-audit
       why: An allowlist constant value differs from the LiteLLM source or a value is missing
       run: |
-        cd /home/user/Desktop/betterlite-worktrees/litellm && python3 <<'AUDIT'
-        import sys
-
-        # Read gateway allowlist from LiteLLM
-        with open("gateway/routes/allowlist.py") as f:
-            content = f.read()
-
-        # Extract tuple definitions
-        gw_prefixes_start = content.find("GATEWAY_PATH_PREFIXES: tuple[str, ...] = (")
-        gw_prefixes = content[gw_prefixes_start:content.find(")", gw_prefixes_start) + 1]
-        gw_exact_start = content.find("GATEWAY_EXACT_PATHS: frozenset[str] = frozenset(")
-        gw_exact = content[gw_exact_start:content.find("})", gw_exact_start) + 2]
-        gw_mount_start = content.find("GATEWAY_MOUNT_PATHS: frozenset[str] = frozenset(")
-        gw_mount = content[gw_mount_start:content.find("})", gw_mount_start) + 2]
-
-        # Read backend allowlist from LiteLLM
-        with open("backend/routes/allowlist.py") as f:
-            content = f.read()
-
-        # Extract tuple definitions
-        be_prefixes_start = content.find("BACKEND_PATH_PREFIXES: tuple[str, ...] = (")
-        be_prefixes = content[be_prefixes_start:content.find(")", be_prefixes_start) + 1]
-        be_exact_start = content.find("BACKEND_EXACT_PATHS: frozenset[str] = frozenset(")
-        be_exact = content[be_exact_start:content.find("})", be_exact_start) + 2]
-        be_mount_start = content.find("BACKEND_MOUNT_PATHS: frozenset[str] = frozenset(")
-        be_mount = content[be_mount_start:content.find("})", be_mount_start) + 2]
-
-        # Verify we got valid content
-        if not all([gw_prefixes, gw_exact, gw_mount, be_prefixes, be_exact, be_mount]):
-            print("Failed to extract all allowlists from LiteLLM source", file=sys.stderr)
-            sys.exit(1)
-
-        print("Gateway prefixes extracted:", len(gw_prefixes.split(",")), "items")
-        print("Backend prefixes extracted:", len(be_prefixes.split(",")), "items")
-        AUDIT
+        awk '/pub (const|static) GATEWAY_PATH_PREFIXES:/,/;$/' crates/betterlite-routes/src/lib.rs | grep -o '"[^"]*"' | jq -es 'sort == ([
+          "/v1/chat/", "/chat/", "/v1/completions", "/completions", "/v1/embeddings", "/embeddings", "/v1/moderations", "/moderations", "/v1/audio/", "/audio/",
+          "/v1/images/", "/images/", "/v1/files", "/files", "/v1/batches", "/batches", "/v1/fine_tuning/", "/fine_tuning/", "/v1/fine-tuning/", "/fine-tuning/",
+          "/v1/responses", "/responses", "/v1/threads", "/threads", "/v1/assistants", "/assistants", "/v1/vector_stores", "/vector_stores", "/v1/indexes", "/v1/models",
+          "/models", "/openai/", "/engines/", "/v1/messages", "/messages", "/v1/skills", "/v1/a2a/", "/a2a/", "/v1/rerank", "/v2/rerank",
+          "/rerank", "/v1/decisions", "/decisions", "/v1/systemone", "/systemone", "/v1/ocr", "/ocr", "/v1/rag/", "/rag/", "/v1/video",
+          "/v1/videos", "/video/", "/videos", "/v1/search", "/search", "/v1/containers", "/containers", "/v1/evals", "/v1/traces", "/v1/memory",
+          "/queue/chat/", "/v1beta/", "/interactions", "/anthropic/", "/azure/", "/azure_ai/", "/azure_speech/", "/aws/", "/bedrock/", "/comprehendmedical",
+          "/transcribe", "/cohere/", "/gemini/", "/gigachat/", "/google/", "/vertex_ai/", "/vertex-ai/", "/assemblyai/", "/eu.assemblyai/", "/deepgram/",
+          "/fal_ai/", "/langfuse/", "/vllm/", "/mistral/", "/typesafe/", "/openrouter/", "/nvidia_nim/", "/groq/", "/voyage/", "/cursor/",
+          "/milvus/", "/openai_passthrough/", "/tinyfish/", "/{provider}/", "/toolset/", "/v1/realtime", "/realtime", "/health", "/metrics", "/watsonx"
+        ] | sort)' &&
+        awk '/pub (const|static) GATEWAY_EXACT_PATHS:/,/;$/' crates/betterlite-routes/src/lib.rs | grep -o '"[^"]*"' | jq -es 'sort == (["/", "/routes", "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc", "/test", "/debug/memory/summary", "/api/event_logging/batch"] | sort)' &&
+        awk '/pub (const|static) GATEWAY_MOUNT_PATHS:/,/;$/' crates/betterlite-routes/src/lib.rs | grep -o '"[^"]*"' | jq -es 'sort == (["/metrics"] | sort)' &&
+        awk '/pub (const|static) BACKEND_PATH_PREFIXES:/,/;$/' crates/betterlite-routes/src/lib.rs | grep -o '"[^"]*"' | jq -es 'sort == ([
+          "/key/", "/v2/key/", "/user/", "/v2/user/", "/team/", "/v2/team/", "/organization/", "/v2/organization/", "/customer/", "/end_user/",
+          "/sso/", "/login", "/v2/login", "/v3/login", "/logout", "/session/logout", "/token", "/onboarding/", "/audit", "/oauth/",
+          "/invitation/", "/jwt/", "/model/", "/v1/model/info", "/v1/model/deprecations", "/v2/model/", "/model_group", "/model_access_group/", "/model_hub/", "/v1/access_group",
+          "/access_group/", "/router/", "/router_settings", "/adaptive_router/", "/auto_router/", "/fallback", "/fallbacks", "/cache_settings", "/coordination_redis/", "/cost_tracking",
+          "/cost_optimization/", "/cost/", "/credentials", "/credential", "/provider/budgets", "/v1/tool/", "/v1/agents", "/agent/daily/activity/", "/v2/guardrails/", "/v1/mcp/",
+          "/test/", "/{mcp_server_name}/", "/budget/", "/tag/", "/workflow/", "/v1/workflows/", "/project/", "/memory/", "/mcp/", "/management/v1/",
+          "/spend/", "/analytics/", "/lens/", "/v1/traces", "/global/", "/user_agent", "/usage/", "/daily/", "/gateway/daily/", "/cloudzero/",
+          "/cache/", "/caching/", "/active/callbacks", "/callbacks", "/team_callback", "/v1/rust_control_plane/", "/alerting/", "/email/", "/add/allowed_ip", "/delete/allowed_ip",
+          "/get/", "/enterprise/", "/debug/", "/config/", "/memory-usage-in-mem-cache", "/otel-spans", "/lazy/", "/in_product_nudges", "/reload/", "/schedule/",
+          "/settings", "/update/", "/upload/", "/utils/", "/get_logo_url", "/get_image", "/get_favicon", "/.well-known/", "/litellm/.well-known/", "/ui_discovery/",
+          "/ui-config", "/sso_settings", "/public/", "/robots.txt", "/health", "/api/plugins", "/plugin-proxy/"
+        ] | sort)' &&
+        awk '/pub (const|static) BACKEND_EXACT_PATHS:/,/;$/' crates/betterlite-routes/src/lib.rs | grep -o '"[^"]*"' | jq -es 'sort == (["/", "/routes", "/lens", "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc", "/fallback/login", "/mcp"] | sort)' &&
+        awk '/pub (const|static) BACKEND_MOUNT_PATHS:/,/;$/' crates/betterlite-routes/src/lib.rs | grep -o '"[^"]*"' | jq -es 'sort == (["/swagger", "/mcp"] | sort)'
     - id: build
       why: Code does not compile or linting fails
       run: cargo build --locked -p betterlite-routes -p betterlite-config && cargo clippy --locked -p betterlite-routes -p betterlite-config --all-targets -- -D warnings

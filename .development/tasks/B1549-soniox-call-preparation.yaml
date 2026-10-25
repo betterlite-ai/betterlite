@@ -39,10 +39,10 @@ scope:
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/soniox_reply.rs
     - crates/betterlite-core/fuzz/corpus/soniox_reply/**
-    - tools/oracle/src/helpers/core_ops/soniox_call_preparation.rs
-    - tools/oracle/src/helpers/core_ops/soniox_call_preparation/**
-    - tools/oracle/helpers/soniox_call_preparation.py
-    - tools/oracle/helpers/soniox_call_preparation/**
+    - tools/oracle/src/helpers/core_ops/soniox_prepare.rs
+    - tools/oracle/src/helpers/core_ops/soniox_prepare/**
+    - tools/oracle/helpers/soniox_prepare.py
+    - tools/oracle/helpers/soniox_prepare/**
     - tools/oracle/cases/helpers/soniox-prepare/**
     - tools/oracle/fuzz/corpus/helper_case/soniox_prepare*
   lint_tables: false
@@ -81,7 +81,7 @@ deviations: []
 out_of_scope:
   - B047 owns audio_transcriptions at 111-172, B1550 the upload/poll/cleanup pairs at 482-588 and 716-816, and B1551 the sync/async pipeline bodies at 358-481 and 589-715.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as soniox_call_preparation in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/soniox_call_preparation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/soniox_call_preparation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as soniox_prepare in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/soniox_prepare.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/soniox_prepare.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - soniox_max_polling_attempts=null fails while an invalid numeric string falls back to 1800.
   - The redaction target is webhook_auth_header_value, not webhook_auth_header_name.
   - Pre-call logging says atranscription=true even when the caller selected synchronous execution.

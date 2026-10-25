@@ -48,10 +48,10 @@ scope:
     - crates/betterlite-db/src/key_user_writes/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - tools/oracle/src/helpers/db/key_user_write_primitives.rs
-    - tools/oracle/src/helpers/db/key_user_write_primitives/**
-    - tools/oracle/helpers/key_user_write_primitives.py
-    - tools/oracle/helpers/key_user_write_primitives/**
+    - tools/oracle/src/helpers/db/key_user_writes.rs
+    - tools/oracle/src/helpers/db/key_user_writes/**
+    - tools/oracle/helpers/key_user_writes.py
+    - tools/oracle/helpers/key_user_writes/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/key-user-writes/**
     - tools/oracle/fuzz/corpus/helper_case/key-user-writes-*
@@ -104,7 +104,7 @@ out_of_scope:
     dispatchers. B770 owns settings_updated_at; B722/B723 own row decoding and repository handles.
     B893 owns generation order and B894 owns the explicit soft-budget transaction.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as key_user_write_primitives in the db group. Replace the stub Op in tools/oracle/src/helpers/db/key_user_write_primitives.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/key_user_write_primitives.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as key_user_writes in the db group. Replace the stub Op in tools/oracle/src/helpers/db/key_user_writes.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/key_user_writes.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Insert always hashes; update only hashes strings beginning sk-.
   - Reusing a token in insert is a no-op even when new fields differ.
 budget:

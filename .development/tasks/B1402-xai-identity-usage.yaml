@@ -42,10 +42,14 @@ scope:
     - crates/betterlite-config/src/providers/xai/identity.rs
     - crates/betterlite-config/src/tests/xai_identity.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/xai_identity*
-    - tools/oracle/src/helpers/openai/xai_identity_usage.rs
-    - tools/oracle/src/helpers/openai/xai_identity_usage/**
-    - tools/oracle/helpers/xai_identity_usage.py
-    - tools/oracle/helpers/xai_identity_usage/**
+    - tools/oracle/src/helpers/openai/xai_identity.rs
+    - tools/oracle/src/helpers/openai/xai_identity/**
+    - tools/oracle/helpers/xai_identity.py
+    - tools/oracle/helpers/xai_identity/**
+    - tools/oracle/src/helpers/openai/xai_usage.rs
+    - tools/oracle/src/helpers/openai/xai_usage/**
+    - tools/oracle/helpers/xai_usage.py
+    - tools/oracle/helpers/xai_usage/**
     - tools/oracle/cases/helpers/{xai-identity,xai-usage}/**
     - tools/oracle/fuzz/corpus/helper_case/xai_identity*
     - tools/oracle/fuzz/corpus/helper_case/xai_usage*
@@ -82,7 +86,7 @@ checks:
       run: test -f tools/oracle/helpers/xai_usage.py && test -f tools/oracle/helpers/xai_identity.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Both reference adapters must invoke their respective source functions.
     - id: xai-usage-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_usage*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_identity*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::xai_(identity|usage)::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_usage*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_identity*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::xai_(identity|usage)::/)'
       why: Each new helper needs its own correctly tagged case corpus.
     - id: xai-model-corpus
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/xai_models.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/xai_models)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_xai_models_corpus)'
@@ -101,7 +105,7 @@ out_of_scope:
   - XAIModelInfo.get_provider_info is B2220; B068 supplies generic_cost_per_token and installs the cost dispatcher.
   - B1403 owns all remaining XAIChatConfig methods and XAIChatCompletionStreamingHandler.chunk_parser in chat/transformation.py.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as xai_identity_usage in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/xai_identity_usage.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/xai_identity_usage.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as xai_identity and xai_usage in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/xai_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/xai_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Boolean cost_in_usd_ticks is rejected even though Python bool is an integer subclass.
   - usage.cost equal to zero is authoritative and disables extra web-search billing.
   - A configured base already ending in /v1 becomes /v1/v1/models in XAIModelInfo.get_models.

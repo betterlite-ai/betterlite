@@ -49,10 +49,10 @@ scope:
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,deepseek}.rs
     - crates/betterlite-config/tests/deepseek_settings.rs
-    - tools/oracle/src/helpers/openai/deepseek_chat.rs
-    - tools/oracle/src/helpers/openai/deepseek_chat/**
-    - tools/oracle/helpers/deepseek_chat.py
-    - tools/oracle/helpers/deepseek_chat/**
+    - tools/oracle/src/helpers/openai/deepseek_request_policy.rs
+    - tools/oracle/src/helpers/openai/deepseek_request_policy/**
+    - tools/oracle/helpers/deepseek_request_policy.py
+    - tools/oracle/helpers/deepseek_request_policy/**
     - tools/oracle/cases/helpers/deepseek-request-policy/**
     - tools/oracle/fuzz/corpus/helper_case/deepseek_request_policy*
   lint_tables: false
@@ -81,7 +81,7 @@ checks:
       run: test -f tools/oracle/helpers/deepseek_request_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Source warnings and mutations must be recorded rather than reconstructed in expected fixtures.
     - id: deepseek-policy-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/deepseek_request_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::deepseek_request_policy::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/deepseek_request_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::deepseek_request_policy::/)'
       why: At least one newly added seed must select the deepseek_request_policy tag.
 oracle_cases:
   - tools/oracle/cases/helpers/deepseek-request-policy/thinking-precedence-and-none.yaml
@@ -94,7 +94,7 @@ deviations: []
 out_of_scope:
   - B1430 owns deepseek/messages/transformation.py; B038 owns DeepSeek execution binding and generic OpenAI dispatch.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as deepseek_chat in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/deepseek_chat.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/deepseek_chat.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as deepseek_request_policy in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/deepseek_request_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/deepseek_request_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A malformed specific tool_choice survives when the tools list contains only function entries.
   - Missing reasoning_content becomes a single space with a warning only for explicitly enabled thinking.
   - Search-results removal happens only when extracted search text is nonempty.

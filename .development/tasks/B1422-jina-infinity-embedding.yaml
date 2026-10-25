@@ -46,10 +46,10 @@ scope:
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,embedding_hosts}.rs
     - crates/betterlite-config/tests/embedding_host_settings.rs
-    - tools/oracle/src/helpers/openai/jina_infinity_embedding.rs
-    - tools/oracle/src/helpers/openai/jina_infinity_embedding/**
-    - tools/oracle/helpers/jina_infinity_embedding.py
-    - tools/oracle/helpers/jina_infinity_embedding/**
+    - tools/oracle/src/helpers/openai/embedding_host_plan.rs
+    - tools/oracle/src/helpers/openai/embedding_host_plan/**
+    - tools/oracle/helpers/embedding_host_plan.py
+    - tools/oracle/helpers/embedding_host_plan/**
     - tools/oracle/cases/helpers/embedding-host-plan/**
     - tools/oracle/fuzz/corpus/helper_case/embedding_host_plan*
   lint_tables: false
@@ -83,7 +83,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/infinity_embedding.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/infinity_embedding)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_infinity_embedding_corpus)'
       why: Missing usage members and malformed Infinity JSON enter the new decoder under limits.
     - id: embedding-host-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/embedding_host_plan*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::embedding_host_plan::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/embedding_host_plan*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::embedding_host_plan::/)'
       why: New seeds must select call.embedding_host_plan and include at least one row.
 oracle_cases:
   - tools/oracle/cases/helpers/embedding-host-plan/jina-mixed-images-and-nonstrings.yaml
@@ -96,7 +96,7 @@ out_of_scope:
   - B1423 owns both providers' rerank methods; the Infinity embedding handler file contains documentation only and no callable.
   - B183 supplies base64 detection and B006 supplies the standard Jina embedding response decoder; neither is copied into this task.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as jina_infinity_embedding in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/jina_infinity_embedding.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/jina_infinity_embedding.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as embedding_host_plan in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/embedding_host_plan.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/embedding_host_plan.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Jina drops a nonstring input only when another item has triggered image-mode conversion.
   - Infinity embedding usage can have prompt_tokens different from total_tokens without reconciliation.
   - Jina's optional input field loses to the normalized input assigned afterward.

@@ -27,10 +27,10 @@ scope:
   - tools/oracle/sdk_http/summary_execution.py
   - tools/oracle/cases/sdk-http/summary-execution/**
   - tools/oracle/fuzz/corpus/sdk_http_case/summary-execution-*
-  - tools/oracle/src/helpers/core_ops/summary_execution.rs
-  - tools/oracle/src/helpers/core_ops/summary_execution/**
-  - tools/oracle/helpers/summary_execution.py
-  - tools/oracle/helpers/summary_execution/**
+  - tools/oracle/src/helpers/core_ops/summary_extraction.rs
+  - tools/oracle/src/helpers/core_ops/summary_extraction/**
+  - tools/oracle/helpers/summary_extraction.py
+  - tools/oracle/helpers/summary_extraction/**
   - tools/oracle/cases/helpers/summary-extraction/**
   - tools/oracle/fuzz/corpus/helper_case/summary_extraction-*
   lint_tables: false
@@ -127,7 +127,7 @@ out_of_scope:
 - B972 owns dispatcher.py, B973/B974 integrate this editor into Messages calls, and B081 converts trigger validation to HTTP.
 - B014/B162 own direct/routed completion orchestration and B071/B072/B068 own actual summary usage charging.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as summary_execution in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/summary_execution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/summary_execution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as summary_extraction in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/summary_extraction.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/summary_extraction.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - No configured summary model disables summarization; it does not silently use the main request model.
 - Summary errors preserve the already-sliced history, not the original pre-compaction history.
 - Parent spend attribution uses litellm_metadata and end-user user, never the upstream metadata field.

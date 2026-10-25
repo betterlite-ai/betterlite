@@ -6,8 +6,7 @@ description: >-
   debug output never reconstructs secret curl arguments. Exporter-specific branches delegate to B110-B118. Inject
   clocks, queues and state. Budget 280 logic/types, 120 Rust/Python adapters, 300 tests and 60 wiring (760 total).
   Write the behavior rstest functions logging_pre_post_behavior_tests_behavior in adjacent tests.rs files, with a named case
-  for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
-  logging_pre_post in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its
+  for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation logging_pre_post is already registered; each operation has its
   own Rust and Python adapter file and corpus seed.
 
 

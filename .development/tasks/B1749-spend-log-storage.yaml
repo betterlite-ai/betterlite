@@ -50,10 +50,10 @@ scope:
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/spend-log-storage-*
-    - tools/oracle/src/helpers/db/spend_log_storage.rs
-    - tools/oracle/src/helpers/db/spend_log_storage/**
-    - tools/oracle/helpers/spend_log_storage.py
-    - tools/oracle/helpers/spend_log_storage/**
+    - tools/oracle/src/helpers/db/batch_claim_row.rs
+    - tools/oracle/src/helpers/db/batch_claim_row/**
+    - tools/oracle/helpers/batch_claim_row.py
+    - tools/oracle/helpers/batch_claim_row/**
     - tools/oracle/cases/helpers/batch-claim-row/**
     - tools/oracle/fuzz/corpus/helper_case/batch-claim-row-*
   lint_tables: false
@@ -112,7 +112,7 @@ out_of_scope:
   - B1745 extracts end-user writes, B1743 extracts metadata status and B1714 extracts disable_spend_updates; other proxy/utils.py functions keep B124 and existing narrower owners.
   - B070 and B1742 through B1748 own all remaining writer construction, enqueue and commit functions; this task handles ordinary provider batch-retrieve evidence, not managed batch orchestration.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as spend_log_storage in the db group. Replace the stub Op in tools/oracle/src/helpers/db/spend_log_storage.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_log_storage.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as batch_claim_row in the db group. Replace the stub Op in tools/oracle/src/helpers/db/batch_claim_row.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/batch_claim_row.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The poison budget resets per 1000-row outer group, not per SQL statement and not once for the entire 10000-row pass.
   - An external spend writer returning HTTP 500 does not trigger the source's retry branch unless the HTTP client itself raises.
 budget:

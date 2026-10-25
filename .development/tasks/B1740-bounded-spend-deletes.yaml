@@ -48,10 +48,10 @@ scope:
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/spend-retention-*
-    - tools/oracle/src/helpers/db/bounded_spend_deletes.rs
-    - tools/oracle/src/helpers/db/bounded_spend_deletes/**
-    - tools/oracle/helpers/bounded_spend_deletes.py
-    - tools/oracle/helpers/bounded_spend_deletes/**
+    - tools/oracle/src/helpers/db/cleanup_bounds.rs
+    - tools/oracle/src/helpers/db/cleanup_bounds/**
+    - tools/oracle/helpers/cleanup_bounds.py
+    - tools/oracle/helpers/cleanup_bounds/**
     - tools/oracle/cases/helpers/cleanup-bounds/**
     - tools/oracle/fuzz/corpus/helper_case/cleanup-bounds-*
   lint_tables: false
@@ -94,7 +94,7 @@ out_of_scope:
   - B1741 owns run progress, six table-specific callers, cleanup groups, outcome summary and cleanup_old_spend_logs in this file.
   - B1739 owns partition operations and the cleanup metrics called by batches.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as bounded_spend_deletes in the db group. Replace the stub Op in tools/oracle/src/helpers/db/bounded_spend_deletes.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bounded_spend_deletes.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as cleanup_bounds in the db group. Replace the stub Op in tools/oracle/src/helpers/db/cleanup_bounds.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cleanup_bounds.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A timeout caused by the run deadline is not a consecutive database failure.
   - maximum_spend_logs_cleanup_max_batches counts successful nonempty deletes, so failed attempts do not consume that cap.
 budget:

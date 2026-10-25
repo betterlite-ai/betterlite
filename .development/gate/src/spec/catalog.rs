@@ -41,6 +41,10 @@ pub(crate) struct Settings {
     pub(crate) always_in_scope: Vec<String>,
     #[schemars(description = "Globs left out of the changed-line budget.")]
     pub(crate) budget_excludes: Vec<String>,
+    #[schemars(
+        description = "Top-level folders a task scope may write under. Any other scope path must start with a folder or file that already exists at the repository root."
+    )]
+    pub(crate) scope_roots: Vec<String>,
     pub(crate) file_size: FileSize,
 }
 

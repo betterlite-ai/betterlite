@@ -88,7 +88,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/host_named_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/host_named_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_host_named_reply_corpus)'
       why: Exercise both decoder policies on fresh malformed response bytes.
     - id: host-identity-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/host_model_identity*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::host_model_identity::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/host_model_identity*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::host_model_identity::/)'
       why: Seed assertions must identify the host_model_identity variant before inspecting outcomes.
 oracle_cases:
   - tools/oracle/cases/helpers/host-model-identity/clarifai-dot-arity-and-response-null.yaml

@@ -28,10 +28,10 @@ scope:
   paths:
     - crates/betterlite-vertex/src/{lib,google_token_counter}.rs
     - crates/betterlite-vertex/src/google_token_counter/**
-    - tools/oracle/src/helpers/vertex/google_token_counter_selection.rs
-    - tools/oracle/src/helpers/vertex/google_token_counter_selection/**
-    - tools/oracle/helpers/google_token_counter_selection.py
-    - tools/oracle/helpers/google_token_counter_selection/**
+    - tools/oracle/src/helpers/vertex/google_counter_selection.rs
+    - tools/oracle/src/helpers/vertex/google_counter_selection/**
+    - tools/oracle/helpers/google_counter_selection.py
+    - tools/oracle/helpers/google_counter_selection/**
     - tools/oracle/cases/helpers/google-counter-selection/**
     - tools/oracle/fuzz/corpus/helper_case/google_counter_selection*
   lint_tables: false
@@ -64,7 +64,7 @@ checks:
       run: test -f tools/oracle/helpers/google_counter_selection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Only synchronous provider predicates and factories are called by the Python helper.
     - id: counter-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_counter_selection*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::google_counter_selection::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_counter_selection*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::google_counter_selection::/)'
       why: Newly added counter records must deserialize into the intended helper variant.
 oracle_cases:
   - tools/oracle/cases/helpers/google-counter-selection/beta-not-selected.yaml
@@ -76,7 +76,7 @@ out_of_scope:
   - Earlier Vertex common_utils.py methods belong to B1304-B1307/B1312; Studio model identity is B1331, image policy B1334 and SDK value encoding B1379.
   - B1329/B1332 own network execution and count-reply parsing; this wrapper adds no decoder.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as google_token_counter_selection in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/google_token_counter_selection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/google_token_counter_selection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as google_counter_selection in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/google_counter_selection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/google_counter_selection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - contents=[] is supplied content and must not trigger message conversion on Vertex.
   - Studio count_tokens ignores messages even when contents is None.
   - A successful Vertex JSON reply without totalTokens produces None instead of a zero-count response.

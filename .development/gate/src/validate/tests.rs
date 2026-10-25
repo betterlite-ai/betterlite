@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use crate::ids::{check_id_problem, task_id_problem};
+use crate::validate::task::{banned_tooling, outside_scope_roots};
 use crate::validate::validate;
 
 #[test]
@@ -29,5 +30,57 @@ fn check_ids_are_lowercase_kebab_case() {
     }
     for bad in ["Lint", "9lives", "", "snake_case"] {
         assert!(check_id_problem(bad).is_some(), "{bad}");
+    }
+}
+
+#[test]
+fn check_commands_run_python_only_as_the_pinned_litellm() {
+    for good in [
+        "jq -e '.[0].provider == \"MINIMAX\"' crates/betterlite-server/assets/a.json",
+        "! uv run --locked --project tools/oracle/litellm python -c 'import litellm_enterprise'",
+        "uv run --locked --project tools/oracle/litellm basedpyright tools/oracle/helpers",
+        "awk '/^\\[/{t=1}' Cargo.toml",
+        "f=$(mktemp) && cargo run -p betterlite-oracle > \"$f\"",
+    ] {
+        assert!(banned_tooling(good).is_empty(), "{good}");
+    }
+    for (bad, expected) in [
+        ("python3 << 'CHECK'\nimport json\nCHECK", vec!["python3"]),
+        (
+            "uv run --with pyyaml python /tmp/check.py",
+            vec!["python", "uv run --with", "/tmp"],
+        ),
+        (
+            "rustc /tmp/check.rs -o /tmp/check && /tmp/check",
+            vec!["rustc", "/tmp"],
+        ),
+        (
+            "cd /home/user/litellm && grep -q x y",
+            vec!["a home directory path"],
+        ),
+        ("cat > /tmp/a.json", vec!["/tmp"]),
+    ] {
+        assert_eq!(banned_tooling(bad), expected, "{bad}");
+    }
+}
+
+#[test]
+fn scope_paths_stay_under_the_scope_roots_or_existing_root_entries() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let roots = ["crates".to_owned(), "tools".to_owned()];
+    for good in [
+        "crates/betterlite-new/src/lib.rs",
+        "tools/oracle/**",
+        "Cargo.toml",
+        ".development/x",
+    ] {
+        assert!(!outside_scope_roots(&root, &roots, good), "{good}");
+    }
+    for bad in [
+        "litellm/policy_templates_backup.json",
+        "policy_templates.json",
+        "packaging/homebrew/lite.rb",
+    ] {
+        assert!(outside_scope_roots(&root, &roots, bad), "{bad}");
     }
 }

@@ -17,7 +17,7 @@ dod:
     proof: [provider-records-preserved]
   - text: All credential fields for each of the fifteen providers have the exact required, field_type, label, placeholder, tooltip, options and default_value from LiteLLM, in LiteLLM's field order.
     proof: [provider-field-exact-values]
-  - text: Dashscope, QwenCloud and Qwen_AI_Platform each have explicit default_value URLs distinct from their placeholder values.
+  - text: Dashscope, QwenCloud and Qwen_AI_Platform each have an explicit api_base default_value URL.
     proof: [qwen-dashscope-default-urls]
   - text: Deepgram, DeepInfra and Deepseek each have a single api_key credential field as a required password type.
     proof: [deepgram-deepinfra-deepseek-single-key]
@@ -25,261 +25,53 @@ dod:
     proof: [edenai-endpoint-guidance]
   - text: CUSTOM and CUSTOM_OPENAI are two separate generic endpoint entries with the same default model placeholder.
     proof: [custom-entries-separate]
-  - text: The JSON file parses correctly with serde_json and yields exactly fifteen provider records in the expected order.
+  - text: The JSON file is a JSON array of exactly fifteen provider records in the expected order.
     proof: [provider-json-parses]
 checks:
   optional: []
   commands:
     - id: provider-records-preserved
       why: the provider records differ from LiteLLM or a record is missing
-      run: |
-        cat > /tmp/check_providers.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_custom_empower.json') as f:
-            data = json.load(f)
-        expected = ['CUSTOM', 'CUSTOM_OPENAI', 'Dashscope', 'QwenCloud', 'Qwen_AI_Platform', 'Databricks', 'DATAROBOT', 'Deepgram', 'DeepInfra', 'Deepseek', 'DOCKER_MODEL_RUNNER', 'DOTPROMPT', 'EDENAI', 'ElevenLabs', 'EMPOWER']
-        actual = [p.get('provider') for p in data]
-        if actual != expected:
-            print(f"Provider mismatch: expected {expected}, got {actual}")
-            exit(1)
-        if len(data) != 15:
-            print(f"Expected 15 providers, got {len(data)}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_providers.py
+      run: >-
+        jq -e '[.[].provider] == ["CUSTOM", "CUSTOM_OPENAI", "Dashscope", "QwenCloud", "Qwen_AI_Platform", "Databricks", "DATAROBOT", "Deepgram", "DeepInfra", "Deepseek", "DOCKER_MODEL_RUNNER", "DOTPROMPT", "EDENAI", "ElevenLabs", "EMPOWER"]'
+        crates/betterlite-server/assets/provider_create_fields_custom_empower.json
     - id: provider-field-exact-values
       why: a credential field label, type, placeholder, tooltip, required flag or default value does not match LiteLLM for any of the fifteen providers
       run: |
-        cat > /tmp/check_fields.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_custom_empower.json') as f:
-            data = json.load(f)
-
-        # CUSTOM: api_base and api_key both optional
-        custom = next(p for p in data if p['provider'] == 'CUSTOM')
-        if len(custom['credential_fields']) != 2:
-            print(f"CUSTOM should have 2 credential fields")
-            exit(1)
-        for field in custom['credential_fields']:
-            if field['required']:
-                print(f"CUSTOM {field['key']} should be optional")
-                exit(1)
-
-        # CUSTOM_OPENAI: same structure as CUSTOM
-        custom_openai = next(p for p in data if p['provider'] == 'CUSTOM_OPENAI')
-        if len(custom_openai['credential_fields']) != 2:
-            print(f"CUSTOM_OPENAI should have 2 credential fields")
-            exit(1)
-
-        # Dashscope: api_key required, api_base required with explicit default
-        dashscope = next(p for p in data if p['provider'] == 'Dashscope')
-        dashscope_key = next((f for f in dashscope['credential_fields'] if f['key'] == 'api_key'), None)
-        if not dashscope_key or not dashscope_key.get('required'):
-            print(f"Dashscope api_key should be required")
-            exit(1)
-        dashscope_base = next((f for f in dashscope['credential_fields'] if f['key'] == 'api_base'), None)
-        if not dashscope_base or not dashscope_base.get('required'):
-            print(f"Dashscope api_base should be required")
-            exit(1)
-        if dashscope_base.get('default_value') != 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1':
-            print(f"Dashscope api_base default_value mismatch")
-            exit(1)
-
-        # QwenCloud: api_key and api_base both required with explicit default
-        qwencloud = next(p for p in data if p['provider'] == 'QwenCloud')
-        qwencloud_base = next((f for f in qwencloud['credential_fields'] if f['key'] == 'api_base'), None)
-        if qwencloud_base.get('default_value') != 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1':
-            print(f"QwenCloud api_base default_value mismatch")
-            exit(1)
-
-        # Qwen_AI_Platform: api_key and api_base both required with explicit default
-        qwen_platform = next(p for p in data if p['provider'] == 'Qwen_AI_Platform')
-        qwen_platform_base = next((f for f in qwen_platform['credential_fields'] if f['key'] == 'api_base'), None)
-        if qwen_platform_base.get('default_value') != 'https://dashscope.aliyuncs.com/compatible-mode/v1':
-            print(f"Qwen_AI_Platform api_base default_value mismatch")
-            exit(1)
-
-        # Databricks: api_base optional, api_key required
-        databricks = next(p for p in data if p['provider'] == 'Databricks')
-        databricks_key = next((f for f in databricks['credential_fields'] if f['key'] == 'api_key'), None)
-        if not databricks_key or not databricks_key.get('required'):
-            print(f"Databricks api_key should be required")
-            exit(1)
-
-        # DATAROBOT: both fields optional
-        datarobot = next(p for p in data if p['provider'] == 'DATAROBOT')
-        if len(datarobot['credential_fields']) != 2:
-            print(f"DATAROBOT should have 2 credential fields")
-            exit(1)
-
-        # Deepgram: single api_key field, required
-        deepgram = next(p for p in data if p['provider'] == 'Deepgram')
-        if len(deepgram['credential_fields']) != 1:
-            print(f"Deepgram should have 1 credential field")
-            exit(1)
-        deepgram_key = deepgram['credential_fields'][0]
-        if deepgram_key['key'] != 'api_key' or not deepgram_key.get('required'):
-            print(f"Deepgram api_key field mismatch")
-            exit(1)
-
-        # DeepInfra: single api_key field with specific model placeholder
-        deepinfra = next(p for p in data if p['provider'] == 'DeepInfra')
-        if len(deepinfra['credential_fields']) != 1:
-            print(f"DeepInfra should have 1 credential field")
-            exit(1)
-        if deepinfra.get('default_model_placeholder') != 'deepinfra/<any-model-on-deepinfra>':
-            print(f"DeepInfra model placeholder mismatch")
-            exit(1)
-
-        # Deepseek: single api_key field, required
-        deepseek = next(p for p in data if p['provider'] == 'Deepseek')
-        if len(deepseek['credential_fields']) != 1:
-            print(f"Deepseek should have 1 credential field")
-            exit(1)
-
-        # DOCKER_MODEL_RUNNER: two fields, both optional
-        docker_runner = next(p for p in data if p['provider'] == 'DOCKER_MODEL_RUNNER')
-        if len(docker_runner['credential_fields']) != 2:
-            print(f"DOCKER_MODEL_RUNNER should have 2 credential fields")
-            exit(1)
-
-        # DOTPROMPT: two fields, both optional
-        dotprompt = next(p for p in data if p['provider'] == 'DOTPROMPT')
-        if len(dotprompt['credential_fields']) != 2:
-            print(f"DOTPROMPT should have 2 credential fields")
-            exit(1)
-
-        # EDENAI: api_base optional with placeholder and tooltip, api_key required
-        edenai = next(p for p in data if p['provider'] == 'EDENAI')
-        edenai_base = next((f for f in edenai['credential_fields'] if f['key'] == 'api_base'), None)
-        if not edenai_base or edenai_base.get('placeholder') != 'https://api.edenai.run/v3':
-            print(f"EDENAI api_base placeholder mismatch")
-            exit(1)
-        if 'EU endpoint' not in (edenai_base.get('tooltip') or ''):
-            print(f"EDENAI api_base tooltip missing EU endpoint guidance")
-            exit(1)
-
-        # ElevenLabs: single api_key field, required
-        elevenlabs = next(p for p in data if p['provider'] == 'ElevenLabs')
-        if len(elevenlabs['credential_fields']) != 1:
-            print(f"ElevenLabs should have 1 credential field")
-            exit(1)
-
-        # EMPOWER: api_base and api_key both optional
-        empower = next(p for p in data if p['provider'] == 'EMPOWER')
-        if len(empower['credential_fields']) != 2:
-            print(f"EMPOWER should have 2 credential fields")
-            exit(1)
-
-        CHECKER
-        uv run --with pyyaml python /tmp/check_fields.py
+        jq -e '.[] | select(.provider == "CUSTOM") | [.credential_fields[].required] == [false, false]' crates/betterlite-server/assets/provider_create_fields_custom_empower.json &&
+        jq -e '[.[] | select(.provider | IN("CUSTOM_OPENAI", "DATAROBOT", "DOCKER_MODEL_RUNNER", "DOTPROMPT", "EMPOWER")) | .credential_fields | length] == [2, 2, 2, 2, 2]' crates/betterlite-server/assets/provider_create_fields_custom_empower.json &&
+        jq -e '[.[] | select(.provider | IN("Deepseek", "ElevenLabs")) | .credential_fields | length] == [1, 1]' crates/betterlite-server/assets/provider_create_fields_custom_empower.json &&
+        jq -e '.[] | select(.provider == "Dashscope") | .credential_fields[] | select(.key == "api_key") | .required == true' crates/betterlite-server/assets/provider_create_fields_custom_empower.json &&
+        jq -e '.[] | select(.provider == "Dashscope") | .credential_fields[] | select(.key == "api_base") | .required == true and .default_value == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"' crates/betterlite-server/assets/provider_create_fields_custom_empower.json &&
+        jq -e '.[] | select(.provider == "QwenCloud") | .credential_fields[] | select(.key == "api_base") | .default_value == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"' crates/betterlite-server/assets/provider_create_fields_custom_empower.json &&
+        jq -e '.[] | select(.provider == "Qwen_AI_Platform") | .credential_fields[] | select(.key == "api_base") | .default_value == "https://dashscope.aliyuncs.com/compatible-mode/v1"' crates/betterlite-server/assets/provider_create_fields_custom_empower.json &&
+        jq -e '.[] | select(.provider == "Databricks") | .credential_fields[] | select(.key == "api_key") | .required == true' crates/betterlite-server/assets/provider_create_fields_custom_empower.json &&
+        jq -e '.[] | select(.provider == "Deepgram") | .credential_fields | length == 1 and .[0].key == "api_key" and .[0].required == true' crates/betterlite-server/assets/provider_create_fields_custom_empower.json &&
+        jq -e '.[] | select(.provider == "DeepInfra") | (.credential_fields | length == 1) and .default_model_placeholder == "deepinfra/<any-model-on-deepinfra>"' crates/betterlite-server/assets/provider_create_fields_custom_empower.json &&
+        jq -e '.[] | select(.provider == "EDENAI") | .credential_fields[] | select(.key == "api_base") | .placeholder == "https://api.edenai.run/v3" and (.tooltip | contains("EU endpoint"))' crates/betterlite-server/assets/provider_create_fields_custom_empower.json
     - id: qwen-dashscope-default-urls
-      why: Qwen/Dashscope providers are missing explicit default_value URLs distinct from placeholder
-      run: |
-        cat > /tmp/check_qwen.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_custom_empower.json') as f:
-            data = json.load(f)
-
-        for provider_name in ['Dashscope', 'QwenCloud', 'Qwen_AI_Platform']:
-            provider = next(p for p in data if p['provider'] == provider_name)
-            api_base = next((f for f in provider['credential_fields'] if f['key'] == 'api_base'), None)
-            if not api_base or not api_base.get('default_value'):
-                print(f"{provider_name} api_base missing default_value")
-                exit(1)
-            # Verify default_value is distinct from placeholder (not identical)
-            if api_base.get('default_value') == api_base.get('placeholder'):
-                print(f"{provider_name} api_base default_value should be distinct")
-                exit(1)
-
-        CHECKER
-        uv run --with pyyaml python /tmp/check_qwen.py
+      why: Qwen/Dashscope providers are missing their explicit default_value URLs
+      run: >-
+        jq -e '[.[] | select(.provider | IN("Dashscope", "QwenCloud", "Qwen_AI_Platform")) | .credential_fields[] | select(.key == "api_base") | .default_value] == ["https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "https://dashscope.aliyuncs.com/compatible-mode/v1"]'
+        crates/betterlite-server/assets/provider_create_fields_custom_empower.json
     - id: deepgram-deepinfra-deepseek-single-key
       why: Deepgram, DeepInfra or Deepseek are missing the single required api_key field
-      run: |
-        cat > /tmp/check_deep.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_custom_empower.json') as f:
-            data = json.load(f)
-
-        for provider_name in ['Deepgram', 'DeepInfra', 'Deepseek']:
-            provider = next(p for p in data if p['provider'] == provider_name)
-            if len(provider['credential_fields']) != 1:
-                print(f"{provider_name} should have exactly 1 credential field")
-                exit(1)
-            field = provider['credential_fields'][0]
-            if field['key'] != 'api_key' or field['field_type'] != 'password' or not field.get('required'):
-                print(f"{provider_name} api_key field mismatch")
-                exit(1)
-
-        CHECKER
-        uv run --with pyyaml python /tmp/check_deep.py
+      run: >-
+        jq -e '[.[] | select(.provider | IN("Deepgram", "DeepInfra", "Deepseek")) | .credential_fields | length == 1 and .[0].key == "api_key" and .[0].field_type == "password" and .[0].required == true] == [true, true, true]'
+        crates/betterlite-server/assets/provider_create_fields_custom_empower.json
     - id: edenai-endpoint-guidance
       why: EDENAI api_base is missing placeholder or tooltip with EU endpoint guidance
-      run: |
-        cat > /tmp/check_edenai.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_custom_empower.json') as f:
-            data = json.load(f)
-
-        edenai = next(p for p in data if p['provider'] == 'EDENAI')
-        api_base = next((f for f in edenai['credential_fields'] if f['key'] == 'api_base'), None)
-        if not api_base:
-            print(f"EDENAI missing api_base field")
-            exit(1)
-        if api_base.get('placeholder') != 'https://api.edenai.run/v3':
-            print(f"EDENAI api_base placeholder should be https://api.edenai.run/v3")
-            exit(1)
-        tooltip = api_base.get('tooltip', '')
-        if 'EU endpoint' not in tooltip or 'https://api.eu.edenai.run/v3' not in tooltip:
-            print(f"EDENAI api_base tooltip missing EU endpoint guidance")
-            exit(1)
-
-        CHECKER
-        uv run --with pyyaml python /tmp/check_edenai.py
+      run: >-
+        jq -e '.[] | select(.provider == "EDENAI") | .credential_fields[] | select(.key == "api_base") | .placeholder == "https://api.edenai.run/v3" and (.tooltip | contains("EU endpoint") and contains("https://api.eu.edenai.run/v3"))'
+        crates/betterlite-server/assets/provider_create_fields_custom_empower.json
     - id: custom-entries-separate
       why: CUSTOM and CUSTOM_OPENAI are not distinct entries or share unexpected structure
-      run: |
-        cat > /tmp/check_custom.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_custom_empower.json') as f:
-            data = json.load(f)
-
-        custom = next(p for p in data if p['provider'] == 'CUSTOM')
-        custom_openai = next(p for p in data if p['provider'] == 'CUSTOM_OPENAI')
-
-        # Both should have the same field structure but be separate entries
-        if custom['provider_display_name'] != 'Custom':
-            print(f"CUSTOM display name mismatch")
-            exit(1)
-        if custom_openai['provider_display_name'] != 'Custom Openai':
-            print(f"CUSTOM_OPENAI display name mismatch")
-            exit(1)
-
-        # Both should have same default model placeholder
-        if custom.get('default_model_placeholder') != custom_openai.get('default_model_placeholder'):
-            print(f"CUSTOM and CUSTOM_OPENAI model placeholder mismatch")
-            exit(1)
-
-        CHECKER
-        uv run --with pyyaml python /tmp/check_custom.py
+      run: >-
+        jq -e '(.[] | select(.provider == "CUSTOM")) as $custom | (.[] | select(.provider == "CUSTOM_OPENAI")) as $custom_openai | $custom.provider_display_name == "Custom" and $custom_openai.provider_display_name == "Custom Openai" and $custom.default_model_placeholder == $custom_openai.default_model_placeholder'
+        crates/betterlite-server/assets/provider_create_fields_custom_empower.json
     - id: provider-json-parses
       why: the JSON file does not parse or does not yield exactly fifteen records
-      run: |
-        cat > /tmp/check_parse.rs << 'CHECKER'
-        use std::fs;
-        fn main() {
-            let content = fs::read_to_string("crates/betterlite-server/assets/provider_create_fields_custom_empower.json")
-                .expect("failed to read json file");
-            let parsed: Vec<serde_json::Value> = serde_json::from_str(&content)
-                .expect("failed to parse json");
-            if parsed.len() != 15 {
-                eprintln!("Expected 15 providers, got {}", parsed.len());
-                std::process::exit(1);
-            }
-        }
-        CHECKER
-        rustc /tmp/check_parse.rs -o /tmp/check_parse && /tmp/check_parse
+      run: jq -e 'type == "array" and length == 15' crates/betterlite-server/assets/provider_create_fields_custom_empower.json
 oracle_cases: []
 deviations: []
 out_of_scope:
@@ -290,7 +82,7 @@ pitfalls:
   - The JSON file must be a plain array, not an object with a key. B3190's loader expects JSON.load(file) to yield a list directly.
   - Every null value in options, placeholder, tooltip or default_value must be preserved exactly; missing the null and writing an empty string changes the wire format.
   - CUSTOM and CUSTOM_OPENAI are two separate provider entries with identical default model placeholders; they are not deduplicated.
-  - Qwen and Dashscope providers all have explicit default_value URLs that differ from their placeholder guidance; preserve both fields exactly.
+  - Qwen and Dashscope providers all have explicit default_value URLs that are the same URL as their placeholder at the pinned commit; preserve both fields exactly.
   - Deepgram, DeepInfra and Deepseek each require only a single api_key field; do not add optional api_base fields.
   - DeepInfra's default_model_placeholder is the literal string "deepinfra/<any-model-on-deepinfra>", not a concrete model name.
   - EDENAI's api_base field includes both a placeholder for the standard US endpoint and tooltip guidance for the EU alternative endpoint.

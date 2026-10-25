@@ -82,10 +82,10 @@ scope:
     - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/src/spend_counter_batch.rs
     - crates/betterlite-auth/src/spend_counter_batch/**
-    - tools/oracle/src/helpers/auth/spend_counter_batches.rs
-    - tools/oracle/src/helpers/auth/spend_counter_batches/**
-    - tools/oracle/helpers/spend_counter_batches.py
-    - tools/oracle/helpers/spend_counter_batches/**
+    - tools/oracle/src/helpers/auth/spend_counter_batch.rs
+    - tools/oracle/src/helpers/auth/spend_counter_batch/**
+    - tools/oracle/helpers/spend_counter_batch.py
+    - tools/oracle/helpers/spend_counter_batch/**
     - tools/oracle/cases/helpers/spend-counter-batch/**
     - tools/oracle/fuzz/corpus/helper_case/spend-counter-batch-*
   lint_tables: false
@@ -147,7 +147,7 @@ out_of_scope:
   - SpendCounterBatch.counter_keys has no production caller at the pin and is not exposed as a new API.
   - B126 owns request Redis batches and their byte decoder; B070 owns reseeding and persistence, B071 reservations and B124 counter-write policy.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as spend_counter_batches in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/spend_counter_batches.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_counter_batches.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as spend_counter_batch in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/spend_counter_batch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_counter_batch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A present null from MGET is authoritative, while an absent map entry demands another read path.
   - Scope exit restores the previous active value but does not perform release or close.
 budget:
