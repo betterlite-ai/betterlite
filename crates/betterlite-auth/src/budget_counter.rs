@@ -65,8 +65,21 @@ pub struct BudgetCounter {
 pub trait FloatInput {
     fn decimal_value(self) -> Option<Decimal>;
 }
-macro_rules! float_special { ($($type:ty => $value:expr),*) => { $(impl FloatInput for $type { fn decimal_value(self) -> Option<Decimal> { let value = self; $value(value) } })* }; }
-float_special!(f64 => |value| Decimal::try_from(value).ok(), f32 => |value| Decimal::try_from(value).ok(), bool => |value| Some(if value { Decimal::ONE } else { Decimal::ZERO }));
+macro_rules! float_decimal {
+    ($($type:ty),*) => {
+        $(impl FloatInput for $type {
+            fn decimal_value(self) -> Option<Decimal> {
+                Decimal::try_from(self).ok()
+            }
+        })*
+    };
+}
+float_decimal!(f64, f32);
+impl FloatInput for bool {
+    fn decimal_value(self) -> Option<Decimal> {
+        Some(if self { Decimal::ONE } else { Decimal::ZERO })
+    }
+}
 macro_rules! float_integer {
     ($($type:ty),*) => {
         $(impl FloatInput for $type {
@@ -118,8 +131,8 @@ fn normalize_digit_grouping(text: &str) -> Option<String> {
     let mut previous = parts.next()?;
     let mut normalized = previous.to_owned();
     for part in parts {
-        if !previous.ends_with(|byte: char| byte.is_ascii_digit())
-            || !part.starts_with(|byte: char| byte.is_ascii_digit())
+        if !previous.ends_with(|character: char| character.is_ascii_digit())
+            || !part.starts_with(|character: char| character.is_ascii_digit())
         {
             return None;
         }

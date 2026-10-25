@@ -35,7 +35,7 @@ fn entity_mapping_handles_all_names(#[case] label: &str, #[case] wire: Option<&s
 }
 #[rstest]
 #[case(2_i32, Decimal::from(2_i32))]
-#[case(2.5_f64, Decimal::try_from(2.5_f64).unwrap())]
+#[case(2.5_f64, Decimal::new(25, 1))]
 #[case(" 2.5\n", Decimal::new(25, 1))]
 #[case("1_000.25", Decimal::new(100_025, 2))]
 #[case("1e-05", Decimal::new(1, 5))]
