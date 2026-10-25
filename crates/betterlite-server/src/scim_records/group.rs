@@ -3,21 +3,25 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use thiserror::Error;
 
-use super::RawObject;
+use super::raw_object::RawObject;
 
-record! { #[serde(rename_all = "camelCase")] Group {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Group {
     pub schemas: Vec<String>,
     pub id: Option<String>,
     pub external_id: Option<String>,
     pub meta: Option<RawObject>,
     pub display_name: String,
     pub members: Option<Vec<Member>>,
-}}
-record! { Member {
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Member {
     pub value: String,
     pub display: Option<String>,
-    #[serde(rename = "type", default)] pub kind: MemberKind,
-}}
+    #[serde(rename = "type", default)]
+    pub kind: MemberKind,
+}
 // LiteLLM keeps a member whose type is not a string and drops only the type
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "MemberKindInput")]
@@ -37,15 +41,19 @@ impl From<MemberKindInput> for MemberKind {
     }
 }
 schema_list! { PatchSchemas, "urn:ietf:params:scim:api:messages:2.0:PatchOp" }
-record! { Patch {
-    #[serde(default)] pub schemas: PatchSchemas,
-    #[serde(rename = "Operations")] pub operations: Vec<PatchOperation>,
-}}
-record! { PatchOperation {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Patch {
+    #[serde(default)]
+    pub schemas: PatchSchemas,
+    #[serde(rename = "Operations")]
+    pub operations: Vec<PatchOperation>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatchOperation {
     pub op: PatchOp,
     pub path: Option<String>,
     pub value: Option<Box<RawValue>>,
-}}
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", try_from = "String")]
 pub enum PatchOp {

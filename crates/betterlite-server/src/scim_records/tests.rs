@@ -1,6 +1,7 @@
 #![cfg(test)]
 use crate::scim_records::discovery::{ResourceType, ServiceProviderConfig};
-use crate::scim_records::user::{Active, ScimBool, User};
+use crate::scim_records::lax_bool::ScimBool;
+use crate::scim_records::user::{Active, User};
 use crate::scim_records::{ResourceKind, decode_scim_resource};
 use rstest::rstest;
 use std::fs;
@@ -32,6 +33,30 @@ fn active_keeps_whether_it_was_sent(#[case] body: &str, #[case] active: Active) 
 #[case::malformed_json(r#"{"schemas":[]"#, ResourceKind::User)]
 fn rejects_what_pydantic_rejects(#[case] body: &str, #[case] kind: ResourceKind) {
     decode_scim_resource(body.as_bytes(), kind).unwrap_err();
+}
+#[rstest]
+#[case::user_meta(
+    r#"{"schemas":[],"meta":{"directory":1,"directory":2}}"#,
+    ResourceKind::User
+)]
+#[case::group_meta(
+    r#"{"schemas":[],"displayName":"group","meta":{"directory":1,"directory":2}}"#,
+    ResourceKind::Group
+)]
+#[case::entitlement(
+    r#"{"schemas":[],"entitlements":[{"directory":1,"directory":2}]}"#,
+    ResourceKind::User
+)]
+#[case::role(
+    r#"{"schemas":[],"roles":[{"directory":1,"directory":2}]}"#,
+    ResourceKind::User
+)]
+fn rejects_duplicate_passthrough_keys(#[case] body: &str, #[case] kind: ResourceKind) {
+    let error = decode_scim_resource(body.as_bytes(), kind).unwrap_err();
+    assert!(
+        error.to_string().contains("duplicate key: directory"),
+        "{error}"
+    );
 }
 #[rstest]
 #[case::absent_blocks(

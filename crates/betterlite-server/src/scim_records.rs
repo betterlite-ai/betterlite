@@ -1,15 +1,6 @@
 use serde::Serialize;
-use serde_json::value::RawValue;
-use std::collections::BTreeMap;
 use thiserror::Error;
 
-macro_rules! record {
-    ($(#[$meta:meta])* $name:ident { $($fields:tt)* }) => {
-        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-        $(#[$meta])*
-        pub struct $name { $($fields)* }
-    };
-}
 macro_rules! schema_list {
     ($name:ident, $urn:literal) => {
         #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -24,7 +15,10 @@ macro_rules! schema_list {
 }
 pub mod attribute;
 pub mod discovery;
+pub mod email;
 pub mod group;
+pub mod lax_bool;
+pub mod raw_object;
 mod tests;
 pub mod user;
 pub const ENTERPRISE_USER_SCHEMA: &str =
@@ -34,8 +28,6 @@ pub const ENTITLEMENTS_METADATA_KEY: &str = "scim_entitlements";
 pub const ROLES_METADATA_KEY: &str = "scim_roles";
 pub const MANAGED_TEAM_METADATA_KEY: &str = "scim_managed";
 pub const TEAM_DATA_METADATA_KEY: &str = "scim_data";
-// directory meta and extension members are stored and echoed as sent, never read by the proxy
-pub type RawObject = BTreeMap<String, Box<RawValue>>;
 #[derive(Debug, Error)]
 pub enum ScimRecordError {
     #[error("the SCIM resource body is not valid: {0}")]
