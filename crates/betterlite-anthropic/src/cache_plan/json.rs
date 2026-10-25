@@ -97,7 +97,6 @@ pub fn digest<Value>(value: &Value) -> Result<String, serde_json::Error>
 where
     Value: Serialize,
 {
-    let mut hasher = Sha256::new();
-    serde_json::to_writer(&mut hasher, value)?;
-    Ok(format!("{:x}", hasher.finalize()))
+    let text = serde_json::to_vec(value)?;
+    Ok(hex::encode(Sha256::digest(text)))
 }
