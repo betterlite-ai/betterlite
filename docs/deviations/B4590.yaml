@@ -1,0 +1,5 @@
+task: B4590
+deviations:
+  - what: Keyring exceptions are caught and returned as enum variants instead of being raised to callers.
+    why: Rust callers need explicit typed fallback outcomes while preserving every failure path required by the task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_keyring.py#L153-229
