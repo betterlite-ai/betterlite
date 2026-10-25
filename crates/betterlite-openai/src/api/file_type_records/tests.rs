@@ -3,6 +3,7 @@
 use super::*;
 use rstest::rstest;
 use std::collections::BTreeMap;
+use std::iter;
 
 #[rstest]
 #[case::jpg("jpg", FileType::Jpeg, "image/jpeg")]
@@ -87,7 +88,7 @@ fn stream_record_identity() {
 #[test]
 fn stream_record_debug_includes_headers() {
     let result = FileContentStreamingResult {
-        stream_iterator: Box::new(std::iter::empty()),
+        stream_iterator: Box::new(iter::empty()),
         headers: BTreeMap::new(),
     };
     assert!(format!("{result:?}").contains("FileContentStreamingResult"));
