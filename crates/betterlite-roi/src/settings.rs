@@ -1,127 +1,153 @@
+use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde::{Deserialize, Serialize, de::Deserializer};
-use std::collections::BTreeMap;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use url::Url;
 
 pub const DEFAULT_PROMPT: &str = "Estimate how many hours it would take an engineer to complete the work in this pull request without AI assistance. Explain your estimate briefly.";
 
-#[derive(Debug, Error)]
+// what Python's str.strip() and the re module's \s treat as whitespace
+const PYTHON_SPACE: [char; 29] = [
+    '\t', '\n', '\u{b}', '\u{c}', '\r', '\u{1c}', '\u{1d}', '\u{1e}', '\u{1f}', ' ', '\u{85}',
+    '\u{a0}', '\u{1680}', '\u{2000}', '\u{2001}', '\u{2002}', '\u{2003}', '\u{2004}', '\u{2005}',
+    '\u{2006}', '\u{2007}', '\u{2008}', '\u{2009}', '\u{200a}', '\u{2028}', '\u{2029}', '\u{202f}',
+    '\u{205f}', '\u{3000}',
+];
+
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum SettingsError {
+    #[error("Input should be a finite number")]
+    NotFinite { field: &'static str },
+    #[error("Input should be greater than or equal to {limit}")]
+    TooSmall { field: &'static str, limit: u32 },
+    #[error("Input should be less than or equal to {limit}")]
+    TooLarge { field: &'static str, limit: u32 },
     #[error("Choose manual updates (0), or an interval of at least 5 minutes.")]
     Interval,
+    #[error("A GitHub API URL is required.")]
+    MissingGitHubUrl,
     #[error("Use an HTTPS GitHub API URL without credentials, query, or fragment.")]
     GitHubUrl,
-    #[error("failed to parse GitHub API URL: {source}")]
-    GitHubUrlParse {
-        #[source]
-        source: url::ParseError,
-    },
+    #[error("Invalid IPv6 URL")]
+    Ipv6Url,
+    #[error("IPvFuture address is invalid")]
+    IpvFuture,
+    #[error("An IPv4 address cannot be in brackets")]
+    BracketedIpv4,
+    #[error("'{host}' does not appear to be an IPv4 or IPv6 address")]
+    BracketedHost { host: String },
+    #[error("netloc '{netloc}' contains invalid characters under NFKC normalization")]
+    NetlocNormalization { netloc: String },
     #[error("Repositories must use owner/repo format.")]
     Repositories,
     #[error("The estimator prompt must contain between 1 and 20,000 characters.")]
     Prompt,
-    #[error("Each identity needs a GitHub username and a valid gateway email.")]
-    Identity,
     #[error("Enter a valid GitHub username.")]
     Login,
-    #[error("Backfill days must be between 1 and 3650.")]
-    BackfillDays,
+    #[error("Each identity needs a GitHub username and a valid gateway email.")]
+    Identity,
 }
 
 pub fn normalize_login(value: &str) -> Result<String, SettingsError> {
-    let login = value.trim().to_lowercase();
-    if login.is_empty()
-        || login
-            .chars()
-            .any(|character| !(character.is_ascii_alphanumeric() || "_[]-".contains(character)))
-    {
+    let login = caseless::default_case_fold_str(value.trim_matches(PYTHON_SPACE));
+    let allowed = |character: char| character.is_ascii_alphanumeric() || "_[]-".contains(character);
+    if login.is_empty() || !login.chars().all(allowed) {
         return Err(SettingsError::Login);
     }
     Ok(login)
 }
 
+#[must_use]
 pub fn normalize_email(value: Option<&str>) -> String {
-    let normalized = value.unwrap_or_default().trim().to_lowercase();
-    let Some((local, domain)) = normalized.rsplit_once('@') else {
+    let normalized =
+        caseless::default_case_fold_str(value.unwrap_or_default().trim_matches(PYTHON_SPACE));
+    let Some((local, domain)) = normalized.split_once('@') else {
         return String::new();
     };
-    let valid = !local.is_empty()
-        && !domain.is_empty()
-        && domain.contains('.')
-        && !normalized.chars().any(char::is_whitespace)
-        && normalized.matches('@').count() == 1
-        && !domain.ends_with("noreply.github.com");
-    if valid { normalized } else { String::new() }
+    let mut inner = domain.chars();
+    inner.next();
+    inner.next_back();
+    if local.is_empty()
+        || domain.contains('@')
+        || normalized.contains(PYTHON_SPACE)
+        || !inner.as_str().contains('.')
+        || normalized.ends_with("noreply.github.com")
+    {
+        return String::new();
+    }
+    normalized
+}
+
+const fn check_backfill_days(value: i64) -> Result<(), SettingsError> {
+    if value < 1 {
+        return Err(SettingsError::TooSmall {
+            field: "backfill_days",
+            limit: 1,
+        });
+    }
+    if value > 3650 {
+        return Err(SettingsError::TooLarge {
+            field: "backfill_days",
+            limit: 3650,
+        });
+    }
+    Ok(())
+}
+
+fn check_interval_bounds(value: f64) -> Result<(), SettingsError> {
+    let field = "update_interval_minutes";
+    if !value.is_finite() {
+        return Err(SettingsError::NotFinite { field });
+    }
+    if value < 0.0_f64 {
+        return Err(SettingsError::TooSmall { field, limit: 0 });
+    }
+    if value > 43_200.0_f64 {
+        return Err(SettingsError::TooLarge {
+            field,
+            limit: 43_200,
+        });
+    }
+    Ok(())
 }
 
 pub fn validate_update_interval(value: f64) -> Result<f64, SettingsError> {
-    if !value.is_finite() || !(value == 0.0_f64 || (5.0_f64..=43_200.0_f64).contains(&value)) {
+    check_interval_bounds(value)?;
+    if 0.0_f64 < value && value < 5.0_f64 {
         return Err(SettingsError::Interval);
     }
     Ok(value)
 }
 
-pub fn normalize_github_api_url(value: &str) -> Result<String, SettingsError> {
-    let normalized = value.trim().trim_end_matches('/');
-    if normalized.is_empty() {
-        return Err(SettingsError::GitHubUrl);
-    }
-    let parsed =
-        Url::parse(normalized).map_err(|source| SettingsError::GitHubUrlParse { source })?;
-    if parsed.scheme() != "https"
-        || parsed.host_str().is_none()
-        || !parsed.username().is_empty()
-        || parsed.password().is_some()
-        || parsed.query().is_some()
-        || parsed.fragment().is_some()
-    {
-        return Err(SettingsError::GitHubUrl);
-    }
-    Ok(normalized.to_owned())
-}
-
 pub fn validate_repositories(values: &[String]) -> Result<Vec<String>, SettingsError> {
-    let mut normalized = Vec::new();
+    let mut normalized: Vec<String> = Vec::new();
     for value in values {
-        let repository = value
-            .trim()
-            .trim_end_matches('/')
-            .trim_end_matches(".git")
-            .to_owned();
-        if !normalized.contains(&repository) {
-            normalized.push(repository);
+        let stripped = value.trim_matches(PYTHON_SPACE).trim_end_matches('/');
+        let repository = stripped.strip_suffix(".git").unwrap_or(stripped);
+        if !normalized.iter().any(|existing| existing == repository) {
+            normalized.push(repository.to_owned());
         }
     }
-    if normalized.iter().any(|repository| {
-        let mut parts = repository.split('/');
-        let Some(owner) = parts.next() else {
-            return true;
-        };
-        let Some(name) = parts.next() else {
-            return true;
-        };
-        parts.next().is_some()
-            || owner.is_empty()
-            || name.is_empty()
-            || owner == "."
-            || owner == ".."
-            || name == "."
-            || name == ".."
-            || owner
+    let valid_part = |part: &str| {
+        !part.is_empty()
+            && part != "."
+            && part != ".."
+            && part
                 .chars()
-                .any(|character| !(character.is_ascii_alphanumeric() || "_.-".contains(character)))
-            || name
-                .chars()
-                .any(|character| !(character.is_ascii_alphanumeric() || "_.-".contains(character)))
-    }) {
+                .all(|character| character.is_ascii_alphanumeric() || "_.-".contains(character))
+    };
+    let valid = normalized.iter().all(|repository| {
+        repository
+            .split_once('/')
+            .is_some_and(|(owner, name)| valid_part(owner) && valid_part(name))
+    });
+    if !valid {
         return Err(SettingsError::Repositories);
     }
     Ok(normalized)
 }
 
 pub fn validate_estimator_prompt(value: &str) -> Result<String, SettingsError> {
-    let normalized = value.trim();
+    let normalized = value.trim_matches(PYTHON_SPACE);
     if normalized.is_empty() || normalized.chars().count() > 20_000 {
         return Err(SettingsError::Prompt);
     }
@@ -129,133 +155,107 @@ pub fn validate_estimator_prompt(value: &str) -> Result<String, SettingsError> {
 }
 
 pub fn normalize_identity_map(
-    values: &BTreeMap<String, String>,
-) -> Result<BTreeMap<String, String>, SettingsError> {
-    let mut normalized = BTreeMap::new();
-    for (login, email) in values {
-        let normalized_login = normalize_login(login)?;
-        let normalized_email = normalize_email(Some(email));
-        if normalized_email.is_empty() {
-            return Err(SettingsError::Identity);
+    values: &IndexMap<String, String>,
+) -> Result<IndexMap<String, String>, SettingsError> {
+    let mut normalized = IndexMap::new();
+    for (login, address) in values {
+        let email = normalize_email(Some(address));
+        if !email.is_empty() {
+            normalized.insert(normalize_login(login)?, email);
         }
-        normalized.insert(normalized_login, normalized_email);
+    }
+    if normalized.len() != values.len() {
+        return Err(SettingsError::Identity);
     }
     Ok(normalized)
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct ROISettings {
-    #[serde(default = "default_github_url")]
     pub github_api_url: String,
-    #[serde(default, deserialize_with = "deserialize_secret")]
     pub github_token: SecretString,
-    #[serde(default, deserialize_with = "deserialize_secret")]
     pub estimator_key: SecretString,
-    #[serde(default)]
     pub repos: Vec<String>,
-    #[serde(default)]
     pub estimator_model: String,
-    #[serde(default = "default_prompt_value")]
     pub estimator_prompt: String,
-    #[serde(default = "default_backfill_days")]
-    pub backfill_days: u32,
-    #[serde(default = "default_interval")]
+    pub backfill_days: i64,
     pub update_interval_minutes: f64,
-    #[serde(default)]
-    pub identity_map: BTreeMap<String, String>,
+    pub identity_map: IndexMap<String, String>,
 }
 
 impl Default for ROISettings {
     fn default() -> Self {
         Self {
-            github_api_url: default_github_url(),
-            github_token: SecretString::from(String::new()),
-            estimator_key: SecretString::from(String::new()),
+            github_api_url: "https://api.github.com".to_owned(),
+            github_token: SecretString::default(),
+            estimator_key: SecretString::default(),
             repos: Vec::new(),
             estimator_model: String::new(),
-            estimator_prompt: default_prompt_value(),
-            backfill_days: default_backfill_days(),
-            update_interval_minutes: default_interval(),
-            identity_map: BTreeMap::new(),
+            estimator_prompt: DEFAULT_PROMPT.to_owned(),
+            backfill_days: 7,
+            update_interval_minutes: 1440.0_f64,
+            identity_map: IndexMap::new(),
         }
     }
 }
 
 impl ROISettings {
     pub fn validate(mut self) -> Result<Self, SettingsError> {
-        self.github_api_url = normalize_github_api_url(&self.github_api_url)?;
+        self.github_api_url = github_url::normalize_github_api_url(&self.github_api_url)?;
         self.repos = validate_repositories(&self.repos)?;
         self.estimator_prompt = validate_estimator_prompt(&self.estimator_prompt)?;
+        check_backfill_days(self.backfill_days)?;
         self.update_interval_minutes = validate_update_interval(self.update_interval_minutes)?;
-        if !(1..=3650).contains(&self.backfill_days) {
-            return Err(SettingsError::BackfillDays);
-        }
         self.identity_map = normalize_identity_map(&self.identity_map)?;
         Ok(self)
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ROISettingsUpdate {
     pub github_api_url: Option<String>,
-    #[serde(deserialize_with = "deserialize_secret_option", default)]
     pub github_token: Option<SecretString>,
-    #[serde(deserialize_with = "deserialize_secret_option", default)]
     pub estimator_key: Option<SecretString>,
     pub repos: Option<Vec<String>>,
     pub estimator_model: Option<String>,
     pub estimator_prompt: Option<String>,
-    pub backfill_days: Option<u32>,
+    pub backfill_days: Option<i64>,
     pub update_interval_minutes: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl ROISettingsUpdate {
+    pub fn validate(self) -> Result<Self, SettingsError> {
+        if let Some(days) = self.backfill_days {
+            check_backfill_days(days)?;
+        }
+        if let Some(minutes) = self.update_interval_minutes {
+            check_interval_bounds(minutes)?;
+        }
+        Ok(self)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "LiteLLM's settings response carries three independent flags on the wire"
+)]
 pub struct ROISettingsResponse {
     pub github_api_url: String,
     pub repos: Vec<String>,
     pub estimator_model: String,
     pub estimator_prompt: String,
-    pub backfill_days: u32,
+    pub backfill_days: i64,
     pub update_interval_minutes: f64,
-    pub has_estimator_key: SettingFlag,
-    pub identity_map: BTreeMap<String, String>,
-    pub has_github_token: SettingFlag,
+    pub has_estimator_key: bool,
+    pub identity_map: IndexMap<String, String>,
+    pub has_github_token: bool,
     pub default_prompt: String,
     pub available_models: Vec<String>,
-    pub ready: SettingFlag,
+    pub ready: bool,
 }
 
-pub type SettingFlag = bool;
-
-fn default_github_url() -> String {
-    "https://api.github.com".to_owned()
-}
-fn default_prompt_value() -> String {
-    DEFAULT_PROMPT.to_owned()
-}
-const fn default_backfill_days() -> u32 {
-    7
-}
-const fn default_interval() -> f64 {
-    1440.0
-}
-
-fn deserialize_secret<'de, D>(deserializer: D) -> Result<SecretString, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = String::deserialize(deserializer)?;
-    Ok(SecretString::from(value))
-}
-
-fn deserialize_secret_option<'de, D>(deserializer: D) -> Result<Option<SecretString>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Option::<String>::deserialize(deserializer)?;
-    Ok(value.map(SecretString::from))
-}
-
-#[cfg(test)]
+pub mod github_url;
 mod tests;
