@@ -8,7 +8,6 @@ publish.workspace = true
 [dependencies]
 indexmap = { version = "2.14.2", features = ["serde"] }
 serde.workspace = true
-serde-transcode = "1.1.1"
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 sha2 = "0.10.9"
 thiserror.workspace = true

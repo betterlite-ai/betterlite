@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::value::RawValue;
 
-use crate::cache_plan::json::compact;
+use crate::cache_plan::json::{JsonError, compact};
 use crate::cache_plan::wire::{Block, CacheControl, Content, PlanRequest, Role, Speed, Ttl};
 
 type Object<'body> = IndexMap<String, &'body RawValue>;
@@ -65,6 +65,8 @@ enum Source<'body> {
 pub(super) enum DecodeError {
     #[error("the request is not a cache plan request")]
     Json(#[from] serde_json::Error),
+    #[error("a request value cannot be written as compact JSON")]
+    Compact(#[from] JsonError),
     #[error("the request has no messages")]
     NoMessages,
 }
@@ -112,7 +114,7 @@ fn predictable(request: &PlanRequest, top: &Object<'_>, positions: &[Position]) 
             .any(|position| position.section != Section::Messages && position.controlled)
 }
 
-fn positions(top: &Object<'_>) -> Result<Vec<Position>, serde_json::Error> {
+fn positions(top: &Object<'_>) -> Result<Vec<Position>, DecodeError> {
     let mut positions = Vec::new();
     for tool in objects(top.get("tools").copied())? {
         positions.push(position(Section::Tools, -1, "", Source::Object(tool))?);
@@ -151,7 +153,7 @@ fn position(
     message_index: i64,
     role: &str,
     source: Source<'_>,
-) -> Result<Position, serde_json::Error> {
+) -> Result<Position, DecodeError> {
     let mut object = match source {
         Source::Text(text) => Object::from([
             ("type".to_owned(), serde_json::from_str(r#""text""#)?),

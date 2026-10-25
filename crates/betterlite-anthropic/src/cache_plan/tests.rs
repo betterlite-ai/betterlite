@@ -125,30 +125,12 @@ fn prefix_body_keeps_options_sections_and_key_order() {
     r#"{"model":"m","max_tokens":1,"stream":true,"temperature":0.5,"top_p":1,"top_k":3,"stop_sequences":["x"],"metadata":{"user_id":"u"},"speed":"standard","service_tier":"standard_only","messages":[{"role":"user","content":[{"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]}]}"#,
     r#"{"messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]}"#
 )]
+#[case::nested_json_follows_python(
+    r#"{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"a","name":"t","input":{"q":1,"z":-0,"q":18446744073709551616,"w":[1.0,true,null,"x"]},"cache_control":{"type":"ephemeral"}}]}]}"#,
+    r#"{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"a","name":"t","input":{"q":18446744073709551616,"z":0,"w":[1.0,true,null,"x"]}}]}]}"#
+)]
 fn single_breakpoint_prefix_matches_litellm(#[case] body: &str, #[case] prefix: &str) {
     assert_eq!(only(body).prefix_body.get(), prefix);
-}
-
-#[rstest]
-#[case::nested_duplicate_keys_stay(r#"{"q":1,"q":2}"#, r#"{"q":1,"q":2}"#)]
-#[case::integer_past_64_bits_is_a_float(
-    r#"{"q":18446744073709551616}"#,
-    r#"{"q":1.8446744073709552e+19}"#
-)]
-fn nested_json_deviates_from_python(#[case] input: &str, #[case] hashed: &str) {
-    let block =
-        |input: &str| format!(r#"{{"type":"tool_use","id":"a","name":"t","input":{input}}}"#);
-    let body = format!(
-        r#"{{"messages":[{{"role":"assistant","content":[{},{{"type":"text","text":"a","cache_control":{{"type":"ephemeral"}}}}]}}]}}"#,
-        block(input)
-    );
-    assert_eq!(
-        only(&body).prefix_body.get(),
-        format!(
-            r#"{{"messages":[{{"role":"assistant","content":[{},{{"type":"text","text":"a"}}]}}]}}"#,
-            block(hashed)
-        )
-    );
 }
 
 #[rstest]
@@ -307,6 +289,10 @@ fn identity_follows_settings_and_content(
 #[case::marked_result_text(r#"{"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"a","content":[{"type":"text","text":"x","cache_control":{"type":"ephemeral"}}]}]}]}"#, UnsupportedCachePlan::UnsupportedPromptShape)]
 #[case::lone_surrogate(r#"{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"a","name":"t","input":{"q":"\ud800"},"cache_control":{"type":"ephemeral"}}]}]}"#, UnsupportedCachePlan::UnsupportedPromptShape)]
 #[case::not_a_number(r#"{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"a","name":"t","input":{"q":NaN}}]}]}"#, UnsupportedCachePlan::UnsupportedPromptShape)]
+#[case::float_overflow(
+    r#"{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"a","name":"t","input":{"q":1e400}}]}]}"#,
+    UnsupportedCachePlan::UnsupportedPromptShape
+)]
 #[case::max_tokens_past_64_bits(
     r#"{"max_tokens":18446744073709551616,"messages":[{"role":"user","content":"hi"}]}"#,
     UnsupportedCachePlan::UnsupportedPromptShape
