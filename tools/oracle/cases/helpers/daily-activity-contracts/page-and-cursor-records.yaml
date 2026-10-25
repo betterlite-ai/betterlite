@@ -3,15 +3,34 @@ name: page_order_preserved
 call:
   daily_activity_contracts:
     step:
-      kind: key_metadata
+      kind: key_page
       value:
-        api_key: sk-test
-        key_alias: null
-        team_id: team
-        user_id: user
-        user_email: null
-        key_exists: true
-        tags: [first, first]
+        total_api_keys: 2
+        rows:
+          - api_key: a
+            spend: "1.23"
+            prompt_tokens: 1
+            completion_tokens: 2
+            total_tokens: 3
+            api_requests: 1
+            successful_requests: 1
+            failed_requests: 0
+            cache_read_input_tokens: 3
+            cache_creation_input_tokens: 4
+          - api_key: b
+            spend: "2.34"
+            prompt_tokens: 1
+            completion_tokens: 2
+            total_tokens: 3
+            api_requests: 1
+            successful_requests: 1
+            failed_requests: 0
+            cache_read_input_tokens: 3
+            cache_creation_input_tokens: 4
 env: {}
 compare:
-  ignore: []
+  ignore:
+    - pointer: /value/rows/0/spend
+      why: Decimal wire representation differs between Rust and Python.
+    - pointer: /value/rows/1/spend
+      why: Decimal wire representation differs between Rust and Python.
