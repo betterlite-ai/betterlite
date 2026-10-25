@@ -3,7 +3,6 @@ name: anthropic-automatic-cache
 call:
   anthropic_cache_plan:
     function: cache_plan
-    body: {model: claude, max_tokens: 32, cache_control: {type: ephemeral}, messages: [{role: user, content: hello}]}
+    body: '{"model":"claude","max_tokens":32,"cache_control":{"type":"ephemeral","ttl":"1h"},"messages":[{"role":"user","content":[{"type":"text","text":"keep"},{"type":"text","text":"\u001c"}]}]}'
 env: {}
 compare: {ignore: []}
-

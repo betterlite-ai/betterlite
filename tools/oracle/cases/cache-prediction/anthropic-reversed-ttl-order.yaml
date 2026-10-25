@@ -3,7 +3,6 @@ name: anthropic-reversed-ttl-order
 call:
   anthropic_cache_plan:
     function: cache_plan
-    body: {model: claude, max_tokens: 32, messages: [{role: user, content: [{type: text, text: a, cache_control: {type: ephemeral, ttl: 5m}}, {type: text, text: b, cache_control: {type: ephemeral, ttl: 1h}}]}]}
+    body: '{"model":"claude","max_tokens":32,"messages":[{"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral","ttl":"5m"}},{"type":"text","text":"b","cache_control":{"type":"ephemeral","ttl":"1h"}}]}]}'
 env: {}
 compare: {ignore: []}
-

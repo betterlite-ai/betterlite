@@ -3,7 +3,6 @@ name: anthropic-prediction-no-thinking
 call:
   anthropic_cache_plan:
     function: prompt
-    body: {model: claude, max_tokens: 32, messages: [{role: user, content: [{type: text, text: hello, cache_control: {type: ephemeral}}]}]}
+    body: '{"model":"claude","max_tokens":32,"system":[{"type":"text","text":"s"}],"tools":[{"name":"t","input_schema":{}}],"messages":[{"role":"user","content":[{"type":"text","text":"hello","cache_control":{"type":"ephemeral"}}]}]}'
 env: {}
 compare: {ignore: []}
-

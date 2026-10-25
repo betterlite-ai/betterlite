@@ -3,7 +3,6 @@ name: anthropic-system-and-tools
 call:
   anthropic_cache_plan:
     function: cache_plan
-    body: {model: claude, max_tokens: 32, system: [{type: text, text: system, cache_control: {type: ephemeral}}], tools: [{name: lookup, description: find, input_schema: {type: object}}], messages: [{role: user, content: hi}]}
+    body: '{"tools":[{"name":"lookup","description":"find","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral","ttl":"1h"}}],"system":[{"type":"text","text":"Stable instructions","cache_control":{"type":"ephemeral","ttl":"1h"}}],"messages":[{"role":"user","content":[{"type":"text","text":"First turn","cache_control":{"type":"ephemeral","ttl":"5m"}}]}]}'
 env: {}
 compare: {ignore: []}
-

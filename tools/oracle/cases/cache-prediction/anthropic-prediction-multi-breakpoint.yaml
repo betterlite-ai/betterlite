@@ -3,7 +3,6 @@ name: anthropic-prediction-multi-breakpoint
 call:
   anthropic_cache_plan:
     function: prompt
-    body: {model: claude, max_tokens: 32, messages: [{role: user, content: [{type: text, text: a, cache_control: {type: ephemeral}}, {type: text, text: b, cache_control: {type: ephemeral}}]}]}
+    body: '{"model":"claude","max_tokens":32,"messages":[{"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral"}},{"type":"text","text":"b","cache_control":{"type":"ephemeral"}}]}]}'
 env: {}
 compare: {ignore: []}
-

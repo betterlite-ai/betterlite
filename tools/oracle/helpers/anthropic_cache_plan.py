@@ -1,9 +1,10 @@
-import dataclasses
 import json
 from collections.abc import Mapping
 from typing import TypeAlias, cast
 
 from litellm.llms.anthropic.prompt_cache_prediction import (
+    CacheBoundary,
+    PromptPrefix,
     UnsupportedCachePlan,
     cache_scope,
     parse_cache_plan,
@@ -12,37 +13,58 @@ from litellm.llms.anthropic.prompt_cache_prediction import (
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
-
-def json_value(value: object) -> Json:
-    return cast(Json, json.loads(json.dumps(plain(value), separators=(",", ":"), ensure_ascii=False)))
+SCOPE_FIELDS = ("caller_key_hash", "deployment_id", "provider_key", "model", "anthropic_version")
 
 
-def plain(value: object) -> object:
-    if dataclasses.is_dataclass(value):
-        return {field.name: plain(getattr(value, field.name)) for field in dataclasses.fields(value)}
-    if isinstance(value, Mapping):
-        return {key: plain(item) for key, item in value.items()}
-    if isinstance(value, (tuple, list)):
-        return [plain(item) for item in value]
-    return value
+def body_value(input_value: dict[str, Json]) -> dict[str, Json]:
+    text = input_value.get("body")
+    if not isinstance(text, str):
+        raise ValueError("body must be a JSON string")
+    body = cast(Json, json.loads(text))
+    if not isinstance(body, dict):
+        raise ValueError("body must be a JSON object")
+    return body
+
+
+def plain(value: Mapping[str, object]) -> Json:
+    return cast(Json, json.loads(json.dumps(value, default=dict)))
+
+
+def boundary(value: CacheBoundary) -> Json:
+    return {
+        "fingerprint": value.fingerprint,
+        "prefix_body": plain(value.prefix_body),
+        "ttl_seconds": value.ttl_seconds,
+        "lookback_fingerprints": list(value.lookback_fingerprints),
+        "content_fingerprint": value.content_fingerprint,
+        "lookback_content_fingerprints": list(value.lookback_content_fingerprints),
+    }
+
+
+def prompt(value: PromptPrefix | None) -> Json:
+    if value is None:
+        return None
+    return {
+        "prefix_body": plain(value.prefix_body),
+        "fingerprint": value.fingerprint,
+        "fingerprints": list(value.fingerprints),
+        "ttl_seconds": value.ttl_seconds,
+    }
 
 
 def run(input_value: dict[str, Json]) -> Json:
     function = input_value.get("function")
     if function == "cache_plan":
-        body = input_value.get("body")
-        result = parse_cache_plan(body if isinstance(body, dict) else {})
-        if isinstance(result, UnsupportedCachePlan):
-            return {"kind": "unsupported", "reason": result.reason}
-        return {"kind": "plan", **json_value(result)}
+        plan = parse_cache_plan(body_value(input_value))
+        if isinstance(plan, UnsupportedCachePlan):
+            return {"unsupported": plan.reason}
+        return {"full_body": plain(plan.full_body), "breakpoints": [boundary(item) for item in plan.breakpoints]}
     if function == "prompt":
-        body = input_value.get("body")
-        result = parse_prompt(body if isinstance(body, dict) else {})
-        return None if result is None else {"kind": "prompt", **json_value(result)}
+        return {"prompt": prompt(parse_prompt(body_value(input_value)))}
     if function == "cache_scope":
-        values = [input_value.get(name, "") for name in ("caller_key_hash", "deployment_id", "provider_key", "model")]
-        values.append(input_value.get("anthropic_version", "2023-06-01"))
-        if not all(isinstance(value, str) for value in values):
+        values = [input_value.get(name) for name in SCOPE_FIELDS]
+        scope = [value for value in values if isinstance(value, str)]
+        if len(scope) != len(SCOPE_FIELDS):
             raise ValueError("cache scope values must be strings")
-        return {"kind": "scope", "fingerprint": cache_scope(*values)}
+        return cache_scope(*scope)
     raise ValueError(f"unknown anthropic cache plan function: {function}")
