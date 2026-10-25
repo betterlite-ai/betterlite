@@ -14,8 +14,7 @@ pub const PERPLEXITY_PARAMS: [&str; 4] = [
     "max_tokens_per_page",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "UPPERCASE")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HttpMethod {
     Get,
     Post,

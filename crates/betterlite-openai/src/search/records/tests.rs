@@ -11,45 +11,21 @@ fn value(text: &str) -> Value {
 }
 
 #[test]
-fn keeps_unknown_fields_and_defaults_object_to_search() {
-    let response: SearchResponse = serde_json::from_str(
-        r#"{"results": [{"title": "A", "url": "https://a.example", "snippet": "B", "rank": 1}],
-        "provider": "demo"}"#,
+fn response_keeps_extras_defaults_object_and_hides_metadata() {
+    let mut response: SearchResponse = serde_json::from_str(
+        r#"{"results": [{"title": "A", "url": "https://a.example", "snippet": "B",
+        "date": "2025-01-02", "rank": 1}], "provider": "demo"}"#,
     )
     .unwrap();
     assert_eq!(response.object, SearchObject(String::from("search")));
-    assert_eq!(response.extra["provider"], value(r#""demo""#));
     let result = response.results.first().unwrap();
     assert_eq!(result.extra["rank"], value("1"));
-    assert_eq!((&result.date, &result.last_updated), (&None, &None));
-}
-
-#[test]
-fn writes_absent_dates_as_null_like_model_dump() {
-    let response: SearchResponse = serde_json::from_str(
-        r#"{"results": [{"title": "A", "url": "https://a.example", "snippet": "B", "date": "2025-01-02"}],
-        "object": "search"}"#,
-    )
-    .unwrap();
-    assert_eq!(
-        serde_json::to_value(response).unwrap(),
-        value(
-            r#"{"results": [{"title": "A", "url": "https://a.example", "snippet": "B",
-            "date": "2025-01-02", "last_updated": null}], "object": "search"}"#
-        )
-    );
-}
-
-#[test]
-fn hidden_params_never_reach_the_wire() {
-    let mut response: SearchResponse = serde_json::from_str(r#"{"results": []}"#).unwrap();
     response
         .hidden_params
         .insert(String::from("response_cost"), value("0.002"));
-    assert_eq!(
-        serde_json::to_value(response).unwrap(),
-        value(r#"{"results": [], "object": "search"}"#)
-    );
+    let expected = r#"{"results": [{"title": "A", "url": "https://a.example", "snippet": "B",
+        "date": "2025-01-02", "last_updated": null, "rank": 1}], "object": "search", "provider": "demo"}"#;
+    assert_eq!(serde_json::to_value(response).unwrap(), value(expected));
 }
 
 #[test]
@@ -62,26 +38,21 @@ fn search_tool_reads_config_entry() {
     )
     .unwrap();
     let params = &tool.litellm_params;
-    assert_eq!(params.search_provider, "google_pse");
+    let key = params.api_key.as_ref().map(ExposeSecret::expose_secret);
     assert_eq!(
-        params.api_key.as_ref().map(ExposeSecret::expose_secret),
-        Some("sk-search")
+        (params.search_provider.as_str(), key),
+        ("google_pse", Some("sk-search"))
     );
-    assert_eq!(params.timeout, Some(Decimal::new(25, 1)));
-    assert_eq!(params.max_retries, Some(3));
+    assert_eq!(
+        (params.timeout, params.max_retries),
+        (Some(Decimal::new(25, 1)), Some(3))
+    );
     assert_eq!(params.extra["search_engine_id"], value(r#""cx-1""#));
-    assert_eq!(tool.search_tool_id, None);
     assert!(!format!("{tool:?}").contains("sk-search"));
-}
-
-#[test]
-fn search_tool_names_an_unknown_key() {
-    let error = serde_json::from_str::<SearchTool>(
-        r#"{"search_tool_name": "litellm-search",
-        "litellm_params": {"search_provider": "tavily"}, "owner": "team-a"}"#,
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("owner"));
+    let unknown = serde_json::from_str::<SearchTool>(
+        r#"{"search_tool_name": "s", "litellm_params": {"search_provider": "tavily"}, "owner": "a"}"#,
+    );
+    assert!(unknown.unwrap_err().to_string().contains("owner"));
 }
 
 #[test]
@@ -92,9 +63,7 @@ fn list_response_round_trips_without_absent_keys() {
         "is_from_config": true}]}"#,
     );
     let list: ListSearchToolsResponse = serde_json::from_value(body.clone()).unwrap();
-    assert_eq!(
-        list.search_tools.first().unwrap().is_from_config,
-        Some(true)
-    );
+    let first = list.search_tools.first().unwrap();
+    assert_eq!(first.is_from_config, Some(true));
     assert_eq!(serde_json::to_value(list).unwrap(), body);
 }

@@ -49,17 +49,6 @@ fn credential_resolves_in_order(
 }
 
 #[test]
-fn credential_without_key_vars_is_keyless() {
-    let keyless = ServerCredential {
-        key_vars: &[],
-        base_var: None,
-        default_base: None,
-    };
-    let resolved = resolve(&keyless, None, Some("https://searx.local"), &[]).unwrap();
-    assert_eq!(resolved, None);
-}
-
-#[test]
 fn credential_error_names_first_var_and_base() {
     let environment = [("TAVILY_KEY", "sk-server")];
     let error = resolve(&TAVILY, None, Some("https://evil.example/x"), &environment).unwrap_err();
@@ -97,17 +86,18 @@ fn search_trust_compares_lowercase_netloc(
 
 #[test]
 fn search_trust_without_default_or_override_refuses() {
-    let bare = ServerCredential {
+    let unconfigured = ServerCredential {
         key_vars: &["BRAVE_API_KEY"],
         base_var: None,
         default_base: None,
     };
-    let environment = [("BRAVE_API_KEY", "sk-server")];
-    let error = resolve(
-        &bare,
-        None,
-        Some("https://api.search.brave.com"),
-        &environment,
-    );
+    let base = Some("https://api.search.brave.com");
+    let error = resolve(&unconfigured, None, base, &[("BRAVE_API_KEY", "sk-server")]);
     assert!(matches!(error, Err(CredentialError::UntrustedBase { .. })));
+    let keyless = ServerCredential {
+        key_vars: &[],
+        base_var: None,
+        default_base: None,
+    };
+    assert_eq!(resolve(&keyless, None, base, &[]), Ok(None));
 }
