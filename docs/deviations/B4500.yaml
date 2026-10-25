@@ -1,0 +1,8 @@
+task: B4500
+deviations:
+  - what: Record decoding uses serde deny_unknown_fields rather than Pydantic extra-forbid.
+    why: Rust serde provides equivalent strict rejection for shared server and worker records.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/models.py#L7-L8
+  - what: Monetary fields use rust_decimal Decimal rather than Python float.
+    why: Fixed-point arithmetic avoids accumulated financial precision loss.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/models.py#L45
