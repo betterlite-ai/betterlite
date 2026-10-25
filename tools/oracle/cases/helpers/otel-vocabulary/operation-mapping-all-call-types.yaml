@@ -1,0 +1,8 @@
+kind: helper
+name: operation-mapping-all-call-types
+call:
+  otel_vocabulary:
+    function: Operation
+    values: [completion, acompletion, completion_with_retries, text_completion, atext_completion, embedding, aembedding, responses, aresponses, get_responses, aget_responses, delete_responses, adelete_responses, cancel_responses, acancel_responses, list_input_items, alist_input_items, image_generation, aimage_generation, moderation, amoderation, ocr, aocr, speech, aspeech, transcription, atranscription, call_mcp_tool, vector_store_search, avector_store_search, query, aquery, send_message, asend_message, asend_message_streaming, vector_store_create, avector_store_create, vector_store_retrieve, avector_store_retrieve, vector_store_list, avector_store_list, vector_store_update, avector_store_update, vector_store_delete, avector_store_delete, vector_store_file_create, avector_store_file_create, vector_store_file_list, avector_store_file_list, vector_store_file_retrieve, avector_store_file_retrieve, vector_store_file_content, avector_store_file_content, vector_store_file_update, avector_store_file_update, vector_store_file_delete, avector_store_file_delete, AEMBEDDING, AVECTOR_STORE_LIST, aavector_store_create, vector_store_file_search, vector_store_, acall_mcp_tool, send_message_streaming, new_route, "", null]
+env: {}
+compare: {ignore: []}

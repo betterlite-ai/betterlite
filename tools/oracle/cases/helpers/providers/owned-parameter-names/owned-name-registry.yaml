@@ -1,0 +1,9 @@
+kind: helper
+name: owned-name-registry
+call:
+  owned_parameter_names:
+    function: owned_name_registry
+    names: [api_key, _litellm_fixture, litellm_fixture, ordinary_parameter, allowed_openai_params]
+env: {}
+compare:
+  ignore: []

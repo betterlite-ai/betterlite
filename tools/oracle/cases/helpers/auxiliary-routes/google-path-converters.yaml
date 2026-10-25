@@ -1,0 +1,8 @@
+kind: helper
+name: google-path-converters
+call:
+  auxiliary_routes:
+    group: google_routes
+env: {}
+compare:
+  ignore: []

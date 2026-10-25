@@ -1,0 +1,11 @@
+kind: helper
+name: internal-state-fields
+call:
+  owned_parameter_names:
+    function: wire_name_projection
+    name: no-log
+    owner: internal_state
+    root: internal_state
+env: {}
+compare:
+  ignore: []

@@ -177,6 +177,9 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-auth"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+]
 
 [[package]]
 name = "betterlite-azure"
@@ -238,6 +241,13 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-db"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-error"
@@ -277,6 +287,16 @@ name = "betterlite-lens"
 version = "0.1.0"
 
 [[package]]
+name = "betterlite-logging"
+version = "0.1.0"
+dependencies = [
+ "rstest",
+ "strum",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "betterlite-models"
 version = "0.1.0"
 dependencies = [
@@ -310,11 +330,14 @@ name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "betterlite-auth",
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-db",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-paths",
@@ -1785,6 +1808,27 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+
+[[package]]
+name = "strum"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
+dependencies = [
+ "strum_macros",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "subtle"
