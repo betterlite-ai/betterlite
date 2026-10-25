@@ -127,9 +127,11 @@ base:
 optional:
   - id: coverage
     why: line coverage of the workspace stays at or above 85 percent
+    after_green: true
     run: cargo llvm-cov nextest --workspace --locked --fail-under-lines 85
   - id: mutants
     why: every mutant in the changed Rust code is caught by a test
+    after_green: true
     run: |-
       set -e
       scratch="$GATE_LOG_DIR/mutants-tmp"

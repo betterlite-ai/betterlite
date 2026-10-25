@@ -119,6 +119,11 @@
       "description": "A shell command run with bash -c from the repository root. Exit 0 passes, anything else fails.",
       "type": "object",
       "properties": {
+        "after_green": {
+          "description": "Run only after every other check passed. A gate that is already red skips it, so slow checks such as mutants never run on unfinished work.",
+          "type": "boolean",
+          "default": false
+        },
         "id": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$"
