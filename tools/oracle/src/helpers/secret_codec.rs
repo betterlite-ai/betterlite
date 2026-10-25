@@ -15,9 +15,35 @@ use betterlite_secrets::secret_codec::{
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
-use super::{HelperError, HelperOutput};
+use super::{Helper, HelperError, HelperResult};
 
 mod tests;
+
+pub(super) const GROUP: super::Group = super::Group { invoke, check };
+
+fn invoke(operation: &str, input: &Value) -> Option<HelperResult> {
+    match operation {
+        "secret_codec" => Some(<Op as Helper>::decode_and_run(input)),
+        _ => None,
+    }
+}
+
+fn check(operation: &str, input: &Value) -> Option<Result<(), String>> {
+    match operation {
+        "secret_codec" => Some(<Op as Helper>::check(input)),
+        _ => None,
+    }
+}
+
+pub(crate) struct Op;
+
+impl Helper for Op {
+    type Input = SecretCodecInput;
+
+    fn run(input: &Self::Input) -> HelperResult {
+        run_codec(input)
+    }
+}
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
@@ -102,7 +128,7 @@ impl SecretDiagnostics for LogRecorder<'_> {
     }
 }
 
-pub(crate) fn invoke(input: &SecretCodecInput) -> HelperOutput {
+fn run_codec(input: &SecretCodecInput) -> HelperResult {
     let mut general = match &input.general_settings {
         Some(Value::Object(settings)) => settings.clone(),
         Some(_) | None => serde_json::Map::new(),
@@ -125,20 +151,20 @@ pub(crate) fn invoke(input: &SecretCodecInput) -> HelperOutput {
         .collect::<Option<Vec<u8>>>();
     let loaded = ConfigLoader { lookup }.load(&source);
     let (Ok(config), Some(bytes)) = (loaded, nonce) else {
-        return failure(
-            "ValueError",
-            "the config or nonce_hex does not load".to_owned(),
-        );
+        return Err(Box::new(HelperError {
+            class: "ValueError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: "the config or nonce_hex does not load".to_owned(),
+        }));
     };
     let results = input
         .steps
         .iter()
         .map(|step| run_step(&config.general_settings.cipher, &bytes, step));
-    HelperOutput {
-        ok: true,
-        value: Some(Value::Array(results.collect())),
-        error: None,
-    }
+    Ok(Value::Array(results.collect()))
 }
 
 fn run_step(settings: &CipherSettings, nonce: &[u8], step: &SecretStep) -> Value {
@@ -170,7 +196,6 @@ fn run_step(settings: &CipherSettings, nonce: &[u8], step: &SecretStep) -> Value
                 | SecretError::TooLarge { .. }
                 | SecretError::Base64
                 | SecretError::Decode { .. }
-                | SecretError::DecodeTail { .. }
                 | SecretError::Truncated
                 | SecretError::Seal { .. }
                 | SecretError::LegacySeal { .. }
@@ -274,20 +299,4 @@ const fn decrypt_policy(report: Report, keep_original: bool) -> DecryptPolicy {
         FailureValue::Nothing
     };
     DecryptPolicy { log, value }
-}
-
-fn failure(class: &str, message: String) -> HelperOutput {
-    let error = HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    };
-    HelperOutput {
-        ok: false,
-        value: None,
-        error: Some(error),
-    }
 }

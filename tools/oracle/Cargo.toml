@@ -14,12 +14,8 @@ betterlite-http = { path = "../../crates/betterlite-http" }
 betterlite-models = { path = "../../crates/betterlite-models" }
 betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
-axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
 betterlite-secrets = { path = "../../crates/betterlite-secrets" }
-reqwest = { version = "0.13.5", default-features = false, features = ["blocking"] }
-tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "time", "io-util", "macros", "process", "fs"] }
 clap = { version = "4.6.7", features = ["derive"] }
-secrecy = "0.10.3"
 futures-util = { version = "0.3.34", default-features = false }
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking"] }
 secrecy = "0.10.3"

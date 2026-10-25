@@ -2,7 +2,7 @@
 
 use serde_json::{Value, json};
 
-use super::{SecretCodecInput, invoke};
+use super::{SecretCodecInput, run_codec};
 
 const HELLO: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj";
 
@@ -15,9 +15,7 @@ fn run(nonce_hex: &str, steps: &Value) -> Value {
         "steps": steps,
     }))
     .unwrap();
-    let output = invoke(&input);
-    assert!(output.ok);
-    output.value.unwrap()
+    run_codec(&input).expect("secret codec helper input should load")
 }
 
 #[test]

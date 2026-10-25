@@ -1,9 +1,4 @@
-mod catalog_generalizations;
-mod dot_paths;
-mod provider_base_helpers;
-mod provider_message_primitives;
 mod secret_codec;
-mod url_path;
 macro_rules! helper_group {
     ($($operation:literal => $module:ident),* $(,)?) => {
         $(mod $module;)*
@@ -116,7 +111,7 @@ struct Group {
     check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
 }
 
-const GROUPS: [Group; 32] = [
+const GROUPS: [Group; 33] = [
     anthropic::GROUP,
     auth::GROUP,
     azure::GROUP,
@@ -143,6 +138,7 @@ const GROUPS: [Group; 32] = [
     redis::GROUP,
     router::GROUP,
     sdk::GROUP,
+    secret_codec::GROUP,
     secrets::GROUP,
     server::GROUP,
     streaming::GROUP,
@@ -152,20 +148,13 @@ const GROUPS: [Group; 32] = [
 ];
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) enum HelperCall {
-    #[serde(rename = "catalog_generalizations")]
-    CatalogGeneralizations(catalog_generalizations::CatalogGeneralizationsInput),
-    #[serde(rename = "dot_paths")]
-    DotPaths(dot_paths::DotPathsInput),
-    #[serde(rename = "provider_base_helpers")]
-    ProviderBaseHelpers(provider_base_helpers::BaseCall),
-    #[serde(rename = "provider_message_primitives")]
-    ProviderMessagePrimitives(provider_message_primitives::PrimitivesInput),
-    #[serde(rename = "secret_codec")]
-    SecretCodec(secret_codec::SecretCodecInput),
-    #[serde(rename = "url_path")]
-    UrlPath(url_path::UrlPathInput),
+#[serde(
+    try_from = "BTreeMap<String, serde_json::Value>",
+    into = "BTreeMap<String, serde_json::Value>"
+)]
+pub(crate) struct HelperCall {
+    pub(crate) operation: String,
+    pub(crate) input: serde_json::Value,
 }
 
 impl TryFrom<BTreeMap<String, serde_json::Value>> for HelperCall {
@@ -242,15 +231,6 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
     Ok(HelperRun::Match)
 }
 
-fn invoke(call: &HelperCall) -> HelperOutput {
-    let result = match call {
-        HelperCall::CatalogGeneralizations(input) => return catalog_generalizations::invoke(input),
-        HelperCall::DotPaths(input) => dot_paths::invoke(input),
-        HelperCall::ProviderBaseHelpers(input) => provider_base_helpers::invoke(input),
-        HelperCall::ProviderMessagePrimitives(input) => provider_message_primitives::invoke(input),
-        HelperCall::SecretCodec(input) => return secret_codec::invoke(input),
-        HelperCall::UrlPath(input) => url_path::invoke(input),
-    };
 pub(crate) fn invoke(call: &HelperCall) -> HelperOutput {
     let result = GROUPS
         .iter()
