@@ -45,7 +45,7 @@ pub struct TurnInput<'turn> {
     pub native_session_id: Option<&'turn str>,
 }
 
-pub trait HarnessConfig {
+pub trait BaseHarnessConfig {
     type Options: OptionsKind;
     const HARNESS: Harness;
     // CLI runtimes call a per-session model endpoint, in-process ones call the model directly
@@ -74,7 +74,7 @@ pub trait HarnessConfig {
     }
 }
 
-pub trait CliHarnessConfig: HarnessConfig {
+pub trait BaseCLIHarnessConfig: BaseHarnessConfig {
     type StreamState;
 
     fn get_binary(&self) -> &'static str;
@@ -101,4 +101,12 @@ pub trait CliHarnessConfig: HarnessConfig {
         exit_code: i32,
         stderr_tail: &[String],
     ) -> Result<HarnessTurnResponse, HarnessError>;
+}
+
+#[must_use]
+pub fn event_list(events: Vec<Event>) -> Vec<Event> {
+    if events.is_empty() {
+        return Vec::new();
+    }
+    events
 }

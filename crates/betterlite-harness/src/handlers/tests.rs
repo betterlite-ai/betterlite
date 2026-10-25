@@ -9,9 +9,9 @@ use rust_decimal::Decimal;
 use crate::context::{SessionContext, SessionSettings, TurnOutcome};
 use crate::errors::HarnessError;
 use crate::events::Event;
-use crate::handlers::HarnessHandler;
+use crate::handlers::BaseHarnessHandler;
 use crate::options::{ClaudeCodeOptions, CodexOptions, HarnessOptions, OpenCodeOptions};
-use crate::transformation::{HarnessConfig, HarnessSessionSetup};
+use crate::transformation::{BaseHarnessConfig, HarnessSessionSetup};
 use crate::types::{Capabilities, Capability, Harness, JsonObject, PermissionMode, Usage};
 
 type Started = Result<(), HarnessError>;
@@ -19,7 +19,7 @@ type Turned = Result<Event, HarnessError>;
 
 struct OpenCodeConfig;
 
-impl HarnessConfig for OpenCodeConfig {
+impl BaseHarnessConfig for OpenCodeConfig {
     type Options = OpenCodeOptions;
     const HARNESS: Harness = Harness::OpenCode;
 
@@ -35,7 +35,7 @@ struct OpenCodeHandler {
     config: OpenCodeConfig,
 }
 
-impl HarnessHandler for OpenCodeHandler {
+impl BaseHarnessHandler for OpenCodeHandler {
     type Config = OpenCodeConfig;
 
     fn config(&self) -> &OpenCodeConfig {

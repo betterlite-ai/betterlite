@@ -7,7 +7,6 @@ use crate::types::Harness;
 
 pub const STATE_VERSION: u32 = 1;
 
-// field order is the wire order of LiteLLM's State.dumps
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct State {
     pub harness: Harness,
@@ -18,6 +17,17 @@ pub struct State {
 }
 
 impl State {
+    #[must_use]
+    pub fn dumps(&self) -> Vec<u8> {
+        match serde_json::to_vec(self) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                drop(error);
+                Vec::new()
+            }
+        }
+    }
+
     pub fn loads(data: &[u8]) -> Result<Self, HarnessError> {
         let state: Self = serde_json::from_slice(data)
             .map_err(|source| HarnessError::StateIncompatible { source })?;

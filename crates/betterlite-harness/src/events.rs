@@ -20,12 +20,48 @@ pub enum Decision {
     Deny { reason: String },
 }
 
-// the first answer wins and any thread may give it, like LiteLLM's future resolved through call_soon_threadsafe
 #[derive(Clone, Debug)]
 pub struct Approval {
     pub tool: String,
     pub input: JsonObject,
     pub decision: Arc<SetOnce<Decision>>,
+}
+
+impl Approval {
+    pub fn allow(&self) {
+        let decision = Decision::Allow;
+        self.resolve(decision);
+    }
+
+    pub fn deny(&self, reason: String) {
+        let decision = Decision::Deny { reason };
+        self.resolve(decision);
+    }
+
+    pub async fn wait(&self) -> Decision {
+        let decision = self.decision.wait().await;
+        decision.clone()
+    }
+
+    #[must_use]
+    pub fn answered(&self) -> bool {
+        let initialized = self.decision.initialized();
+        if initialized && self.decision.get().is_some() {
+            return true;
+        }
+        false
+    }
+
+    fn resolve(&self, decision: Decision) {
+        let result = decision;
+        self.set_result(result);
+    }
+
+    fn set_result(&self, decision: Decision) {
+        if !self.decision.initialized() {
+            drop(self.decision.set(decision));
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -39,6 +75,8 @@ pub struct RunResult {
     pub stop_reason: StopReason,
     pub session_id: String,
 }
+
+pub type Result = RunResult;
 
 #[derive(Clone, Debug)]
 pub enum Event {
@@ -70,3 +108,5 @@ pub enum Event {
         result: RunResult,
     },
 }
+
+pub type Done = Event;

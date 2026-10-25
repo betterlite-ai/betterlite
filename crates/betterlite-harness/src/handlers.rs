@@ -8,11 +8,11 @@ use crate::context::SessionContext;
 use crate::errors::HarnessError;
 use crate::events::Event;
 use crate::sandbox::Sandbox;
-use crate::transformation::HarnessConfig;
+use crate::transformation::BaseHarnessConfig;
 use crate::types::{Capability, JsonObject};
 
-pub trait HarnessHandler: Send {
-    type Config: HarnessConfig;
+pub trait BaseHarnessHandler: Send {
+    type Config: BaseHarnessConfig;
 
     fn config(&self) -> &Self::Config;
     // called again after an interrupt
@@ -54,7 +54,7 @@ pub trait HarnessHandler: Send {
         S: Sync,
     {
         let unsupported = HarnessError::CapabilityUnsupported {
-            harness: <Self::Config as HarnessConfig>::HARNESS,
+            harness: <Self::Config as BaseHarnessConfig>::HARNESS,
             capability: Capability::History,
         };
         async move { Err(unsupported) }

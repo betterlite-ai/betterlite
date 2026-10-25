@@ -1,6 +1,6 @@
 mod tests;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::de::value::StrDeserializer;
 use serde::{Deserialize, Serialize, de};
@@ -11,7 +11,7 @@ use crate::errors::HarnessError;
     clippy::disallowed_types,
     reason = "tool input, runtime config, subagents and history are JSON objects whose shape each agent runtime defines"
 )]
-pub type JsonObject = serde_json::Map<String, serde_json::Value>;
+pub type JsonObject = BTreeMap<String, serde_json::Value>;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Harness {
