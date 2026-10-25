@@ -10,8 +10,8 @@ use rstest::rstest;
 )]
 #[case::list_spacing(r#"[{"k":"v"},"x"]"#, r#"[{"k": "v"}, "x"]"#)]
 #[case::ascii_escapes(
-    "[\"caf\u{e9} \u{1f600}\u{7f}\\n\"]",
-    "[\"caf\\u00e9 \\ud83d\\ude00\\u007f\\n\"]"
+    "[\"\u{e9}t\u{e9} \u{1f600}\u{7f}\\n\"]",
+    "[\"\\u00e9t\\u00e9 \\ud83d\\ude00\\u007f\\n\"]"
 )]
 fn writes_json_like_python(#[case] json: &str, #[case] text: &str) {
     let value: DecisionsJson = serde_json::from_str(json).unwrap();
