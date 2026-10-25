@@ -5,15 +5,15 @@ use crate::{
         SessionSigningKeys, SessionTokenKind,
     },
 };
+use aws_lc_rs::{
+    encoding::{AsDer as _, PublicKeyX509Der},
+    signature::{KeyPair as _, RsaKeyPair},
+};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{
     Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, decode_header, encode,
     errors::ErrorKind,
-};
-use rsa::{
-    RsaPrivateKey,
-    pkcs8::{DecodePrivateKey as _, EncodePublicKey as _, LineEnding},
 };
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
@@ -101,12 +101,18 @@ open_route!(
     SESSION_REFRESH_PREFIX
 );
 pub fn session_public_key_pem(keys: &AsymmetricSessionKeys) -> Result<String, SessionTokenError> {
-    let private = RsaPrivateKey::from_pkcs8_pem(keys.private_key_pem.expose_secret())
+    let encoded = EncodingKey::from_rsa_pem(keys.private_key_pem.expose_secret().as_bytes())
         .map_err(|_source| SessionTokenError::InvalidKey)?;
-    private
-        .to_public_key()
-        .to_public_key_pem(LineEnding::LF)
-        .map_err(|_source| SessionTokenError::InvalidKey)
+    let private = RsaKeyPair::from_der(encoded.as_bytes())
+        .map_err(|_source| SessionTokenError::InvalidKey)?;
+    let public: PublicKeyX509Der<'_> = private
+        .public_key()
+        .as_der()
+        .map_err(|_source| SessionTokenError::InvalidKey)?;
+    Ok(pem::encode_config(
+        &pem::Pem::new("PUBLIC KEY", public.as_ref()),
+        pem::EncodeConfig::new().set_line_ending(pem::LineEnding::LF),
+    ))
 }
 #[derive(Clone, Copy)]
 struct MintSpec<'prefix> {

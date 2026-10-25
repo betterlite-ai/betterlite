@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use crate::session_tokens::{
     is_session_refresh_token, is_session_token, mint_session_refresh_token, mint_session_token,
     open_session_refresh_token, open_session_token,
@@ -21,6 +23,29 @@ fn fixture() -> (SessionSigningKeys, SessionPrincipal, chrono::DateTime<Utc>) {
         .single()
         .expect("valid fixture clock");
     (keys, principal, now)
+}
+#[rstest::rstest]
+#[case::pkcs8(include_str!("../fixtures/session-private.pem"))]
+#[case::pkcs1(include_str!("../fixtures/session-pkcs1.pem"))]
+fn rsa_public_key(#[case] private: &str) {
+    let keys = crate::types::AsymmetricSessionKeys {
+        private_key_pem: SecretString::from(private),
+        kid: "current".to_owned(),
+        previous_public_keys: Vec::new(),
+    };
+    assert_eq!(
+        crate::session_tokens::session_public_key_pem(&keys).unwrap(),
+        include_str!("../fixtures/session-public.pem")
+    );
+    let (_, principal, now) = fixture();
+    let signing = SessionSigningKeys::Asymmetric(keys);
+    let minted = mint_session_token(&principal, &signing, now).unwrap();
+    assert_eq!(
+        open_session_token(minted.token.expose_secret(), &signing, now)
+            .unwrap()
+            .principal,
+        principal
+    );
 }
 #[test]
 fn session_token_tests_behavior() {
