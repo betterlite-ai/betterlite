@@ -292,7 +292,6 @@ fn patch_schema() -> Vec<String> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PatchOperation {
     pub op: String,
-    #[serde(default)]
     pub path: Option<String>,
     #[serde(default)]
     pub value: Option<ScimValue>,
