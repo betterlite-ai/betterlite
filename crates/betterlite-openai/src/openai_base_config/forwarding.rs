@@ -67,7 +67,6 @@ pub struct OpenAiErrorParts {
     pub response: Option<ErrorResponse>,
     pub body: Option<Object>,
 }
-
 #[derive(Debug, thiserror::Error)]
 pub enum BaseConfigError {
     #[error("invalid api base URL: {0}")]
@@ -79,13 +78,11 @@ pub enum BaseConfigError {
     #[error("response projection failed: {0}")]
     Projection(String),
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ErrorRequest {
     pub method: String,
     pub url: String,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub status_code: u16,

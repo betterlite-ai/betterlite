@@ -1,13 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{self, Formatter};
-
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{self, Formatter};
 use url::Url;
 pub type Object = Map<String, Value>;
 pub type Headers = BTreeMap<String, String>;
-
 pub mod forwarding;
 use forwarding::BaseConfigError;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,7 +23,6 @@ impl CatalogCapabilities {
             text_models: normalized_text_models,
         }
     }
-
     #[must_use]
     pub fn is_catalog_model(&self, model: &str) -> bool {
         let checked = model
@@ -83,23 +80,10 @@ impl OpenAiConfig {
             settings: normalized_settings,
         }
     }
-
     #[must_use]
     pub fn get_config(&self) -> Object {
-        let entries = self
-            .settings
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()));
-        entries.collect()
-    }
-
-    #[must_use]
-    pub const fn family(&self) -> ConfigFamily {
-        match self.family {
-            ConfigFamily::OpenAi => ConfigFamily::OpenAi,
-            ConfigFamily::AzureAiStudio => ConfigFamily::AzureAiStudio,
-            ConfigFamily::Other => ConfigFamily::Other,
-        }
+        let settings = self.settings.clone();
+        Object::from_iter(settings)
     }
     #[must_use]
     pub fn validate_environment(&self) -> Headers {
@@ -129,7 +113,6 @@ impl OpenAiConfig {
         }
         params
     }
-
     pub fn map_params(
         &self,
         model: &str,
@@ -144,7 +127,6 @@ impl OpenAiConfig {
             }
         }
     }
-
     #[must_use]
     pub fn request_body(&self, model: &str, messages: Value, optional: &Object) -> Object {
         let mut body = Object::from_iter([
@@ -169,33 +151,27 @@ pub fn model_family(model: &str, catalog: &CatalogCapabilities) -> ModelFamily {
         ModelFamily::Unknown
     }
 }
-
 pub fn is_o_series_model(model: &str, catalog: &CatalogCapabilities) -> bool {
     let name = model.rsplit('/').next().unwrap_or(model);
-    name.len() > 1
-        && name.starts_with('o')
+    name.starts_with('o')
         && name.as_bytes().get(1).is_some_and(u8::is_ascii_digit)
         && catalog.chat_models.contains(name)
 }
-
 #[must_use]
 pub fn is_gpt_reasoning_series_name(model: &str) -> bool {
     let final_component = model.rsplit('/').next().unwrap_or(model);
     (model.contains("gpt-5") || model.contains("gpt-6")) && !final_component.contains("gpt-5-chat")
 }
-
 #[must_use]
 pub fn is_gpt_audio_model(model: &str, catalog: &CatalogCapabilities) -> bool {
     let in_catalog = catalog.is_catalog_model(model);
     in_catalog && model.contains("audio")
 }
-
 #[must_use]
 pub fn is_azure_gpt5_model(model: &str) -> bool {
     let reasoning = is_gpt_reasoning_series_name(model);
     reasoning || model.contains("gpt5_series")
 }
-
 #[must_use]
 pub fn metadata_filter_limit(metadata: Option<&Object>) -> Option<BTreeMap<String, String>> {
     let values = metadata?;
@@ -208,7 +184,6 @@ pub fn metadata_filter_limit(metadata: Option<&Object>) -> Option<BTreeMap<Strin
             .collect(),
     )
 }
-
 pub fn overlapping_api_base_path(
     api_base: &str,
     ending_path: &str,
@@ -245,7 +220,5 @@ pub fn overlapping_api_base_path(
     url.set_path(&format!("/{}", segments.join("/")));
     Ok(url.to_string())
 }
-
 const BASE_PARAMS: &str = "frequency_penalty logit_bias logprobs top_logprobs max_tokens max_completion_tokens modalities prediction n presence_penalty seed stop stream stream_options temperature top_p tools tool_choice function_call functions max_retries extra_headers parallel_tool_calls audio web_search_options service_tier safety_identifier prompt_cache_key prompt_cache_retention store";
-
 mod tests;

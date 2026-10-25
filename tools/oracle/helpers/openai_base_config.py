@@ -27,37 +27,25 @@ def text(fields: Object, name: str) -> str:
 def params(fields: Object) -> Json:
     selected = OpenAIConfig() if fields.get("family", "openai") == "openai" else OpenAIGPTConfig()
     return cast("Json", selected.get_supported_openai_params(model=text(fields, "model")))  # pyright: ignore[reportUnknownMemberType]
-
-
 def o_series(fields: Object) -> Json:
     return OpenAIOSeriesConfig().is_model_o_series_model(model=text(fields, "model"))
-
-
 def gpt5(fields: Object) -> Json:
     return is_gpt_reasoning_series_name(text(fields, "model"))
-
-
 def audio(fields: Object) -> Json:
     model = text(fields, "model")
     return model in cast("set[object]", litellm.open_ai_chat_completion_models) and "audio" in model
-
-
 def auth(fields: Object) -> Json:
     key = fields.get("api_key") if isinstance(fields.get("api_key"), str) else None
     return cast("Json", OpenAIConfig().validate_environment(  # pyright: ignore[reportUnknownMemberType]
         headers=cast("dict[str, str]", fields.get("headers", {})), model=text(fields, "model"),
         messages=[], optional_params={}, litellm_params={}, api_key=cast("str | None", key),
     ))
-
-
 def projection(fields: Object) -> Json:
     raw = text(fields, "raw_text")
     decoded = fields.get("decoded")
     if decoded is None:
         json.loads(raw)
     return {"post_call": raw, "response_headers": fields.get("raw_headers", {}), "projected": decoded}  # noqa: E501
-
-
 def error(fields: Object) -> Json:
     status = fields.get("status_code", 500)
     if not isinstance(status, int):
@@ -69,34 +57,26 @@ def error(fields: Object) -> Json:
                          "request": {"method": failure.response.request.method, "url": str(failure.response.request.url)}},  # noqa: E501
             "body": None}
 
-
 def metadata(fields: Object) -> Json:
     value = fields.get("metadata")
     return cast("Json", add_openai_metadata(None if value is None else obj(value)))
-
-
 def request(fields: Object) -> Json:
     return cast("Json", OpenAIConfig().transform_request(  # pyright: ignore[reportUnknownMemberType]
         model=text(fields, "model"), messages=cast("list[object]", fields.get("messages", [])),  # pyright: ignore[reportArgumentType]
         optional_params=obj(fields.get("optional", {})), litellm_params={}, headers={},
     ))
-
-
 def mapped(fields: Object) -> Json:
     body = obj(fields.get("base_parameter_allowlist", fields))
     return cast("Json", OpenAIConfig().map_openai_params(  # pyright: ignore[reportUnknownMemberType]
         obj(body.get("requested", {})), obj(body.get("existing", {})), text(body, "model"), drop_params=False,  # noqa: E501
     ))
 
-
 def overlap(fields: Object) -> Json:
     return _add_path_to_api_base(text(fields, "api_base"), text(fields, "ending_path"))  # pyright: ignore[reportPrivateUsage]
-
 
 def azure_gpt5(fields: Object) -> Json:
     model = text(fields, "model")
     return is_gpt_reasoning_series_name(model) or "gpt5_series" in model
-
 
 HANDLERS: dict[str, Callable[[Object], Json]] = {
     "o_series_routing": o_series, "gpt5_routing": gpt5, "audio_routing": audio,
@@ -106,7 +86,6 @@ HANDLERS: dict[str, Callable[[Object], Json]] = {
     "openai_error_defaults": error, "metadata_filter_limit": metadata,
     "overlapping_api_base_path": overlap, "azure_gpt5_route_predicate": azure_gpt5,
 }
-
 
 def run(argument: Json) -> Json:
     fields = obj(argument)
