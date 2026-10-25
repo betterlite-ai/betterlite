@@ -69,9 +69,9 @@ pub struct AgentKillSwitchResult {
 impl AgentKillSwitchResult {
     #[must_use]
     pub fn succeeded(&self) -> bool {
-        match self.status_code {
-            Some(value) => (200..300).contains(&value),
-            None => false,
-        }
+        let Some(status_code) = self.status_code else {
+            return false;
+        };
+        (200..300).contains(&status_code)
     }
 }
