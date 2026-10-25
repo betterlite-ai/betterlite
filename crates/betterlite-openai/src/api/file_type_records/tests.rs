@@ -2,8 +2,7 @@
 
 use super::*;
 use rstest::rstest;
-use std::collections::BTreeMap;
-use std::iter;
+use std::{collections::BTreeMap, iter};
 
 #[rstest]
 #[case::jpg("jpg", FileType::Jpeg, "image/jpeg")]
