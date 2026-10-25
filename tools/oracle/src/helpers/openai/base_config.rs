@@ -4,9 +4,8 @@ use betterlite_openai::openai_base_config::forwarding::{
     forward_response,
 };
 use betterlite_openai::openai_base_config::{
-    CatalogCapabilities, ConfigFamily, OpenAiConfig, OpenAiSettings,
-    is_gpt_reasoning_series_name, is_o_series_model, metadata_filter_limit,
-    overlapping_api_base_path,
+    CatalogCapabilities, ConfigFamily, OpenAiConfig, OpenAiSettings, is_gpt_reasoning_series_name,
+    is_o_series_model, metadata_filter_limit, overlapping_api_base_path,
 };
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -100,14 +99,27 @@ fn error_value(input: &ErrorInput) -> Result<Value, Box<HelperError>> {
         body: input.body.clone(),
     });
     serde_json::to_value(record).map_err(|error| {
-        Box::new(HelperError { class: String::from("InvalidInput"), status: None, error_type: None, param: None, code: None, message: error.to_string() })
+        Box::new(HelperError {
+            class: String::from("InvalidInput"),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
     })
 }
 fn forwarding(input: &ProjectionInput) -> Value {
     let events = Rc::new(RefCell::new(Vec::new()));
     let mut wire_headers = input.raw_headers.clone();
-    wire_headers.insert("content-length".to_owned(), input.raw_text.len().to_string());
-    wire_headers.insert("content-type".to_owned(), "text/plain; charset=utf-8".to_owned());
+    wire_headers.insert(
+        "content-length".to_owned(),
+        input.raw_text.len().to_string(),
+    );
+    wire_headers.insert(
+        "content-type".to_owned(),
+        "text/plain; charset=utf-8".to_owned(),
+    );
     let sink_events = Rc::clone(&events);
     let projection_events = Rc::clone(&events);
     let response = forward_response(
@@ -123,11 +135,17 @@ fn forwarding(input: &ProjectionInput) -> Value {
                 .push(json!([decoded, hidden_headers, callback_headers]));
             Ok::<Value, ForwardingFailure>(json!("projected"))
         },
-        &ResponseForward { raw_text: &input.raw_text, raw_headers: &wire_headers, hidden_headers: &wire_headers },
+        &ResponseForward {
+            raw_text: &input.raw_text,
+            raw_headers: &wire_headers,
+            hidden_headers: &wire_headers,
+        },
     );
     match response {
         Ok(_value) => json!({"events": events.take()}),
-        Err(BaseConfigError::Decode(_)) => json!({"events": events.take(), "error": "JSONDecodeError"}),
+        Err(BaseConfigError::Decode(_)) => {
+            json!({"events": events.take(), "error": "JSONDecodeError"})
+        }
         Err(error) => json!({"events": events.take(), "error": error.to_string()}),
     }
 }
@@ -137,7 +155,10 @@ fn mapped(value: &MappingInput) -> Value {
         &value.model,
         &value.requested,
         &mut existing,
-        &CatalogCapabilities { chat_models: value.chat_models.clone(), text_models: value.text_models.clone() },
+        &CatalogCapabilities {
+            chat_models: value.chat_models.clone(),
+            text_models: value.text_models.clone(),
+        },
     );
     Value::Object(existing)
 }
@@ -145,14 +166,29 @@ fn invoke(input: &BaseCall) -> Result<Value, Box<HelperError>> {
     match input {
         BaseCall::OSeriesRouting(value) => Ok(json!(is_o_series_model(
             &value.model,
-            &CatalogCapabilities { chat_models: value.chat_models.clone(), text_models: value.text_models.clone() }
+            &CatalogCapabilities {
+                chat_models: value.chat_models.clone(),
+                text_models: value.text_models.clone()
+            }
         ))),
         BaseCall::Gpt5Routing(value) => Ok(json!(is_gpt_reasoning_series_name(&value.model))),
-        BaseCall::AudioRouting(value) => Ok(json!(value.chat_models.contains(&value.model) && value.model.contains("audio"))),
-        BaseCall::AzureGpt5RoutePredicate(value) => Ok(json!(is_gpt_reasoning_series_name(&value.model) || value.model.contains("gpt5_series"))),
+        BaseCall::AudioRouting(value) => Ok(json!(
+            value.chat_models.contains(&value.model) && value.model.contains("audio")
+        )),
+        BaseCall::AzureGpt5RoutePredicate(value) => Ok(json!(
+            is_gpt_reasoning_series_name(&value.model) || value.model.contains("gpt5_series")
+        )),
         BaseCall::CatalogUserOnly(value)
         | BaseCall::OldGptResponseFormatDrop(value)
-        | BaseCall::UnknownReasoningEffort(value) => Ok(json!(config(&value.config).supported_params(&value.model, &CatalogCapabilities { chat_models: value.chat_models.clone(), text_models: value.text_models.clone() }))),
+        | BaseCall::UnknownReasoningEffort(value) => {
+            Ok(json!(config(&value.config).supported_params(
+                &value.model,
+                &CatalogCapabilities {
+                    chat_models: value.chat_models.clone(),
+                    text_models: value.text_models.clone()
+                }
+            )))
+        }
         BaseCall::BaseParameterAllowlist(value) => Ok(mapped(value)),
         BaseCall::BaseAuthOverride(value) => {
             Ok(json!(config(&value.config).validate_environment()))
@@ -165,13 +201,30 @@ fn invoke(input: &BaseCall) -> Result<Value, Box<HelperError>> {
         ))),
         BaseCall::OpenaiErrorDefaults(value) => error_value(value),
         BaseCall::MetadataFilterLimit(value) => {
-            serde_json::to_value(metadata_filter_limit(value.metadata.as_ref()))
-                .map_err(|error| Box::new(HelperError { class: String::from("InvalidInput"), status: None, error_type: None, param: None, code: None, message: error.to_string() }))
+            serde_json::to_value(metadata_filter_limit(value.metadata.as_ref())).map_err(|error| {
+                Box::new(HelperError {
+                    class: String::from("InvalidInput"),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: error.to_string(),
+                })
+            })
         }
         BaseCall::OverlappingApiBasePath(value) => {
             overlapping_api_base_path(&value.api_base, &value.ending_path)
                 .map(Value::String)
-                .map_err(|error| Box::new(HelperError { class: String::from("InvalidInput"), status: None, error_type: None, param: None, code: None, message: error.to_string() }))
+                .map_err(|error| {
+                    Box::new(HelperError {
+                        class: String::from("InvalidInput"),
+                        status: None,
+                        error_type: None,
+                        param: None,
+                        code: None,
+                        message: error.to_string(),
+                    })
+                })
         }
     }
 }
