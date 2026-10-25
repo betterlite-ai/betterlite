@@ -145,6 +145,10 @@ scope:
   - tools/oracle/fixtures/request-intake/**
   - crates/betterlite-config/src/sections/request_intake.rs
   - crates/betterlite-config/src/sections/request_intake/**
+  - tools/oracle/helpers/b1137.py
+  - tools/oracle/helpers/b1137/**
+  - tools/oracle/src/helpers/server/b1137.rs
+  - tools/oracle/src/helpers/server/b1137/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1993-L2580

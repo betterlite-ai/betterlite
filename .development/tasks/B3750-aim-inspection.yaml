@@ -34,6 +34,10 @@ scope:
     - tools/oracle/cases/guardrails/aim/**
     - crates/betterlite-config/src/sections/aim_inspection.rs
     - crates/betterlite-config/src/sections/aim_inspection/**
+    - tools/oracle/helpers/b3750.py
+    - tools/oracle/helpers/b3750/**
+    - tools/oracle/src/helpers/guardrails/b3750.rs
+    - tools/oracle/src/helpers/guardrails/b3750/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aim/aim.py#L105-L465

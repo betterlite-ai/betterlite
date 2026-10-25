@@ -54,6 +54,10 @@ scope:
   - tools/oracle/cases/sdk-http/vector-store-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-transport-*
   - Cargo.lock
+  - tools/oracle/helpers/b2402.py
+  - tools/oracle/helpers/b2402/**
+  - tools/oracle/src/helpers/core_ops/b2402.rs
+  - tools/oracle/src/helpers/core_ops/b2402/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10494-L10751

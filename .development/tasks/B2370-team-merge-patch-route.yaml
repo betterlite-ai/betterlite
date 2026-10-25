@@ -37,6 +37,10 @@ scope:
     - crates/betterlite-server/src/app/**
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/cases/management/team-merge-patch/**
+    - tools/oracle/helpers/b2370.py
+    - tools/oracle/helpers/b2370/**
+    - tools/oracle/src/helpers/server/b2370.rs
+    - tools/oracle/src/helpers/server/b2370/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2568-L2642

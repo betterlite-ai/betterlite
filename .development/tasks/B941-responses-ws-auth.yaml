@@ -173,6 +173,10 @@ scope:
   - tools/oracle/fixtures/responses-ws-auth/**
   - crates/betterlite-config/src/sections/responses_ws_auth.rs
   - crates/betterlite-config/src/sections/responses_ws_auth/**
+  - tools/oracle/helpers/b941.py
+  - tools/oracle/helpers/b941/**
+  - tools/oracle/src/helpers/server/b941.rs
+  - tools/oracle/src/helpers/server/b941/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1316-L1384

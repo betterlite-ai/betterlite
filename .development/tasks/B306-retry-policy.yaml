@@ -54,6 +54,10 @@ scope:
   - crates/betterlite-router/fuzz/corpus/retry_after/retry-policy-*
   - crates/betterlite-config/src/sections/retry_policy.rs
   - crates/betterlite-config/src/sections/retry_policy/**
+  - tools/oracle/helpers/b306.py
+  - tools/oracle/helpers/b306/**
+  - tools/oracle/src/helpers/router/b306.rs
+  - tools/oracle/src/helpers/router/b306/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/get_retry_from_policy.py#L19-L70

@@ -38,6 +38,10 @@ scope:
     - crates/betterlite-config/src/sso/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-services-*
     - tools/oracle/cases/sso/services/**
+    - tools/oracle/helpers/b063.py
+    - tools/oracle/helpers/b063/**
+    - tools/oracle/src/helpers/server/b063.rs
+    - tools/oracle/src/helpers/server/b063/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L977-L1127

@@ -59,6 +59,10 @@ scope:
   - crates/betterlite-openai/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/deployment_clients.rs
   - crates/betterlite-config/src/sections/deployment_clients/**
+  - tools/oracle/helpers/b303.py
+  - tools/oracle/helpers/b303/**
+  - tools/oracle/src/helpers/router/b303.rs
+  - tools/oracle/src/helpers/router/b303/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/client_initalization_utils.py#L16-L78

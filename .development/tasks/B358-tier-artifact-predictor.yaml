@@ -62,6 +62,10 @@ scope:
   - crates/betterlite-router/fuzz/corpus/tier_data/tier-artifact-predictor-*
   - crates/betterlite-config/src/sections/tier_artifact_predictor.rs
   - crates/betterlite-config/src/sections/tier_artifact_predictor/**
+  - tools/oracle/helpers/b358.py
+  - tools/oracle/helpers/b358/**
+  - tools/oracle/src/helpers/router/b358.rs
+  - tools/oracle/src/helpers/router/b358/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/tier_predictor.py#L14-L157

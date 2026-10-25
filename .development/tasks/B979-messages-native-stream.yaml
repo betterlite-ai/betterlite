@@ -39,6 +39,10 @@ scope:
   - tools/oracle/fuzz/corpus/sdk_http_case/messages-native-stream-*
   - crates/betterlite-config/src/sections/messages_native_stream.rs
   - crates/betterlite-config/src/sections/messages_native_stream/**
+  - tools/oracle/helpers/b979.py
+  - tools/oracle/helpers/b979/**
+  - tools/oracle/src/helpers/core_ops/b979.rs
+  - tools/oracle/src/helpers/core_ops/b979/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L29-L30

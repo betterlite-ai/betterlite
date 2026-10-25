@@ -59,6 +59,10 @@ scope:
   - crates/betterlite-router/fuzz/corpus/plugin_json/routing-plugins-*
   - crates/betterlite-config/src/sections/routing_plugins.rs
   - crates/betterlite-config/src/sections/routing_plugins/**
+  - tools/oracle/helpers/b363.py
+  - tools/oracle/helpers/b363/**
+  - tools/oracle/src/helpers/router/b363.rs
+  - tools/oracle/src/helpers/router/b363/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/router_plugins.json#L1-L28

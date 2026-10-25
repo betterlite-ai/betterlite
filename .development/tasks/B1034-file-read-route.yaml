@@ -34,6 +34,10 @@ scope:
   - crates/betterlite-core/src/api/file_read_route/**
   - tools/oracle/cases/api/file-read-route/**
   - tools/oracle/fixtures/http-scenarios/file-read-route/**
+  - tools/oracle/helpers/b1034.py
+  - tools/oracle/helpers/b1034/**
+  - tools/oracle/src/helpers/server/b1034.rs
+  - tools/oracle/src/helpers/server/b1034/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1235-L1431

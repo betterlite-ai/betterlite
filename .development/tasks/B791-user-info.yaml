@@ -140,6 +140,10 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/user-info-*
     - crates/betterlite-config/src/sections/user_info.rs
     - crates/betterlite-config/src/sections/user_info/**
+    - tools/oracle/helpers/b791.py
+    - tools/oracle/helpers/b791/**
+    - tools/oracle/src/helpers/server/b791.rs
+    - tools/oracle/src/helpers/server/b791/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L763-L1283

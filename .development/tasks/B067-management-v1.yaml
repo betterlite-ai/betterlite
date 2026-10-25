@@ -43,6 +43,10 @@ scope:
     - crates/betterlite-server/src/routes/**
     - tools/oracle/cases/http/management-member-actions/**
     - tools/oracle/cases/http/management-v1-mount/**
+    - tools/oracle/helpers/b067.py
+    - tools/oracle/helpers/b067/**
+    - tools/oracle/src/helpers/server/b067.rs
+    - tools/oracle/src/helpers/server/b067/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/__init__.py#L1-L26
