@@ -1,210 +1,170 @@
-#![expect(
-    clippy::restriction,
-    clippy::pedantic,
-    clippy::style,
-    clippy::complexity,
-    clippy::nursery,
-    reason = "Cache-plan JSON is intentionally validation-aware and preserves provider insertion order for fingerprints"
-)]
-
-#[path = "cache_plan_planning.rs"]
-mod cache_plan_planning;
-#[path = "cache_plan_validation.rs"]
-mod cache_plan_validation;
-use cache_plan_planning::{
-    cacheable, chained_hashes, digest, entry_fingerprint, lookbacks, position_groups, prefix_body,
-    selected_settings,
-};
-use cache_plan_validation::{cache_ttl, valid_shape};
-use serde_json::{Map, Value};
+mod breakpoints;
+mod decode;
+mod json;
+mod prefix;
 mod tests;
-pub type JsonObject = Map<String, Value>;
-#[derive(Clone, Debug, Eq, PartialEq)]
+pub mod wire;
+
+use serde::Serialize;
+use serde_json::value::RawValue;
+
+use crate::cache_plan::breakpoints::{groups, lookback, markers};
+use crate::cache_plan::decode::{Decoded, Section, decode};
+use crate::cache_plan::json::digest;
+use crate::cache_plan::prefix::prefix_body;
+use crate::cache_plan::wire::Ttl;
+
+const ENTRY_SCOPE: &str = "native-cache-prefix-v2";
+
+#[derive(Debug, Clone, Serialize)]
 pub struct CacheBoundary {
     pub fingerprint: String,
-    pub prefix_body: JsonObject,
+    pub prefix_body: Box<RawValue>,
     pub ttl_seconds: u32,
     pub lookback_fingerprints: Vec<String>,
     pub content_fingerprint: String,
     pub lookback_content_fingerprints: Vec<String>,
 }
-#[derive(Clone, Debug, Eq, PartialEq)]
+
+#[derive(Debug, Clone, Serialize)]
 pub struct PromptCachePlan {
-    pub full_body: JsonObject,
+    pub full_body: Box<RawValue>,
     pub breakpoints: Vec<CacheBoundary>,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UnsupportedCacheReason {
-    UnsupportedPromptShape,
-    ConflictingCacheTtl,
-    TooManyCacheBreakpoints,
-    InvalidCacheTtlOrder,
-    UnsupportedThinkingCache,
-    TokenCountUnavailable,
-    InconsistentPrefixTokenCount,
-}
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UnsupportedCachePlan {
-    pub reason: UnsupportedCacheReason,
-}
-#[derive(Clone, Debug, Eq, PartialEq)]
+
+#[derive(Debug, Clone, Serialize)]
 pub struct PromptPrefix {
-    pub prefix_body: JsonObject,
+    pub prefix_body: Box<RawValue>,
     pub fingerprint: String,
     pub fingerprints: Vec<String>,
     pub ttl_seconds: u32,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Section {
-    Tools,
-    System,
-    Messages,
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, thiserror::Error)]
+#[serde(rename_all = "snake_case")]
+pub enum UnsupportedCachePlan {
+    #[error("the request does not have a shape the cache planner models")]
+    UnsupportedPromptShape,
+    #[error("the request cache_control ttl differs from the marker on the last cacheable block")]
+    ConflictingCacheTtl,
+    #[error("the request marks more than four cache breakpoints")]
+    TooManyCacheBreakpoints,
+    #[error("a 1h cache breakpoint follows a 5m one")]
+    InvalidCacheTtlOrder,
+    #[error("the model's thinking cache semantics are not known")]
+    UnsupportedThinkingCacheSemantics,
+    #[error("the provider did not count the prompt tokens")]
+    TokenCountUnavailable,
+    #[error("a longer prefix counted fewer tokens than a shorter one")]
+    InconsistentPrefixTokenCount,
 }
-#[derive(Clone, Debug)]
-struct Position {
-    section: Section,
-    message_index: i64,
-    role: String,
-    block: JsonObject,
-    marker: Option<u32>,
+
+#[derive(Serialize)]
+struct Settings<'plan> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<&'plan RawValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_config: Option<&'plan RawValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    speed: Option<&'plan RawValue>,
 }
-pub fn parse_cache_plan(body: &JsonObject) -> Result<PromptCachePlan, UnsupportedCachePlan> {
-    if !valid_shape(body, true) {
-        return Err(unsupported(UnsupportedCacheReason::UnsupportedPromptShape));
-    }
-    let mut positions: Vec<Position> = body
-        .get("tools")
-        .and_then(Value::as_array)
-        .map(|tools| {
-            tools
-                .iter()
-                .map(|tool| cache_plan_planning::make_position(Section::Tools, -1, "", tool))
-                .collect()
-        })
-        .unwrap_or_default();
-    if let Some(system) = body.get("system") {
-        positions.extend(
-            cache_plan_planning::blocks(system)
-                .into_iter()
-                .map(|block| cache_plan_planning::make_position(Section::System, -1, "", block)),
-        );
-    }
-    if let Some(messages) = body.get("messages").and_then(Value::as_array) {
-        for (index, value) in messages.iter().enumerate() {
-            let Some(message) = value.as_object() else {
-                continue;
-            };
-            let Some(content) = message.get("content") else {
-                continue;
-            };
-            for block in cache_plan_planning::blocks(content) {
-                positions.push(cache_plan_planning::make_position(
-                    Section::Messages,
-                    i64::try_from(index).unwrap_or(i64::MAX),
-                    message.get("role").and_then(Value::as_str).unwrap_or(""),
-                    block,
-                ));
-            }
-        }
-    }
-    let markers = markers(body, &positions)?;
-    let hashes = chained_hashes(&positions, body, &selected_settings(body));
-    let groups = position_groups(&positions);
-    let mut breakpoints = Vec::new();
-    for (index, ttl) in markers {
-        let Some(hash) = hashes.get(index) else {
-            return Err(unsupported(UnsupportedCacheReason::UnsupportedPromptShape));
-        };
-        breakpoints.push(CacheBoundary {
-            fingerprint: entry_fingerprint(hash, ttl),
-            prefix_body: prefix_body(body, &positions, index),
-            ttl_seconds: ttl,
-            lookback_fingerprints: lookbacks(&groups, &hashes, index, ttl, true),
-            content_fingerprint: hash.clone(),
-            lookback_content_fingerprints: lookbacks(&groups, &hashes, index, ttl, false),
-        });
-    }
-    Ok(PromptCachePlan {
-        full_body: body.clone(),
-        breakpoints,
-    })
+
+pub fn parse_cache_plan(body: &str) -> Result<PromptCachePlan, UnsupportedCachePlan> {
+    let Ok(decoded) = decode(body) else {
+        return Err(UnsupportedCachePlan::UnsupportedPromptShape);
+    };
+    plan(decoded)
 }
-fn markers(
-    body: &JsonObject,
-    positions: &[Position],
-) -> Result<Vec<(usize, u32)>, UnsupportedCachePlan> {
-    let automatic = positions
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(_, item)| cacheable(item));
-    let mut result: Vec<(usize, u32)> = positions
-        .iter()
-        .enumerate()
-        .filter_map(|(index, item)| item.marker.map(|ttl| (index, ttl)))
-        .collect();
-    if let Some(request_ttl) = body.get("cache_control").and_then(cache_ttl) {
-        if let Some((index, item)) = automatic {
-            if let Some(position_ttl) = item.marker {
-                if position_ttl != request_ttl {
-                    return Err(unsupported(UnsupportedCacheReason::ConflictingCacheTtl));
-                }
-            } else {
-                result.push((index, request_ttl));
-            }
-        }
-    }
-    result.sort_by_key(|item| item.0);
-    if result.len() > 4 {
-        return Err(unsupported(UnsupportedCacheReason::TooManyCacheBreakpoints));
-    }
-    if result.windows(2).any(|pair| {
-        pair.first().map(|item| item.1).unwrap_or(0) < pair.last().map(|item| item.1).unwrap_or(0)
-    }) {
-        return Err(unsupported(UnsupportedCacheReason::InvalidCacheTtlOrder));
-    }
-    Ok(result)
-}
+
 #[must_use]
-pub fn parse_prompt(body: &JsonObject) -> Option<PromptPrefix> {
-    if !valid_shape(body, false) {
-        return None;
-    }
-    let plan = parse_cache_plan(body).ok()?;
-    if plan.breakpoints.len() != 1 {
-        return None;
-    }
-    let boundary = plan.breakpoints.first()?;
+pub fn parse_prompt(body: &str) -> Option<PromptPrefix> {
+    let decoded = decode(body).ok().filter(|decoded| decoded.predictable)?;
+    let [boundary] = <[CacheBoundary; 1]>::try_from(plan(decoded).ok()?.breakpoints).ok()?;
     Some(PromptPrefix {
-        prefix_body: boundary.prefix_body.clone(),
-        fingerprint: boundary.fingerprint.clone(),
-        fingerprints: boundary.lookback_fingerprints.clone(),
+        prefix_body: boundary.prefix_body,
+        fingerprint: boundary.fingerprint,
+        fingerprints: boundary.lookback_fingerprints,
         ttl_seconds: boundary.ttl_seconds,
     })
 }
-#[must_use]
+
 pub fn cache_scope(
     caller_key_hash: &str,
     deployment_id: &str,
     provider_key: &str,
     model: &str,
     anthropic_version: &str,
-) -> String {
-    let scope = digest(&Value::Array(
-        [
-            caller_key_hash,
-            deployment_id,
-            provider_key,
-            model,
-            anthropic_version,
-        ]
-        .into_iter()
-        .map(|item| Value::String(item.to_owned()))
-        .collect(),
-    ));
-    scope
+) -> Result<String, serde_json::Error> {
+    digest(&(
+        caller_key_hash,
+        deployment_id,
+        provider_key,
+        model,
+        anthropic_version,
+    ))
 }
-const fn unsupported(reason: UnsupportedCacheReason) -> UnsupportedCachePlan {
-    let plan = UnsupportedCachePlan { reason };
-    plan
+
+fn plan(decoded: Decoded) -> Result<PromptCachePlan, UnsupportedCachePlan> {
+    let markers = markers(&decoded)?;
+    let Ok(breakpoints) = breakpoints(&decoded, &markers) else {
+        return Err(UnsupportedCachePlan::UnsupportedPromptShape);
+    };
+    Ok(PromptCachePlan {
+        full_body: decoded.full_body,
+        breakpoints,
+    })
+}
+
+fn breakpoints(
+    decoded: &Decoded,
+    markers: &[Option<Ttl>],
+) -> Result<Vec<CacheBoundary>, serde_json::Error> {
+    let chain = chain(decoded)?;
+    let groups = groups(&decoded.positions);
+    let mut breakpoints = Vec::new();
+    for (index, (hash, marker)) in chain.iter().zip(markers).enumerate() {
+        let Some(ttl) = marker else {
+            continue;
+        };
+        let seconds = ttl.seconds();
+        let window = lookback(&groups, &chain, index);
+        let mut fingerprints = Vec::with_capacity(window.len());
+        for earlier in &window {
+            fingerprints.push(digest(&(ENTRY_SCOPE, earlier, seconds))?);
+        }
+        breakpoints.push(CacheBoundary {
+            fingerprint: digest(&(ENTRY_SCOPE, hash, seconds))?,
+            prefix_body: prefix_body(decoded, index)?,
+            ttl_seconds: seconds,
+            lookback_fingerprints: fingerprints,
+            content_fingerprint: hash.clone(),
+            lookback_content_fingerprints: window.into_iter().map(str::to_owned).collect(),
+        });
+    }
+    Ok(breakpoints)
+}
+
+fn chain(decoded: &Decoded) -> Result<Vec<String>, serde_json::Error> {
+    let mut previous = digest(&Settings {
+        thinking: decoded.thinking.as_deref(),
+        output_config: decoded.output_config.as_deref(),
+        speed: decoded.speed.as_deref(),
+    })?;
+    let mut chain = Vec::with_capacity(decoded.positions.len());
+    for position in &decoded.positions {
+        let tool_choice = match position.section {
+            Section::Messages => decoded.tool_choice.as_deref(),
+            Section::Tools | Section::System => None,
+        };
+        let current = digest(&(
+            position.section,
+            position.message_index,
+            &position.role,
+            &position.fields,
+            tool_choice,
+        ))?;
+        previous = digest(&(&previous, &current))?;
+        chain.push(previous.clone());
+    }
+    Ok(chain)
 }

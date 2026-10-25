@@ -10,7 +10,6 @@ cargo-fuzz = true
 [dependencies]
 betterlite-anthropic = { path = ".." }
 libfuzzer-sys = "0.4.9"
-serde_json = "1.0.154"
 
 [[bin]]
 name = "cache_plan_decoder"
