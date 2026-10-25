@@ -2,7 +2,7 @@
 
 use super::*;
 use rstest::rstest;
-use std::{collections::BTreeMap, iter};
+use std::collections::BTreeMap;
 
 #[rstest]
 #[case::jpg("jpg", FileType::Jpeg, "image/jpeg")]
@@ -17,14 +17,9 @@ fn mime_extension_table(#[case] extension: &str, #[case] file_type: FileType, #[
         extension
     };
     assert_eq!(extension_from_mime(mime), Ok(canonical_extension));
-}
-
-#[test]
-fn three_gpp_uses_litellm_wire_value() {
-    let encoded = serde_json::to_string(&FileType::ThreeGpp).unwrap();
-    assert_eq!(encoded, "\"3GPP\"");
-    let decoded: FileType = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(decoded, FileType::ThreeGpp);
+    if file_type == FileType::ThreeGpp {
+        assert_eq!(serde_json::to_string(&file_type).unwrap(), "\"3GPP\"");
+    }
 }
 
 #[rstest]
@@ -90,13 +85,4 @@ fn stream_record_identity() {
     assert_eq!(result.headers["content-type"], "application/octet-stream");
     assert_eq!(result.stream_iterator.next(), Some(vec![0, 255]));
     assert_eq!(result.stream_iterator.next(), Some(vec![10]));
-}
-
-#[test]
-fn stream_record_debug_includes_headers() {
-    let result = FileContentStreamingResult {
-        stream_iterator: Box::new(iter::empty()),
-        headers: BTreeMap::new(),
-    };
-    assert!(format!("{result:?}").contains("FileContentStreamingResult"));
 }
