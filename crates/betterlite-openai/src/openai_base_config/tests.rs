@@ -2,7 +2,7 @@
 use super::forwarding::{ForwardingFailure, ResponseForward, forward_response};
 use super::{
     CatalogCapabilities, ConfigFamily, Headers, ModelFamily, OpenAiConfig, OpenAiSettings,
-    is_gpt_reasoning_series_name, is_o_series_model, model_family,
+    azure_model_family, is_gpt_reasoning_series_name, is_o_series_model, model_family,
 };
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -35,7 +35,7 @@ fn config(family: ConfigFamily) -> OpenAiConfig {
 fn openai_base_config_cases(#[case] case: u8) { let models = catalog(); match case {
 0 => assert!(is_o_series_model("openai/o3", &models) && !is_o_series_model("o4", &models)),
 1 => assert!(is_gpt_reasoning_series_name("proxy/gpt-5.1") && !is_gpt_reasoning_series_name("gpt-5-chat")),
-2 => assert!(models.chat_models.contains("gpt-audio") && "gpt-audio".contains("audio") && model_family("gpt-audio", &models) == ModelFamily::Audio && model_family("text-audio", &models) == ModelFamily::Unknown && !(models.chat_models.contains("responses/gpt-audio") && "responses/gpt-audio".contains("audio")) && !models.chat_models.contains("text-audio")),
+2 => { assert_eq!(model_family("gpt-audio", &models), ModelFamily::Audio); assert_eq!(model_family("text-audio", &models), ModelFamily::Unknown); assert_eq!(model_family("responses/gpt-audio", &models), ModelFamily::Gpt); },
 3 => assert!(config(ConfigFamily::OpenAi).supported_params("responses/gpt-4o", &models).contains(&"user")),
 4 => { let supported = config(ConfigFamily::OpenAi).supported_params("gpt-4", &models); assert!(!supported.contains(&"response_format") && config(ConfigFamily::OpenAi).supported_params("gpt-4o", &models).contains(&"response_format")); },
 5 => assert_ne!(config(ConfigFamily::OpenAi).supported_params("custom", &models), config(ConfigFamily::AzureAiStudio).supported_params("custom", &models)),
@@ -46,7 +46,7 @@ fn openai_base_config_cases(#[case] case: u8) { let models = catalog(); match ca
 10 => { let expected_headers = Some(Headers::from([(String::from("x"), String::from("y"))])); let expected_body = Some(Map::from_iter([(String::from("detail"), json!("body"))])); let expected_request = super::forwarding::ErrorRequest { method: String::from("POST"), url: String::from("https://api.openai.com/v1") }; let expected = super::forwarding::OpenAiErrorRecord { status_code: 429, message: String::from("busy"), headers: expected_headers, request: expected_request.clone(), response: super::forwarding::ErrorResponse { status_code: 429, request: expected_request }, body: expected_body }; let record = super::forwarding::OpenAiErrorRecord::from_parts(super::forwarding::OpenAiErrorParts { status_code: 429, message: String::from("busy"), headers: Some(Headers::from([(String::from("x"), String::from("y"))])), request: None, response: None, body: Some(Map::from_iter([(String::from("detail"), json!("body"))])) }); assert_eq!(record, expected); },
 11 => { let metadata = IndexMap::from_iter(once((String::from("hidden_params"), json!("hidden"))).chain(once((String::from("number"), json!(3_i32))).chain((0_i32..18_i32).map(|index| (format!("key{index:02}"), json!(format!("value{index:02}"))))))); let filtered = super::metadata_filter_limit(Some(&metadata)).expect("metadata"); assert_eq!(filtered.len(), 16); assert!(!filtered.contains_key("hidden_params") && !filtered.contains_key("number") && filtered.contains_key("key15") && !filtered.contains_key("key16")); assert!(super::metadata_filter_limit(None).is_none()); },
 12 => assert_eq!(super::overlapping_api_base_path("https://example.test/v1", "/v1/chat").expect("valid URL"), "https://example.test/v1/chat"),
-13 => assert!((is_gpt_reasoning_series_name("gpt5_series/custom") || "gpt5_series/custom".contains("gpt5_series")) && !(is_gpt_reasoning_series_name("GPT5_SERIES/custom") || "GPT5_SERIES/custom".contains("gpt5_series"))),
+13 => { assert_eq!(azure_model_family("gpt5_series/custom"), ModelFamily::GptReasoning); assert_eq!(azure_model_family("GPT5_SERIES/custom"), ModelFamily::Gpt); assert_eq!(azure_model_family("proxy/gpt-6"), ModelFamily::GptReasoning); assert_eq!(azure_model_family("gpt-5-chat"), ModelFamily::Gpt); },
 _ => panic!("unknown case {case}") } }
 #[test]
 #[rustfmt::skip]

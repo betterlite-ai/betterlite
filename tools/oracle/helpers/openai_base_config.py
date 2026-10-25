@@ -67,19 +67,18 @@ def projection(fields: Object) -> Json:
     events: list[Json] = []
     raw = text(fields, "raw_text")
     raw_headers = cast(dict[str, str], fields.get("raw_headers", {}))
-    response_headers = dict(httpx.Response(200, text=raw, headers=raw_headers).headers)
 
     def recorder(**kwargs: object) -> ModelResponse:
         response_object = kwargs.get("response_object")
         hidden_params = kwargs.get("hidden_params")
-        response_headers = kwargs.get("_response_headers")
+        projected_headers = kwargs.get("_response_headers")
         if not isinstance(hidden_params, dict) or "headers" not in hidden_params:
             raise TypeError("missing hidden response headers")
-        if not isinstance(response_headers, dict):
+        if not isinstance(projected_headers, dict):
             raise TypeError("missing response headers")
         hidden = cast(dict[str, object], hidden_params)
         hidden_headers = dict(cast(httpx.Headers, hidden["headers"]))
-        events.append(cast(Json, [response_object, hidden_headers, response_headers]))
+        events.append(cast(Json, [response_object, hidden_headers, projected_headers]))
         return ModelResponse()
 
     class Recording:
@@ -87,10 +86,10 @@ def projection(fields: Object) -> Json:
             self.model_call_details: dict[str, object] = {}
 
         def post_call(self, original_response: str) -> None:
-            events.append(cast(Json, ["post_call", original_response, response_headers]))
-            self.model_call_details["response_headers"] = response_headers
+            events.append(["post_call", original_response])
 
     logging_obj = Recording()
+    result: Object = {"events": events}
     with patch.object(openai_module, "convert_to_model_response_object", side_effect=recorder):
         try:
             OpenAIConfig().transform_response(  # pyright: ignore[reportUnknownMemberType]
@@ -100,8 +99,10 @@ def projection(fields: Object) -> Json:
                 request_data={}, messages=cast(list[AllMessageValues], []), optional_params={},
                 litellm_params={}, encoding=None)
         except json.JSONDecodeError as error:
-            return {"events": events, "error": type(error).__name__}
-    return {"events": events}
+            result["error"] = type(error).__name__
+    logged_headers = dict(cast(httpx.Headers, logging_obj.model_call_details["response_headers"]))
+    cast(list[Json], events[0]).append(cast(Json, logged_headers))
+    return result
 
 def error(fields: Object) -> Json:
     status = fields.get("status_code")

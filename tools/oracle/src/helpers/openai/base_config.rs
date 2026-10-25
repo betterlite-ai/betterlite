@@ -4,8 +4,9 @@ use betterlite_openai::openai_base_config::forwarding::{
     forward_response,
 };
 use betterlite_openai::openai_base_config::{
-    CatalogCapabilities, ConfigFamily, OpenAiConfig, OpenAiSettings, is_gpt_reasoning_series_name,
-    is_o_series_model, metadata_filter_limit, overlapping_api_base_path,
+    CatalogCapabilities, ConfigFamily, ModelFamily, OpenAiConfig, OpenAiSettings,
+    azure_model_family, is_gpt_reasoning_series_name, is_o_series_model, metadata_filter_limit,
+    model_family, overlapping_api_base_path,
 };
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -90,10 +91,6 @@ fn config(input: &ConfigInput) -> OpenAiConfig {
     }
 }
 #[rustfmt::skip]
-fn invalid_error(error: impl std::fmt::Display) -> HelperError {
-    let message = error.to_string();
-    HelperError { class: String::from("InvalidInput"), status: None, error_type: None, param: None, code: None, message }
-}
 fn error_value(input: &ErrorInput) -> Result<Value, Box<HelperError>> {
     let record = OpenAiErrorRecord::from_parts(OpenAiErrorParts {
         status_code: input.status_code,
@@ -103,19 +100,9 @@ fn error_value(input: &ErrorInput) -> Result<Value, Box<HelperError>> {
         response: None,
         body: input.body.clone(),
     });
-    serde_json::to_value(record).map_err(|error| Box::new(invalid_error(error)))
-}
-fn metadata_value(input: &MetadataInput) -> Result<Value, Box<HelperError>> {
-    match serde_json::to_value(metadata_filter_limit(input.metadata.as_ref())) {
-        Ok(value) => Ok(value),
-        Err(error) => Err(Box::new(invalid_error(error))),
-    }
-}
-fn overlap_value(input: &OverlapInput) -> Result<Value, Box<HelperError>> {
-    match overlapping_api_base_path(&input.api_base, &input.ending_path) {
-        Ok(value) => Ok(Value::String(value)),
-        Err(error) => Err(Box::new(invalid_error(error))),
-    }
+    serde_json::to_value(record).map_err(|error| {
+        Box::new(HelperError { class: String::from("InvalidInput"), status: None, error_type: None, param: None, code: None, message: error.to_string() })
+    })
 }
 fn forwarding(input: &ProjectionInput) -> Value {
     let events = Rc::new(RefCell::new(Vec::new()));
@@ -170,31 +157,29 @@ fn mapped(value: &MappingInput) -> Value {
     );
     Value::Object(existing)
 }
+#[rustfmt::skip]
 fn invoke(input: &BaseCall) -> Result<Value, Box<HelperError>> {
     match input {
         BaseCall::OSeriesRouting(value) => Ok(json!(is_o_series_model(
             &value.model,
-            &CatalogCapabilities {
-                chat_models: value.chat_models.clone(),
-                text_models: value.text_models.clone()
-            }
+            &CatalogCapabilities { chat_models: value.chat_models.clone(), text_models: value.text_models.clone() }
         ))),
         BaseCall::Gpt5Routing(value) => Ok(json!(is_gpt_reasoning_series_name(&value.model))),
         BaseCall::AudioRouting(value) => Ok(json!(
-            value.chat_models.contains(&value.model) && value.model.contains("audio")
+            model_family(
+                &value.model,
+                &CatalogCapabilities { chat_models: value.chat_models.clone(), text_models: value.text_models.clone() }
+            ) == ModelFamily::Audio
         )),
         BaseCall::AzureGpt5RoutePredicate(value) => Ok(json!(
-            is_gpt_reasoning_series_name(&value.model) || value.model.contains("gpt5_series")
+            azure_model_family(&value.model) == ModelFamily::GptReasoning
         )),
         BaseCall::CatalogUserOnly(value)
         | BaseCall::OldGptResponseFormatDrop(value)
         | BaseCall::UnknownReasoningEffort(value) => {
             Ok(json!(config(&value.config).supported_params(
                 &value.model,
-                &CatalogCapabilities {
-                    chat_models: value.chat_models.clone(),
-                    text_models: value.text_models.clone()
-                }
+                &CatalogCapabilities { chat_models: value.chat_models.clone(), text_models: value.text_models.clone() }
             )))
         }
         BaseCall::BaseParameterAllowlist(value) => Ok(mapped(value)),
@@ -208,8 +193,10 @@ fn invoke(input: &BaseCall) -> Result<Value, Box<HelperError>> {
             &value.optional
         ))),
         BaseCall::OpenaiErrorDefaults(value) => error_value(value),
-        BaseCall::MetadataFilterLimit(value) => metadata_value(value),
-        BaseCall::OverlappingApiBasePath(value) => overlap_value(value),
+        BaseCall::MetadataFilterLimit(value) => serde_json::to_value(metadata_filter_limit(value.metadata.as_ref()))
+            .map_err(|error| Box::new(HelperError { class: String::from("InvalidInput"), status: None, error_type: None, param: None, code: None, message: error.to_string() })),
+        BaseCall::OverlappingApiBasePath(value) => overlapping_api_base_path(&value.api_base, &value.ending_path).map(Value::String)
+            .map_err(|error| Box::new(HelperError { class: String::from("InvalidInput"), status: None, error_type: None, param: None, code: None, message: error.to_string() })),
     }
 }
 pub(crate) struct Op;

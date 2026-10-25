@@ -154,6 +154,14 @@ pub fn model_family(model: &str, catalog: &CatalogCapabilities) -> ModelFamily {
         ModelFamily::Unknown
     }
 }
+#[must_use]
+pub fn azure_model_family(model: &str) -> ModelFamily {
+    if is_gpt_reasoning_series_name(model) || model.contains("gpt5_series") {
+        ModelFamily::GptReasoning
+    } else {
+        ModelFamily::Gpt
+    }
+}
 pub fn is_o_series_model(model: &str, catalog: &CatalogCapabilities) -> bool {
     let name = model.rsplit('/').next().unwrap_or(model);
     name.starts_with('o')
