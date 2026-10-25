@@ -1,7 +1,7 @@
 id: B668
 milestone: M3 providers
 title: OpenAI base chat parameter policy
-status: todo
+status: in-progress
 depends_on: [B171, B2202, B2214]
 file: tasks/B668-openai-base-config.yaml
 covers:
