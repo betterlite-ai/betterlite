@@ -849,6 +849,7 @@ OPERATIONS: frozenset[str] = frozenset(
         "scim_record",
         "scim_user_patch",
         "scim_user_values",
+        "secret_codec",
         "sentry_scrubbing",
         "service_logging",
         "session_cursor",

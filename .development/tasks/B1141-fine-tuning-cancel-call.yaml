@@ -16,13 +16,17 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/fine_tuning_cancel_call.rs
   - crates/betterlite-core/src/api/fine_tuning_cancel_call/**
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/fine_tuning_provider_config.rs
   - crates/betterlite-server/src/api/fine_tuning_provider_config/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/fine_tuning_provider_config.rs
+  - crates/betterlite-config/src/api/fine_tuning_provider_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/finetune-settings-*
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/fine_tuning_cancel.rs

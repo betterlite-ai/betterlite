@@ -1,0 +1,5 @@
+kind: helper
+name: base-request-overlay
+call: {openai_base_config: {base_request_overlay: {model: gpt-4o, messages: [{role: user, content: hi}], optional: {temperature: 0.2, model: override}}}}
+env: {}
+compare: {ignore: []}

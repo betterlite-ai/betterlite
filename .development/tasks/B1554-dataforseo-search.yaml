@@ -37,10 +37,13 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/api/search_providers.rs
+    - crates/betterlite-core/src/api/search_providers/**
     - crates/betterlite-core/src/api/search_providers/dataforseo.rs
     - crates/betterlite-core/src/api/search_providers/dataforseo/**
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/dataforseo.rs
+    - crates/betterlite-config/src/providers/dataforseo/**
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/dataforseo_reply.rs
     - crates/betterlite-core/fuzz/corpus/dataforseo_reply/**

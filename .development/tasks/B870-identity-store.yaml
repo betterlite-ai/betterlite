@@ -85,8 +85,11 @@ scope:
     - tools/oracle/cases/helpers/identity-store/**
     - tools/oracle/fuzz/corpus/helper_case/identity-store-*
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/identity-store/**
     - crates/betterlite-server/src/auth/identity_store.rs
     - crates/betterlite-server/src/auth/identity_store/**

@@ -27,6 +27,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/bfl.rs
+    - crates/betterlite-core/src/api/bfl/**
     - crates/betterlite-core/src/api/bfl/edit_call.rs
     - crates/betterlite-core/src/api/bfl/edit_call/**
     - tools/oracle/src/helpers/core_ops/bfl_edit_call.rs

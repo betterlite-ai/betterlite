@@ -7,22 +7,29 @@ publish.workspace = true
 
 [dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+betterlite-auth = { path = "../../crates/betterlite-auth" }
 betterlite-bedrock = { path = "../../crates/betterlite-bedrock" }
 betterlite-config = { path = "../../crates/betterlite-config" }
 betterlite-context = { path = "../../crates/betterlite-context" }
+betterlite-db = { path = "../../crates/betterlite-db" }
+betterlite-guardrails = { path = "../../crates/betterlite-guardrails" }
 betterlite-http = { path = "../../crates/betterlite-http" }
 betterlite-lens = { path = "../../crates/betterlite-lens" }
+betterlite-logging = { path = "../../crates/betterlite-logging" }
 betterlite-models = { path = "../../crates/betterlite-models" }
 betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
+betterlite-secrets = { path = "../../crates/betterlite-secrets" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 clap = { version = "4.6.7", features = ["derive"] }
 futures-util = { version = "0.3.34", default-features = false }
+hex = "0.4.3"
+indexmap = { version = "2.14.2", features = ["serde"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking"] }
 secrecy = "0.10.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
-serde_json = "1.0.145"
+serde_json = { version = "1.0.145", features = ["raw_value"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
 thiserror = "2.0.17"
 tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "time", "io-util", "macros", "process", "fs"] }

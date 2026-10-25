@@ -33,12 +33,14 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/chatgpt.rs
+    - crates/betterlite-openai/src/chatgpt/**
     - crates/betterlite-openai/src/chatgpt/token_store.rs
     - crates/betterlite-openai/src/chatgpt/token_store/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/auth_record.rs
     - crates/betterlite-openai/fuzz/corpus/auth_record/**
     - crates/betterlite-config/src/providers/chatgpt.rs
+    - crates/betterlite-config/src/providers/chatgpt/**
     - crates/betterlite-config/src/providers/chatgpt/token_store.rs
     - crates/betterlite-config/src/providers/chatgpt/token_store/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/chatgpt_token_store*

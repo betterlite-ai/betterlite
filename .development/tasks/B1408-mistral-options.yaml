@@ -35,8 +35,11 @@ scope:
     - crates/betterlite-openai/fixtures/mistral_reasoning.txt
     - crates/betterlite-config/src/{lib,config,settings,model,env,providers,tests}.rs
     - crates/betterlite-config/src/providers/mistral.rs
+    - crates/betterlite-config/src/providers/mistral/**
     - crates/betterlite-config/src/providers/mistral/options.rs
+    - crates/betterlite-config/src/providers/mistral/options/**
     - crates/betterlite-config/src/tests/mistral_options.rs
+    - crates/betterlite-config/src/tests/mistral_options/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/mistral_options*
     - tools/oracle/src/helpers/openai/mistral_options.rs
     - tools/oracle/src/helpers/openai/mistral_options/**

@@ -30,8 +30,11 @@ scope:
     - crates/betterlite-server/src/team_merge_patch/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/cases/management/team-merge-patch/**
   lint_tables: false

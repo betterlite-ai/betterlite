@@ -37,7 +37,9 @@ scope:
   - crates/betterlite-server/src/api/proxy_endpoint_support.rs
   - crates/betterlite-server/src/api/proxy_endpoint_support/**
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/Cargo.toml
   - tools/oracle/src/helpers/server/proxy_endpoint_support.rs
   - tools/oracle/src/helpers/server/proxy_endpoint_support/**

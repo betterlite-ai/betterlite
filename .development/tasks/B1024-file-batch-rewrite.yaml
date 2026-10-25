@@ -28,6 +28,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/file_batch_rewrite.rs
   - crates/betterlite-core/src/api/file_batch_rewrite/**
   - tools/oracle/Cargo.toml
