@@ -285,6 +285,7 @@ version = "0.1.0"
 name = "betterlite-logging"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "rstest",
  "strum",
  "thiserror",

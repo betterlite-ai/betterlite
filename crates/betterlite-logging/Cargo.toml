@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+betterlite-config = { path = "../betterlite-config" }
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tracing.workspace = true

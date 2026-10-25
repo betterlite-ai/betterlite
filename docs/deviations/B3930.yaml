@@ -1,0 +1,11 @@
+task: B3930
+deviations:
+  - what: When the ddtrace module is not available or disabled, all tracer methods return no-op implementations.
+    why: LiteLLM gracefully disables Datadog APM when the agent is absent; betterlite retains the same fallback behavior for compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dd_tracing.py#L66-L78
+  - what: Best-effort span tagging silently fails if the span lacks set_tag or set_tag_str methods, or if an operation raises an exception.
+    why: A broken APM tracer must not break request logging.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dd_tracing.py#L100-L123
+  - what: DD_BASE_URL has no literal default and resolves to None when unset.
+    why: It is an optional endpoint override in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_handler.py#L24-L29
