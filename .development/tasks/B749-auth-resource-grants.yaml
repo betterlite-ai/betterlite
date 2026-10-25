@@ -325,6 +325,6 @@ pitfalls:
   - Search-tool denials use key_model_access_denied for teams too, while vector-store denials choose the object-specific type and 401.
   - Cached vector rows are returned before database misses, so mixed hit/miss results do not retain request order.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

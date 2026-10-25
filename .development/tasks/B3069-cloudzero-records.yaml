@@ -98,5 +98,5 @@ pitfalls:
   - CBF field names are literal strings in the returned dict; consistency with field-name spelling is required for CloudZero delivery to recognize them.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

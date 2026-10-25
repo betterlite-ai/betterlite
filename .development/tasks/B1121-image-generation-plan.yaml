@@ -29,6 +29,10 @@ scope:
   - tools/oracle/sdk_http/image_generation_plan.py
   - tools/oracle/cases/sdk-http/image-generation-plan/**
   - tools/oracle/fuzz/corpus/sdk_http_case/image-generation-plan-*
+  - tools/oracle/helpers/b1121.py
+  - tools/oracle/helpers/b1121/**
+  - tools/oracle/src/helpers/core_ops/b1121.rs
+  - tools/oracle/src/helpers/core_ops/b1121/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L79-L129
@@ -80,5 +84,5 @@ pitfalls:
 - The wrapper uses the first positional argument as model even though generation calls name that position prompt.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

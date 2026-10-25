@@ -75,6 +75,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/bulk-user-routes/**
+    - tools/oracle/helpers/b1222.py
+    - tools/oracle/helpers/b1222/**
+    - tools/oracle/src/helpers/server/b1222.rs
+    - tools/oracle/src/helpers/server/b1222/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/users.py#L28-L108
@@ -124,6 +128,6 @@ pitfalls:
   - A helper's non-ManagementProblem exception becomes 500 even when it carries a 4xx status; dependency authentication failures occur before that catch.
   - Adding the router's relative /users/bulk path as a public alias would expose a route absent from LiteLLM.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

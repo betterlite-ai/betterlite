@@ -91,20 +91,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/auth-limit-inputs/**
     - tools/oracle/fuzz/corpus/helper_case/auth-limit-inputs-*
-    - crates/betterlite-config/src/auth_limit_inputs.rs
-    - crates/betterlite-config/src/auth_limit_inputs/**
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-limit-inputs-*
+    - crates/betterlite-config/src/sections/auth_limit_inputs.rs
+    - crates/betterlite-config/src/sections/auth_limit_inputs/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L950-L1358
@@ -209,7 +199,7 @@ checks:
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: Deployment default RPM/TPM fields are ignored by the loader.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^auth_limit_inputs::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::auth_limit_inputs::tests::/) - test(/replays_the_/)'
     - id: config-corpus
       why: No newly added deployment-limit config seed exists.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/auth-limit-inputs-*")" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
@@ -280,6 +270,6 @@ pitfalls:
   - An unchanged estimate resent by a non-admin is allowed, but replacing metadata without that field can be a forbidden removal.
   - Empty key model-limit metadata falls through, whereas an empty team model-limit map blocks deployment inheritance.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

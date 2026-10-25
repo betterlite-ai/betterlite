@@ -198,5 +198,5 @@ pitfalls:
   into a hard error.
 review_level: security
 budget:
-  max_changed_lines: 660
+  max_changed_lines: 1000
   max_new_expects: 1

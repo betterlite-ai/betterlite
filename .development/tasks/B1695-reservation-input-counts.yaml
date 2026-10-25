@@ -88,6 +88,6 @@ pitfalls:
   - A present messages key blocks every later input field even when its value is null.
   - A failed model count is omitted from the result instead of being represented by a free zero-token request.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

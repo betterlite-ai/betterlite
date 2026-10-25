@@ -20,6 +20,10 @@ scope:
     - crates/betterlite-auth/src/session_budget.rs
     - crates/betterlite-auth/src/session_budget/**
     - tools/oracle/cases/auth/session-budget/**
+    - tools/oracle/helpers/b3007.py
+    - tools/oracle/helpers/b3007/**
+    - tools/oracle/src/helpers/auth/b3007.rs
+    - tools/oracle/src/helpers/auth/b3007/**
   lint_tables: false
 
 references:
@@ -102,7 +106,7 @@ deviations:
 review_level: security
 
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 
 checks:

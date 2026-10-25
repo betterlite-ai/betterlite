@@ -100,6 +100,6 @@ pitfalls:
   - Batch output thresholds are discovered from output keys, not borrowed from the input threshold selected for the request.
   - The tier-table one-hour cache fallback uses truthiness, so zero there behaves differently from an ordinary model one-hour zero.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

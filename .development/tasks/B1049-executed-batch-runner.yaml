@@ -89,20 +89,6 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/executed_batch_runner.rs
-  - crates/betterlite-config/src/api/executed_batch_runner/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/executed-batch-runner-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/executed_batch_runner.rs
@@ -111,6 +97,8 @@ scope:
   - tools/oracle/helpers/executed_batch_runner/**
   - tools/oracle/fuzz/corpus/helper_case/executed_batch_runner-*
   - tools/oracle/cases/helpers/executed-batch-runner/**
+  - crates/betterlite-config/src/sections/executed_batch_runner.rs
+  - crates/betterlite-config/src/sections/executed_batch_runner/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1741-L1741
@@ -165,7 +153,7 @@ checks:
   commands:
   - id: behavior-tests
     why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::executed_batch_runner::/)
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::executed_batch_runner::/)
       - test(/::replays_corpus$/)'
   - id: case-executed-batch-success
     why: the executed-batch-success behavior or its assertions are absent
@@ -187,7 +175,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_runner::tests::result_files_published($|::)/)'
   - id: config-tests
     why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::executed_batch_runner::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::executed_batch_runner::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: no newly added key-bearing config seed reaches the production loader
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/executed-batch-runner-*)"
@@ -235,5 +223,5 @@ pitfalls:
   f''Invalid batch input file: {parsed.describe()}'') and its nested guards.'
 review_level: security
 budget:
-  max_changed_lines: 610
+  max_changed_lines: 1000
   max_new_expects: 1

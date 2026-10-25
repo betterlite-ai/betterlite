@@ -67,6 +67,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-info-v2/**
+    - tools/oracle/helpers/b850.py
+    - tools/oracle/helpers/b850/**
+    - tools/oracle/src/helpers/server/b850.rs
+    - tools/oracle/src/helpers/server/b850/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15295-L15529
@@ -477,6 +481,6 @@ pitfalls:
   - Agent rows bypass search and team filters but pass the final access_group and wildcard filters.
   - A search count from Postgres is overwritten with the fetched row count before pagination.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

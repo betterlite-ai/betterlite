@@ -205,6 +205,6 @@ pitfalls:
   flux-2-flex.
 - Size-derived width/height and explicit width/height overwrite each other in caller iteration order.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

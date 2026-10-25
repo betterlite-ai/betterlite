@@ -92,6 +92,6 @@ pitfalls:
   - Deepgram registry lookups that fail log debug and continue without raising; unpriced entries preserve the spend row with zero cost instead of losing it.
   - Fal image URL extraction traverses all top-level response values without recursive nesting, gathering ImageObject records from both single and sequence types.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

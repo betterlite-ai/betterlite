@@ -98,22 +98,12 @@ scope:
     - tools/oracle/cases/helpers/database-tokens/**
     - tools/oracle/fuzz/corpus/helper_case/database-tokens-*
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/database_tokens.rs
-    - crates/betterlite-config/src/database_tokens/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/database-tokens-*
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/database_token_expiry.rs
     - crates/betterlite-db/fuzz/corpus/database_token_expiry/**
+    - crates/betterlite-config/src/sections/database_tokens.rs
+    - crates/betterlite-config/src/sections/database_tokens/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L25-L38
@@ -161,7 +151,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tokens::tests::/) - test(replays_the_database_token_expiry_corpus)'
     - id: config-tests
       why: Strict auth flags and the exact pooled marker must reach production strategy selection.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_tokens::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::database_tokens::tests::/) - test(/replays_the_/)'
     - id: helper-python
       why: Pure adapters must use the actual pinned endpoint and expiry functions.
       run: test -f tools/oracle/helpers/database_tokens.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
@@ -207,6 +197,6 @@ pitfalls:
   - Entra timestamp conversion happens outside the caught validation block, so a huge valid exp is not a None fallback.
   - A pinned reader URL suppresses token resolution before the reader reaches the conflicting-flag check.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

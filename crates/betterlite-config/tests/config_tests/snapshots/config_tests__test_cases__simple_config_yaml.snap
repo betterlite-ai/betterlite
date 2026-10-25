@@ -1,6 +1,6 @@
 ---
 source: crates/betterlite-config/tests/config_tests/mod.rs
-expression: result
+expression: other
 ---
 Ok(
     Config {
@@ -54,5 +54,6 @@ Ok(
             default_max_tokens: 4096,
         },
         environment_variables: {},
+        sections: Sections,
     },
 )

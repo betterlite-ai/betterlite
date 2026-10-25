@@ -65,19 +65,9 @@ scope:
     - tools/oracle/cases/helpers/management-rbac/**
     - tools/oracle/fuzz/corpus/helper_case/management-rbac-*
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/management_rbac.rs
-    - crates/betterlite-config/src/management_rbac/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/management-rbac-*
+    - crates/betterlite-config/src/sections/management_rbac.rs
+    - crates/betterlite-config/src/sections/management_rbac/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L41-L61
@@ -126,7 +116,7 @@ checks:
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^management_rbac::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::management_rbac::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
@@ -153,6 +143,6 @@ pitfalls:
   - disable_key_generate_for_org_admin checks the global role, not membership rows.
   - A nonempty string 'false' is truthy in the source's runtime settings map.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -137,5 +137,5 @@ pitfalls:
   - CREATE TABLE IF NOT EXISTS preserves a wrong existing definition; rerunning this file is not a schema repair.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

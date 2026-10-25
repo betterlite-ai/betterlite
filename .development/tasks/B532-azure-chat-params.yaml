@@ -262,6 +262,6 @@ pitfalls:
 - Azure GPT5 parameter lists can contain duplicate logprobs/top_logprobs after extension; a set projection would
   hide that behavior.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

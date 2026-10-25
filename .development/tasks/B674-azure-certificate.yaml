@@ -276,6 +276,6 @@ pitfalls:
 - The x5t value retains base64 padding even though the JWT segments themselves do not.
 - PKCS#12 detection is based on absence of -----BEGIN, not the file extension.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -36,19 +36,6 @@ scope:
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/anthropic_beta_config.rs
   - crates/betterlite-core/fuzz/corpus/anthropic_beta_config/**
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/anthropic_beta_config.rs
-  - crates/betterlite-config/src/api/anthropic_beta_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-beta-config-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/anthropic_beta_config.rs
@@ -63,6 +50,8 @@ scope:
   - tools/oracle/cases/helpers/anthropic-beta-config/**
   - tools/oracle/cases/sdk-http/anthropic-beta-config/**
   - Cargo.lock
+  - crates/betterlite-config/src/sections/anthropic_beta_config.rs
+  - crates/betterlite-config/src/sections/anthropic_beta_config/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L47-L212
@@ -109,10 +98,10 @@ checks:
   commands:
   - id: behavior-tests
     why: beta cache and validation behavior is missing in core or config
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::anthropic_beta_config::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::anthropic_beta_config::/) - test(/::replays_corpus$/)'
   - id: config-tests
     why: local mode or URL precedence is not supported by the config loader
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::anthropic_beta_config::tests::loads_beta_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::anthropic_beta_config::tests::loads_beta_settings($|::)/)'
   - id: config-corpus
     why: the new beta settings have no config parser seeds
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-beta-config-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
@@ -146,5 +135,5 @@ pitfalls:
 - The local-only flag does not trim spaces and is not a general boolean parser.
 review_level: standard
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0

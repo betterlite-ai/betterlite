@@ -113,6 +113,6 @@ pitfalls:
   - Anthropic calculates geo before speed, so malformed geo data prevents even an otherwise valid fast-speed surcharge.
   - Stability 1 preserves the supplied size spelling in its price key instead of applying the default image calculator's normalization.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security
