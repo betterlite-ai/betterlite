@@ -1,34 +1,110 @@
+use crate::helpers::{HelperError, HelperResult};
+use betterlite_openai::openai_base_config::forwarding::{
+    BaseConfigError, ForwardingFailure, OpenAiErrorParts, OpenAiErrorRecord, ResponseForward,
+    forward_response,
+};
 use betterlite_openai::openai_base_config::{
-    CatalogCapabilities, ConfigFamily, OpenAiConfig, is_azure_gpt5_model, is_gpt_audio_model,
-    is_gpt_reasoning_series_name, is_o_series_model, metadata_filter_limit,
+    CatalogCapabilities, ConfigFamily, OpenAiConfig, OpenAiSettings, is_azure_gpt5_model,
+    is_gpt_audio_model, is_gpt_reasoning_series_name, is_o_series_model, metadata_filter_limit,
     overlapping_api_base_path,
 };
+use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-
-use crate::helpers::{HelperError, HelperResult};
-use betterlite_openai::openai_base_config::forwarding::{OpenAiErrorParts, OpenAiErrorRecord};
-
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 type Object = Map<String, Value>;
-
 mod tests;
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[rustfmt::skip]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CatalogInput { #[serde(default)] chat_models: BTreeSet<String>, #[serde(default)] text_models: BTreeSet<String> }
+#[rustfmt::skip]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ConfigInput { #[serde(default)] family: ConfigFamily, api_key: Option<String>, #[serde(default)] headers: BTreeMap<String, String> }
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RoutingInput {
+    model: String,
+    #[serde(flatten)]
+    catalog: CatalogInput,
+}
+#[rustfmt::skip]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SupportedInput { model: String, #[serde(flatten)] catalog: CatalogInput, #[serde(flatten)] config: ConfigInput }
+#[rustfmt::skip]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MappingInput { model: String, #[serde(flatten)] catalog: CatalogInput, #[serde(flatten)] config: ConfigInput, #[serde(default)] existing: Object, #[serde(default)] requested: Object }
+#[rustfmt::skip]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct AuthInput { model: String, #[serde(flatten)] config: ConfigInput }
+#[rustfmt::skip]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RequestInput { model: String, messages: Value, optional: Object, #[serde(flatten)] config: ConfigInput }
+#[rustfmt::skip]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ProjectionInput { raw_text: String, #[serde(default)] raw_headers: BTreeMap<String, String>, #[serde(default)] hidden_headers: BTreeMap<String, String>, decoded: Option<Value>, stream_value: Option<Value>, #[serde(default)] stream_error: bool }
+#[rustfmt::skip]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ErrorInput { #[serde(default = "default_status")] status_code: u16, message: String, headers: Option<BTreeMap<String, String>>, body: Option<Object> }
+const fn default_status() -> u16 {
+    match 0_u16 {
+        0 => 500,
+        value => value,
+    }
+}
+#[rustfmt::skip]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MetadataInput { metadata: Option<IndexMap<String, Value>> }
+#[rustfmt::skip]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OverlapInput { api_base: String, ending_path: String }
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum BaseCall {
-    OSeriesRouting(Object),
-    Gpt5Routing(Object),
-    AudioRouting(Object),
-    CatalogUserOnly(Object),
-    OldGptResponseFormatDrop(Object),
-    UnknownReasoningEffort(Object),
-    BaseParameterAllowlist(Object),
-    BaseAuthOverride(Object),
-    BaseProjectionForwarding(Object),
-    BaseRequestOverlay(Object),
-    OpenaiErrorDefaults(Object),
-    MetadataFilterLimit(Object),
-    OverlappingApiBasePath(Object),
-    AzureGpt5RoutePredicate(Object),
+    OSeriesRouting(RoutingInput),
+    Gpt5Routing(RoutingInput),
+    AudioRouting(RoutingInput),
+    CatalogUserOnly(SupportedInput),
+    OldGptResponseFormatDrop(SupportedInput),
+    UnknownReasoningEffort(SupportedInput),
+    BaseParameterAllowlist(MappingInput),
+    BaseAuthOverride(AuthInput),
+    BaseProjectionForwarding(ProjectionInput),
+    BaseRequestOverlay(RequestInput),
+    OpenaiErrorDefaults(ErrorInput),
+    MetadataFilterLimit(MetadataInput),
+    OverlappingApiBasePath(OverlapInput),
+    AzureGpt5RoutePredicate(RoutingInput),
+}
+fn catalog(input: &CatalogInput) -> CatalogCapabilities {
+    let chat_models = input.chat_models.clone();
+    let text_models = input.text_models.clone();
+    CatalogCapabilities {
+        chat_models,
+        text_models,
+    }
+}
+fn config(input: &ConfigInput) -> OpenAiConfig {
+    let api_key = input.api_key.clone().map(secrecy::SecretString::from);
+    let headers = input.headers.clone();
+    OpenAiConfig {
+        family: input.family,
+        api_key,
+        headers,
+        settings: OpenAiSettings::default(),
+    }
 }
 fn invalid_input(message: String) -> HelperError {
     let class = String::from("InvalidInput");
@@ -41,152 +117,113 @@ fn invalid_input(message: String) -> HelperError {
         message,
     }
 }
-fn text<'input>(fields: &'input Object, name: &str) -> Result<&'input str, Box<HelperError>> {
-    let value = fields.get(name).and_then(Value::as_str);
-    value.map_or_else(
-        || Err(Box::new(invalid_input(format!("{name} must be a string")))),
-        Ok,
-    )
-}
-fn catalog(fields: &Object) -> CatalogCapabilities {
-    let set = |name| {
-        fields
-            .get(name)
-            .and_then(Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-    CatalogCapabilities::new(set("chat_models"), set("text_models"))
-}
-fn configuration(fields: &Object) -> OpenAiConfig {
-    let family = match fields.get("family").and_then(Value::as_str) {
-        Some("azure_ai_studio") => ConfigFamily::AzureAiStudio,
-        Some("other") => ConfigFamily::Other,
-        _ => ConfigFamily::OpenAi,
-    };
-    let key = fields
-        .get("api_key")
-        .and_then(Value::as_str)
-        .map(secrecy::SecretString::from);
-    let headers = fields
-        .get("headers")
-        .and_then(Value::as_object)
-        .map(|values| {
-            values
-                .iter()
-                .filter_map(|(name, value)| {
-                    value.as_str().map(|text| (name.clone(), text.to_owned()))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    OpenAiConfig::new(family, key, headers, Map::new())
-}
-fn supported(fields: &Object) -> Value {
-    let config = configuration(fields);
-    let model = fields
-        .get("model")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    json!(config.supported_params(model, &catalog(fields)))
-}
-fn object(fields: &Object, name: &str) -> Object {
-    let value = fields.get(name).and_then(Value::as_object);
-    value.map_or_else(Map::new, Clone::clone)
-}
-fn mapped(fields: &Object) -> Value {
-    let config = configuration(fields);
-    let mut existing = object(fields, "existing");
-    let requested = object(fields, "requested");
-    config.map_params(
-        fields
-            .get("model")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-        &requested,
-        &mut existing,
-        &catalog(fields),
-    );
-    Value::Object(existing)
-}
-fn request(fields: &Object, model: &str) -> Value {
-    let messages = fields.get("messages").cloned().unwrap_or(Value::Null);
-    let optional = fields
-        .get("optional")
-        .and_then(Value::as_object)
-        .map_or_else(Map::new, Clone::clone);
-    json!(configuration(fields).request_body(model, messages, &optional,))
-}
-fn error(status_code: u16, message: String) -> Result<Value, Box<HelperError>> {
+fn error_value(input: &ErrorInput) -> Result<Value, Box<HelperError>> {
     let record = OpenAiErrorRecord::from_parts(OpenAiErrorParts {
-        status_code,
-        message,
-        headers: None,
+        status_code: input.status_code,
+        message: input.message.clone(),
+        headers: input.headers.clone(),
         request: None,
         response: None,
-        body: None,
+        body: input.body.clone(),
     });
     serde_json::to_value(record).map_err(|error| Box::new(invalid_input(error.to_string())))
 }
-fn metadata(fields: &Object) -> Result<Value, Box<HelperError>> {
-    let value = metadata_filter_limit(fields.get("metadata").and_then(Value::as_object));
-    serde_json::to_value(value).map_err(|error| Box::new(invalid_input(error.to_string())))
+fn forwarding(input: &ProjectionInput) -> Value {
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let headers = input.raw_headers.clone();
+    let hidden = input.hidden_headers.clone();
+    let sink_events = Rc::clone(&events);
+    let projection_events = Rc::clone(&events);
+    let response = forward_response(
+        |raw, response_headers| {
+            sink_events
+                .borrow_mut()
+                .push(json!(["post_call", raw, response_headers]));
+            Ok::<(), ForwardingFailure>(())
+        },
+        |decoded, response_headers, hidden_headers| {
+            projection_events.borrow_mut().push(json!([
+                "projection",
+                decoded,
+                response_headers,
+                hidden_headers
+            ]));
+            Ok::<Value, ForwardingFailure>(json!("projected"))
+        },
+        ResponseForward {
+            raw_text: &input.raw_text,
+            raw_headers: &headers,
+            decoded: serde_json::from_str(&input.raw_text),
+            hidden_headers: &hidden,
+        },
+    );
+    json!({"events": events.take(), "projected": projection_result(response), "stream": stream_result(input)})
 }
-fn openai_error(fields: &Object) -> Result<Value, Box<HelperError>> {
-    let status =
-        fields
-            .get("status_code")
-            .and_then(Value::as_u64)
-            .map_or(Ok(500), |raw_status| {
-                u16::try_from(raw_status)
-                    .map_err(|_| Box::new(invalid_input(String::from("status too large"))))
-            })?;
-    error(status, text(fields, "message")?.to_owned())
+fn projection_result(response: Result<Value, BaseConfigError>) -> Value {
+    let decode_error = json!({"error": "decode"});
+    response.map_or_else(|_| decode_error, |value| json!(value))
 }
-fn overlap(fields: &Object) -> Result<Value, Box<HelperError>> {
-    let api_base = text(fields, "api_base")?;
-    let ending_path = text(fields, "ending_path")?;
-    overlapping_api_base_path(api_base, ending_path)
-        .map(Value::String)
-        .map_err(|error| Box::new(invalid_input(error.to_string())))
+fn stream_result(input: &ProjectionInput) -> Value {
+    let stream_value = input.stream_value.clone();
+    stream_value.map_or_else(
+        || Value::Null,
+        |value| {
+            if input.stream_error {
+                json!({"error": "injected forwarding failure: stream"})
+            } else {
+                json!(value)
+            }
+        },
+    )
+}
+fn supported(value: &SupportedInput) -> Value {
+    let capabilities = catalog(&value.catalog);
+    json!(config(&value.config).supported_params(&value.model, &capabilities))
+}
+fn mapped(value: &MappingInput) -> Value {
+    let mut existing = value.existing.clone();
+    config(&value.config).map_params(
+        &value.model,
+        &value.requested,
+        &mut existing,
+        &catalog(&value.catalog),
+    );
+    Value::Object(existing)
 }
 fn invoke(input: &BaseCall) -> Result<Value, Box<HelperError>> {
     match input {
-        BaseCall::OSeriesRouting(fields) => Ok(json!(is_o_series_model(
-            text(fields, "model")?,
-            &catalog(fields)
+        BaseCall::OSeriesRouting(value) => Ok(json!(is_o_series_model(
+            &value.model,
+            &catalog(&value.catalog)
         ))),
-        BaseCall::Gpt5Routing(fields) => {
-            Ok(json!(is_gpt_reasoning_series_name(text(fields, "model",)?)))
-        }
-        BaseCall::AudioRouting(fields) => Ok(json!(is_gpt_audio_model(
-            text(fields, "model")?,
-            &catalog(fields)
+        BaseCall::Gpt5Routing(value) => Ok(json!(is_gpt_reasoning_series_name(&value.model))),
+        BaseCall::AudioRouting(value) => Ok(json!(is_gpt_audio_model(
+            &value.model,
+            &catalog(&value.catalog)
         ))),
-        BaseCall::CatalogUserOnly(fields)
-        | BaseCall::OldGptResponseFormatDrop(fields)
-        | BaseCall::UnknownReasoningEffort(fields) => Ok(supported(fields)),
-        BaseCall::BaseParameterAllowlist(fields) => Ok(mapped(fields)),
-        BaseCall::BaseAuthOverride(fields) => {
-            Ok(json!(configuration(fields).validate_environment()))
+        BaseCall::AzureGpt5RoutePredicate(value) => Ok(json!(is_azure_gpt5_model(&value.model))),
+        BaseCall::CatalogUserOnly(value)
+        | BaseCall::OldGptResponseFormatDrop(value)
+        | BaseCall::UnknownReasoningEffort(value) => Ok(supported(value)),
+        BaseCall::BaseParameterAllowlist(value) => Ok(mapped(value)),
+        BaseCall::BaseAuthOverride(value) => {
+            Ok(json!(config(&value.config).validate_environment()))
         }
-        BaseCall::BaseProjectionForwarding(fields) => Ok(json!({
-            "post_call": fields.get("raw_text"),
-            "response_headers": fields.get("raw_headers"),
-            "projected": fields.get("decoded")
-        })),
-        BaseCall::BaseRequestOverlay(fields) => Ok(request(fields, text(fields, "model")?)),
-        BaseCall::OpenaiErrorDefaults(fields) => openai_error(fields),
-        BaseCall::MetadataFilterLimit(fields) => metadata(fields),
-        BaseCall::OverlappingApiBasePath(fields) => overlap(fields),
-        BaseCall::AzureGpt5RoutePredicate(fields) => {
-            Ok(json!(is_azure_gpt5_model(text(fields, "model")?)))
+        BaseCall::BaseProjectionForwarding(value) => Ok(forwarding(value)),
+        BaseCall::BaseRequestOverlay(value) => Ok(json!(config(&value.config).request_body(
+            &value.model,
+            value.messages.clone(),
+            &value.optional
+        ))),
+        BaseCall::OpenaiErrorDefaults(value) => error_value(value),
+        BaseCall::MetadataFilterLimit(value) => {
+            serde_json::to_value(metadata_filter_limit(value.metadata.as_ref()))
+                .map_err(|error| Box::new(invalid_input(error.to_string())))
+        }
+        BaseCall::OverlappingApiBasePath(value) => {
+            overlapping_api_base_path(&value.api_base, &value.ending_path)
+                .map(Value::String)
+                .map_err(|error| Box::new(invalid_input(error.to_string())))
         }
     }
 }

@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -15,14 +16,6 @@ pub struct CatalogCapabilities {
 }
 impl CatalogCapabilities {
     #[must_use]
-    pub fn new(chat_models: BTreeSet<String>, text_models: BTreeSet<String>) -> Self {
-        let normalized_chat_models = chat_models.into_iter().collect();
-        Self {
-            chat_models: normalized_chat_models,
-            text_models: text_models.into_iter().collect(),
-        }
-    }
-    #[must_use]
     pub fn is_catalog_model(&self, model: &str) -> bool {
         let checked = model
             .split_once("responses/")
@@ -30,9 +23,11 @@ impl CatalogCapabilities {
         self.chat_models.contains(checked) || self.text_models.contains(checked)
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfigFamily {
+    #[serde(rename = "openai")]
+    #[default]
     OpenAi,
     AzureAiStudio,
     Other,
@@ -46,43 +41,60 @@ pub enum ModelFamily {
     Gpt,
     Unknown,
 }
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenAiSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function_call: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub functions: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logit_bias: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_completion_tokens: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "n")]
+    pub number: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<Value>,
+}
 #[derive(Clone)]
 pub struct OpenAiConfig {
-    family: ConfigFamily,
-    api_key: Option<SecretString>,
-    headers: Headers,
-    settings: Object,
+    pub family: ConfigFamily,
+    pub api_key: Option<SecretString>,
+    pub headers: Headers,
+    pub settings: OpenAiSettings,
 }
 impl fmt::Debug for OpenAiConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("OpenAiConfig")
             .field("family", &self.family)
             .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
-            .field("headers", &self.headers)
+            .field("headers", &self.headers.keys().collect::<Vec<_>>())
             .field("settings", &self.settings)
             .finish()
     }
 }
 impl OpenAiConfig {
     #[must_use]
-    pub fn new(
-        family: ConfigFamily,
-        api_key: Option<SecretString>,
-        headers: Headers,
-        settings: Object,
-    ) -> Self {
-        let normalized_settings = settings.into_iter().collect();
-        Self {
-            family,
-            api_key,
-            headers,
-            settings: normalized_settings,
-        }
-    }
-    #[must_use]
     pub fn get_config(&self) -> Object {
-        let settings = self.settings.clone();
-        Object::from_iter(settings)
+        let serialized = serde_json::to_value(&self.settings);
+        serialized.map_or_else(
+            |_| Object::default(),
+            |value| value.as_object().cloned().unwrap_or_default(),
+        )
     }
     #[must_use]
     pub fn validate_environment(&self) -> Headers {
@@ -163,8 +175,11 @@ pub fn is_gpt_reasoning_series_name(model: &str) -> bool {
 }
 #[must_use]
 pub fn is_gpt_audio_model(model: &str, catalog: &CatalogCapabilities) -> bool {
-    let in_catalog = catalog.is_catalog_model(model);
-    in_catalog && model.contains("audio")
+    if catalog.chat_models.contains(model) {
+        model.contains("audio")
+    } else {
+        false
+    }
 }
 #[must_use]
 pub fn is_azure_gpt5_model(model: &str) -> bool {
@@ -172,7 +187,9 @@ pub fn is_azure_gpt5_model(model: &str) -> bool {
     reasoning || model.contains("gpt5_series")
 }
 #[must_use]
-pub fn metadata_filter_limit(metadata: Option<&Object>) -> Option<BTreeMap<String, String>> {
+pub fn metadata_filter_limit(
+    metadata: Option<&IndexMap<String, Value>>,
+) -> Option<IndexMap<String, String>> {
     let values = metadata?;
     Some(
         values
