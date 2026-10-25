@@ -3,6 +3,7 @@ mod error_body;
 pub mod jwt_display;
 mod model_list;
 mod model_query;
+pub mod passthrough;
 mod routes;
 pub mod server;
 mod shutdown;

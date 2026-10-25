@@ -3,8 +3,11 @@
 use std::path::Path;
 
 use crate::ids::{check_id_problem, task_id_problem};
+use crate::spec::task::Task;
+use crate::validate::needs::needed_paths;
 use crate::validate::task::{banned_tooling, outside_scope_roots};
 use crate::validate::validate;
+use crate::yaml::read_yaml;
 
 #[test]
 fn the_committed_development_folder_is_valid() {
@@ -83,4 +86,22 @@ fn scope_paths_stay_under_the_scope_roots_or_existing_root_entries() {
     ] {
         assert!(outside_scope_roots(&root, &roots, bad), "{bad}");
     }
+}
+
+#[test]
+fn needed_paths_come_from_oracle_cases_and_test_flags() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let fixture: Task =
+        read_yaml(&root.join(".development/tasks/B860-postgres-http.yaml")).unwrap();
+    let needed = needed_paths(&fixture);
+    assert!(needed.contains(&(
+        "tools/oracle/fuzz/fuzz_targets/http_case.rs".to_owned(),
+        false
+    )));
+    let passthrough: Task =
+        read_yaml(&root.join(".development/tasks/B3600-passthrough-wire-helpers.yaml")).unwrap();
+    assert!(needed_paths(&passthrough).contains(&(
+        "tools/oracle/cases/passthrough/endpoint-type-vertex.yaml".to_owned(),
+        false
+    )));
 }

@@ -1,11 +1,12 @@
 mod agents;
 pub(crate) mod backlog;
 pub(crate) mod catalog;
+mod needs;
 mod rules;
 mod task;
 mod tests;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::de::DeserializeOwned;
@@ -110,16 +111,17 @@ pub(crate) fn validate(root: &Path) -> Result<Vec<String>, GateError> {
     problems.extend(coverage::problems(&coverage::measure(
         &folder, &litellm, &backlog,
     )?));
+    let mut tasks = BTreeMap::new();
     for entry in &backlog.tasks {
         if let Some(file) = &entry.file {
             let parsed: Option<Task> = load(&folder.join(file), &mut problems);
-            problems.extend(
-                parsed
-                    .map(|spec| task::problems(root, &catalog, entry, &spec))
-                    .unwrap_or_default(),
-            );
+            if let Some(spec) = parsed {
+                problems.extend(task::problems(root, &catalog, entry, &spec));
+                tasks.insert(entry.id.clone(), spec);
+            }
         }
     }
+    problems.extend(needs::problems(root, &catalog, &backlog, &tasks)?);
     problems.extend(deviations::log_problems(root, &backlog)?);
     problems.extend(schema::stale(root)?);
     Ok(problems)

@@ -1,0 +1,6 @@
+name: passthrough-stream-other-types
+config: "model_list: []"
+env: {}
+request: {method: GET, path: /health/liveliness, headers: {}, body: null}
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}

@@ -15,6 +15,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-logging/**
+    - tools/oracle/cases/helpers/datadog/**
     - Cargo.toml
   lint_tables: false
 references:
