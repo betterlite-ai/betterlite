@@ -15,10 +15,10 @@ hex = "0.4.3"
 hyper-util = "0.1.21"
 percent-encoding = "2.3.2"
 regex = "1.13.1"
-rust_decimal = "1.43.0"
+rust_decimal = { version = "1.43.0", features = ["serde-with-arbitrary-precision"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring"] }
 rustls-native-certs = "0.8.5"
-secrecy = { version = "0.10.3", features = ["serde"] }
+secrecy = "0.10.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = { version = "2.0.0", features = ["serialize"] }
 serde_ignored = "0.1.14"

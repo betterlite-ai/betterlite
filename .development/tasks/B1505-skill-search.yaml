@@ -26,6 +26,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/skills.rs
+    - crates/betterlite-core/src/skills/**
     - crates/betterlite-core/src/skills/search.rs
     - crates/betterlite-core/src/skills/search/**
     - tools/oracle/src/helpers/core_ops/hosted_skill_search.rs

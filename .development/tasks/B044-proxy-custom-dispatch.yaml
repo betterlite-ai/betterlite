@@ -44,25 +44,35 @@ scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-provider/src/provider.rs
+    - crates/betterlite-provider/src/provider/**
     - crates/betterlite-provider/src/operation.rs
+    - crates/betterlite-provider/src/operation/**
     - crates/betterlite-provider/src/legacy_dispatch.rs
     - crates/betterlite-provider/src/legacy_dispatch/**
     - crates/betterlite-provider/fuzz/Cargo.toml
     - crates/betterlite-provider/fuzz/fuzz_targets/custom_output.rs
     - crates/betterlite-provider/fuzz/corpus/custom_output/**
     - crates/betterlite-core/src/operation.rs
+    - crates/betterlite-core/src/operation/**
     - crates/betterlite-core/src/dispatch.rs
+    - crates/betterlite-core/src/dispatch/**
     - crates/betterlite-core/src/skills.rs
+    - crates/betterlite-core/src/skills/**
     - crates/betterlite-core/src/skills/composition.rs
     - crates/betterlite-core/src/skills/composition/**
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/legacy_provider.rs
     - crates/betterlite-config/src/providers/legacy_provider/**
     - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/loader/**
     - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/raw/**
     - crates/betterlite-config/tests/**
     - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/resolve/**
     - crates/betterlite-config/src/types.rs
+    - crates/betterlite-config/src/types/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/legacy_provider*
     - tools/oracle/src/helpers/provider/custom_method.rs
     - tools/oracle/src/helpers/provider/custom_method/**

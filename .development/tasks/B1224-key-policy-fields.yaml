@@ -126,10 +126,14 @@ scope:
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/loader/**
     - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/raw/**
     - crates/betterlite-config/tests/**
     - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/resolve/**
     - crates/betterlite-config/src/types.rs
+    - crates/betterlite-config/src/types/**
     - crates/betterlite-config/src/key_policy_fields.rs
     - crates/betterlite-config/src/key_policy_fields/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/key-policy-fields-*

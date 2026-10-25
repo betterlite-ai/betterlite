@@ -37,6 +37,7 @@ scope:
   paths:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/list_api.rs
+    - crates/betterlite-server/src/list_api/**
     - crates/betterlite-server/src/list_api/{plan,problem,links}.rs
     - crates/betterlite-server/src/list_api/{plan,problem,links}/**
     - crates/betterlite-server/fuzz/Cargo.toml

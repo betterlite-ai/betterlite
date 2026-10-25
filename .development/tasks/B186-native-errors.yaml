@@ -27,6 +27,7 @@ scope:
   - tools/oracle/cases/helpers/native-errors/**
   - tools/oracle/fuzz/corpus/helper_case/**
   - crates/betterlite-error/src/dispatch.rs
+  - crates/betterlite-error/src/dispatch/**
   lint_tables: false
 references:
 - url: >-

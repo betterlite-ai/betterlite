@@ -1,7 +1,7 @@
 id: B3600
 milestone: M5 api families
 title: Pass-through wire records and response helpers
-status: in-progress
+status: done
 depends_on: []
 file: tasks/B3600-passthrough-wire-helpers.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/passthrough_endpoints/pass_through_endpoints.py"
 parent: B102
 split_from: B102
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 116

@@ -25,10 +25,13 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/realtime_routes.rs
   - crates/betterlite-server/src/api/realtime_routes/**
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - tools/oracle/cases/api/realtime-routes/**
   - tools/oracle/fixtures/realtime-routes/**
   lint_tables: false

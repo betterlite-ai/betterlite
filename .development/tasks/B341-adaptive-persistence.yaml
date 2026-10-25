@@ -38,12 +38,17 @@ scope:
   - crates/betterlite-router/src/adaptive_persistence/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/adaptive_persistence.rs
   - crates/betterlite-server/src/routing/adaptive_persistence/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/adaptive_persistence.rs
   - tools/oracle/src/router_probes/adaptive_persistence/**
   - tools/oracle/src/router_probes/mod.rs

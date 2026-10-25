@@ -33,12 +33,17 @@ scope:
   - crates/betterlite-router/src/affinity_claims/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/affinity_claims.rs
   - crates/betterlite-server/src/routing/affinity_claims/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/affinity_claims.rs
   - tools/oracle/src/router_probes/affinity_claims/**
   - tools/oracle/src/router_probes/mod.rs

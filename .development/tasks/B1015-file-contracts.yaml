@@ -35,15 +35,20 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/file_contracts.rs
   - crates/betterlite-core/src/api/file_contracts/**
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/file_contracts.rs
   - crates/betterlite-provider/src/api/file_contracts/**
   - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/provider/**
   - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/**
   - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-provider/src/prepared/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/provider/file_contracts.rs
   - tools/oracle/src/helpers/provider/file_contracts/**

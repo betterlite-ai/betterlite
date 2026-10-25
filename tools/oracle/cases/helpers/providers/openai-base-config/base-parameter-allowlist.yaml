@@ -1,0 +1,5 @@
+kind: helper
+name: base-parameter-allowlist
+call: {openai_base_config: {base_parameter_allowlist: {model: gpt-4o, chat_models: [gpt-4o], family: other, existing: {existing: true}, requested: {temperature: 1, unsupported: 2, stream: true}}}}
+env: {}
+compare: {ignore: []}
