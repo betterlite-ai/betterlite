@@ -135,13 +135,6 @@ fn chunk_outputs(chunk: &ChunkResult) -> &[Output] {
     outputs.or(response.output.as_deref()).unwrap_or_default()
 }
 
-const fn text_output(text: String) -> Output {
-    Output {
-        text: Some(text),
-        extra: Extensions::new(),
-    }
-}
-
 fn merge_group(group: &[ChunkResult]) -> (Vec<Output>, bool) {
     let masked = group.iter().any(|chunk| !chunk_outputs(chunk).is_empty());
     if group.len() > 1 {
@@ -151,15 +144,19 @@ fn merge_group(group: &[ChunkResult]) -> (Vec<Output>, bool) {
                 .and_then(|output| output.text.clone());
             masked_text.unwrap_or_else(|| chunk.content.first().map_or("", source_text).to_owned())
         };
-        let merged_text = group.iter().map(fragment_text).collect();
-        return (vec![text_output(merged_text)], masked);
+        let text = Some(group.iter().map(fragment_text).collect());
+        let extra = Extensions::new();
+        return (vec![Output { text, extra }], masked);
     }
     if masked {
         let outputs = group.iter().flat_map(chunk_outputs).cloned();
         return (outputs.collect(), true);
     }
     let sources = group.iter().flat_map(|chunk| &chunk.content);
-    let placeholders = sources.map(|item| text_output(source_text(item).to_owned()));
+    let placeholders = sources.map(|item| Output {
+        text: Some(source_text(item).to_owned()),
+        extra: Extensions::new(),
+    });
     (placeholders.collect(), false)
 }
 
