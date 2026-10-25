@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use rust_decimal::Decimal;
@@ -150,6 +150,18 @@ impl FixtureSeed {
             self.jwt_mappings.iter().map(|row| row.subject.as_str()),
             "JWT mapping",
         )?;
+        let mut roles = BTreeMap::new();
+        for key in &self.keys {
+            if let Some(role) = key.role {
+                if let Some(previous) = roles.insert(key.user_id.as_str(), role)
+                    && previous != role
+                {
+                    return Err(FixtureError::ConflictingUserRole {
+                        user_id: key.user_id.clone(),
+                    });
+                }
+            }
+        }
         let users = self
             .users
             .iter()

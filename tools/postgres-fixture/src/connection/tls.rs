@@ -17,13 +17,16 @@ pub(super) enum TlsMode {
     VerifyFull,
 }
 
-pub(super) fn tls_mode(raw: &str) -> TlsMode {
+pub(super) fn tls_mode(raw: &str) -> Result<TlsMode, FixtureError> {
     match query_value(raw, "sslmode").as_deref() {
-        Some("disable") => TlsMode::Disable,
-        Some("require") => TlsMode::Require,
-        Some("verify-ca") => TlsMode::VerifyCa,
-        Some("verify-full") => TlsMode::VerifyFull,
-        _ => TlsMode::Prefer,
+        None | Some("prefer") => Ok(TlsMode::Prefer),
+        Some("disable") => Ok(TlsMode::Disable),
+        Some("require") => Ok(TlsMode::Require),
+        Some("verify-ca") => Ok(TlsMode::VerifyCa),
+        Some("verify-full") => Ok(TlsMode::VerifyFull),
+        Some(value) => Err(FixtureError::UnknownTlsMode {
+            value: value.to_owned(),
+        }),
     }
 }
 
@@ -83,6 +86,9 @@ fn trusted_roots(options: &ConnectionOptions) -> Result<RootCertStore, FixtureEr
         }
     } else {
         let native = rustls_native_certs::load_native_certs();
+        if let Some(error) = native.errors.into_iter().next() {
+            return Err(FixtureError::TlsNative(error));
+        }
         for certificate in native.certs {
             roots
                 .add(certificate)

@@ -1,27 +1,40 @@
 #![cfg(test)]
 use crate::case::Compare;
-use crate::case::decode_http_case;
+use crate::case::{LoadedCase, decode_http_case};
+use crate::cli::Options;
 use crate::compare::compare;
 use crate::http::Response;
 use crate::runner::DatabaseEnvironment;
+use crate::runner::run_cases_with_url;
 use secrecy::ExposeSecret as _;
 use std::collections::BTreeMap;
 use std::{fs, path::Path};
 
 #[test]
 fn legacy_case_without_database() {
-    decode_http_case(b"name: legacy\nconfig: config\nenv: {}\nrequest: {method: GET, path: /health/liveliness, headers: {}, body: null}\nupstream: []\ncompare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}\n").unwrap();
+    let case = decode_http_case(b"name: legacy\nconfig: 'general_settings: {}'\nenv: {}\nrequest: {method: GET, path: /health/liveliness, headers: {}, body: null}\nupstream: []\ncompare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}\n").unwrap();
+    let options = Options {
+        self_check: true,
+        paths: Vec::new(),
+    };
+    let result = run_cases_with_url(&options, vec![LoadedCase::Http(case)], None).unwrap();
+    assert_eq!(result, std::process::ExitCode::SUCCESS);
 }
 
 #[test]
 fn public_route_without_key() {
     let case = decode_http_case(
-        b"name: public\nconfig: config\nenv: {}\nrequest: {method: GET, path: /health/liveliness, headers: {}, body: null}\nupstream: []\ncompare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}\n",
+        b"name: public\nconfig: 'general_settings: {}'\nenv: {}\nrequest: {method: GET, path: /health/liveliness, headers: {}, body: null}\nupstream: []\ncompare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}\n",
     )
     .unwrap();
     assert_eq!(case.request.path, "/health/liveliness");
     assert!(case.request.headers.is_empty());
-    assert!(case.database.is_none());
+    let options = Options {
+        self_check: true,
+        paths: Vec::new(),
+    };
+    let result = run_cases_with_url(&options, vec![LoadedCase::Http(case)], None).unwrap();
+    assert_eq!(result, std::process::ExitCode::SUCCESS);
 }
 
 #[test]

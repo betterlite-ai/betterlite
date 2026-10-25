@@ -17,8 +17,9 @@ pub(super) async fn source_connection(
     match source {
         FixtureSource::Configured(options) => Ok((*options, None)),
         FixtureSource::Testcontainers => {
-            let image = GenericImage::new("postgres", "16.6")
+            let image = GenericImage::new("postgres", "17")
                 .with_wait_for(WaitFor::message_on_stdout("database system is ready"))
+                .with_wait_for(WaitFor::seconds(2))
                 .with_exposed_port(5432.tcp())
                 .with_env_var("POSTGRES_USER", "fixture")
                 .with_env_var("POSTGRES_PASSWORD", "fixture")

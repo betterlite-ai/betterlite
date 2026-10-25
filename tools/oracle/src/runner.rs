@@ -40,8 +40,7 @@ pub(crate) fn run_cases_with_url(
     for loaded_case in cases {
         match loaded_case {
             LoadedCase::Http(http_case) => {
-                let group_env = http_case.env.clone();
-                let group_key = format!("{}\n{:?}", http_case.config, group_env);
+                let group_key = format!("{}\n{:?}", http_case.config, http_case.env);
                 groups.entry(group_key).or_default().push(http_case);
             }
             LoadedCase::Helper(helper_case) => {

@@ -21,6 +21,8 @@ pub enum FixtureError {
         #[source]
         source: url::ParseError,
     },
+    #[error("configured PostgreSQL URL has unknown sslmode {value}")]
+    UnknownTlsMode { value: String },
     #[error("configured PostgreSQL server is unreachable: {0}")]
     Connect(#[source] tokio_postgres::Error),
     #[error("testcontainers could not start PostgreSQL: {0}")]
@@ -35,6 +37,8 @@ pub enum FixtureError {
     TlsPem(#[source] PemError),
     #[error("fixture TLS certificate was rejected: {0}")]
     TlsCertificate(#[source] rustls::Error),
+    #[error("fixture native TLS certificate store failed: {0}")]
+    TlsNative(#[source] rustls_native_certs::Error),
     #[error("fixture TLS has no trusted root certificates")]
     TlsNoRoots,
     #[error("fixture {operation} timed out after {duration:?}")]
@@ -70,4 +74,6 @@ pub enum FixtureError {
     },
     #[error("fixture database name was not created by this fixture")]
     ForeignDatabase,
+    #[error("user {user_id} has conflicting roles")]
+    ConflictingUserRole { user_id: String },
 }

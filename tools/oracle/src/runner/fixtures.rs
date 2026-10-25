@@ -1,6 +1,6 @@
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_postgres_fixture::error::FixtureError;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::SecretString;
 
 use crate::OracleError;
 use crate::case::Case;
@@ -14,9 +14,9 @@ pub(super) fn provision(
     configured_url: Option<&SecretString>,
 ) -> Result<FixtureGuard, OracleError> {
     let first_case = cases.first().ok_or(OracleError::MissingCapture(0))?;
-    let fixture_definition = first_case.database.clone();
+    let fixture_definition = &first_case.database;
     for current_case in cases {
-        if current_case.database != fixture_definition {
+        if current_case.database != *fixture_definition {
             return Err(OracleError::DatabaseFixturesDiffer {
                 cases: cases.iter().map(|item| item.name.clone()).collect(),
             });
@@ -25,10 +25,9 @@ pub(super) fn provision(
     let Some(database) = fixture_definition else {
         return Ok(FixtureGuard { databases: None });
     };
-    let exposed_url = configured_url.map(ExposeSecret::expose_secret);
-    let first = PostgresFixture::provision_from_url(exposed_url, &database)
+    let first = PostgresFixture::provision_from_url(configured_url, database)
         .map_err(OracleError::DatabaseFixture)?;
-    let second = match PostgresFixture::provision_from_url(exposed_url, &database) {
+    let second = match PostgresFixture::provision_from_url(configured_url, database) {
         Ok(second_database) => second_database,
         Err(error) => {
             let cleanup_result = first.close();

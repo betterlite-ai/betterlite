@@ -9,7 +9,7 @@ use crate::case::Case;
 use secrecy::ExposeSecret as _;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct ConfigDocument {
     #[serde(default)]
     general_settings: GeneralSettings,
@@ -17,7 +17,7 @@ struct ConfigDocument {
     other: BTreeMap<String, serde_json::Value>,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Default, Deserialize, Serialize)]
 struct GeneralSettings {
     #[serde(default)]
     database_url: Option<String>,
