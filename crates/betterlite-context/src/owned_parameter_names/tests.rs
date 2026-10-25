@@ -24,6 +24,10 @@ fn owned_parameter_names_cases(#[case] case_name: &str) {
         }
         "owned_name_registry" => {
             let names = owned_names().unwrap();
+            let expected = include_str!("owned_names.txt")
+                .split_whitespace()
+                .collect::<Vec<_>>();
+            assert_eq!(names, expected);
             assert_eq!(names.first().map(String::as_str), Some("api_key"));
             assert!(
                 names
