@@ -1,0 +1,5 @@
+task: B3000
+deviations:
+  - what: "Non-finite float inputs such as inf and nan return None instead of a numeric Decimal."
+    why: "rust_decimal::Decimal represents finite decimal values only, so these Python float values have no safe equivalent in the budget counter."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1695-L1702"

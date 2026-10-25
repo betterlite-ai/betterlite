@@ -1,7 +1,7 @@
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive as _;
 use rust_decimal::prelude::ToPrimitive as _;
 use std::collections::HashMap;
-use std::hash::BuildHasher;
 use std::str;
 use std::str::FromStr as _;
 use std::time::SystemTime;
@@ -19,7 +19,6 @@ pub enum CounterEntityType {
     Project,
 }
 impl CounterEntityType {
-    #[must_use]
     pub fn from_litellm_name(name: &str) -> Option<Self> {
         match name {
             "Key" => Some(Self::Key),
@@ -32,20 +31,6 @@ impl CounterEntityType {
             "Organization" => Some(Self::Organization),
             "Project" => Some(Self::Project),
             _ => None,
-        }
-    }
-    #[must_use]
-    pub const fn wire_value(self) -> &'static str {
-        match self {
-            Self::Key => "key",
-            Self::Team => "team",
-            Self::TeamMember => "team_member",
-            Self::User => "user",
-            Self::EndUser => "end_user",
-            Self::Tag => "tag",
-            Self::ModelAccessGroup => "model_access_group",
-            Self::Organization => "organization",
-            Self::Project => "project",
         }
     }
 }
@@ -75,25 +60,23 @@ macro_rules! float_integer {
         })*
     };
 }
-float_integer!(
-    i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize
-);
+float_integer!(i8, i16, i32, i64, isize, u8, u16, u32, u64, usize);
+macro_rules! float_128 { ($($type:ty => $method:ident),*) => { $(impl FloatInput for $type { fn decimal_value(self) -> Option<Decimal> { Decimal::$method(self) } })* }; }
+float_128!(i128 => from_i128, u128 => from_u128);
 fn parse_decimal_text(text: &str) -> Option<Decimal> {
     let trimmed = text.trim_ascii();
-    let without_digit_grouping = trimmed.replace('_', "");
-    Decimal::from_str(&without_digit_grouping).ok()
+    let without_digit_grouping = normalize_digit_grouping(trimmed)?;
+    if let Ok(decimal) = Decimal::from_str(trimmed).or_else(|_| Decimal::from_scientific(trimmed)) {
+        return Some(decimal);
+    }
+    Decimal::from_str(&without_digit_grouping)
+        .or_else(|_| Decimal::from_scientific(&without_digit_grouping))
+        .ok()
 }
 macro_rules! float_string { ($($type:ty),*) => { $(impl FloatInput for $type { fn decimal_value(self) -> Option<Decimal> { parse_decimal_text(self.as_ref()) } })* }; }
 float_string!(String, &str);
 macro_rules! float_bytes { ($($type:ty),*) => { $(impl FloatInput for $type { fn decimal_value(self) -> Option<Decimal> { parse_decimal_text(str::from_utf8(self.as_ref()).ok()?) } })* }; }
 float_bytes!(Vec<u8>, &[u8]);
-pub fn _to_float<T>(value: T) -> Option<Decimal>
-where
-    T: FloatInput,
-{
-    let decimal = value.decimal_value()?;
-    Some(decimal)
-}
 pub trait IntInput {
     fn int_value(self) -> Option<i64>;
 }
@@ -114,31 +97,37 @@ impl IntInput for bool {
         Some(i64::from(self))
     }
 }
-macro_rules! int_string { ($($type:ty),*) => { $(impl IntInput for $type { fn int_value(self) -> Option<i64> { self.trim_ascii().replace('_', "").parse().ok() } })* }; }
+macro_rules! int_string { ($($type:ty),*) => { $(impl IntInput for $type { fn int_value(self) -> Option<i64> { normalize_digit_grouping(self.trim_ascii())?.parse().ok() } })* }; }
 int_string!(String, &str);
-macro_rules! int_bytes { ($($type:ty),*) => { $(impl IntInput for $type { fn int_value(self) -> Option<i64> { str::from_utf8(self.as_ref()).ok()?.trim_ascii().replace('_', "").parse().ok() } })* }; }
+macro_rules! int_bytes { ($($type:ty),*) => { $(impl IntInput for $type { fn int_value(self) -> Option<i64> { normalize_digit_grouping(str::from_utf8(self.as_ref()).ok()?.trim_ascii())?.parse().ok() } })* }; }
 int_bytes!(Vec<u8>, &[u8]);
-pub fn _to_int<T>(value: T) -> Option<i64>
-where
-    T: IntInput,
-{
-    if let Some(integer) = value.int_value() {
-        return Some(integer);
+fn normalize_digit_grouping(text: &str) -> Option<String> {
+    let mut previous_was_digit = false;
+    let mut separator_pending = false;
+    for character in text.chars() {
+        if character == '_' {
+            if !previous_was_digit || separator_pending {
+                return None;
+            }
+            separator_pending = true;
+            continue;
+        }
+        if separator_pending && !character.is_ascii_digit() {
+            return None;
+        }
+        separator_pending = false;
+        previous_was_digit = character.is_ascii_digit();
     }
-    None
+    if separator_pending {
+        return None;
+    }
+    Some(text.replace('_', ""))
 }
 pub trait ValueLookup {
     fn value(&self, key: &str) -> Option<&String>;
 }
-impl<S: BuildHasher> ValueLookup for HashMap<String, String, S> {
+impl ValueLookup for HashMap<String, String> {
     fn value(&self, key: &str) -> Option<&String> {
         self.get(key)
     }
-}
-pub fn _get_value<'value, T>(object: &'value T, key: &str) -> Option<&'value String>
-where
-    T: ValueLookup + ?Sized,
-{
-    let lookup_key = key.to_owned();
-    object.value(&lookup_key)
 }

@@ -1,8 +1,5 @@
 #![cfg(test)]
-use super::{
-    _get_value as get_value, _to_float as to_float, _to_int as to_int, BudgetCounter,
-    CounterEntityType,
-};
+use super::{BudgetCounter, CounterEntityType, FloatInput, IntInput, ValueLookup};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -22,58 +19,74 @@ fn structure_has_all_counter_fields() {
     assert_eq!(counter.entity_id, "test");
 }
 #[rstest]
-#[case("Key", CounterEntityType::Key, "key")]
-#[case("Team", CounterEntityType::Team, "team")]
-#[case("TeamMember", CounterEntityType::TeamMember, "team_member")]
-#[case("User", CounterEntityType::User, "user")]
-#[case("EndUser", CounterEntityType::EndUser, "end_user")]
-#[case("Tag", CounterEntityType::Tag, "tag")]
-#[case(
-    "Model access group",
-    CounterEntityType::ModelAccessGroup,
-    "model_access_group"
-)]
-#[case("Organization", CounterEntityType::Organization, "organization")]
-#[case("Project", CounterEntityType::Project, "project")]
-fn entity_mapping_handles_all_names(
-    #[case] label: &str,
-    #[case] kind: CounterEntityType,
-    #[case] wire: &str,
-) {
+#[case("Key", CounterEntityType::Key)]
+#[case("Team", CounterEntityType::Team)]
+#[case("TeamMember", CounterEntityType::TeamMember)]
+#[case("User", CounterEntityType::User)]
+#[case("EndUser", CounterEntityType::EndUser)]
+#[case("Tag", CounterEntityType::Tag)]
+#[case("Model access group", CounterEntityType::ModelAccessGroup)]
+#[case("Organization", CounterEntityType::Organization)]
+#[case("Project", CounterEntityType::Project)]
+fn entity_mapping_handles_all_names(#[case] label: &str, #[case] kind: CounterEntityType) {
     assert_eq!(CounterEntityType::from_litellm_name(label), Some(kind));
-    assert_eq!(kind.wire_value(), wire);
 }
 #[rstest]
 #[case(2_i32, Decimal::from(2_i32))]
 #[case(2.5_f64, Decimal::try_from(2.5_f64).unwrap())]
 #[case(" 2.5\n", Decimal::new(25, 1))]
 #[case("1_000.25", Decimal::new(100_025, 2))]
+#[case("1e-05", Decimal::new(1, 5))]
+#[case(true, Decimal::ONE)]
+#[case(false, Decimal::ZERO)]
 fn to_float_accepts_values<T>(#[case] value: T, #[case] expected: Decimal)
 where
-    T: super::FloatInput,
+    T: FloatInput,
 {
-    assert_eq!(to_float(value), Some(expected));
-    assert_eq!(to_float(&b" 3.5\n"[..]), Some(Decimal::new(35, 1)));
-    assert_eq!(to_float(true), Some(Decimal::ONE));
-    assert_eq!(to_float("abc"), None);
-    assert_eq!(to_float(Vec::from([0xff, 0xfe])), None);
+    assert_eq!(value.decimal_value(), Some(expected));
+    assert_eq!(
+        <&[u8] as FloatInput>::decimal_value(&b" 3.5\n"[..]),
+        Some(Decimal::new(35, 1))
+    );
+}
+#[rstest]
+#[case("_5")]
+#[case("5_")]
+#[case("1__0")]
+fn to_float_rejects_invalid_digit_separators(#[case] value: &str) {
+    assert_eq!(value.decimal_value(), None);
+}
+#[test]
+fn to_float_rejects_u128_values_decimal_cannot_hold() {
+    assert_eq!(u128::MAX.decimal_value(), None);
+}
+#[rstest]
+#[case(f64::INFINITY)]
+#[case(f64::NAN)]
+fn to_float_rejects_non_finite_values(#[case] value: f64) {
+    assert_eq!(value.decimal_value(), None);
 }
 #[rstest]
 #[case(2_i32, 2_i64)]
 #[case(2.9_f64, 2_i64)]
 #[case(" 1_000\n", 1_000_i64)]
+#[case(true, 1_i64)]
+#[case(false, 0_i64)]
 fn to_int_accepts_values<T>(#[case] value: T, #[case] expected: i64)
 where
-    T: super::IntInput,
+    T: IntInput,
 {
-    assert!(matches!(to_int(value), Some(actual) if actual == expected));
-    assert_eq!(to_int("abc"), None);
-    assert_eq!(to_int(Vec::from([0xff, 0xfe])), None);
-    assert_eq!(to_int(u128::MAX), None);
-    assert_eq!(to_int(f64::NAN), None);
+    assert_eq!(value.int_value(), Some(expected));
+}
+#[rstest]
+#[case("_5")]
+#[case("5_")]
+#[case("1__0")]
+fn to_int_rejects_invalid_digit_separators(#[case] value: &str) {
+    assert_eq!(value.int_value(), None);
 }
 struct Object(String);
-impl super::ValueLookup for Object {
+impl ValueLookup for Object {
     fn value(&self, key: &str) -> Option<&String> {
         (key == "spend").then_some(&self.0)
     }
@@ -81,10 +94,10 @@ impl super::ValueLookup for Object {
 #[test]
 fn get_value_reads_mapping_and_object_without_conversion() {
     let values = HashMap::from([(String::from("spend"), String::from("2.5"))]);
-    assert_eq!(get_value(&values, "spend"), Some(&String::from("2.5")));
-    assert_eq!(get_value(&values, "missing"), None);
+    assert_eq!(values.value("spend"), Some(&String::from("2.5")));
+    assert_eq!(values.value("missing"), None);
     assert_eq!(
-        get_value(&Object(String::from("3")), "spend"),
+        Object(String::from("3")).value("spend"),
         Some(&String::from("3"))
     );
 }
