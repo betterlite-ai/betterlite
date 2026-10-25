@@ -1,260 +1,227 @@
 use std::collections::BTreeMap;
+use std::mem;
 
-use crate::bedrock_records::{
-    BedrockContentItem, BedrockGuardrailOutput, BedrockGuardrailResponse,
-};
+use crate::bedrock_records::{ContentItem, Output, Response, TextContent, Usage};
+use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
 mod tests;
 
 pub const DEFAULT_CHUNK_BUDGET_CHARS: usize = 25_000;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct BedrockContentChunkResult {
-    pub response: BedrockGuardrailResponse,
-    pub content: Vec<BedrockContentItem>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChunkResult {
+    pub response: Response,
+    pub content: Vec<ContentItem>,
     pub fragment_group_size: usize,
 }
 
-pub fn content_uses_contextual_grounding(content: &[BedrockContentItem]) -> bool {
-    content.iter().any(|item| {
-        item.text
-            .as_ref()
-            .and_then(|text| text.qualifiers.as_ref())
-            .is_some_and(|values| !values.is_empty())
-    })
+#[must_use]
+pub fn uses_grounding(content: &[ContentItem]) -> bool {
+    let mut qualifiers = content
+        .iter()
+        .filter_map(|item| item.text.as_ref()?.qualifiers.as_ref());
+    qualifiers.any(|values| !values.is_empty())
 }
 
-pub fn bin_pack_bedrock_content(
-    content: &[BedrockContentItem],
-    budget: usize,
-) -> Vec<Vec<BedrockContentItem>> {
-    if content.is_empty() {
-        return vec![Vec::new()];
-    }
+fn source_text(item: &ContentItem) -> &str {
+    let Some(block) = &item.text else {
+        return "";
+    };
+    block.text.as_deref().unwrap_or("")
+}
+
+#[must_use]
+pub fn bin_pack(content: &[ContentItem], budget: usize) -> Vec<Vec<ContentItem>> {
     let mut batches = Vec::new();
     let mut current = Vec::new();
     let mut used: usize = 0;
     for item in content {
-        let length = item
-            .text
-            .as_ref()
-            .and_then(|text| text.text.as_ref())
-            .map_or(0, String::len);
-        if !current.is_empty() && used.checked_add(length).is_some_and(|total| total > budget) {
-            batches.push(current);
-            current = Vec::new();
+        let length = source_text(item).chars().count();
+        if !current.is_empty() && used.saturating_add(length) > budget {
+            batches.push(mem::take(&mut current));
             used = 0;
         }
         used = used.saturating_add(length);
         current.push(item.clone());
     }
-    if !current.is_empty() {
+    if !current.is_empty() || batches.is_empty() {
         batches.push(current);
     }
     batches
 }
 
-pub fn split_bedrock_content(
-    content: &[BedrockContentItem],
-) -> Option<(Vec<BedrockContentItem>, Vec<BedrockContentItem>)> {
+#[must_use]
+pub fn split(content: &[ContentItem]) -> Option<(Vec<ContentItem>, Vec<ContentItem>)> {
     if content.len() > 1 {
-        let midpoint = content.len() / 2;
-        return Some((content[..midpoint].to_vec(), content[midpoint..].to_vec()));
+        let (left, right) = content.split_at_checked(content.len().checked_div(2)?)?;
+        return Some((left.to_vec(), right.to_vec()));
     }
-    let item = content.first()?.clone();
-    let text = item.text.as_ref()?.text.as_ref()?;
+    let block = content.first()?.text.as_ref()?;
+    let text = block.text.as_ref()?;
     if text.chars().count() < 2 {
         return None;
     }
-    let split_at = nearest_whitespace_split_index(text);
-    let (left, right) = text.split_at(split_at);
-    let make = |part: &str| BedrockContentItem {
-        text: Some(crate::bedrock_records::BedrockTextContent {
+    let boundary = text.char_indices().nth(nearest_whitespace(text))?.0;
+    let (left, right) = text.split_at_checked(boundary)?;
+    let fragment = |part: &str| ContentItem {
+        text: Some(TextContent {
             text: Some(part.to_owned()),
-            qualifiers: item
-                .text
-                .as_ref()
-                .and_then(|value| value.qualifiers.clone()),
+            qualifiers: block.qualifiers.clone().filter(|values| !values.is_empty()),
+            extra: BTreeMap::new(),
         }),
+        extra: BTreeMap::new(),
     };
-    Some((vec![make(left)], vec![make(right)]))
+    Some((vec![fragment(left)], vec![fragment(right)]))
 }
 
-pub fn nearest_whitespace_split_index(text: &str) -> usize {
-    let midpoint = text
-        .char_indices()
-        .nth(text.chars().count() / 2)
-        .map_or(text.len(), |(index, _)| index);
+#[must_use]
+pub fn nearest_whitespace(text: &str) -> usize {
+    let length = text.chars().count();
+    let midpoint = length.checked_shr(1).unwrap_or_default();
+    let whitespace =
+        |character: char| character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character);
     let before = text
-        .char_indices()
-        .take_while(|(index, _)| *index < midpoint)
-        .filter(|(_, character)| character.is_whitespace())
-        .map(|(index, character)| index + character.len_utf8())
+        .chars()
+        .enumerate()
+        .take(midpoint)
+        .filter(|(_, character)| whitespace(*character))
+        .map(|(index, _)| index)
         .last();
     let after = text
-        .char_indices()
-        .find(|(index, character)| *index >= midpoint && character.is_whitespace())
-        .map(|(index, character)| index + character.len_utf8());
+        .chars()
+        .enumerate()
+        .skip(midpoint)
+        .find(|(_, character)| whitespace(*character))
+        .map(|(index, _)| index);
     [before, after]
         .into_iter()
         .flatten()
-        .filter(|index| *index > 0 && *index < text.len())
+        .map(|index| index.saturating_add(1))
+        .filter(|index| *index < length)
         .min_by_key(|index| index.abs_diff(midpoint))
         .unwrap_or(midpoint)
 }
 
-pub fn merge_bedrock_guardrail_responses(
-    chunks: &[BedrockContentChunkResult],
-) -> BedrockGuardrailResponse {
-    let groups = group_fragment_units(chunks);
-    let mut outputs = Vec::new();
-    let mut masked = false;
-    for group in groups {
-        let (group_outputs, group_masked) = merge_group(group);
-        outputs.extend(group_outputs);
-        masked |= group_masked;
-    }
-    let mut merged = chunks
-        .last()
-        .map(|chunk| chunk.response.clone())
-        .unwrap_or_default();
-    let actions: Vec<&str> = chunks
-        .iter()
-        .filter_map(|chunk| chunk.response.action.as_deref())
-        .collect();
-    if actions
-        .iter()
-        .any(|action| *action == "GUARDRAIL_INTERVENED")
-    {
-        merged.action = Some("GUARDRAIL_INTERVENED".to_owned());
-    } else if let Some(action) = actions.last() {
-        merged.action = Some((*action).to_owned());
-    }
-    let assessments = chunks
-        .iter()
-        .flat_map(|chunk| chunk.response.assessments.clone().unwrap_or_default())
-        .collect::<Vec<_>>();
-    if !assessments.is_empty() {
-        merged.assessments = Some(assessments);
-    }
-    if masked {
-        merged.outputs = Some(outputs.clone());
-        merged.output = Some(outputs);
-    }
-    if chunks.iter().any(|chunk| chunk.response.usage.is_some()) {
-        merged.usage = Some(sum_usage(chunks));
-    }
-    merged
+#[must_use]
+pub fn is_input_too_large(detail: Option<&str>) -> bool {
+    let Some(message) = detail else {
+        return false;
+    };
+    let lowered = message.to_lowercase();
+    [
+        "text unit",
+        "maximum input size",
+        "content size",
+        "too long",
+        "too large",
+        "exceeds the maximum",
+    ]
+    .iter()
+    .any(|pattern| lowered.contains(pattern))
 }
 
-fn group_fragment_units(chunks: &[BedrockContentChunkResult]) -> Vec<&[BedrockContentChunkResult]> {
-    let mut groups = Vec::new();
-    let mut start = 0;
-    while start < chunks.len() {
-        let size = chunks[start]
-            .fragment_group_size
-            .max(1)
-            .min(chunks.len() - start);
-        groups.push(&chunks[start..start + size]);
-        start += size;
-    }
-    groups
+fn chunk_outputs(chunk: &ChunkResult) -> &[Output] {
+    let response = &chunk.response;
+    response
+        .outputs
+        .as_deref()
+        .filter(|values| !values.is_empty())
+        .or(response.output.as_deref())
+        .unwrap_or_default()
 }
 
-fn merge_group(group: &[BedrockContentChunkResult]) -> (Vec<BedrockGuardrailOutput>, bool) {
+fn merge_group(group: &[ChunkResult]) -> (Vec<Output>, bool) {
+    let Some(first) = group.first() else {
+        return (Vec::new(), false);
+    };
+    let masked = group.iter().any(|chunk| !chunk_outputs(chunk).is_empty());
     if group.len() > 1 {
-        let mut text = String::new();
-        let mut masked = false;
-        for chunk in group {
-            let source = chunk
-                .content
-                .first()
-                .and_then(|item| item.text.as_ref())
-                .and_then(|text| text.text.as_deref())
-                .unwrap_or("");
-            let output = chunk
-                .response
-                .outputs
-                .as_ref()
-                .or(chunk.response.output.as_ref())
-                .and_then(|values| values.first())
-                .and_then(|value| value.text.as_deref())
-                .unwrap_or(source);
-            masked |= chunk
-                .response
-                .outputs
-                .as_ref()
-                .is_some_and(|values| !values.is_empty())
-                || chunk
-                    .response
-                    .output
-                    .as_ref()
-                    .is_some_and(|values| !values.is_empty());
-            text.push_str(output);
-        }
+        let text = group
+            .iter()
+            .map(|chunk| {
+                chunk_outputs(chunk)
+                    .first()
+                    .and_then(|output| output.text.as_deref())
+                    .unwrap_or_else(|| chunk.content.first().map_or("", source_text))
+            })
+            .collect();
         return (
-            vec![BedrockGuardrailOutput {
+            vec![Output {
                 text: Some(text),
                 extra: BTreeMap::new(),
             }],
             masked,
         );
     }
-    let chunk = &group[0];
-    let outputs = chunk
-        .response
-        .outputs
-        .as_ref()
-        .or(chunk.response.output.as_ref())
-        .cloned()
-        .unwrap_or_default();
-    if outputs.len() == chunk.content.len() {
-        return (outputs, !chunk.content.is_empty());
+    let outputs = chunk_outputs(first);
+    if !outputs.is_empty() {
+        return (outputs.to_vec(), true);
     }
-    if outputs.is_empty() {
-        return (
-            chunk
-                .content
-                .iter()
-                .map(|item| BedrockGuardrailOutput {
-                    text: item.text.as_ref().and_then(|text| text.text.clone()),
-                    extra: BTreeMap::new(),
-                })
-                .collect(),
-            false,
-        );
-    }
-    (outputs, true)
+    (
+        first
+            .content
+            .iter()
+            .map(|item| Output {
+                text: Some(source_text(item).to_owned()),
+                extra: BTreeMap::new(),
+            })
+            .collect(),
+        false,
+    )
 }
 
-fn sum_usage(
-    chunks: &[BedrockContentChunkResult],
-) -> crate::bedrock_records::BedrockGuardrailUsage {
-    let mut values: BTreeMap<String, i64> = BTreeMap::new();
+#[must_use]
+pub fn merge(chunks: &[ChunkResult]) -> Response {
+    let mut merged = Response::default();
+    let mut outputs = Vec::new();
+    let mut any_masked = false;
+    let mut remaining = chunks;
+    while let Some(first) = remaining.first() {
+        let size = first.fragment_group_size.max(1).min(remaining.len());
+        let Some((group, rest)) = remaining.split_at_checked(size) else {
+            break;
+        };
+        let (unit_outputs, masked) = merge_group(group);
+        outputs.extend(unit_outputs);
+        any_masked |= masked;
+        remaining = rest;
+    }
     for chunk in chunks {
-        if let Some(usage) = &chunk.response.usage {
-            let fields = usage.extra.iter().filter_map(|(key, value)| match value {
-                crate::bedrock_records::BedrockExtensionValue::Number(number) => {
-                    Some((key.clone(), *number))
-                }
-                _ => None,
-            });
-            for (key, number) in fields {
-                let entry = values.entry(key).or_insert(0);
-                *entry = (*entry).saturating_add(number);
-            }
+        merge_fields(&mut merged, &chunk.response);
+    }
+    if any_masked && !outputs.is_empty() {
+        merged.output = Some(outputs.clone());
+        merged.outputs = Some(outputs);
+    }
+    merged
+}
+
+fn merge_fields(merged: &mut Response, response: &Response) {
+    merged.extra.extend(response.extra.clone());
+    if merged.action.as_deref() != Some("GUARDRAIL_INTERVENED") && response.action.is_some() {
+        merged.action.clone_from(&response.action);
+    }
+    if let Some(outputs) = &response.outputs {
+        merged.outputs = Some(outputs.clone());
+    }
+    if let Some(output) = &response.output {
+        merged.output = Some(output.clone());
+    }
+    if let Some(assessments) = &response.assessments {
+        merged
+            .assessments
+            .get_or_insert_default()
+            .extend(assessments.clone());
+    }
+    if let Some(usage) = &response.usage {
+        let totals = merged.usage.get_or_insert_with(Usage::default);
+        for (key, counter) in &usage.0 {
+            let entry = totals.0.entry(key.clone()).or_insert(Some(0));
+            *entry = Some(
+                entry
+                    .unwrap_or_default()
+                    .saturating_add(counter.unwrap_or_default()),
+            );
         }
     }
-    let mut result = crate::bedrock_records::BedrockGuardrailUsage::default();
-    result.extra = values
-        .into_iter()
-        .map(|(key, value)| {
-            (
-                key,
-                crate::bedrock_records::BedrockExtensionValue::Number(value),
-            )
-        })
-        .collect();
-    result
 }

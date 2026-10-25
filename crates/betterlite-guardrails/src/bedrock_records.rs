@@ -1,113 +1,84 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[cfg(test)]
 mod tests;
 
-pub type BedrockGuardrailQualifier = String;
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum BedrockExtensionValue {
-    Null,
-    Bool(bool),
-    Number(i64),
-    Float(f64),
-    String(String),
-    Array(Vec<BedrockExtensionValue>),
-    Object(BTreeMap<String, BedrockExtensionValue>),
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Qualifier {
+    GroundingSource,
+    Query,
+    GuardContent,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct BedrockTextContent {
-    #[serde(default)]
-    pub text: Option<String>,
-    #[serde(default)]
-    pub qualifiers: Option<Vec<BedrockGuardrailQualifier>>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Source {
+    Input,
+    Output,
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct BedrockContentItem {
-    #[serde(default)]
-    pub text: Option<BedrockTextContent>,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct BedrockRequest {
-    #[serde(default)]
-    pub source: Option<String>,
-    #[serde(default)]
-    pub content: Option<Vec<BedrockContentItem>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct BedrockGuardrailUsage {
-    #[serde(rename = "topicPolicyUnits", default)]
-    pub topic_policy_units: Option<i64>,
-    #[serde(rename = "contentPolicyUnits", default)]
-    pub content_policy_units: Option<i64>,
-    #[serde(rename = "wordPolicyUnits", default)]
-    pub word_policy_units: Option<i64>,
-    #[serde(rename = "sensitiveInformationPolicyUnits", default)]
-    pub sensitive_information_policy_units: Option<i64>,
-    #[serde(rename = "sensitiveInformationPolicyFreeUnits", default)]
-    pub sensitive_information_policy_free_units: Option<i64>,
-    #[serde(rename = "contextualGroundingPolicyUnits", default)]
-    pub contextual_grounding_policy_units: Option<i64>,
-    #[serde(rename = "contentPolicyImageUnits", default)]
-    pub content_policy_image_units: Option<i64>,
-    #[serde(rename = "automatedReasoningPolicyUnits", default)]
-    pub automated_reasoning_policy_units: Option<i64>,
-    #[serde(rename = "automatedReasoningPolicies", default)]
-    pub automated_reasoning_policies: Option<i64>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, BedrockExtensionValue>,
-}
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct BedrockGuardrailOutput {
-    #[serde(default)]
-    pub text: Option<String>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, BedrockExtensionValue>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    User,
+    Assistant,
+    System,
 }
 
 macro_rules! record { ($name:ident { $($field:ident: $ty:ty => $wire:literal),* $(,)? }) => {
-    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-    pub struct $name { $(#[serde(rename=$wire, default, skip_serializing_if = "Option::is_none")] pub $field: Option<$ty>,)* #[serde(flatten)] pub extra: BTreeMap<String, BedrockExtensionValue> }
+    #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+    pub struct $name { $(#[serde(rename=$wire, default, skip_serializing_if = "Option::is_none")] pub $field: Option<$ty>,)* #[serde(flatten)] pub extra: BTreeMap<String, serde_json::Value> }
 }; }
-record!(BedrockGuardrailTopicPolicyItem { name: String => "name", type_name: String => "type", action: String => "action" });
-record!(BedrockGuardrailTopicPolicy { topics: Vec<BedrockGuardrailTopicPolicyItem> => "topics" });
-record!(BedrockGuardrailContentPolicyFilter { type_name: String => "type", confidence: String => "confidence", filter_strength: String => "filterStrength", action: String => "action" });
-record!(BedrockGuardrailContentPolicy { filters: Vec<BedrockGuardrailContentPolicyFilter> => "filters" });
-record!(BedrockGuardrailWordPolicyCustomWord { match_text: String => "match", action: String => "action" });
-record!(BedrockGuardrailWordPolicyManagedWord { match_text: String => "match", type_name: String => "type", action: String => "action" });
-record!(BedrockGuardrailWordPolicy { custom_words: Vec<BedrockGuardrailWordPolicyCustomWord> => "customWords", managed_word_lists: Vec<BedrockGuardrailWordPolicyManagedWord> => "managedWordLists" });
-record!(BedrockGuardrailPiiEntity { type_name: String => "type", match_text: String => "match", action: String => "action" });
-record!(BedrockGuardrailRegex { name: String => "name", regex: String => "regex", match_text: String => "match", action: String => "action" });
-record!(BedrockGuardrailSensitiveInformationPolicy { pii_entities: Vec<BedrockGuardrailPiiEntity> => "piiEntities", regexes: Vec<BedrockGuardrailRegex> => "regexes" });
-record!(BedrockGuardrailContextualGroundingFilter { type_name: String => "type", threshold: f64 => "threshold", score: f64 => "score", action: String => "action" });
-record!(BedrockGuardrailContextualGroundingPolicy { filters: Vec<BedrockGuardrailContextualGroundingFilter> => "filters" });
-record!(BedrockGuardrailCoverage { text_characters: BTreeMap<String, i64> => "textCharacters" });
-record!(BedrockGuardrailInvocationMetrics { guardrail_processing_latency: i64 => "guardrailProcessingLatency", usage: BedrockGuardrailUsage => "usage", guardrail_coverage: BedrockGuardrailCoverage => "guardrailCoverage" });
-record!(BedrockGuardrailAssessment { topic_policy: BedrockGuardrailTopicPolicy => "topicPolicy", content_policy: BedrockGuardrailContentPolicy => "contentPolicy", word_policy: BedrockGuardrailWordPolicy => "wordPolicy", sensitive_information_policy: BedrockGuardrailSensitiveInformationPolicy => "sensitiveInformationPolicy", contextual_grounding_policy: BedrockGuardrailContextualGroundingPolicy => "contextualGroundingPolicy", invocation_metrics: BedrockGuardrailInvocationMetrics => "invocationMetrics", guardrail_coverage: BedrockGuardrailCoverage => "guardrailCoverage" });
-record!(BedrockGuardrailResponse { usage: BedrockGuardrailUsage => "usage", action: String => "action", output: Vec<BedrockGuardrailOutput> => "output", outputs: Vec<BedrockGuardrailOutput> => "outputs", assessments: Vec<BedrockGuardrailAssessment> => "assessments" });
+record!(TextContent { text: String => "text", qualifiers: Vec<Qualifier> => "qualifiers" });
+record!(ContentItem { text: TextContent => "text" });
+record!(Request { source: Source => "source", content: Vec<ContentItem> => "content" });
+record!(Output { text: String => "text" });
+record!(ChecksTextContent { text: String => "text" });
+record!(ChecksMessage { role: Role => "role", content: Vec<ChecksTextContent> => "content" });
+record!(TopicPolicyItem { name: String => "name", type_name: String => "type", action: String => "action" });
+record!(TopicPolicy { topics: Vec<TopicPolicyItem> => "topics" });
+record!(ContentFilter { type_name: String => "type", confidence: String => "confidence", filter_strength: String => "filterStrength", action: String => "action" });
+record!(ContentPolicy { filters: Vec<ContentFilter> => "filters" });
+record!(CustomWord { match_text: String => "match", action: String => "action" });
+record!(ManagedWord { match_text: String => "match", type_name: String => "type", action: String => "action" });
+record!(WordPolicy { custom_words: Vec<CustomWord> => "customWords", managed_word_lists: Vec<ManagedWord> => "managedWordLists" });
+record!(PiiEntity { type_name: String => "type", match_text: String => "match", action: String => "action" });
+record!(Regex { name: String => "name", regex: String => "regex", match_text: String => "match", action: String => "action" });
+record!(SensitivePolicy { pii_entities: Vec<PiiEntity> => "piiEntities", regexes: Vec<Regex> => "regexes" });
+record!(GroundingFilter { type_name: String => "type", threshold: f64 => "threshold", score: f64 => "score", action: String => "action" });
+record!(GroundingPolicy { filters: Vec<GroundingFilter> => "filters" });
+record!(Coverage { text_characters: BTreeMap<String, i64> => "textCharacters" });
+record!(InvocationMetrics { guardrail_processing_latency: i64 => "guardrailProcessingLatency", usage: Usage => "usage", guardrail_coverage: Coverage => "guardrailCoverage" });
+record!(Assessment { topic_policy: TopicPolicy => "topicPolicy", content_policy: ContentPolicy => "contentPolicy", word_policy: WordPolicy => "wordPolicy", sensitive_information_policy: SensitivePolicy => "sensitiveInformationPolicy", contextual_grounding_policy: GroundingPolicy => "contextualGroundingPolicy", invocation_metrics: InvocationMetrics => "invocationMetrics", guardrail_coverage: Coverage => "guardrailCoverage" });
+record!(Response { usage: Usage => "usage", action: String => "action", output: Vec<Output> => "output", outputs: Vec<Output> => "outputs", assessments: Vec<Assessment> => "assessments" });
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct BedrockChecksTextContent {
-    #[serde(default)]
-    pub text: Option<String>,
+record!(ChecksScoreEntry { category: String => "category", severity_score: f64 => "severityScore" });
+record!(ChecksPiiEntry { type_name: String => "type", confidence_score: f64 => "confidenceScore", message_index: i64 => "messageIndex", content_index: i64 => "contentIndex", begin_offset: i64 => "beginOffset", end_offset: i64 => "endOffset" });
+record!(ChecksScoreResult { results: Vec<ChecksScoreEntry> => "results" });
+record!(ChecksSensitiveResult { results: Vec<ChecksPiiEntry> => "results", truncated: bool => "truncated" });
+record!(ChecksResults { content_filter: ChecksScoreResult => "contentFilter", prompt_attack: ChecksScoreResult => "promptAttack", sensitive_information: ChecksSensitiveResult => "sensitiveInformation" });
+record!(ChecksViolation { check: String => "check", category: String => "category", type_name: String => "type", severity_score: f64 => "severityScore", confidence_score: f64 => "confidenceScore", truncated: bool => "truncated" });
+record!(ChecksTextUnits { text_units: i64 => "textUnits" });
+record!(ChecksUsage { content_filter: ChecksTextUnits => "contentFilter", prompt_attack: ChecksTextUnits => "promptAttack", sensitive_information: ChecksTextUnits => "sensitiveInformation" });
+record!(ChecksResponse { results: ChecksResults => "results", usage: ChecksUsage => "usage" });
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Usage(pub BTreeMap<String, Option<i64>>);
+#[derive(Debug, Clone)]
+pub struct QualifiedTextBlock {
+    pub text: String,
+    pub qualifier: Option<Qualifier>,
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct BedrockChecksMessage {
-    #[serde(default)]
-    pub role: Option<String>,
-    #[serde(default)]
-    pub content: Option<Vec<BedrockChecksTextContent>>,
+#[derive(Debug, Clone)]
+pub struct MessageFilterResult<Message> {
+    pub payload_messages: Option<Vec<Message>>,
+    pub original_messages: Option<Vec<Message>>,
+    pub target_indices: Option<Vec<usize>>,
 }
-record!(BedrockChecksScoreEntry { category: String => "category", severity_score: f64 => "severityScore" });
-record!(BedrockChecksPiiEntry { type_name: String => "type", confidence_score: f64 => "confidenceScore", message_index: i64 => "messageIndex", content_index: i64 => "contentIndex", begin_offset: i64 => "beginOffset", end_offset: i64 => "endOffset" });
-record!(BedrockChecksScoreResult { results: Vec<BedrockChecksScoreEntry> => "results" });
-record!(BedrockChecksSensitiveInformationResult { results: Vec<BedrockChecksPiiEntry> => "results", truncated: bool => "truncated" });
-record!(BedrockChecksResults { content_filter: BedrockChecksScoreResult => "contentFilter", prompt_attack: BedrockChecksScoreResult => "promptAttack", sensitive_information: BedrockChecksSensitiveInformationResult => "sensitiveInformation" });
-record!(BedrockChecksViolation { check: String => "check", category: String => "category", type_name: String => "type", severity_score: f64 => "severityScore", confidence_score: f64 => "confidenceScore", truncated: bool => "truncated" });
-record!(BedrockChecksTextUnits { text_units: i64 => "textUnits" });
-record!(BedrockChecksUsage { content_filter: BedrockChecksTextUnits => "contentFilter", prompt_attack: BedrockChecksTextUnits => "promptAttack", sensitive_information: BedrockChecksTextUnits => "sensitiveInformation" });
-record!(BedrockGuardrailChecksResponse { results: BedrockChecksResults => "results", usage: BedrockChecksUsage => "usage" });
+#[derive(Debug, Clone)]
+pub struct MessageSelection<Message> {
+    pub filtered_messages: Option<Vec<Message>>,
+    pub scanned_slice: Option<(usize, usize)>,
+    pub scanned_role_subset: bool,
+    pub skip_scan: bool,
+}

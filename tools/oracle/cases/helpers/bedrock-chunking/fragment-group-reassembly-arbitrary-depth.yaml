@@ -2,6 +2,6 @@ kind: helper
 name: fragment-group-reassembly-arbitrary-depth
 call:
   bedrock_chunking:
-    step: {operation: merge, chunks: []}
+    step: {"operation": "merge", "chunks": [{"content": [{"text": {"text": "aa"}}], "response": {}, "fragment_group_size": 4}, {"content": [{"text": {"text": "bb"}}], "response": {"output": [{"text": "*"}]}, "fragment_group_size": 4}, {"content": [{"text": {"text": "cc"}}], "response": {"outputs": [], "output": [{"text": "!"}]}, "fragment_group_size": 4}, {"content": [{"text": {"text": "dd"}}], "response": {}, "fragment_group_size": 4}, {"content": [{"text": {"text": "later"}}], "response": {"outputs": [{"text": "LAST"}]}, "fragment_group_size": 1}]}
 env: {}
 compare: {ignore: []}

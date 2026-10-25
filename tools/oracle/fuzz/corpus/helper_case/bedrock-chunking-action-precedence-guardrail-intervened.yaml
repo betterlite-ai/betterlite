@@ -1,0 +1,7 @@
+kind: helper
+name: action-precedence-guardrail-intervened
+call:
+  bedrock_chunking:
+    step: {"operation": "merge", "chunks": [{"content": [{"text": {"text": "a"}}], "response": {"action": "GUARDRAIL_INTERVENED"}, "fragment_group_size": 1}, {"content": [{"text": {"text": "b"}}], "response": {"action": "NONE"}, "fragment_group_size": 1}, {"content": [{"text": {"text": "c"}}], "response": {}, "fragment_group_size": 1}]}
+env: {}
+compare: {ignore: []}

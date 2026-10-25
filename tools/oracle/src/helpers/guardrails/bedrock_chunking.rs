@@ -1,33 +1,63 @@
-use betterlite_guardrails::bedrock_chunking::{bin_pack_bedrock_content, merge_bedrock_guardrail_responses, nearest_whitespace_split_index, split_bedrock_content, BedrockContentChunkResult};
-use betterlite_guardrails::bedrock_records::{BedrockContentItem, BedrockGuardrailResponse};
+use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_guardrails::bedrock_chunking::{
+    ChunkResult, bin_pack, is_input_too_large, merge, nearest_whitespace, split, uses_grounding,
+};
+use betterlite_guardrails::bedrock_records::ContentItem;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct Input { step: Step }
+pub(crate) struct Input {
+    step: Step,
+}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "operation")]
-enum Step { BinPack { content: Vec<BedrockContentItem>, budget: usize }, Split { content: Vec<BedrockContentItem> }, Nearest { text: String }, Merge { chunks: Vec<Chunk> } }
-#[derive(Debug, Deserialize)]
-struct Chunk { response: BedrockGuardrailResponse, content: Vec<BedrockContentItem>, fragment_group_size: usize }
+enum Step {
+    BinPack {
+        content: Vec<ContentItem>,
+        budget: usize,
+    },
+    Split {
+        content: Vec<ContentItem>,
+    },
+    Nearest {
+        text: String,
+    },
+    Merge {
+        chunks: Vec<ChunkResult>,
+    },
+    Grounding {
+        content: Vec<ContentItem>,
+    },
+    TooLarge {
+        detail: Option<String>,
+    },
+}
 
-fn encode<T: Serialize>(value: T) -> crate::helpers::HelperResult {
-    serde_json::to_value(value).map_err(|error| Box::new(crate::helpers::HelperError { class: "SerializationError".to_owned(), status: None, error_type: None, param: None, code: None, message: error.to_string() }))
+fn encode<Value: Serialize>(value: Value) -> HelperResult {
+    let result = serde_json::to_value(value);
+    result.map_err(|error| {
+        Box::new(HelperError {
+            class: "SerializationError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })
 }
 
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let output = match &input.step {
-            Step::BinPack { content, budget } => return encode(bin_pack_bedrock_content(content, *budget)),
-            Step::Split { content } => return encode(split_bedrock_content(content)),
-            Step::Nearest { text } => json!(nearest_whitespace_split_index(text)),
-            Step::Merge { chunks } => {
-                let owned = chunks.iter().map(|chunk| BedrockContentChunkResult { response: chunk.response.clone(), content: chunk.content.clone(), fragment_group_size: chunk.fragment_group_size }).collect::<Vec<_>>();
-                return encode(merge_bedrock_guardrail_responses(&owned));
-            }
-        };
-        Ok(output)
+    fn run(input: &Self::Input) -> HelperResult {
+        match &input.step {
+            Step::BinPack { content, budget } => encode(bin_pack(content, *budget)),
+            Step::Split { content } => encode(split(content)),
+            Step::Nearest { text } => encode(nearest_whitespace(text)),
+            Step::Merge { chunks } => encode(merge(chunks)),
+            Step::Grounding { content } => encode(uses_grounding(content)),
+            Step::TooLarge { detail } => encode(is_input_too_large(detail.as_deref())),
+        }
     }
 }
