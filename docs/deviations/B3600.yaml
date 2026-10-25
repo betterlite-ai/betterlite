@@ -1,6 +1,6 @@
 task: B3600
 deviations:
-  - what: "Path joining normalizes parent segments and falls back to the base path when traversal escapes it."
+  - what: "Path joining normalizes .. segments and falls back to the base path when traversal escapes it."
     why: "This matches LiteLLM behavior and keeps configured base paths safe."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L697-L705"
   - what: "Rust exports use shorter identifiers than LiteLLM's exact long public names."
