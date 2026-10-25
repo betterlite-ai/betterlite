@@ -86,7 +86,7 @@ fn write_number(source: &str, out: &mut String) -> Result<(), JsonError> {
         let point = if fixed.contains('.') { "" } else { ".0" };
         write!(out, "{fixed}{point}")?;
     } else {
-        let sign = if exponent < 0_i32 { '-' } else { '+' };
+        let sign = if exponent.is_negative() { '-' } else { '+' };
         write!(out, "{mantissa}e{sign}{:02}", exponent.unsigned_abs())?;
     }
     Ok(())

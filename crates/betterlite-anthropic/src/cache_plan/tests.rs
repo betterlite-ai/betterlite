@@ -145,6 +145,17 @@ fn unmarked_plans_have_no_breakpoints(#[case] body: &str) {
 }
 
 #[test]
+fn four_breakpoints_are_allowed() {
+    let body = r#"{"cache_control":{"type":"ephemeral"},"messages":[{"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral","ttl":"1h"}},{"type":"text","text":"b","cache_control":{"type":"ephemeral","ttl":"1h"}},{"type":"text","text":"c","cache_control":{"type":"ephemeral"}},{"type":"text","text":"d"}]}]}"#;
+    let ttls: Vec<u32> = plan(body)
+        .breakpoints
+        .iter()
+        .map(|item| item.ttl_seconds)
+        .collect();
+    assert_eq!(ttls, [3600, 3600, 300, 300]);
+}
+
+#[test]
 fn hierarchical_prefixes_share_earlier_sections() {
     let before = plan(HIERARCHY);
     let after = plan(&HIERARCHY.replace("Stable instructions", "Changed instructions"));
