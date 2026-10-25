@@ -1,6 +1,8 @@
+use serde_json::Number;
+
 use crate::decisions::openai::{ChoiceValue, InputMessage};
 use crate::decisions::systemone::NoulCriteria;
-use crate::decisions::{DecisionsJson, Extra};
+use crate::decisions::{DecisionsJson, Extra, TokenCount};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecisionInput {
@@ -58,34 +60,34 @@ pub struct DecisionRequest {
     pub safety_identifier: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChoiceProbability {
     pub value: ChoiceValue,
-    pub probability: f64,
+    pub probability: Number,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScoreProbability {
-    pub value: u64,
+    pub value: Number,
     pub label: DecisionsJson,
-    pub probability: f64,
+    pub probability: Number,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecisionAnswer {
     Predicate {
-        probability: f64,
+        probability: Number,
         extra: Extra,
     },
     Choice {
         choice: ChoiceValue,
-        confidence: f64,
+        confidence: Number,
         probabilities: Vec<ChoiceProbability>,
         extra: Extra,
     },
     Score {
-        score: f64,
-        confidence: f64,
+        score: Number,
+        confidence: Number,
         probabilities: Vec<ScoreProbability>,
         extra: Extra,
     },
@@ -94,15 +96,15 @@ pub enum DecisionAnswer {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DecisionUsage {
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cached_tokens: u64,
-    pub cache_write_tokens: u64,
-    pub reasoning_tokens: u64,
+    pub input_tokens: TokenCount,
+    pub output_tokens: TokenCount,
+    pub cached_tokens: TokenCount,
+    pub cache_write_tokens: TokenCount,
+    pub reasoning_tokens: TokenCount,
     pub extra: Extra,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DecisionResponse {
     pub model: Option<String>,
     pub answers: Vec<DecisionAnswer>,

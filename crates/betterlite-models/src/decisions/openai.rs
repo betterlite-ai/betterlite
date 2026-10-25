@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 
 use crate::decisions::validators::{Bounded, Checked};
-use crate::decisions::{Extra, HiddenParams, MAX_DECISION_QUESTIONS};
+use crate::decisions::{Extra, HiddenParams, MAX_DECISION_QUESTIONS, TokenCount};
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -132,68 +133,68 @@ pub struct DecisionRequest {
     pub body: DecisionRequestBody,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ChoiceProbability {
     pub value: ChoiceValue,
-    pub probability: f64,
+    pub probability: Number,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ScoreProbability {
-    pub value: u64,
+    pub value: Number,
     pub label: String,
-    pub probability: f64,
+    pub probability: Number,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum DecisionAnswer {
     Predicate {
         name: Option<String>,
-        probability: f64,
+        probability: Number,
     },
     Choice {
         name: Option<String>,
         choice: ChoiceValue,
         probabilities: Vec<ChoiceProbability>,
-        confidence: f64,
+        confidence: Number,
     },
     Score {
         name: Option<String>,
-        score: f64,
+        score: Number,
         probabilities: Vec<ScoreProbability>,
-        confidence: f64,
+        confidence: Number,
     },
     Refusal {
         name: Option<String>,
     },
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct InputTokensDetails {
-    pub cached_tokens: u64,
-    pub cache_write_tokens: u64,
+    pub cached_tokens: TokenCount,
+    pub cache_write_tokens: TokenCount,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct OutputTokensDetails {
-    pub reasoning_tokens: u64,
+    pub reasoning_tokens: TokenCount,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DecisionUsage {
-    pub input_tokens: u64,
+    pub input_tokens: TokenCount,
     #[serde(default)]
     pub input_tokens_details: InputTokensDetails,
-    pub output_tokens: u64,
+    pub output_tokens: TokenCount,
     #[serde(default)]
     pub output_tokens_details: OutputTokensDetails,
-    pub total_tokens: u64,
+    pub total_tokens: TokenCount,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DecisionResponse {
     pub model: String,
     pub answers: Vec<DecisionAnswer>,

@@ -2,10 +2,11 @@ use betterlite_models::decisions::openai::{self, ChoiceValue, DecisionRequest, D
 use betterlite_models::decisions::systemone::{
     self, DecisionQuestionMap, DecisionsRequest, DecisionsResponse, DecisionsUsage,
 };
-use betterlite_models::decisions::{DecisionsJson, Extra, ir};
+use betterlite_models::decisions::{DecisionsJson, Extra, TokenCount, ir};
 use rstest::rstest;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde_json::Number;
 
 fn round_trip<Record>(json: &str) -> String
 where
@@ -35,7 +36,13 @@ fn fills_defaults_and_hides_cache_tokens() {
     let usage: DecisionsUsage =
         serde_json::from_str(r#"{"input_tokens":3,"cached_tokens":2,"cache_write_tokens":1}"#)
             .unwrap();
-    assert_eq!((usage.cached_tokens, usage.cache_write_tokens), (2, 1));
+    assert_eq!(
+        (&usage.cached_tokens, &usage.cache_write_tokens),
+        (
+            &TokenCount(Number::from(2_u8)),
+            &TokenCount(Number::from(1_u8))
+        )
+    );
     assert_eq!(
         serde_json::to_string(&usage).unwrap(),
         r#"{"input_tokens":3,"output_tokens":0}"#
@@ -72,13 +79,10 @@ fn builds_ir_records() {
     };
     assert_eq!(request.questions.len(), 1);
     let usage = ir::DecisionUsage::default();
+    let zero = TokenCount(Number::from(0_u8));
     assert_eq!(
-        [
-            usage.input_tokens,
-            usage.cached_tokens,
-            usage.reasoning_tokens
-        ],
-        [0, 0, 0]
+        [usage.input_tokens, usage.reasoning_tokens],
+        [zero.clone(), zero]
     );
     let unsupported = ir::UnsupportedRequest {
         reason: "text only".to_owned(),

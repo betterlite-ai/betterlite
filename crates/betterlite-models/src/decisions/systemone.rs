@@ -1,8 +1,9 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 
 use crate::decisions::validators::{Bounded, Checked};
-use crate::decisions::{DecisionsJson, Extra, HiddenParams, MAX_DECISION_QUESTIONS};
+use crate::decisions::{DecisionsJson, Extra, HiddenParams, MAX_DECISION_QUESTIONS, TokenCount};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -63,26 +64,26 @@ pub struct DecisionsRequest {
     pub body: DecisionsRequestBody,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum DecisionAnswer {
     Noul {
-        noul: f64,
+        noul: Number,
         #[serde(flatten)]
         extra: Extra,
     },
     Choice {
         choice: String,
-        confidence: f64,
-        probabilities: IndexMap<String, f64>,
+        confidence: Number,
+        probabilities: IndexMap<String, Number>,
         #[serde(flatten)]
         extra: Extra,
     },
     Score {
-        score: f64,
-        confidence: f64,
+        score: Number,
+        confidence: Number,
         legend: IndexMap<String, DecisionsJson>,
-        probabilities: IndexMap<String, f64>,
+        probabilities: IndexMap<String, Number>,
         #[serde(flatten)]
         extra: Extra,
     },
@@ -91,17 +92,17 @@ pub enum DecisionAnswer {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct DecisionsUsage {
-    pub input_tokens: u64,
-    pub output_tokens: u64,
+    pub input_tokens: TokenCount,
+    pub output_tokens: TokenCount,
     #[serde(skip_serializing)]
-    pub cached_tokens: u64,
+    pub cached_tokens: TokenCount,
     #[serde(skip_serializing)]
-    pub cache_write_tokens: u64,
+    pub cache_write_tokens: TokenCount,
     #[serde(flatten)]
     pub extra: Extra,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DecisionsResponse {
     pub model: Option<String>,
     pub answers: IndexMap<String, DecisionAnswer>,
