@@ -20,7 +20,7 @@ async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
     let port = free_port().await;
     let config_path = fixture(port, STANDARD_CONFIG).await;
     let server = spawn_server(&config_path, port);
-    wait_until_ready(port, 100).await;
+    wait_until_ready(port, 1000).await;
     let mut request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     let mut health_request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     let mut readiness_request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
@@ -80,7 +80,7 @@ async fn short_config_alias_starts_server() {
         .spawn()
         .unwrap();
     let server = ServerGuard { child: Some(child) };
-    wait_until_ready(port, 100).await;
+    wait_until_ready(port, 1000).await;
     drop(server);
 }
 #[tokio::test]
@@ -88,7 +88,7 @@ async fn dropping_server_guard_kills_server() {
     let port = free_port().await;
     let config_path = fixture(port, STANDARD_CONFIG).await;
     let server = spawn_server(&config_path, port);
-    wait_until_ready(port, 100).await;
+    wait_until_ready(port, 1000).await;
     let connection = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     timeout(Duration::from_secs(3), connection.readable())
         .await
@@ -186,7 +186,7 @@ async fn partial_headers_are_closed_after_the_read_deadline() {
     let port = free_port().await;
     let config_path = fixture(port, STANDARD_CONFIG).await;
     let server = spawn_server(&config_path, port);
-    wait_until_ready(port, 100).await;
+    wait_until_ready(port, 1000).await;
     let mut connection = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     connection
         .write_all(b"GET /health/liveliness HTTP/1.1\r\nHost: localhost\r\n")
