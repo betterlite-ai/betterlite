@@ -19,17 +19,16 @@ description: >-
   300 records/query code, 170 tests, 90 oracle adapters and 90 fuzz/exports, total 650.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/tool_records.rs
     - crates/betterlite-db/src/tool_records/**
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/tool_record.rs
     - crates/betterlite-db/fuzz/corpus/tool_record/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/db/tool_records.rs
-    - tools/oracle/src/helpers/db/tool_records/**
-    - tools/oracle/helpers/tool_records.py
-    - tools/oracle/helpers/tool_records/**
+    - tools/oracle/src/helpers/db/tool_row.rs
+    - tools/oracle/src/helpers/db/tool_row/**
+    - tools/oracle/helpers/tool_row.py
+    - tools/oracle/helpers/tool_row/**
     - tools/oracle/cases/helpers/tool-row/**
     - tools/oracle/fuzz/corpus/helper_case/tool-row-*
   lint_tables: false
@@ -73,7 +72,7 @@ out_of_scope:
   - B1606 owns batch_upsert_tools, update_tool_policy, ToolPolicyRegistry and its accessor, add_tool_to_object_permission_blocked and remove_tool_from_object_permission_blocked in tool_registry_writer.py.
   - get_tools_by_names has no caller at the pin; its unused database lookup is not implemented.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as tool_records in the db group. Replace the stub Op in tools/oracle/src/helpers/db/tool_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/tool_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as tool_row in the db group. Replace the stub Op in tools/oracle/src/helpers/db/tool_row.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/tool_row.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - One permission can produce several override display rows sharing the same override_id.
   - A failed owner lookup must not erase tools already read successfully.
 budget:

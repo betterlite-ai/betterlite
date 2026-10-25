@@ -38,18 +38,19 @@ scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_partner_dispatch}.rs
+    - crates/betterlite-provider/src/vertex_partner_dispatch.rs
     - crates/betterlite-provider/src/vertex_partner_dispatch/**
     - crates/betterlite-core/src/{dispatch,operation}.rs
     - crates/betterlite-core/src/api/{mod,vertex_partner_bindings}.rs
+    - crates/betterlite-core/src/api/vertex_partner_bindings.rs
     - crates/betterlite-core/src/api/vertex_partner_bindings/**
-    - crates/betterlite-vertex/src/lib.rs
     - tools/oracle/cases/chat/vertex-partner/**
     - tools/oracle/cases/api/vertex-partner-messages/**
     - tools/oracle/fixtures/vertex-partner/**
-    - tools/oracle/src/helpers/core_ops/vertex_partner_provider.rs
-    - tools/oracle/src/helpers/core_ops/vertex_partner_provider/**
-    - tools/oracle/helpers/vertex_partner_provider.py
-    - tools/oracle/helpers/vertex_partner_provider/**
+    - tools/oracle/src/helpers/core_ops/vertex_partner_factory.rs
+    - tools/oracle/src/helpers/core_ops/vertex_partner_factory/**
+    - tools/oracle/helpers/vertex_partner_factory.py
+    - tools/oracle/helpers/vertex_partner_factory/**
     - tools/oracle/cases/helpers/vertex-partner-factory/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_partner_factory*
   lint_tables: false
@@ -84,7 +85,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_partner_factory.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Factory comparisons call the pinned package selector and project its returned config kind without HTTP.
     - id: partner-factory-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_partner_factory*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_partner_factory::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_partner_factory*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::vertex_partner_factory::/)'
       why: New HelperCase seeds must select call.vertex_partner_factory and reach the production selector.
 oracle_cases:
   - tools/oracle/cases/chat/vertex-partner/claude.yaml
@@ -107,7 +108,7 @@ out_of_scope:
   - B036 and B038 retain generic Codestral/Mistral/OpenAILike implementations; B081/B004/B005 retain route registration.
   - vertex_ai.py declarations outside VertexPartnerProvider belong to the consuming tasks in B031/B033/B034; this composition adds no byte decoder.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_partner_provider in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vertex_partner_provider.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_partner_provider.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_partner_factory in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vertex_partner_factory.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_partner_factory.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The partner URL uses the versioned model before Mistral/Codestral body model suffix removal.
   - Claude Authorization must be written into a fresh header map because deployments share extra_headers.
   - The native gateway alias is enabled by B081's existing flag, not a second Vertex route.

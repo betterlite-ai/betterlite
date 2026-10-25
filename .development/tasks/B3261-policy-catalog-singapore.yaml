@@ -1,43 +1,33 @@
 id: B3261
-title: Local Singapore privacy and local financial AI catalog records
+title: Local Singapore privacy catalog record
 description: >-
-  Retain the local Singapore PDPA privacy protection record and the local MAS financial AI risk management record in the backup catalog.
-  These are pure policy catalog data with no implementation; their descriptions reference guardrail definitions that are owned by policy engine tasks, not this data task.
+  Retain the local Singapore PDPA privacy protection record in the backup catalog.
+  This is pure policy catalog data with no implementation; its description references guardrail definitions that are owned by policy engine tasks, not this data task.
   Own the local pdpa-singapore record (backup lines 2458-2688) with all nine guardrailDefinitions (sg-pdpa-pii-identifiers, sg-pdpa-contact-information, sg-pdpa-financial-data, sg-pdpa-business-identifiers, sg-pdpa-personal-identifiers, sg-pdpa-sensitive-data, sg-pdpa-do-not-call, sg-pdpa-data-transfer, sg-pdpa-profiling-automated-decisions).
-  Own the local mas-ai-risk-management record (backup lines 2689-2819) with all five guardrailDefinitions (sg-mas-fairness-bias, sg-mas-transparency-explainability, sg-mas-human-oversight, sg-mas-data-governance, sg-mas-model-security).
+  Write it to `crates/betterlite-policy/assets/templates/local/pdpa-singapore.json`, a fragment file holding exactly one JSON object: the record as LiteLLM has it at the pinned commit, with the same keys in the same order and the same values.
+  B3252 (local lookup) and B3253 (remote catalog) assemble the fragments in LiteLLM's source order from an explicit list, so the order of records is their job, not this task's.
   The PDPA record covers 5 obligation areas: personal identifier collection (section 13 Consent), sensitive data profiling (Advisory Guidelines), Do Not Call Registry violations (Part IX), overseas data transfers (section 26), and automated profiling without human oversight (Model AI Governance Framework).
-  Includes regex-based PII detection for NRIC/FIN, Singapore phone numbers, postal codes, passports, UEN, and bank account numbers. The MAS record covers fairness and bias in financial decisions, transparency and explainability, human oversight for consequential actions, data governance, and model security against adversarial attacks.
-  Preserve the exact field order and values from the pinned LiteLLM commit. Both records include complete litellm_params with pattern/category definitions and pattern_redaction_format or category_file references.
+  Includes regex-based PII detection for NRIC/FIN, Singapore phone numbers, postal codes, passports, UEN, and bank account numbers.
+  Preserve the exact field order and values from the pinned LiteLLM commit. The record includes complete litellm_params with pattern/category definitions and pattern_redaction_format or category_file references.
 scope:
   paths:
-    - litellm/policy_templates_backup.json
+    - crates/betterlite-policy/assets/templates/local/pdpa-singapore.json
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L2458-L2688
     why: The complete local pdpa-singapore record in the backup file with 9 guardrailDefinitions including prebuilt patterns and category definitions.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L2689-L2819
-    why: The complete local mas-ai-risk-management record in the backup file with 5 guardrailDefinitions covering MAS AI Risk Management guidelines for financial institutions.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L610-L624
     why: The _load_policy_templates_from_local_backup function that loads the backup catalog file.
 dod:
-  - text: The backup file contains the complete pdpa-singapore record with id "pdpa-singapore", title "Singapore PDPA — Personal Data Protection", and all 9 guardrail definitions.
+  - text: The local pdpa-singapore fragment holds the complete record with id "pdpa-singapore", title "Singapore PDPA — Personal Data Protection", and all 9 guardrail definitions.
     proof: [catalog-local-pdpa]
-  - text: The backup file contains the complete mas-ai-risk-management record with id "mas-ai-risk-management", title "Singapore MAS — AI Risk Management for Financial Institutions", and all 5 guardrail definitions.
-    proof: [catalog-local-mas]
-  - text: Both records in the backup file are valid JSON and can be loaded without errors.
-    proof: [catalog-local-pdpa, catalog-local-mas]
+  - text: The fragment is valid JSON and holds exactly one object.
+    proof: [catalog-local-pdpa]
   - text: >-
-      The local PDPA record includes all required fields
-      (id, title, description, icon, iconColor, iconBg, guardrails array,
+      The local PDPA record's keys are, in this order, id, title, description, icon, iconColor, iconBg, guardrails array,
       complexity, guardrailDefinitions array with 9 entries, templateData,
-      tags, and estimated_latency_ms) with correct literal values.
+      tags, and estimated_latency_ms, with correct literal values.
     proof: [catalog-local-pdpa]
-  - text: >-
-      The local MAS record includes all required fields
-      (id, title, description, icon, iconColor, iconBg, guardrails array,
-      complexity, guardrailDefinitions array with 5 entries, templateData,
-      tags, and estimated_latency_ms) with correct literal values.
-    proof: [catalog-local-mas]
   - text: >-
       The local PDPA record has all 9 guardrail definitions present with correct names
       (sg-pdpa-pii-identifiers, sg-pdpa-contact-information, sg-pdpa-financial-data,
@@ -45,123 +35,34 @@ dod:
       sg-pdpa-do-not-call, sg-pdpa-data-transfer, sg-pdpa-profiling-automated-decisions).
     proof: [catalog-local-pdpa]
   - text: >-
-      The local MAS record has all 5 guardrail definitions present with correct names
-      (sg-mas-fairness-bias, sg-mas-transparency-explainability, sg-mas-human-oversight,
-      sg-mas-data-governance, sg-mas-model-security).
-    proof: [catalog-local-mas]
-  - text: >-
       Literal field values are verified: PDPA title "Singapore PDPA — Personal Data Protection",
       tags ["PII Protection", "Regulatory", "Singapore"], estimated_latency_ms value 1,
-      local MAS title "Singapore MAS — AI Risk Management for Financial Institutions",
-      tags ["Financial Services", "Regulatory", "Singapore"], and all pattern_redaction_format
-      and category_file references are preserved exactly from the pinned commit.
-    proof: [catalog-local-pdpa, catalog-local-mas]
+      and all pattern_redaction_format and category_file references are preserved exactly from the pinned commit.
+    proof: [catalog-local-pdpa]
 checks:
   optional: []
   commands:
     - id: catalog-local-pdpa
-      why: the policy_templates_backup.json file is missing, has invalid JSON, or the pdpa-singapore record is corrupted, missing required fields, or literal values are wrong
-      run: |
-        python3 << 'CATALOG_CHECK_PDPA'
-        import json
-        with open('litellm/policy_templates_backup.json', 'r') as f:
-            templates = json.load(f)
-
-        pdpa_record = None
-        for t in templates:
-            if t.get('id') == 'pdpa-singapore':
-                pdpa_record = t
-                break
-
-        assert pdpa_record is not None, 'pdpa-singapore record not found in backup'
-
-        required_fields = ['id', 'title', 'description', 'icon', 'iconColor',
-                          'iconBg', 'guardrails', 'complexity', 'guardrailDefinitions', 'templateData',
-                          'tags', 'estimated_latency_ms']
-        for field in required_fields:
-            assert field in pdpa_record, f'missing field: {field}'
-
-        assert isinstance(pdpa_record['guardrails'], list) and len(pdpa_record['guardrails']) == 9, 'guardrails count wrong'
-        assert isinstance(pdpa_record['guardrailDefinitions'], list) and len(pdpa_record['guardrailDefinitions']) == 9, 'guardrailDefinitions count wrong'
-        assert isinstance(pdpa_record['tags'], list) and len(pdpa_record['tags']) == 3, 'tags count wrong'
-
-        assert pdpa_record['id'] == 'pdpa-singapore', 'id value corrupted'
-        assert pdpa_record['title'] == 'Singapore PDPA — Personal Data Protection', 'title value corrupted'
-        assert 'Personal Data Protection Act' in pdpa_record['description'], 'description value corrupted'
-        assert pdpa_record['tags'] == ['PII Protection', 'Regulatory', 'Singapore'], 'tags values corrupted'
-        assert pdpa_record['icon'] == 'ShieldCheckIcon', 'icon value corrupted'
-        assert pdpa_record['iconColor'] == 'text-red-500', 'iconColor value corrupted'
-        assert pdpa_record['iconBg'] == 'bg-red-50', 'iconBg value corrupted'
-        assert pdpa_record['complexity'] == 'High', 'complexity value corrupted'
-        assert pdpa_record['estimated_latency_ms'] == 1, 'estimated_latency_ms not 1'
-
-        guardrail_names = [g['guardrail_name'] for g in pdpa_record['guardrailDefinitions']]
-        expected_names = ['sg-pdpa-pii-identifiers', 'sg-pdpa-contact-information', 'sg-pdpa-financial-data',
-                         'sg-pdpa-business-identifiers', 'sg-pdpa-personal-identifiers', 'sg-pdpa-sensitive-data',
-                         'sg-pdpa-do-not-call', 'sg-pdpa-data-transfer', 'sg-pdpa-profiling-automated-decisions']
-        assert guardrail_names == expected_names, 'guardrail names corrupted or reordered'
-
-        for guardrail in pdpa_record['guardrailDefinitions']:
-            assert 'guardrail_name' in guardrail, 'guardrail missing name'
-            assert 'litellm_params' in guardrail, 'guardrail missing litellm_params'
-            params = guardrail['litellm_params']
-            assert 'guardrail' in params, f'{guardrail["guardrail_name"]} missing guardrail type'
-            assert 'mode' in params, f'{guardrail["guardrail_name"]} missing mode'
-            assert 'patterns' in params or 'categories' in params, f'{guardrail["guardrail_name"]} missing patterns or categories'
-
-        print('Singapore PDPA record valid and complete')
-        CATALOG_CHECK_PDPA
-    - id: catalog-local-mas
-      why: the litellm/policy_templates_backup.json file is missing, has invalid JSON, or the mas-ai-risk-management record is corrupted, missing required fields, or literal values are wrong
-      run: |
-        python3 << 'CATALOG_CHECK_MAS'
-        import json
-        with open('litellm/policy_templates_backup.json', 'r') as f:
-            templates = json.load(f)
-
-        mas_record = None
-        for t in templates:
-            if t.get('id') == 'mas-ai-risk-management':
-                mas_record = t
-                break
-
-        assert mas_record is not None, 'mas-ai-risk-management record not found in backup catalog'
-
-        required_fields = ['id', 'title', 'description', 'icon', 'iconColor',
-                          'iconBg', 'guardrails', 'complexity', 'guardrailDefinitions', 'templateData',
-                          'tags', 'estimated_latency_ms']
-        for field in required_fields:
-            assert field in mas_record, f'missing field: {field}'
-
-        assert isinstance(mas_record['guardrails'], list) and len(mas_record['guardrails']) == 5, 'guardrails count wrong'
-        assert isinstance(mas_record['guardrailDefinitions'], list) and len(mas_record['guardrailDefinitions']) == 5, 'guardrailDefinitions count wrong'
-        assert isinstance(mas_record['tags'], list) and len(mas_record['tags']) == 3, 'tags count wrong'
-
-        assert mas_record['id'] == 'mas-ai-risk-management', 'id value corrupted'
-        assert mas_record['title'] == 'Singapore MAS — AI Risk Management for Financial Institutions', 'title value corrupted'
-        assert 'Monetary Authority of Singapore' in mas_record['description'], 'description value corrupted'
-        assert mas_record['tags'] == ['Financial Services', 'Regulatory', 'Singapore'], 'tags values corrupted'
-        assert mas_record['icon'] == 'ShieldCheckIcon', 'icon value corrupted'
-        assert mas_record['iconColor'] == 'text-blue-600', 'iconColor value corrupted'
-        assert mas_record['iconBg'] == 'bg-blue-50', 'iconBg value corrupted'
-        assert mas_record['complexity'] == 'High', 'complexity value corrupted'
-        assert mas_record['estimated_latency_ms'] == 1, 'estimated_latency_ms not 1'
-
-        guardrail_names = [g['guardrail_name'] for g in mas_record['guardrailDefinitions']]
-        expected_names = ['sg-mas-fairness-bias', 'sg-mas-transparency-explainability', 'sg-mas-human-oversight',
-                         'sg-mas-data-governance', 'sg-mas-model-security']
-        assert guardrail_names == expected_names, 'guardrail names corrupted or reordered'
-
-        for guardrail in mas_record['guardrailDefinitions']:
-            assert 'guardrail_name' in guardrail, 'guardrail missing name'
-            assert 'litellm_params' in guardrail, 'guardrail missing litellm_params'
-            params = guardrail['litellm_params']
-            assert 'guardrail' in params, f'{guardrail["guardrail_name"]} missing guardrail type'
-            assert 'mode' in params, f'{guardrail["guardrail_name"]} missing mode'
-            assert 'categories' in params, f'{guardrail["guardrail_name"]} missing categories'
-
-        print('Local MAS financial AI risk management record valid and complete')
-        CATALOG_CHECK_MAS
+      why: the local pdpa-singapore fragment is missing, is not one valid JSON object, or its keys, key order, guardrail definitions or literal values differ from the pinned LiteLLM record
+      run: |-
+        jq -e -s 'length == 1 and (.[0]
+          | ["sg-pdpa-pii-identifiers", "sg-pdpa-contact-information", "sg-pdpa-financial-data", "sg-pdpa-business-identifiers", "sg-pdpa-personal-identifiers", "sg-pdpa-sensitive-data", "sg-pdpa-do-not-call", "sg-pdpa-data-transfer", "sg-pdpa-profiling-automated-decisions"] as $names
+          | keys_unsorted == ["id", "title", "description", "icon", "iconColor", "iconBg", "guardrails", "complexity", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
+          and .id == "pdpa-singapore"
+          and .title == "Singapore PDPA " + ([8212] | implode) + " Personal Data Protection"
+          and (.description | contains("Personal Data Protection Act"))
+          and .icon == "ShieldCheckIcon"
+          and .iconColor == "text-red-500"
+          and .iconBg == "bg-red-50"
+          and .guardrails == $names
+          and .complexity == "High"
+          and [.guardrailDefinitions[].guardrail_name] == $names
+          and all(.guardrailDefinitions[].litellm_params; .guardrail == "litellm_content_filter" and .mode == "pre_call")
+          and [.guardrailDefinitions[0:4][].litellm_params.pattern_redaction_format] == ["[{pattern_name}_REDACTED]", "[{pattern_name}_REDACTED]", "[{pattern_name}_REDACTED]", "[UEN_REDACTED]"]
+          and all(.guardrailDefinitions[0:4][]; .litellm_params.patterns | length > 0)
+          and all(.guardrailDefinitions[4:][]; (.guardrail_name | gsub("-"; "_")) as $category | [.litellm_params.categories[] | [.category, .category_file]] == [[$category, "litellm/proxy/guardrails/content_filter_data/policy_templates/\($category).yaml"]])
+          and .tags == ["PII Protection", "Regulatory", "Singapore"]
+          and .estimated_latency_ms == 1)' crates/betterlite-policy/assets/templates/local/pdpa-singapore.json
 oracle_cases: []
 deviations: []
 out_of_scope:
@@ -169,15 +70,14 @@ out_of_scope:
   - Guardrail implementations or pattern definitions referenced by these templates. The records only define policy patterns, categories, and metadata.
   - Other policy templates in the backup or published files. Those are owned by other catalog tasks.
   - Published mas-ai-risk-management record (policy_templates.json lines 2248-2378) is owned by B3260.
+  - Local mas-ai-risk-management record (litellm/policy_templates_backup.json lines 2689-2819) is owned by B3265.
 pitfalls:
-  - The backup file must be valid JSON. Any syntax errors prevent loading; _load_policy_templates_from_local_backup returns an empty list on file-not-found but not on malformed JSON.
-  - The pdpa-singapore record must contain exactly 9 guardrailDefinitions in the correct order at backup lines 2458-2688; do not reorder or omit guardrail definitions.
-  - The mas-ai-risk-management record must contain exactly 5 guardrailDefinitions in the correct order at backup lines 2689-2819; do not reorder or omit guardrail definitions.
+  - The fragment must be valid JSON holding one object. LiteLLM's _load_policy_templates_from_local_backup returns an empty list on file-not-found but not on malformed JSON.
+  - The pdpa-singapore record must contain exactly 9 guardrailDefinitions in the correct order; do not reorder or omit guardrail definitions.
   - >-
-    Each guardrailDefinitions entry must include the complete litellm_params block. For PDPA: patterns entries with pattern_type, pattern_name, action and pattern_redaction_format. For MAS: categories entries with category, category_file, enabled, action, and severity_threshold.
-  - Both records must include all category_file references unchanged (litellm/proxy/guardrails/content_filter_data/policy_templates/...). These are data references, not a request to implement filters.
-  - Local and published MAS records are distinct. The local version in the backup may differ from the published version; both are valid catalog entries in their respective files.
+    Each guardrailDefinitions entry must include the complete litellm_params block: patterns entries with pattern_type, pattern_name, action and pattern_redaction_format, or categories entries with category, category_file, enabled, action, and severity_threshold.
+  - The record must include all category_file references unchanged (litellm/proxy/guardrails/content_filter_data/policy_templates/...). These are data references, not a request to implement filters.
 review_level: standard
 budget:
-  max_changed_lines: 380
+  max_changed_lines: 260
   max_new_expects: 0

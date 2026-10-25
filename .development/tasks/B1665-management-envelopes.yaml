@@ -32,10 +32,10 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/management_envelopes.rs
     - crates/betterlite-server/src/management_envelopes/**
-    - tools/oracle/src/helpers/server/management_envelopes.rs
-    - tools/oracle/src/helpers/server/management_envelopes/**
-    - tools/oracle/helpers/management_envelopes.py
-    - tools/oracle/helpers/management_envelopes/**
+    - tools/oracle/src/helpers/server/management_envelope.rs
+    - tools/oracle/src/helpers/server/management_envelope/**
+    - tools/oracle/helpers/management_envelope.py
+    - tools/oracle/helpers/management_envelope/**
     - tools/oracle/cases/helpers/management-envelope/**
     - tools/oracle/fuzz/corpus/helper_case/management-envelope-*
   lint_tables: false
@@ -73,7 +73,7 @@ out_of_scope:
   - B007 currently owns list_api/common.py's ManagementProblem, HTTP translation, query errors and link construction; no function from that file is reimplemented here.
   - B067 and its route parts own management_v1 budgets, users, teams and spend-log facets and the router in management_v1/__init__.py.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as management_envelopes in the server group. Replace the stub Op in tools/oracle/src/helpers/server/management_envelopes.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/management_envelopes.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as management_envelope in the server group. Replace the stub Op in tools/oracle/src/helpers/server/management_envelope.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/management_envelope.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Problem documents omit allowed when absent, whereas page links deliberately retain null prev and next fields.
   - Facets have has_more but no total count or first/last links; counted entity lists use the other envelope.
 budget:

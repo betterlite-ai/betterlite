@@ -36,7 +36,6 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-roi/src/lib.rs
     - crates/betterlite-roi/src/settings.rs
     - crates/betterlite-roi/src/records.rs
   lint_tables: false

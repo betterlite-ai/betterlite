@@ -56,7 +56,6 @@ scope:
   paths:
     - crates/betterlite-db/src/schema_contract.rs
     - crates/betterlite-db/src/schema_contract/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
   lint_tables: false
 references:

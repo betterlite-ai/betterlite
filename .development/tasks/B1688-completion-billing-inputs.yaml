@@ -44,13 +44,12 @@ scope:
     - crates/betterlite-core/src/cost.rs
     - crates/betterlite-core/src/cost/prepare.rs
     - crates/betterlite-core/src/cost/prepare/**
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/billing_text.rs
     - crates/betterlite-models/src/billing_text/**
-    - tools/oracle/src/helpers/core_ops/completion_billing_inputs.rs
-    - tools/oracle/src/helpers/core_ops/completion_billing_inputs/**
-    - tools/oracle/helpers/completion_billing_inputs.py
-    - tools/oracle/helpers/completion_billing_inputs/**
+    - tools/oracle/src/helpers/core_ops/billing_text.rs
+    - tools/oracle/src/helpers/core_ops/billing_text/**
+    - tools/oracle/helpers/billing_text.py
+    - tools/oracle/helpers/billing_text/**
     - tools/oracle/cases/helpers/billing-text/**
     - tools/oracle/fuzz/corpus/helper_case/billing-text-*
   lint_tables: false
@@ -93,7 +92,7 @@ out_of_scope:
   - B014 retains utils.py functions other than the two text helpers extracted here; existing B195/B196/B197/B259 tokenizer ownership remains intact.
   - B1681-B1683 own the called tier, identity and usage helpers in cost_calculator.py; this task only composes them for L1401-L1560.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as completion_billing_inputs in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/completion_billing_inputs.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/completion_billing_inputs.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as billing_text in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/billing_text.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/billing_text.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Null and duplicate model candidates are real attempts; deduplicating them changes which failure is returned last.
   - A nonempty prompt_tokens_details with no cached_tokens changes the explicit cache-read count to zero.
   - Removing spaces by byte value misses Unicode whitespace and changes billed character counts.

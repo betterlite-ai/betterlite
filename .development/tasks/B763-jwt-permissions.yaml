@@ -94,7 +94,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/jwt_permissions.rs
     - crates/betterlite-auth/src/jwt_permissions/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/jwt_permissions.rs
     - tools/oracle/src/helpers/server/jwt_permissions/**

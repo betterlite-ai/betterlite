@@ -92,7 +92,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/session_token_codec.rs
     - crates/betterlite-auth/src/session_token_codec/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/session_token_codec.rs
     - tools/oracle/src/helpers/auth/session_token_codec/**

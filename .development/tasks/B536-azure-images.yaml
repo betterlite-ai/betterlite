@@ -64,7 +64,6 @@ description: >-
   and oracle adapters.
 
 
-  Register helper operation azure_images in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
   The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
   transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
   model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
@@ -96,8 +95,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
-  - crates/betterlite-azure/src/lib.rs
-  - crates/betterlite-azure/src/error.rs
   - crates/betterlite-azure/src/images.rs
   - crates/betterlite-azure/src/images/**
   - tools/oracle/Cargo.toml

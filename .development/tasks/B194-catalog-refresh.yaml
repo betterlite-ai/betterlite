@@ -15,8 +15,7 @@ description: >-
   cases override only inside an injected get_model_cost_map client call, never by allowing import-time network.
   Runtime unknown fields warn with paths and are ignored under B205 policy. Write the behavior rstest functions
   catalog_refresh_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
-  in the DoD; corpus replay tests have separate names. Register helper operations catalog_refresh in tools/oracle/src/helpers/mod.rs
-  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  in the DoD; corpus replay tests have separate names. The helper operation catalog_refresh is already registered; each operation has its own Rust and Python adapter file and corpus seed.
   Own refetch_model_cost_map 364-412, provenance 415-478, alias expansion/finalization/adoption 481-567 and startup/retry-task
   orchestration 570-697; local file reading/snapshot access delegates to B193 and fetch policy to B257. Budget 300
   state/startup, 110 adapters, 290 tests and 70 config/wiring (770 total).
@@ -24,8 +23,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-models/Cargo.toml
-  - crates/betterlite-models/src/lib.rs
-  - crates/betterlite-models/src/error.rs
   - crates/betterlite-models/src/source.rs
   - crates/betterlite-models/src/source/**
   - crates/betterlite-models/src/reload.rs

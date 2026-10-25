@@ -41,13 +41,12 @@ description: >-
   source lines fit 340 rate logic, 260 tests and 200 adapters/cases within 800 changed lines.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/token_rates.rs
     - crates/betterlite-models/src/token_rates/**
-    - tools/oracle/src/helpers/models/token_rate_selection.rs
-    - tools/oracle/src/helpers/models/token_rate_selection/**
-    - tools/oracle/helpers/token_rate_selection.py
-    - tools/oracle/helpers/token_rate_selection/**
+    - tools/oracle/src/helpers/models/token_rates.rs
+    - tools/oracle/src/helpers/models/token_rates/**
+    - tools/oracle/helpers/token_rates.py
+    - tools/oracle/helpers/token_rates/**
     - tools/oracle/cases/helpers/token-rates/**
     - tools/oracle/fuzz/corpus/helper_case/token-rates-*
   lint_tables: false
@@ -96,7 +95,7 @@ out_of_scope:
   - The other utils.py regions are off-peak L401-L613 (B1669), token details L105-L110/L162-L168/L892-L1173/L1495-L1496 (B1671), generic/uplift L99-L102/L1176-L1248/L1291-L1492 (B1672), billed breakdown L1499-L1770 (B1673), image math L862-L889/L1773-L1862 (B1674), web counters L126-L153 (B1675), character pricing L156-L159/L171-L250 (B1676), and image dispatch L113-L123/L1865-L2093 (B1687).
   - Catalog decoding stays in B204/B193; this task consumes records and extends helper_case seeds rather than defining a second price-file parser.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as token_rate_selection in the models group. Replace the stub Op in tools/oracle/src/helpers/models/token_rate_selection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/token_rate_selection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as token_rates in the models group. Replace the stub Op in tools/oracle/src/helpers/models/token_rates.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/token_rates.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A malformed nonnull service-tier price does not take the missing-key fallback to the ordinary price.
   - Batch output thresholds are discovered from output keys, not borrowed from the input threshold selected for the request.
   - The tier-table one-hour cache fallback uses truthiness, so zero there behaves differently from an ordinary model one-hour zero.

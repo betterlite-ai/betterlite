@@ -27,14 +27,16 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,vertex_agent_stream}.rs
+    - crates/betterlite-vertex/src/vertex_agent_stream.rs
     - crates/betterlite-vertex/src/vertex_agent_stream/**
     - crates/betterlite-provider/src/adapters.rs
     - crates/betterlite-provider/src/adapters/{mod,vertex_agent_stream}.rs
+    - crates/betterlite-provider/src/adapters/vertex_agent_stream.rs
     - crates/betterlite-provider/src/adapters/vertex_agent_stream/**
-    - tools/oracle/src/helpers/provider/vertex_agent_engine_stream.rs
-    - tools/oracle/src/helpers/provider/vertex_agent_engine_stream/**
-    - tools/oracle/helpers/vertex_agent_engine_stream.py
-    - tools/oracle/helpers/vertex_agent_engine_stream/**
+    - tools/oracle/src/helpers/provider/vertex_agent_chunk.rs
+    - tools/oracle/src/helpers/provider/vertex_agent_chunk/**
+    - tools/oracle/helpers/vertex_agent_chunk.py
+    - tools/oracle/helpers/vertex_agent_chunk/**
     - tools/oracle/cases/helpers/vertex-agent-chunk/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_agent_chunk*
   lint_tables: false
@@ -63,7 +65,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_agent_chunk.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Source chunk_parser operates on fixture dictionaries without network IO.
     - id: agent-chunk-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_agent_chunk*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_agent_chunk::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_agent_chunk*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::provider::vertex_agent_chunk::/)'
       why: The shared parser must recognize call.vertex_agent_chunk on every added seed.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-agent-chunk/first-dictionary-text.yaml
@@ -76,7 +78,7 @@ out_of_scope:
   - Agent Engine URL/auth/request and buffered-answer methods remain B1386; B031 selects this adapter for chat completion.
   - B010 retains the generic BaseModelResponseIterator decoder, while B005 owns the external chat SSE envelope.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_agent_engine_stream in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/vertex_agent_engine_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_agent_engine_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_agent_chunk in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/vertex_agent_chunk.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_agent_chunk.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Streaming state_delta text is ignored even though buffered Agent Engine responses can use it.
   - Each chunk's first text value is forwarded directly without snapshot differencing.
   - An empty usage_metadata object is absent usage rather than an explicit zero usage block.

@@ -25,7 +25,6 @@ scope:
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-server/src/api/file_read_route.rs
   - crates/betterlite-server/src/api/file_read_route/**
-  - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_read_route.rs
   - crates/betterlite-core/src/api/file_read_route/**

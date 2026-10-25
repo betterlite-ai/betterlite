@@ -49,13 +49,12 @@ description: >-
   260 tests and 180 adapters/corpus within 800 changed lines.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/baseline_history.rs
     - crates/betterlite-models/src/baseline_history/**
-    - tools/oracle/src/helpers/models/baseline_cache_history.rs
-    - tools/oracle/src/helpers/models/baseline_cache_history/**
-    - tools/oracle/helpers/baseline_cache_history.py
-    - tools/oracle/helpers/baseline_cache_history/**
+    - tools/oracle/src/helpers/models/baseline_history.rs
+    - tools/oracle/src/helpers/models/baseline_history/**
+    - tools/oracle/helpers/baseline_history.py
+    - tools/oracle/helpers/baseline_history/**
     - tools/oracle/cases/helpers/baseline-history/**
     - tools/oracle/fuzz/corpus/helper_case/baseline-history-*
   lint_tables: false
@@ -103,7 +102,7 @@ out_of_scope:
   - B075 owns every function and record in anthropic/prompt_cache_prediction.py except the two counted records extracted here; it builds/fills those records and performs provider counting.
   - The database baseline-accounting tasks own ordering observations, durable checkpoints and publication; B1694 owns pricing a supplied estimate.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as baseline_cache_history in the models group. Replace the stub Op in tools/oracle/src/helpers/models/baseline_cache_history.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/baseline_cache_history.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as baseline_history in the models group. Replace the stub Op in tools/oracle/src/helpers/models/baseline_history.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/baseline_history.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Identical-path estimates can be valid even when their cache plan later invalidates the group's stored history.
   - A cache write expires from started_at, not available_at, so a slow response can arrive after its own entry expired.
   - One invalid relevant observation extends the block through every relevant observation's availability in that timestamp group.

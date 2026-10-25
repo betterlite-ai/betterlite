@@ -13,15 +13,13 @@ description: >-
   Add adversarial exact/pattern route cases proving every listed tool-capable route maps to the intended call type,
   while retaining source behavior for unknown routes. Write the behavior rstest functions call_route_metadata_route_metadata_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
-  separate names. Register helper operations route_metadata in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  separate names. The helper operation route_metadata is already registered;
   each operation has its own Rust and Python adapter file and corpus seed. Budget 250 route tables/matching, 100
   adapters, 290 tests and 100 fuzz/replay wiring (740 total).
 scope:
   paths:
   - Cargo.toml
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/routes.rs
   - crates/betterlite-core/src/routes/**
   - crates/betterlite-core/fixtures/**

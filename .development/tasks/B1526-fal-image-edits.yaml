@@ -33,10 +33,10 @@ scope:
     - crates/betterlite-core/src/api/fal.rs
     - crates/betterlite-core/src/api/fal/edit.rs
     - crates/betterlite-core/src/api/fal/edit/**
-    - tools/oracle/src/helpers/core_ops/fal_image_edits.rs
-    - tools/oracle/src/helpers/core_ops/fal_image_edits/**
-    - tools/oracle/helpers/fal_image_edits.py
-    - tools/oracle/helpers/fal_image_edits/**
+    - tools/oracle/src/helpers/core_ops/fal_edit.rs
+    - tools/oracle/src/helpers/core_ops/fal_edit/**
+    - tools/oracle/helpers/fal_edit.py
+    - tools/oracle/helpers/fal_edit/**
     - tools/oracle/cases/helpers/fal-edit/**
     - tools/oracle/fuzz/corpus/helper_case/fal_edit*
   lint_tables: false
@@ -72,7 +72,7 @@ deviations: []
 out_of_scope:
   - B046 installs the edit selector into the executable image family; B1525 remains the owner of GPT quality inference and Fal image-object decoding.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as fal_image_edits in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/fal_image_edits.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fal_image_edits.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as fal_edit in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/fal_edit.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fal_edit.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The generic edit mapper forwards unsupported keys even when drop_params=false.
   - None entries do not count toward the depth endpoint's one-image limit.
   - A string that looks like a local path is forwarded unchanged; only PathLike triggers a local file read.

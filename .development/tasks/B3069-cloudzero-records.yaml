@@ -5,12 +5,11 @@ description: >-
   CZRNs normalize and validate resource identifiers following the format `czrn:service-type:provider:region:owner-account-id:resource-type:cloud-local-id`, with provider mapping from LiteLLM's provider enum (azure, aws, gcp, google, anthropic, cohere, huggingface, replicate, together-ai).
   CBF transformation filters daily usage records with zero successful requests and skips records that fail CZRN generation, producing a DataFrame with required fields time/usage_start, cost/cost, resource/id (the CZRN), usage/amount and units, plus CBF column mappings for service, account, region, usage_family and operation.
   Preserve actual provider-map lookup ordering, per-record warning-and-drop behavior for CZRN failures and zero requests, account alias/hash formatting as `alias|hash`, token tags and date parsing with fallback to None when format is unknown.
-  The type file exports CBFRecord as `dict[str, Any]` to accommodate field names with forward slashes (e.g., `time/usage_start`, `cost/cost`), and carries the Apache-2.0 notices from the CloudZero source alongside the repository's MIT notice.
+  LiteLLM's type file declares CBFRecord as `dict[str, Any]` to accommodate field names with forward slashes (e.g., `time/usage_start`, `cost/cost`). The module carries the Apache-2.0 notices from the CloudZero source alongside the repository's MIT notice.
 scope:
   paths:
-    - litellm/integrations/cloudzero/cz_resource_names.py
-    - litellm/integrations/cloudzero/transform.py
-    - litellm/types/integrations/cloudzero.py
+    - crates/betterlite-logging/src/finops/cloudzero/records.rs
+    - crates/betterlite-logging/src/finops/cloudzero/records/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_resource_names.py#L26-L156

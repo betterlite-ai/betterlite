@@ -77,7 +77,6 @@ scope:
   paths:
     - crates/betterlite-db/src/resource_rows.rs
     - crates/betterlite-db/src/resource_rows/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - tools/oracle/src/helpers/db/resource_rows.rs
     - tools/oracle/src/helpers/db/resource_rows/**

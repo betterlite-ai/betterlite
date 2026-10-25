@@ -100,8 +100,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_cache.rs
     - crates/betterlite-auth/src/auth_cache/**
-    - crates/betterlite-auth/src/lib.rs
-    - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/cache.rs
     - tools/oracle/src/helpers/auth/cache/**

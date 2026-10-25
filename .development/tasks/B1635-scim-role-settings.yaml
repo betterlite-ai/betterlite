@@ -36,10 +36,10 @@ scope:
     - crates/betterlite-config/src/scim_role_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/scim-role-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/server/scim_role_settings.rs
-    - tools/oracle/src/helpers/server/scim_role_settings/**
-    - tools/oracle/helpers/scim_role_settings.py
-    - tools/oracle/helpers/scim_role_settings/**
+    - tools/oracle/src/helpers/server/scim_user_values.rs
+    - tools/oracle/src/helpers/server/scim_user_values/**
+    - tools/oracle/helpers/scim_user_values.py
+    - tools/oracle/helpers/scim_user_values/**
     - tools/oracle/cases/helpers/scim-user-values/**
     - tools/oracle/fuzz/corpus/helper_case/scim-user-values-*
   lint_tables: false
@@ -78,7 +78,7 @@ out_of_scope:
   - "scim_v2.py support services assigned elsewhere: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1636 L764-L787/L854-L949/L1097-L1142; B1637 L966-L1094/L2200-L2322/L2819-L2864."
   - "The remaining scim_v2.py functions belong to B1638 L164-L232/L1661-L1879, B1639 L1965-L2197/L2325-L2397, B1640 L2511-L2708, B1641 L1556-L1658/L2405-L2508, B1642 L1171-L1553, B1643 L1882-L1962, or B064 L2711-L2816/L2867-L2945."
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as scim_role_settings in the server group. Replace the stub Op in tools/oracle/src/helpers/server/scim_role_settings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/scim_role_settings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as scim_user_values in the server group. Replace the stub Op in tools/oracle/src/helpers/server/scim_user_values.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/scim_user_values.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Recomputing an unchanged member is necessary after a group rename because scim_admin_group can match the display name.
   - The default role helper treats a missing user_role differently from placeholder creation's direct dictionary lookup.
 budget:

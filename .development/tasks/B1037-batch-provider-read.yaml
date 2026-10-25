@@ -66,8 +66,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/api/batch_provider_read.rs
   - crates/betterlite-core/src/api/batch_provider_read/**
   - crates/betterlite-core/src/api.rs

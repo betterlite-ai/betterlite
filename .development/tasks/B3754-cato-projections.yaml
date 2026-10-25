@@ -25,7 +25,6 @@ description: >-
   x-cato-user-email (key-bound user email if present) and x-cato-gateway-key-alias (key_alias if present).
 scope:
   paths:
-    - crates/betterlite-guardrails/src/lib.rs
     - crates/betterlite-guardrails/src/cato.rs
     - crates/betterlite-guardrails/Cargo.toml
     - crates/betterlite-config/src/raw.rs

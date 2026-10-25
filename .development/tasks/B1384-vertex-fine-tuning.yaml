@@ -27,6 +27,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_fine_tuning}.rs
+    - crates/betterlite-vertex/src/vertex_fine_tuning.rs
     - crates/betterlite-vertex/src/vertex_fine_tuning/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_tuning_job.rs
@@ -66,7 +67,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_tuning_job.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_tuning_job)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_tuning_job_corpus)'
       why: decode_vertex_tuning_job receives malformed dates, states and nested hyperparameters.
     - id: tuning-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_fine_tuning*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_fine_tuning::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_fine_tuning*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::fine_tuning::/)'
       why: Every new fixture must parse as call.vertex_fine_tuning.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-fine-tuning/request-names.yaml

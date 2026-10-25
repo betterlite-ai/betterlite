@@ -54,8 +54,8 @@ scope:
   paths:
     - crates/betterlite-db/src/migration_deploy.rs
     - crates/betterlite-db/src/migration_deploy/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/migration_deploy/fixtures.rs
     - crates/betterlite-db/src/migration_deploy/fixtures/**
   lint_tables: false
 references:

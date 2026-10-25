@@ -41,10 +41,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/cost_estimate_request.rs
     - crates/betterlite-server/fuzz/corpus/cost_estimate_request/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/server/cost_estimate_route.rs
-    - tools/oracle/src/helpers/server/cost_estimate_route/**
-    - tools/oracle/helpers/cost_estimate_route.py
-    - tools/oracle/helpers/cost_estimate_route/**
+    - tools/oracle/src/helpers/server/cost_estimate_values.rs
+    - tools/oracle/src/helpers/server/cost_estimate_values/**
+    - tools/oracle/helpers/cost_estimate_values.py
+    - tools/oracle/helpers/cost_estimate_values/**
     - tools/oracle/cases/helpers/cost-estimate-values/**
     - tools/oracle/cases/management/cost-estimate/**
     - tools/oracle/fuzz/corpus/helper_case/cost-estimate-values-*
@@ -93,7 +93,7 @@ out_of_scope:
   - B075 owns the included prompt-cache prediction router; B066 composes it without duplicating its registration.
   - B068 supplies completion-cost calculation, billed rates and breakdown collection; B124 owns the public estimate model validator.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as cost_estimate_route in the server group. Replace the stub Op in tools/oracle/src/helpers/server/cost_estimate_route.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cost_estimate_route.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as cost_estimate_values in the server group. Replace the stub Op in tools/oracle/src/helpers/server/cost_estimate_values.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cost_estimate_values.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Reporting a second catalog lookup's rates can disagree with the quoted total when provider inference, token tiers or an off-peak boundary changes pricing.
   - Cache-read/cache-write and reasoning lines are portions of input/output costs, not amounts to add again to the total.
 budget:

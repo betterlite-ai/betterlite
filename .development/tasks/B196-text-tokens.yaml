@@ -16,8 +16,7 @@ description: >-
   threshold sample/extrapolate rather than reject; the HTTP body limit supplies the oversized-request cap. Invalid
   bounded-integer settings warn and fall back. Do not implement undecided HF family selection or model_info.custom_tokenizer
   from B195. Write the behavior rstest functions text_tokens_token_count_tests_behavior in adjacent tests.rs files, with
-  a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper
-  operations token_count in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation
+  a named case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation token_count is already registered; each operation
   has its own Rust and Python adapter file and corpus seed. Own token_counter.py 364-662 and use B259 for 663-690
   and 954-1051. The utils.py tokenizer backend and supported bundled-engine selection are B195; do not add HF acquisition
   or decide its fallback. Budget 300 counting/sampling, 100 adapters, 240 tests, 70 fuzz/replay and 60 config/wiring
@@ -34,8 +33,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-tokenizer/Cargo.toml
-  - crates/betterlite-tokenizer/src/lib.rs
-  - crates/betterlite-tokenizer/src/error.rs
   - crates/betterlite-tokenizer/src/count.rs
   - crates/betterlite-tokenizer/src/count/**
   - crates/betterlite-tokenizer/fuzz/**

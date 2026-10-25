@@ -76,7 +76,6 @@ scope:
   paths:
     - crates/betterlite-db/src/database_failures.rs
     - crates/betterlite-db/src/database_failures/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-config/src/database_failures.rs
     - crates/betterlite-config/src/database_failures/**

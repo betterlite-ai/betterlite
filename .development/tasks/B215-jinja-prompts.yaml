@@ -11,14 +11,11 @@ description: >-
   extraction, 110 adapters, 330 tests/fuzz and 70 wiring (750 total). Add the prompt_template cargo-fuzz target,
   call the production parser, and commit/replay malformed and boundary seeds. Write the behavior rstest functions
   jinja_prompts_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure in the
-  DoD; corpus replay tests have separate names. Register helper operations jinja_prompts in tools/oracle/src/helpers/mod.rs
-  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  DoD; corpus replay tests have separate names. The helper operation jinja_prompts is already registered; each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
   - crates/betterlite-prompts/Cargo.toml
-  - crates/betterlite-prompts/src/lib.rs
-  - crates/betterlite-prompts/src/error.rs
   - crates/betterlite-prompts/src/jinja.rs
   - crates/betterlite-prompts/src/jinja/**
   - tools/oracle/Cargo.toml

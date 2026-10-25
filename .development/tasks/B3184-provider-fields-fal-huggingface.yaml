@@ -32,7 +32,7 @@ dod:
     proof: [remaining-providers-exact-fields]
   - text: All thirteen providers preserve the exact field order, with credentials appearing in their LiteLLM order and never reordered.
     proof: [provider-field-order-all-thirteen]
-  - text: The JSON file parses correctly with serde_json and yields thirteen provider records in the expected order.
+  - text: The JSON file is a JSON array of thirteen provider records in the expected order.
     proof: [provider-json-parses]
 checks:
   optional: []
@@ -40,460 +40,102 @@ checks:
     - id: provider-records-deep-equality
       why: the provider records differ from LiteLLM in any field including litellm_provider, provider_display_name, or default_model_placeholder
       run: |
-        cat > "$TMPDIR/check_deep_equality.py" << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json') as f:
-            actual = json.load(f)
-
-        # Full expected records from LiteLLM pinned commit d665dc1a
-        expected = [
-          {
-            "provider": "FalAI",
-            "litellm_provider": "fal_ai",
-            "provider_display_name": "Fal AI",
-            "default_model_placeholder": "fal_ai/fal-ai/flux-pro/v1.1-ultra",
-            "credential_fields": [
-              {"key": "api_key", "label": "API Key", "field_type": "password", "required": True}
-            ]
-          },
-          {
-            "provider": "FEATHERLESS_AI",
-            "litellm_provider": "featherless_ai",
-            "provider_display_name": "Featherless Ai",
-            "default_model_placeholder": "gpt-3.5-turbo"
-          },
-          {
-            "provider": "FireworksAI",
-            "litellm_provider": "fireworks_ai",
-            "provider_display_name": "Fireworks AI",
-            "default_model_placeholder": "gpt-3.5-turbo"
-          },
-          {
-            "provider": "FRIENDLIAI",
-            "litellm_provider": "friendliai",
-            "provider_display_name": "Friendliai",
-            "default_model_placeholder": "gpt-3.5-turbo"
-          },
-          {
-            "provider": "GALADRIEL",
-            "litellm_provider": "galadriel",
-            "provider_display_name": "Galadriel",
-            "default_model_placeholder": "gpt-3.5-turbo"
-          },
-          {
-            "provider": "GIGACHAT",
-            "litellm_provider": "gigachat",
-            "provider_display_name": "GigaChat",
-            "default_model_placeholder": "GigaChat-2"
-          },
-          {
-            "provider": "GITHUB",
-            "litellm_provider": "github",
-            "provider_display_name": "Github",
-            "default_model_placeholder": "gpt-3.5-turbo"
-          },
-          {
-            "provider": "GITHUB_COPILOT",
-            "litellm_provider": "github_copilot",
-            "provider_display_name": "Github Copilot",
-            "default_model_placeholder": "gpt-3.5-turbo"
-          },
-          {
-            "provider": "Google_AI_Studio",
-            "litellm_provider": "gemini",
-            "provider_display_name": "Google AI Studio",
-            "default_model_placeholder": "gemini-pro"
-          },
-          {
-            "provider": "GradientAI",
-            "litellm_provider": "gradient_ai",
-            "provider_display_name": "GradientAI",
-            "default_model_placeholder": "gpt-3.5-turbo"
-          },
-          {
-            "provider": "Groq",
-            "litellm_provider": "groq",
-            "provider_display_name": "Groq",
-            "default_model_placeholder": "gpt-3.5-turbo"
-          },
-          {
-            "provider": "HEROKU",
-            "litellm_provider": "heroku",
-            "provider_display_name": "Heroku",
-            "default_model_placeholder": "gpt-3.5-turbo"
-          },
-          {
-            "provider": "HUGGINGFACE",
-            "litellm_provider": "huggingface",
-            "provider_display_name": "Huggingface",
-            "default_model_placeholder": "gpt-3.5-turbo"
-          }
-        ]
-
-        # Verify array length
-        if len(actual) != 13:
-            print(f"Expected 13 providers, got {len(actual)}")
-            exit(1)
-
-        # Verify each record's core fields
-        for i, (exp, act) in enumerate(zip(expected, actual)):
-            if act.get('provider') != exp['provider']:
-                print(f"Record {i}: provider mismatch: expected '{exp['provider']}', got '{act.get('provider')}'")
-                exit(1)
-            if act.get('litellm_provider') != exp['litellm_provider']:
-                print(f"Record {i} ({exp['provider']}): litellm_provider mismatch: expected '{exp['litellm_provider']}', got '{act.get('litellm_provider')}'")
-                exit(1)
-            if act.get('provider_display_name') != exp['provider_display_name']:
-                print(f"Record {i} ({exp['provider']}): provider_display_name mismatch: expected '{exp['provider_display_name']}', got '{act.get('provider_display_name')}'")
-                exit(1)
-            if act.get('default_model_placeholder') != exp['default_model_placeholder']:
-                print(f"Record {i} ({exp['provider']}): default_model_placeholder mismatch: expected '{exp['default_model_placeholder']}', got '{act.get('default_model_placeholder')}'")
-                exit(1)
-            if 'credential_fields' not in act:
-                print(f"Record {i} ({exp['provider']}): missing credential_fields")
-                exit(1)
-        CHECKER
-        uv run --with pyyaml python "$TMPDIR/check_deep_equality.py"
+        jq -e 'all(has("credential_fields")) and map({provider, litellm_provider, provider_display_name, default_model_placeholder}) == [
+          {"provider": "FalAI", "litellm_provider": "fal_ai", "provider_display_name": "Fal AI", "default_model_placeholder": "fal_ai/fal-ai/flux-pro/v1.1-ultra"},
+          {"provider": "FEATHERLESS_AI", "litellm_provider": "featherless_ai", "provider_display_name": "Featherless Ai", "default_model_placeholder": "gpt-3.5-turbo"},
+          {"provider": "FireworksAI", "litellm_provider": "fireworks_ai", "provider_display_name": "Fireworks AI", "default_model_placeholder": "gpt-3.5-turbo"},
+          {"provider": "FRIENDLIAI", "litellm_provider": "friendliai", "provider_display_name": "Friendliai", "default_model_placeholder": "gpt-3.5-turbo"},
+          {"provider": "GALADRIEL", "litellm_provider": "galadriel", "provider_display_name": "Galadriel", "default_model_placeholder": "gpt-3.5-turbo"},
+          {"provider": "GIGACHAT", "litellm_provider": "gigachat", "provider_display_name": "GigaChat", "default_model_placeholder": "GigaChat-2"},
+          {"provider": "GITHUB", "litellm_provider": "github", "provider_display_name": "Github", "default_model_placeholder": "gpt-3.5-turbo"},
+          {"provider": "GITHUB_COPILOT", "litellm_provider": "github_copilot", "provider_display_name": "Github Copilot", "default_model_placeholder": "gpt-3.5-turbo"},
+          {"provider": "Google_AI_Studio", "litellm_provider": "gemini", "provider_display_name": "Google AI Studio", "default_model_placeholder": "gemini-pro"},
+          {"provider": "GradientAI", "litellm_provider": "gradient_ai", "provider_display_name": "GradientAI", "default_model_placeholder": "gpt-3.5-turbo"},
+          {"provider": "Groq", "litellm_provider": "groq", "provider_display_name": "Groq", "default_model_placeholder": "gpt-3.5-turbo"},
+          {"provider": "HEROKU", "litellm_provider": "heroku", "provider_display_name": "Heroku", "default_model_placeholder": "gpt-3.5-turbo"},
+          {"provider": "HUGGINGFACE", "litellm_provider": "huggingface", "provider_display_name": "Huggingface", "default_model_placeholder": "gpt-3.5-turbo"}
+        ]' crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json
     - id: provider-litellm-display-names
       why: litellm_provider or provider_display_name values differ from LiteLLM for any of the thirteen providers
       run: |
-        cat > "$TMPDIR/check_names.py" << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json') as f:
-            data = json.load(f)
-
-        expected_names = {
-          'FalAI': ('fal_ai', 'Fal AI'),
-          'FEATHERLESS_AI': ('featherless_ai', 'Featherless Ai'),
-          'FireworksAI': ('fireworks_ai', 'Fireworks AI'),
-          'FRIENDLIAI': ('friendliai', 'Friendliai'),
-          'GALADRIEL': ('galadriel', 'Galadriel'),
-          'GIGACHAT': ('gigachat', 'GigaChat'),
-          'GITHUB': ('github', 'Github'),
-          'GITHUB_COPILOT': ('github_copilot', 'Github Copilot'),
-          'Google_AI_Studio': ('gemini', 'Google AI Studio'),
-          'GradientAI': ('gradient_ai', 'GradientAI'),
-          'Groq': ('groq', 'Groq'),
-          'HEROKU': ('heroku', 'Heroku'),
-          'HUGGINGFACE': ('huggingface', 'Huggingface'),
-        }
-
-        if len(data) != 13:
-            print(f"Expected 13 providers, got {len(data)}")
-            exit(1)
-
-        for provider_data in data:
-            provider = provider_data.get('provider')
-            if provider not in expected_names:
-                print(f"Unexpected provider: {provider}")
-                exit(1)
-            exp_llm, exp_display = expected_names[provider]
-            if provider_data.get('litellm_provider') != exp_llm:
-                print(f"{provider}: litellm_provider mismatch: expected '{exp_llm}', got '{provider_data.get('litellm_provider')}'")
-                exit(1)
-            if provider_data.get('provider_display_name') != exp_display:
-                print(f"{provider}: provider_display_name mismatch: expected '{exp_display}', got '{provider_data.get('provider_display_name')}'")
-                exit(1)
-        CHECKER
-        uv run --with pyyaml python "$TMPDIR/check_names.py"
+        jq -e '{
+          "FalAI": ["fal_ai", "Fal AI"],
+          "FEATHERLESS_AI": ["featherless_ai", "Featherless Ai"],
+          "FireworksAI": ["fireworks_ai", "Fireworks AI"],
+          "FRIENDLIAI": ["friendliai", "Friendliai"],
+          "GALADRIEL": ["galadriel", "Galadriel"],
+          "GIGACHAT": ["gigachat", "GigaChat"],
+          "GITHUB": ["github", "Github"],
+          "GITHUB_COPILOT": ["github_copilot", "Github Copilot"],
+          "Google_AI_Studio": ["gemini", "Google AI Studio"],
+          "GradientAI": ["gradient_ai", "GradientAI"],
+          "Groq": ["groq", "Groq"],
+          "HEROKU": ["heroku", "Heroku"],
+          "HUGGINGFACE": ["huggingface", "Huggingface"]
+        } as $expected | length == 13 and all(.[]; [.litellm_provider, .provider_display_name] == $expected[.provider])' crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json
     - id: falai-flux-placeholder
       why: FalAI model placeholder is not the flux model identifier
-      run: |
-        cat > "$TMPDIR/check_falai.py" << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json') as f:
-            data = json.load(f)
-        falai = next(p for p in data if p['provider'] == 'FalAI')
-        expected = 'fal_ai/fal-ai/flux-pro/v1.1-ultra'
-        actual = falai.get('default_model_placeholder')
-        if actual != expected:
-            print(f"FalAI placeholder mismatch: expected '{expected}', got '{actual}'")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python "$TMPDIR/check_falai.py"
+      run: jq -e '.[] | select(.provider == "FalAI") | .default_model_placeholder == "fal_ai/fal-ai/flux-pro/v1.1-ultra"' crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json
     - id: gigachat-five-fields
       why: GigaChat is missing a field or fields are out of order
       run: |
-        cat > "$TMPDIR/check_gigachat_fields.py" << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json') as f:
-            data = json.load(f)
-        gigachat = next(p for p in data if p['provider'] == 'GIGACHAT')
-        expected_keys = ['api_base', 'api_key', 'gigachat_scope', 'gigachat_auth_url', 'gigachat_access_token']
-        actual_keys = [f['key'] for f in gigachat['credential_fields']]
-        if actual_keys != expected_keys:
-            print(f"GigaChat field order mismatch: expected {expected_keys}, got {actual_keys}")
-            exit(1)
-        if len(gigachat['credential_fields']) != 5:
-            print(f"GigaChat should have 5 fields, got {len(gigachat['credential_fields'])}")
-            exit(1)
-        # Verify access_token has the OAuth tooltip
-        access_token = next((f for f in gigachat['credential_fields'] if f['key'] == 'gigachat_access_token'), None)
-        if not access_token or access_token.get('tooltip') != 'Disable OAuth, provide value to authorization.':
-            print(f"GigaChat access_token tooltip missing or incorrect: {access_token}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python "$TMPDIR/check_gigachat_fields.py"
+        jq -e '.[] | select(.provider == "GIGACHAT") | [.credential_fields[].key] == ["api_base", "api_key", "gigachat_scope", "gigachat_auth_url", "gigachat_access_token"]' crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json &&
+        jq -e '.[] | select(.provider == "GIGACHAT") | .credential_fields[] | select(.key == "gigachat_access_token") | .tooltip == "Disable OAuth, provide value to authorization."' crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json
     - id: gigachat-scope-options
       why: GigaChat scope field options or default are missing or incorrect
-      run: |
-        cat > "$TMPDIR/check_gigachat_scope.py" << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json') as f:
-            data = json.load(f)
-        gigachat = next(p for p in data if p['provider'] == 'GIGACHAT')
-        scope_field = next((f for f in gigachat['credential_fields'] if f['key'] == 'gigachat_scope'), None)
-        if not scope_field:
-            print("GigaChat scope field not found")
-            exit(1)
-        expected_options = ['GIGACHAT_API_PERS', 'GIGACHAT_API_B2B', 'GIGACHAT_API_CORP']
-        if scope_field.get('options') != expected_options:
-            print(f"GigaChat scope options mismatch: expected {expected_options}, got {scope_field.get('options')}")
-            exit(1)
-        if scope_field.get('default_value') != 'GIGACHAT_API_PERS':
-            print(f"GigaChat scope default should be GIGACHAT_API_PERS, got {scope_field.get('default_value')}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python "$TMPDIR/check_gigachat_scope.py"
+      run: >-
+        jq -e '.[] | select(.provider == "GIGACHAT") | .credential_fields[] | select(.key == "gigachat_scope") | .options == ["GIGACHAT_API_PERS", "GIGACHAT_API_B2B", "GIGACHAT_API_CORP"] and .default_value == "GIGACHAT_API_PERS"'
+        crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json
     - id: google-ai-api-version-guidance
       why: Google AI Studio api_base tooltip does not include API version guidance
-      run: |
-        cat > "$TMPDIR/check_google_ai.py" << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json') as f:
-            data = json.load(f)
-        google = next(p for p in data if p['provider'] == 'Google_AI_Studio')
-        api_base = next((f for f in google['credential_fields'] if f['key'] == 'api_base'), None)
-        if not api_base:
-            print("Google_AI_Studio api_base field not found")
-            exit(1)
-        expected_placeholder = 'https://generativelanguage.googleapis.com/v1beta'
-        if api_base.get('placeholder') != expected_placeholder:
-            print(f"api_base placeholder mismatch: expected '{expected_placeholder}', got '{api_base.get('placeholder')}'")
-            exit(1)
-        tooltip = api_base.get('tooltip', '')
-        if 'v1alpha for Gemini 3+ models' not in tooltip:
-            print("api_base tooltip missing v1alpha guidance for Gemini 3+ models")
-            exit(1)
-        if 'include the version prefix' not in tooltip:
-            print("api_base tooltip missing version prefix guidance")
-            exit(1)
-        if 'but not the trailing slash' not in tooltip:
-            print("api_base tooltip missing trailing slash guidance")
-            exit(1)
-        if '/models/{model}:generateContent' not in tooltip:
-            print("api_base tooltip missing generateContent path guidance")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python "$TMPDIR/check_google_ai.py"
+      run: >-
+        jq -e '.[] | select(.provider == "Google_AI_Studio") | .credential_fields[] | select(.key == "api_base") | .placeholder == "https://generativelanguage.googleapis.com/v1beta" and (.tooltip | contains("v1alpha for Gemini 3+ models") and contains("include the version prefix") and contains("but not the trailing slash") and contains("/models/{model}:generateContent"))'
+        crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json
     - id: gradient-ai-custom-labels
       why: GradientAI labels or placeholders do not match LiteLLM's custom values
       run: |
-        cat > "$TMPDIR/check_gradient.py" << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json') as f:
-            data = json.load(f)
-        gradient = next(p for p in data if p['provider'] == 'GradientAI')
-        # Check api_base
-        api_base = next((f for f in gradient['credential_fields'] if f['key'] == 'api_base'), None)
-        if not api_base or api_base.get('label') != 'GradientAI Endpoint':
-            print(f"GradientAI api_base label should be 'GradientAI Endpoint', got '{api_base.get('label') if api_base else 'not found'}'")
-            exit(1)
-        if api_base.get('placeholder') != 'https://...':
-            print(f"GradientAI api_base placeholder should be 'https://...', got '{api_base.get('placeholder')}'")
-            exit(1)
-        # Check api_key
-        api_key = next((f for f in gradient['credential_fields'] if f['key'] == 'api_key'), None)
-        if not api_key or api_key.get('label') != 'GradientAI API Key':
-            print(f"GradientAI api_key label should be 'GradientAI API Key', got '{api_key.get('label') if api_key else 'not found'}'")
-            exit(1)
-        if not api_key.get('required'):
-            print("GradientAI api_key should be required")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python "$TMPDIR/check_gradient.py"
+        jq -e '.[] | select(.provider == "GradientAI") | .credential_fields[] | select(.key == "api_base") | .label == "GradientAI Endpoint" and .placeholder == "https://..."' crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json &&
+        jq -e '.[] | select(.provider == "GradientAI") | .credential_fields[] | select(.key == "api_key") | .label == "GradientAI API Key" and .required == true' crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json
     - id: remaining-providers-exact-fields
       why: One or more providers are missing fields or field properties (type, label, required) do not match LiteLLM
       run: |
-        cat > "$TMPDIR/check_remaining.py" << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json') as f:
-            data = json.load(f)
-
-        # FireworksAI: single api_key field, required, password type, "API Key" label
-        fireworks = next(p for p in data if p['provider'] == 'FireworksAI')
-        fireworks_fields = [f['key'] for f in fireworks['credential_fields']]
-        if fireworks_fields != ['api_key']:
-            print(f"FireworksAI fields mismatch: expected ['api_key'], got {fireworks_fields}")
-            exit(1)
-        api_key = next(f for f in fireworks['credential_fields'] if f['key'] == 'api_key')
-        if not api_key.get('required') or api_key.get('field_type') != 'password' or api_key.get('label') != 'API Key':
-            print(f"FireworksAI api_key field mismatch")
-            exit(1)
-
-        # Groq: single api_key field, required, password type, "API Key" label
-        groq = next(p for p in data if p['provider'] == 'Groq')
-        groq_fields = [f['key'] for f in groq['credential_fields']]
-        if groq_fields != ['api_key']:
-            print(f"Groq fields mismatch: expected ['api_key'], got {groq_fields}")
-            exit(1)
-        groq_api_key = next(f for f in groq['credential_fields'] if f['key'] == 'api_key')
-        if not groq_api_key.get('required') or groq_api_key.get('field_type') != 'password' or groq_api_key.get('label') != 'API Key':
-            print(f"Groq api_key field mismatch: got {groq_api_key}")
-            exit(1)
-
-        # FEATHERLESS_AI, FRIENDLIAI: api_base (text, not required), api_key (password, not required)
-        for provider_name in ['FEATHERLESS_AI', 'FRIENDLIAI']:
-            provider = next(p for p in data if p['provider'] == provider_name)
-            fields = [f['key'] for f in provider['credential_fields']]
-            if fields != ['api_base', 'api_key']:
-                print(f"{provider_name} fields mismatch: expected ['api_base', 'api_key'], got {fields}")
-                exit(1)
-            api_base = next((f for f in provider['credential_fields'] if f['key'] == 'api_base'), None)
-            if not api_base or api_base.get('field_type') != 'text' or api_base.get('label') != 'API Base' or api_base.get('required'):
-                print(f"{provider_name} api_base field mismatch")
-                exit(1)
-            api_key = next((f for f in provider['credential_fields'] if f['key'] == 'api_key'), None)
-            if not api_key or api_key.get('field_type') != 'password' or api_key.get('label') != 'API Key' or api_key.get('required'):
-                print(f"{provider_name} api_key field mismatch")
-                exit(1)
-
-        # GALADRIEL, GITHUB, HEROKU, HUGGINGFACE: api_base (text, not required, "API Base"), api_key (password, not required, "API Key")
-        for provider_name in ['GALADRIEL', 'GITHUB', 'HEROKU', 'HUGGINGFACE']:
-            provider = next(p for p in data if p['provider'] == provider_name)
-            fields = [f['key'] for f in provider['credential_fields']]
-            if fields != ['api_base', 'api_key']:
-                print(f"{provider_name} fields mismatch: expected ['api_base', 'api_key'], got {fields}")
-                exit(1)
-            api_base = next((f for f in provider['credential_fields'] if f['key'] == 'api_base'), None)
-            if not api_base or api_base.get('field_type') != 'text' or api_base.get('label') != 'API Base' or api_base.get('required'):
-                print(f"{provider_name} api_base field mismatch: {api_base}")
-                exit(1)
-            api_key = next((f for f in provider['credential_fields'] if f['key'] == 'api_key'), None)
-            if not api_key or api_key.get('field_type') != 'password' or api_key.get('label') != 'API Key' or api_key.get('required'):
-                print(f"{provider_name} api_key field mismatch: {api_key}")
-                exit(1)
-
-        # GITHUB_COPILOT: api_base (text, not required), api_key (password, not required)
-        github_copilot = next(p for p in data if p['provider'] == 'GITHUB_COPILOT')
-        fields = [f['key'] for f in github_copilot['credential_fields']]
-        if fields != ['api_base', 'api_key']:
-            print(f"GITHUB_COPILOT fields mismatch: expected ['api_base', 'api_key'], got {fields}")
-            exit(1)
-        api_base = next((f for f in github_copilot['credential_fields'] if f['key'] == 'api_base'), None)
-        if not api_base or api_base.get('field_type') != 'text' or api_base.get('label') != 'API Base' or api_base.get('required'):
-            print(f"GITHUB_COPILOT api_base field mismatch")
-            exit(1)
-        api_key = next((f for f in github_copilot['credential_fields'] if f['key'] == 'api_key'), None)
-        if not api_key or api_key.get('field_type') != 'password' or api_key.get('label') != 'API Key' or api_key.get('required'):
-            print(f"GITHUB_COPILOT api_key field mismatch")
-            exit(1)
-
-        CHECKER
-        uv run --with pyyaml python "$TMPDIR/check_remaining.py"
+        jq -e '[.[] | select(.provider | IN("FireworksAI", "Groq")) | .credential_fields | map(.key) == ["api_key"] and .[0].required == true and .[0].field_type == "password" and .[0].label == "API Key"] == [true, true]' crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json &&
+        jq -e '[.[] | select(.provider | IN("FEATHERLESS_AI", "FRIENDLIAI", "GALADRIEL", "GITHUB", "GITHUB_COPILOT", "HEROKU", "HUGGINGFACE")) | .credential_fields | map(.key) == ["api_base", "api_key"] and .[0].field_type == "text" and .[0].label == "API Base" and .[0].required == false and .[1].field_type == "password" and .[1].label == "API Key" and .[1].required == false] == [true, true, true, true, true, true, true]' crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json
     - id: provider-field-order-all-thirteen
       why: One or more providers have fields out of order or missing credential field metadata
       run: |
-        cat > "$TMPDIR/check_all_fields.py" << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json') as f:
-            data = json.load(f)
-
-        expected_structures = {
-            'FalAI': {
-                'fields': ['api_key'],
-                'field_types': {'api_key': 'password'},
-                'required': {'api_key': True},
-                'labels': {'api_key': 'API Key'},
-                'placeholder': 'fal_ai/fal-ai/flux-pro/v1.1-ultra'
-            },
-            'FEATHERLESS_AI': {
-                'fields': ['api_base', 'api_key'],
-                'required': {'api_base': False, 'api_key': False},
-            },
-            'FireworksAI': {
-                'fields': ['api_key'],
-                'required': {'api_key': True},
-            },
-            'FRIENDLIAI': {
-                'fields': ['api_base', 'api_key'],
-                'required': {'api_base': False, 'api_key': False},
-            },
-            'GALADRIEL': {
-                'fields': ['api_base', 'api_key'],
-                'required': {'api_base': False, 'api_key': False},
-            },
-            'GIGACHAT': {
-                'fields': ['api_base', 'api_key', 'gigachat_scope', 'gigachat_auth_url', 'gigachat_access_token'],
-            },
-            'GITHUB': {
-                'fields': ['api_base', 'api_key'],
-                'required': {'api_base': False, 'api_key': False},
-            },
-            'GITHUB_COPILOT': {
-                'fields': ['api_base', 'api_key'],
-                'required': {'api_base': False, 'api_key': False},
-            },
-            'Google_AI_Studio': {
-                'fields': ['api_base', 'api_key'],
-                'required': {'api_base': False, 'api_key': True},
-            },
-            'GradientAI': {
-                'fields': ['api_base', 'api_key'],
-                'required': {'api_base': False, 'api_key': True},
-            },
-            'Groq': {
-                'fields': ['api_key'],
-                'required': {'api_key': True},
-            },
-            'HEROKU': {
-                'fields': ['api_base', 'api_key'],
-                'required': {'api_base': False, 'api_key': False},
-            },
-            'HUGGINGFACE': {
-                'fields': ['api_base', 'api_key'],
-                'required': {'api_base': False, 'api_key': False},
-            },
-        }
-
-        for provider_name, expected in expected_structures.items():
-            provider = next((p for p in data if p['provider'] == provider_name), None)
-            if not provider:
-                print(f"Provider {provider_name} not found")
-                exit(1)
-
-            # Check field keys and order
-            actual_fields = [f['key'] for f in provider['credential_fields']]
-            if actual_fields != expected['fields']:
-                print(f"{provider_name} field order mismatch: expected {expected['fields']}, got {actual_fields}")
-                exit(1)
-
-            # Check required flags if specified
-            if 'required' in expected:
-                for field_key, expected_required in expected['required'].items():
-                    field = next((f for f in provider['credential_fields'] if f['key'] == field_key), None)
-                    if field and field.get('required') != expected_required:
-                        print(f"{provider_name} {field_key} required mismatch: expected {expected_required}, got {field.get('required')}")
-                        exit(1)
-
-        CHECKER
-        uv run --with pyyaml python "$TMPDIR/check_all_fields.py"
+        jq -e '(map({(.provider): [.credential_fields[].key]}) | add) == {
+          "FalAI": ["api_key"],
+          "FEATHERLESS_AI": ["api_base", "api_key"],
+          "FireworksAI": ["api_key"],
+          "FRIENDLIAI": ["api_base", "api_key"],
+          "GALADRIEL": ["api_base", "api_key"],
+          "GIGACHAT": ["api_base", "api_key", "gigachat_scope", "gigachat_auth_url", "gigachat_access_token"],
+          "GITHUB": ["api_base", "api_key"],
+          "GITHUB_COPILOT": ["api_base", "api_key"],
+          "Google_AI_Studio": ["api_base", "api_key"],
+          "GradientAI": ["api_base", "api_key"],
+          "Groq": ["api_key"],
+          "HEROKU": ["api_base", "api_key"],
+          "HUGGINGFACE": ["api_base", "api_key"]
+        }' crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json &&
+        jq -e '(map(select(.provider != "GIGACHAT") | {(.provider): [.credential_fields[].required]}) | add) == {
+          "FalAI": [true],
+          "FEATHERLESS_AI": [false, false],
+          "FireworksAI": [true],
+          "FRIENDLIAI": [false, false],
+          "GALADRIEL": [false, false],
+          "GITHUB": [false, false],
+          "GITHUB_COPILOT": [false, false],
+          "Google_AI_Studio": [false, true],
+          "GradientAI": [false, true],
+          "Groq": [true],
+          "HEROKU": [false, false],
+          "HUGGINGFACE": [false, false]
+        }' crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json
     - id: provider-json-parses
       why: the JSON file does not parse or does not yield thirteen records
-      run: |
-        cat > "$TMPDIR/check_parse.rs" << 'CHECKER'
-        use std::fs;
-        fn main() {
-            let content = fs::read_to_string("crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json")
-                .expect("failed to read json file");
-            let parsed: Vec<serde_json::Value> = serde_json::from_str(&content)
-                .expect("failed to parse json");
-            if parsed.len() != 13 {
-                panic!("Expected 13 providers, got {}", parsed.len());
-            }
-        }
-        CHECKER
-        rustc "$TMPDIR/check_parse.rs" -o "$TMPDIR/check_parse" && "$TMPDIR/check_parse"
+      run: jq -e 'type == "array" and length == 13' crates/betterlite-server/assets/provider_create_fields_fal_huggingface.json
 oracle_cases: []
 deviations: []
 out_of_scope:

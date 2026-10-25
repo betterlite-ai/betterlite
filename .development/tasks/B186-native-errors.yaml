@@ -8,12 +8,10 @@ description: >-
   branch lives in its classifier task, with cross-family dispatch/idempotence tested here. Budget 210 dispatch,
   90 adapters, 280 tests and 50 wiring (630 total). Write the behavior rstest functions native_errors_native_error_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
-  separate names. Register helper operations native_error in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  separate names. The helper operation native_error is already registered;
   each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
-  - crates/betterlite-error/src/lib.rs
-  - crates/betterlite-error/src/error.rs
   - crates/betterlite-error/src/native.rs
   - crates/betterlite-error/src/native/**
   - crates/betterlite-error/src/parse.rs

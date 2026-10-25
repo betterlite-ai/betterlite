@@ -27,14 +27,15 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_batch_lifecycle}.rs
+    - crates/betterlite-vertex/src/vertex_batch_lifecycle.rs
     - crates/betterlite-vertex/src/vertex_batch_lifecycle/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_page.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_batch_page/**
-    - tools/oracle/src/helpers/vertex/batch_lifecycle.rs
-    - tools/oracle/src/helpers/vertex/batch_lifecycle/**
-    - tools/oracle/helpers/vertex_batch_lifecycle.py
-    - tools/oracle/helpers/vertex_batch_lifecycle/**
+    - tools/oracle/src/helpers/vertex/batch_page.rs
+    - tools/oracle/src/helpers/vertex/batch_page/**
+    - tools/oracle/helpers/vertex_batch_page.py
+    - tools/oracle/helpers/vertex_batch_page/**
     - tools/oracle/cases/helpers/vertex-batch-page/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_batch_page*
   lint_tables: false
@@ -66,7 +67,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_page.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_batch_page)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_batch_page_corpus)'
       why: Malformed and boundary-sized list bodies replay through decode_vertex_batch_page.
     - id: batch-page-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_page*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_batch_page::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_page*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::batch_page::/)'
       why: New page fixtures must be recognized by the shared helper reader.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-batch-page/jobs-present.yaml
@@ -78,7 +79,7 @@ out_of_scope:
   - B1372 owns handler construction, single-job payload reading, create, endpoint resolution and collection URL generation at L38-L291 except the page reader.
   - B1371 transforms decoded job/page records and B034 performs provider-to-route composition over B086's registered aliases.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_batch_lifecycle in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/batch_lifecycle.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_batch_lifecycle.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_batch_page in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/batch_page.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_batch_page.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Cancel returns the subsequent provider state, which may still be in_progress or cancelling.
   - An empty after value is sent as pageToken rather than omitted.
   - Only cancellation's POST receives the caller timeout; its follow-up GET does not.

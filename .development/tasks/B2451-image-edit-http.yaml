@@ -23,7 +23,6 @@ scope:
   - crates/betterlite-provider/src/api.rs
   - crates/betterlite-provider/src/api/image_edit_http.rs
   - crates/betterlite-provider/src/api/image_edit_http/**
-  - crates/betterlite-provider/src/error.rs
   - crates/betterlite-provider/src/operation.rs
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/image_edit_http.rs

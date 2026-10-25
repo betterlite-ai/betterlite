@@ -51,13 +51,16 @@ scope:
     - crates/betterlite-core/src/cost.rs
     - crates/betterlite-core/src/cost/usage.rs
     - crates/betterlite-core/src/cost/usage/**
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/zero_cost.rs
     - crates/betterlite-models/src/zero_cost/**
-    - tools/oracle/src/helpers/core_ops/billing_usage_and_diagnostics.rs
-    - tools/oracle/src/helpers/core_ops/billing_usage_and_diagnostics/**
-    - tools/oracle/helpers/billing_usage_and_diagnostics.py
-    - tools/oracle/helpers/billing_usage_and_diagnostics/**
+    - tools/oracle/src/helpers/core_ops/billing_usage.rs
+    - tools/oracle/src/helpers/core_ops/billing_usage/**
+    - tools/oracle/helpers/billing_usage.py
+    - tools/oracle/helpers/billing_usage/**
+    - tools/oracle/src/helpers/core_ops/zero_cost_diagnostic.rs
+    - tools/oracle/src/helpers/core_ops/zero_cost_diagnostic/**
+    - tools/oracle/helpers/zero_cost_diagnostic.py
+    - tools/oracle/helpers/zero_cost_diagnostic/**
     - tools/oracle/cases/helpers/billing-usage/**
     - tools/oracle/cases/helpers/zero-cost-diagnostic/**
     - tools/oracle/fuzz/corpus/helper_case/billing-usage-*
@@ -116,7 +119,7 @@ out_of_scope:
   - cost_calculator.py's prices are separated into B1649 adjustments, B1673 custom tokens, B1674 images, B1676 duration/transcription/video, B1677 extra fees, B1678 OCR and B1679 batches; its usage merging, realtime and model/breakdown context are B1680-B1682. B1686 dispatches token/vector/rerank pricing, B1688 prepares inputs, B1689 handles replicate and early-call charges, and B068 owns completion_cost/response_cost_calculator composition.
   - The zero-cost counter's exporter and decision to emit diagnostics stay with the logging lifecycle owner; this task supplies the diagnostic record and warning string only.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as billing_usage_and_diagnostics in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/billing_usage_and_diagnostics.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/billing_usage_and_diagnostics.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as billing_usage and zero_cost_diagnostic in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/billing_usage.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/billing_usage.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty or auto service-tier string on the response stops the search before usage and hidden traffic_type are inspected.
   - A positive nested price deeper than four expansion rounds is invisible to the diagnostic even if it would be billable elsewhere.
   - Explicitly free used rates suppress a diagnostic before calculation_failed is considered.

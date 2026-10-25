@@ -87,7 +87,6 @@ scope:
   paths:
     - crates/betterlite-db/src/database_refresh.rs
     - crates/betterlite-db/src/database_refresh/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
   lint_tables: false
 references:

@@ -78,7 +78,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/key_context.rs
     - crates/betterlite-auth/src/key_context/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/key_context.rs
     - tools/oracle/src/helpers/server/key_context/**

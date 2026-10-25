@@ -62,10 +62,10 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/user_contracts.rs
     - crates/betterlite-server/fuzz/corpus/user_contracts/**
-    - tools/oracle/src/helpers/server/user_wire_contracts.rs
-    - tools/oracle/src/helpers/server/user_wire_contracts/**
-    - tools/oracle/helpers/user_wire_contracts.py
-    - tools/oracle/helpers/user_wire_contracts/**
+    - tools/oracle/src/helpers/server/user_contracts.rs
+    - tools/oracle/src/helpers/server/user_contracts/**
+    - tools/oracle/helpers/user_contracts.py
+    - tools/oracle/helpers/user_contracts/**
     - tools/oracle/cases/helpers/user-contracts/**
     - tools/oracle/fuzz/corpus/helper_case/user-contracts-*
   lint_tables: false
@@ -111,7 +111,7 @@ out_of_scope:
     management_v1 response shapes. B790 retains mutation/role helpers; B791 info, B792 updates,
     B795 bulk updates, B796 list, B797 deletion, B798 activity, B1203 search and B1226 default teams.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as user_wire_contracts in the server group. Replace the stub Op in tools/oracle/src/helpers/server/user_wire_contracts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/user_wire_contracts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as user_contracts in the server group. Replace the stub Op in tools/oracle/src/helpers/server/user_contracts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/user_contracts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Omitting user_updates bypasses the field validator while explicit null invokes it.
   - Replacing unanchored raw query matching with a query-map lookup changes accepted identities.
 budget:

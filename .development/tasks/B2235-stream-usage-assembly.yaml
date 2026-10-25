@@ -50,7 +50,6 @@ description: >-
   implementation used by tests and oracle adapters.
 
 
-  Register helper operation stream_usage_assembly in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
   The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
   transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
   model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
@@ -83,8 +82,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-streaming/Cargo.toml
-  - crates/betterlite-streaming/src/lib.rs
-  - crates/betterlite-streaming/src/error.rs
   - crates/betterlite-streaming/src/stream_usage_assembly.rs
   - crates/betterlite-streaming/src/stream_usage_assembly/**
   - tools/oracle/Cargo.toml

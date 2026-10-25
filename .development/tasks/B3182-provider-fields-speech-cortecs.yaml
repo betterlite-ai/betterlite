@@ -48,55 +48,85 @@ checks:
       run: test -f crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json | grep -Fq "provider_create_fields_speech_cortecs.json" && test -s crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: catalog-data-exact
       why: catalog record count does not match the expected fifteen providers
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); assert len(f) == 15, f'expected 15 records, got {len(f)}'; assert f[0]['provider'] == 'Azure_Speech', f'first record must be Azure_Speech, got {f[0][\"provider\"]}'; assert f[-1]['provider'] == 'CORTECS', f'last record must be CORTECS, got {f[-1][\"provider\"]}'; print('valid')")"
+      run: jq -e 'length == 15 and .[0].provider == "Azure_Speech" and .[-1].provider == "CORTECS"' crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: azure-speech-fields
       why: Azure_Speech credential_fields, display_name or default_model_placeholder do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'Azure_Speech'), None); assert p, 'Azure_Speech not found'; assert len(p['credential_fields']) == 1; assert p['credential_fields'][0]['key'] == 'api_key'; assert p['credential_fields'][0]['field_type'] == 'password'; assert p['credential_fields'][0]['required'] == True; assert 'Ocp-Apim-Subscription-Key' in p['credential_fields'][0]['tooltip']; assert p['default_model_placeholder'] == 'azure_speech/short-audio'; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "Azure_Speech") | (.credential_fields | length == 1 and .[0].key == "api_key" and .[0].field_type == "password" and .[0].required == true and (.[0].tooltip | contains("Ocp-Apim-Subscription-Key"))) and .default_model_placeholder == "azure_speech/short-audio"'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: azure-text-fields
       why: AZURE_TEXT credential_fields, field_type values or default_model_placeholder do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'AZURE_TEXT'), None); assert p, 'AZURE_TEXT not found'; assert len(p['credential_fields']) == 2; assert p['credential_fields'][0]['key'] == 'api_base'; assert p['credential_fields'][0]['field_type'] == 'text'; assert p['credential_fields'][0]['required'] == False; assert p['credential_fields'][1]['key'] == 'api_key'; assert p['credential_fields'][1]['field_type'] == 'password'; assert p['credential_fields'][1]['required'] == False; assert p['default_model_placeholder'] == 'gpt-3.5-turbo'; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "AZURE_TEXT") | (.credential_fields | length == 2 and .[0].key == "api_base" and .[0].field_type == "text" and .[0].required == false and .[1].key == "api_key" and .[1].field_type == "password" and .[1].required == false) and .default_model_placeholder == "gpt-3.5-turbo"'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: baseten-fields
       why: BASETEN credential_fields, field_type values or default_model_placeholder do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'BASETEN'), None); assert p, 'BASETEN not found'; assert len(p['credential_fields']) == 2; assert p['credential_fields'][0]['key'] == 'api_base'; assert p['credential_fields'][1]['key'] == 'api_key'; assert p['credential_fields'][0]['field_type'] == 'text'; assert p['credential_fields'][1]['field_type'] == 'password'; assert p['default_model_placeholder'] == 'gpt-3.5-turbo'; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "BASETEN") | (.credential_fields | length == 2 and .[0].key == "api_base" and .[1].key == "api_key" and .[0].field_type == "text" and .[1].field_type == "password") and .default_model_placeholder == "gpt-3.5-turbo"'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: bytez-fields
       why: BYTEZ credential_fields or field_type values do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'BYTEZ'), None); assert p, 'BYTEZ not found'; assert len(p['credential_fields']) == 2; assert p['credential_fields'][0]['key'] == 'api_base'; assert p['credential_fields'][1]['key'] == 'api_key'; assert p['credential_fields'][0]['field_type'] == 'text'; assert p['credential_fields'][1]['field_type'] == 'password'; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "BYTEZ") | .credential_fields | length == 2 and .[0].key == "api_base" and .[1].key == "api_key" and .[0].field_type == "text" and .[1].field_type == "password"'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: cerebras-fields
       why: Cerebras credential_fields, required flag or field_type do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'Cerebras'), None); assert p, 'Cerebras not found'; assert len(p['credential_fields']) == 1; assert p['credential_fields'][0]['key'] == 'api_key'; assert p['credential_fields'][0]['required'] == True; assert p['credential_fields'][0]['field_type'] == 'password'; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "Cerebras") | .credential_fields | length == 1 and .[0].key == "api_key" and .[0].required == true and .[0].field_type == "password"'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: chatgpt-empty-credentials
       why: ChatGPT credential_fields is not an empty array
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'CHATGPT'), None); assert p, 'CHATGPT not found'; assert p['credential_fields'] == [], f'credential_fields must be empty'; assert p['default_model_placeholder'] == 'chatgpt/gpt-5.4'; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "CHATGPT") | .credential_fields == [] and .default_model_placeholder == "chatgpt/gpt-5.4"'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: clarifai-fields
       why: CLARIFAI credential_fields, keys or required flags do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'CLARIFAI'), None); assert p, 'CLARIFAI not found'; assert len(p['credential_fields']) == 2; assert p['credential_fields'][0]['key'] == 'api_base'; assert p['credential_fields'][1]['key'] == 'api_key'; assert p['credential_fields'][0]['required'] == False; assert p['credential_fields'][1]['required'] == False; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "CLARIFAI") | .credential_fields | length == 2 and .[0].key == "api_base" and .[1].key == "api_key" and .[0].required == false and .[1].required == false'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: cloudflare-fields
       why: CLOUDFLARE credential_fields, field_type or required flags do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'CLOUDFLARE'), None); assert p, 'CLOUDFLARE not found'; assert len(p['credential_fields']) == 2; assert p['credential_fields'][0]['field_type'] == 'text'; assert p['credential_fields'][1]['field_type'] == 'password'; assert p['credential_fields'][0]['required'] == False; assert p['credential_fields'][1]['required'] == False; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "CLOUDFLARE") | .credential_fields | length == 2 and .[0].field_type == "text" and .[1].field_type == "password" and .[0].required == false and .[1].required == false'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: codestral-fields
       why: CODESTRAL credential_fields, field_type or required flags do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'CODESTRAL'), None); assert p, 'CODESTRAL not found'; assert len(p['credential_fields']) == 2; assert p['credential_fields'][0]['field_type'] == 'text'; assert p['credential_fields'][1]['field_type'] == 'password'; assert p['credential_fields'][0]['required'] == False; assert p['credential_fields'][1]['required'] == False; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "CODESTRAL") | .credential_fields | length == 2 and .[0].field_type == "text" and .[1].field_type == "password" and .[0].required == false and .[1].required == false'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: cognition-fields
       why: Cognition endpoint placeholder, api_key required flag or fields do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'Cognition'), None); assert p, 'Cognition not found'; assert len(p['credential_fields']) == 2; assert p['credential_fields'][0]['key'] == 'api_base'; assert p['credential_fields'][0]['placeholder'] == 'https://api.cognition.ai/v1'; assert p['credential_fields'][1]['key'] == 'api_key'; assert p['credential_fields'][1]['required'] == True; assert p['default_model_placeholder'] == 'cognition/swe-1.7'; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "Cognition") | (.credential_fields | length == 2 and .[0].key == "api_base" and .[0].placeholder == "https://api.cognition.ai/v1" and .[1].key == "api_key" and .[1].required == true) and .default_model_placeholder == "cognition/swe-1.7"'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: cohere-fields
       why: Cohere credential_fields, required flag or field_type do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'Cohere'), None); assert p, 'Cohere not found'; assert len(p['credential_fields']) == 1; assert p['credential_fields'][0]['key'] == 'api_key'; assert p['credential_fields'][0]['required'] == True; assert p['credential_fields'][0]['field_type'] == 'password'; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "Cohere") | .credential_fields | length == 1 and .[0].key == "api_key" and .[0].required == true and .[0].field_type == "password"'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: cohere-chat-fields
       why: COHERE_CHAT credential_fields, keys or required flags do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'COHERE_CHAT'), None); assert p, 'COHERE_CHAT not found'; assert len(p['credential_fields']) == 2; assert p['credential_fields'][0]['key'] == 'api_base'; assert p['credential_fields'][1]['key'] == 'api_key'; assert p['credential_fields'][0]['required'] == False; assert p['credential_fields'][1]['required'] == False; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "COHERE_CHAT") | .credential_fields | length == 2 and .[0].key == "api_base" and .[1].key == "api_key" and .[0].required == false and .[1].required == false'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: cometapi-fields
       why: COMETAPI credential_fields, keys or required flags do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'COMETAPI'), None); assert p, 'COMETAPI not found'; assert len(p['credential_fields']) == 2; assert p['credential_fields'][0]['key'] == 'api_base'; assert p['credential_fields'][1]['key'] == 'api_key'; assert p['credential_fields'][0]['required'] == False; assert p['credential_fields'][1]['required'] == False; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "COMETAPI") | .credential_fields | length == 2 and .[0].key == "api_base" and .[1].key == "api_key" and .[0].required == false and .[1].required == false'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: compactifai-fields
       why: COMPACTIFAI credential_fields, keys or required flags do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'COMPACTIFAI'), None); assert p, 'COMPACTIFAI not found'; assert len(p['credential_fields']) == 2; assert p['credential_fields'][0]['key'] == 'api_base'; assert p['credential_fields'][1]['key'] == 'api_key'; assert p['credential_fields'][0]['required'] == False; assert p['credential_fields'][1]['required'] == False; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "COMPACTIFAI") | .credential_fields | length == 2 and .[0].key == "api_base" and .[1].key == "api_key" and .[0].required == false and .[1].required == false'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: cortecs-fields
       why: CORTECS endpoint placeholder, api_key required flag or default_model_placeholder do not match LiteLLM
-      run: test -n "$(python3 -c "import json; f=json.load(open('crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json')); p = next((x for x in f if x['provider'] == 'CORTECS'), None); assert p, 'CORTECS not found'; assert len(p['credential_fields']) == 2; assert p['credential_fields'][0]['key'] == 'api_base'; assert p['credential_fields'][0]['placeholder'] == 'https://api.cortecs.ai/v1'; assert p['credential_fields'][1]['key'] == 'api_key'; assert p['credential_fields'][1]['required'] == True; assert p['default_model_placeholder'] == 'cortecs/gpt-6-sol'; print('valid')")"
+      run: >-
+        jq -e '.[] | select(.provider == "CORTECS") | (.credential_fields | length == 2 and .[0].key == "api_base" and .[0].placeholder == "https://api.cortecs.ai/v1" and .[1].key == "api_key" and .[1].required == true) and .default_model_placeholder == "cortecs/gpt-6-sol"'
+        crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
     - id: catalog-json-valid
       why: the JSON does not parse or contains malformed structures
-      run: python3 -m json.tool crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json > /dev/null && echo 'valid'
+      run: jq -e 'type == "array"' crates/betterlite-server/assets/provider_create_fields_speech_cortecs.json
 oracle_cases: []
 deviations: []
 out_of_scope:

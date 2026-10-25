@@ -28,7 +28,6 @@ description: >-
   lines inside a 625-line budget.
 scope:
   paths:
-    - crates/betterlite-core/src/lib.rs
     - crates/betterlite-core/src/skills.rs
     - crates/betterlite-core/src/skills/store.rs
     - crates/betterlite-core/src/skills/store/**

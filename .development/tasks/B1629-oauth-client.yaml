@@ -30,7 +30,6 @@ scope:
     - Cargo.toml
     - Cargo.lock
     - crates/betterlite-auth/Cargo.toml
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/oauth_client.rs
     - crates/betterlite-auth/src/oauth_client/**
     - crates/betterlite-auth/fuzz/Cargo.toml
@@ -44,10 +43,10 @@ scope:
     - crates/betterlite-config/src/google_sso/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/google-sso-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/auth/oauth_client.rs
-    - tools/oracle/src/helpers/auth/oauth_client/**
-    - tools/oracle/helpers/oauth_client.py
-    - tools/oracle/helpers/oauth_client/**
+    - tools/oracle/src/helpers/auth/google_identity.rs
+    - tools/oracle/src/helpers/auth/google_identity/**
+    - tools/oracle/helpers/google_identity.py
+    - tools/oracle/helpers/google_identity/**
     - tools/oracle/cases/helpers/google-identity/**
     - tools/oracle/fuzz/corpus/helper_case/google-identity-*
   lint_tables: false
@@ -89,7 +88,7 @@ out_of_scope:
   - B1622 owns Microsoft-specific claims and B1623 owns generic callback orchestration; B1620's direct PKCE exchange retains its separate authentication/fallback rules.
   - Route dispatch and all remaining ui_sso.py definitions follow the B063 ownership inventory.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as oauth_client in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/oauth_client.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/oauth_client.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as google_identity in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/google_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/google_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Fastapi-sso 0.19.0 requires neither state nor a state cookie by default, but rejects a mismatching cookie when both values exist.
   - Google's raw debug response can contain an unverified email even though ordinary identity conversion rejects it.
 budget:

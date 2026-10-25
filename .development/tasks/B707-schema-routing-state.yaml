@@ -79,8 +79,8 @@ scope:
   paths:
     - crates/betterlite-db/src/schema_routing_state.rs
     - crates/betterlite-db/src/schema_routing_state/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/schema_routing_state/fixtures.rs
     - crates/betterlite-db/src/schema_routing_state/fixtures/**
     - crates/betterlite-db/migrations/20260418000000_add_adaptive_router_tables/migration.sql
     - crates/betterlite-db/migrations/20260421120000_add_memory_table/migration.sql

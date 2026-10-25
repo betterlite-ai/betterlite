@@ -28,6 +28,7 @@ scope:
   paths:
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,error,cache_create}.rs
+    - crates/betterlite-vertex/src/cache_create.rs
     - crates/betterlite-vertex/src/cache_create/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/cache_created.rs

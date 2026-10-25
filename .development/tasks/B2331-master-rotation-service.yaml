@@ -69,10 +69,10 @@ scope:
     - crates/betterlite-server/src/master_rotation/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/server/master_rotation_service.rs
-    - tools/oracle/src/helpers/server/master_rotation_service/**
-    - tools/oracle/helpers/master_rotation_service.py
-    - tools/oracle/helpers/master_rotation_service/**
+    - tools/oracle/src/helpers/server/master_rotation.rs
+    - tools/oracle/src/helpers/server/master_rotation/**
+    - tools/oracle/helpers/master_rotation.py
+    - tools/oracle/helpers/master_rotation/**
     - tools/oracle/cases/helpers/master-rotation/**
     - tools/oracle/fuzz/corpus/helper_case/master-rotation-*
   lint_tables: false
@@ -119,7 +119,7 @@ out_of_scope:
     B137 SSO assertion rotation, B725 model rows, B730 credential/config rows, B770 table adapters,
     B2303 crypto and B2305 stored MCP contracts. Remaining key endpoint functions keep B770-B898 owners.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as master_rotation_service in the server group. Replace the stub Op in tools/oracle/src/helpers/server/master_rotation_service.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/master_rotation_service.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as master_rotation in the server group. Replace the stub Op in tools/oracle/src/helpers/server/master_rotation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/master_rotation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - current_master_key is not used to decrypt; the active salt remains authoritative during migration.
   - An error after model commit leaves those rows encrypted under the new key even if later stores fail.
 budget:

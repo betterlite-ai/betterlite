@@ -13,16 +13,13 @@ description: >-
   bundled-map inventory tests. At runtime accept unknown catalog fields with warnings listing their complete paths,
   so a remote refresh remains forward compatible; do not silently discard their existence. Known fields still enforce
   type/depth/duplicate checks. Write the behavior rstest functions model_metadata_types_model_field_tests_behavior in adjacent tests.rs
-  files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
-  helper operations model_fields in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation
+  files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation model_fields is already registered; each operation
   has its own Rust and Python adapter file and corpus seed. Budget 260 metadata projection, 100 adapters, 280 tests
   and 100 parser/replay wiring (740 total).
 scope:
   paths:
   - Cargo.toml
   - crates/betterlite-models/Cargo.toml
-  - crates/betterlite-models/src/lib.rs
-  - crates/betterlite-models/src/error.rs
   - crates/betterlite-models/src/metadata.rs
   - crates/betterlite-models/src/metadata/**
   - crates/betterlite-models/src/capabilities.rs

@@ -31,6 +31,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,studio_interactions}.rs
+    - crates/betterlite-vertex/src/studio_interactions.rs
     - crates/betterlite-vertex/src/studio_interactions/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/studio_interaction.rs
@@ -67,7 +68,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/studio_interaction.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/studio_interaction)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_studio_interaction_corpus)'
       why: The production interaction decoder must handle sparse and malformed envelopes without unbounded parsing.
     - id: studio-interactions-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_interactions*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_interactions::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_interactions*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::studio_interactions::/)'
       why: New fixtures must select the studio_interactions call tag.
 oracle_cases:
   - tools/oracle/cases/helpers/studio-interactions/model-over-agent.yaml

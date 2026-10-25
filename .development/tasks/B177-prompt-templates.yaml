@@ -12,8 +12,7 @@ description: >-
   unsupported-operation outcome rather than a fabricated prompt. Do not create remote-template acquisition or new
   config behavior before the open decision. Budget 230 selector/custom transforms, 100 adapters, 300 tests and 60
   wiring (690 total). Write the behavior rstest functions prompt_templates_prompt_template_tests_behavior in adjacent tests.rs
-  files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
-  helper operations prompt_factory in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each
+  files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation prompt_factory is already registered; each
   operation has its own Rust and Python adapter file and corpus seed.
 
 
@@ -37,6 +36,7 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   - crates/betterlite-prompts/Cargo.toml
   - crates/betterlite-prompts/src/{lib,error,factory}.rs
+  - crates/betterlite-prompts/src/factory.rs
   - crates/betterlite-prompts/src/factory/**
   lint_tables: false
 references:

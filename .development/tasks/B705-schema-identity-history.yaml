@@ -91,8 +91,8 @@ scope:
   paths:
     - crates/betterlite-db/src/schema_identity_history.rs
     - crates/betterlite-db/src/schema_identity_history/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/schema_identity_history/fixtures.rs
     - crates/betterlite-db/src/schema_identity_history/fixtures/**
     - crates/betterlite-db/migrations/20251219110931_add_deleted_keys_and_deleted_teams_tables/migration.sql
     - crates/betterlite-db/migrations/20251220144550_schema_update/migration.sql

@@ -84,7 +84,7 @@ checks:
       run: test -f tools/oracle/helpers/gdc_request_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: This adapter may call only pure GDC methods and must not load or refresh Google credentials.
     - id: gdc-policy-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gdc_request_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gdc_request_policy::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gdc_request_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::gdc_request_policy::/)'
       why: Require parsed gdc_request_policy seeds for a full URL and a rejected plain identifier.
 oracle_cases:
   - tools/oracle/cases/helpers/gdc-request-policy/project-location-precedence.yaml

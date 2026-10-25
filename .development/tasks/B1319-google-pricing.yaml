@@ -24,6 +24,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,google_pricing}.rs
+    - crates/betterlite-vertex/src/google_pricing.rs
     - crates/betterlite-vertex/src/google_pricing/**
     - tools/oracle/src/helpers/vertex/google_pricing.rs
     - tools/oracle/src/helpers/vertex/google_pricing/**
@@ -56,7 +57,7 @@ checks:
       run: test -f tools/oracle/helpers/google_pricing.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Fixture model records and pricing delegates isolate these exact source functions.
     - id: pricing-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_pricing*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::google_pricing::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_pricing*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::google_pricing::/)'
       why: Pricing seeds must use the registered call tag and typed decimal inputs.
 oracle_cases:
   - tools/oracle/cases/helpers/google-pricing/character-threshold.yaml

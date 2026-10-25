@@ -75,7 +75,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/google_image.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/google_image)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_google_image_corpus)'
       why: Sparse and malformed Google image reply bytes must reach decode_google_image.
     - id: gemini-image-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_gemini_images*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_gemini_images::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_gemini_images*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_images::/)'
       why: New image-generation helper tags must be registered in fixture parsing.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-gemini-images/custom-base-no-auth.yaml

@@ -247,6 +247,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-anthropic"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-auth"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-azure"
+version = "0.1.0"
+
+[[package]]
 name = "betterlite-bedrock"
 version = "0.1.0"
 dependencies = [
@@ -258,6 +270,10 @@ dependencies = [
  "serde_json",
  "thiserror",
 ]
+
+[[package]]
+name = "betterlite-cli"
+version = "0.1.0"
 
 [[package]]
 name = "betterlite-config"
@@ -288,6 +304,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-core"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-cost"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-db"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-error"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-foundry"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-guardrails"
+version = "0.1.0"
+
+[[package]]
 name = "betterlite-http"
 version = "0.1.0"
 dependencies = [
@@ -301,6 +341,10 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
 ]
+
+[[package]]
+name = "betterlite-lens"
+version = "0.1.0"
 
 [[package]]
 name = "betterlite-models"
@@ -323,6 +367,10 @@ dependencies = [
  "serde_json",
  "thiserror",
 ]
+
+[[package]]
+name = "betterlite-openapi"
+version = "0.1.0"
 
 [[package]]
 name = "betterlite-oracle"
@@ -363,6 +411,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-policy"
+version = "0.1.0"
+
+[[package]]
 name = "betterlite-postgres-fixture"
 version = "0.1.0"
 dependencies = [
@@ -380,6 +432,38 @@ dependencies = [
  "tokio-postgres-rustls-improved",
  "uuid",
 ]
+
+[[package]]
+name = "betterlite-prompts"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-provider"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-rate-limit"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-redact"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-redis"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-roi"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-router"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-sdk"
+version = "0.1.0"
 
 [[package]]
 name = "betterlite-server"
@@ -401,6 +485,18 @@ dependencies = [
  "tower",
  "tracing",
 ]
+
+[[package]]
+name = "betterlite-streaming"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-tokenizer"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-vertex"
+version = "0.1.0"
 
 [[package]]
 name = "bit-set"

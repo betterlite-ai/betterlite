@@ -30,14 +30,15 @@ scope:
   paths:
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,error,vertex_rag_store}.rs
+    - crates/betterlite-vertex/src/vertex_rag_store.rs
     - crates/betterlite-vertex/src/vertex_rag_store/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_rag_payload.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_rag_payload/**
-    - tools/oracle/src/helpers/vertex/rag_vector_store.rs
-    - tools/oracle/src/helpers/vertex/rag_vector_store/**
-    - tools/oracle/helpers/vertex_rag_vector_store.py
-    - tools/oracle/helpers/vertex_rag_vector_store/**
+    - tools/oracle/src/helpers/vertex/rag_store.rs
+    - tools/oracle/src/helpers/vertex/rag_store/**
+    - tools/oracle/helpers/vertex_rag_store.py
+    - tools/oracle/helpers/vertex_rag_store/**
     - tools/oracle/cases/helpers/vertex-rag-store/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_rag_store*
   lint_tables: false
@@ -67,7 +68,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_rag_payload.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_rag_payload)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_rag_payload_corpus)'
       why: decode_vertex_rag_payload handles malformed context/corpus JSON with bounded input.
     - id: rag-store-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_rag_store*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_rag_store::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_rag_store*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::rag_store::/)'
       why: All introduced helper envelopes assert call.vertex_rag_store.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-rag-store/full-corpus-query.yaml
@@ -84,7 +85,7 @@ out_of_scope:
   - B1385 uploads/imports corpus files; this adapter only implements the source's create and search operations.
   - B034 supplies vector operation binding to B1064 without adding another HTTP route.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_rag_vector_store in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/rag_vector_store.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_rag_vector_store.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_rag_store in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/rag_store.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_rag_store.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - RAG creation reads display_name, so a camelCase displayName alone does not populate the returned name.
   - Explicit zero top_k is retained because only None suppresses retrieval options.
   - Corpus creation reports completed immediately without polling an operation.

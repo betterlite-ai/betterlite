@@ -35,7 +35,6 @@ description: >-
   plus 83 primary-read lines; allocate 800 changed lines including SQL and failure tests.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/window_spend.rs
     - crates/betterlite-db/src/window_spend/**
     - crates/betterlite-db/src/spend_rows.rs
@@ -43,10 +42,10 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/spend_counter_key.rs
     - crates/betterlite-db/fuzz/corpus/spend_counter_key/**
-    - tools/oracle/src/helpers/db/window_spend_store.rs
-    - tools/oracle/src/helpers/db/window_spend_store/**
-    - tools/oracle/helpers/window_spend_store.py
-    - tools/oracle/helpers/window_spend_store/**
+    - tools/oracle/src/helpers/db/window_seed.rs
+    - tools/oracle/src/helpers/db/window_seed/**
+    - tools/oracle/helpers/window_seed.py
+    - tools/oracle/helpers/window_seed/**
     - tools/oracle/cases/helpers/window-seed/**
     - tools/oracle/fuzz/corpus/helper_case/window-seed-*
   lint_tables: false
@@ -87,7 +86,7 @@ out_of_scope:
   - B1736 owns coalescing, cache warming and window reads in spend_counter_reseed.py; this task owns every budget_window_spend_writer function.
   - B071 owns budget reservation/reset policy and calls this lower row store; B1734 owns queued window normalization/merging.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as window_spend_store in the db group. Replace the stub Op in tools/oracle/src/helpers/db/window_spend_store.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/window_spend_store.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as window_seed in the db group. Replace the stub Op in tools/oracle/src/helpers/db/window_seed.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/window_seed.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A late old-window increment adds into the newer stored window instead of being discarded.
   - The seed query runs before the write transaction, so concurrency safety must come from the upsert rather than a fictitious read lock.
 budget:

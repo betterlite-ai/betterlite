@@ -25,10 +25,10 @@ scope:
   paths:
   - crates/betterlite-server/src/assets.rs
   - crates/betterlite-server/src/assets/**
-  - tools/oracle/src/helpers/server/proxy_paths_and_images.rs
-  - tools/oracle/src/helpers/server/proxy_paths_and_images/**
-  - tools/oracle/helpers/proxy_paths_and_images.py
-  - tools/oracle/helpers/proxy_paths_and_images/**
+  - tools/oracle/src/helpers/server/assets.rs
+  - tools/oracle/src/helpers/server/assets/**
+  - tools/oracle/helpers/assets.py
+  - tools/oracle/helpers/assets/**
   - tools/oracle/fuzz/corpus/helper_case/assets-*
   - tools/oracle/cases/helpers/assets/**
   - Cargo.lock
@@ -122,7 +122,7 @@ out_of_scope:
   a logger injected through the function interface, following the dependency injection
   pattern, so logging behavior is testable.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as proxy_paths_and_images in the server group. Replace the stub Op in tools/oracle/src/helpers/server/proxy_paths_and_images.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/proxy_paths_and_images.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as assets in the server group. Replace the stub Op in tools/oracle/src/helpers/server/assets.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/assets.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - safe_join and is_within resolve symlinks, so a symlink inside base_dir pointing outside it will fail; join_within does not resolve and returns the link.
 - Directory traversal is checked after realpath resolution; path.startswith(base) is insufficient and must include os.sep or equality check.
 - GIF8a is detected by checking header[0:4] == b"GIF8" and header[5:6] == b"a" only; any other byte at offset 5:6 (including 'b') returns None.

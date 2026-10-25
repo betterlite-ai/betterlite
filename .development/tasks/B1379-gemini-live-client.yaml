@@ -34,6 +34,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,gemini_live_client}.rs
+    - crates/betterlite-vertex/src/gemini_live_client.rs
     - crates/betterlite-vertex/src/gemini_live_client/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_client.rs
@@ -76,7 +77,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_client.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/gemini_live_client)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_gemini_live_client_corpus)'
       why: decode_gemini_live_client_event receives malformed event JSON, missing audio and nested tool output.
     - id: live-client-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_client*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_live_client::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_client*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_live_client::/)'
       why: Every added envelope must parse as call.gemini_live_client.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-live-client/invalid-json.yaml
