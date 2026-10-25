@@ -15,10 +15,8 @@ fn harness_keeps_litellm_value_and_name(
     #[case] value: &str,
     #[case] name: &str,
 ) {
-    assert_eq!(
-        serde_json::to_string(&harness).unwrap(),
-        format!("\"{value}\"")
-    );
+    let encoded = serde_json::to_string(&harness).unwrap();
+    assert_eq!(encoded, format!("\"{value}\""));
     assert_eq!(harness.name(), name);
 }
 
