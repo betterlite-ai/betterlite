@@ -15,6 +15,10 @@ scope:
     - Cargo.toml
     - crates/betterlite-anthropic/**
     - tools/oracle/cases/cache-prediction/**
+    - tools/oracle/helpers/anthropic_cache_plan.py
+    - tools/oracle/helpers/anthropic_cache_plan/**
+    - tools/oracle/src/helpers/anthropic/cache_plan.rs
+    - tools/oracle/src/helpers/anthropic/cache_plan/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L68-L163
@@ -119,5 +123,5 @@ pitfalls:
   - _count_objects returns list[dict] (mutable JSONValue dicts), as required by the existing provider count API in B3121.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 1

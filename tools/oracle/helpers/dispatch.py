@@ -17,6 +17,7 @@ OPERATIONS: frozenset[str] = frozenset(
         "anthropic_batches",
         "anthropic_beta_config",
         "anthropic_beta_filter",
+        "anthropic_cache_plan",
         "anthropic_capabilities",
         "anthropic_capability_catalog",
         "anthropic_catalog_lookup",
