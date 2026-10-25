@@ -83,6 +83,7 @@ fn stream_record_identity() {
         )]),
     };
     assert_eq!(result.headers["content-type"], "application/octet-stream");
+    assert!(format!("{result:?}").contains("FileContentStreamingResult"));
     assert_eq!(result.stream_iterator.next(), Some(vec![0, 255]));
     assert_eq!(result.stream_iterator.next(), Some(vec![10]));
 }
