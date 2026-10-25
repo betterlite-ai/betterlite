@@ -252,19 +252,6 @@ name = "betterlite-guardrails"
 version = "0.1.0"
 
 [[package]]
-name = "betterlite-harness"
-version = "0.1.0"
-dependencies = [
- "futures-core",
- "rust_decimal",
- "secrecy",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
-]
-
-[[package]]
 name = "betterlite-http"
 version = "0.1.0"
 dependencies = [
@@ -273,6 +260,7 @@ dependencies = [
  "reqwest",
  "rstest",
  "secrecy",
+ "serde_json",
  "thiserror",
  "tokio",
  "tracing",
@@ -394,6 +382,7 @@ dependencies = [
  "regex",
  "rquickjs",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -402,6 +391,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -1542,6 +1532,7 @@ dependencies = [
  "serde",
  "serde_json",
  "wasm-bindgen",
+ "zmij",
 ]
 
 [[package]]
