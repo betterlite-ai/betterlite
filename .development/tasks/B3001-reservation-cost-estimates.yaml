@@ -37,6 +37,7 @@ scope:
     - crates/betterlite-auth/src/reservation_cost.rs
     - crates/betterlite-auth/src/reservation_cost/**
     - crates/betterlite-auth/src/tiering.rs
+    - crates/betterlite-auth/src/tiering/**
     - tools/oracle/src/auth_probes/reservation_cost.rs
     - tools/oracle/src/auth_probes/reservation_cost/**
     - tools/oracle/src/auth_probes/mod.rs

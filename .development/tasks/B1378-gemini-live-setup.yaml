@@ -45,6 +45,7 @@ scope:
     - crates/betterlite-config/src/{config,settings,env,providers,tests}.rs
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/tests/gemini_live_settings.rs
+    - crates/betterlite-config/src/tests/gemini_live_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/gemini_live_setup*
     - tools/oracle/src/helpers/vertex/gemini_live_setup.rs
     - tools/oracle/src/helpers/vertex/gemini_live_setup/**

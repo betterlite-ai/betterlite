@@ -1,0 +1,5 @@
+kind: helper
+name: azure-gpt5-route-predicate
+call: {openai_base_config: {azure_gpt5_route_predicate: {model: gpt5_series/custom}}}
+env: {}
+compare: {ignore: []}

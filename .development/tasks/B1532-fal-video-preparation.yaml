@@ -36,6 +36,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/**
     - crates/betterlite-core/src/api/fal/video_prepare.rs
     - crates/betterlite-core/src/api/fal/video_prepare/**
     - crates/betterlite-core/fuzz/Cargo.toml

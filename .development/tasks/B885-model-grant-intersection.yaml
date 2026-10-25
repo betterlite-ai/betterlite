@@ -79,8 +79,11 @@ scope:
     - tools/oracle/cases/helpers/model-grant-intersection/**
     - tools/oracle/fuzz/corpus/helper_case/model-grant-intersection-*
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/model-grant-intersection/**
     - crates/betterlite-server/src/auth/model_grant_intersection.rs
     - crates/betterlite-server/src/auth/model_grant_intersection/**

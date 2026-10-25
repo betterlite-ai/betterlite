@@ -30,6 +30,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/runway.rs
+    - crates/betterlite-core/src/api/runway/**
     - crates/betterlite-core/src/api/runway/speech.rs
     - crates/betterlite-core/src/api/runway/speech/**
     - tools/oracle/src/helpers/core_ops/runway_speech.rs

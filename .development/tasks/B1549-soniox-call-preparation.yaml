@@ -34,6 +34,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/soniox.rs
+    - crates/betterlite-core/src/api/soniox/**
     - crates/betterlite-core/src/api/soniox/prepare.rs
     - crates/betterlite-core/src/api/soniox/prepare/**
     - crates/betterlite-core/fuzz/Cargo.toml

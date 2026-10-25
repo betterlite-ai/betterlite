@@ -5,3 +5,4 @@
 
 pub mod base_helpers;
 pub mod error;
+pub mod openai_base_config;

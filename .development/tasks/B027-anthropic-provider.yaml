@@ -110,10 +110,15 @@ scope:
   - crates/betterlite-provider/src/anthropic_dispatch/**
   - crates/betterlite-anthropic/Cargo.toml
   - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/provider/**
   - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/**
   - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-provider/src/prepared/**
   - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/dispatch/**
   - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/Cargo.toml
   - deny.toml
   - tools/oracle/Cargo.toml

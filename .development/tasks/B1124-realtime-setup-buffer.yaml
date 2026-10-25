@@ -21,6 +21,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_setup_buffer.rs
   - crates/betterlite-core/src/api/realtime_setup_buffer/**
   - tools/oracle/src/websocket_driver.rs

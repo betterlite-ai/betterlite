@@ -43,6 +43,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_store_http_write.rs
   - crates/betterlite-core/src/api/vector_store_http_write/**
   - tools/oracle/Cargo.toml

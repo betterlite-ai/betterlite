@@ -34,11 +34,13 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/management.rs
+    - crates/betterlite-server/src/management/**
     - crates/betterlite-server/src/management/v1.rs
     - crates/betterlite-server/src/management/v1/**
     - crates/betterlite-server/src/management/member_actions.rs
     - crates/betterlite-server/src/management/member_actions/**
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/**
     - tools/oracle/cases/http/management-member-actions/**
     - tools/oracle/cases/http/management-v1-mount/**
   lint_tables: false
