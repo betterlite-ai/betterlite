@@ -1,0 +1,13 @@
+kind: helper
+name: model-path-reserved-characters
+call:
+  management_oracle:
+    domain: models
+    operation:
+      path_encoding:
+        function: segment
+        value: "model/a?b#c"
+        field_name: model_id
+env: {}
+compare:
+  ignore: []
