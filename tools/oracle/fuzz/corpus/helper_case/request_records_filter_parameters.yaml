@@ -1,0 +1,10 @@
+kind: helper
+name: request-records-filter-parameters
+call:
+  request_records:
+    function: filter_parameters
+    record: {keep: 1, drop: null, nested: [true, null, 3]}
+    max_depth: 20
+env: {}
+compare:
+  ignore: []

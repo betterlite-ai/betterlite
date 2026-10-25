@@ -1,0 +1,9 @@
+kind: helper
+name: internal-parameter-names
+call:
+  request_records:
+    function: filter_internal
+    record: {keep: null, skip_mcp_handler: true, _other: 2, extra: 3}
+    additional: [extra]
+env: {}
+compare: {ignore: []}

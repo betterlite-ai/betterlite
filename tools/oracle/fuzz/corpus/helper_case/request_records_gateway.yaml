@@ -1,0 +1,11 @@
+kind: helper
+name: request-records-gateway
+call:
+  request_records:
+    function: gateway_injection
+    record: {metadata: {}, model_info: {id: deployment-a}}
+    added: 1
+    every_deployment: false
+env: {}
+compare:
+  ignore: []
