@@ -63,6 +63,7 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-10-24: the Codex usage limit ran out until 2026-10-30 22:51. Until then the worker ladder starts with the Claude Opus worker and Claude reviews Claude work (review_by_other_vendor off), with at most about 6 Claude agents at once. Revert both after the reset.
 - 2026-10-24: shared list files are written once, not by tasks, so parallel task PRs never conflict and the merge queue can land them in any order. The oracle helper registry is pre-registered from every task file: one group file per crate lists its operations, each operation has its own module (a stub until its task builds it) and adapter, and HelperCall carries the operation by name. Task scopes list only their own files; a task that needs a new shared entry reports a blocker.
 - 2026-10-24: a raised budget or widened scope ships in the task's own pull request (Max). A task branch may change its own task file and nothing else under .development/; the architect makes that commit, and the dispatcher sends back any worker run that touched .development/.
+- 2026-10-25: Codex runs again ahead of its reset, so the worker ladder starts with the Codex rungs again and a reviewer from the other vendor reviews each run.
 
 ## Writing a task
 

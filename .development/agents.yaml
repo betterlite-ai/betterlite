@@ -24,11 +24,6 @@ roles:
   worker:
     instructions: roles/worker.md
     ladder:
-      - runner: claude-worker
-        model: opus
-        effort: high
-        attempts: 3
-        timeout_minutes: 120
       - runner: codex-worker
         model: gpt-reserve
         effort: high
@@ -38,6 +33,11 @@ roles:
         model: gpt-6-astra
         effort: high
         attempts: 2
+        timeout_minutes: 120
+      - runner: claude-worker
+        model: opus
+        effort: high
+        attempts: 1
         timeout_minutes: 120
   reviewer:
     instructions: roles/reviewer.md
@@ -74,7 +74,7 @@ roles:
         attempts: 1
         timeout_minutes: 60
 policy:
-  review_by_other_vendor: false
+  review_by_other_vendor: true
   max_review_rounds: 3
   max_hook_blocks: 6
   writable:

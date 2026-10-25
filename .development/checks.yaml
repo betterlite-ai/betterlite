@@ -45,6 +45,7 @@ tools:
 settings:
   always_in_scope:
     - Cargo.lock
+    - "**/Cargo.toml"
   budget_excludes:
     - Cargo.lock
     - "**/fixtures/**"

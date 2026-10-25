@@ -1,0 +1,90 @@
+id: B4770
+title: Agent registry, identity and webhook wire records
+description: >-
+  Build shared typed agent cards, registration/patch/response records, caller identity, Entra bindings and webhook settings under betterlite-core::agents and betterlite-auth::identity. Preserve absent-versus-null values, UUID normalization, autonomous execution defaults, delegated user_impersonation scope and webhook URL validation; money uses Decimal.
+
+  Core record types: AgentCard (self-describing manifest), AugmentedAgentCard (AgentCard with is_public), AgentProvider, AgentCapabilities, AgentSkill, AgentInterface, AgentCardSignature, SecurityScheme unions; AgentConfig, PatchAgentRequest, AgentResponse with agent_id, agent_name, litellm_params, object_permission, tpm/rpm/session limits, static headers, extra_headers, access_group_ids, kill_switch, and optional spend, keys, search_score, created_at/updated_at timestamps; AgentKeySummary with token/key_alias/key_name; AgentCaller with optional user_id/team_id; MakeAgentsPublicRequest, AgentMakePublicResponse with message/public_agent_groups/updated_by.
+
+  Kill switch records: AgentKillSwitchConfig with url (absolute http(s) required), method (POST default), headers, query_params, body, auth choice (bearer/api_key/basic); AgentKillSwitchResult with agent_id, url, method, status_code, response_body, error, and succeeded property.
+
+  Identity records: EntraIdentityConfig (frozen, microsoft_entra provider, tenant_id/client_id normalized as UUIDs, service_principal_id optional, required_roles defaulting to (), required_scopes defaulting to ("user_impersonation",), issuer property); AgentIdentityBinding (frozen, agent_id/active/provider/tenant_id/client_id/service_principal_id/issuer/required_roles defaulting to ()/required_scopes defaulting to ("user_impersonation",)/revision/last_authenticated_at); AgentSubject with kind/oid/mode; AgentIdentityFailure with code (identity_denied/policy_unavailable) and message; ManagedAgentContext with agent_id/binding_revision/mode/user_id/subject_oid; VerifiedHumanSubject with issuer/tenant_id/oid/user_id; MicrosoftInteractiveSubject with issuer/tenant_id/oid; ManagedAgentIdentityStatus with identity/identity_managed/enabled/execution_mode/last_authenticated_at.
+
+  All records use pydantic BaseModel with ConfigDict(frozen=True, extra="forbid") where LiteLLM specifies frozen. TypedDict preserves absent-versus-null (total=False). Decimals for spend when recorded. Entra UUIDs are normalized at validation time, rejecting invalid UUID strings.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/agents/**
+    - crates/betterlite-auth/src/identity/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L1-175
+    why: AgentCard, AugmentedAgentCard, AgentProvider, AgentCapabilities, AgentSkill, AgentInterface, AgentCardSignature, SecurityScheme unions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L176-340
+    why: AgentConfig, PatchAgentRequest, AgentResponse, AgentCaller, AgentKeySummary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L187-253
+    why: AgentKillSwitchAuth unions, AgentKillSwitchConfig with _require_absolute_http_url validator, AgentKillSwitchResult with succeeded property.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L406-413
+    why: AgentMakePublicResponse, MakeAgentsPublicRequest.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/agent_identity.py#L1-96
+    why: EntraIdentityConfig, AgentIdentityBinding, AgentSubject, AgentIdentityFailure, ManagedAgentContext, VerifiedHumanSubject, MicrosoftInteractiveSubject, ManagedAgentIdentityStatus.
+  - url: https://docs.rs/uuid/latest/uuid/
+    why: UUID parsing and normalization for Entra identifiers.
+  - url: https://docs.rs/rust_decimal/latest/rust_decimal/
+    why: Decimal for spend tracking, no floats.
+
+dod:
+  - text: AgentCard and its nested schema types (AgentProvider, AgentCapabilities, AgentSkill, AgentInterface, AgentCardSignature, SecurityScheme unions) deserialize and serialize without losing absent-versus-null distinctions.
+    proof: [agent-records-tests]
+  - text: AugmentedAgentCard extends AgentCard with is_public field.
+    proof: [agent-records-tests]
+  - text: AgentMakePublicResponse with message, public_agent_groups, and updated_by deserializes and serializes correctly.
+    proof: [agent-records-tests]
+  - text: AgentKillSwitchConfig rejects non-absolute http(s) URLs at parse time.
+    proof: [agent-records-tests]
+  - text: AgentKillSwitchResult.succeeded returns true for 2xx status codes, false otherwise.
+    proof: [agent-records-tests]
+  - text: EntraIdentityConfig.normalize_identifier validates and normalizes tenant_id, client_id and service_principal_id as UUIDs, rejecting invalid UUID strings.
+    proof: [identity-records-tests]
+  - text: EntraIdentityConfig.issuer returns the correct Microsoft token endpoint URL for its tenant.
+    proof: [identity-records-tests]
+  - text: All record types that should be frozen are ConfigDict(frozen=True) and reject extra fields.
+    proof: [identity-records-tests]
+  - text: AgentResponse spend and search_score, when present, use Decimal and no float types.
+    proof: [agent-records-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: agent-records-tests
+      why: agent records tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^agents::/)'
+    - id: identity-records-tests
+      why: identity records tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^identity::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: AgentResponse includes spend as Decimal, while LiteLLM's agents API in proxy uses float. betterlite's decimal representation matches its money-is-decimal rule and cost-tracking design.
+    why: Floating-point sums drift, and a budget check that drifts either blocks paying keys or lets them through. Decimals stay exact.
+  - what: betterlite rejects agent_card_params with extra fields at parse time; LiteLLM's AgentCard uses TypedDict total=False so unknown fields pass through.
+    why: betterlite validates at the boundary with model_config extra="forbid" to catch schema mismatches early.
+
+out_of_scope:
+  - Behavior behind the keys (routing, retries, fallbacks, grant logic). This task only defines the record types.
+  - Authorization, storage and HTTP routes. Registry reconciliation and DB operations belong to later tasks.
+  - The include key, secret managers and config stored in a database.
+
+pitfalls:
+  - UUID normalization happens at validation time. Invalid UUID strings are rejected with a validation error; the validator cannot silently accept a string like "123" or a malformed guid.
+  - TypedDict with total=False preserves absent fields (not in the input) from present-but-null fields (explicitly null in JSON). Do not use Option/Option<T> where None means "was not provided"; use TypedDict with total=False and serde(default) instead.
+  - AgentKillSwitchConfig.url is not optional; it must be absolute and http(s). Relative URLs and custom schemes are rejected at parse time.
+  - Pydantic's frozen=True makes instances immutable after creation. Tests that would mutate records after parse will fail; clone instead if a test needs mutation.
+  - LiteLLM uses a property issuer on EntraIdentityConfig that synthesizes the Microsoft token endpoint. This is a derived value, not a stored field, and must not be serialized back to the config file.
+
+review_level: security
+
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
