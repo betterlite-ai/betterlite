@@ -112,13 +112,16 @@ fn error_value(input: &ErrorInput) -> Result<Value, Box<HelperError>> {
     serde_json::to_value(record).map_err(|error| Box::new(invalid_error(error)))
 }
 fn metadata_value(input: &MetadataInput) -> Result<Value, Box<HelperError>> {
-    serde_json::to_value(metadata_filter_limit(input.metadata.as_ref()))
-        .map_err(|error| Box::new(invalid_error(error)))
+    match serde_json::to_value(metadata_filter_limit(input.metadata.as_ref())) {
+        Ok(value) => Ok(value),
+        Err(error) => Err(Box::new(invalid_error(error))),
+    }
 }
 fn overlap_value(input: &OverlapInput) -> Result<Value, Box<HelperError>> {
-    overlapping_api_base_path(&input.api_base, &input.ending_path)
-        .map(Value::String)
-        .map_err(|error| Box::new(invalid_error(error)))
+    match overlapping_api_base_path(&input.api_base, &input.ending_path) {
+        Ok(value) => Ok(Value::String(value)),
+        Err(error) => Err(Box::new(invalid_error(error))),
+    }
 }
 fn forwarding(input: &ProjectionInput) -> Value {
     let events = Rc::new(RefCell::new(Vec::new()));
