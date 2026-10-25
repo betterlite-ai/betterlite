@@ -3,3 +3,12 @@ deviations:
   - what: Keyring exceptions are caught and returned as enum variants instead of being raised to callers.
     why: Rust callers need explicit typed fallback outcomes while preserving every failure path required by the task.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_keyring.py#L153-229
+  - what: A failed read-back returns KeyringUnreachable instead of KeyringDiscardsWrites.
+    why: The task explicitly distinguishes failed reads from missing or mismatched stored values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_keyring.py#L197
+  - what: The kill switch is resolved from an injected environment when the vault is constructed.
+    why: Repository rules require configuration injection; callers rebuild the vault when configuration changes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_keyring.py#L103-120
+  - what: Native backends are selected by the optional os-keyring feature instead of Python package discovery and backend configuration.
+    why: Rust uses the maintained keyring-core interface and platform stores without a Python runtime or global backend state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_keyring.py#L107-120

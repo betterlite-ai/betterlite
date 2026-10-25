@@ -12,7 +12,6 @@ publish = false
 [workspace.dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 hyper-util = "0.1.21"
-keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
 percent-encoding = "2.3.2"
 regex = "1.13.1"
 rust_decimal = { version = "1.43.0", features = ["serde-with-arbitrary-precision"] }
