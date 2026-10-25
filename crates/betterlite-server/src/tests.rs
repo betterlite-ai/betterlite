@@ -3,7 +3,6 @@ use crate::auth::parse_key_header;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use std::{fs, path::Path};
-
 #[rstest]
 #[case::repeated_bearer("Bearer test-Bearer master", "test-master")]
 #[case::repeated_basic("Basic test-Basic master", "test-master")]
