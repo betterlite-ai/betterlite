@@ -2,10 +2,9 @@ mod tests;
 
 use std::sync::Arc;
 
+use crate::types::{FileChangeKind, JsonObject, StopReason, Usage};
 use rust_decimal::Decimal;
 use tokio::sync::SetOnce;
-
-use crate::types::{FileChangeKind, JsonObject, StopReason, Usage};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FileChange {
@@ -25,14 +24,6 @@ pub struct Approval {
     pub tool: String,
     pub input: JsonObject,
     pub decision: Arc<SetOnce<Decision>>,
-}
-
-impl Approval {
-    pub fn resolve(&self, decision: Decision) {
-        if !self.decision.initialized() {
-            drop(self.decision.set(decision));
-        }
-    }
 }
 
 #[derive(Clone, Debug)]

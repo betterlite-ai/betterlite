@@ -1,3 +1,5 @@
+use std::io;
+
 use thiserror::Error;
 
 use crate::events::RunResult;
@@ -17,10 +19,13 @@ pub enum HarnessError {
         harness: Harness,
         expected: &'static str,
     },
-    #[error("the runtime is missing from the sandbox or failed to start: {reason}")]
-    InstallFailed { reason: String },
-    #[error("the sandbox failed: {reason}")]
-    Sandbox { reason: String },
+    #[error("the runtime is missing from the sandbox or failed to start: {0}")]
+    InstallFailed(#[source] io::Error),
+    #[error("the sandbox failed: {source}")]
+    Sandbox {
+        #[source]
+        source: io::Error,
+    },
     #[error("a turn was started on a session that is closed or detached")]
     SessionClosed,
     #[error("{source}")]
@@ -41,4 +46,9 @@ pub enum HarnessError {
     HarnessHint { given: String, hint: Harness },
     #[error("the token counts overflow: {usage:?}")]
     TokenOverflow { usage: Usage },
+    #[error("sandbox {operation} exceeded the {limit}-byte content limit")]
+    ContentLimitExceeded {
+        operation: &'static str,
+        limit: usize,
+    },
 }

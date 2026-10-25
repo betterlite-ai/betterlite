@@ -1,6 +1,9 @@
 #![cfg(test)]
+use std::collections::BTreeMap;
+
 use secrecy::{ExposeSecret, SecretString};
 
+use crate::sandbox::SandboxCommand;
 use crate::transformation::{HarnessSessionSetup, HarnessTurnRequest};
 
 #[test]
@@ -21,4 +24,10 @@ fn session_and_turn_debug_redact_endpoint_tokens() {
         request.env.get(key).map(ExposeSecret::expose_secret),
         Some(token)
     );
+    let command = SandboxCommand {
+        argv: vec!["claude".to_owned()],
+        env: BTreeMap::from([("ANTHROPIC_AUTH_TOKEN".to_owned(), SecretString::from(token))]),
+        cwd: None,
+    };
+    assert!(!format!("{command:?}").contains(token));
 }

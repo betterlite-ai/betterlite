@@ -28,14 +28,14 @@ async fn an_answer_from_another_thread_wakes_the_waiting_turn() {
     assert!(poll!(waiting.as_mut()).is_pending());
     let answering = approval.clone();
     let mut tasks = JoinSet::new();
-    tasks.spawn_blocking(move || answering.resolve(Decision::Allow));
+    tasks.spawn_blocking(move || drop(answering.decision.set(Decision::Allow)));
     let decision = timeout(Duration::from_secs(1), waiting).await.unwrap();
     tasks.join_next().await.unwrap().unwrap();
     assert!(approval.decision.initialized());
     assert_eq!(decision, &Decision::Allow);
-    approval.resolve(Decision::Deny {
+    drop(approval.decision.set(Decision::Deny {
         reason: "too late".to_owned(),
-    });
+    }));
     assert_eq!(approval.decision.wait().await, &Decision::Allow);
 }
 
@@ -46,12 +46,12 @@ async fn an_answer_from_another_thread_wakes_the_waiting_turn() {
 async fn the_first_answer_wins(#[case] first: Decision) {
     let approval = approval();
     assert!(!approval.decision.initialized());
-    approval.resolve(first.clone());
+    drop(approval.decision.set(first.clone()));
     assert!(approval.decision.initialized());
-    approval.resolve(Decision::Allow);
-    approval.resolve(Decision::Deny {
+    drop(approval.decision.set(Decision::Allow));
+    drop(approval.decision.set(Decision::Deny {
         reason: "later denial".to_owned(),
-    });
+    }));
     let decision = timeout(Duration::from_secs(1), approval.decision.wait())
         .await
         .unwrap();

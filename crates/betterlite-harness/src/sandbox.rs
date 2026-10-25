@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::time::Duration;
 
+use secrecy::SecretString;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::errors::HarnessError;
@@ -13,10 +14,10 @@ pub struct CompletedRun {
     pub exit_code: i32,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub struct SandboxCommand {
     pub argv: Vec<String>,
-    pub env: BTreeMap<String, String>,
+    pub env: BTreeMap<String, SecretString>,
     // absent means the sandbox workdir
     pub cwd: Option<String>,
 }
@@ -45,8 +46,13 @@ pub trait Sandbox: Send + Sync {
         &self,
         command: &SandboxCommand,
         timeout: Duration,
+        max_output_bytes: usize,
     ) -> impl Future<Output = Result<CompletedRun, HarnessError>> + Send;
-    fn read(&self, path: &str) -> impl Future<Output = Result<Vec<u8>, HarnessError>> + Send;
+    fn read(
+        &self,
+        path: &str,
+        max_bytes: usize,
+    ) -> impl Future<Output = Result<Vec<u8>, HarnessError>> + Send;
     fn write(
         &self,
         path: &str,
