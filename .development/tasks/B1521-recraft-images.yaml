@@ -34,13 +34,16 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/recraft.rs
     - crates/betterlite-core/src/api/recraft/**
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/recraft_images.rs
     - crates/betterlite-core/fuzz/corpus/recraft_images/**
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/recraft.rs
+    - crates/betterlite-config/src/providers/recraft/**
     - tools/oracle/src/helpers/core_ops/recraft.rs
     - tools/oracle/src/helpers/core_ops/recraft/**
     - tools/oracle/helpers/recraft.py

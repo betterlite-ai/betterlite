@@ -1,0 +1,5 @@
+kind: helper
+name: audio-routing-text
+call: {openai_base_config: {audio_routing: {model: text-audio, chat_models: [], text_models: [text-audio]}}}
+env: {}
+compare: {ignore: []}

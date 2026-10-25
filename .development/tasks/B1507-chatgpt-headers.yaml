@@ -33,11 +33,14 @@ scope:
   paths:
     - crates/betterlite-openai/src/lib.rs
     - crates/betterlite-openai/src/chatgpt.rs
+    - crates/betterlite-openai/src/chatgpt/**
     - crates/betterlite-openai/src/chatgpt/headers.rs
     - crates/betterlite-openai/src/chatgpt/headers/**
     - crates/betterlite-openai/src/chatgpt/default_instructions.txt
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/chatgpt.rs
+    - crates/betterlite-config/src/providers/chatgpt/**
     - crates/betterlite-config/src/providers/chatgpt/headers.rs
     - crates/betterlite-config/src/providers/chatgpt/headers/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/chatgpt_headers*

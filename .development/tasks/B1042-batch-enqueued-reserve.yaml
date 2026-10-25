@@ -63,6 +63,7 @@ scope:
   - crates/betterlite-core/src/api/batch_enqueued_reserve.rs
   - crates/betterlite-core/src/api/batch_enqueued_reserve/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml

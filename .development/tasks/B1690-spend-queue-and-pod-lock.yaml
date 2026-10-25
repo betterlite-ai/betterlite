@@ -44,6 +44,7 @@ scope:
   paths:
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/src/queues.rs
+    - crates/betterlite-db/src/queues/**
     - crates/betterlite-db/src/queues/memory.rs
     - crates/betterlite-db/src/queues/memory/**
     - crates/betterlite-db/src/queues/pod_lock.rs

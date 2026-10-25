@@ -79,19 +79,19 @@ checks:
       run: test -f crates/betterlite-logging/fuzz/fuzz_targets/otlp_decode.rs && test "$(ls crates/betterlite-logging/fuzz/corpus/otlp_decode | wc -l)" -ge 5 && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_otlp_decode_corpus)'
     - id: otlp-decode-tests
       why: decode behavior tests fail, do not exist, or snapshots were not accepted
-      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otlp_normalize::/'
+      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otlp_normalize::/)'
     - id: otlp-response-tests
       why: OTLP response encoding tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otlp_response::/'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otlp_response::/)'
     - id: message-content-tests
       why: message content extraction tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^message_content::/'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^message_content::/)'
     - id: ui-format-tests
       why: UI format conversion tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^ui_content::/'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^ui_content::/)'
     - id: otlp-error-tests
       why: error handling tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otlp_errors::/'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otlp_errors::/)'
     - id: helper-python
       why: the oracle adapters fail strict Python checks
       run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json

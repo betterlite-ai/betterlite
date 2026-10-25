@@ -21,6 +21,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_fake_stream.rs
   - crates/betterlite-core/src/api/messages_fake_stream/**
   - tools/oracle/src/helpers/core_ops/messages_fake_stream.rs

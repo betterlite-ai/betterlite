@@ -1,0 +1,5 @@
+kind: helper
+name: metadata-filter-limit
+call: {openai_base_config: {metadata_filter_limit: {metadata: {zeta: zeta, number: 3, hidden_params: hidden, alpha: alpha, key02: value02, key03: value03, key04: value04, key05: value05, key06: value06, key07: value07, key08: value08, key09: value09, key10: value10, key11: value11, key12: value12, key13: value13, key14: value14, key15: value15, key16: value16, key17: value17}}}}
+env: {}
+compare: {ignore: []}

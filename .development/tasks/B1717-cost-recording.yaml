@@ -43,10 +43,13 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/**
     - crates/betterlite-core/src/cost/recording.rs
     - crates/betterlite-core/src/cost/recording/**
     - crates/betterlite-core/src/cost/dispatch.rs
+    - crates/betterlite-core/src/cost/dispatch/**
     - crates/betterlite-core/src/helpers.rs
+    - crates/betterlite-core/src/helpers/**
     - tools/oracle/src/helpers/core_ops/cost_recording.rs
     - tools/oracle/src/helpers/core_ops/cost_recording/**
     - tools/oracle/helpers/cost_recording.py

@@ -34,12 +34,16 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/elevenlabs.rs
+    - crates/betterlite-core/src/api/elevenlabs/**
     - crates/betterlite-core/src/api/elevenlabs/{common,speech}.rs
     - crates/betterlite-core/src/api/elevenlabs/speech.rs
     - crates/betterlite-core/src/api/elevenlabs/speech/**
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/elevenlabs.rs
+    - crates/betterlite-config/src/providers/elevenlabs/**
     - tools/oracle/src/helpers/core_ops/elevenlabs_speech.rs
     - tools/oracle/src/helpers/core_ops/elevenlabs_speech/**
     - tools/oracle/helpers/elevenlabs_speech.py

@@ -36,6 +36,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/runway.rs
+    - crates/betterlite-core/src/api/runway/**
     - crates/betterlite-core/src/api/runway/video_create.rs
     - crates/betterlite-core/src/api/runway/video_create/**
     - crates/betterlite-core/src/api/runway/tasks.rs
