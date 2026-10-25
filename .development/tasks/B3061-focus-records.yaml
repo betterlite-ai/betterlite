@@ -18,10 +18,8 @@ description: >-
   (microseconds), null handling for unmapped columns or date-to-period conversion.
 scope:
   paths:
-    - "litellm/integrations/focus/schema.py"
-    - "litellm/integrations/focus/transformer.py"
-    - "litellm/integrations/focus/serializers/**"
-    - "litellm/integrations/focus/destinations/base.py"
+    - "crates/betterlite-logging/src/focus_records.rs"
+    - "crates/betterlite-logging/src/focus_records/**"
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/schema.py#L1-L58

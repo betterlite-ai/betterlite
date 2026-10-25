@@ -32,10 +32,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/scim_resource.rs
     - crates/betterlite-server/fuzz/corpus/scim_resource/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/server/scim_records.rs
-    - tools/oracle/src/helpers/server/scim_records/**
-    - tools/oracle/helpers/scim_records.py
-    - tools/oracle/helpers/scim_records/**
+    - tools/oracle/src/helpers/server/scim_record.rs
+    - tools/oracle/src/helpers/server/scim_record/**
+    - tools/oracle/helpers/scim_record.py
+    - tools/oracle/helpers/scim_record/**
     - tools/oracle/cases/helpers/scim-record/**
     - tools/oracle/fuzz/corpus/helper_case/scim-record-*
   lint_tables: false
@@ -71,7 +71,7 @@ deviations: []
 out_of_scope:
   - SCIM HTTP operations live in B064 and its route parts; this file contains only resource models and their validation methods.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as scim_records in the server group. Replace the stub Op in tools/oracle/src/helpers/server/scim_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/scim_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as scim_record in the server group. Replace the stub Op in tools/oracle/src/helpers/server/scim_record.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/scim_record.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Dropping model_fields_set would silently reactivate a deactivated account on a PUT that omits active.
   - SCIM roles are stored directory attributes, not LitellmUserRoles authorization assignments.
 budget:

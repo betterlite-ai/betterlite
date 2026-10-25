@@ -27,8 +27,6 @@ scope:
     - Cargo.lock
     - deny.toml
     - crates/betterlite-vertex/Cargo.toml
-    - crates/betterlite-vertex/src/lib.rs
-    - crates/betterlite-vertex/src/error.rs
     - crates/betterlite-vertex/src/aws_federation.rs
     - crates/betterlite-vertex/src/aws_federation/**
     - tools/oracle/Cargo.toml
@@ -63,7 +61,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_aws_federation.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The independent Google constructor adapter is absent or fails strict typing.
     - id: federation-seed
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_aws_federation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_aws_federation::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_aws_federation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::aws_federation::/)'
       why: Seed tests must parse the new call tag and fail on an empty seed set.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-aws-federation/all-recognized-fields.yaml

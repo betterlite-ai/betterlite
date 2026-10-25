@@ -77,7 +77,6 @@ scope:
   paths:
     - crates/betterlite-db/src/user_repository.rs
     - crates/betterlite-db/src/user_repository/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/user_record.rs

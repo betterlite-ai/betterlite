@@ -17,7 +17,7 @@ description: >-
   signoz_ingestion_key) are skipped for export with a warning naming the field, matching LiteLLM. os.environ/ references
   in allowed dynamic fields still fail before lookup. Write the behavior rstest functions logging_privacy_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
-  separate names. Register helper operations logging_privacy in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  separate names. The helper operation logging_privacy is already registered;
   each operation has its own Rust and Python adapter file and corpus seed. Budget 270 privacy transforms, 110 adapters,
   280 tests and 100 config/replay wiring (760 total).
 scope:

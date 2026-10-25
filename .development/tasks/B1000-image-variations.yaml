@@ -24,7 +24,6 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/image_variations.rs
   - crates/betterlite-core/src/api/image_variations/**
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/image_variations.rs
   - crates/betterlite-config/src/api/image_variations/**

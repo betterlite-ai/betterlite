@@ -90,7 +90,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_resource_grants.rs
     - crates/betterlite-auth/src/auth_resource_grants/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/auth_resource_grants.rs
     - tools/oracle/src/helpers/server/auth_resource_grants/**

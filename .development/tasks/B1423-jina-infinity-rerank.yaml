@@ -50,10 +50,10 @@ scope:
     - crates/betterlite-config/src/resolve.rs
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/tests/embedding_host_settings.rs
-    - tools/oracle/src/helpers/openai/jina_infinity_rerank.rs
-    - tools/oracle/src/helpers/openai/jina_infinity_rerank/**
-    - tools/oracle/helpers/jina_infinity_rerank.py
-    - tools/oracle/helpers/jina_infinity_rerank/**
+    - tools/oracle/src/helpers/openai/host_rerank_record.rs
+    - tools/oracle/src/helpers/openai/host_rerank_record/**
+    - tools/oracle/helpers/host_rerank_record.py
+    - tools/oracle/helpers/host_rerank_record/**
     - tools/oracle/cases/helpers/host-rerank-record/**
     - tools/oracle/fuzz/corpus/helper_case/host_rerank_record*
   lint_tables: false
@@ -85,7 +85,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/host_rerank.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/host_rerank)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_host_rerank_corpus)'
       why: Both provider variants must replay malformed response bodies from newly added seeds.
     - id: host-rerank-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/host_rerank_record*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::host_rerank_record::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/host_rerank_record*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::host_rerank_record::/)'
       why: A nonempty helper corpus must select the host_rerank_record operation.
 oracle_cases:
   - tools/oracle/cases/helpers/host-rerank-record/jina-formals-versus-dictionary.yaml
@@ -97,7 +97,7 @@ deviations: []
 out_of_scope:
   - B1419 owns inherited Cohere V1 request construction and B1422 the common Infinity error; B037 handles dispatch and provider key resolution.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as jina_infinity_rerank in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/jina_infinity_rerank.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/jina_infinity_rerank.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as host_rerank_record in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/host_rerank_record.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/host_rerank_record.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Infinity's check for cohere_results is None cannot fire because the list was initialized before the loop.
   - Jina ignores a formal top_n value if non_default_params does not contain that key.
   - Infinity can report negative output_tokens when total_tokens is below prompt_tokens.

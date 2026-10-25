@@ -56,7 +56,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/Cargo.toml
-    - crates/betterlite-core/src/lib.rs
     - crates/betterlite-core/src/cost.rs
     - crates/betterlite-core/src/cost/completion.rs
     - crates/betterlite-core/src/cost/completion/**
@@ -67,10 +66,10 @@ scope:
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/cost_service.rs
     - crates/betterlite-server/src/cost_service/**
-    - tools/oracle/src/helpers/core_ops/response_cost_service.rs
-    - tools/oracle/src/helpers/core_ops/response_cost_service/**
-    - tools/oracle/helpers/response_cost_service.py
-    - tools/oracle/helpers/response_cost_service/**
+    - tools/oracle/src/helpers/core_ops/response_charge.rs
+    - tools/oracle/src/helpers/core_ops/response_charge/**
+    - tools/oracle/helpers/response_charge.py
+    - tools/oracle/helpers/response_charge/**
     - tools/oracle/cases/helpers/response-charge/**
     - tools/oracle/fuzz/corpus/helper_case/response-charge-*
   lint_tables: false
@@ -138,7 +137,7 @@ out_of_scope:
   - B1694 owns the savings pricing context and attaches it to this cost service; savings.py is never called from completion_cost.
   - B1692 owns PTU job installation in proxy startup; completion pricing does not assemble the scheduler, pod leases or reconciliation storage.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as response_cost_service in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/response_cost_service.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/response_cost_service.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as response_charge in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/response_charge.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/response_charge.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A token-type breakdown lookup can make a candidate fail, while a breakdown setter failure is swallowed after a charge is known.
   - The response wrapper honors the provider cost header even when custom pricing would otherwise override usage-reported cost.
   - Websocket tier recursion shares one breakdown receiver, so only the final partition's breakdown remains.

@@ -31,14 +31,15 @@ scope:
   paths:
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,vertex_batch_upload}.rs
+    - crates/betterlite-vertex/src/vertex_batch_upload.rs
     - crates/betterlite-vertex/src/vertex_batch_upload/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_upload.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_batch_upload/**
-    - tools/oracle/src/helpers/vertex/batch_upload_stream.rs
-    - tools/oracle/src/helpers/vertex/batch_upload_stream/**
-    - tools/oracle/helpers/vertex_batch_upload_stream.py
-    - tools/oracle/helpers/vertex_batch_upload_stream/**
+    - tools/oracle/src/helpers/vertex/batch_upload.rs
+    - tools/oracle/src/helpers/vertex/batch_upload/**
+    - tools/oracle/helpers/vertex_batch_upload.py
+    - tools/oracle/helpers/vertex_batch_upload/**
     - tools/oracle/cases/helpers/vertex-batch-upload/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_batch_upload*
   lint_tables: false
@@ -72,7 +73,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_upload.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_batch_upload)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_batch_upload_corpus)'
       why: Invalid UTF-8, split lines and malformed bodies reach decode_openai_batch_line.
     - id: upload-row-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_upload*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_batch_upload::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_upload*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::batch_upload::/)'
       why: Seed assertions select call.vertex_batch_upload and reject an empty fixture set.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-batch-upload/embeddings-fanout.yaml
@@ -89,7 +90,7 @@ out_of_scope:
   - File metadata, media-upload selection and GCS naming at L851-L1237 belong to B1376, with authorization delegated to B1393.
   - Output classification and embedding regrouping are B1374; content response iteration and conversion are B1377.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_batch_upload_stream in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/batch_upload_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_batch_upload_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_batch_upload in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/batch_upload.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_batch_upload.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A string upload value is JSONL content even when it resembles a filesystem path.
   - Passing passthrough=1 must not activate the source's is True branch.
   - 'A custom_id already ending in #0/2 must be escaped before a real fan-out suffix is appended.'

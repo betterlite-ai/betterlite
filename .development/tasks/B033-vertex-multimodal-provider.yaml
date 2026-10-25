@@ -38,10 +38,12 @@ scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_media_dispatch}.rs
+    - crates/betterlite-provider/src/vertex_media_dispatch.rs
     - crates/betterlite-provider/src/vertex_media_dispatch/**
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/{lib,dispatch,operation}.rs
     - crates/betterlite-core/src/api/{mod,vertex_media_bindings}.rs
+    - crates/betterlite-core/src/api/vertex_media_bindings.rs
     - crates/betterlite-core/src/api/vertex_media_bindings/**
     - tools/oracle/cases/api/vertex-media/**
     - tools/oracle/fixtures/vertex-media/**

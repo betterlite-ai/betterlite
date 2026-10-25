@@ -49,7 +49,6 @@ scope:
   paths:
     - crates/betterlite-db/src/mcp_stored_contracts.rs
     - crates/betterlite-db/src/mcp_stored_contracts/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/mcp_stored_contract.rs

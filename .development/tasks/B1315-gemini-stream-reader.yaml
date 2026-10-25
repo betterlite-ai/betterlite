@@ -22,14 +22,15 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,gemini_stream}.rs
+    - crates/betterlite-vertex/src/gemini_stream.rs
     - crates/betterlite-vertex/src/gemini_stream/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_stream.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_stream/**
-    - tools/oracle/src/helpers/vertex/gemini_stream_reader.rs
-    - tools/oracle/src/helpers/vertex/gemini_stream_reader/**
-    - tools/oracle/helpers/gemini_stream_reader.py
-    - tools/oracle/helpers/gemini_stream_reader/**
+    - tools/oracle/src/helpers/vertex/gemini_stream.rs
+    - tools/oracle/src/helpers/vertex/gemini_stream/**
+    - tools/oracle/helpers/gemini_stream.py
+    - tools/oracle/helpers/gemini_stream/**
     - tools/oracle/cases/helpers/gemini-stream/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_stream*
   lint_tables: false
@@ -61,7 +62,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_stream.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_stream)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_stream_corpus)'
       why: Every committed fragment corpus input runs through push and EOF draining.
     - id: stream-fixtures
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_stream*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_stream::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_stream*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_stream::/)'
       why: The shared corpus parser must recognize stream calls with fragment sequences.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-stream/split-after-valid.yaml
@@ -77,7 +78,7 @@ out_of_scope:
   - B1316 supplies HTTP streams; B1326/B1314/B1313/B1322/B1323 own envelope, candidate, part, usage and metadata transformations.
   - B1305/B1308-B1310 own request policy methods in the same Gemini file.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as gemini_stream_reader in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_stream_reader.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_stream_reader.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as gemini_stream in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Fragmentation may begin after several valid JSON chunks, not only on the first chunk.
   - EOF must drain a complete object ahead of an unfinished value without requiring a closing final byte.
   - Seeing tool_calls in an earlier chunk changes the finish reason of a later empty STOP chunk.

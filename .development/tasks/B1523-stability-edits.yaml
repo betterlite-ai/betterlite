@@ -35,10 +35,10 @@ scope:
     - crates/betterlite-core/src/api/stability.rs
     - crates/betterlite-core/src/api/stability/edit.rs
     - crates/betterlite-core/src/api/stability/edit/**
-    - tools/oracle/src/helpers/core_ops/stability_edits.rs
-    - tools/oracle/src/helpers/core_ops/stability_edits/**
-    - tools/oracle/helpers/stability_edits.py
-    - tools/oracle/helpers/stability_edits/**
+    - tools/oracle/src/helpers/core_ops/stability_edit.rs
+    - tools/oracle/src/helpers/core_ops/stability_edit/**
+    - tools/oracle/helpers/stability_edit.py
+    - tools/oracle/helpers/stability_edit/**
     - tools/oracle/cases/helpers/stability-edit/**
     - tools/oracle/fuzz/corpus/helper_case/stability_edit*
   lint_tables: false
@@ -74,7 +74,7 @@ deviations: []
 out_of_scope:
   - B1522 owns StabilityImageGenerationRequest and the generation/aspect tables; its no-caller inventory excludes the other shared request/response declarations.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as stability_edits in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/stability_edits.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/stability_edits.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as stability_edit in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/stability_edit.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/stability_edit.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - drop_params=true leaves the original unsupported field in mapped_params instead of deleting it.
   - The body ignores a supplied output_format and keeps png.
   - Catalog price is attached even when the provider response contains no image.

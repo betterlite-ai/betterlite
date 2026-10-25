@@ -9,15 +9,12 @@ description: >-
   initialization. Budget 240 scrubber/settings, 110 adapters, 300 tests/fuzz and 60 wiring (710 total). Add the
   sentry_scrubbing cargo-fuzz target, call the production parser, and commit/replay malformed and boundary seeds.
   Write the behavior rstest functions sentry_scrubbing_behavior_tests_behavior in adjacent tests.rs files, with a named case
-  for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
-  sentry_scrubbing in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its
+  for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation sentry_scrubbing is already registered; each operation has its
   own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
   - crates/betterlite-redact/Cargo.toml
-  - crates/betterlite-redact/src/lib.rs
-  - crates/betterlite-redact/src/error.rs
   - crates/betterlite-redact/src/sentry.rs
   - crates/betterlite-redact/src/sentry/**
   - tools/oracle/Cargo.toml

@@ -41,10 +41,10 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/cohere_chat_v2.rs
     - crates/betterlite-openai/fuzz/corpus/cohere_chat_v2/**
-    - tools/oracle/src/helpers/openai/cohere_chat_v2.rs
-    - tools/oracle/src/helpers/openai/cohere_chat_v2/**
-    - tools/oracle/helpers/cohere_chat_v2.py
-    - tools/oracle/helpers/cohere_chat_v2/**
+    - tools/oracle/src/helpers/openai/cohere_v2_reply.rs
+    - tools/oracle/src/helpers/openai/cohere_v2_reply/**
+    - tools/oracle/helpers/cohere_v2_reply.py
+    - tools/oracle/helpers/cohere_v2_reply/**
     - tools/oracle/cases/helpers/cohere-v2-reply/**
     - tools/oracle/fuzz/corpus/helper_case/cohere_v2_reply*
   lint_tables: false
@@ -73,7 +73,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/cohere_chat_v2.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/cohere_chat_v2)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_cohere_chat_v2_corpus)'
       why: The V2 decoder must handle array roots and malformed citation structures within limits.
     - id: cohere-v2-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_v2_reply*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::cohere_v2_reply::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_v2_reply*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::cohere_v2_reply::/)'
       why: Seed parsing must assert the cohere_v2_reply tag and fail when none were added.
 oracle_cases:
   - tools/oracle/cases/helpers/cohere-v2-reply/max-completion-wins.yaml
@@ -86,7 +86,7 @@ out_of_scope:
   - B1415 owns ChatHistory and tool-result types before L47; this task consumes their prompt-layer counterparts only through B503.
   - Cohere version routing is B2230 and main.py execution is B037; the common V2 streaming parser is B1414.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as cohere_chat_v2 in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/cohere_chat_v2.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cohere_chat_v2.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as cohere_v2_reply in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/cohere_v2_reply.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cohere_v2_reply.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A citation's fallback URL is built from source.id rather than document.id.
   - Empty annotations leave an existing non-tool message's annotations untouched.
   - CohereV2ChatResponse construction accepts mappings with missing fields because it is a TypedDict.

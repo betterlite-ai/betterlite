@@ -115,7 +115,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/request_body_safety.rs
     - crates/betterlite-auth/src/request_body_safety/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/request_body_safety.rs
     - tools/oracle/src/helpers/auth/request_body_safety/**

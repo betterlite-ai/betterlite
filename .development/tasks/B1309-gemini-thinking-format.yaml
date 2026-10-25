@@ -28,16 +28,18 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,gemini_thinking,gemini_format}.rs
+    - crates/betterlite-vertex/src/gemini_thinking.rs
     - crates/betterlite-vertex/src/gemini_thinking/**
+    - crates/betterlite-vertex/src/gemini_format.rs
     - crates/betterlite-vertex/src/gemini_format/**
     - crates/betterlite-config/src/{env,settings}.rs
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/thinking.rs
     - crates/betterlite-config/src/providers/vertex/thinking/**
-    - tools/oracle/src/helpers/vertex/gemini_thinking_format.rs
-    - tools/oracle/src/helpers/vertex/gemini_thinking_format/**
-    - tools/oracle/helpers/gemini_thinking_format.py
-    - tools/oracle/helpers/gemini_thinking_format/**
+    - tools/oracle/src/helpers/vertex/gemini_thinking.rs
+    - tools/oracle/src/helpers/vertex/gemini_thinking/**
+    - tools/oracle/helpers/gemini_thinking.py
+    - tools/oracle/helpers/gemini_thinking/**
     - tools/oracle/cases/helpers/gemini-thinking/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_thinking*
   lint_tables: false
@@ -70,7 +72,7 @@ checks:
       run: test -f tools/oracle/helpers/gemini_thinking.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Thinking helper comparisons require the independently configured Python implementation.
     - id: thinking-seed
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_thinking*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_thinking::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_thinking*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_thinking::/)'
       why: The corpus must contain a parsed call.gemini_thinking seed.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-thinking/model-minimums.yaml
@@ -88,7 +90,7 @@ out_of_scope:
   - B1308 owns tool mapping, B1305 the model-name predicates and B1310 the remaining option/class-default methods before L1313.
   - Output parts/usage and candidates are B1313-B1314; streaming is B1315; request transport is B1316.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as gemini_thinking_format in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_thinking_format.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_thinking_format.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as gemini_thinking in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_thinking.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_thinking.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - thinking.type=enabled with budget_tokens=0 suppresses thoughts without forcing a Gemini 3 thinkingLevel.
   - Gemini 3 none selects low or minimal with includeThoughts=false rather than an invalid zero thinkingBudget.
   - Response schema cleanup removes only false additionalProperties on the older path.

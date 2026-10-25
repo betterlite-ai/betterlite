@@ -82,107 +82,53 @@ checks:
       && test -r crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json
   - id: provider-records-present
     why: The asset contains exactly fourteen provider records in the expected order.
-    run: python3 -c "import json; data = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json')); providers = [p.get('provider') for p in data]; expected = ['HUMANLOOP', 'HYPERBOLIC', 'Infinity', 'JinaAI', 'LAMBDA_AI', 'LANGFUSE', 'LEMONADE', 'LITELLM_PROXY', 'LLAMAFILE', 'LM_STUDIO', 'MARITALK', 'LLAMA', 'MILVUS', 'MistralAI']; assert providers == expected, f'Expected {expected}, got {providers}'; print('Provider order matches')"
+    run: >-
+      jq -e '[.[].provider] == ["HUMANLOOP", "HYPERBOLIC", "Infinity", "JinaAI", "LAMBDA_AI", "LANGFUSE", "LEMONADE", "LITELLM_PROXY", "LLAMAFILE", "LM_STUDIO", "MARITALK", "LLAMA", "MILVUS", "MistralAI"]'
+      crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json
   - id: provider-infinity-fields
     why: Infinity provider has the optional api_base field with the correct placeholder.
-    run: python3 -c "import json; data = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json')); infinity = [p for p in data if p.get('provider') == 'Infinity'][0]; assert len(infinity['credential_fields']) == 1; assert infinity['credential_fields'][0]['key'] == 'api_base'; assert infinity['credential_fields'][0]['placeholder'] == 'http://localhost:7997'; assert infinity['credential_fields'][0]['required'] == False; print('Infinity fields correct')"
+    run: >-
+      jq -e '.[] | select(.provider == "Infinity") | .credential_fields | length == 1 and .[0].key == "api_base" and .[0].placeholder == "http://localhost:7997" and .[0].required == false'
+      crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json
   - id: provider-jinaai-fields
     why: JinaAI provider has the required api_key field with required flag set to true.
-    run: python3 -c "import json; data = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json')); jinaai = [p for p in data if p.get('provider') == 'JinaAI'][0]; assert len(jinaai['credential_fields']) == 1; assert jinaai['credential_fields'][0]['key'] == 'api_key'; assert jinaai['credential_fields'][0]['required'] == True; print('JinaAI fields correct')"
+    run: >-
+      jq -e '.[] | select(.provider == "JinaAI") | .credential_fields | length == 1 and .[0].key == "api_key" and .[0].required == true'
+      crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json
   - id: provider-records-match
     why: Each provider's credential fields match the literal LiteLLM values for placeholder,
       tooltip, required, field_type and default_value; length must match exactly. JinaAI's
       default_model_placeholder is verified as "jina_ai/" and other providers use "gpt-3.5-turbo".
     run: |
-      python3 << 'CHECKSCRIPT'
-      import json, sys
-      d = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json'))
-      r = {
-          'HUMANLOOP': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
-          'HYPERBOLIC': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
-          'Infinity': [{'key':'api_base','placeholder':'http://localhost:7997','tooltip':None,'required':False,'field_type':'text','default_value':None}],
-          'JinaAI': [{'key':'api_key','placeholder':None,'tooltip':None,'required':True,'field_type':'password','default_value':None}],
-          'LAMBDA_AI': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
-          'LANGFUSE': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
-          'LEMONADE': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
-          'LITELLM_PROXY': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
-          'LLAMAFILE': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
-          'LM_STUDIO': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
-          'MARITALK': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
-          'LLAMA': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
-          'MILVUS': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
-          'MistralAI': [{'key':'api_key','placeholder':None,'tooltip':None,'required':True,'field_type':'password','default_value':None}]
-      }
-      default_model_placeholders = {
-          'JinaAI': 'jina_ai/',
-      }
-      for p in d:
-          if p.get('provider') not in r:
-              continue
-          actual_len = len(p.get('credential_fields', []))
-          expected_len = len(r[p['provider']])
-          if actual_len != expected_len:
-              print('Provider {} has {} fields, expected {}'.format(p['provider'], actual_len, expected_len))
-              sys.exit(1)
-          for a, e in zip(p.get('credential_fields', []), r[p['provider']]):
-              for k in ['key', 'placeholder', 'tooltip', 'required', 'field_type', 'default_value']:
-                  if a.get(k) != e.get(k):
-                      print('Provider {}, field {}: {} mismatch'.format(p['provider'], a.get('key'), k))
-                      sys.exit(1)
-          if p['provider'] in default_model_placeholders:
-              expected = default_model_placeholders[p['provider']]
-              actual = p.get('default_model_placeholder')
-              if actual != expected:
-                  print('Provider {}, default_model_placeholder mismatch: expected "{}", got "{}"'.format(p['provider'], expected, actual))
-                  sys.exit(1)
-      print('All fields and placeholders match')
-      CHECKSCRIPT
+      jq -e '[{"key": "api_base", "placeholder": null, "tooltip": null, "required": false, "field_type": "text", "default_value": null}, {"key": "api_key", "placeholder": null, "tooltip": null, "required": false, "field_type": "password", "default_value": null}] as $two_optional
+        | (map({(.provider): [.credential_fields[] | {key, placeholder, tooltip, required, field_type, default_value}]}) | add) == {
+          "HUMANLOOP": $two_optional,
+          "HYPERBOLIC": $two_optional,
+          "Infinity": [{"key": "api_base", "placeholder": "http://localhost:7997", "tooltip": null, "required": false, "field_type": "text", "default_value": null}],
+          "JinaAI": [{"key": "api_key", "placeholder": null, "tooltip": null, "required": true, "field_type": "password", "default_value": null}],
+          "LAMBDA_AI": $two_optional,
+          "LANGFUSE": $two_optional,
+          "LEMONADE": $two_optional,
+          "LITELLM_PROXY": $two_optional,
+          "LLAMAFILE": $two_optional,
+          "LM_STUDIO": $two_optional,
+          "MARITALK": $two_optional,
+          "LLAMA": $two_optional,
+          "MILVUS": $two_optional,
+          "MistralAI": [{"key": "api_key", "placeholder": null, "tooltip": null, "required": true, "field_type": "password", "default_value": null}]
+        }' crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json &&
+      jq -e '.[] | select(.provider == "JinaAI") | .default_model_placeholder == "jina_ai/"' crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json
   - id: asset-corpus
     why: Asset parses as valid JSON and the catalog loader can read the fragment.
-    run: python3 -c "import json; data = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json')); assert isinstance(data, list); assert len(data) == 14; print('Asset is valid JSON with 14 records')"
+    run: jq -e 'type == "array" and length == 14' crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json
   - id: provider-jinaai-default-placeholder
     why: JinaAI default_model_placeholder is not the distinct "jina_ai/" identifier
-    run: |
-      python3 << 'CHECKSCRIPT'
-      import json, sys
-      data = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json'))
-      jinaai = next((p for p in data if p.get('provider') == 'JinaAI'), None)
-      if not jinaai:
-          print('JinaAI provider not found')
-          sys.exit(1)
-      expected = 'jina_ai/'
-      actual = jinaai.get('default_model_placeholder')
-      if actual != expected:
-          print(f'JinaAI default_model_placeholder mismatch: expected "{expected}", got "{actual}"')
-          sys.exit(1)
-      print('JinaAI default_model_placeholder correct')
-      CHECKSCRIPT
+    run: jq -e '.[] | select(.provider == "JinaAI") | .default_model_placeholder == "jina_ai/"' crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json
   - id: provider-litellm-provider-values
     why: litellm_provider field does not match LiteLLM values for key providers
-    run: |
-      python3 << 'CHECKSCRIPT'
-      import json, sys
-      data = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json'))
-      expected_litellm_providers = {
-          'Infinity': 'infinity',
-          'JinaAI': 'jina_ai',
-          'LITELLM_PROXY': 'litellm_proxy',
-          'LLAMAFILE': 'llamafile',
-          'LM_STUDIO': 'lm_studio',
-          'LLAMA': 'meta_llama',
-          'MistralAI': 'mistral',
-      }
-      for provider_name, expected_value in expected_litellm_providers.items():
-          provider = next((p for p in data if p.get('provider') == provider_name), None)
-          if not provider:
-              print(f'{provider_name} provider not found')
-              sys.exit(1)
-          actual = provider.get('litellm_provider')
-          if actual != expected_value:
-              print(f'{provider_name} litellm_provider mismatch: expected "{expected_value}", got "{actual}"')
-              sys.exit(1)
-      print('All litellm_provider values match')
-      CHECKSCRIPT
+    run: >-
+      jq -e '[.[] | select(.provider | IN("Infinity", "JinaAI", "LITELLM_PROXY", "LLAMAFILE", "LM_STUDIO", "LLAMA", "MistralAI")) | {(.provider): .litellm_provider}] | add == {"Infinity": "infinity", "JinaAI": "jina_ai", "LITELLM_PROXY": "litellm_proxy", "LLAMAFILE": "llamafile", "LM_STUDIO": "lm_studio", "LLAMA": "meta_llama", "MistralAI": "mistral"}'
+      crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json
 oracle_cases: []
 deviations: []
 out_of_scope:

@@ -59,10 +59,10 @@ scope:
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,deepinfra}.rs
     - crates/betterlite-config/tests/deepinfra_settings.rs
-    - tools/oracle/src/helpers/openai/deepinfra_chat_rerank.rs
-    - tools/oracle/src/helpers/openai/deepinfra_chat_rerank/**
-    - tools/oracle/helpers/deepinfra_chat_rerank.py
-    - tools/oracle/helpers/deepinfra_chat_rerank/**
+    - tools/oracle/src/helpers/openai/deepinfra_policy.rs
+    - tools/oracle/src/helpers/openai/deepinfra_policy/**
+    - tools/oracle/helpers/deepinfra_policy.py
+    - tools/oracle/helpers/deepinfra_policy/**
     - tools/oracle/cases/helpers/deepinfra-policy/**
     - tools/oracle/fuzz/corpus/helper_case/deepinfra_policy*
   lint_tables: false
@@ -98,7 +98,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/deepinfra_payload.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/deepinfra_payload)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_deepinfra_payload_corpus)'
       why: Replay both score-body and nested-error byte formats with fresh corpus entries.
     - id: deepinfra-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/deepinfra_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::deepinfra_policy::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/deepinfra_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::deepinfra_policy::/)'
       why: The parsed helper tag must select deepinfra_policy for both API families.
 oracle_cases:
   - tools/oracle/cases/helpers/deepinfra-policy/tool-choice-never-inserted.yaml
@@ -113,7 +113,7 @@ out_of_scope:
   - B038 binds DeepInfra chat and native rerank into the provider dispatcher and existing API services.
   - The MIN_NON_ZERO_TEMPERATURE declaration remains in the shared constants inventory; this task consumes its loaded value rather than changing unrelated providers.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as deepinfra_chat_rerank in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/deepinfra_chat_rerank.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/deepinfra_chat_rerank.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as deepinfra_policy in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/deepinfra_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/deepinfra_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - DeepInfra validates tool_choice=auto and none successfully but still omits either from the resulting options.
   - Rerank documents arrive through non_default_params; the formal documents argument only sizes repeated queries.
   - A failing post_call hook triggers the same silent rerank fallback as invalid JSON.

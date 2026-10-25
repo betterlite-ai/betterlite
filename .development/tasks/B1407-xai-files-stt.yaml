@@ -38,10 +38,14 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/xai_uploads.rs
     - crates/betterlite-openai/fuzz/corpus/xai_uploads/**
-    - tools/oracle/src/helpers/openai/xai_files_stt.rs
-    - tools/oracle/src/helpers/openai/xai_files_stt/**
-    - tools/oracle/helpers/xai_files_stt.py
-    - tools/oracle/helpers/xai_files_stt/**
+    - tools/oracle/src/helpers/openai/xai_files.rs
+    - tools/oracle/src/helpers/openai/xai_files/**
+    - tools/oracle/helpers/xai_files.py
+    - tools/oracle/helpers/xai_files/**
+    - tools/oracle/src/helpers/openai/xai_stt.rs
+    - tools/oracle/src/helpers/openai/xai_stt/**
+    - tools/oracle/helpers/xai_stt.py
+    - tools/oracle/helpers/xai_stt/**
     - tools/oracle/cases/helpers/{xai-files,xai-stt}/**
     - tools/oracle/fuzz/corpus/helper_case/xai_files*
     - tools/oracle/fuzz/corpus/helper_case/xai_stt*
@@ -71,7 +75,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/xai_uploads.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/xai_uploads)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_xai_uploads_corpus)'
       why: The replay must dispatch tagged inputs to both production decoders.
     - id: xai-upload-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_files*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_stt*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::xai_(files|stt)::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_files*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_stt*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::xai_(files|stt)::/)'
       why: One operation's seeds cannot substitute for the other operation's parser coverage.
 oracle_cases:
   - tools/oracle/cases/helpers/xai-files/upload-defaults.yaml
@@ -85,7 +89,7 @@ deviations: []
 out_of_scope:
   - B1406 supplies shared xAI resource helpers; B036 invokes B1001 audio preprocessing before this leaf and owns operation selection.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as xai_files_stt in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/xai_files_stt.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/xai_files_stt.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as xai_files and xai_stt in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/xai_files.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/xai_files.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A requested file purpose is sent on upload but never reflected in the normalized xAI file object.
   - STT boolean list items retain Python's capitalized spelling even though scalar booleans do not.
   - STT decode errors use raw_response.status_code rather than replacing a successful status with 500.

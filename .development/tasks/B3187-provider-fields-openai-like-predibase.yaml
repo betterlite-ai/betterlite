@@ -15,61 +15,28 @@ references:
 dod:
   - text: The twelve provider records (OPENAI_LIKE through PREDIBASE) are preserved byte-for-byte from the LiteLLM source at the pinned commit.
     proof: [provider-records-preserved]
-  - text: Sample credential fields match LiteLLM's exact field_type, label, and required values. OPENAI_LIKE has optional api_base and api_key; Oracle has six required and one required PEM textarea field; PETALS and PG_VECTOR have optional api_key fields.
+  - text: Sample credential fields match LiteLLM's exact field_type, label, and required values. OPENAI_LIKE has optional api_base and api_key; Oracle has six fields, all required, one of them the PEM textarea; PETALS and PG_VECTOR have optional api_key fields.
     proof: [credential-field-values]
   - text: Oracle's PEM private-key textarea field is preserved with its full placeholder text including the BEGIN/END markers and newline escaping.
     proof: [oracle-pem-field-intact]
   - text: Multiple OpenAI-compatible entries preserve their distinct provider display names and underlying litellm_provider identifiers.
     proof: [openai-variants-distinct]
-  - text: The JSON file parses correctly with serde_json and yields twelve provider records in the expected order.
+  - text: The JSON file is a JSON array of twelve provider records in the expected order.
     proof: [provider-json-parses]
 checks:
   optional: []
   commands:
     - id: provider-records-preserved
       why: the provider records differ from LiteLLM or a record is missing
-      run: |
-        cat > /tmp/check_providers.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json') as f:
-            data = json.load(f)
-        expected = ['OPENAI_LIKE', 'OpenAI_Text', 'OpenAI_Compatible', 'OpenAI_Text_Compatible', 'Openrouter', 'Nadir', 'Oracle', 'OVHCLOUD', 'Perplexity', 'PETALS', 'PG_VECTOR', 'PREDIBASE']
-        actual = [p.get('provider') for p in data]
-        if actual != expected:
-            print(f"Provider mismatch: expected {expected}, got {actual}")
-            exit(1)
-        if len(data) != 12:
-            print(f"Expected 12 providers, got {len(data)}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_providers.py
+      run: >-
+        jq -e '[.[].provider] == ["OPENAI_LIKE", "OpenAI_Text", "OpenAI_Compatible", "OpenAI_Text_Compatible", "Openrouter", "Nadir", "Oracle", "OVHCLOUD", "Perplexity", "PETALS", "PG_VECTOR", "PREDIBASE"]'
+        crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json
     - id: credential-field-values
       why: a credential field label, type or required flag does not match LiteLLM
       run: |
-        cat > /tmp/check_fields.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json') as f:
-            data = json.load(f)
-        # Check OPENAI_LIKE has optional api_key
-        openai_like = next(p for p in data if p['provider'] == 'OPENAI_LIKE')
-        api_key = next((f for f in openai_like['credential_fields'] if f['key'] == 'api_key'), None)
-        if not api_key or api_key['field_type'] != 'password' or api_key['required']:
-            print(f"OPENAI_LIKE api_key should be optional: {api_key}")
-            exit(1)
-        # Check PETALS has optional api_key
-        petals = next(p for p in data if p['provider'] == 'PETALS')
-        petals_key = next((f for f in petals['credential_fields'] if f['key'] == 'api_key'), None)
-        if not petals_key or petals_key['required']:
-            print(f"PETALS api_key should be optional (required: false): {petals_key}")
-            exit(1)
-        # Check PG_VECTOR has optional api_key
-        pg_vector = next(p for p in data if p['provider'] == 'PG_VECTOR')
-        pg_key = next((f for f in pg_vector['credential_fields'] if f['key'] == 'api_key'), None)
-        if not pg_key or pg_key['required']:
-            print(f"PG_VECTOR api_key should be optional (required: false): {pg_key}")
-            exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_fields.py
+        jq -e '.[] | select(.provider == "OPENAI_LIKE") | .credential_fields[] | select(.key == "api_key") | .field_type == "password" and .required == false' crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json &&
+        jq -e '.[] | select(.provider == "PETALS") | .credential_fields[] | select(.key == "api_key") | .required == false' crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json &&
+        jq -e '.[] | select(.provider == "PG_VECTOR") | .credential_fields[] | select(.key == "api_key") | .required == false' crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json
     - id: oracle-pem-field-intact
       why: Oracle PEM key field is missing or modified
       run: |
@@ -80,18 +47,7 @@ checks:
         jq -e '.[0].provider == "OPENAI_LIKE" and .[1].provider == "OpenAI_Text" and .[2].provider == "OpenAI_Compatible" and .[3].provider == "OpenAI_Text_Compatible"' crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json > /dev/null
     - id: provider-json-parses
       why: the JSON file does not parse or does not yield twelve records
-      run: |
-        cat > /tmp/check_parse.rs << 'CHECKER'
-        use std::fs;
-        fn main() {
-            let content = fs::read_to_string("crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json")
-                .expect("failed to read json file");
-            let data: Vec<serde_json::Value> = serde_json::from_str(&content)
-                .expect("failed to parse json");
-            assert_eq!(data.len(), 12, "expected 12 providers, got {}", data.len());
-        }
-        CHECKER
-        rustc /tmp/check_parse.rs -o /tmp/check_parse && /tmp/check_parse
+      run: jq -e 'type == "array" and length == 12' crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json
 oracle_cases: []
 deviations: []
 out_of_scope:

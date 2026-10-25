@@ -22,7 +22,6 @@ description: >-
   100 adapters and 100 config/corpus lines, within 675 changed lines.
 scope:
   paths:
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/sso_claims.rs
     - crates/betterlite-auth/src/sso_claims/**
     - crates/betterlite-auth/fuzz/corpus/jwt_claims/sso-*

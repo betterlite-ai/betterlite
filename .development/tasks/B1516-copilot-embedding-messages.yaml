@@ -34,10 +34,10 @@ scope:
     - crates/betterlite-core/src/api/copilot_embedding/**
     - crates/betterlite-core/src/api/copilot_messages.rs
     - crates/betterlite-core/src/api/copilot_messages/**
-    - tools/oracle/src/helpers/core_ops/copilot_embedding_messages.rs
-    - tools/oracle/src/helpers/core_ops/copilot_embedding_messages/**
-    - tools/oracle/helpers/copilot_embedding_messages.py
-    - tools/oracle/helpers/copilot_embedding_messages/**
+    - tools/oracle/src/helpers/core_ops/copilot_auxiliary.rs
+    - tools/oracle/src/helpers/core_ops/copilot_auxiliary/**
+    - tools/oracle/helpers/copilot_auxiliary.py
+    - tools/oracle/helpers/copilot_auxiliary/**
     - tools/oracle/cases/helpers/copilot-auxiliary/**
     - tools/oracle/fuzz/corpus/helper_case/copilot_auxiliary*
   lint_tables: false
@@ -71,7 +71,7 @@ deviations: []
 out_of_scope:
   - B045 attaches these prepared operations to the existing gateway routes and embedding dispatch branch.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as copilot_embedding_messages in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/copilot_embedding_messages.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/copilot_embedding_messages.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as copilot_auxiliary in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/copilot_auxiliary.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/copilot_auxiliary.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Messages must ignore GITHUB_COPILOT_API_BASE even though the embedding adapter honors it.
   - Embedding optional_params can replace the model and input fields constructed immediately before it.
   - The Messages API version is 2026-06-01 rather than the shared 2025-04-01 header default.

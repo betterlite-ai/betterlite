@@ -64,7 +64,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-core -p betterlite-server --no-tests=fail -E 'test(/^media_relay_logging::fal/)'
     - id: media-relay-logging-python
       why: Helper adapters or fixtures lack typing or implementation.
-      run: test -f tools/oracle/helpers/dispatch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      run: test -f tools/oracle/helpers/media_relay_logging.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
   - tools/oracle/cases/helpers/media-relay-logging/deepgram-route-detection-listen.yaml
   - tools/oracle/cases/helpers/media-relay-logging/deepgram-route-detection-non-listen.yaml

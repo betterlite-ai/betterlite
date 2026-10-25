@@ -18,7 +18,6 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-guardrails/src/lib.rs
     - crates/betterlite-guardrails/src/cisco_mcp.rs
     - tools/oracle/cases/guardrails/cisco/mcp-**
   lint_tables: false

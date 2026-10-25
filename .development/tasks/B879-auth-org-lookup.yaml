@@ -87,7 +87,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_org_lookup.rs
     - crates/betterlite-auth/src/auth_org_lookup/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/auth_org_lookup.rs
     - tools/oracle/src/helpers/server/auth_org_lookup/**

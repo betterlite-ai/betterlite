@@ -17,15 +17,12 @@ description: >-
   as Python does; Nmo duration subtracts naive local datetimes, so DST shifts do not add/subtract an hour. Convert
   to an instant only when returning a reset, not during those civil comparisons. Write the behavior rstest functions
   duration_parser_duration_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure in the
-  DoD; corpus replay tests have separate names. Register helper operations duration in tools/oracle/src/helpers/mod.rs
-  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  DoD; corpus replay tests have separate names. The helper operation duration is already registered; each operation has its own Rust and Python adapter file and corpus seed.
   Budget 270 duration/calendar logic, 110 adapters, 290 tests and 90 fuzz/replay wiring (760 total).
 scope:
   paths:
   - Cargo.toml
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/duration.rs
   - crates/betterlite-core/src/duration/**
   - crates/betterlite-core/fuzz/**

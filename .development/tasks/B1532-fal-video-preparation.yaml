@@ -41,10 +41,10 @@ scope:
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/fal_video_reply.rs
     - crates/betterlite-core/fuzz/corpus/fal_video_reply/**
-    - tools/oracle/src/helpers/core_ops/fal_video_preparation.rs
-    - tools/oracle/src/helpers/core_ops/fal_video_preparation/**
-    - tools/oracle/helpers/fal_video_preparation.py
-    - tools/oracle/helpers/fal_video_preparation/**
+    - tools/oracle/src/helpers/core_ops/fal_video_prepare.rs
+    - tools/oracle/src/helpers/core_ops/fal_video_prepare/**
+    - tools/oracle/helpers/fal_video_prepare.py
+    - tools/oracle/helpers/fal_video_prepare/**
     - tools/oracle/cases/helpers/fal-video-prepare/**
     - tools/oracle/fuzz/corpus/helper_case/fal_video_prepare*
   lint_tables: false
@@ -84,7 +84,7 @@ deviations: []
 out_of_scope:
   - B1533 covers _detail_item_text, _error_text, _result_error, _terminal_result_error, _get_fal_ai_async_httpx_client, _result_request, _status_video_object, constructor, status retrieval responses/fetch helpers, content response helpers and unsupported operations in the same file.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as fal_video_preparation in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/fal_video_preparation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fal_video_preparation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as fal_video_prepare in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/fal_video_prepare.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fal_video_prepare.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - H3 detection is a case-sensitive startswith check rather than a substring match.
   - An explicitly present input_reference=null fails instead of being ignored.
   - A status URL uses the model's queue namespace prefix, while submission uses its full endpoint path.

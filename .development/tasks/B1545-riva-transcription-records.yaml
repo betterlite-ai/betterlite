@@ -39,10 +39,10 @@ scope:
     - crates/betterlite-core/src/api/riva.rs
     - crates/betterlite-core/src/api/riva/records.rs
     - crates/betterlite-core/src/api/riva/records/**
-    - tools/oracle/src/helpers/core_ops/riva_transcription_records.rs
-    - tools/oracle/src/helpers/core_ops/riva_transcription_records/**
-    - tools/oracle/helpers/riva_transcription_records.py
-    - tools/oracle/helpers/riva_transcription_records/**
+    - tools/oracle/src/helpers/core_ops/riva_records.rs
+    - tools/oracle/src/helpers/core_ops/riva_records/**
+    - tools/oracle/helpers/riva_records.py
+    - tools/oracle/helpers/riva_records/**
     - tools/oracle/cases/helpers/riva-records/**
     - tools/oracle/fuzz/corpus/helper_case/riva_records*
   lint_tables: false
@@ -77,7 +77,7 @@ deviations: []
 out_of_scope:
   - transform_audio_transcription_response has no caller at the pin because the Riva handler builds the response directly from gRPC results; omit its HTTP-only NotImplementedError and cases.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as riva_transcription_records in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/riva_transcription_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/riva_transcription_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as riva_records in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/riva_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/riva_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Riva concatenates final chunks directly, so missing spaces in the upstream transcripts remain missing.
   - A generic exception whose message says UNAUTHENTICATED still maps to 500 without code().name.
   - Explicit empty endpointing_config suppresses chunking_strategy conversion.

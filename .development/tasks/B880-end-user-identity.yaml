@@ -82,7 +82,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/end_user_identity.rs
     - crates/betterlite-auth/src/end_user_identity/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/end_user_identity.rs
     - tools/oracle/src/helpers/server/end_user_identity/**

@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use crate::builtins::globs::glob_set;
 use crate::ids::check_id_problem;
@@ -127,7 +128,81 @@ fn proof_problems(catalog: &Catalog, task: &Task) -> Vec<String> {
     problems
 }
 
-pub(crate) fn problems(catalog: &Catalog, entry: &BacklogEntry, task: &Task) -> Vec<String> {
+// Python runs only as the pinned LiteLLM under test; ad hoc scripts and machine paths break on other hosts
+pub(crate) fn banned_tooling(run: &str) -> Vec<&'static str> {
+    let words: Vec<&str> = run
+        .split(|letter: char| letter.is_whitespace() || ";|&()<>'\"`".contains(letter))
+        .filter(|word| !word.is_empty())
+        .collect();
+    let spaced = format!(" {} ", words.join(" "));
+    let mut banned = Vec::new();
+    for interpreter in ["python", "python3"] {
+        let calls = spaced.matches(&format!(" {interpreter} ")).count();
+        let locked = spaced
+            .matches(&format!(
+                " uv run --locked --project tools/oracle/litellm {interpreter} "
+            ))
+            .count();
+        if calls > locked {
+            banned.push(interpreter);
+        }
+    }
+    for (needle, name) in [
+        (" rustc ", "rustc"),
+        (" uv run --with ", "uv run --with"),
+        (" /tmp", "/tmp"),
+        (" /home/", "a home directory path"),
+    ] {
+        if spaced.contains(needle) {
+            banned.push(name);
+        }
+    }
+    banned
+}
+
+fn command_problems(task: &Task) -> Vec<String> {
+    let mut problems = Vec::new();
+    for check in &task.checks.commands {
+        let banned = banned_tooling(&check.run);
+        if !banned.is_empty() {
+            problems.push(format!(
+                "{}: check {} uses {}; checks use CLI tools such as jq, grep, awk and cargo with paths relative to the repository root",
+                task.id,
+                check.id,
+                banned.join(", ")
+            ));
+        }
+    }
+    problems
+}
+
+pub(crate) fn outside_scope_roots(root: &Path, roots: &[String], path: &str) -> bool {
+    let first = path.split('/').next().unwrap_or(path);
+    !roots.iter().any(|allowed| allowed == first) && !root.join(first).exists()
+}
+
+fn scope_root_problems(root: &Path, catalog: &Catalog, task: &Task) -> Vec<String> {
+    let roots = &catalog.settings.scope_roots;
+    task.scope
+        .paths
+        .iter()
+        .filter(|path| outside_scope_roots(root, roots, path))
+        .map(|path| {
+            format!(
+                "{}: scope path {path} is outside {} and starts with nothing that exists at the repository root",
+                task.id,
+                roots.join(", ")
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn problems(
+    root: &Path,
+    catalog: &Catalog,
+    entry: &BacklogEntry,
+    task: &Task,
+) -> Vec<String> {
     let mut problems = Vec::new();
     if task.id != entry.id {
         problems.push(format!("{}: the file says id {}", entry.id, task.id));
@@ -135,5 +210,7 @@ pub(crate) fn problems(catalog: &Catalog, entry: &BacklogEntry, task: &Task) -> 
     problems.extend(text_problems(task));
     problems.extend(link_problems(task));
     problems.extend(proof_problems(catalog, task));
+    problems.extend(command_problems(task));
+    problems.extend(scope_root_problems(root, catalog, task));
     problems
 }

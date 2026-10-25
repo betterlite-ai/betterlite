@@ -38,10 +38,10 @@ scope:
     - crates/betterlite-config/src/resolve.rs
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/proxy_options*
-    - tools/oracle/src/helpers/openai/proxy_provider_options.rs
-    - tools/oracle/src/helpers/openai/proxy_provider_options/**
-    - tools/oracle/helpers/proxy_provider_options.py
-    - tools/oracle/helpers/proxy_provider_options/**
+    - tools/oracle/src/helpers/openai/proxy_options.rs
+    - tools/oracle/src/helpers/openai/proxy_options/**
+    - tools/oracle/helpers/proxy_options.py
+    - tools/oracle/helpers/proxy_options/**
     - tools/oracle/cases/helpers/proxy-options/**
     - tools/oracle/fuzz/corpus/helper_case/proxy_options*
   lint_tables: false
@@ -91,7 +91,7 @@ deviations: []
 out_of_scope:
   - Provider registration and main.py composition are B044; inherited OpenAI parsing stays with B504, B506, B511 and B512.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as proxy_provider_options in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/proxy_provider_options.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/proxy_provider_options.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as proxy_options in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/proxy_options.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/proxy_options.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A false deployment use_litellm_proxy does not veto a true USE_LITELLM_PROXY environment value.
   - Proxy image authorization renders the missing value as Bearer None at this seam.
   - The optional_params expansion can replace model and messages, so a fixed-field-first serializer changes behavior.

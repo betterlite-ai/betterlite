@@ -26,14 +26,15 @@ scope:
   paths:
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,partner_openai}.rs
+    - crates/betterlite-vertex/src/partner_openai.rs
     - crates/betterlite-vertex/src/partner_openai/**
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/partner_options.rs
     - crates/betterlite-config/src/providers/vertex/partner_options/**
-    - tools/oracle/src/helpers/vertex/openai_partners.rs
-    - tools/oracle/src/helpers/vertex/openai_partners/**
-    - tools/oracle/helpers/vertex_openai_partners.py
-    - tools/oracle/helpers/vertex_openai_partners/**
+    - tools/oracle/src/helpers/vertex/partner_openai.rs
+    - tools/oracle/src/helpers/vertex/partner_openai/**
+    - tools/oracle/helpers/vertex_partner_openai.py
+    - tools/oracle/helpers/vertex_partner_openai/**
     - tools/oracle/cases/helpers/vertex-partner-openai/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_partner_openai*
   lint_tables: false
@@ -66,7 +67,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_partner_openai.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The adapter feeds decoded Llama chunks through the actual pinned handler.
     - id: partner-openai-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_partner_openai*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_partner_openai::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_partner_openai*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::partner_openai::/)'
       why: Partner fixture tags must map to the intended production policy.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-partner-openai/token-alias-overwrite.yaml
@@ -81,7 +82,7 @@ out_of_scope:
   - B032 executes the selected partner call; B036 owns inherited Mistral/Codestral implementations.
   - B504/B005 own OpenAI response JSON/SSE decoding, so this adapter adds no new byte parser.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_openai_partners in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/openai_partners.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_openai_partners.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_partner_openai in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/partner_openai.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_partner_openai.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - GPT-OSS removes tool rather than tools at the pin, leaving the plural field in the inherited allowlist.
   - A split terminal chunk uses index=0 even when the first source choice had a different index.
   - provider_specific_fields={} is needed to prevent an empty initial assistant chunk being dropped.

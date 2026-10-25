@@ -36,6 +36,7 @@ scope:
     - crates/betterlite-core/src/api.rs
     - crates/betterlite-core/src/api/deepgram.rs
     - crates/betterlite-core/src/api/deepgram/{common,listen_metadata}.rs
+    - crates/betterlite-core/src/api/deepgram/listen_metadata.rs
     - crates/betterlite-core/src/api/deepgram/listen_metadata/**
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/listen_query.rs

@@ -42,10 +42,10 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/list_query.rs
     - crates/betterlite-server/fuzz/corpus/list_query/**
-    - tools/oracle/src/helpers/server/management_query_plans.rs
-    - tools/oracle/src/helpers/server/management_query_plans/**
-    - tools/oracle/helpers/management_query_plans.py
-    - tools/oracle/helpers/management_query_plans/**
+    - tools/oracle/src/helpers/server/management_plan.rs
+    - tools/oracle/src/helpers/server/management_plan/**
+    - tools/oracle/helpers/management_plan.py
+    - tools/oracle/helpers/management_plan/**
     - tools/oracle/cases/helpers/management-plan/**
     - tools/oracle/fuzz/corpus/helper_case/management-plan-*
   lint_tables: false
@@ -90,7 +90,7 @@ out_of_scope:
   - B1702 owns SQL rendering, handle_list, handle_facet, _duplicate_params and all in_memory.py execution; B1665 owns response records.
   - B007's broad list_api ownership needs narrowing to these extracted leaves before workers run; its existing model-list task is unchanged here.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as management_query_plans in the server group. Replace the stub Op in tools/oracle/src/helpers/server/management_query_plans.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/management_query_plans.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as management_plan in the server group. Replace the stub Op in tools/oracle/src/helpers/server/management_plan.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/management_plan.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An unknown operator and an unsupported valid operator produce different problem types.
   - Requested descending sort still ends with the ascending tiebreaker.
   - Counted-list page_size is capped, while the spend-log facet routes separately reject values above 100.

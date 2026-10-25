@@ -68,8 +68,8 @@ scope:
   paths:
     - crates/betterlite-db/src/schema_daily_usage.rs
     - crates/betterlite-db/src/schema_daily_usage/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/schema_daily_usage/fixtures.rs
     - crates/betterlite-db/src/schema_daily_usage/fixtures/**
     - crates/betterlite-db/migrations/20250326171002_add_daily_user_table/migration.sql
     - crates/betterlite-db/migrations/20250327180120_add_api_requests_to_daily_user_table/migration.sql

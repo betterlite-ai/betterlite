@@ -111,8 +111,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_user_lookup.rs
     - crates/betterlite-auth/src/auth_user_lookup/**
-    - crates/betterlite-auth/src/lib.rs
-    - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/user_lookup.rs
     - tools/oracle/src/helpers/auth/user_lookup/**

@@ -52,8 +52,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/api/batch_limit_counters.rs
   - crates/betterlite-core/src/api/batch_limit_counters/**
   - crates/betterlite-core/src/api.rs

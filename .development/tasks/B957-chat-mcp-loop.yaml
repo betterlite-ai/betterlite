@@ -47,8 +47,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/api/chat_mcp_loop.rs
   - crates/betterlite-core/src/api/chat_mcp_loop/**
   - crates/betterlite-core/src/api.rs

@@ -164,12 +164,20 @@
         },
         "file_size": {
           "$ref": "#/$defs/FileSize"
+        },
+        "scope_roots": {
+          "description": "Top-level folders a task scope may write under. Any other scope path must start with a folder or file that already exists at the repository root.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false,
       "required": [
         "always_in_scope",
         "budget_excludes",
+        "scope_roots",
         "file_size"
       ]
     },

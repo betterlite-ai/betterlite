@@ -19,10 +19,10 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_chat_call.rs
   - crates/betterlite-core/src/api/messages_chat_call/**
-  - tools/oracle/src/helpers/core_ops/messages_chat_call.rs
-  - tools/oracle/src/helpers/core_ops/messages_chat_call/**
-  - tools/oracle/helpers/messages_chat_call.py
-  - tools/oracle/helpers/messages_chat_call/**
+  - tools/oracle/src/helpers/core_ops/messages_completion_arguments.rs
+  - tools/oracle/src/helpers/core_ops/messages_completion_arguments/**
+  - tools/oracle/helpers/messages_completion_arguments.py
+  - tools/oracle/helpers/messages_completion_arguments/**
   - tools/oracle/cases/helpers/messages-completion-arguments/**
   - tools/oracle/fuzz/corpus/helper_case/messages_completion_arguments-*
   - tools/oracle/src/sdk_http.rs
@@ -121,7 +121,7 @@ out_of_scope:
 - B967 owns translation/factory composition, B977 actual streaming, B962 model-name/logging helpers and B014 provider completion orchestration.
 - B081 owns auth, aliases and Messages HTTP error envelopes; this SDK handler never registers a route.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as messages_chat_call in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_chat_call.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_chat_call.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as messages_completion_arguments in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_completion_arguments.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_completion_arguments.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Sync context management must not attach the proxy router implicitly because its clients belong to another event loop.
 - Explicit prompt_cache_key overrides a translated key even when it is the empty string.
 - Re-merging output_config after translation leaks an Anthropic-only parameter to chat providers.

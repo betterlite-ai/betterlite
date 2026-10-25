@@ -64,14 +64,13 @@ scope:
     - Cargo.toml
     - deny.toml
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/postgres_store.rs
     - crates/betterlite-db/src/postgres_store/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/db/postgres_store.rs
-    - tools/oracle/src/helpers/db/postgres_store/**
-    - tools/oracle/helpers/postgres_store.py
-    - tools/oracle/helpers/postgres_store/**
+    - tools/oracle/src/helpers/db/repository_record.rs
+    - tools/oracle/src/helpers/db/repository_record/**
+    - tools/oracle/helpers/repository_record.py
+    - tools/oracle/helpers/repository_record/**
     - tools/oracle/cases/helpers/repository-record/**
     - tools/oracle/fuzz/corpus/helper_case/repository-record-*
   lint_tables: false
@@ -139,7 +138,7 @@ out_of_scope:
   - B710 owns connection settings and row/config decoding, B711 connection lifecycle, B714 shared row types, B716 migration locks/recovery and B873 deployment of SQL. Table-specific statements and field validation stay in B722-B726 and other concrete repositories.
   - B860 owns the shared Postgres fixture; this task consumes it without adding another testcontainer wrapper.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as postgres_store in the db group. Replace the stub Op in tools/oracle/src/helpers/db/postgres_store.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/postgres_store.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as repository_record in the db group. Replace the stub Op in tools/oracle/src/helpers/db/repository_record.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/repository_record.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - BaseRepository checks its table before find_many_in can return for empty IDs, so a missing client still fails that wrapper.
   - exists deliberately ignores record validity; routing it through find_by_id can introduce a decoder failure that LiteLLM never raises.
   - A typed SQLSTATE classifier must not mistake foreign-key or not-null violations for the P2002 compatibility category.

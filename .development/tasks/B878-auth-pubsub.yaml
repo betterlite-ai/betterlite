@@ -82,7 +82,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_pubsub.rs
     - crates/betterlite-auth/src/auth_pubsub/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/pubsub.rs
     - tools/oracle/src/helpers/auth/pubsub/**

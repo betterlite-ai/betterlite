@@ -42,10 +42,10 @@ scope:
     - crates/betterlite-core/src/api/soniox/records/**
     - crates/betterlite-config/src/providers.rs
     - crates/betterlite-config/src/providers/soniox.rs
-    - tools/oracle/src/helpers/core_ops/soniox_transcript_records.rs
-    - tools/oracle/src/helpers/core_ops/soniox_transcript_records/**
-    - tools/oracle/helpers/soniox_transcript_records.py
-    - tools/oracle/helpers/soniox_transcript_records/**
+    - tools/oracle/src/helpers/core_ops/soniox_records.rs
+    - tools/oracle/src/helpers/core_ops/soniox_records/**
+    - tools/oracle/helpers/soniox_records.py
+    - tools/oracle/helpers/soniox_records/**
     - tools/oracle/cases/helpers/soniox-records/**
     - tools/oracle/fuzz/corpus/helper_case/soniox_records*
   lint_tables: false
@@ -81,7 +81,7 @@ deviations: []
 out_of_scope:
   - transform_audio_transcription_request at 141-163 and transform_audio_transcription_response at 164-187 have no caller at the pin on the Soniox dispatch path; its dedicated handler builds requests and calls _build_response_from_payload directly, so omit these HTTP-contract wrappers and their isolated cases.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as soniox_transcript_records in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/soniox_transcript_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/soniox_transcript_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as soniox_records in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/soniox_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/soniox_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Empty VTT token input can return transcript.text rather than a WEBVTT header.
   - Translation tokens disappear from subtitles but remain in verbose_json words.
   - Native language_hints supplied in the same mapping call overrides the earlier language merge.

@@ -23,14 +23,16 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,vertex_messages}.rs
+    - crates/betterlite-vertex/src/vertex_messages.rs
     - crates/betterlite-vertex/src/vertex_messages/**
     - crates/betterlite-core/src/api/{mod,vertex_messages}.rs
+    - crates/betterlite-core/src/api/vertex_messages.rs
     - crates/betterlite-core/src/api/vertex_messages/**
     - crates/betterlite-core/Cargo.toml
-    - tools/oracle/src/helpers/core_ops/vertex_native_messages.rs
-    - tools/oracle/src/helpers/core_ops/vertex_native_messages/**
-    - tools/oracle/helpers/vertex_native_messages.py
-    - tools/oracle/helpers/vertex_native_messages/**
+    - tools/oracle/src/helpers/core_ops/vertex_messages.rs
+    - tools/oracle/src/helpers/core_ops/vertex_messages/**
+    - tools/oracle/helpers/vertex_messages.py
+    - tools/oracle/helpers/vertex_messages/**
     - tools/oracle/cases/helpers/vertex-messages/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_messages*
   lint_tables: false
@@ -57,7 +59,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_messages.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The helper invokes provider transformations with fixed credentials rather than a FastAPI handler.
     - id: messages-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_messages*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_messages::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_messages*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::vertex_messages::/)'
       why: Native provider fixture tags must be exercised by the shared parser.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-messages/deployment-headers-unchanged.yaml
@@ -71,7 +73,7 @@ out_of_scope:
   - B961/B962 own inherited native Messages parsing and normalization; B1333 owns output parameter sanitization and chat-specific media behavior.
   - Public Messages paths and authentication remain B081; this adapter cannot register duplicate routes.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_native_messages in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vertex_native_messages.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_native_messages.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_messages in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vertex_messages.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_messages.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - safeguards={} still adds the dangerous-tool-use beta because the condition is not None.
   - Existing anthropic-beta values are stripped but empty entries are not filtered in this native path.
   - get_complete_url must not append a second endpoint suffix after validation built rawPredict.

@@ -61,6 +61,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-provider/src/{lib,error,provider,operation,prepared,xai_mistral}.rs
+    - crates/betterlite-provider/src/xai_mistral.rs
     - crates/betterlite-provider/src/xai_mistral/**
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-core/src/{lib,dispatch,operation,error,xai_mistral,mistral_ocr_guardrail}.rs
@@ -71,10 +72,10 @@ scope:
     - crates/betterlite-config/src/providers/{mod,xai_mistral}.rs
     - crates/betterlite-config/tests/xai_mistral_settings.rs
     - Cargo.lock
-    - tools/oracle/src/helpers/core_ops/xai_mistral_provider.rs
-    - tools/oracle/src/helpers/core_ops/xai_mistral_provider/**
-    - tools/oracle/helpers/xai_mistral_provider.py
-    - tools/oracle/helpers/xai_mistral_provider/**
+    - tools/oracle/src/helpers/core_ops/mistral_ocr_translation.rs
+    - tools/oracle/src/helpers/core_ops/mistral_ocr_translation/**
+    - tools/oracle/helpers/mistral_ocr_translation.py
+    - tools/oracle/helpers/mistral_ocr_translation/**
     - tools/oracle/cases/helpers/mistral-ocr-translation/**
     - tools/oracle/cases/providers/xai-mistral/**
     - tools/oracle/fixtures/multipart-oracle/xai-mistral*
@@ -119,7 +120,7 @@ checks:
       run: test -f tools/oracle/helpers/mistral_ocr_translation.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The guardrail fixture must invoke OCRHandler and retain its input/output distinction.
     - id: mistral-ocr-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mistral_ocr_translation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mistral_ocr_translation::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mistral_ocr_translation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::mistral_ocr_translation::/)'
       why: The adapter test parses fresh seeds and asserts call.mistral_ocr_translation with a nonzero count.
 oracle_cases:
   - tools/oracle/cases/providers/xai-mistral/chat-and-embedding-aliases.yaml
@@ -142,7 +143,7 @@ out_of_scope:
   - B004, B006, B202, B080, B083, B1125, B1032, B1033, B1034, B087, B1050, B1051, B1133, B086 and B092 own route factories; this task adds bindings and alias cases without registering routes.
   - B104 owns generic guardrail metadata conversion, B151 the login command and B068 final pricing integration; no managed-file hook is introduced here.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as xai_mistral_provider in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/xai_mistral_provider.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/xai_mistral_provider.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as mistral_ocr_translation in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/mistral_ocr_translation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/mistral_ocr_translation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The public xAI web_search_options path bypasses the chat leaf's warning-and-drop branch.
   - Existing litellm_metadata=null blocks OCR metadata insertion because the code tests key presence.
   - A FIM api_base override prevents later optional aliases from being popped.

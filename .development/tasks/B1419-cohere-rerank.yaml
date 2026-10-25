@@ -39,14 +39,19 @@ scope:
     - crates/betterlite-openai/src/{lib,error,cohere_rerank}.rs
     - crates/betterlite-openai/src/cohere_rerank/**
     - crates/betterlite-core/src/{lib,cohere_rerank_guardrail}.rs
+    - crates/betterlite-core/src/cohere_rerank_guardrail.rs
     - crates/betterlite-core/src/cohere_rerank_guardrail/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,cohere_rerank}.rs
     - crates/betterlite-config/tests/cohere_rerank_settings.rs
-    - tools/oracle/src/helpers/core_ops/cohere_rerank.rs
-    - tools/oracle/src/helpers/core_ops/cohere_rerank/**
-    - tools/oracle/helpers/cohere_rerank.py
-    - tools/oracle/helpers/cohere_rerank/**
+    - tools/oracle/src/helpers/core_ops/cohere_rerank_plan.rs
+    - tools/oracle/src/helpers/core_ops/cohere_rerank_plan/**
+    - tools/oracle/helpers/cohere_rerank_plan.py
+    - tools/oracle/helpers/cohere_rerank_plan/**
+    - tools/oracle/src/helpers/core_ops/rerank_guardrail_fields.rs
+    - tools/oracle/src/helpers/core_ops/rerank_guardrail_fields/**
+    - tools/oracle/helpers/rerank_guardrail_fields.py
+    - tools/oracle/helpers/rerank_guardrail_fields/**
     - tools/oracle/cases/helpers/{cohere-rerank-plan,rerank-guardrail-fields}/**
     - tools/oracle/fuzz/corpus/helper_case/{cohere_rerank_plan,rerank_guardrail_fields}*
   lint_tables: false
@@ -77,7 +82,7 @@ checks:
       run: test -f tools/oracle/helpers/cohere_rerank_plan.py && test -f tools/oracle/helpers/rerank_guardrail_fields.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The two adapters must call the actual config and guardrail translation methods.
     - id: rerank-helper-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_rerank_plan*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/rerank_guardrail_fields*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::cohere_rerank_plan::/) | test(/^helpers::rerank_guardrail_fields::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_rerank_plan*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/rerank_guardrail_fields*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::cohere_rerank_plan::/) | test(/^helpers::core_ops::rerank_guardrail_fields::/)'
       why: Neither a config-only seed nor a guardrail-only seed proves both operations are wired.
 oracle_cases:
   - tools/oracle/cases/helpers/cohere-rerank-plan/versioned-limits-and-suffix.yaml
@@ -91,7 +96,7 @@ out_of_scope:
   - B085 owns rerank HTTP aliases and B1014 call orchestration; B037 composes this provider and the two guardrail mappings.
   - B104 retains the general guardrail interface/registry and B1013 retains common rerank validation, decoding and inherited search-unit pricing.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as cohere_rerank in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/cohere_rerank.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cohere_rerank.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as cohere_rerank_plan and rerank_guardrail_fields in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/cohere_rerank_plan.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cohere_rerank_plan.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Passing an already versioned base ending in /v1 appends another /v1/rerank in the V1 implementation.
   - Empty instruction strings are scanned because the guardrail checks type rather than truthiness.
   - A partial guardrail result leaves the unmatched original request field in place.

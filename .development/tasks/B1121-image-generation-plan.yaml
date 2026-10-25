@@ -22,7 +22,6 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/image_generation_plan.rs
   - crates/betterlite-core/src/api/image_generation_plan/**
-  - crates/betterlite-core/src/error.rs
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/image_generation_plan.rs
   - tools/oracle/sdk_http/dispatch.py

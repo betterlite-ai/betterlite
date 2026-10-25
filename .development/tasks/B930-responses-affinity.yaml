@@ -22,7 +22,6 @@ description: >-
   95 adapters and 25 wiring lines: 710 total.
 scope:
   paths:
-  - crates/betterlite-router/src/lib.rs
   - crates/betterlite-router/src/responses_affinity.rs
   - crates/betterlite-router/src/responses_affinity/**
   - tools/oracle/src/helpers/router/responses_affinity.rs

@@ -9,8 +9,7 @@ description: >-
   is metadata, never executable Provider (B010 owns that enum). Use B193 catalog membership and synthetic secret
   inputs; never trigger OAuth or read process environment. Budget 260 types/classification, 120 adapters, 300 tests
   and 80 manifests (760 total). Write the behavior rstest functions provider_identity_behavior_tests_behavior in adjacent tests.rs
-  files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
-  helper operations provider_identity in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each
+  files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation provider_identity is already registered; each
   operation has its own Rust and Python adapter file and corpus seed.
 
 
@@ -21,8 +20,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-models/Cargo.toml
-  - crates/betterlite-models/src/lib.rs
-  - crates/betterlite-models/src/error.rs
   - crates/betterlite-models/src/identity.rs
   - crates/betterlite-models/src/identity/**
   - tools/oracle/Cargo.toml

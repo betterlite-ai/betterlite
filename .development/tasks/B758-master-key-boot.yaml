@@ -50,7 +50,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/master_key_boot.rs
     - crates/betterlite-auth/src/master_key_boot/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/master_key_boot.rs
     - tools/oracle/src/helpers/auth/master_key_boot/**

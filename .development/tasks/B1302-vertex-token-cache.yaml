@@ -24,8 +24,6 @@ description: >-
   lines, capped at 725. SDK response decoding stays in the selected auth library.
 scope:
   paths:
-    - crates/betterlite-vertex/src/lib.rs
-    - crates/betterlite-vertex/src/error.rs
     - crates/betterlite-vertex/src/token_cache.rs
     - crates/betterlite-vertex/src/token_cache/**
     - tools/oracle/src/helpers/vertex/token_cache.rs
@@ -66,7 +64,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_token_cache.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The cache trace adapter is missing or has an unchecked Python interface.
     - id: cache-seed
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_token_cache*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_token_cache::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_token_cache*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::token_cache::/)'
       why: Tests must reject a wrong call tag and require at least one cache seed.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-token-cache/legacy-quota-project.yaml

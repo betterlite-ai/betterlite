@@ -28,10 +28,10 @@ scope:
   - tools/oracle/src/sdk_http/fine_tuning_cancel.rs
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/fine_tuning_cancel.py
-  - tools/oracle/src/helpers/core_ops/fine_tuning_cancel_call.rs
-  - tools/oracle/src/helpers/core_ops/fine_tuning_cancel_call/**
-  - tools/oracle/helpers/fine_tuning_cancel_call.py
-  - tools/oracle/helpers/fine_tuning_cancel_call/**
+  - tools/oracle/src/helpers/core_ops/fine_tuning_provider_config.rs
+  - tools/oracle/src/helpers/core_ops/fine_tuning_provider_config/**
+  - tools/oracle/helpers/fine_tuning_provider_config.py
+  - tools/oracle/helpers/fine_tuning_provider_config/**
   - tools/oracle/cases/sdk-http/fine-tuning-cancel/**
   - tools/oracle/cases/helpers/fine-tuning-provider-config/**
   - tools/oracle/fuzz/corpus/sdk_http_case/fine-tuning-cancel-*
@@ -109,7 +109,7 @@ out_of_scope:
 - B1052 owns SDK create, B1053 reads, B2487 timeout capability/settings and its finite-duration deviation.
 - B088 and its split own create/read HTTP routes; B1054 cancellation HTTP. This task registers no routes.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as fine_tuning_cancel_call in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/fine_tuning_cancel_call.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fine_tuning_cancel_call.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as fine_tuning_provider_config in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/fine_tuning_provider_config.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fine_tuning_provider_config.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - finetune_settings=null leaves previous configuration intact.
 - Lookup returns the first matching provider and can fail on an earlier non-dict entry.
 - vertex_ai appears in the cancellation annotation but has no dispatch branch.

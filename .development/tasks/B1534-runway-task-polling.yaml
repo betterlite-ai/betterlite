@@ -38,10 +38,10 @@ scope:
     - crates/betterlite-core/fuzz/corpus/runway_task/**
     - crates/betterlite-config/src/providers.rs
     - crates/betterlite-config/src/providers/runway.rs
-    - tools/oracle/src/helpers/core_ops/runway_task_polling.rs
-    - tools/oracle/src/helpers/core_ops/runway_task_polling/**
-    - tools/oracle/helpers/runway_task_polling.py
-    - tools/oracle/helpers/runway_task_polling/**
+    - tools/oracle/src/helpers/core_ops/runway_tasks.rs
+    - tools/oracle/src/helpers/core_ops/runway_tasks/**
+    - tools/oracle/helpers/runway_tasks.py
+    - tools/oracle/helpers/runway_tasks/**
     - tools/oracle/cases/helpers/runway-tasks/**
     - tools/oracle/fuzz/corpus/helper_case/runway_tasks*
   lint_tables: false
@@ -81,7 +81,7 @@ out_of_scope:
   - B1535 owns image _transform_runwayml_response_to_openai at 93-153 and all methods from 301 onward.
   - B1536 owns speech dispatch, voice mapping and request/response assembly at 43-200 and 385-587; task records at 35-40 belong here.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as runway_task_polling in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/runway_task_polling.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/runway_task_polling.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as runway_tasks in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/runway_tasks.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/runway_tasks.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - RUNWAYML_API_SECRET outranks RUNWAYML_API_KEY even though both produce the same Bearer header.
   - Exactly 600 elapsed seconds permits one more GET under the default polling deadline.
   - The image failure prefix is RunwayML image generation failed while speech uses RunwayML TTS failed.
