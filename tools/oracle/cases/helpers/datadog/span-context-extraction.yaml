@@ -2,8 +2,12 @@ kind: helper
 name: span-context-extraction
 call:
   datadog_tags:
-    function: trace_context
-    current: {available: false, trace_id: 12, span_id: 34, set_tag_str: false, set_tag: false}
-    root: {available: true, trace_id: 56, span_id: null, set_tag_str: false, set_tag: false}
+    function: spans
+    current: null
+    root: {trace_id: 18446744073709551615, span_id: null, set_tag_str: false, set_tag: false}
+    call_id: null
+    key_alias: null
+    key_hash: null
+    requested_model: null
 env: {}
 compare: {ignore: []}

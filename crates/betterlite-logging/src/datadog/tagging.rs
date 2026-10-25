@@ -1,0 +1,90 @@
+use betterlite_config::loader::EnvironmentLookup;
+use serde::Deserialize;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Environment {
+    pub source: String,
+    pub service: String,
+    pub hostname: String,
+    pub env: String,
+    pub pod_name: String,
+    pub version: String,
+    pub base_url: Option<String>,
+    pub use_tracer: bool,
+    pub use_profiler: bool,
+}
+
+impl Environment {
+    pub fn from_lookup(lookup: &dyn EnvironmentLookup) -> Self {
+        let text =
+            |name: &str, default: &str| lookup.lookup(name).unwrap_or_else(|| default.to_owned());
+        // LiteLLM's str_to_bool takes only "true", so "1" or "yes" leave the flag off
+        let flag = |name: &str| text(name, "").trim().eq_ignore_ascii_case("true");
+        Self {
+            source: text("DD_SOURCE", "litellm"),
+            service: text("DD_SERVICE", "litellm-server"),
+            hostname: text("HOSTNAME", ""),
+            env: text("DD_ENV", "unknown"),
+            pod_name: text("POD_NAME", "unknown"),
+            version: text("DD_VERSION", "unknown"),
+            base_url: lookup.lookup("DD_BASE_URL"),
+            use_tracer: flag("USE_DDTRACE"),
+            use_profiler: flag("USE_DDPROFILER"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct TeamMetadata {
+    pub user_api_key_team_alias: Option<String>,
+    pub team_alias: Option<String>,
+    pub user_api_key_team_id: Option<String>,
+    pub team_id: Option<String>,
+}
+
+#[must_use]
+pub fn normalize_value(value: &str) -> String {
+    let mut normalized = String::with_capacity(value.len());
+    for character in value.to_lowercase().chars() {
+        let kept = if character.is_alphanumeric() || "_-:./".contains(character) {
+            character
+        } else {
+            '_'
+        };
+        if kept != '_' || !normalized.ends_with('_') {
+            normalized.push(kept);
+        }
+    }
+    normalized.trim_matches('_').to_owned()
+}
+
+#[must_use]
+pub fn tags(
+    environment: &Environment,
+    request_tags: &[String],
+    team: &TeamMetadata,
+) -> Vec<String> {
+    let mut tags = vec![
+        format!("env:{}", environment.env),
+        format!("service:{}", environment.service),
+        format!("version:{}", environment.version),
+        format!("HOSTNAME:{}", environment.hostname),
+        format!("POD_NAME:{}", environment.pod_name),
+    ];
+    for tag in request_tags {
+        tags.push(format!("request_tag:{}", normalize_value(tag)));
+    }
+    // LiteLLM chains these with `or`, so an empty value falls through to the next one
+    let candidates = [
+        team.user_api_key_team_alias.as_deref(),
+        team.team_alias.as_deref(),
+        team.user_api_key_team_id.as_deref(),
+        team.team_id.as_deref(),
+    ];
+    if let Some(name) = candidates.iter().flatten().find(|name| !name.is_empty()) {
+        tags.push(format!("team:{}", normalize_value(name)));
+    }
+    tags
+}
+
+mod tests;
