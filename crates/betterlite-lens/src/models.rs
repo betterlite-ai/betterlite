@@ -5,4 +5,3 @@ pub mod finding;
 pub mod job;
 pub mod messages;
 pub mod settings;
-pub mod validate;

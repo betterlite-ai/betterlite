@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["alloc", "serde"] }
+garde = { version = "0.23.0", default-features = false, features = ["derive", "regex", "rust_decimal"] }
 hex = "0.4.3"
 indexmap = "2.14.2"
 rust_decimal = { version = "1.43.0", features = ["serde-with-float"] }

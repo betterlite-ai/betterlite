@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use garde::Validate;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -7,7 +8,6 @@ use serde_inline_default::serde_inline_default;
 use crate::models::execution::{Coverage, RunAssessment, Sample};
 use crate::models::finding::Finding;
 use crate::models::settings::{LensSettings, Scope};
-use crate::models::validate::{RecordError, Validate};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -21,8 +21,9 @@ pub enum JobStatus {
 }
 
 #[serde_inline_default]
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Validate)]
 #[serde(deny_unknown_fields)]
+#[garde(allow_unvalidated)]
 pub struct Job {
     pub id: String,
     #[serde(default)]
@@ -32,6 +33,7 @@ pub struct Job {
     pub created_at: DateTime<Utc>,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
+    #[garde(dive)]
     pub settings: LensSettings,
     pub revision: i64,
     // the next four stay absent until a worker claims or finishes the job
@@ -48,31 +50,26 @@ pub struct Job {
     #[serde(default)]
     pub error: String,
     #[serde(default)]
+    #[garde(dive)]
     pub sample: Option<Sample>,
     #[serde(default, with = "rust_decimal::serde::float")]
     pub cost: Decimal,
     // absent until the job reports results, which differs from reporting none
     #[serde(default)]
+    #[garde(dive)]
     pub findings: Option<Vec<Finding>>,
     #[serde(default)]
     pub assessments: Vec<RunAssessment>,
 }
 
-impl Validate for Job {
-    fn validate(&self) -> Result<(), RecordError> {
-        self.settings.validate()?;
-        self.sample.iter().try_for_each(Validate::validate)?;
-        let findings = self.findings.as_deref().unwrap_or_default();
-        findings.iter().try_for_each(Validate::validate)
-    }
-}
-
 #[serde_inline_default]
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Validate)]
 #[serde(deny_unknown_fields)]
+#[garde(allow_unvalidated)]
 pub struct Lens {
     pub id: String,
     pub scope: Scope,
+    #[garde(dive)]
     pub settings: LensSettings,
     #[serde_inline_default(1)]
     pub revision: i64,
@@ -83,27 +80,23 @@ pub struct Lens {
     #[serde(default)]
     pub last_scan_at: Option<DateTime<Utc>>,
     #[serde(default)]
+    #[garde(dive)]
     pub jobs: Vec<Job>,
     #[serde(default)]
+    #[garde(dive)]
     pub findings: Vec<Finding>,
     pub budget_month: String,
     #[serde(default, with = "rust_decimal::serde::float")]
     pub spent: Decimal,
 }
 
-impl Validate for Lens {
-    fn validate(&self) -> Result<(), RecordError> {
-        self.settings.validate()?;
-        self.jobs.iter().try_for_each(Validate::validate)?;
-        self.findings.iter().try_for_each(Validate::validate)
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Validate)]
 #[serde(deny_unknown_fields)]
+#[garde(allow_unvalidated)]
 pub struct Worker {
     // absent for workers registered before analysis keys existed
     #[serde(default)]
+    #[garde(pattern(r"^[a-f0-9]{64}$"))]
     pub analysis_key_id: Option<String>,
     pub id: String,
     pub name: String,
@@ -113,47 +106,22 @@ pub struct Worker {
     pub revoked: bool,
 }
 
-impl Validate for Worker {
-    fn validate(&self) -> Result<(), RecordError> {
-        let Some(key) = &self.analysis_key_id else {
-            return Ok(());
-        };
-        let hex = key
-            .bytes()
-            .all(|byte| matches!(byte, b'a'..=b'f' | b'0'..=b'9'));
-        if key.len() == 64 && hex {
-            return Ok(());
-        }
-        Err(RecordError::Pattern {
-            field: "analysis_key_id",
-        })
-    }
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
+#[garde(allow_unvalidated)]
 pub struct WorkerCreated {
+    #[garde(dive)]
     pub worker: Worker,
     pub token: SecretString,
 }
 
-impl Validate for WorkerCreated {
-    fn validate(&self) -> Result<(), RecordError> {
-        self.worker.validate()
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Validate)]
 #[serde(deny_unknown_fields)]
+#[garde(allow_unvalidated)]
 pub struct LensList {
+    #[garde(dive)]
     pub lenses: Vec<Lens>,
+    #[garde(dive)]
     pub workers: Vec<Worker>,
     pub tracing_enabled: bool,
-}
-
-impl Validate for LensList {
-    fn validate(&self) -> Result<(), RecordError> {
-        self.lenses.iter().try_for_each(Validate::validate)?;
-        self.workers.iter().try_for_each(Validate::validate)
-    }
 }

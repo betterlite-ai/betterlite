@@ -20,10 +20,11 @@ use crate::models::settings::LensSettings;
 )]
 fn each_check_rule_has_its_own_message(#[case] fields: &str, #[case] message: &str) {
     let json = format!(r#"{{"name": "lens", "model": "gpt-4o", {fields}}}"#);
-    let DecodeError::Invalid(rule) = decode::<LensSettings>(json.as_bytes()).unwrap_err() else {
+    let DecodeError::Invalid(report) = decode::<LensSettings>(json.as_bytes()).unwrap_err() else {
         panic!("the settings must fail a check rule");
     };
-    assert_eq!(rule.to_string(), message);
+    let messages: Vec<&str> = report.iter().map(|(_, error)| error.message()).collect();
+    assert_eq!(messages, [message]);
 }
 
 #[test]

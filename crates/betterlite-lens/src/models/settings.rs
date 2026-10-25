@@ -1,9 +1,9 @@
+use garde::Validate;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_inline_default::serde_inline_default;
 
 use crate::models::check_validation::check_rules;
-use crate::models::validate::{RecordError, Validate, check_items, check_length};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
@@ -13,37 +13,26 @@ pub struct Scope {
     pub all_teams: bool,
 }
 
-impl Validate for Scope {}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Validate)]
 #[serde(deny_unknown_fields)]
 pub struct MetadataFilter {
+    #[garde(length(chars, min = 1, max = 200))]
     pub key: String,
+    #[garde(length(chars, min = 1, max = 500))]
     pub value: String,
 }
 
-impl Validate for MetadataFilter {
-    fn validate(&self) -> Result<(), RecordError> {
-        check_length("key", &self.key, 1, 200)?;
-        check_length("value", &self.value, 1, 500)
-    }
-}
-
 #[serde_inline_default]
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Validate)]
 #[serde(deny_unknown_fields)]
+#[garde(allow_unvalidated)]
 pub struct Check {
+    #[garde(length(chars, min = 1, max = 80))]
     pub id: String,
+    #[garde(length(chars, min = 3, max = 3000))]
     pub instruction: String,
     #[serde_inline_default(true)]
     pub enabled: bool,
-}
-
-impl Validate for Check {
-    fn validate(&self) -> Result<(), RecordError> {
-        check_length("id", &self.id, 1, 80)?;
-        check_length("instruction", &self.instruction, 3, 3000)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -55,37 +44,58 @@ pub enum Source {
     Both,
 }
 
+pub fn positive(amount: &Decimal, (): &()) -> garde::Result {
+    if *amount > Decimal::ZERO {
+        Ok(())
+    } else {
+        Err(garde::Error::new("must be greater than 0"))
+    }
+}
+
 #[serde_inline_default]
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Validate)]
 #[serde(deny_unknown_fields)]
+#[garde(allow_unvalidated)]
 pub struct LensSettings {
+    #[garde(length(chars, min = 1, max = 100))]
     pub name: String,
     #[serde(default)]
+    #[garde(length(chars, max = 6000))]
     pub context: String,
     #[serde(default)]
     pub source: Source,
     #[serde_inline_default(24)]
+    #[garde(range(min = 1, max = 8760))]
     pub lookback_hours: u32,
     #[serde(default)]
+    #[garde(length(chars, max = 200))]
     pub service: String,
     #[serde(default)]
+    #[garde(length(chars, max = 200))]
     pub agent_name: String,
     #[serde(default)]
+    #[garde(length(max = 8), dive)]
     pub filters: Vec<MetadataFilter>,
     #[serde(default)]
+    #[garde(dive, custom(check_rules(&self.context)))]
     pub checks: Vec<Check>,
+    #[garde(length(chars, min = 1, max = 200))]
     pub model: String,
     #[serde_inline_default(true)]
     pub enabled: bool,
     #[serde_inline_default(15)]
+    #[garde(range(min = 1, max = 10080))]
     pub interval_minutes: u32,
     // absent means every eligible execution, which no count can say
     #[serde(default)]
+    #[garde(range(min = 1))]
     pub sample_size: Option<u64>,
     #[serde_inline_default(Decimal::ONE_HUNDRED)]
     #[serde(with = "rust_decimal::serde::float")]
+    #[garde(custom(positive), range(max = Decimal::ONE_HUNDRED))]
     pub sample_percent: Decimal,
     #[serde_inline_default(8)]
+    #[garde(range(min = 1))]
     pub concurrency: u64,
     #[serde(default)]
     pub team_id: String,
@@ -93,6 +103,7 @@ pub struct LensSettings {
     pub execution_ids: Vec<String>,
     #[serde_inline_default(Decimal::ONE_HUNDRED)]
     #[serde(with = "rust_decimal::serde::float")]
+    #[garde(custom(positive), range(max = Decimal::from(100_000_u32)))]
     pub monthly_budget: Decimal,
 }
 
@@ -108,39 +119,5 @@ impl LensSettings {
         let described = (!self.context.trim().is_empty()).then_some(behavior);
         let enabled = self.checks.iter().filter(|check| check.enabled).cloned();
         described.into_iter().chain(enabled).collect()
-    }
-}
-
-impl Validate for LensSettings {
-    fn validate(&self) -> Result<(), RecordError> {
-        check_length("name", &self.name, 1, 100)?;
-        check_length("context", &self.context, 0, 6000)?;
-        check_length("service", &self.service, 0, 200)?;
-        check_length("agent_name", &self.agent_name, 0, 200)?;
-        check_length("model", &self.model, 1, 200)?;
-        check_items("filters", &self.filters, 0, 8)?;
-        self.checks.iter().try_for_each(Validate::validate)?;
-        let ranges = [
-            ("lookback_hours", (1..=8760).contains(&self.lookback_hours)),
-            (
-                "interval_minutes",
-                (1..=10080).contains(&self.interval_minutes),
-            ),
-            ("sample_size", self.sample_size != Some(0)),
-            ("concurrency", self.concurrency >= 1),
-            (
-                "sample_percent",
-                self.sample_percent > Decimal::ZERO && self.sample_percent <= Decimal::ONE_HUNDRED,
-            ),
-            (
-                "monthly_budget",
-                self.monthly_budget > Decimal::ZERO
-                    && self.monthly_budget <= Decimal::from(100_000_u32),
-            ),
-        ];
-        if let Some((field, _)) = ranges.into_iter().find(|(_, within)| !within) {
-            return Err(RecordError::Range { field });
-        }
-        check_rules(self)
     }
 }

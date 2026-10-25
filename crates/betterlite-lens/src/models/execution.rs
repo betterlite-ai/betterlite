@@ -1,7 +1,7 @@
+use garde::Validate;
 use serde::{Deserialize, Serialize};
 
 use crate::models::settings::MetadataFilter;
-use crate::models::validate::{RecordError, Validate};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
@@ -18,8 +18,6 @@ pub struct Coverage {
     pub unassessable: i64,
 }
 
-impl Validate for Coverage {}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ExecutionSource {
@@ -27,8 +25,9 @@ pub enum ExecutionSource {
     Requests,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Validate)]
 #[serde(deny_unknown_fields)]
+#[garde(allow_unvalidated)]
 pub struct Execution {
     pub id: String,
     pub source: ExecutionSource,
@@ -44,13 +43,8 @@ pub struct Execution {
     #[serde(default)]
     pub service: String,
     #[serde(default)]
+    #[garde(dive)]
     pub metadata: Vec<MetadataFilter>,
-}
-
-impl Validate for Execution {
-    fn validate(&self) -> Result<(), RecordError> {
-        self.metadata.iter().try_for_each(Validate::validate)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -67,11 +61,11 @@ pub struct TracePart {
     pub truncated: bool,
 }
 
-impl Validate for TracePart {}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Validate)]
 #[serde(deny_unknown_fields)]
+#[garde(allow_unvalidated)]
 pub struct ExecutionContent {
+    #[garde(dive)]
     pub execution: Execution,
     pub parts: Vec<TracePart>,
     // absent once the last page is read
@@ -81,15 +75,11 @@ pub struct ExecutionContent {
     pub partial: bool,
 }
 
-impl Validate for ExecutionContent {
-    fn validate(&self) -> Result<(), RecordError> {
-        self.execution.validate()
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Validate)]
 #[serde(deny_unknown_fields)]
+#[garde(allow_unvalidated)]
 pub struct Sample {
+    #[garde(dive)]
     pub executions: Vec<Execution>,
     pub eligible: i64,
     #[serde(default)]
@@ -99,12 +89,6 @@ pub struct Sample {
     pub next_offset: Option<i64>,
     #[serde(default)]
     pub next_cursor: Option<String>,
-}
-
-impl Validate for Sample {
-    fn validate(&self) -> Result<(), RecordError> {
-        self.executions.iter().try_for_each(Validate::validate)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -118,5 +102,3 @@ pub struct RunAssessment {
     #[serde(default)]
     pub cannot_assess: bool,
 }
-
-impl Validate for RunAssessment {}

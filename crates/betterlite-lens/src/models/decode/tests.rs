@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::fs;
 use std::path::PathBuf;
 
+use garde::Validate;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -17,14 +18,13 @@ use crate::models::messages::{
     Claim, FindingUpdate, JobResult, ModelRequest, ModelResult, Progress, RunRequest,
 };
 use crate::models::settings::{LensSettings, Source};
-use crate::models::validate::{RecordError, Validate};
 
-fn rule<T>(json: &str) -> RecordError
+fn failures<T>(json: &str) -> Vec<String>
 where
-    T: DeserializeOwned + Validate + Debug,
+    T: DeserializeOwned + Validate<Context = ()> + Debug,
 {
     match decode::<T>(json.as_bytes()).unwrap_err() {
-        DecodeError::Invalid(rule) => rule,
+        DecodeError::Invalid(report) => report.iter().map(|(path, _)| path.to_string()).collect(),
         DecodeError::Json(error) => panic!("expected a rule failure, got {error}"),
     }
 }
@@ -68,17 +68,14 @@ fn money_keeps_its_decimal_digits() {
 #[case::model(&format!(r#"{{"name": "n", "model": "{}", "context": "c"}}"#, "m".repeat(201)), "model")]
 #[case::filter_key(
     r#"{"name": "n", "model": "m", "context": "c", "filters": [{"key": "", "value": "v"}]}"#,
-    "key"
+    "filters[0].key"
 )]
 #[case::check_instruction(
     r#"{"name": "n", "model": "m", "checks": [{"id": "a", "instruction": "ok"}]}"#,
-    "instruction"
+    "checks[0].instruction"
 )]
 fn settings_reject_text_out_of_bounds(#[case] json: &str, #[case] field: &str) {
-    let RecordError::Length { field: found, .. } = rule::<LensSettings>(json) else {
-        panic!("expected a length failure");
-    };
-    assert_eq!(found, field);
+    assert_eq!(failures::<LensSettings>(json), [field]);
 }
 
 #[rstest]
@@ -91,9 +88,9 @@ fn settings_reject_text_out_of_bounds(#[case] json: &str, #[case] field: &str) {
 #[case::percent_past_all(r#""sample_percent": 100.5"#, "sample_percent")]
 #[case::free_budget(r#""monthly_budget": 0"#, "monthly_budget")]
 #[case::budget_past_cap(r#""monthly_budget": 100000.01"#, "monthly_budget")]
-fn settings_reject_numbers_out_of_range(#[case] field_json: &str, #[case] field: &'static str) {
+fn settings_reject_numbers_out_of_range(#[case] field_json: &str, #[case] field: &str) {
     let json = format!(r#"{{"name": "n", "model": "m", "context": "c", {field_json}}}"#);
-    assert_eq!(rule::<LensSettings>(&json), RecordError::Range { field });
+    assert_eq!(failures::<LensSettings>(&json), [field]);
 }
 
 const EVIDENCE: &str = r#"{"execution_id": "e", "span_id": "s", "quote": "q"}"#;
@@ -102,30 +99,40 @@ const DRAFT: &str =
 
 #[rstest]
 #[case::nine_filters(
-    rule::<LensSettings>,
+    failures::<LensSettings>,
     &format!(r#"{{"name": "n", "model": "m", "context": "c", "filters": [{}]}}"#, [r#"{"key": "k", "value": "v"}"#; 9].join(",")),
-    "filters must hold 0 to 8 items, got 9"
+    "filters"
 )]
-#[case::no_evidence(rule::<FindingDraft>, &format!("{DRAFT}[]}}"), "evidence must hold 1 to 20 items, got 0")]
+#[case::no_evidence(failures::<FindingDraft>, &format!("{DRAFT}[]}}"), "evidence")]
 #[case::evidence_past_cap(
-    rule::<FindingDraft>,
+    failures::<FindingDraft>,
     &format!("{DRAFT}[{}]}}", [EVIDENCE; 21].join(",")),
-    "evidence must hold 1 to 20 items, got 21"
+    "evidence"
 )]
-#[case::empty_quote(rule::<Evidence>, r#"{"execution_id": "e", "span_id": "s", "quote": ""}"#, "quote must be 1 to 1000 characters long, got 0")]
+#[case::empty_quote(failures::<Evidence>, r#"{"execution_id": "e", "span_id": "s", "quote": ""}"#, "quote")]
 #[case::analysis_key(
-    rule::<Worker>,
+    failures::<Worker>,
     r#"{"id": "w", "name": "n", "scope": {}, "last_seen": "2026-01-01T00:00:00Z", "analysis_key_id": "ABC"}"#,
-    "analysis_key_id does not match its pattern"
+    "analysis_key_id"
 )]
-#[case::run_lookback(rule::<RunRequest>, r#"{"lookback_hours": 0}"#, "lookback_hours is out of range")]
-#[case::empty_prompt(rule::<ModelRequest>, r#"{"prompt": "", "purpose": "extract"}"#, "prompt must be 1 to 100000 characters long, got 0")]
+#[case::analysis_key_with_newline(
+    failures::<Worker>,
+    &format!(r#"{{"id": "w", "name": "n", "scope": {{}}, "last_seen": "2026-01-01T00:00:00Z", "analysis_key_id": "{}\n"}}"#, "a".repeat(64)),
+    "analysis_key_id"
+)]
+#[case::run_lookback(failures::<RunRequest>, r#"{"lookback_hours": 0}"#, "lookback_hours")]
+#[case::empty_prompt(failures::<ModelRequest>, r#"{"prompt": "", "purpose": "extract"}"#, "prompt")]
+#[case::nested_draft(
+    failures::<JobResult>,
+    &format!(r#"{{"coverage": {{}}, "findings": [{DRAFT}[]}}]}}"#),
+    "findings[0].evidence"
+)]
 fn records_keep_their_limits(
-    #[case] check: fn(&str) -> RecordError,
+    #[case] check: fn(&str) -> Vec<String>,
     #[case] json: &str,
-    #[case] message: &str,
+    #[case] field: &str,
 ) {
-    assert_eq!(check(json).to_string(), message);
+    assert_eq!(check(json), [field]);
 }
 
 #[rstest]
@@ -145,7 +152,7 @@ fn settings_refuse_unknown_fields_and_values(#[case] bytes: &[u8]) {
 
 fn replay<T>(bytes: &[u8])
 where
-    T: DeserializeOwned + Validate + Serialize,
+    T: DeserializeOwned + Validate<Context = ()> + Serialize,
 {
     if let Ok(record) = decode::<T>(bytes) {
         serde_json::to_vec(&record).unwrap();
