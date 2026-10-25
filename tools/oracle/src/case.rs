@@ -1,22 +1,29 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str;
 
 use crate::OracleError;
 use crate::helpers::HelperCall;
+use betterlite_postgres_fixture::seed::DatabaseFixture;
 use serde::Deserialize;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Case {
+pub struct Case {
     pub(crate) name: String,
     pub(crate) config: String,
     pub(crate) env: BTreeMap<String, String>,
-    pub(crate) request: Request,
+    pub(crate) request: Box<Request>,
     pub(crate) upstream: Vec<UpstreamAnswer>,
-    pub(crate) compare: Compare,
+    pub(crate) compare: Box<Compare>,
+    #[serde(default)]
+    #[serde(alias = "database_fixture")]
+    pub(crate) database: Option<DatabaseFixture>,
 }
+
+pub type HttpCase = Case;
 
 #[derive(Debug, Clone)]
 pub(crate) enum LoadedCase {
@@ -116,12 +123,19 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
         validate_helper(path, &case)?;
         return Ok(LoadedCase::Helper(case));
     }
-    let case: Case = serde_saphyr::from_str(text).map_err(|source| OracleError::CaseParse {
+    let case = decode_http_case(text.as_bytes()).map_err(|message| OracleError::CaseInvalid {
         path: path.to_owned(),
-        source: Box::new(source),
+        message,
     })?;
     validate(path, &case)?;
     Ok(LoadedCase::Http(case))
+}
+
+pub fn decode_http_case(bytes: &[u8]) -> Result<HttpCase, String> {
+    let text = str::from_utf8(bytes).map_err(|error| error.to_string())?;
+    let case: Case = serde_saphyr::from_str(text).map_err(|error| error.to_string())?;
+    validate(Path::new("<bytes>"), &case).map_err(|error| error.to_string())?;
+    Ok(case)
 }
 
 pub fn parse_helper_case(source: &str) -> Result<(), String> {
@@ -173,6 +187,12 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     };
     if case.name.is_empty() || case.config.is_empty() || case.request.path.is_empty() {
         return Err(invalid("name, config, and request.path cannot be empty"));
+    }
+    if let Some(database) = &case.database {
+        database
+            .seed
+            .validate()
+            .map_err(|error| invalid(&error.to_string()))?;
     }
     for answer in &case.upstream {
         if answer.body.is_some() == answer.events.is_some() {

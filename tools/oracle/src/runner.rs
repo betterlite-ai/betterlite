@@ -15,6 +15,7 @@ use crate::mock::{MockProvider, ProviderRequest};
 use crate::paths::artifact_root;
 use crate::process::Gateway;
 use crate::routing_mock_scripts::MockScript;
+use betterlite_postgres_fixture::connection::PostgresFixture;
 
 use super::gateway::{GatewayInput, start as start_gateway};
 
@@ -72,6 +73,7 @@ pub(crate) fn run_group(
         .collect::<Vec<_>>();
     let mock = MockProvider::start(MockScript::try_from(upstream_answers.as_slice())?)?;
     let first_case = cases.first().ok_or(OracleError::MissingCapture(0))?;
+    let (first_fixture, second_fixture) = provision_fixtures(cases)?;
     let (group_dir, config_path) = artifacts::prepare(root, first_case, &mock.base_url)?;
     let client = http::client()?;
     let input = GatewayInput {
@@ -80,26 +82,70 @@ pub(crate) fn run_group(
         config_path: &config_path,
         case_env: &first_case.env,
     };
-    let first = start_gateway(&input, true)?;
+    let captures = capture_gateways(&input, cases, &client, mock)?;
+    let result = compare_group(root, cases, &captures);
+    close_fixture(first_fixture)?;
+    close_fixture(second_fixture)?;
+    result
+}
+
+fn capture_gateways(
+    input: &GatewayInput<'_>,
+    cases: &[Case],
+    client: &Client,
+    mock: MockProvider,
+) -> Result<GroupCapture, OracleError> {
+    let first = start_gateway(input, true)?;
     let first_log = first.log_path.clone();
-    let first_results = capture_gateway(&client, first, cases)?;
+    let first_results = capture_gateway(client, first, cases)?;
     let first_trace = mock.finish_run()?;
-    let second = start_gateway(&input, false)?;
+    let second = start_gateway(input, false)?;
     let second_log = second.log_path.clone();
-    let second_results = capture_gateway(&client, second, cases)?;
-    let captures = GroupCapture {
+    let second_results = capture_gateway(client, second, cases)?;
+    let second_requests = mock
+        .finish()?
+        .into_iter()
+        .map(|call| call.request)
+        .collect();
+    Ok(GroupCapture {
         first: first_results,
         second: second_results,
         first_log,
         second_log,
         first_requests: first_trace.into_iter().map(|call| call.request).collect(),
-        second_requests: mock
-            .finish()?
-            .into_iter()
-            .map(|call| call.request)
-            .collect(),
+        second_requests,
+    })
+}
+
+fn provision_fixtures(
+    cases: &[Case],
+) -> Result<(Option<PostgresFixture>, Option<PostgresFixture>), OracleError> {
+    let database_fixture = cases.iter().find_map(|case| case.database.clone());
+    let Some(database) = database_fixture else {
+        return Ok((None, None));
     };
-    compare_group(root, cases, &captures)
+    let configured_url = cases
+        .iter()
+        .find_map(|case| case.env.get("POSTGRES_TEST_URL").map(String::as_str));
+    let first = PostgresFixture::provision_from_url(configured_url, &database)
+        .map_err(OracleError::DatabaseFixture)?;
+    let second = match PostgresFixture::provision_from_url(configured_url, &database) {
+        Ok(second_database) => second_database,
+        Err(error) => {
+            drop(first.close());
+            return Err(OracleError::DatabaseFixture(error));
+        }
+    };
+    Ok((Some(first), Some(second)))
+}
+
+fn close_fixture(maybe_database: Option<PostgresFixture>) -> Result<(), OracleError> {
+    if let Some(created_database) = maybe_database {
+        created_database
+            .close()
+            .map_err(OracleError::DatabaseFixture)?;
+    }
+    Ok(())
 }
 
 pub(crate) struct GroupCapture {

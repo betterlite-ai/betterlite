@@ -33,6 +33,7 @@ use std::str::Utf8Error;
 use std::time::{Duration, SystemTimeError};
 
 use axum::http::status::InvalidStatusCode;
+use betterlite_postgres_fixture::error::FixtureError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -165,6 +166,8 @@ pub enum OracleError {
     },
     #[error("helper output is not valid JSON: {0}")]
     HelperJson(#[source] serde_json::Error),
+    #[error("database fixture failed: {0}")]
+    DatabaseFixture(#[source] FixtureError),
 }
 
 pub fn run() -> Result<ExitCode, OracleError> {
