@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -41,7 +40,7 @@ pub struct UserRow {
     pub user_email: Option<String>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KeyRow {
     pub token: SecretString,
@@ -66,17 +65,6 @@ impl PartialEq for KeyRow {
 }
 
 impl Eq for KeyRow {}
-
-impl fmt::Debug for KeyRow {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("KeyRow")
-            .field("token", &"[redacted]")
-            .field("user_id", &self.user_id)
-            .field("team_id", &self.team_id)
-            .field("role", &self.role)
-            .finish()
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]

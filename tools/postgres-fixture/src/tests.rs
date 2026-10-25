@@ -442,6 +442,8 @@ fn membership_seed() -> FixtureSeed {
 fn connection_credentials_redacted() {
     let source = select_source(Some(&url("postgresql://user:secret@localhost/db"))).unwrap();
     assert!(!format!("{source:?}").contains("secret"));
+    let seed = fixture_seed("user", "secret-token");
+    assert!(!format!("{seed:?}").contains("secret-token"));
 }
 
 #[tokio::test]

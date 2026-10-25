@@ -486,7 +486,7 @@ fn run_cases_propagates_a_gateway_start_failure() {
     };
     let mut case = test_case();
     case.config = "not: [valid".to_owned();
-    let result = runner::run_cases_with_url(&options, vec![LoadedCase::Http(case)], None);
+    let result = runner::run_cases(&options, vec![LoadedCase::Http(case)]);
     let _error = result.unwrap_err();
     fs::remove_dir_all("target/oracle").unwrap();
 }
@@ -637,10 +637,10 @@ fn runner_selects_cases_and_gateways() {
     );
     assert!(runner::request_slice(slice::from_ref(&request), 1, 1).is_empty());
     let normal = <Options as clap::Parser>::try_parse_from(["oracle", "cases"]).unwrap();
-    runner::run_cases_with_url(&normal, Vec::new(), None).unwrap_err();
+    runner::run_cases(&normal, Vec::new()).unwrap_err();
     let group_root = env::temp_dir().join(format!("betterlite-empty-group-{}", process::id()));
     fs::create_dir_all(&group_root).unwrap();
-    runner::run_group_with_url(&normal, &group_root, &[], None).unwrap_err();
+    runner::run_group(&normal, &group_root, &[]).unwrap_err();
     fs::remove_dir_all(&group_root).unwrap();
     assert!(paths::artifact_root().unwrap().exists());
 }

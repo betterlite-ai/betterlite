@@ -200,8 +200,6 @@ pub enum OracleError {
 
 pub fn run() -> Result<ExitCode, OracleError> {
     let options = <cli::Options as clap::Parser>::try_parse()?;
-    let environment =
-        <runner::DatabaseEnvironment as clap::Parser>::try_parse_from([env!("CARGO_PKG_NAME")])?;
     let cases = case::load_cases(&options.paths)?;
-    runner::run_cases_with_url(&options, cases, environment.postgres_test_url.as_ref())
+    runner::run_cases(&options, cases)
 }

@@ -15,24 +15,16 @@ macro_rules! insert_rows {
 }
 
 pub(crate) async fn seed_database(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
-    baseline(client).await?;
-    seed_rows(client, seed).await?;
-    Ok(())
-}
-
-async fn baseline(client: &Client) -> Result<(), FixtureError> {
     client
         .batch_execute(BASELINE)
         .await
         .map_err(FixtureError::Database)?;
+    seed_rows(client, seed).await?;
     Ok(())
 }
 
 async fn seed_rows(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
-    users(client, seed).await?;
-    teams(client, seed).await?;
-    memberships(client, seed).await?;
-    budgets(client, seed).await?;
+    seed_principals(client, seed).await?;
     for row in &seed.keys {
         let hash = FixtureSeed::key_hash(row.token.expose_secret());
         let params: &[&(dyn ToSql + Sync)] = &[&hash, &row.user_id, &row.team_id];
@@ -57,47 +49,31 @@ async fn seed_rows(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureErr
     Ok(())
 }
 
-async fn users(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
-    let rows = &seed.users;
+async fn seed_principals(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
     insert_rows!(
         client,
-        rows,
+        &seed.users,
         "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\",\"user_email\") VALUES ($1,$2)",
         user_id,
         user_email
     );
-    Ok(())
-}
-
-async fn teams(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
-    let rows = &seed.teams;
     insert_rows!(
         client,
-        rows,
+        &seed.teams,
         "INSERT INTO \"LiteLLM_TeamTable\" (\"team_id\",\"team_alias\") VALUES ($1,$2)",
         team_id,
         team_alias
     );
-    Ok(())
-}
-
-async fn memberships(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
-    let rows = &seed.memberships;
     insert_rows!(
         client,
-        rows,
+        &seed.memberships,
         "INSERT INTO \"LiteLLM_TeamMembership\" (\"user_id\",\"team_id\") VALUES ($1,$2)",
         user_id,
         team_id
     );
-    Ok(())
-}
-
-async fn budgets(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
-    let rows = &seed.budgets;
     insert_rows!(
         client,
-        rows,
+        &seed.budgets,
         "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\",\"max_budget\",\"created_by\",\"updated_by\") VALUES ($1,$2,$3,$4)",
         budget_id,
         max_budget,

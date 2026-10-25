@@ -27,10 +27,9 @@ pub(crate) struct DatabaseEnvironment {
     pub(crate) postgres_test_url: Option<SecretString>,
 }
 
-pub(crate) fn run_cases_with_url(
+pub(crate) fn run_cases(
     options: &Options,
     cases: Vec<LoadedCase>,
-    configured_url: Option<&SecretString>,
 ) -> Result<ExitCode, OracleError> {
     if cases.is_empty() {
         return Err(OracleError::MissingCapture(0));
@@ -54,7 +53,7 @@ pub(crate) fn run_cases_with_url(
     let root = artifact_root()?;
     let mut outcomes = Vec::new();
     for (_, group) in groups {
-        outcomes.extend(run_group_with_url(options, &root, &group, configured_url)?);
+        outcomes.extend(run_group(options, &root, &group)?);
     }
     if matches!(helper_outcome, helpers::HelperRun::Difference) {
         return Ok(exit_status(true));
@@ -68,6 +67,16 @@ pub(crate) fn exit_status(different: bool) -> ExitCode {
     } else {
         ExitCode::SUCCESS
     }
+}
+
+pub(crate) fn run_group(
+    options: &Options,
+    root: &Path,
+    cases: &[Case],
+) -> Result<Vec<bool>, OracleError> {
+    let environment =
+        <DatabaseEnvironment as clap::Parser>::try_parse_from([env!("CARGO_PKG_NAME")])?;
+    run_group_with_url(options, root, cases, environment.postgres_test_url.as_ref())
 }
 
 pub(crate) fn run_group_with_url(
