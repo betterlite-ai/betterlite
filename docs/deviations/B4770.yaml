@@ -1,0 +1,8 @@
+task: B4770
+deviations:
+  - what: AgentResponse spend and search_score use Decimal instead of LiteLLM float fields.
+    why: Exact decimal arithmetic is required for money and budget decisions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L290-L323
+  - what: AgentCard passthrough-shaped fields use the recursively typed AgentJson enum and reject unknown record fields where applicable.
+    why: betterlite enforces typed wire boundaries instead of silently accepting arbitrary schema data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L140-L175
