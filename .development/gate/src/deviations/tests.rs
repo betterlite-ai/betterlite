@@ -8,7 +8,7 @@ fn deviation(what: &str) -> ReportDeviation {
     ReportDeviation {
         what: what.to_owned(),
         why: "LiteLLM drops the header".to_owned(),
-        link: String::new(),
+        link: format!("https://example.com/{what}"),
     }
 }
 
@@ -37,6 +37,18 @@ fn a_log_matching_the_report_passes_in_any_order() {
 }
 
 #[test]
+fn a_log_in_other_words_passes() {
+    let mut logged = deviation("same");
+    logged.what = "the same deviation in other words".to_owned();
+    logged.why = "LiteLLM keeps the header".to_owned();
+    let log = DeviationLog {
+        task: "B003".to_owned(),
+        deviations: vec![logged],
+    };
+    assert!(mismatch(&[deviation("same")], Some(&log), "B003").is_empty());
+}
+
+#[test]
 fn a_log_that_differs_names_both_sides() {
     let log = DeviationLog {
         task: "B004".to_owned(),
@@ -47,26 +59,16 @@ fn a_log_that_differs_names_both_sides() {
         problems,
         vec![
             "docs/deviations/B003.yaml names task B004, not B003",
-            "docs/deviations/B003.yaml is missing the report's deviation: what: missing; why: LiteLLM drops the header; link: ",
-            "docs/deviations/B003.yaml has a deviation the report doesn't list: what: extra; why: LiteLLM drops the header; link: ",
+            "the report and docs/deviations/B003.yaml list different deviations, by count or link; report: missing (https://example.com/missing); docs/deviations/B003.yaml: extra (https://example.com/extra)",
         ]
     );
 }
 
 #[test]
-fn a_log_with_another_why_shows_both_whys() {
-    let mut logged = deviation("same");
-    logged.why = "LiteLLM keeps the header".to_owned();
+fn a_log_with_one_more_entry_fails() {
     let log = DeviationLog {
         task: "B003".to_owned(),
-        deviations: vec![logged],
+        deviations: vec![deviation("a"), deviation("b")],
     };
-    let problems = mismatch(&[deviation("same")], Some(&log), "B003");
-    assert_eq!(
-        problems,
-        vec![
-            "docs/deviations/B003.yaml is missing the report's deviation: what: same; why: LiteLLM drops the header; link: ",
-            "docs/deviations/B003.yaml has a deviation the report doesn't list: what: same; why: LiteLLM keeps the header; link: ",
-        ]
-    );
+    assert_eq!(mismatch(&[deviation("a")], Some(&log), "B003").len(), 1);
 }

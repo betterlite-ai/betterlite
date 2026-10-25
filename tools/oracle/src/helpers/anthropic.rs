@@ -1,5 +1,6 @@
 helper_group! {
     "anthropic_batches" => batches,
+    "anthropic_cache_plan" => cache_plan,
     "anthropic_capabilities" => capabilities,
     "anthropic_capability_catalog" => capability_catalog,
     "anthropic_chat_call" => chat_call,
