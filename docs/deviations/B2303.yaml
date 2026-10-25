@@ -1,8 +1,11 @@
 task: B2303
 deviations:
-  - what: The debug line for a non-string value passed to encrypt_value names its Rust type and omits the value.
+  - what: Non-string encryption diagnostics omit the supplied value.
     why: secrets-stay-secret forbids logging the supplied structure, which can hold credentials.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L142-L146
+  - what: Encoded inputs and JSON depth are bounded.
+    why: bounded-inputs requires finite limits before decoding untrusted ciphertext or structured data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L273-L289
   - what: Encoded scalar, bearer and map inputs over 1048576 bytes fail through each decoder's existing outcome (the scalar failure policy, None for bearers, SecretMapDecodeError for maps) before they are decoded.
     why: bounded-inputs requires a finite limit; every compatible ciphertext stays well under it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L273-L289
