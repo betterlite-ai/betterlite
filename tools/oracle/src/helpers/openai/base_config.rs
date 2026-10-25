@@ -96,14 +96,14 @@ fn supported(fields: &Object) -> Value {
         .unwrap_or_default();
     json!(config.supported_params(model, &catalog(fields)))
 }
+fn object(fields: &Object, name: &str) -> Object {
+    let value = fields.get(name).and_then(Value::as_object);
+    value.map_or_else(Map::new, Clone::clone)
+}
 fn mapped(fields: &Object) -> Value {
     let config = configuration(fields);
-    let mut existing = fields
-        .get("existing")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    let requested = fields.get("requested").and_then(Value::as_object).cloned().unwrap_or_default();
+    let mut existing = object(fields, "existing");
+    let requested = object(fields, "requested");
     config.map_params(
         fields
             .get("model")
