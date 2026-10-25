@@ -1,0 +1,14 @@
+kind: helper
+name: resource-type-without-extensions
+call:
+  scim_record:
+    kind: resource_type
+    value:
+      id: Group
+      name: Group
+      endpoint: /Groups
+      schema_: urn:ietf:params:scim:schemas:core:2.0:Group
+      meta: {resourceType: ResourceType}
+env: {}
+compare:
+  ignore: []

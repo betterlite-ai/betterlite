@@ -8,5 +8,6 @@ fuzz_target!(|bytes: &[u8]| {
         Some(b'g') => ResourceKind::Group,
         _ => ResourceKind::Patch,
     };
-    drop(decode_scim_resource(bytes.get(1..).unwrap_or_default(), kind));
+    let body = bytes.get(1..).unwrap_or_default();
+    drop(decode_scim_resource(body, kind));
 });

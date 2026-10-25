@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 use super::RawObject;
-use super::group::Group;
-use super::user::User;
 
 macro_rules! characteristic {
     ($name:ident, $case:literal { $($variants:tt)* }) => {
@@ -89,22 +87,16 @@ impl Default for ServiceProviderConfig {
         }
     }
 }
-// list responses are built by the handlers and only ever serialized
+// LiteLLM lists only users or only groups, so Resource is User or Group
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ListResponse {
+pub struct ListResponse<Resource> {
     pub schemas: ListSchemas,
     pub total_results: u64,
     pub start_index: Option<u64>,
     pub items_per_page: Option<u64>,
     #[serde(rename = "Resources")]
-    pub resources: ListedResources,
-}
-#[derive(Debug, Clone, Serialize)]
-#[serde(untagged)]
-pub enum ListedResources {
-    Users(Vec<User>),
-    Groups(Vec<Group>),
+    pub resources: Vec<Resource>,
 }
 record! { PlaceholderMergeResult {
     pub placeholder_user_id: String,

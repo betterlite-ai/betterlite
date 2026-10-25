@@ -5,7 +5,6 @@ use thiserror::Error;
 use super::RawObject;
 use super::attribute::DirectoryAttribute;
 
-const SPECIAL_USE_DOMAINS: [&str; 6] = ["arpa", "invalid", "local", "localhost", "onion", "test"];
 record! { #[serde(rename_all = "camelCase")] User {
     pub schemas: Vec<String>,
     pub id: Option<String>,
@@ -101,14 +100,17 @@ impl TryFrom<String> for Email {
         let address =
             EmailAddress::parse_with_options(raw.trim(), options).map_err(EmailError::Syntax)?;
         let domain = address.domain().to_lowercase();
-        let special_use = SPECIAL_USE_DOMAINS
-            .iter()
-            .any(|name| domain == *name || domain.ends_with(&format!(".{name}")));
+        let tld = domain.rsplit('.').next().unwrap_or_default();
         let local = address.local_part();
+        // email-validator refuses special-use names and top-level domains that end in a digit
+        let special_use = matches!(
+            tld,
+            "arpa" | "invalid" | "local" | "localhost" | "onion" | "test"
+        );
         if raw.contains(['\r', '\n'])
             || local.starts_with('"')
             || special_use
-            || !domain.ends_with(char::is_alphabetic)
+            || !tld.ends_with(char::is_alphabetic)
         {
             return Err(EmailError::Refused);
         }
