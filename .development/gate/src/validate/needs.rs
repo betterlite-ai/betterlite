@@ -31,8 +31,41 @@ pub(crate) fn needed_paths(task: &Task) -> Vec<(String, bool)> {
                 needed.push(((*path).to_owned(), *flag == "-d"));
             }
         }
+        needed.extend(added_file_pathspecs(&words));
     }
     needed
+}
+
+// a check that wants new files under a pathspec can only pass when the task may write there
+fn added_file_pathspecs(words: &[&str]) -> Vec<(String, bool)> {
+    let mut found = Vec::new();
+    let mut wants_added = false;
+    let mut in_pathspecs = false;
+    for word in words {
+        let path = word.trim_end_matches(')');
+        match *word {
+            "git" | "&&" | "||" | ";" | "|" => {
+                wants_added = false;
+                in_pathspecs = false;
+            }
+            "--diff-filter=A" => wants_added = true,
+            "--" if wants_added => in_pathspecs = true,
+            _ if in_pathspecs && !path.is_empty() && !path.starts_with(['$', ':']) => {
+                if let Some((prefix, _)) = path.split_once(['*', '?', '[']) {
+                    found.push((format!("{prefix}probe"), false));
+                } else {
+                    let file = path
+                        .rsplit('/')
+                        .next()
+                        .is_some_and(|last| last.contains('.'));
+                    found.push((path.trim_end_matches('/').to_owned(), !file));
+                }
+                in_pathspecs = !word.ends_with(')');
+            }
+            _ => {}
+        }
+    }
+    found
 }
 
 fn dependency_closure<'backlog>(backlog: &'backlog Backlog, id: &str) -> BTreeSet<&'backlog str> {
