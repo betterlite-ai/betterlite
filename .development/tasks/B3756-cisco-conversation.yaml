@@ -14,6 +14,7 @@ scope:
   paths:
   - crates/betterlite-guardrails/Cargo.toml
   - crates/betterlite-guardrails/src/cisco_conversation.rs
+  - crates/betterlite-guardrails/src/cisco_conversation/**
   - tools/oracle/src/helpers/guardrails/cisco_conversation.rs
   - tools/oracle/src/helpers/guardrails/cisco_conversation/**
   - tools/oracle/helpers/cisco_conversation.py

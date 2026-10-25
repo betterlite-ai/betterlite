@@ -41,6 +41,7 @@ scope:
     - crates/betterlite-config/src/{config,settings,env,providers,tests}.rs
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/tests/vertex_rag_settings.rs
+    - crates/betterlite-config/src/tests/vertex_rag_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_rag*
     - tools/oracle/src/helpers/vertex/rag_chunking.rs
     - tools/oracle/src/helpers/vertex/rag_chunking/**

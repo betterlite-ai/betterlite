@@ -91,19 +91,25 @@ scope:
   - crates/betterlite-core/src/api/batch_records.rs
   - crates/betterlite-core/src/api/batch_records/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-openai/Cargo.toml
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/api/batch_records.rs
   - crates/betterlite-openai/src/api/batch_records/**
   - crates/betterlite-openai/src/api.rs
+  - crates/betterlite-openai/src/api/**
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/api/batch_records.rs
   - crates/betterlite-provider/src/api/batch_records/**
   - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/provider/**
   - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/**
   - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-provider/src/prepared/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-openai/fuzz/Cargo.toml

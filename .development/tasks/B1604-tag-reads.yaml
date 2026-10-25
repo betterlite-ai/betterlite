@@ -24,6 +24,7 @@ scope:
   paths:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/tag_reads.rs
     - crates/betterlite-server/src/tag_reads/**
     - crates/betterlite-server/fuzz/Cargo.toml

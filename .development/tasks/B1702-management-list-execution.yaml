@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/list_api.rs
+    - crates/betterlite-server/src/list_api/**
     - crates/betterlite-server/src/list_api/{sql,memory,execute}.rs
     - crates/betterlite-server/src/list_api/{sql,memory,execute}/**
     - tools/oracle/src/helpers/server/management_executor.rs

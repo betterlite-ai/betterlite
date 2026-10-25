@@ -289,10 +289,13 @@ name = "betterlite-openai"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "indexmap",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
  "thiserror",
+ "url",
 ]
 
 [[package]]
@@ -313,6 +316,7 @@ dependencies = [
  "betterlite-paths",
  "clap",
  "futures-util",
+ "indexmap",
  "reqwest",
  "rstest",
  "secrecy",
