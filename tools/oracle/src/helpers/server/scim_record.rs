@@ -1,40 +1,41 @@
 use betterlite_server::scim_records::discovery::{ResourceType, Schema};
-use betterlite_server::scim_records::user::Active;
+use betterlite_server::scim_records::user::{Active, User};
 use betterlite_server::scim_records::{ResourceKind, ScimResource, decode_scim_resource};
-use serde::Deserialize;
-use serde_json::json;
-
+use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use crate::helpers::{Helper, HelperError, HelperResult};
-
 pub(crate) struct Op;
-
-#[expect(
-    clippy::disallowed_types,
-    reason = "The SCIM oracle transports arbitrary model input as JSON."
-)]
-type ScimJson = serde_json::Value;
-
 #[derive(Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub(crate) enum Input {
-    User(ScimJson),
-    Group(ScimJson),
-    Patch(ScimJson),
-    Schema(ScimJson),
-    ResourceType(ScimJson),
+pub(crate) struct Input {
+    kind: Kind,
+    value: Box<RawValue>,
 }
-
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Kind {
+    User,
+    Group,
+    Patch,
+    Schema,
+    ResourceType,
+}
+#[derive(Serialize)]
+#[serde(untagged)]
+enum Output {
+    User { record: Box<User>, active_set: bool },
+    Resource(ScimResource),
+}
 impl Helper for Op {
     type Input = Input;
-
     fn run(input: &Input) -> HelperResult {
-        let dumped = match input {
-            Input::User(value) => decode(value, ResourceKind::User),
-            Input::Group(value) => decode(value, ResourceKind::Group),
-            Input::Patch(value) => decode(value, ResourceKind::Patch),
-            Input::Schema(value) => Schema::deserialize(value).and_then(serde_json::to_value),
-            Input::ResourceType(value) => {
-                ResourceType::deserialize(value).and_then(serde_json::to_value)
+        let value = input.value.get();
+        let dumped = match input.kind {
+            Kind::User => decode(value, ResourceKind::User).and_then(serde_json::to_value),
+            Kind::Group => decode(value, ResourceKind::Group).and_then(serde_json::to_value),
+            Kind::Patch => decode(value, ResourceKind::Patch).and_then(serde_json::to_value),
+            Kind::Schema => serde_json::from_str::<Schema>(value).and_then(serde_json::to_value),
+            Kind::ResourceType => {
+                serde_json::from_str::<ResourceType>(value).and_then(serde_json::to_value)
             }
         };
         dumped.map_err(|error| {
@@ -50,14 +51,13 @@ impl Helper for Op {
     }
 }
 
-fn decode(value: &ScimJson, kind: ResourceKind) -> Result<ScimJson, serde_json::Error> {
-    let bytes = serde_json::to_vec(value)?;
-    match decode_scim_resource(&bytes, kind) {
-        Ok(ScimResource::User(user)) => Ok(json!({
-            "record": serde_json::to_value(&user)?,
-            "active_set": matches!(user.active, Active::Sent(_)),
-        })),
-        Ok(resource) => serde_json::to_value(resource),
+fn decode(value: &str, kind: ResourceKind) -> Result<Output, serde_json::Error> {
+    match decode_scim_resource(value.as_bytes(), kind) {
+        Ok(ScimResource::User(user)) => Ok(Output::User {
+            active_set: matches!(user.active, Active::Sent(_)),
+            record: user,
+        }),
+        Ok(resource) => Ok(Output::Resource(resource)),
         Err(error) => Err(serde::de::Error::custom(error)),
     }
 }
