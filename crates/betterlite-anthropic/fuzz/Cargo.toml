@@ -1,0 +1,22 @@
+[package]
+name = "betterlite-anthropic-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-anthropic = { path = ".." }
+libfuzzer-sys = "0.4.9"
+serde_json = "1.0.154"
+
+[[bin]]
+name = "cache_plan_decoder"
+path = "fuzz_targets/cache_plan_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
