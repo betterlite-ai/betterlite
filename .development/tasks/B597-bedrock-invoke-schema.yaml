@@ -102,11 +102,10 @@ scope:
   - crates/betterlite-bedrock/src/invoke_schema.rs
   - crates/betterlite-bedrock/src/invoke_schema/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_invoke_schema.rs
-  - tools/oracle/src/helpers/bedrock_invoke_schema/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/invoke_schema.rs
+  - tools/oracle/src/helpers/bedrock/invoke_schema/**
   - tools/oracle/helpers/bedrock_invoke_schema.py
+  - tools/oracle/helpers/bedrock_invoke_schema/**
   - tools/oracle/cases/helpers/providers/bedrock-invoke-schema/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_schema*
   lint_tables: false
@@ -319,6 +318,7 @@ out_of_scope:
   CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
   or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_invoke_schema in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/invoke_schema.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_invoke_schema.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Legacy output_format={} suppresses a valid nested output_config.format because precedence tests dict type, not
   truthiness.
 - Schema normalization is limited to named schema edges; walking every nested dictionary would rewrite fields the

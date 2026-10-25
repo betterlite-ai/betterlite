@@ -45,10 +45,10 @@ scope:
     - crates/betterlite-config/src/providers.rs
     - crates/betterlite-config/src/providers/copilot.rs
     - crates/betterlite-config/src/providers/copilot/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/copilot_device.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/copilot_device.py
+    - tools/oracle/src/helpers/openai/copilot_device_auth.rs
+    - tools/oracle/src/helpers/openai/copilot_device_auth/**
+    - tools/oracle/helpers/copilot_device_auth.py
+    - tools/oracle/helpers/copilot_device_auth/**
     - tools/oracle/cases/helpers/copilot-device/**
     - tools/oracle/fuzz/corpus/helper_case/copilot_device*
   lint_tables: false
@@ -87,6 +87,7 @@ deviations: []
 out_of_scope:
   - B1513 owns get_api_key, get_api_base and _refresh_api_key in the shared authenticator file.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as copilot_device_auth in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/copilot_device_auth.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/copilot_device_auth.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The access-token poll ignores an interval value from the device reply and always waits five seconds.
   - OAuth authorization uses the literal token scheme, whereas inference authorization uses Bearer.
   - A failed access-token write must not consume another outer login attempt.

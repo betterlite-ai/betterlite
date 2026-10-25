@@ -81,12 +81,11 @@ scope:
     - crates/betterlite-server/src/model_deprecation/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/model_deprecation.rs
-    - tools/oracle/src/helpers/model_deprecation/**
+    - tools/oracle/src/helpers/server/model_deprecation.rs
+    - tools/oracle/src/helpers/server/model_deprecation/**
     - tools/oracle/helpers/model_deprecation.py
+    - tools/oracle/helpers/model_deprecation/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/model-deprecation/**
     - tools/oracle/fuzz/corpus/helper_case/model-deprecation-*
     - crates/betterlite-server/fuzz/Cargo.toml
@@ -198,6 +197,7 @@ deviations: []
 out_of_scope:
   - B116 owns Slack delivery, deduplication TTL and polling; the model-info route owner calls this collector.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as model_deprecation in the server group. Replace the stub Op in tools/oracle/src/helpers/server/model_deprecation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_deprecation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Two deployments with the same public name and date report the first deployment's metadata, even if their providers differ.
   - Supplying today does not freeze checked_at, which always comes from a fresh UTC clock sample.
 budget:

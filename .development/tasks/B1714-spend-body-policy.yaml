@@ -58,8 +58,10 @@ scope:
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/spend_storage_policy.rs,corpus/spend_storage_policy/**}
-    - tools/oracle/src/helpers/{mod.rs,spend_bodies.rs}
-    - tools/oracle/helpers/{dispatch.py,spend_bodies.py}
+    - tools/oracle/src/helpers/logging/spend_body_policy.rs
+    - tools/oracle/src/helpers/logging/spend_body_policy/**
+    - tools/oracle/helpers/spend_body_policy.py
+    - tools/oracle/helpers/spend_body_policy/**
     - tools/oracle/cases/helpers/spend-bodies/**
     - tools/oracle/fuzz/corpus/helper_case/spend-bodies-*
   lint_tables: false
@@ -116,6 +118,7 @@ out_of_scope:
   - B1726 owns _query_raw_rows and get_spend_by_team; B1727 owns get_spend_by_team_and_customer in the report-query tail at L928-L1076.
   - B021 retains is_classifier_call and masked_originating_request, consuming the extracted snapshot helper rather than implementing it again.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_body_policy in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/spend_body_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_body_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A false store_prompts_in_spend_logs setting does not defeat STORE_PROMPTS_IN_SPEND_LOGS=true.
   - With omission enabled, a trace ID must not be promoted into a fabricated session.
 budget:

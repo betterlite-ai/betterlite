@@ -89,12 +89,11 @@ scope:
     - crates/betterlite-server/src/bulk_user_write/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/bulk_user_write.rs
-    - tools/oracle/src/helpers/bulk_user_write/**
+    - tools/oracle/src/helpers/server/bulk_user_write.rs
+    - tools/oracle/src/helpers/server/bulk_user_write/**
     - tools/oracle/helpers/bulk_user_write.py
+    - tools/oracle/helpers/bulk_user_write/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/users.rs
-    - tools/oracle/helpers/management/users.py
     - tools/oracle/cases/helpers/bulk-user-write/**
     - tools/oracle/fuzz/corpus/helper_case/bulk-user-write-*
     - crates/betterlite-server/src/bulk_user_write/fixtures/**
@@ -187,6 +186,7 @@ out_of_scope:
     (L759-L760), bulk_create_users (L763-L863).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as bulk_user_write in the server group. Replace the stub Op in tools/oracle/src/helpers/server/bulk_user_write.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bulk_user_write.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A partial landed set after a lost bulk-insert response is treated as conflicting users, not credited to this request.
   - An existing roster member still appears in added and triggers spend-cache invalidation.
 budget:

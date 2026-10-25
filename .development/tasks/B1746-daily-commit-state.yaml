@@ -43,8 +43,10 @@ scope:
     - crates/betterlite-db/src/spend_commit/**
     - crates/betterlite-db/src/autorouter_drain.rs
     - crates/betterlite-db/src/autorouter_drain/**
-    - tools/oracle/src/helpers/{mod.rs,commit_remainder.rs}
-    - tools/oracle/helpers/{dispatch.py,commit_remainder.py}
+    - tools/oracle/src/helpers/db/daily_commit_state.rs
+    - tools/oracle/src/helpers/db/daily_commit_state/**
+    - tools/oracle/helpers/daily_commit_state.py
+    - tools/oracle/helpers/daily_commit_state/**
     - tools/oracle/cases/helpers/commit-remainder/**
     - tools/oracle/fuzz/corpus/helper_case/commit-remainder-*
   lint_tables: false
@@ -93,6 +95,7 @@ out_of_scope:
   - B1745 supplies entity SQL; B1747 decides memory requeue after cancellation, while B1748 decides Redis restoration. B1749 supplies failure reporting and log-row persistence.
   - B070/B1742/B1743/B1744 retain writer construction, request scheduling and enqueue projections; this task does not start those services.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as daily_commit_state in the db group. Replace the stub Op in tools/oracle/src/helpers/db/daily_commit_state.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/daily_commit_state.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The daily pending map is intentionally mutated before an unsafe error escapes, so restoring the original snapshot would double-charge it.
   - Auto-router turn retries do not inherit the daily writer's deadlock retry rule.
 budget:

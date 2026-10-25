@@ -92,12 +92,11 @@ scope:
     - crates/betterlite-auth/src/auth_resource_grants/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_resource_grants.rs
-    - tools/oracle/src/helpers/auth_resource_grants/**
+    - tools/oracle/src/helpers/server/auth_resource_grants.rs
+    - tools/oracle/src/helpers/server/auth_resource_grants/**
     - tools/oracle/helpers/auth_resource_grants.py
+    - tools/oracle/helpers/auth_resource_grants/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-resource-grants/**
     - tools/oracle/fuzz/corpus/helper_case/auth-resource-grants-*
     - crates/betterlite-server/src/auth.rs
@@ -320,6 +319,7 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_resource_grants in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_resource_grants.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_resource_grants.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Search-tool denials use key_model_access_denied for teams too, while vector-store denials choose the object-specific type and 401.
   - Cached vector rows are returned before database misses, so mixed hit/miss results do not retain request order.
 budget:

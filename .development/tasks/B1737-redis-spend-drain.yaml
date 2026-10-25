@@ -46,8 +46,10 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/spend_buffer.rs
     - crates/betterlite-db/fuzz/corpus/spend_buffer/**
-    - tools/oracle/src/helpers/{mod.rs,redis_spend_codec.rs}
-    - tools/oracle/helpers/{dispatch.py,redis_spend_codec.py}
+    - tools/oracle/src/helpers/db/redis_spend_drain.rs
+    - tools/oracle/src/helpers/db/redis_spend_drain/**
+    - tools/oracle/helpers/redis_spend_drain.py
+    - tools/oracle/helpers/redis_spend_drain/**
     - tools/oracle/cases/helpers/redis-spend-codec/**
     - tools/oracle/fuzz/corpus/helper_case/redis-spend-codec-*
   lint_tables: false
@@ -102,6 +104,7 @@ out_of_scope:
   - B1738 owns transaction publishing/restoration and daily-tag publication in redis_update_buffer.py.
   - _number_of_transactions_to_store_in_redis, _remove_prefix_from_keys, get_all_update_transactions_from_redis_buffer and the individual daily user/team/org/end-user/agent getters have no caller at the pin and are not built.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as redis_spend_drain in the db group. Replace the stub Op in tools/oracle/src/helpers/db/redis_spend_drain.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/redis_spend_drain.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The daily-tag queue is deliberately absent from the main seven-slot pipeline.
   - Malformed JSON is discovered after destructive LPOP and cannot be treated as a harmless cache miss.
 budget:

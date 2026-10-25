@@ -101,12 +101,11 @@ scope:
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/team_model_aliases.rs
     - crates/betterlite-auth/fuzz/corpus/team_model_aliases/**
-    - tools/oracle/src/helpers/identity_grants.rs
-    - tools/oracle/src/helpers/identity_grants/**
+    - tools/oracle/src/helpers/auth/identity_grants.rs
+    - tools/oracle/src/helpers/auth/identity_grants/**
     - tools/oracle/helpers/identity_grants.py
+    - tools/oracle/helpers/identity_grants/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/identity-grants/**
     - tools/oracle/fuzz/corpus/helper_case/identity-grants-*
   lint_tables: false
@@ -169,6 +168,7 @@ out_of_scope:
   - B738 refreshes session grants and decides LookupDegraded fallback; B765/B877 select JWT teams and call resolve_identity. This task adds no separately registered middleware or HTTP route.
   - B859 owns safe_get_team_member_tpm_limit/rpm_limit and typed team rows; B720 owns user rows and B2310 object permissions. B757 owns final auth-error serialization.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as identity_grants in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/identity_grants.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/identity_grants.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A loaded membership row cannot grant access when the live user's teams array excludes that team.
   - A malformed alias JSON string and a malformed alias mapping follow different metadata-drop paths.
   - Empty team_id skips membership loading but does not skip the team lookup in resolve.

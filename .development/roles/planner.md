@@ -24,7 +24,7 @@ Size and split:
 Content:
 
 - The description says what to build and why, in prose a worker with no other context can start from. It names types, files, config keys and env vars with their defaults. Defaults are LiteLLM's, read from the same env vars and config keys, and litellm.* settings count as much as general_settings keys.
-- scope.paths lists exactly what the task may touch, including the shared dispatch file a new variant goes into (like tools/oracle/src/helpers/mod.rs).
+- scope.paths lists exactly what the task may touch, and never a shared registry or list file: those are written once by the architect so parallel tasks never edit the same file. An oracle helper task scopes its own module (tools/oracle/src/helpers/<group>/<module>.rs and that folder) and adapter (tools/oracle/helpers/<operation>.py and that folder), and names the operation and its group in the description.
 - References link LiteLLM at the pinned commit with line ranges you checked against the checkout, plus the docs a worker needs. A route's reference starts at its decorators, and the task lists every path and alias (/v1/..., /..., /openai/v1/..., /{provider}/v1/..., gateway aliases).
 - Pitfalls name the traps you found in this task's code, one sentence each, with the literals that matter (tool names, header names, config keys). No pitfall copied from another task.
 - Every function in a covered LiteLLM file is built or listed in out_of_scope with the task that owns it, and that owner's covers include the file. Grep for callers first: code nothing calls at the pinned commit is out of scope with "no caller at the pin", and its cases go too.

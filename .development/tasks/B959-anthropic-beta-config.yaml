@@ -46,11 +46,10 @@ scope:
   - crates/betterlite-config/src/api/anthropic_beta_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-beta-config-*
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_beta_config.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/anthropic_beta_config.rs
+  - tools/oracle/src/helpers/core_ops/anthropic_beta_config/**
   - tools/oracle/helpers/anthropic_beta_config.py
+  - tools/oracle/helpers/anthropic_beta_config/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_beta_config-*
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/anthropic_beta_config.rs
@@ -136,6 +135,7 @@ out_of_scope:
 - is_beta_header_supported, get_provider_beta_header and get_unsupported_headers have no caller at the pin and are not rebuilt.
 - B124 owns the administrative proxy routes that trigger reload; this task exports the reload operation only.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_beta_config in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/anthropic_beta_config.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_beta_config.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A matrix containing only databricks or bedrock_mantle is rejected despite both providers appearing in the bundled JSON.
 - Cache presence is tested against null, so an empty fallback must not trigger repeated fetching.
 - The local-only flag does not trim spaces and is not a general boolean parser.

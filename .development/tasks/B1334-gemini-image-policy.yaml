@@ -28,8 +28,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/image_options.rs
     - crates/betterlite-vertex/fuzz/corpus/image_options/**
-    - tools/oracle/src/helpers/{mod,gemini_image_policy}.rs
-    - tools/oracle/helpers/{dispatch,gemini_image_policy}.py
+    - tools/oracle/src/helpers/vertex/gemini_image_policy.rs
+    - tools/oracle/src/helpers/vertex/gemini_image_policy/**
+    - tools/oracle/helpers/gemini_image_policy.py
+    - tools/oracle/helpers/gemini_image_policy/**
     - tools/oracle/cases/helpers/gemini-image-policy/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_image_policy*
   lint_tables: false
@@ -72,6 +74,7 @@ out_of_scope:
   - B1331 owns Studio identity/model discovery, B1330 token counting and B1378 encode_unserializable_types in common_utils.py.
   - Image HTTP execution and generated-image byte decoding belong to the B033/B035 image operation tasks.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as gemini_image_policy in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_image_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_image_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Dimensions 1280x896 and 896x1280 have explicit table mappings that override nearest-ratio inference.
   - candidateCount=0 is selected because alias precedence checks None rather than truthiness.
   - A tool containing multiple search keys is deduplicated according to the first recognized key only.

@@ -90,8 +90,10 @@ scope:
   - Cargo.lock
   - tools/oracle/src/websocket_driver.rs
   - tools/oracle/src/websocket_driver/responses_ws_managed.rs
-  - tools/oracle/helpers/websocket_dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_ws_managed.rs
+  - tools/oracle/src/helpers/core_ops/responses_ws_managed/**
   - tools/oracle/helpers/responses_ws_managed.py
+  - tools/oracle/helpers/responses_ws_managed/**
   - tools/oracle/cases/websocket/responses-ws-managed/**
   - tools/oracle/fixtures/responses-ws-managed/**
   lint_tables: false
@@ -217,6 +219,7 @@ out_of_scope:
 - 'B941 and B1125 own gateway route registration, /v1/responses and /responses aliases, authentication, handshake statuses, and route-level failure frames; this task registers no route.'
 - 'Provider-specific HTTP transformations remain with their provider tasks; the mock exchange proves the managed request and stream boundary, not provider transformation internals.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_ws_managed in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_ws_managed.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_ws_managed.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - 'The completion discriminator is read from chunk.type before serialization, or from a dict chunk["type"]; a serializer that only inspects emitted JSON can miss the first completion and lose the history write.'
 - 'The try around _stream_and_forward begins after quota, routing, history application, credential injection, proxy projection, and extra_kwargs.update; a non-RateLimit quota exception therefore reaches run as Internal server error: <exception>, while a provider exception uses the error processing response.create diagnostic.'
 - 'An unknown previous_response_id is popped from the allowlist and then deliberately reinserted by B944; removing it again before B932 prevents cross-connection database reconstruction even though no local map entry exists.'

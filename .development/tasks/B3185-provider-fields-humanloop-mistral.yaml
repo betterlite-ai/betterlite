@@ -1,0 +1,207 @@
+id: B3185
+title: Provider form catalog from Humanloop through Mistral
+description: >-
+  Extract and retain the fourteen provider definitions HUMANLOOP through MistralAI
+  from the LiteLLM provider catalog into a betterlite-owned asset, preserving Infinity's
+  optional api_base field with placeholder "http://localhost:7997", JinaAI's required
+  api_key, and the distinct provider identity records in litellm_provider. This part
+  supplies the sixth ordered catalog fragment consumed by B3190's get_provider_fields
+  loader without introducing callable logic; B3190 assembles all fragments in source
+  order and returns them to the public endpoint.
+
+
+  Owned data: litellm/proxy/public_endpoints/provider_create_fields.json lines 1794-2155,
+  complete records HUMANLOOP through MistralAI. The fragment includes 14 providers:
+  HUMANLOOP, HYPERBOLIC, Infinity, JinaAI, LAMBDA_AI, LANGFUSE, LEMONADE, LITELLM_PROXY,
+  LLAMAFILE, LM_STUDIO, MARITALK, LLAMA (Meta Llama), MILVUS and MistralAI.
+
+
+  Infinity is the sole provider with a lone optional api_base credential field carrying
+  a placeholder "http://localhost:7997". JinaAI marks its api_key as required: true and
+  has a distinct default_model_placeholder "jina_ai/" instead of the generic "gpt-3.5-turbo".
+  LITELLM_PROXY, LLAMAFILE and LM_STUDIO preserve their distinct litellm_provider values
+  for local and proxy model endpoints. All credential records preserve exact placeholder,
+  tooltip, required, field_type and default_value values from the pinned source.
+
+
+  No owned functions or executable Python code. B3190 reads this fragment as pure data.
+
+
+  Budget from 362 nonblank, non-comment lines in the owned LiteLLM data range (JSON
+  punctuation, field pairs and provider objects): 362 data lines, 0 Python lines;
+  estimate 450–625 changed lines including asset checks and corpus replay.
+scope:
+  paths:
+  - crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L1794-L2155
+  why: Owned data range for the fourteen complete provider records HUMANLOOP through
+    MistralAI, including Infinity and JinaAI credential specifications.
+dod:
+- text: The asset contains exactly fourteen provider records in source order from HUMANLOOP
+    through MistralAI.
+  proof:
+  - provider-records-present
+  - asset
+- text: 'Infinity''s credential_fields include the optional api_base field with placeholder
+    "http://localhost:7997".'
+  proof:
+  - provider-infinity-fields
+  - asset
+- text: 'JinaAI''s credential_fields include the required api_key field with required: true.'
+  proof:
+  - provider-jinaai-fields
+  - asset
+- text: Each credential field preserves placeholder, tooltip, required, field_type and
+    default_value exactly as in litellm.
+  proof:
+  - provider-records-match
+  - asset
+- text: 'JinaAI''s default_model_placeholder is "jina_ai/", distinct from the generic "gpt-3.5-turbo" used by all other providers in this range.'
+  proof:
+  - provider-jinaai-default-placeholder
+  - asset
+- text: The litellm_provider field matches LiteLLM exactly for Infinity (infinity), JinaAI
+    (jina_ai), LITELLM_PROXY (litellm_proxy), LLAMAFILE (llamafile), LM_STUDIO (lm_studio),
+    LLAMA (meta_llama), and MistralAI (mistral).
+  proof:
+  - provider-litellm-provider-values
+  - asset
+- text: The asset JSON parses without errors and the provider catalog loader can read
+    all fragments in order.
+  proof:
+  - asset-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: asset
+    why: Asset file exists and is readable.
+    run: test -f crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json
+      && test -r crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json
+  - id: provider-records-present
+    why: The asset contains exactly fourteen provider records in the expected order.
+    run: python3 -c "import json; data = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json')); providers = [p.get('provider') for p in data]; expected = ['HUMANLOOP', 'HYPERBOLIC', 'Infinity', 'JinaAI', 'LAMBDA_AI', 'LANGFUSE', 'LEMONADE', 'LITELLM_PROXY', 'LLAMAFILE', 'LM_STUDIO', 'MARITALK', 'LLAMA', 'MILVUS', 'MistralAI']; assert providers == expected, f'Expected {expected}, got {providers}'; print('Provider order matches')"
+  - id: provider-infinity-fields
+    why: Infinity provider has the optional api_base field with the correct placeholder.
+    run: python3 -c "import json; data = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json')); infinity = [p for p in data if p.get('provider') == 'Infinity'][0]; assert len(infinity['credential_fields']) == 1; assert infinity['credential_fields'][0]['key'] == 'api_base'; assert infinity['credential_fields'][0]['placeholder'] == 'http://localhost:7997'; assert infinity['credential_fields'][0]['required'] == False; print('Infinity fields correct')"
+  - id: provider-jinaai-fields
+    why: JinaAI provider has the required api_key field with required flag set to true.
+    run: python3 -c "import json; data = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json')); jinaai = [p for p in data if p.get('provider') == 'JinaAI'][0]; assert len(jinaai['credential_fields']) == 1; assert jinaai['credential_fields'][0]['key'] == 'api_key'; assert jinaai['credential_fields'][0]['required'] == True; print('JinaAI fields correct')"
+  - id: provider-records-match
+    why: Each provider's credential fields match the literal LiteLLM values for placeholder,
+      tooltip, required, field_type and default_value; length must match exactly. JinaAI's
+      default_model_placeholder is verified as "jina_ai/" and other providers use "gpt-3.5-turbo".
+    run: |
+      python3 << 'CHECKSCRIPT'
+      import json, sys
+      d = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json'))
+      r = {
+          'HUMANLOOP': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
+          'HYPERBOLIC': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
+          'Infinity': [{'key':'api_base','placeholder':'http://localhost:7997','tooltip':None,'required':False,'field_type':'text','default_value':None}],
+          'JinaAI': [{'key':'api_key','placeholder':None,'tooltip':None,'required':True,'field_type':'password','default_value':None}],
+          'LAMBDA_AI': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
+          'LANGFUSE': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
+          'LEMONADE': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
+          'LITELLM_PROXY': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
+          'LLAMAFILE': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
+          'LM_STUDIO': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
+          'MARITALK': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
+          'LLAMA': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
+          'MILVUS': [{'key':'api_base','placeholder':None,'tooltip':None,'required':False,'field_type':'text','default_value':None},{'key':'api_key','placeholder':None,'tooltip':None,'required':False,'field_type':'password','default_value':None}],
+          'MistralAI': [{'key':'api_key','placeholder':None,'tooltip':None,'required':True,'field_type':'password','default_value':None}]
+      }
+      default_model_placeholders = {
+          'JinaAI': 'jina_ai/',
+      }
+      for p in d:
+          if p.get('provider') not in r:
+              continue
+          actual_len = len(p.get('credential_fields', []))
+          expected_len = len(r[p['provider']])
+          if actual_len != expected_len:
+              print('Provider {} has {} fields, expected {}'.format(p['provider'], actual_len, expected_len))
+              sys.exit(1)
+          for a, e in zip(p.get('credential_fields', []), r[p['provider']]):
+              for k in ['key', 'placeholder', 'tooltip', 'required', 'field_type', 'default_value']:
+                  if a.get(k) != e.get(k):
+                      print('Provider {}, field {}: {} mismatch'.format(p['provider'], a.get('key'), k))
+                      sys.exit(1)
+          if p['provider'] in default_model_placeholders:
+              expected = default_model_placeholders[p['provider']]
+              actual = p.get('default_model_placeholder')
+              if actual != expected:
+                  print('Provider {}, default_model_placeholder mismatch: expected "{}", got "{}"'.format(p['provider'], expected, actual))
+                  sys.exit(1)
+      print('All fields and placeholders match')
+      CHECKSCRIPT
+  - id: asset-corpus
+    why: Asset parses as valid JSON and the catalog loader can read the fragment.
+    run: python3 -c "import json; data = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json')); assert isinstance(data, list); assert len(data) == 14; print('Asset is valid JSON with 14 records')"
+  - id: provider-jinaai-default-placeholder
+    why: JinaAI default_model_placeholder is not the distinct "jina_ai/" identifier
+    run: |
+      python3 << 'CHECKSCRIPT'
+      import json, sys
+      data = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json'))
+      jinaai = next((p for p in data if p.get('provider') == 'JinaAI'), None)
+      if not jinaai:
+          print('JinaAI provider not found')
+          sys.exit(1)
+      expected = 'jina_ai/'
+      actual = jinaai.get('default_model_placeholder')
+      if actual != expected:
+          print(f'JinaAI default_model_placeholder mismatch: expected "{expected}", got "{actual}"')
+          sys.exit(1)
+      print('JinaAI default_model_placeholder correct')
+      CHECKSCRIPT
+  - id: provider-litellm-provider-values
+    why: litellm_provider field does not match LiteLLM values for key providers
+    run: |
+      python3 << 'CHECKSCRIPT'
+      import json, sys
+      data = json.load(open('crates/betterlite-server/assets/provider_create_fields_humanloop_mistral.json'))
+      expected_litellm_providers = {
+          'Infinity': 'infinity',
+          'JinaAI': 'jina_ai',
+          'LITELLM_PROXY': 'litellm_proxy',
+          'LLAMAFILE': 'llamafile',
+          'LM_STUDIO': 'lm_studio',
+          'LLAMA': 'meta_llama',
+          'MistralAI': 'mistral',
+      }
+      for provider_name, expected_value in expected_litellm_providers.items():
+          provider = next((p for p in data if p.get('provider') == provider_name), None)
+          if not provider:
+              print(f'{provider_name} provider not found')
+              sys.exit(1)
+          actual = provider.get('litellm_provider')
+          if actual != expected_value:
+              print(f'{provider_name} litellm_provider mismatch: expected "{expected_value}", got "{actual}"')
+              sys.exit(1)
+      print('All litellm_provider values match')
+      CHECKSCRIPT
+oracle_cases: []
+deviations: []
+out_of_scope:
+- B3190 owns the get_provider_fields loader and catalog assembly. B3180-B3189 supply
+  ordered data fragments; no callable functions or provider resolution logic belongs
+  to this task.
+- No provider dispatch, resolution or credential handling functions belong to this
+  data part. The loaded records are static form/metadata only.
+pitfalls:
+- Infinity's api_base field placeholder is "http://localhost:7997", not a production
+  endpoint; it is the only optional field in this provider range.
+- JinaAI requires api_key, unlike most other providers; confirm the required flag is
+  true in any override or validator.
+- JinaAI's default_model_placeholder is "jina_ai/", the only provider in this range
+  with a non-generic placeholder; using "gpt-3.5-turbo" instead breaks model lookup
+  for Jina embedding endpoints.
+- LITELLM_PROXY, LLAMAFILE and LM_STUDIO are distinct litellm_provider values for local
+  and proxy model endpoints; do not collapse them into a single provider identity.
+review_level: standard
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0

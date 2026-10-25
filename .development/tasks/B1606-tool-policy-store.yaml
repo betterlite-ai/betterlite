@@ -25,10 +25,10 @@ scope:
     - crates/betterlite-db/src/tool_policy_store.rs
     - crates/betterlite-db/src/tool_policy_store/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/tool_policy.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/tool_policy.py
+    - tools/oracle/src/helpers/db/tool_policy_store.rs
+    - tools/oracle/src/helpers/db/tool_policy_store/**
+    - tools/oracle/helpers/tool_policy_store.py
+    - tools/oracle/helpers/tool_policy_store/**
     - tools/oracle/cases/helpers/tool-policy/**
     - tools/oracle/fuzz/corpus/helper_case/tool-policy-*
   lint_tables: false
@@ -68,6 +68,7 @@ out_of_scope:
   - B1605 owns record conversion, repository table contracts, owner lookup, list/get and override display in tool_registry_writer.py; get_tools_by_names has no caller at the pin.
   - Tool discovery scheduling and queue draining are other B070 parts; guardrail enforcement is B106.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as tool_policy_store in the db group. Replace the stub Op in tools/oracle/src/helpers/db/tool_policy_store.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/tool_policy_store.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A discovered tool's first key_hash and origin survive later discovery by a different user.
   - Making the registry refresh atomic would hide the source's new-tool-map and old-permission-map intermediate failure state.
 budget:

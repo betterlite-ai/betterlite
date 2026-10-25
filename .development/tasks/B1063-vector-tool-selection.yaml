@@ -24,10 +24,10 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/vector_tool_selection.rs
   - crates/betterlite-core/src/api/vector_tool_selection/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/vector_tool_selection.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/vector_tool_selection.rs
+  - tools/oracle/src/helpers/core_ops/vector_tool_selection/**
   - tools/oracle/helpers/vector_tool_selection.py
+  - tools/oracle/helpers/vector_tool_selection/**
   - tools/oracle/cases/helpers/vector-tool-selection/**
   - tools/oracle/fuzz/corpus/helper_case/vector_tool_selection-*
   lint_tables: false
@@ -97,6 +97,7 @@ out_of_scope:
 - pop_vector_stores_to_run,delete_vector_store_index,list_all_vector_stores have no caller at the pin and are excluded.
 - B1060/B1061 own endpoint authorization; recognized ids in this registry method are not an authorization result.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as vector_tool_selection in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_tool_selection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_tool_selection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Stored litellm_params wins over tool parameters despite the source comment claiming the opposite.
 - A tool containing even one unknown id is left intact, so database fallback does not make that tool recognized first.
 - The consuming path preserves duplicate ids and can search or verify the same store multiple times.

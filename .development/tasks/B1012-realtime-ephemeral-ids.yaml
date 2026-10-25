@@ -29,11 +29,10 @@ scope:
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/realtime_token_payload.rs
   - crates/betterlite-core/fuzz/corpus/realtime_token_payload/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/realtime_ephemeral_ids.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/realtime_ephemeral_ids.rs
+  - tools/oracle/src/helpers/core_ops/realtime_ephemeral_ids/**
   - tools/oracle/helpers/realtime_ephemeral_ids.py
+  - tools/oracle/helpers/realtime_ephemeral_ids/**
   - tools/oracle/cases/helpers/realtime-ephemeral-ids/**
   - tools/oracle/fuzz/corpus/helper_case/realtime-ephemeral-ids-*
   lint_tables: false
@@ -101,6 +100,7 @@ deviations: []
 out_of_scope:
 - B1126 owns both secret/transcription handlers at 216-359 and 521-658; B084 owns the complete WebRTC calls handler at 362-518. B061 owns encrypt_value_helper/decrypt_value_helper and key management.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as realtime_ephemeral_ids in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/realtime_ephemeral_ids.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/realtime_ephemeral_ids.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A malformed versioned token payload returns None and the route treats its decrypted text as a legacy key.
 - Transcription authorizes every distinct candidate before normalizing to the first; authorizing only the chosen model weakens the pin.
 - The token encoder converts absent user/team IDs to empty strings but keeps expiry=None as JSON null.

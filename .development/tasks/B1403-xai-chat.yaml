@@ -33,8 +33,10 @@ scope:
     - crates/betterlite-openai/src/{lib,error,xai_chat}.rs
     - crates/betterlite-openai/src/xai_chat/**
     - crates/betterlite-openai/fuzz/corpus/{chat_response,sse_events}/xai*
-    - tools/oracle/src/helpers/{mod,xai_chat}.rs
-    - tools/oracle/helpers/{dispatch,xai_chat}.py
+    - tools/oracle/src/helpers/openai/xai_chat.rs
+    - tools/oracle/src/helpers/openai/xai_chat/**
+    - tools/oracle/helpers/xai_chat.py
+    - tools/oracle/helpers/xai_chat/**
     - tools/oracle/cases/helpers/xai-chat/**
     - tools/oracle/fuzz/corpus/helper_case/xai_chat*
   lint_tables: false
@@ -77,6 +79,7 @@ out_of_scope:
   - B1402 owns _usage_restated_from_xai_ticks, fold_reasoning_tokens_into_completion and _normalize_openai_compatible_usage_totals in this file.
   - B036 installs _complete_xai and exercises authenticated chat aliases through the running proxy.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as xai_chat in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/xai_chat.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/xai_chat.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The supported list still advertises web_search_options although transform_request warns and removes it.
   - OAuth never takes precedence over a truthy xai_key or XAI_API_KEY.
   - A usage key with a null value still causes insertion of the empty streaming choice.

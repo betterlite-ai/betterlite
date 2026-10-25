@@ -112,11 +112,10 @@ scope:
   - crates/betterlite-bedrock/src/web_identity.rs
   - crates/betterlite-bedrock/src/web_identity/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_web_identity.rs
-  - tools/oracle/src/helpers/bedrock_web_identity/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/web_identity.rs
+  - tools/oracle/src/helpers/bedrock/web_identity/**
   - tools/oracle/helpers/bedrock_web_identity.py
+  - tools/oracle/helpers/bedrock_web_identity/**
   - tools/oracle/cases/helpers/providers/bedrock-web-identity/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_web_identity*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -360,6 +359,7 @@ out_of_scope:
   BaseAWSLLM._sign_request L1657-L1730; sign_aws_json_post L1733-L1749; run_aws_signing L1758-L1767; sign_request_off_loop_if_aws
   L1770-L1779 belong to B595.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_web_identity in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/web_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_web_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The warning still says 75% when BEDROCK_MAX_POLICY_SIZE changes; the threshold and displayed literal are separate.
 - Direct web identity uses a3540-second TTL; only role-assumption helpers use returned Expiration.
 budget:

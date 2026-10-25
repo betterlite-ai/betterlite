@@ -37,10 +37,10 @@ scope:
     - crates/betterlite-core/src/api/copilot_responses/**
     - crates/betterlite-config/src/providers/copilot.rs
     - crates/betterlite-config/src/providers/copilot/responses.rs
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/copilot_responses.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/copilot_responses.rs
+    - tools/oracle/src/helpers/core_ops/copilot_responses/**
     - tools/oracle/helpers/copilot_responses.py
+    - tools/oracle/helpers/copilot_responses/**
     - tools/oracle/cases/helpers/copilot-responses/**
     - tools/oracle/fuzz/corpus/helper_case/copilot_responses*
   lint_tables: false
@@ -76,6 +76,7 @@ deviations: []
 out_of_scope:
   - B045 consumes the native capability predicate in dispatch; B508 remains responsible for Responses event decoding and projection.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as copilot_responses in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/copilot_responses.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/copilot_responses.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - mode=chat wins over supported_endpoints containing /v1/responses.
   - encrypted_content=None is removed despite a nearby source comment claiming it is preserved.
   - top-level item_id takes precedence over rewriting item.id on a done event carrying both fields.

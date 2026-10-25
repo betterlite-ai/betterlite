@@ -90,11 +90,10 @@ scope:
   - crates/betterlite-models/src/full_model_metadata.rs
   - crates/betterlite-models/src/full_model_metadata/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/full_model_metadata.rs
-  - tools/oracle/src/helpers/full_model_metadata/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/models/full_model_metadata.rs
+  - tools/oracle/src/helpers/models/full_model_metadata/**
   - tools/oracle/helpers/full_model_metadata.py
+  - tools/oracle/helpers/full_model_metadata/**
   - tools/oracle/cases/helpers/providers/full-model-metadata/**
   - tools/oracle/fuzz/corpus/helper_case/full_model_metadata*
   - crates/betterlite-config/Cargo.toml
@@ -365,6 +364,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/utils.py: _handle_new_key_with_scan L5621-L5637 have no caller at the pin;
   do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as full_model_metadata in the models group. Replace the stub Op in tools/oracle/src/helpers/models/full_model_metadata.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/full_model_metadata.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty explicit API key bypasses the cache because the guard is is not None.
 - Full metadata overlays provider defaults after helper lookup, unlike the authoritative flags used by B688.
 budget:

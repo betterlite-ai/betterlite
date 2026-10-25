@@ -98,12 +98,11 @@ scope:
     - crates/betterlite-auth/src/auth_request_policy/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_request_policy.rs
-    - tools/oracle/src/helpers/auth_request_policy/**
+    - tools/oracle/src/helpers/server/auth_request_policy.rs
+    - tools/oracle/src/helpers/server/auth_request_policy/**
     - tools/oracle/helpers/auth_request_policy.py
+    - tools/oracle/helpers/auth_request_policy/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-request-policy/**
     - tools/oracle/fuzz/corpus/helper_case/auth-request-policy-*
     - crates/betterlite-server/src/auth.rs
@@ -299,6 +298,7 @@ out_of_scope:
     commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_request_policy in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_request_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_request_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - allowed_ips and allowed_routes denials are 403, while banned body fields become 401 auth_error.
   - The legacy use_x_forwarded_for behavior is distinct from trusted OAuth proxy authentication.
 budget:

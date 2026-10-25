@@ -35,8 +35,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/studio_file_metadata.rs
     - crates/betterlite-vertex/fuzz/corpus/studio_file_metadata/**
-    - tools/oracle/src/helpers/{mod,studio_files}.rs
-    - tools/oracle/helpers/{dispatch,studio_files}.py
+    - tools/oracle/src/helpers/vertex/studio_native_files.rs
+    - tools/oracle/src/helpers/vertex/studio_native_files/**
+    - tools/oracle/helpers/studio_native_files.py
+    - tools/oracle/helpers/studio_native_files/**
     - tools/oracle/cases/helpers/studio-files/**
     - tools/oracle/fuzz/corpus/helper_case/studio_files*
   lint_tables: false
@@ -81,6 +83,7 @@ out_of_scope:
   - This task owns the entire Studio files configuration; B235 extracts supplied file records and B035 connects the resumable plan to file execution.
   - B087 and its file-route leaves own proxy access checks and enterprise managed-file rejection; this adapter is the native provider Files API.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as studio_native_files in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/studio_native_files.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/studio_native_files.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A full URL file ID contributes only an encoded identifier, never a destination host.
   - File creation returns the provider uri as its OpenAI file ID rather than the name field.
   - HTTP 204 is not treated as a successful delete by this transformer.

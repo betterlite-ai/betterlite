@@ -132,12 +132,11 @@ scope:
     - crates/betterlite-server/src/login_throttle/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/login_throttle.rs
-    - tools/oracle/src/helpers/login_throttle/**
+    - tools/oracle/src/helpers/server/login_throttle.rs
+    - tools/oracle/src/helpers/server/login_throttle/**
     - tools/oracle/helpers/login_throttle.py
+    - tools/oracle/helpers/login_throttle/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/login-throttle/**
     - tools/oracle/fuzz/corpus/helper_case/login-throttle-*
     - crates/betterlite-config/Cargo.toml
@@ -288,6 +287,7 @@ out_of_scope:
     cache operations, B126 Redis execution, B002 resolved settings and B899 login HTTP routes.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as login_throttle in the server group. Replace the stub Op in tools/oracle/src/helpers/server/login_throttle.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/login_throttle.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Local fallback refreshes count expiry on every failure while the Redis Lua window is fixed.
   - A successful sign-in clears the pair counter but cannot clear an existing block.
 budget:

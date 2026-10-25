@@ -88,12 +88,11 @@ scope:
     - crates/betterlite-auth/src/management_routes/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/management_routes.rs
-    - tools/oracle/src/helpers/management_routes/**
+    - tools/oracle/src/helpers/auth/management_routes.rs
+    - tools/oracle/src/helpers/auth/management_routes/**
     - tools/oracle/helpers/management_routes.py
+    - tools/oracle/helpers/management_routes/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/management-routes/**
     - tools/oracle/fuzz/corpus/helper_case/management-routes-*
   lint_tables: false
@@ -214,6 +213,7 @@ out_of_scope:
     (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
     (L5766-L5772).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as management_routes in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/management_routes.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/management_routes.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - KEY_HEALTH exists in the enum but is absent from key_management_routes; deriving that list from all variants broadens the grant.
   - Adding global_spend_tracking_routes to internal_user_routes exposes other tenants' spend.
   - The viewer table includes semantically read-only POST paths and is not an exhaustive GET allowlist.

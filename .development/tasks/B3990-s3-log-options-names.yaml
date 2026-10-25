@@ -1,0 +1,92 @@
+id: B3990
+title: Resolve S3 logging options and bounded object names
+description: >-
+  Build S3's option coercion, encryption-header policy and UTF-8 bounded object/download names.
+  Implement pure resolve functions that read configured values and environment variables through B002,
+  applying warning-and-fallback behavior when values fail validation. These functions set defaults for
+  max queue sizes, concurrent uploads, retry age, adaptive concurrency, batch-file mode and prompt-only
+  filtering. Preserve the aws:kms precedence rule where KMS key ID presence implies KMS encryption, and
+  drop non-string encryption values with a warning. Build the immutable s3BatchLoggingElement type
+  shared by upload and batching tasks. Implement UTF-8-safe truncation and the two bounding strategies:
+  file-name bounding preserves a head-prefix of the file name, then appends the full SHA256 hexdigest
+  for collision avoidance. Prefix bounding keeps the first S3_PREFIX_DIGEST_CHARS (16) characters of
+  the prefix hash and a trailing slash. Object keys preserve team/partition/request-id structure while
+  fitting within S3's byte limit by first truncating the file name, then the prefix only if needed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L29-L148
+  why: All option resolution functions and prompts_only_payload.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L315-L410
+  why: SSE validation, encryption-header resolution, UTF-8 truncation and object-key bounding.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/s3_v2.py#L1-L18
+  why: s3BatchLoggingElement type definition.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L64-L72
+  why: S3 size and partition constants.
+dod:
+- text: >-
+    Every option resolution function matches its LiteLLM behavior, including defaults, validation precedence,
+    and warning-on-fallback for invalid input types.
+  proof:
+  - s3-option-resolution-tests
+- text: >-
+    Object key and download filename bounding correctly preserves UTF-8 boundaries, applies both hashing
+    strategies, and never exceeds byte limits.
+  proof:
+  - s3-object-naming-tests
+- text: >-
+    Non-string encryption values are dropped with a warning; KMS key ID without KMS algorithm is dropped;
+    valid SSE values are preserved.
+  proof:
+  - s3-option-resolution-tests
+- text: >-
+    The s3BatchLoggingElement type loads correctly and passes through serialization unchanged.
+  proof:
+  - s3-option-resolution-tests
+checks:
+  optional: []
+  commands:
+  - id: s3-option-resolution-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/s3_option_resolution_behaviors_behavior($|::)/) - test(/replays_the_/)'
+  - id: s3-object-naming-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/s3_object_naming_behaviors_behavior($|::)/) - test(/replays_the_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- resolve_s3_log_prompts_only's default (False) and resolve_s3_drop_on_terminal_error's default (True) are
+  pure semantics; task B3991 and later callers control fallback order.
+- Invalid partition granularity values are logged as warnings; the function returns "day" for any invalid
+  input.
+pitfalls:
+- >-
+  Key bounding uses the full 64-character SHA256 hexdigest for the file-name strategy; prefix bounding
+  truncates to S3_PREFIX_DIGEST_CHARS (16) hex characters plus a slash. Both hashes prevent collisions
+  under truncation.
+- >-
+  resolve_s3_max_retry_age_seconds returns None (disables retries) for explicit zero or None, not
+  fallback_value.
+- >-
+  resolve_s3_max_retry_age_seconds and resolve_s3_max_adaptive_concurrency reject boolean values but
+  resolve_s3_max_concurrent_uploads accepts them.
+- >-
+  Object key construction orders operations: first sanitize the file name, then combine path + prefix,
+  add partition by date/hour, then apply truncation to the shortest component (file name) before
+  truncating prefix.
+- >-
+  _truncate_to_utf8_bytes must never split a multi-byte UTF-8 character; decode with errors="ignore"
+  after truncating the byte array.
+- >-
+  Non-string s3_server_side_encryption or s3_sse_kms_key_id values are dropped (treated as None) with
+  a warning, independent of the aws:kms precedence check.
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

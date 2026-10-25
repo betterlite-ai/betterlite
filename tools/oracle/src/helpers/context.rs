@@ -1,0 +1,13 @@
+helper_group! {
+    "a2a_text" => a2a_text,
+    "anthropic_catalog_lookup" => anthropic_catalog_lookup,
+    "bedrock_config_selection" => bedrock_config_selection,
+    "bedrock_model" => bedrock_model,
+    "call_context" => call_context,
+    "chat_config_selection" => chat_config_selection,
+    "cloud_storage" => cloud_storage,
+    "local_ttl_cache" => local_ttl_cache,
+    "owned_parameter_names" => owned_parameter_names,
+    "provider_message_primitives" => provider_message_primitives,
+    "request_records" => request_records,
+}

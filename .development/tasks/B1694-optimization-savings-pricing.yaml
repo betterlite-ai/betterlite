@@ -62,10 +62,10 @@ scope:
     - crates/betterlite-server/src/savings.rs
     - crates/betterlite-server/src/savings/**
     - crates/betterlite-server/src/state.rs
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/savings_pricing.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/savings_pricing.py
+    - tools/oracle/src/helpers/server/optimization_savings_pricing.rs
+    - tools/oracle/src/helpers/server/optimization_savings_pricing/**
+    - tools/oracle/helpers/optimization_savings_pricing.py
+    - tools/oracle/helpers/optimization_savings_pricing/**
     - tools/oracle/cases/helpers/savings-pricing/**
     - tools/oracle/fuzz/corpus/helper_case/savings-pricing-*
   lint_tables: false
@@ -119,6 +119,7 @@ out_of_scope:
   - B1693 owns all savings.py records except _ModelIdentity and the extraction/cache-normalization functions; it also owns compression_savings.py in full.
   - Baseline history construction and durable correction publication belong to the baseline-accounting splits of B068; this task prices supplied observations only.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as optimization_savings_pricing in the server group. Replace the stub Op in tools/oracle/src/helpers/server/optimization_savings_pricing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/optimization_savings_pricing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A supplied empty baseline_info is authoritative, while an empty deployment lookup falls through to public pricing in request savings.
   - observed_initial and observed_identical are different provenance literals consumed by different comparison APIs.
   - A nonnull unknown estimate suppresses recomputation even when a usable routing decision and usage record are present.

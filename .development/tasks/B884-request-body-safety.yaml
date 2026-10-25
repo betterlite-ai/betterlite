@@ -117,12 +117,11 @@ scope:
     - crates/betterlite-auth/src/request_body_safety/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/request_body_safety.rs
-    - tools/oracle/src/helpers/request_body_safety/**
+    - tools/oracle/src/helpers/auth/request_body_safety.rs
+    - tools/oracle/src/helpers/auth/request_body_safety/**
     - tools/oracle/helpers/request_body_safety.py
+    - tools/oracle/helpers/request_body_safety/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/request-body-safety/**
     - tools/oracle/fuzz/corpus/helper_case/request-body-safety-*
     - crates/betterlite-server/src/auth.rs
@@ -332,6 +331,7 @@ out_of_scope:
   - 'litellm/proxy/auth/auth_utils.py::check_complete_credentials (L111-L156): no caller at the pin; removed
     implicit caller-credential bypass.'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as request_body_safety in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/request_body_safety.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/request_body_safety.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Stringified litellm_metadata is decoded before checking nested banned host and pricing fields.
   - CustomPricingLiteLLMParams and callback tables contribute fields that are absent from the handwritten
     tuple.

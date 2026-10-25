@@ -1,0 +1,105 @@
+id: B3761
+title: Cisco MCP envelopes and output replacement
+description: >-
+  Build JSON-RPC request/response projection helpers, MCP tool-context hydration, synthesized
+  blocked response generation, and in-place MCP response text rewriting. These pure helpers
+  normalize diverse MCP response shapes (MCP SDK models, dicts, Pydantic-coerced field lists)
+  into JSON-RPC envelopes for /inspect/mcp, hydrate inspection context from nested metadata,
+  and replace tool-call output without reading or writing the verdict. The blocking response
+  synthesizes a JSON error payload as TextContent, preserving response_cost from HiddenParams
+  if present.
+
+
+  Request payloads preserve literal jsonrpc/id/method/params from the original call or build
+  them from mcp_tool_name, mcp_arguments and litellm_call_id. Response payloads combine the
+  request envelope with result/error from the normalized response shape. Text content
+  rewriting searches mcp_tool_call_response, content lists, structured_content/structuredContent
+  and dict result fields, then updates each text item and its structured_content mirror.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/lib.rs
+    - crates/betterlite-guardrails/src/cisco_mcp.rs
+    - tools/oracle/cases/guardrails/cisco/mcp-**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L27-L54
+    why: _serialize_mcp_content_item and _source_field utility functions for content normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L175-L211
+    why: _build_blocking_mcp_response synthesis from detail, preserving response_cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L213-L281
+    why: _replace_mcp_tool_response in-place rewriting, _replacement_structured_content generation and _extract_mcp_tool_call_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L361-L427
+    why: _build_mcp_request_payload and _build_mcp_response_payload envelope builders for /inspect/mcp.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L429-L525
+    why: _hydrate_mcp_tool_context, _normalize_mcp_response and _build_mcp_result for request-context and response-shape handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L531-L602
+    why: _set_mcp_tool_response_text in-place rewriting and _coerce_to_content_list shape discovery.
+dod:
+  - text: JSON-RPC request envelopes preserve or construct jsonrpc (2.0), id, method and params from call data.
+    proof: [oracle]
+  - text: Response envelopes combine the request payload with result or error from normalized shapes.
+    proof: [oracle]
+  - text: Tool-context hydration reads mcp_tool_call_metadata from nested metadata and populates mcp_tool_name,
+      tool_name, name, mcp_arguments, arguments and mcp_server_name, server_name.
+    proof: [mcp-context-tests]
+  - text: Response normalization handles dicts, lists, Pydantic models, and Pydantic-coerced field tuples, extracting
+      content, id, result and error.
+    proof: [oracle, mcp-normalization-tests]
+  - text: Blocking response synthesizes MCPPostCallResponseObject with JSON error payload as TextContent and preserves
+      response_cost from HiddenParams.
+    proof: [mcp-blocking-tests]
+  - text: In-place text rewriting finds and updates text content in mcp_tool_call_response, content lists and structured_content/structuredContent fields.
+    proof: [mcp-redaction-tests]
+checks:
+  optional: []
+  commands:
+    - id: mcp-context-tests
+      why: Tool-context hydration does not populate request_data from nested metadata
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/cisco_mcp::.*context/)'
+    - id: mcp-normalization-tests
+      why: Response shape normalization omits dict, model, list or field-tuple handling
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/cisco_mcp::.*normaliz/)'
+    - id: mcp-blocking-tests
+      why: Blocking response does not synthesize valid MCPPostCallResponseObject or loses response_cost
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/cisco_mcp::.*block/)'
+    - id: mcp-redaction-tests
+      why: Text content rewriting does not find or update all response shapes
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/cisco_mcp::.*redact/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/cisco/mcp-request-envelope-from-call-data.yaml
+  - tools/oracle/cases/guardrails/cisco/mcp-request-envelope-from-jsonrpc.yaml
+  - tools/oracle/cases/guardrails/cisco/mcp-response-envelope-with-result.yaml
+  - tools/oracle/cases/guardrails/cisco/mcp-response-envelope-with-error.yaml
+  - tools/oracle/cases/guardrails/cisco/mcp-context-hydration-from-metadata.yaml
+  - tools/oracle/cases/guardrails/cisco/mcp-normalize-dict-response.yaml
+  - tools/oracle/cases/guardrails/cisco/mcp-normalize-model-response.yaml
+  - tools/oracle/cases/guardrails/cisco/mcp-normalize-field-tuple-list.yaml
+  - tools/oracle/cases/guardrails/cisco/mcp-blocking-response-with-error-dict.yaml
+  - tools/oracle/cases/guardrails/cisco/mcp-blocking-response-with-string-detail.yaml
+  - tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-in-content-list.yaml
+  - tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-structured-content.yaml
+deviations:
+  - what: Blocking response synthesizes JSON-serialized error payload, not returning raw detail string.
+    why: Cisco inspection returns structured verdicts; MCP tool output is JSON text content.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L188-L199
+out_of_scope:
+  - Sanitized MCP argument extraction from verdicts; B3758 owns _extract_sanitized_mcp_arguments.
+  - MCP post-tool hook orchestration; B3762 drives inspection and verdict dispatch.
+  - Inspection request/response posting; B3762 calls _post_inspection.
+  - Verdict finalization and redaction dispatch; B3760 calls _finalize_inspection.
+  - Extraction of request inspection messages; B3756 builds _extract_inspect_messages_from_request.
+pitfalls:
+  - Response normalization must handle Pydantic model_dump(exclude_none=True, by_alias=True) fallback to model_dump()
+    when exclude_none is not supported.
+  - Hydration must set mcp_tool_name, tool_name and name to the same value; inspection lookups check all three.
+  - Text content rewriting must update both content list text and its structured_content mirror, or text changes
+    are invisible to downstream code reading structuredContent.
+  - Sanitized payload keys vary between providers (sanitized_payload vs sanitizedPayload, modified_payload vs modifiedPayload);
+    check both camelCase and snake_case.
+  - In-place list replacement (content[:] = replacement) must not assume setattr works on read-only Pydantic models;
+    catch AttributeError and continue to dict-based fallback.
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

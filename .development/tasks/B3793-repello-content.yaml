@@ -1,0 +1,115 @@
+id: B3793
+title: Repello inspection content
+description: >-
+  Build content extraction for the RepelloAI Argus guardrail. Extract text from chat messages, Responses input/output, tool schemas and instructions to send for scanning. Preserve the source's text choices instead of serializing request objects to JSON.
+
+  The RepelloAIGuardrailConfigModel holds api_key (env ARGUS_API_KEY or REPELLOAI_API_KEY), api_base (env REPELLOAI_API_BASE or https://argusapi.repello.ai/sdk/v1), asset_id (required, raises at init if absent), and unreachable_fallback (Literal "fail_closed" or "fail_open", default "fail_closed"). The ui_friendly_name() static method returns the literal "RepelloAI Argus".
+
+  Wire types: RepelloAIScanData carries prompt or response string; RepelloAIAnalyzeRequest wraps asset_id and scan_data; RepelloAIViolatedPolicy holds policy_name, policy_id, action_taken, scope, details and masked_result; RepelloAIAnalyzeResponse returns verdict ("blocked", "flagged", or "passed"), request_id, policies_violated and policies_applied lists.
+
+  Build text extraction by joining message content (via build_inspection_messages from B3664), prompt field (string or array), instructions, tool call arguments in messages, input content items with type "input_text", and tool/function schema text (from name, description, title, const, default, enum, examples fields). Do not serialize request dicts to JSON; preserve the source's direct text.
+scope:
+  paths:
+    - "litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py"
+    - "litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py"
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py"
+    why: The complete types file with config model, wire types and ui_friendly_name method.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L57-L140"
+    why: Type guards _is_object_dict and _is_object_list, _get_field accessor, and schema text extraction helpers.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L328-L377"
+    why: Prompt text extraction from messages, input text parts, prompt field, and tool definitions.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L498-L565"
+    why: Response text extraction from chat completion choices, Responses API output items and output_text field.
+dod:
+  - text: RepelloAIGuardrailConfigModel has api_key, api_base, asset_id (all str | None, no default) and unreachable_fallback (Literal["fail_closed", "fail_open"], default "fail_closed").
+    proof: [config-model-fields]
+  - text: ui_friendly_name() static method returns the exact literal "RepelloAI Argus".
+    proof: [config-friendly-name]
+  - text: RepelloAIScanData wire type has prompt and response fields as str | None.
+    proof: [scan-data-fields]
+  - text: RepelloAIAnalyzeRequest wire type has asset_id (str) and scan_data (RepelloAIScanData).
+    proof: [analyze-request-fields]
+  - text: RepelloAIViolatedPolicy wire type has policy_name, policy_id, action_taken, scope, details and masked_result.
+    proof: [violated-policy-fields]
+  - text: RepelloAIAnalyzeResponse wire type has verdict (str | None), request_id (str | None), policies_violated (list) and policies_applied (list).
+    proof: [analyze-response-fields]
+  - text: _extract_prompt_text joins message content (via build_inspection_messages), prompt field (string or array), instructions, tool call arguments, input content with type "input_text" and tool schema text with newlines.
+    proof: [repello-content-tests]
+  - text: _extract_response_text returns string or None and extracts from ModelResponse objects, dicts, and objects with output_text attribute.
+    proof: [repello-content-tests]
+  - text: _extract_chat_completion_text extracts content from choices/message/content, choices/text and tool call arguments, joining with newlines.
+    proof: [repello-content-tests]
+  - text: _extract_responses_api_text extracts arguments from output items with type "function_call" and text from type "message" with content[].text or content[].output_text.
+    proof: [repello-content-tests]
+  - text: _iter_schema_text walks JSON schema depth-first and extracts scalars from name, description, title, const, default and lists from enum, examples.
+    proof: [repello-content-tests]
+  - text: _extract_tool_definition_text applies _iter_schema_text to tools[].function and functions[] arrays.
+    proof: [repello-content-tests]
+  - text: _extract_tool_call_args_from_message extracts arguments strings from both message.tool_calls[].function.arguments and message.function_call.arguments.
+    proof: [repello-content-tests]
+  - text: _extract_input_text_parts filters input content items by type == "input_text" and returns text field values.
+    proof: [repello-content-tests]
+  - text: _extract_prompt_field_text handles prompt as string, array of strings, or missing without error.
+    proof: [repello-content-tests]
+  - text: get_supported_event_hooks returns [GuardrailEventHooks.pre_call, GuardrailEventHooks.post_call].
+    proof: [repello-content-tests]
+checks:
+  optional: []
+  commands:
+    - id: config-model-fields
+      why: config model is missing or fields are incorrectly defined
+      run: >-
+        grep -q "class RepelloAIGuardrailConfigModel" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
+        grep -qE "api_key.*str.*None.*Field" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
+        grep -qE "unreachable_fallback.*Literal" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py
+    - id: config-friendly-name
+      why: ui_friendly_name method is missing or incorrect
+      run: >-
+        grep -q "def ui_friendly_name" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
+        grep -q 'RepelloAI Argus' litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py
+    - id: scan-data-fields
+      why: RepelloAIScanData wire type is missing or incomplete
+      run: >-
+        grep -q "class RepelloAIScanData" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
+        grep -q "prompt:" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py
+    - id: analyze-request-fields
+      why: RepelloAIAnalyzeRequest wire type is missing or incomplete
+      run: >-
+        grep -q "class RepelloAIAnalyzeRequest" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
+        grep -q "asset_id:" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py
+    - id: violated-policy-fields
+      why: RepelloAIViolatedPolicy wire type is missing or incomplete
+      run: >-
+        grep -q "class RepelloAIViolatedPolicy" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
+        grep -q "policy_name:" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py
+    - id: analyze-response-fields
+      why: RepelloAIAnalyzeResponse wire type is missing or incomplete
+      run: >-
+        grep -q "class RepelloAIAnalyzeResponse" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
+        grep -q "verdict:" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py
+    - id: repello-content-tests
+      why: content extraction tests fail or are missing
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^repello_content::/)' 2>&1 | grep -q "test result"
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The __init__, _call_analyze, and _raise_for_config_error methods; owned by B3794 (Repello scan lifecycle and stream blocking)."
+  - "The async_pre_call_hook, async_post_call_success_hook and async_post_call_streaming_iterator_hook hook implementations; owned by B3794."
+  - "The _verdict_blocks, _raise_if_blocked, _format_blocked_detail and _log_flagged_verdict response handling methods; owned by B3794."
+  - "The _handle_unreachable error handling method; owned by B3794."
+  - "The get_config_model method; owned by B3794."
+  - "The initialize_guardrail and _event_hook_from_mode functions in litellm/proxy/guardrails/guardrail_hooks/repelloai/__init__.py; owned by B3794."
+  - "build_inspection_messages function from litellm/proxy/guardrails/_content_utils.py; owned by B3664 (Guardrail invocation records and content inspection primitives)."
+pitfalls:
+  - "Schema text extraction walks depth-first and must not serialize dicts to JSON strings; preserve LiteLLM's stack-based traversal order."
+  - "Tool call arguments in tool_calls are JSON strings nested under function.arguments; join as-is without parsing."
+  - "Responses API output items of type 'message' have content arrays; type 'function_call' extracts the arguments string."
+  - "Input content items must match type == 'input_text' exactly; other content types in input arrays must be skipped."
+  - "The verdict comes from the wire and must be compared with string literals 'blocked', 'flagged' and 'passed'."
+  - "When a field is empty or missing, skip it; join multiple parts with newlines for prompt, directly concatenate for Responses output."
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

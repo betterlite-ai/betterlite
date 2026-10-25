@@ -45,8 +45,10 @@ scope:
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/tests/gemini_live_settings.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/gemini_live_setup*
-    - tools/oracle/src/helpers/{mod,gemini_live_setup}.rs
-    - tools/oracle/helpers/{dispatch,gemini_live_setup}.py
+    - tools/oracle/src/helpers/vertex/gemini_live_setup.rs
+    - tools/oracle/src/helpers/vertex/gemini_live_setup/**
+    - tools/oracle/helpers/gemini_live_setup.py
+    - tools/oracle/helpers/gemini_live_setup/**
     - tools/oracle/cases/helpers/gemini-live-setup/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_live_setup*
   lint_tables: false
@@ -106,6 +108,7 @@ out_of_scope:
   - B1379 owns client events, session state and SDK-value encoding; B1380 owns content-event helpers; B1381 owns tool/usage accounting; B1382 owns server-frame dispatch.
   - B1365 overrides Vertex setup/URL policy and B035 composes the Studio websocket adapter.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as gemini_live_setup in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_live_setup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_live_setup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A second session.update is discarded even when it contains new tools or instructions.
   - semantic_vad with create_response=false must not be omitted by the semantic-VAD shortcut.
   - session.created copies only a string systemInstruction, although setup normally stores it as a content object.

@@ -22,8 +22,10 @@ scope:
   - crates/betterlite-core/src/mock.rs
   - crates/betterlite-core/src/mock/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/core_ops/mock_calls.rs
+  - tools/oracle/src/helpers/core_ops/mock_calls/**
+  - tools/oracle/helpers/mock_calls.py
+  - tools/oracle/helpers/mock_calls/**
   - tools/oracle/cases/helpers/mock-calls/**
   - tools/oracle/fuzz/corpus/helper_case/**
   - crates/betterlite-config/**
@@ -108,6 +110,7 @@ out_of_scope:
   mock_functions.mock_image_generation is B082; admission_input_tokens/admitted_prompt_token_counter are B069 (consume
   an injected optional prompt_tokens value here).
 pitfalls:
+- 'The oracle helper for this task is pre-registered as mock_calls in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/mock_calls.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/mock_calls.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.

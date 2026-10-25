@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Process memory and runtime diagnostic snapshots
 status: todo
 depends_on: [B002]
-file: null
+file: tasks/B4173-runtime-diagnostic-snapshots.yaml
 covers:
   - "litellm/proxy/common_utils/debug_utils.py"
 parent: B121

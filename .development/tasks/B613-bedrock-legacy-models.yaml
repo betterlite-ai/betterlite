@@ -133,11 +133,10 @@ scope:
   - crates/betterlite-bedrock/src/legacy_models.rs
   - crates/betterlite-bedrock/src/legacy_models/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_legacy_models.rs
-  - tools/oracle/src/helpers/bedrock_legacy_models/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/legacy_models.rs
+  - tools/oracle/src/helpers/bedrock/legacy_models/**
   - tools/oracle/helpers/bedrock_legacy_models.py
+  - tools/oracle/helpers/bedrock_legacy_models/**
   - tools/oracle/cases/helpers/providers/bedrock-legacy-models/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_legacy_models*
   - crates/betterlite-config/Cargo.toml
@@ -514,6 +513,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py:
   AmazonAnthropicConfig.get_legacy_anthropic_model_names L62-L68 belong to B2231.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_legacy_models in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/legacy_models.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_legacy_models.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The AI21 constructor spells frequencePenalty differently from the usual frequency spelling.
 - The Titan filter reads global litellm.drop_params even when its mapper receives a different drop_params argument.
 budget:

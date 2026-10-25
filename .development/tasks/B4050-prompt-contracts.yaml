@@ -1,0 +1,95 @@
+id: B4050
+title: Prompt contracts and compiled result projection
+description: >-
+  Add prompt specification, integration contracts and compiled-result types to crates/betterlite-models.
+  The prompt management system dispatches through a common interface, so these types live in the models crate
+  used everywhere. Build SupportedPromptIntegrations enum, PromptSpec, PromptInfo, PromptLiteLLMParams records,
+  PromptManagementClient (the compiled result), and the contracts every backend implements: integration_name property,
+  should_run_prompt_management, _compile_prompt_helper (sync) and async_compile_prompt_helper methods.
+  Include the utility functions: resolve_ignore_flags (merges ignore flags from request and spec),
+  _get_model_from_prompt (picks model from compiled result or strips integration prefix), and post_compile_prompt_processing
+  (merges compiled optional params, picks model, collects completed messages).
+  Add CustomPromptManagement, a no-op backend that passes through model, messages and params unchanged and raises
+  NotImplementedError on compile methods, so custom hooks can inherit it without implementing compilation.
+  Include TestPromptRequest for testing prompt logic without routing.
+  Preserve "development" as the default environment, false as the default for ignore flags, prompt_type="config"
+  injection when not supplied, extra prompt fields via ConfigDict(extra="allow"), template-option precedence over
+  request options in post_compile_prompt_processing (template params overwrite request params), and stripping
+  every occurrence of the integration-name prefix from the model when the template provides no model override.
+  Keep custom Python extension execution (litellm_logging, callbacks, hooks) out of scope: these types are passive.
+  The PromptManagementClient.prompt_optional_params field holds optional template params. Model and param
+  projection are wrapped in compile_prompt, async_compile_prompt, get_chat_completion_prompt and async_get_chat_completion_prompt
+  methods, owned by B4058; this task defines the passive type only.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-models/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L1-L72
+    why: PromptManagementClient TypedDict, resolve_ignore_flags function, and abstract PromptManagementBase contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L81-L133
+    why: compile_prompt and async_compile_prompt methods with prompt_id-is-None short-circuit and compile-error wrapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L135-L164
+    why: _get_model_from_prompt and post_compile_prompt_processing methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L166-L257
+    why: get_chat_completion_prompt and async_get_chat_completion_prompt completion hooks with should_run_prompt_management gate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_prompt_management.py#L1-L75
+    why: CustomPromptManagement no-op implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/prompts/init_prompts.py#L1-L77
+    why: PromptSpec, PromptInfo, PromptLiteLLMParams, SupportedPromptIntegrations enum and all records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/prompt_endpoints.py#L1-L9
+    why: TestPromptRequest for testing.
+dod:
+  - text: PromptSpec, PromptInfo and PromptLiteLLMParams deserialize from YAML/JSON and default environment to "development".
+    proof: [prompt-spec-tests]
+  - text: PromptSpec.__init__ injects prompt_type="config" when prompt_info is omitted or prompt_type is missing.
+    proof: [prompt-spec-tests]
+  - text: resolve_ignore_flags merges ignore flags from spec and request parameters, using OR semantics.
+    proof: [prompt-contract-tests]
+  - text: _get_model_from_prompt returns the template model if present, else strips every leading integration_name/ prefix from the request model.
+    proof: [prompt-contract-tests]
+  - text: post_compile_prompt_processing merges template optional params over request params, applies model override, and collects completed messages.
+    proof: [prompt-contract-tests]
+  - text: CustomPromptManagement passes through model, messages and params unchanged and raises NotImplementedError on compile attempts.
+    proof: [prompt-contract-tests]
+  - text: TestPromptRequest deserializes from request bodies with dotprompt_content, optional prompt_variables and optional conversation_history.
+    proof: [prompt-contract-tests]
+  - text: PromptManagementClient is a record with prompt_id, prompt_template, prompt_template_model, prompt_optional_params and completed_messages.
+    proof: [prompt-contract-tests]
+  - text: SupportedPromptIntegrations includes dotprompt, langfuse, custom, bitbucket, gitlab, generic_prompt_management and arize_phoenix.
+    proof: [prompt-spec-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: prompt-contract-tests
+      why: contract tests or utilities fail or do not exist
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^prompt_contracts::/)'
+    - id: prompt-spec-tests
+      why: spec and record tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^prompt_spec::/)'
+oracle_cases: []
+deviations:
+  - what: Template optional params fully overwrite request params instead of merging at the top level; the last two arguments of post_compile_prompt_processing flatten and override in one pass.
+    why: LiteLLM does the same; the spec does not require key-by-key merging.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L154-L157
+out_of_scope:
+  - Backend implementations (dotprompt, gitlab, bitbucket, generic API, langfuse, arize); those own their _compile_prompt_helper and async_compile_prompt_helper overrides.
+  - "compile_prompt (L81-106), async_compile_prompt (L108-133), get_chat_completion_prompt (L166-210) and async_get_chat_completion_prompt (L212-257): owned by B4058. These methods wrap backend compilation and add the None-prompt_id short-circuit, the should_run_prompt_management gate and the compile-error wrapping."
+  - Custom Python extension execution through litellm_logging or user hooks; this task defines the passive types only.
+  - Integration with routing, retries, fallbacks or logging; those tasks call these types but are not called by them.
+  - The merge_messages helper; it is not called at the pinned commit in open-source LiteLLM.
+  - StandardCallbackDynamicParams declaration and ownership; this task imports it from B2228's wire registry but the type definition is owned elsewhere in the logging/cost domain.
+pitfalls:
+  - PromptSpec.__init__ must inject missing prompt_type only if prompt_info is absent or if it is present as a dict without prompt_type; don't double-inject.
+  - resolve_ignore_flags uses OR semantics; both false inputs yield false, but true in either position yields true.
+  - _get_model_from_prompt strips every leading "integration_name/" prefix, not just one; if the model is "custom/custom/model", strip both.
+  - CustomPromptManagement.should_run_prompt_management returns true; only the compile methods raise NotImplementedError.
+  - Template optional params (prompt_optional_params) take full precedence; a value present in both request and template uses the template value, never merges individual keys.
+  - AllMessageValues (used for prompt_template and completed_messages) is owned by B004 and imported here; it lives in the wire-format types.
+  - StandardCallbackDynamicParams (used in abstract method signatures) is imported from litellm/types/utils.py but owned elsewhere in the logging domain.
+  - ConfigDict(extra="allow") permits extra fields in PromptInfo and PromptLiteLLMParams (LiteLLM does this for forward compatibility).
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

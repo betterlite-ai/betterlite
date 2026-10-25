@@ -83,11 +83,10 @@ scope:
   - crates/betterlite-openai/src/image_generation.rs
   - crates/betterlite-openai/src/image_generation/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_image_generation.rs
-  - tools/oracle/src/helpers/openai_image_generation/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/image_generation.rs
+  - tools/oracle/src/helpers/openai/image_generation/**
   - tools/oracle/helpers/openai_image_generation.py
+  - tools/oracle/helpers/openai_image_generation/**
   - tools/oracle/cases/helpers/providers/openai-image-generation/**
   - tools/oracle/fuzz/corpus/helper_case/openai_image_generation*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -299,6 +298,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_image_generation in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/image_generation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_image_generation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - DALL-E reply annotations use dict.get defaults and can become explicit None, while GPT uses truthiness to retain
   provider-supplied values.
 - The family selector is case-sensitive and treats every unknown non-DALL-E name as GPT image.

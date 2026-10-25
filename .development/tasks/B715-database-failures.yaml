@@ -88,10 +88,10 @@ scope:
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/database-failures-*
-    - tools/oracle/src/helpers/database_failures.rs
+    - tools/oracle/src/helpers/db/database_failures.rs
+    - tools/oracle/src/helpers/db/database_failures/**
     - tools/oracle/helpers/database_failures.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/helpers/database_failures/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/database-failures/**
     - tools/oracle/fuzz/corpus/helper_case/database-failures-*
@@ -165,6 +165,7 @@ out_of_scope:
   - B012 owns service hook dispatch/exporters; B110 owns _get_parent_otel_span_from_kwargs. This task
     only selects the DB event shape and success/failure scheduling order.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as database_failures in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_failures.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_failures.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A successful lookup leaves the recent stall marker intact until its strict time window expires.
   - Only the second positional argument can supply the PROXY success span; the outer keyword span is ignored there.
   - Failure metrics are awaited and can replace the original exception, while success metrics are scheduled.

@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Generic guardrail contracts and inbound header policy
 status: todo
 depends_on: []
-file: null
+file: tasks/B3770-generic-guardrail-contracts.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py"

@@ -47,8 +47,10 @@ scope:
     - crates/betterlite-core/src/cost/recording/**
     - crates/betterlite-core/src/cost/dispatch.rs
     - crates/betterlite-core/src/helpers.rs
-    - tools/oracle/src/helpers/{mod.rs,cost_recording.rs}
-    - tools/oracle/helpers/{dispatch.py,cost_recording.py}
+    - tools/oracle/src/helpers/core_ops/cost_recording.rs
+    - tools/oracle/src/helpers/core_ops/cost_recording/**
+    - tools/oracle/helpers/cost_recording.py
+    - tools/oracle/helpers/cost_recording/**
     - tools/oracle/cases/helpers/cost-recording/**
     - tools/oracle/fuzz/corpus/helper_case/cost-recording-*
   lint_tables: false
@@ -97,6 +99,7 @@ out_of_scope:
   - B206 retains other core_helpers functions except budget reservation wrappers assigned to the spend settlement leaf; B176 retains the remaining get_litellm_params functions.
   - B204 owns monetary types; B884 owns request bans; B1716 owns end-user attribution and earlier utils.py owners retain its other helpers.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as cost_recording in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/cost_recording.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cost_recording.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A hidden response_cost of zero is authoritative and still bypasses an otherwise positive additional_response_cost.
   - A top-level off_peak_pricing entry alone does not enable custom pricing.
 budget:

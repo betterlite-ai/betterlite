@@ -1,0 +1,59 @@
+id: B4110
+title: Agentic loop ceilings and follow-up keyword precedence
+description: >-
+  Build agentic loop validation and follow-up request assembly across `betterlite-config` and `betterlite-context`.
+  In `betterlite-config`, add a ceiling validator for `max_agentic_loops` that accepts whole numbers spelled as int, float, or string, rejects bool explicitly (since bool is an int subclass), rejects values below 1, and defaults to 3. The validator names the config field where it failed, so errors say which line to fix.
+  In `betterlite-context`, build an immutable kwargs projection for follow-up calls that chains request kwargs and patch kwargs with patch taking precedence, excludes keys already sent as explicit request parameters, and injects the three output keys with depth (incremented), max_loops (unchanged), and fingerprints (request's list plus the current fingerprint appended): `_agentic_loop_depth`, `max_agentic_loops`, `_agentic_loop_fingerprints`.
+  Preserve LiteLLM's precedence (patch overwrites request), exclusion of explicit parameters (so a caller sending tools in the request does not get them again in the follow-up), and the immutable return type so follow-ups cannot mutate shared state. The default ceiling of three survives upgrade from versions that used `int(... or 3)`, so a ceiling of 3 is also the default when a user omits the setting entirely.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/agentic_loop_ceiling.rs
+  - crates/betterlite-context/Cargo.toml
+  - crates/betterlite-context/src/lib.rs
+  - crates/betterlite-context/src/agentic_followup_kwargs.rs
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/agentic_loop_settings.py#L27-L59
+  why: The ceiling validator functions, including bool rejection and whole-number coercion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/agentic_followup_kwargs.py#L7-L32
+  why: The kwargs projection that merges request and patch with patch precedence and explicit-parameter exclusion.
+dod:
+- text: The validator rejects bool values, even when they are the int subclass.
+  proof: [agentic-ceiling-tests]
+- text: The validator accepts whole numbers spelled as int, float, or string, and rejects non-integer floats and non-numeric strings.
+  proof: [agentic-ceiling-tests]
+- text: The validator rejects values below 1 and returns None when max_agentic_loops is None.
+  proof: [agentic-ceiling-tests]
+- text: The default ceiling is 3 when the config loads with no max_agentic_loops set.
+  proof: [agentic-ceiling-tests]
+- text: The follow-up kwargs projection returns an immutable mapping, merges request and patch with patch taking precedence, and excludes keys already sent as request parameters.
+  proof: [agentic-context-tests]
+- text: The projection injects the three output keys with the correct values for any request and patch kwargs supplied, regardless of caller.
+  proof: [agentic-context-tests]
+checks:
+  optional: [mutants]
+  commands:
+  - id: agentic-ceiling-tests
+    why: the validator tests fail, do not exist, or miss an edge case
+    run: cargo nextest run --locked -p betterlite-config -p betterlite-context --no-tests=fail -E 'test(/^agentic_loop_ceiling/)'
+  - id: agentic-context-tests
+    why: the follow-up kwargs tests fail or do not exist
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^agentic_followup/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Agentic loop execution and plan building; those depend on the validator and projection.
+- Web search or code interpreter tool selection and authorization.
+- The integration of max_agentic_loops into the config loader or request/response schemas.
+pitfalls:
+- bool is an int subclass in Rust just as in Python. A ceiling validator that only checks `isinstance(x, int)` will accept true as a value of 1. Test bool rejection explicitly.
+- The follow-up kwargs must never include keys the caller sent as explicit parameters, so a request with tools does not get tools again. Encode this list at the call site, not in the projection.
+- LiteLLM accepts a string like "5" for max_agentic_loops because it was parameterized with environment variables, which resolve to strings. Whole-number coercion from strings is a compatibility feature, not a config-format flexibility.
+- The immutable return type (MappingProxyType in Python) keeps follow-ups from mutating request state. Use a rust enum or a Sealed/Final pattern to enforce this in tests.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 1

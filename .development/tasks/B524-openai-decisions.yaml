@@ -86,11 +86,10 @@ scope:
   - crates/betterlite-openai/src/decisions.rs
   - crates/betterlite-openai/src/decisions/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_decisions.rs
-  - tools/oracle/src/helpers/openai_decisions/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/decisions.rs
+  - tools/oracle/src/helpers/openai/decisions/**
   - tools/oracle/helpers/openai_decisions.py
+  - tools/oracle/helpers/openai_decisions/**
   - tools/oracle/cases/helpers/providers/openai-decisions/**
   - tools/oracle/fuzz/corpus/helper_case/openai_decisions*
   lint_tables: false
@@ -267,6 +266,7 @@ out_of_scope:
   BaseDecisionsConfig.parse_response L369-L370; BaseDecisionsConfig.transform_decisions_response L372-L386; BaseDecisionsConfig.get_error_class
   L388-L394 belong to B099.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_decisions in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/decisions.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_decisions.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - One-option detection uses length < 2 and therefore rejects an empty list too.
 - Python json.dumps stringification distinguishes a boolean choice from a similarly spelled text choice; reuse systemone_choice_key
   instead of Rust debug formatting.

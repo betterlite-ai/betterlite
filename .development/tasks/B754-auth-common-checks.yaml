@@ -111,12 +111,11 @@ scope:
     - crates/betterlite-auth/src/auth_common_checks/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_common_checks.rs
-    - tools/oracle/src/helpers/auth_common_checks/**
+    - tools/oracle/src/helpers/server/auth_common_checks.rs
+    - tools/oracle/src/helpers/server/auth_common_checks/**
     - tools/oracle/helpers/auth_common_checks.py
+    - tools/oracle/helpers/auth_common_checks/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-common-checks/**
     - tools/oracle/fuzz/corpus/helper_case/auth-common-checks-*
     - crates/betterlite-server/src/auth.rs
@@ -394,6 +393,7 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_common_checks in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_common_checks.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_common_checks.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The first failed common check stops later checks and their side effects.
 budget:
   max_changed_lines: 800

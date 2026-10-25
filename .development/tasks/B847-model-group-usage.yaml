@@ -84,12 +84,11 @@ scope:
     - crates/betterlite-router/src/model_group_usage/**
     - crates/betterlite-router/src/lib.rs
     - crates/betterlite-router/Cargo.toml
-    - tools/oracle/src/helpers/model_group_usage.rs
-    - tools/oracle/src/helpers/model_group_usage/**
+    - tools/oracle/src/helpers/router/model_group_usage.rs
+    - tools/oracle/src/helpers/router/model_group_usage/**
     - tools/oracle/helpers/model_group_usage.py
+    - tools/oracle/helpers/model_group_usage/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/model-group-usage/**
     - tools/oracle/fuzz/corpus/helper_case/model-group-usage-*
   lint_tables: false
@@ -554,6 +553,7 @@ out_of_scope:
     (L14097-L14118).'
   - 'litellm/router.py: B021 owns the remaining functions Router.async_pre_routing_hook (L13796-L13980).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as model_group_usage in the router group. Replace the stub Op in tools/oracle/src/helpers/router/model_group_usage.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_group_usage.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Ordinary TPM/RPM remaining headers can be negative while IO remaining headers clamp to zero.
   - No overlap with access groups leaves candidates untouched; this filter is not an authorization verdict.
 budget:

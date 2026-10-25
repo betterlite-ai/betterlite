@@ -58,8 +58,10 @@ scope:
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,cometapi}.rs
     - crates/betterlite-config/tests/cometapi_embedding_settings.rs
-    - tools/oracle/src/helpers/{mod,cometapi_record}.rs
-    - tools/oracle/helpers/{dispatch,cometapi_record}.py
+    - tools/oracle/src/helpers/openai/cometapi_chat_embedding.rs
+    - tools/oracle/src/helpers/openai/cometapi_chat_embedding/**
+    - tools/oracle/helpers/cometapi_chat_embedding.py
+    - tools/oracle/helpers/cometapi_chat_embedding/**
     - tools/oracle/cases/helpers/cometapi-record/**
     - tools/oracle/fuzz/corpus/helper_case/cometapi_record*
   lint_tables: false
@@ -106,6 +108,7 @@ out_of_scope:
   - B1431 owns CometAPI image generation and pricing; B038 owns chat credential resolution and API-family dispatch.
   - B010 owns BaseModelResponseIterator byte framing and lifecycle; CometAPI supplies only its parsed chunk projection.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as cometapi_chat_embedding in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/cometapi_chat_embedding.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cometapi_chat_embedding.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - CometAPI's chat endpoint test accepts chat/completions inside a query as well as at the end of a path.
   - A present null reasoning value overwrites an existing reasoning_content value in each streamed choice.
   - Missing CometAPI embedding credentials produce Bearer None rather than an authentication setup error.

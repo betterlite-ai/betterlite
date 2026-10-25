@@ -111,11 +111,10 @@ scope:
   - crates/betterlite-bedrock/src/converse_tools.rs
   - crates/betterlite-bedrock/src/converse_tools/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_converse_tools.rs
-  - tools/oracle/src/helpers/bedrock_converse_tools/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/converse_tools.rs
+  - tools/oracle/src/helpers/bedrock/converse_tools/**
   - tools/oracle/helpers/bedrock_converse_tools.py
+  - tools/oracle/helpers/bedrock_converse_tools/**
   - tools/oracle/cases/helpers/providers/bedrock-converse-tools/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_converse_tools*
   lint_tables: false
@@ -348,6 +347,7 @@ out_of_scope:
   L471-L473; ServerSentEvent.id L475-L477; ServerSentEvent.retry L479-L481; ServerSentEvent.data L483-L485; ServerSentEvent.json
   L487-L488; ServerSentEvent.__repr__ L490-L492 belong to B599.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_converse_tools in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/converse_tools.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_converse_tools.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Computer function parameters are spread after generated type/name and may override both.
 - The additionalProperties copier does not descend into additionalProperties itself, despite its object-recursion
   docstring.

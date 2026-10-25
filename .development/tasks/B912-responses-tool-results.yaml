@@ -21,11 +21,10 @@ scope:
   - crates/betterlite-core/src/api/responses_tool_results.rs
   - crates/betterlite-core/src/api/responses_tool_results/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_tool_results.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_tool_results.rs
+  - tools/oracle/src/helpers/core_ops/responses_tool_results/**
   - tools/oracle/helpers/responses_tool_results.py
+  - tools/oracle/helpers/responses_tool_results/**
   - tools/oracle/fuzz/corpus/helper_case/responses_tool_results-*
   - tools/oracle/cases/helpers/responses-tool-results/**
   lint_tables: false
@@ -87,6 +86,7 @@ out_of_scope:
 - Other transformation.py methods are B907 tool primitives, B908 options, B909 input dispatch, B910 merges, B911 repair, B913 namespaces/cache writes, B914 response assembly, B915 session history and B1115 details.
 - The unused deduplicate and ensure-output-correspondence methods at L925-L995 have no caller at the pin.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_tool_results in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_tool_results.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_tool_results.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Input reconstruction prefers call_id even when it is call_0; the outbound Responses-item converter alone applies the index-shaped-ID fallback.
 - Function output conversion always emits index=0, whereas apply_patch honors its index argument.
 - A tool-result list with no recognized parts becomes JSON text instead of an empty message.

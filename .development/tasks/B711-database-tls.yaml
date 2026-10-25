@@ -78,11 +78,11 @@ scope:
     - crates/betterlite-db/Cargo.toml
     - Cargo.toml
     - deny.toml
-    - tools/oracle/src/helpers/database_tls.rs
+    - tools/oracle/src/helpers/db/database_tls.rs
+    - tools/oracle/src/helpers/db/database_tls/**
     - tools/oracle/helpers/database_tls.py
+    - tools/oracle/helpers/database_tls/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
     - tools/oracle/cases/helpers/database-tls/**
     - tools/oracle/fuzz/corpus/helper_case/database-tls-*
     - crates/betterlite-config/Cargo.toml
@@ -181,6 +181,7 @@ out_of_scope:
   - Extras utils.py ledger helpers and _prisma_schema_param belong to B716, v2 recovery and excluded
     v1 fallback to B717, drift/index repair to B857 and startup entry points to B051; str_to_bool is B2307.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as database_tls in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_tls.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_tls.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A blank sslcert key suppresses sslrootcert conversion even though it cannot identify a useful certificate.
   - sslkey changes the meaning of sslcert in the reverse translation and bypasses Prisma CA handling.
   - Source verify-ca becomes strict hostname verification through the Prisma dialect.

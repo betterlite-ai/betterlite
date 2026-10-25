@@ -29,11 +29,10 @@ scope:
     - crates/betterlite-vertex/src/error.rs
     - crates/betterlite-vertex/src/model_urls.rs
     - crates/betterlite-vertex/src/model_urls/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/vertex_model_urls.rs
-    - tools/oracle/src/helpers/vertex_model_urls/**
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/vertex/model_urls.rs
+    - tools/oracle/src/helpers/vertex/model_urls/**
     - tools/oracle/helpers/vertex_model_urls.py
+    - tools/oracle/helpers/vertex_model_urls/**
     - tools/oracle/cases/helpers/vertex-model-urls/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_model_urls*
   lint_tables: false
@@ -78,6 +77,7 @@ out_of_scope:
   - Schema conversion at common_utils L603-L1066 belongs to B1307; passthrough route helpers L1067-L1169 belong to B1304 and model-info/token-counter methods L1170-L1317 to B1319.
   - The Gemini class's request options are B1308-B1310, message conversion B1311-B1312, responses B1313-B1314, iterator B1315 and HTTP execution B1316; B031 composes them.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_model_urls in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/model_urls.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_model_urls.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - gemini-flash-latest follows the newer-model branch although gemini-flash does not.
   - The native Vertex helper rejects batch_embedding even though the Gemini helper supports batchEmbedContents.
   - Publisher embeddings keep v1 when a numeric endpoint would use the supplied v1beta1 version.

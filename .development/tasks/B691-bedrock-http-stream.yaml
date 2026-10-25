@@ -94,11 +94,10 @@ scope:
   - crates/betterlite-bedrock/src/bedrock_http_stream.rs
   - crates/betterlite-bedrock/src/bedrock_http_stream/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_http_stream.rs
-  - tools/oracle/src/helpers/bedrock_http_stream/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/http_stream.rs
+  - tools/oracle/src/helpers/bedrock/http_stream/**
   - tools/oracle/helpers/bedrock_http_stream.py
+  - tools/oracle/helpers/bedrock_http_stream/**
   - tools/oracle/cases/helpers/providers/bedrock-http-stream/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_http_stream*
   lint_tables: false
@@ -256,6 +255,7 @@ out_of_scope:
   AmazonCohereChatConfig.get_config L112-L128; AmazonCohereChatConfig.get_supported_openai_params L130-L144; AmazonCohereChatConfig.map_openai_params
   L146-L166 belong to B611.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_http_stream in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/http_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_http_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The post-call message says first stream response received before any event is consumed; do not delay it until
   the first parsed chunk.
 - Sync Converse reads an error body and uses bytes repr, while Invoke uses unread-response reason_phrase without

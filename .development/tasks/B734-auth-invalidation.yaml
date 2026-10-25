@@ -90,12 +90,11 @@ scope:
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_invalidation.rs
-    - tools/oracle/src/helpers/auth_invalidation/**
+    - tools/oracle/src/helpers/auth/invalidation.rs
+    - tools/oracle/src/helpers/auth/invalidation/**
     - tools/oracle/helpers/auth_invalidation.py
+    - tools/oracle/helpers/auth_invalidation/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-invalidation/**
     - tools/oracle/fuzz/corpus/helper_case/auth-invalidation-*
     - crates/betterlite-config/Cargo.toml
@@ -326,6 +325,7 @@ out_of_scope:
     (L177-L198), AuthCacheInvalidationSubscriber._consume (L200-L205), AuthCacheInvalidationSubscriber._apply_message
     (L207-L218), AuthCacheInvalidationSubscriber._close_pubsub (L221-L225).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_invalidation in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/invalidation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_invalidation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A cap-only membership change must keep the live spend counter because a database reseed can undercount unflushed usage.
   - Matching Redis handles, including two None values, trigger memory-only usage eviction during team refresh.
   - Waiting for the alias DEL result matters even when the team SET was queued in the same request batch.

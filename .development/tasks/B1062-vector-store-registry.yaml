@@ -24,10 +24,10 @@ scope:
   - crates/betterlite-config/src/api/vector_store_registry.rs
   - crates/betterlite-config/src/api/vector_store_registry/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-registry-*
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/vector_store_registry.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/vector_store_registry.rs
+  - tools/oracle/src/helpers/core_ops/vector_store_registry/**
   - tools/oracle/helpers/vector_store_registry.py
+  - tools/oracle/helpers/vector_store_registry/**
   - tools/oracle/cases/helpers/vector-store-registry/**
   - tools/oracle/fuzz/corpus/helper_case/vector_store_registry-*
   lint_tables: false
@@ -110,6 +110,7 @@ out_of_scope:
 - delete_vector_store_index,list_all_vector_stores and pop_vector_stores_to_run have no caller at the pin; do not build or test these unused entry points.
 - B061 owns credential resolution; B726/B858 own repository schema/rows. This registry layer performs no store permission check.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as vector_store_registry in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_store_registry.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_store_registry.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Config loading appends incrementally and does not roll back earlier records when a later one is invalid.
 - Registry updates preserve config-owned entries, but registry deletion itself does not protect them.
 - rewrite_query is in the advertised search parameter list but is not accepted by VectorStoreToolParams.

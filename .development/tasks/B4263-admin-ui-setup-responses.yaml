@@ -1,0 +1,68 @@
+id: B4263
+title: Admin UI setup and disabled responses
+description: >-
+  Build missing-environment and disabled-admin-UI HTML response helpers in betterlite-server,
+  using injected master-key and database availability checks. Implement three functions from
+  litellm/proxy/common_utils/admin_ui_utils.py:
+
+  `show_missing_vars_in_env(has_master_key: bool, has_database: bool)` returns None when both
+  are true, or an HTMLResponse with status 200 containing setup instructions if either is missing.
+  When both are missing, list "DATABASE_URL, LITELLM_MASTER_KEY"; when only database is missing,
+  list "DATABASE_URL"; when only master key is missing, list "LITELLM_MASTER_KEY".
+
+  `missing_keys_form(missing_key_names: &str)` formats and returns a full HTML page with
+  environment variable setup instructions, using the input string as the value for the
+  {missing_keys} placeholder in the template.
+
+  `admin_ui_disabled()` returns an HTMLResponse with status 200 containing a fixed HTML page
+  explaining the admin UI is disabled and how to re-enable it.
+
+  All HTML responses preserve LiteLLM's content and structure, with betterlite branding
+  adjustments. Add the module at the top level of betterlite-server, following the jwt_display
+  pattern: admin_setup.rs declared in lib.rs, with admin_setup/ subdirectory for tests.
+scope:
+  paths:
+    - crates/betterlite-server/src/admin_setup.rs
+    - crates/betterlite-server/src/admin_setup/**
+    - crates/betterlite-server/src/lib.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/admin_ui_utils.py#L4-L22
+    why: "`show_missing_vars_in_env` checks availability and returns HTMLResponse with setup form or None."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/admin_ui_utils.py#L25-L96
+    why: "`missing_keys_form` builds HTML setup instruction page with placeholder for missing variable names."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/admin_ui_utils.py#L99-L169
+    why: "`admin_ui_disabled` returns fixed HTML page for disabled admin UI with status 200."
+dod:
+  - text: "`show_missing_vars_in_env(has_master_key, has_database)` returns None when both true, HTMLResponse(status=200) with missing_keys_form listing DATABASE_URL when only database missing, LITELLM_MASTER_KEY when only master key missing, both when both missing."
+    proof: [behavior-tests]
+  - text: "`missing_keys_form(missing_key_names: &str)` returns valid HTML page with charset UTF-8, viewport meta, CSS styling for body/container/heading/pre, heading 'Environment Setup Instructions', variable list with LITELLM_MASTER_KEY generator comment and DATABASE_URL example, placeholder {missing_keys} substituted with input, and support section with Discord and docs links opening in new tab."
+    proof: [behavior-tests]
+  - text: "`admin_ui_disabled()` returns HTMLResponse(status=200) with HTML page containing <!DOCTYPE html>, lang=en, same CSS styling, heading 'Admin UI is Disabled', instruction text with DISABLE_ADMIN_UI=False setting, and support section with Discord and docs links."
+    proof: [behavior-tests]
+  - text: Module declared in lib.rs as `pub mod admin_setup;` following jwt_display pattern with tests in admin_setup/tests.rs.
+    proof: [structure]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: admin_setup module tests must cover all availability combinations and HTML output
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^admin_setup::/)'
+    - id: structure
+      why: module must be declared in lib.rs and follow jwt_display file layout
+      run: grep -q 'pub mod admin_setup;' crates/betterlite-server/src/lib.rs && test -f crates/betterlite-server/src/admin_setup.rs && test -f crates/betterlite-server/src/admin_setup/tests.rs
+oracle_cases: []
+deviations:
+  - what: "`show_missing_vars_in_env` takes boolean flags for availability rather than reading global proxy state like LiteLLM's `master_key` and `prisma_client` module variables."
+    why: betterlite is a standalone Rust server without FastAPI globals or module-level state. Callers independently determine availability and pass flags to these pure functions. Output HTML is identical.
+out_of_scope:
+  - "Route handlers: this task builds response-generation helpers only, without registering HTTP endpoints."
+  - "ProxyConfig or startup task dependencies: availability facts are injected by the caller."
+pitfalls:
+  - "The HTML template uses {missing_keys} as a format placeholder, not Jinja-style template syntax. The string is substituted once with the entire input value."
+  - "Both missing-keys and disabled-UI responses return status 200, not 400 or other error code, matching LiteLLM's choice to explain the situation without signaling an HTTP error."
+  - "The support section's Discord and docs links use target=\"_blank\" to open in new tabs."
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

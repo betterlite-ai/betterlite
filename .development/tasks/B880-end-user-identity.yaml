@@ -84,12 +84,11 @@ scope:
     - crates/betterlite-auth/src/end_user_identity/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/end_user_identity.rs
-    - tools/oracle/src/helpers/end_user_identity/**
+    - tools/oracle/src/helpers/server/end_user_identity.rs
+    - tools/oracle/src/helpers/server/end_user_identity/**
     - tools/oracle/helpers/end_user_identity.py
+    - tools/oracle/helpers/end_user_identity/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/end-user-identity/**
     - tools/oracle/fuzz/corpus/helper_case/end-user-identity-*
     - crates/betterlite-server/src/auth.rs
@@ -373,6 +372,7 @@ out_of_scope:
     commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as end_user_identity in the server group. Replace the stub Op in tools/oracle/src/helpers/server/end_user_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/end_user_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A cached invalid ID can become usable immediately when a default budget is attached; the cache stores existence, not the final decision.
   - The resolver swallows even BudgetExceededError from its existence probe; downstream end-user budget admission is a separate caller responsibility.
 budget:

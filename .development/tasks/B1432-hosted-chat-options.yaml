@@ -50,8 +50,10 @@ scope:
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,hosted_chat}.rs
     - crates/betterlite-config/tests/hosted_chat_settings.rs
-    - tools/oracle/src/helpers/{mod,hosted_chat_options}.rs
-    - tools/oracle/helpers/{dispatch,hosted_chat_options}.py
+    - tools/oracle/src/helpers/models/hosted_chat_options.rs
+    - tools/oracle/src/helpers/models/hosted_chat_options/**
+    - tools/oracle/helpers/hosted_chat_options.py
+    - tools/oracle/helpers/hosted_chat_options/**
     - tools/oracle/cases/helpers/hosted-chat-options/**
     - tools/oracle/fuzz/corpus/helper_case/hosted_chat_options*
   lint_tables: false
@@ -98,6 +100,7 @@ out_of_scope:
   - BasetenConfig._get_openai_compatible_provider_info has no caller at the pin; do not expose its literal BASETEN_API_KEY fallback as live behavior.
   - B210 retains provider resolver defaults and explicit-base precedence; B038 owns executable selection for these host policies.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as hosted_chat_options in the models group. Replace the stub Op in tools/oracle/src/helpers/models/hosted_chat_options.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/hosted_chat_options.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Featherless still forwards legacy functions even though it rejects tools unless dropping is enabled.
   - Baseten removes every baseten/ occurrence before checking the eight-character deployment id.
   - Cerebras copies a supported null option while Featherless discards the same null except for max_completion_tokens.

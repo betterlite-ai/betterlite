@@ -72,12 +72,11 @@ scope:
     - crates/betterlite-auth/src/model_grant_intersection/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/model_grant_intersection.rs
-    - tools/oracle/src/helpers/model_grant_intersection/**
+    - tools/oracle/src/helpers/server/model_grant_intersection.rs
+    - tools/oracle/src/helpers/server/model_grant_intersection/**
     - tools/oracle/helpers/model_grant_intersection.py
+    - tools/oracle/helpers/model_grant_intersection/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/model-grant-intersection/**
     - tools/oracle/fuzz/corpus/helper_case/model-grant-intersection-*
     - crates/betterlite-server/src/auth.rs
@@ -279,6 +278,7 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as model_grant_intersection in the server group. Replace the stub Op in tools/oracle/src/helpers/server/model_grant_intersection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_grant_intersection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - enforced_model_allowlists omits organizations while attribution includes them and omits users; sharing one list builder changes behavior.
   - An empty matched result does not clear an earlier token stamp, even after a swallowed lookup error.
 budget:

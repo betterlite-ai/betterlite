@@ -32,11 +32,10 @@ scope:
   - crates/betterlite-anthropic/fuzz/fuzz_targets/messages_errors.rs
   - crates/betterlite-anthropic/fuzz/corpus/messages_errors/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/messages_errors.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/messages_errors.rs
+  - tools/oracle/src/helpers/anthropic/messages_errors/**
   - tools/oracle/helpers/messages_errors.py
+  - tools/oracle/helpers/messages_errors/**
   - tools/oracle/fuzz/corpus/helper_case/messages_errors-*
   - tools/oracle/cases/helpers/messages-errors/**
   - Cargo.lock
@@ -120,6 +119,7 @@ out_of_scope:
 - B081 owns HTTP error status and headers; B978 owns non-error SSE decoding and response-to-event conversion.
 - B184 owns shared provider exception types; this leaf module does not perform provider exception dispatch.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as messages_errors in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/messages_errors.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_errors.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An existing request_id key with null blocks insertion just as a nonempty id does.
 - Presence of inner type/message keys, not their value types, determines whether an Anthropic error passes through.
 - A dict detail without message suppresses the otherwise usable top-level Message field.

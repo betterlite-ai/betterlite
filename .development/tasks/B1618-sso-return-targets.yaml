@@ -34,10 +34,10 @@ scope:
     - crates/betterlite-config/src/sso_return_targets/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-return-target-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/sso_return_target.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/sso_return_target.py
+    - tools/oracle/src/helpers/server/sso_return_targets.rs
+    - tools/oracle/src/helpers/server/sso_return_targets/**
+    - tools/oracle/helpers/sso_return_targets.py
+    - tools/oracle/helpers/sso_return_targets/**
     - tools/oracle/cases/helpers/sso-return-targets/**
     - tools/oracle/fuzz/corpus/helper_case/sso-return-target-*
   lint_tables: false
@@ -79,6 +79,7 @@ out_of_scope:
   - Redemption at POST /v3/login/exchange belongs to its existing management owner, not this redirect producer.
   - B1624 creates browser sessions and B063 supplies login routes; other ui_sso.py definitions follow B063's inventory.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as sso_return_targets in the server group. Replace the stub Op in tools/oracle/src/helpers/server/sso_return_targets.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/sso_return_targets.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Marking token HttpOnly breaks the retained dashboard even though litellm_cp_return_to itself is HttpOnly.
   - The code redirect appends an ampersand whenever return_to already contains a question mark, matching the source even with a fragment.
 budget:

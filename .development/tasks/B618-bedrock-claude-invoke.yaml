@@ -185,11 +185,10 @@ scope:
   - crates/betterlite-bedrock/src/claude_invoke.rs
   - crates/betterlite-bedrock/src/claude_invoke/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_claude_invoke.rs
-  - tools/oracle/src/helpers/bedrock_claude_invoke/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/claude_invoke.rs
+  - tools/oracle/src/helpers/bedrock/claude_invoke/**
   - tools/oracle/helpers/bedrock_claude_invoke.py
+  - tools/oracle/helpers/bedrock_claude_invoke/**
   - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_claude_invoke*
   lint_tables: false
@@ -405,6 +404,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_claude_invoke in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/claude_invoke.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_claude_invoke.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The tool-search beta is computed from the original tools, while the body uses a renamed and filtered tool list.
 - An explicitly supplied user beta bypasses filtering even when the same automatically generated beta would be removed.
 budget:

@@ -124,11 +124,10 @@ scope:
   - crates/betterlite-bedrock/src/passthrough.rs
   - crates/betterlite-bedrock/src/passthrough/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_passthrough.rs
-  - tools/oracle/src/helpers/bedrock_services_passthrough/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_passthrough.rs
+  - tools/oracle/src/helpers/bedrock/services_passthrough/**
   - tools/oracle/helpers/bedrock_services_passthrough.py
+  - tools/oracle/helpers/bedrock_services_passthrough/**
   - tools/oracle/cases/helpers/providers/bedrock-services-passthrough/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_passthrough*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -337,6 +336,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_passthrough in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_passthrough.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_passthrough.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A plain non-ARN model_id containing slash is truncated by the temporary-endpoint regex; generic URL encoding would
   change that result.
 - Text-run coalescing keeps the first chunk metadata even when subsequent text chunks carry different ids or roles.

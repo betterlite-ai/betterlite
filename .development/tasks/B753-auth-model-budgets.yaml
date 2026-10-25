@@ -104,12 +104,11 @@ scope:
     - crates/betterlite-auth/src/auth_model_budgets/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_model_budgets.rs
-    - tools/oracle/src/helpers/auth_model_budgets/**
+    - tools/oracle/src/helpers/server/auth_model_budgets.rs
+    - tools/oracle/src/helpers/server/auth_model_budgets/**
     - tools/oracle/helpers/auth_model_budgets.py
+    - tools/oracle/helpers/auth_model_budgets/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-model-budgets/**
     - tools/oracle/fuzz/corpus/helper_case/auth-model-budgets-*
     - crates/betterlite-server/src/auth.rs
@@ -295,6 +294,7 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_model_budgets in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_model_budgets.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_model_budgets.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The limiter protocols return booleans, but this caller enforces exceptions, not false returns.
   - Updating the token deliberately omits end_user_max_budget despite the preceding parameter builder setting it.
 budget:

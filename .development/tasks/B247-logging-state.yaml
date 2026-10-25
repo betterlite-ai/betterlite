@@ -19,8 +19,10 @@ scope:
   - crates/betterlite-logging/src/logging_state.rs
   - crates/betterlite-logging/src/logging_state/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/logging/state.rs
+  - tools/oracle/src/helpers/logging/state/**
+  - tools/oracle/helpers/logging_state.py
+  - tools/oracle/helpers/logging_state/**
   - tools/oracle/cases/helpers/logging-state/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -116,6 +118,7 @@ out_of_scope:
   Enterprise callback controls are excluded by repository licensing rules; no enterprise implementation is read
   or ported.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as logging_state in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/state.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/logging_state.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.

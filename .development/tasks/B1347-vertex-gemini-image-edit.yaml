@@ -23,8 +23,10 @@ scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_gemini_edit}.rs
     - crates/betterlite-vertex/src/vertex_gemini_edit/**
-    - tools/oracle/src/helpers/{mod,vertex_gemini_edit}.rs
-    - tools/oracle/helpers/{dispatch,vertex_gemini_edit}.py
+    - tools/oracle/src/helpers/vertex/gemini_image_edit.rs
+    - tools/oracle/src/helpers/vertex/gemini_image_edit/**
+    - tools/oracle/helpers/vertex_gemini_image_edit.py
+    - tools/oracle/helpers/vertex_gemini_image_edit/**
     - tools/oracle/cases/helpers/vertex-gemini-edit/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_gemini_edit*
   lint_tables: false
@@ -61,6 +63,7 @@ out_of_scope:
   - B1345 implements the fallback resolver trio at L72-L97 and decode_google_image; remaining methods and the JSON response protocol declaration belong here.
   - B1349 chooses the edit configuration, while B999 executes the generic image-edit operation.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_gemini_image_edit in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_image_edit.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_gemini_image_edit.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - contents is a single object with role USER in this Vertex adapter.
   - An empty inlineData.data value is omitted even though the generation adapter includes it.
   - Image edit does not advertise n or copy usageMetadata into its response.

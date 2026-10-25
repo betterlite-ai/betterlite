@@ -33,10 +33,10 @@ scope:
     - crates/betterlite-config/src/sso_identity_bridge/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-identity-bridge-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/sso_identity_bridge.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/server/sso_identity_bridge.rs
+    - tools/oracle/src/helpers/server/sso_identity_bridge/**
     - tools/oracle/helpers/sso_identity_bridge.py
+    - tools/oracle/helpers/sso_identity_bridge/**
     - tools/oracle/cases/helpers/sso-identity-bridge/**
     - tools/oracle/fuzz/corpus/helper_case/sso-identity-bridge-*
   lint_tables: false
@@ -80,6 +80,7 @@ out_of_scope:
   - B4663 stores and spends the captured assertion; this task diagnoses its absence but never creates an assertion from an access token.
   - B1622 calls subject projection during Microsoft login; the remaining ui_sso.py functions are indexed in B063.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as sso_identity_bridge in the server group. Replace the stub Op in tools/oracle/src/helpers/server/sso_identity_bridge.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/sso_identity_bridge.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - GOOGLE_CLIENT_ID="" selects Google for capture diagnostics even when GENERIC_CLIENT_ID is also configured.
   - Enrollment is allowed only when every nonempty endpoint override matches its expected canonical tenant URL exactly.
 budget:

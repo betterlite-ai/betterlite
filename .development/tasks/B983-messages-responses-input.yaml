@@ -66,11 +66,8 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/messages_responses_input.rs
-  - tools/oracle/src/helpers/messages_responses_input/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/messages_responses_input.rs
+  - tools/oracle/src/helpers/core_ops/messages_responses_input/**
   - tools/oracle/helpers/messages_responses_input.py
   - tools/oracle/helpers/messages_responses_input/**
   - tools/oracle/fuzz/corpus/helper_case/messages_responses_input-*
@@ -162,6 +159,7 @@ out_of_scope:
 - Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
   never stand in for those HTTP comparisons.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as messages_responses_input in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_responses_input.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_responses_input.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Within LiteLLMAnthropicToResponsesAPIAdapter.translate_responses_api_usage_to_anthropic_usage\'s raw_usage is
   None branch, preserve return AnthropicUsage(input_tokens=0, output_tokens=0) and its nested guards.
 - Within LiteLLMAnthropicToResponsesAPIAdapter._translate_anthropic_image_source_to_url\'s not isinstance(source,

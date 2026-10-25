@@ -27,8 +27,10 @@ scope:
   - crates/betterlite-core/src/api/realtime_backend_relay/**
   - tools/oracle/src/websocket_driver.rs
   - tools/oracle/src/websocket_driver/realtime_backend_relay.rs
-  - tools/oracle/helpers/websocket_dispatch.py
-  - tools/oracle/helpers/realtime_backend_relay_websocket.py
+  - tools/oracle/src/helpers/core_ops/realtime_backend_relay.rs
+  - tools/oracle/src/helpers/core_ops/realtime_backend_relay/**
+  - tools/oracle/helpers/realtime_backend_relay.py
+  - tools/oracle/helpers/realtime_backend_relay/**
   - tools/oracle/cases/websocket/realtime-backend-relay/**
   - tools/oracle/fuzz/corpus/websocket_oracle/realtime-backend-relay-*
   lint_tables: false
@@ -102,6 +104,7 @@ out_of_scope:
 - B1009 owns bidirectional_forward and final client close. B1110 owns normalized client sends; B1006 owns usage/success accumulation; B2455 owns guardrail detection and B1007 its runner.
 - Remaining streaming methods are B1004 contracts, B1005 beta helpers and B1124 buffering. _has_realtime_guardrails has no caller at the pin.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as realtime_backend_relay in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/realtime_backend_relay.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/realtime_backend_relay.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A malformed received frame still prevents a later non1000 close from being classified as a pre-frame refusal.
 - The raw transcript path bypasses beta event translation and uses only GA normalization for its direct client send.
 - Transformed-path exceptions are swallowed per frame; the same error in the raw path ends the relay.

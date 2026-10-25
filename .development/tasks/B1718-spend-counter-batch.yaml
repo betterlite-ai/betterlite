@@ -35,8 +35,10 @@ scope:
     - crates/betterlite-auth/src/spend_batch.rs
     - crates/betterlite-auth/src/spend_batch/**
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/{mod.rs,counter_keys.rs}
-    - tools/oracle/helpers/{dispatch.py,counter_keys.py}
+    - tools/oracle/src/helpers/auth/spend_counter_batch.rs
+    - tools/oracle/src/helpers/auth/spend_counter_batch/**
+    - tools/oracle/helpers/spend_counter_batch.py
+    - tools/oracle/helpers/spend_counter_batch/**
     - tools/oracle/cases/helpers/counter-keys/**
     - tools/oracle/fuzz/corpus/helper_case/counter-keys-*
   lint_tables: false
@@ -67,6 +69,7 @@ deviations: []
 out_of_scope:
   - B126 owns Redis pipelines and response decoding; this task owns every function in spend_counter_batch.py but no counter increment or reservation policy.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_counter_batch in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/spend_counter_batch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_counter_batch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A null MGET result suppresses a redundant per-key read, whereas an omitted key requires that fallback.
   - Closing a scope must happen before a read-then-write operation can mistake the old snapshot for current spend.
 budget:

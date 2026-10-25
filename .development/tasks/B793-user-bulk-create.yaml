@@ -144,12 +144,11 @@ scope:
     - crates/betterlite-server/src/user_bulk_create/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/user_bulk_create.rs
-    - tools/oracle/src/helpers/user_bulk_create/**
+    - tools/oracle/src/helpers/server/user_bulk_create.rs
+    - tools/oracle/src/helpers/server/user_bulk_create/**
     - tools/oracle/helpers/user_bulk_create.py
+    - tools/oracle/helpers/user_bulk_create/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/users.rs
-    - tools/oracle/helpers/management/users.py
     - tools/oracle/cases/helpers/user-bulk-create/**
     - tools/oracle/fuzz/corpus/helper_case/user-bulk-create-*
     - crates/betterlite-server/src/user_bulk_create/fixtures/**
@@ -257,6 +256,7 @@ out_of_scope:
     (L735-L745).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as user_bulk_create in the server group. Replace the stub Op in tools/oracle/src/helpers/server/user_bulk_create.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/user_bulk_create.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The first invalid duplicate still reserves its email, and the database email query does not strip it.
   - success=true can accompany an error; meta.created counts the persisted user, not successful follow-ups.
 budget:

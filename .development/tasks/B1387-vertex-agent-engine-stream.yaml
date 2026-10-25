@@ -31,8 +31,10 @@ scope:
     - crates/betterlite-provider/src/adapters.rs
     - crates/betterlite-provider/src/adapters/{mod,vertex_agent_stream}.rs
     - crates/betterlite-provider/src/adapters/vertex_agent_stream/**
-    - tools/oracle/src/helpers/{mod,vertex_agent_chunk}.rs
-    - tools/oracle/helpers/{dispatch,vertex_agent_chunk}.py
+    - tools/oracle/src/helpers/provider/vertex_agent_engine_stream.rs
+    - tools/oracle/src/helpers/provider/vertex_agent_engine_stream/**
+    - tools/oracle/helpers/vertex_agent_engine_stream.py
+    - tools/oracle/helpers/vertex_agent_engine_stream/**
     - tools/oracle/cases/helpers/vertex-agent-chunk/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_agent_chunk*
   lint_tables: false
@@ -74,6 +76,7 @@ out_of_scope:
   - Agent Engine URL/auth/request and buffered-answer methods remain B1386; B031 selects this adapter for chat completion.
   - B010 retains the generic BaseModelResponseIterator decoder, while B005 owns the external chat SSE envelope.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_agent_engine_stream in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/vertex_agent_engine_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_agent_engine_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Streaming state_delta text is ignored even though buffered Agent Engine responses can use it.
   - Each chunk's first text value is forwarded directly without snapshot differencing.
   - An empty usage_metadata object is absent usage rather than an explicit zero usage block.

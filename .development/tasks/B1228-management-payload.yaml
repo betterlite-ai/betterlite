@@ -69,12 +69,11 @@ scope:
     - crates/betterlite-server/src/management_payload/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/management_payload.rs
-    - tools/oracle/src/helpers/management_payload/**
+    - tools/oracle/src/helpers/server/management_payload.rs
+    - tools/oracle/src/helpers/server/management_payload/**
     - tools/oracle/helpers/management_payload.py
+    - tools/oracle/helpers/management_payload/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/management-payload/**
     - tools/oracle/fuzz/corpus/helper_case/management-payload-*
   lint_tables: false
@@ -155,6 +154,7 @@ out_of_scope:
     MemberWriteTx.litellm_budgettable (L105-L106), MemberWriteTx.litellm_teammembership (L108-L109).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as management_payload in the server group. Replace the stub Op in tools/oracle/src/helpers/server/management_payload.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/management_payload.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Endpoints without http_request still need the legacy success/failure span ended using the function
     name.
   - OTel v2 skips the legacy payload entirely; do not emit it twice.

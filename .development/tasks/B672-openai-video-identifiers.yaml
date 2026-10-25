@@ -92,11 +92,10 @@ scope:
   - crates/betterlite-openai/src/openai_video_identifiers.rs
   - crates/betterlite-openai/src/openai_video_identifiers/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_video_identifiers.rs
-  - tools/oracle/src/helpers/openai_video_identifiers/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/video_identifiers.rs
+  - tools/oracle/src/helpers/openai/video_identifiers/**
   - tools/oracle/helpers/openai_video_identifiers.py
+  - tools/oracle/helpers/openai_video_identifiers/**
   - tools/oracle/cases/helpers/providers/openai-video-identifiers/**
   - tools/oracle/fuzz/corpus/helper_case/openai_video_identifiers*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -288,6 +287,7 @@ out_of_scope:
   L502-L528; OpenAIVideoConfig.transform_video_edit_response L530-L540; OpenAIVideoConfig.transform_video_extension_request
   L542-L561; OpenAIVideoConfig.transform_video_extension_response L563-L572 belong to B526.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_video_identifiers in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/video_identifiers.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_video_identifiers.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The video ID docstring says vid_, but the executable constant is video_.
 - A semicolon inside a provider ID is not escaped, so only the third field survives extraction.
 - An I/O exception during the video MIME probe can leave the file cursor changed; only successful probes restore

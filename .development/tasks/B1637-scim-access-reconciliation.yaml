@@ -32,10 +32,10 @@ scope:
     - crates/betterlite-server/src/scim_access_reconciliation.rs
     - crates/betterlite-server/src/scim_access_reconciliation/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/scim_access_state.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/scim_access_state.py
+    - tools/oracle/src/helpers/server/scim_access_reconciliation.rs
+    - tools/oracle/src/helpers/server/scim_access_reconciliation/**
+    - tools/oracle/helpers/scim_access_reconciliation.py
+    - tools/oracle/helpers/scim_access_reconciliation/**
     - tools/oracle/cases/helpers/scim-access-state/**
     - tools/oracle/fuzz/corpus/helper_case/scim-access-state-*
   lint_tables: false
@@ -76,6 +76,7 @@ out_of_scope:
   - "scim_v2.py non-write support: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1636 L764-L787/L854-L949/L1097-L1142."
   - "Other scim_v2.py functions: B1638 L164-L232/L1661-L1879; B1639 L1965-L2197/L2325-L2397; B1640 L2511-L2708; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B1643 L1882-L1962; B064 L2711-L2816/L2867-L2945."
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as scim_access_reconciliation in the server group. Replace the stub Op in tools/oracle/src/helpers/server/scim_access_reconciliation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/scim_access_reconciliation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - SQL blocked=false alone misses existing NULL keys and would leave a deactivated user's credentials usable.
   - The absence of rollback is observable both when roster writes partially succeed and when key updates fail before eviction begins.
 budget:

@@ -35,10 +35,10 @@ scope:
     - crates/betterlite-core/src/api/bfl/edit.rs
     - crates/betterlite-core/src/api/bfl/edit/**
     - crates/betterlite-config/src/providers/bfl.rs
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/bfl_edit.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/bfl_edit.py
+    - tools/oracle/src/helpers/core_ops/bfl_edit_format.rs
+    - tools/oracle/src/helpers/core_ops/bfl_edit_format/**
+    - tools/oracle/helpers/bfl_edit_format.py
+    - tools/oracle/helpers/bfl_edit_format/**
     - tools/oracle/cases/helpers/bfl-edit/**
     - tools/oracle/fuzz/corpus/helper_case/bfl_edit*
   lint_tables: false
@@ -75,6 +75,7 @@ deviations:
 out_of_scope:
   - B1520 submits edits and runs the polling lifecycle; B1517 owns authentication settings and all BFL response-byte decoding.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as bfl_edit_format in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/bfl_edit_format.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bfl_edit_format.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - mask appears in the advertised supported list but is absent from _BFL_REQUEST_PARAMS and needs its own byte conversion.
   - An empty image list fails rather than falling through to a later image.
   - The async BFL-specific handler calls the synchronous transformer at the pin, so both entry paths must enforce the media policy.

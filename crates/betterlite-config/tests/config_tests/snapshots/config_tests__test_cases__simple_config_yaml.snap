@@ -45,6 +45,11 @@ Ok(
             num_retries: None,
             request_timeout: None,
             drop_params: None,
+            proxy_trust: ProxyTrust {
+                aiohttp_trust_env: false,
+                disable_aiohttp_trust_env: false,
+            },
+            bedrock_metadata_fields: [],
             modify_params: false,
             default_max_tokens: 4096,
         },

@@ -3,7 +3,7 @@ milestone: M8 platform
 title: CLI keyring access and verified secret storage
 status: todo
 depends_on: [B002]
-file: null
+file: tasks/B4590-cli-keyring.yaml
 covers:
   - "litellm/litellm_core_utils/cli_keyring.py"
 parent: B135

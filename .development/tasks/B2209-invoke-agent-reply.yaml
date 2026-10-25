@@ -242,6 +242,7 @@ out_of_scope:
   AmazonInvokeAgentConfig.validate_environment L475-L485; AmazonInvokeAgentConfig.get_error_class L487-L488; AmazonInvokeAgentConfig.should_fake_stream
   L490-L496 belong to B652.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as invoke_agent_reply in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/invoke_agent_reply.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/invoke_agent_reply.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The frame parser swallows its own BedrockError, so an exception frame can disappear while a corrupt framing checksum
   fails the whole response.
 - No trace model leaves model=None in the reply because the initialized usage record already contains the model
@@ -259,11 +260,10 @@ scope:
   - crates/betterlite-bedrock/src/invoke_agent_reply.rs
   - crates/betterlite-bedrock/src/invoke_agent_reply/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/invoke_agent_reply.rs
-  - tools/oracle/src/helpers/invoke_agent_reply/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/invoke_agent_reply.rs
+  - tools/oracle/src/helpers/bedrock/invoke_agent_reply/**
   - tools/oracle/helpers/invoke_agent_reply.py
+  - tools/oracle/helpers/invoke_agent_reply/**
   - tools/oracle/cases/helpers/providers/invoke-agent-reply/**
   - tools/oracle/fuzz/corpus/helper_case/invoke_agent_reply*
   - crates/betterlite-bedrock/fuzz/Cargo.toml

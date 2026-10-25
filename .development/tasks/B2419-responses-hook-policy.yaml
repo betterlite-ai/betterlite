@@ -41,11 +41,10 @@ scope:
   - crates/betterlite-config/src/api/responses_hook_policy.rs
   - crates/betterlite-config/src/api/responses_hook_policy/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-hook-policy-*
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_hook_policy.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_hook_policy.rs
+  - tools/oracle/src/helpers/core_ops/responses_hook_policy/**
   - tools/oracle/helpers/responses_hook_policy.py
+  - tools/oracle/helpers/responses_hook_policy/**
   - tools/oracle/cases/helpers/responses-hook-policy/**
   - tools/oracle/fuzz/corpus/helper_case/responses_hook_policy-*
   - Cargo.lock
@@ -141,6 +140,7 @@ out_of_scope:
 - _agentic_hook_kwargs and _server_fulfilled_tools_in_request serve other HTTP-handler paths and remain with their Anthropic API integration; they are not called by this policy slice.
 - Other llm_http_handler.py families retain their endpoint owners; this task claims only the eleven named functions.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_hook_policy in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_hook_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_hook_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The pre-hook converts an explicitly present null model/provider to the literal string "None".
 - Fingerprint repetition is checked before max depth and is not an ordinary callback failure.
 - String callback resolution affects capability detection but does not make B2415 execute string entries.

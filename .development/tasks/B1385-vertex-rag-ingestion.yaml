@@ -41,8 +41,10 @@ scope:
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/tests/vertex_rag_settings.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_rag*
-    - tools/oracle/src/helpers/{mod,vertex_rag_chunking}.rs
-    - tools/oracle/helpers/{dispatch,vertex_rag_chunking}.py
+    - tools/oracle/src/helpers/vertex/rag_ingestion.rs
+    - tools/oracle/src/helpers/vertex/rag_ingestion/**
+    - tools/oracle/helpers/vertex_rag_ingestion.py
+    - tools/oracle/helpers/vertex_rag_ingestion/**
     - tools/oracle/cases/helpers/vertex-rag-chunking/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_rag_chunking*
   lint_tables: false
@@ -93,6 +95,7 @@ out_of_scope:
   - B097 owns generic ingestion orchestration and routes; this task exports a provider contract and does not register them.
   - Native file upload preparation is B1376, and arbitrary file-URL acquisition is outside these byte-only store methods.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_rag_ingestion in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/rag_ingestion.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_rag_ingestion.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A failed corpus import does not delete the GCS object already uploaded.
   - The source's wait_for_import=false branch never awaits the SDK coroutine and therefore performs no import.
   - Explicit upload credentials do not replace the application-default identity used by vertexai.init.

@@ -321,6 +321,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/azure/common_utils.py: BaseAzureLLM._try_get_default_azure_credential_provider
   L450-L478 belong to B677.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_urls in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/urls.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_urls.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The generic Azure path helper tests route membership against the whole URL string, so a matching query substring
   can suppress path append.
 - Header preservation is exact-case api-key here, unlike B529 get_azure_request_auth_headers.
@@ -353,11 +354,10 @@ scope:
   - crates/betterlite-azure/src/azure_urls.rs
   - crates/betterlite-azure/src/azure_urls/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_urls.rs
-  - tools/oracle/src/helpers/azure_urls/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/urls.rs
+  - tools/oracle/src/helpers/azure/urls/**
   - tools/oracle/helpers/azure_urls.py
+  - tools/oracle/helpers/azure_urls/**
   - tools/oracle/cases/helpers/providers/azure-urls/**
   - tools/oracle/fuzz/corpus/helper_case/azure_urls*
   - crates/betterlite-config/Cargo.toml

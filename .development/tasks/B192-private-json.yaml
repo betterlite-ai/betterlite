@@ -29,8 +29,10 @@ scope:
   - crates/betterlite-logging/src/private_json/**
   - crates/betterlite-logging/fuzz/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/logging/private_json.rs
+  - tools/oracle/src/helpers/logging/private_json/**
+  - tools/oracle/helpers/private_json.py
+  - tools/oracle/helpers/private_json/**
   - tools/oracle/cases/helpers/private-json/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -114,6 +116,7 @@ out_of_scope:
 - >-
   Windows ACL parity must be added with B170's platform packaging; this task's permission tests run on pinned Debian.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as private_json in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/private_json.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/private_json.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Explicit overwrite is non-atomic and must never be an automatic fallback after failed staging.
 - A restrictive final file mode does not undo a secret leaked through a permissive temporary file.
 - Use tempfile or an equivalent existing atomic-file facility rather than building random filenames by hand.

@@ -1,0 +1,106 @@
+id: B3967
+title: Lunary events and Weights and Biases trace trees
+description: >-
+  Build Lunary's paired start/terminal events and Weights and Biases' request/response
+  trace-tree projections. Lunary sends two track_event calls per request: one at request
+  start and one at completion with output/usage/error. W&B builds trace trees from request
+  and response objects, supporting three request types (edit, text completion, chat completion)
+  with distinct request/choice formatting.
+
+  For Lunary, parse messages to handle string input, single-element arrays (flattened),
+  and message lists with tool_calls. Parse tool_calls with custom or standard function
+  variants and filter on presence of either. Parse usage tokens to a {completion, prompt}
+  dict with zero-fallback. Strip extra_body, user and extra_headers except Template-Id
+  from optional_params. Convert non-serializable extra parameters to strings, except the
+  tools parameter which stays as-is (preserving list/dict structure).
+
+  For W&B, implement request/response resolver for three OpenAI-compatible response objects,
+  building trace trees with ISO millisecond timestamps from response created time and
+  elapsed duration. Format request as prose: edit sends instruction/input, completion
+  sends prompt, chat completion formats messages by role. Build results from choice text
+  fields. Preserve the three resolver branches and their distinct choice handling.
+
+  Lunary version checking uses packaging.version.Version >= 0.1.43. W&B resolver swallows
+  exceptions and logs warnings, returning None on unknown response object.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/analytics/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lunary.py#L12-L16
+    why: parse_usage converts usage dict to completion/prompt dict with zero-fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lunary.py#L19-L42
+    why: parse_tool_calls filters on function or custom variant and builds {type, id, function} dicts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lunary.py#L45-L74
+    why: parse_messages recurses on single-item lists, extracts message from nested message dict, handles tool_calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lunary.py#L79-L96
+    why: LunaryLogger.__init__ checks version >= 0.1.43 and imports lunary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lunary.py#L98-L182
+    why: log_event sends start event with parsed input/metadata/tags, then terminal event with output/usage/error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weights_biases.py#L17-L23
+    why: OpenAIResponse protocol defines __getitem__ and get methods on a response with object attribute.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weights_biases.py#L25-L43
+    why: OpenAIRequestResponseResolver.__call__ dispatches on response object type and catches exceptions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weights_biases.py#L46-L73
+    why: results_to_trace_tree builds WBTraceTree with span attributes, start_time_ms and end_time_ms from response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weights_biases.py#L75-L91
+    why: _resolve_edit formats request as instruction/input and response as edited text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weights_biases.py#L93-L109
+    why: _resolve_completion formats request as prompt and response as completion text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weights_biases.py#L111-L134
+    why: _resolve_chat_completion formats messages by role and response choices by role and content.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weights_biases.py#L136-L153
+    why: _request_response_result_to_trace builds results list and calls results_to_trace_tree.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weights_biases.py#L164-L193
+    why: WeightsBiasesLogger.__init__ and log_event implement resolver dispatch and wandb.init/run.log/run.finish.
+
+dod:
+  - text: Lunary parse_usage returns {completion, prompt} dict with zero-fallback for missing tokens.
+    proof: [analytics-tests]
+  - text: Lunary parse_tool_calls filters on function or custom variant and preserves type, id and function name/arguments.
+    proof: [analytics-tests]
+  - text: Lunary parse_messages flattens single-item lists, recurses on nested message dict, includes tool_calls in serialized output.
+    proof: [analytics-tests]
+  - text: LunaryLogger.__init__ enforces minimum version >= 0.1.43 and raises ImportError for outdated versions.
+    proof: [analytics-tests]
+  - text: Lunary log_event sends paired start/terminal track_event calls with parsed messages, usage, error and metadata.
+    proof: [analytics-tests]
+  - text: Lunary extra parameter stringification skips the tools key, preserving it as a list or dict while stringifying other non-primitive types; a named case exercises a tools value that is a list of dicts.
+    proof: [analytics-tests]
+  - text: W&B resolver builds trace trees for edit, completion and chat completion response types.
+    proof: [analytics-tests]
+  - text: W&B trace tree spans use ISO millisecond timestamps calculated from response created time and elapsed seconds.
+    proof: [analytics-tests]
+  - text: W&B resolver swallows exceptions and returns None on unknown response object type.
+    proof: [analytics-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: analytics-tests
+      why: the analytics tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^sdk_analytics::/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Lunary and W&B SDK calls (lunary.track_event, wandb.init, trace_tree, run.log, run.finish) require a concrete Python SDK bridge or native execution contract before dispatch.
+    why: These external SDK calls are live behavior in LiteLLM but need explicit transport/execution contracts to be implemented in betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lunary.py#L154-L179
+
+out_of_scope: []
+
+pitfalls:
+  - Lunary parse_messages returns a string for single-element lists, not a list; this is intentional flattening.
+  - Lunary extra parameter cleanup pops extra_body, user and extra_headers (keeping only Template-Id); order matters for metadata precedence.
+  - Lunary extra parameter stringification at line 134 explicitly excludes the "tools" key (`if not isinstance(value, (str, int, bool, float)) and param != "tools"`), so a tools value that is a list or dict stays unchanged while other non-primitive types are converted to strings.
+  - W&B resolver builds prose request/choice strings with hardcoded markdown formatting; do not substitute plain text.
+  - W&B span name concatenates response['model'] with fallback 'openai', response['object'] and response['created']; all three must be present.
+  - W&B results use response['choices'], not parsed choice text; build Result from choice['text'] field directly.
+
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

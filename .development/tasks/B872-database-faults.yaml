@@ -74,12 +74,11 @@ scope:
     - crates/betterlite-db/src/database_faults/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - tools/oracle/src/helpers/database_faults.rs
-    - tools/oracle/src/helpers/database_faults/**
+    - tools/oracle/src/helpers/db/database_faults.rs
+    - tools/oracle/src/helpers/db/database_faults/**
     - tools/oracle/helpers/database_faults.py
+    - tools/oracle/helpers/database_faults/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
     - tools/oracle/cases/helpers/database-faults/**
     - tools/oracle/fuzz/corpus/helper_case/database-faults-*
     - crates/betterlite-db/src/database_faults/fixtures/**
@@ -179,6 +178,7 @@ out_of_scope:
     (L422-L435).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as database_faults in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_faults.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_faults.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A data error is not a connection outage and must never enable the restricted fallback token.
 budget:
   max_changed_lines: 625

@@ -39,10 +39,10 @@ scope:
     - crates/betterlite-core/src/api/polly.rs
     - crates/betterlite-core/src/api/polly/speech.rs
     - crates/betterlite-core/src/api/polly/speech/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/polly_speech.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/polly_speech.rs
+    - tools/oracle/src/helpers/core_ops/polly_speech/**
     - tools/oracle/helpers/polly_speech.py
+    - tools/oracle/helpers/polly_speech/**
     - tools/oracle/cases/helpers/polly-speech/**
     - tools/oracle/fuzz/corpus/helper_case/polly_speech*
   lint_tables: false
@@ -78,6 +78,7 @@ deviations: []
 out_of_scope:
   - The empty aws_polly package initializers need no runtime implementation; AWS identity acquisition and signing internals remain B590-B595.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as polly_speech in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/polly_speech.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/polly_speech.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Passing model=standard does not choose the standard engine without a slash-prefixed model string.
   - API base is copied into effective parameters even when null, preserving dispatch's replacement semantics.
   - The ssml_body field carries signed JSON here, not an XML payload.

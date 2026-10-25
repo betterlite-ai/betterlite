@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Safe bug report records and issue links
 status: todo
 depends_on: []
-file: null
+file: tasks/B4170-bug-report-links.yaml
 covers:
   - "litellm/litellm_core_utils/bug_report.py"
 parent: B121

@@ -54,11 +54,10 @@ scope:
   - tools/oracle/sdk_http/speech_chat_bridge.py
   - tools/oracle/cases/sdk-http/speech-chat-bridge/**
   - tools/oracle/fuzz/corpus/sdk_http_case/speech-chat-bridge-*
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/speech_media_type.rs
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/speech_media_type.py
+  - tools/oracle/src/helpers/openai/speech_chat_bridge.rs
+  - tools/oracle/src/helpers/openai/speech_chat_bridge/**
+  - tools/oracle/helpers/speech_chat_bridge.py
+  - tools/oracle/helpers/speech_chat_bridge/**
   - tools/oracle/cases/helpers/speech-media-type/**
   - tools/oracle/fuzz/corpus/helper_case/speech_media_type-*
   lint_tables: false
@@ -136,6 +135,7 @@ out_of_scope:
 - B1001 owns every audio_utils/utils.py function through calculate_request_duration at line 331; the five MIME/sniff functions after it belong here.
 - B004 owns completion execution and HttpxBinaryResponseContent; B011 owns provider error normalization; B1135's base speech interface is not called by this bridge.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as speech_chat_bridge in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/speech_chat_bridge.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/speech_chat_bridge.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The bridge does not require voice; nonstring voice omits chat audio rather than raising a voice error.
 - Response model controls PCM-to-WAV conversion, so request-model detection alone is insufficient.
 - Non-Gemini output is always labeled audio/mpeg here; MIME sniffing is a separate helper used by route consumers.

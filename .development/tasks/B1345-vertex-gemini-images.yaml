@@ -33,8 +33,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/google_image.rs
     - crates/betterlite-vertex/fuzz/corpus/google_image/**
-    - tools/oracle/src/helpers/{mod,vertex_gemini_images}.rs
-    - tools/oracle/helpers/{dispatch,vertex_gemini_images}.py
+    - tools/oracle/src/helpers/vertex/gemini_images.rs
+    - tools/oracle/src/helpers/vertex/gemini_images/**
+    - tools/oracle/helpers/vertex_gemini_images.py
+    - tools/oracle/helpers/vertex_gemini_images/**
     - tools/oracle/cases/helpers/vertex-gemini-images/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_gemini_images*
   lint_tables: false
@@ -88,6 +90,7 @@ out_of_scope:
   - B1346 owns remaining Imagen generation methods; B1347 owns remaining Gemini edit methods; B1348 owns remaining Imagen edit methods.
   - B1349 owns generation execution, selector exports and Vertex image pricing.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_gemini_images in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_images.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_gemini_images.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Vertex image generation uses a five-entry size map, not Studio's nearest-aspect algorithm.
   - The credential fallback can use litellm_settings.vertex_credentials even though the generic Vertex credential getter does not.
   - An empty custom base skips credential validation but cannot satisfy the URL builder's truthy custom-base branch.

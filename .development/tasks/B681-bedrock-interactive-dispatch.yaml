@@ -91,11 +91,10 @@ scope:
   - crates/betterlite-provider/src/bedrock_interactive_dispatch.rs
   - crates/betterlite-provider/src/bedrock_interactive_dispatch/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_interactive_dispatch.rs
-  - tools/oracle/src/helpers/bedrock_interactive_dispatch/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/bedrock_interactive_dispatch.rs
+  - tools/oracle/src/helpers/provider/bedrock_interactive_dispatch/**
   - tools/oracle/helpers/bedrock_interactive_dispatch.py
+  - tools/oracle/helpers/bedrock_interactive_dispatch/**
   - tools/oracle/cases/helpers/providers/bedrock-interactive-dispatch/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_interactive_dispatch*
   lint_tables: false
@@ -240,6 +239,7 @@ out_of_scope:
   L321-L328; BedrockVectorStoreConfig.transform_search_vector_store_response L330-L367; BedrockVectorStoreConfig.transform_create_vector_store_request
   L370-L375; BedrockVectorStoreConfig.transform_create_vector_store_response L377-L378 belong to B660.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_interactive_dispatch in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/bedrock_interactive_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_interactive_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The realtime operation passes an owned duplex connection, not a buffered response body.
 budget:
   max_changed_lines: 550

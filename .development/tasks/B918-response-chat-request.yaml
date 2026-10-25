@@ -24,11 +24,10 @@ scope:
   - crates/betterlite-config/src/api/response_chat_request.rs
   - crates/betterlite-config/src/api/response_chat_request/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/response-chat-request-*
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/response_chat_request.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/response_chat_request.rs
+  - tools/oracle/src/helpers/core_ops/response_chat_request/**
   - tools/oracle/helpers/response_chat_request.py
+  - tools/oracle/helpers/response_chat_request/**
   - tools/oracle/fuzz/corpus/helper_case/response_chat_request-*
   - tools/oracle/cases/helpers/response-chat-request/**
   lint_tables: false
@@ -124,6 +123,7 @@ out_of_scope:
 - B917 owns history/shared reasoning; B1136 content/choices/annotations; B919 response assembly; B920 iterator construction and streaming; B2412 SSE recovery; the status helper at L1313-L1325 has no caller at the pin.
 - B216 owns custom-tool grammar normalization and B921 executes the request over HTTP.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as response_chat_request in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/response_chat_request.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/response_chat_request.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The source mutates extra_body and discards its unsupported leftovers; its docstring is inaccurate.
 - reasoning_auto_summary and its environment flag are ORed, so an explicit false cannot override true in the environment.
 - The previous-response warning says the ID is ignored but it remains in the request.

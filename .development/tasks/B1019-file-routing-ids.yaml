@@ -30,11 +30,10 @@ scope:
   - crates/betterlite-core/fuzz/fuzz_targets/file_routing_ids.rs
   - crates/betterlite-core/fuzz/corpus/file_routing_ids/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/file_routing_ids.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/file_routing_ids.rs
+  - tools/oracle/src/helpers/core_ops/file_routing_ids/**
   - tools/oracle/helpers/file_routing_ids.py
+  - tools/oracle/helpers/file_routing_ids/**
   - tools/oracle/fuzz/corpus/helper_case/file_routing_ids-*
   - tools/oracle/cases/helpers/file-routing-ids/**
   - Cargo.lock
@@ -115,6 +114,7 @@ out_of_scope:
 - B1020 owns credential/model-routing functions L317-L709; B1021 owns creation/managed-requirement functions L889-L1130. The MIME inference/normalization functions L772-L830 serve only unused wrappers and have no live caller.
 - B1041 owns all batch-response/database functions from _batch_response_model_id_candidates through update_batch_in_database (L1138-L1549), except the two unused mapping functions above.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as file_routing_ids in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/file_routing_ids.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/file_routing_ids.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - openai_code records the bound-specific reason, but ProxyException.code remains the string "400".
 - A model-embedded id with an empty model can decode its original id without being considered model-embedded.
 - The legacy batch parser throws when neither batch nor generic-response marker exists; do not turn that branch into an empty successful id.

@@ -95,11 +95,10 @@ scope:
   - crates/betterlite-provider/src/foundry_resource_dispatch.rs
   - crates/betterlite-provider/src/foundry_resource_dispatch/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_resource_dispatch.rs
-  - tools/oracle/src/helpers/foundry_resource_dispatch/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/foundry_resource_dispatch.rs
+  - tools/oracle/src/helpers/provider/foundry_resource_dispatch/**
   - tools/oracle/helpers/foundry_resource_dispatch.py
+  - tools/oracle/helpers/foundry_resource_dispatch/**
   - tools/oracle/cases/helpers/providers/foundry-resource-dispatch/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_resource_dispatch*
   lint_tables: false
@@ -254,6 +253,7 @@ out_of_scope:
   L182-L259; AzureAIVectorStoreConfig.transform_create_vector_store_request L261-L266; AzureAIVectorStoreConfig.transform_create_vector_store_response
   L268-L269 belong to B558.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_resource_dispatch in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/foundry_resource_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_resource_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Foundry image edit version defaults differ by Flux and MAI and must reach the leaf unchanged.
 budget:
   max_changed_lines: 550

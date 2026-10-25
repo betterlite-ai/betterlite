@@ -108,11 +108,10 @@ scope:
   - crates/betterlite-bedrock/src/model_routes.rs
   - crates/betterlite-bedrock/src/model_routes/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_model_routes.rs
-  - tools/oracle/src/helpers/bedrock_model_routes/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/model_routes.rs
+  - tools/oracle/src/helpers/bedrock/model_routes/**
   - tools/oracle/helpers/bedrock_model_routes.py
+  - tools/oracle/helpers/bedrock_model_routes/**
   - tools/oracle/cases/helpers/providers/bedrock-model-routes/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_model_routes*
   lint_tables: false
@@ -368,6 +367,7 @@ out_of_scope:
   CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
   or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_model_routes in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/model_routes.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_model_routes.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - When several route tokens occur in a model id, the route table order wins rather than their position in the string.
 - A json_schema key present with None can pass the native-route gate; that gate does not validate the schema body.
 budget:

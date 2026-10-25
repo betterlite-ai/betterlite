@@ -146,11 +146,10 @@ scope:
   - Cargo.toml
   - deny.toml
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_s3_listing.rs
-  - tools/oracle/src/helpers/bedrock_services_s3_listing/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_s3_listing.rs
+  - tools/oracle/src/helpers/bedrock/services_s3_listing/**
   - tools/oracle/helpers/bedrock_services_s3_listing.py
+  - tools/oracle/helpers/bedrock_services_s3_listing/**
   - tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_listing*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -463,6 +462,7 @@ out_of_scope:
   L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_s3_listing in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_s3_listing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_s3_listing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty-string purpose has the broad listing query but filters out every result and disables the output-bucket
   walk.
 - An authorized listing entry retains its raw percent-encoded key, even though authorization checked a decoded form.

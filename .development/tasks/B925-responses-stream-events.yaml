@@ -22,11 +22,10 @@ scope:
   - crates/betterlite-core/src/api/responses_stream_events.rs
   - crates/betterlite-core/src/api/responses_stream_events/**
   - crates/betterlite-core/fuzz/corpus/responses_stream_value/responses-event-*
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_stream_events.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_stream_events.rs
+  - tools/oracle/src/helpers/core_ops/responses_stream_events/**
   - tools/oracle/helpers/responses_stream_events.py
+  - tools/oracle/helpers/responses_stream_events/**
   - tools/oracle/fuzz/corpus/helper_case/responses_stream_events-*
   - tools/oracle/cases/helpers/responses-stream-events/**
   lint_tables: false
@@ -106,6 +105,7 @@ out_of_scope:
 - Test-only hook facades L801-L807 and L995-L1006 have no production caller at the pin and are excluded.
 - B942-B945 own websocket code after L1732 and quota invocation; B005 owns network SSE framing.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_stream_events in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_stream_events.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_stream_events.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Re-stripping the data prefix here would corrupt payloads because the SSE decoder already removed it.
 - Malformed JSON still establishes completion_start_time before it is silently skipped.
 - A terminal event is stored and logged without setting finished; the driver still consumes the stream boundary.

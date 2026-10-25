@@ -1,0 +1,113 @@
+id: B4173
+title: Process memory and runtime diagnostic snapshots
+description: >-
+  Build typed process, cache, router and runtime diagnostic snapshot functions that capture system state at a point in time, independent of HTTP handlers. These functions feed the debug routes registered in B4174 and the config reports built in B4171.
+
+
+  The snapshots capture process memory usage (RSS, virtual, percent of system), garbage collection statistics, object type histograms, cache memory use, router data structure sizes, and process-level info from /proc/self/statm or psutil. Implement in betterlite-core as pure functions that snapshot data but do not persist or serve HTTP—the routes belong to B4174.
+
+
+  For process memory, try psutil.Process() first; fall back to reading /proc/self/statm and /proc/meminfo on Linux when psutil is unavailable. On other platforms without psutil, return an unsupported error that handlers can surface as HTTP 501. Memory thresholds are fixed: critical at >80%, warning at >60%, healthy otherwise. When process info cannot be read (psutil fails or /proc is unavailable), return an error-status snapshot so handlers see a consistent response type; on that error, default to healthy status instead of failing the whole endpoint.
+
+
+  The Rust implementation cannot provide CPython GC generations, object type names, tracemalloc sites, or asyncio coroutine introspection that only Python has. Accepted interim behavior is to return `error.type="unsupported_runtime"` with `error.code="unsupported_runtime"` for endpoints that ask for those measurements; startup GC configuration warns but does not fail. Cache and router snapshots remain independently implementable by reading runtime state without Python introspection.
+
+
+  Preserve Linux /proc decoding with fuzz coverage, memory threshold comparisons at exact >80 and >60 boundaries, per-section error handling so a cache-read failure does not silence router stats, and deterministic samples in tests so dynamic runtime measures can be validated.
+scope:
+  paths:
+    - crates/betterlite-core/**
+    - Cargo.toml
+    - deny.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L29-L53
+    why: configure_gc_thresholds reads PYTHON_GC_THRESHOLD and parses comma-separated integers, warning on invalid format.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L234-L315
+    why: _process_memory_usage and _summary_process_memory build the process memory snapshot with health status.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L254-L283
+    why: _ProcFilesystemProcess reads /proc/self/statm and /proc/meminfo, and _process_handle tries psutil.Process() first, falling back to the proc reader.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L286-L291
+    why: _health_status compares memory_percent > 80 for critical, > 60 for warning, else healthy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L412-L437
+    why: _get_gc_statistics collects Python GC thresholds, counts, and collection history; native Rust returns 501 for this.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L448-L481
+    why: _type_name_counts, _get_object_type_counts, _type_names and _get_uncollectable_objects_info inspect Python object types; native Rust returns 501 for these.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L484-L555
+    why: _get_cache_memory_stats measures in-memory cache dict and ttl dict sizes and item counts for user keys, router, logging, and redis.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L558-L621
+    why: _get_router_memory_stats measures model_list, model_names, deployment_names, latency_map, fallbacks sizes and the router object itself.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L624-L669
+    why: _get_process_memory_info uses psutil to read RAM, virtual memory, file descriptors and threads; native with /proc fallback uses the earlier process snapshot.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1606
+    why: PYTHON_GC_THRESHOLD environment variable provides comma-separated generation thresholds; look it up through B002's env boundary.
+  - url: https://man7.org/linux/man-pages/man5/proc.5.html
+    why: /proc/self/statm format (pages) and /proc/meminfo MemTotal format (kilobytes).
+dod:
+  - text: Process memory snapshots read psutil.Process() when available; on import failure, fall back to /proc/self/statm and /proc/meminfo on Linux; on other platforms or when /proc is unavailable, return an error that allows handlers to surface 501.
+    proof: [process-memory-snapshots]
+  - text: Health status is "critical" when memory_percent > 80, "warning" when > 60, else "healthy", matching LiteLLM exactly.
+    proof: [process-memory-snapshots]
+  - text: Process info errors do not fail the summary snapshot; the snapshot returns with an error field and status defaults to "healthy".
+    proof: [process-memory-snapshots]
+  - text: Cache memory snapshot includes item counts and size measurements for user_api_key_cache, llm_router.cache, proxy_logging_obj.internal_usage_cache and redis_usage_cache, with per-cache error handling.
+    proof: [cache-router-snapshots]
+  - text: Router memory snapshot measures model_list, model_names, deployment_names, deployment_latency_map, fallbacks and the router object itself, with per-field error handling.
+    proof: [cache-router-snapshots]
+  - text: The diagnostic_snapshots module exports types and functions with no HTTP handler or FastAPI dependency; calling code handles routing and auth.
+    proof: [diagnostic-snapshots-tests]
+  - text: A fuzz target at crates/betterlite-core/fuzz/fuzz_targets/proc_statm_meminfo.rs feeds arbitrary bytes to the /proc parser; replays_the_proc_parser_corpus test replays every corpus file without panic.
+    proof: [proc-parser-fuzz]
+  - text: PYTHON_GC_THRESHOLD is looked up through B002's configuration boundary (B002.ConfigLoader or equivalent), not by direct env reading.
+    proof: [gc-config-lookup]
+  - text: Snapshot functions for GC statistics, object type counts and uncollectable objects return results indicating unsupported_runtime error type in Rust, since Python runtime introspection is not available.
+    proof: [gc-snapshot-unsupported]
+  - text: Every mutant in process memory thresholds, health status assignment and cache/router size calculations is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: process-memory-snapshots
+      why: Process memory snapshot builders do not exist, fail to compile, or do not distinguish psutil/proc/error cases correctly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^diagnostic_snapshots::.*process/)'
+    - id: cache-router-snapshots
+      why: Cache and router snapshot builders do not exist, fail, or do not handle per-section errors
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^diagnostic_snapshots::.*(cache|router)/)'
+    - id: diagnostic-snapshots-tests
+      why: The diagnostic_snapshots module tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^diagnostic_snapshots::/)'
+    - id: proc-parser-fuzz
+      why: The /proc parser fuzz target or its corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-core/fuzz/fuzz_targets/proc_statm_meminfo.rs && test -n "$(ls -A crates/betterlite-core/fuzz/corpus/proc_statm_meminfo)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_proc_parser_corpus)'
+    - id: gc-snapshot-unsupported
+      why: GC statistics and object type histogram snapshots do not return unsupported_runtime error types
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^diagnostic_snapshots::.*(gc|object_type|uncollectable)/)'
+    - id: gc-config-lookup
+      why: GC threshold configuration is not looked up through B002's boundary
+      run: grep -q 'ConfigLoader\|config' crates/betterlite-core/src/diagnostic_snapshots.rs && ! grep -q 'std::env::var.*PYTHON_GC_THRESHOLD' crates/betterlite-core/src/diagnostic_snapshots.rs
+oracle_cases: []
+deviations:
+  - what: Endpoints requesting Python-only measurements return HTTP 501 with error.type=unsupported_runtime instead of returning the measurements.
+    why: Native Rust cannot provide CPython GC generations, object type counts, tracemalloc sites, or asyncio introspection. 501 signals to clients that these features are unavailable in this deployment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L60-L127
+  - what: GC configuration warnings about unavailable Python instrumentation are logged but do not prevent startup.
+    why: betterlite does not have a Python runtime to instrument; warnings acknowledge the limitation while allowing server startup to proceed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L29-L53
+out_of_scope:
+  - HTTP routes and handlers; these functions are helpers registered by B4174.
+  - Request authentication and authorization; those are handled by B4174's route dependencies.
+  - Persistent logging of diagnostic snapshots; these are point-in-time captures.
+  - Integration with asyncio task tracking; /debug/asyncio-tasks returns 501 in native Rust.
+  - Memory profiling with tracemalloc; not available without Python.
+pitfalls:
+  - On Linux, /proc/self/statm lines may be split or contain trailing whitespace; split on whitespace and take indices [0] and [1] as size_pages and resident_pages.
+  - /proc/meminfo may have lines in any order; search for "MemTotal:" prefix rather than assuming line position.
+  - sys.getsizeof in Python reports the size of a single object, not the full memory of nested structures; mirror this shallow-size behavior in Rust with appropriate field measurements.
+  - Cache item counts in LiteLLM include both cache_dict and ttl_dict entries; sum them for each cache component.
+  - Router snapshots measure sys.getsizeof on data structures that may not exist (llm_router may be None); check hasattr before accessing each field and handle AttributeError per-section rather than failing the whole snapshot.
+  - When psutil is unavailable and /proc is unreadable, do not guess process memory; return an error message so handlers know the measurement failed.
+  - Fuzz targets are committed with corpus files that must not be .gitignored; if cargo fuzz init writes fuzz/.gitignore, remove the corpus exclusion line.
+review_level: standard
+budget:
+  max_changed_lines: 750
+  max_new_expects: 2

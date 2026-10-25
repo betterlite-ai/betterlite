@@ -115,12 +115,11 @@ scope:
     - crates/betterlite-server/src/user_bulk_delete/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/user_bulk_delete.rs
-    - tools/oracle/src/helpers/user_bulk_delete/**
+    - tools/oracle/src/helpers/server/user_bulk_delete.rs
+    - tools/oracle/src/helpers/server/user_bulk_delete/**
     - tools/oracle/helpers/user_bulk_delete.py
+    - tools/oracle/helpers/user_bulk_delete/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/users.rs
-    - tools/oracle/helpers/management/users.py
     - tools/oracle/cases/helpers/user-bulk-delete/**
     - tools/oracle/fuzz/corpus/helper_case/user-bulk-delete-*
     - crates/betterlite-server/src/user_bulk_delete/fixtures/**
@@ -214,6 +213,7 @@ out_of_scope:
     (L193-L196).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as user_bulk_delete in the server group. Replace the stub Op in tools/oracle/src/helpers/server/user_bulk_delete.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/user_bulk_delete.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Organization authority comes from membership rows, and an orgless target fails even for an org admin.
   - Only the transaction is caught as row errors; a failed postcommit broadcast can leave deletion committed.
 budget:

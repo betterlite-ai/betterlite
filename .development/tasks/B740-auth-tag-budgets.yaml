@@ -73,12 +73,11 @@ scope:
     - crates/betterlite-auth/src/auth_tag_budgets/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_tag_budgets.rs
-    - tools/oracle/src/helpers/auth_tag_budgets/**
+    - tools/oracle/src/helpers/server/auth_tag_budgets.rs
+    - tools/oracle/src/helpers/server/auth_tag_budgets/**
     - tools/oracle/helpers/auth_tag_budgets.py
+    - tools/oracle/helpers/auth_tag_budgets/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-tag-budgets/**
     - tools/oracle/fuzz/corpus/helper_case/auth-tag-budgets-*
     - crates/betterlite-server/src/auth.rs
@@ -290,6 +289,7 @@ out_of_scope:
     commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_tag_budgets in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_tag_budgets.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_tag_budgets.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A failed second cache write discards every fetched row from this response while the first write survives for the next request.
   - The group registry is an exported loader for grant collection, not a prerequisite inside the group budget batch fetch.
 budget:

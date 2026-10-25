@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Lens records, job transitions and finding identity
 status: todo
 depends_on: []
-file: null
+file: tasks/B4500-lens-state.yaml
 covers:
   - "litellm/proxy/lens/models.py"
   - "litellm/proxy/lens/state.py"

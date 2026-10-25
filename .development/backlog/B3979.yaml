@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Supabase request lifecycle records
 status: todo
 depends_on: [B002, B068]
-file: null
+file: tasks/B3979-supabase-logging.yaml
 covers:
   - "litellm/integrations/supabase.py"
 parent: B114

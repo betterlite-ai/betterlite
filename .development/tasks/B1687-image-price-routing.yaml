@@ -42,10 +42,10 @@ scope:
     - crates/betterlite-core/src/cost/image_dispatch/**
     - crates/betterlite-provider/src/pricing.rs
     - crates/betterlite-provider/src/pricing/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/image_request_options.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/image_request_options.py
+    - tools/oracle/src/helpers/core_ops/image_price_routing.rs
+    - tools/oracle/src/helpers/core_ops/image_price_routing/**
+    - tools/oracle/helpers/image_price_routing.py
+    - tools/oracle/helpers/image_price_routing/**
     - tools/oracle/cases/helpers/image-request-options/**
     - tools/oracle/fuzz/corpus/helper_case/image-request-options-*
   lint_tables: false
@@ -88,6 +88,7 @@ out_of_scope:
   - B1674 owns image cost arithmetic, B1675 owns Bedrock image and Anthropic search arithmetic, and the existing B031/B033/B035/B038-B042 provider owners retain their other image/grounding formulas.
   - In llm_cost_calc/utils.py, B1669 handles off-peak windows, B1670 threshold/base rates, B1671 token-detail arithmetic, B1672 generic/uplift formulas, B1673 billed rates and savings, B1674 image usage math, B1675 search counters and B1676 character metrics; this task adds only L116-L123 and L1865-L2093.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as image_price_routing in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/image_price_routing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/image_price_routing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Bedrock's image dispatcher omits model_info even though neighboring provider branches receive deployment prices.
   - Perplexity's zero is a completed search-price answer, so replacing it with None adds an erroneous generic fee.
   - Only optional_params.size is regex-checked here; explicit and response sizes bypass that preliminary filter.

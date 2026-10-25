@@ -44,10 +44,10 @@ scope:
     - crates/betterlite-core/fuzz/corpus/bfl_boundary/**
     - crates/betterlite-config/src/providers.rs
     - crates/betterlite-config/src/providers/bfl.rs
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/bfl_generation.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/bfl_generation.py
+    - tools/oracle/src/helpers/core_ops/bfl_generation_format.rs
+    - tools/oracle/src/helpers/core_ops/bfl_generation_format/**
+    - tools/oracle/helpers/bfl_generation_format.py
+    - tools/oracle/helpers/bfl_generation_format/**
     - tools/oracle/cases/helpers/bfl-generation/**
     - tools/oracle/fuzz/corpus/helper_case/bfl_generation*
   lint_tables: false
@@ -85,6 +85,7 @@ deviations: []
 out_of_scope:
   - The package initializers only expose the configuration, constants and later B1519/B1520 handlers; they do not require singleton state in Rust.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as bfl_generation_format in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/bfl_generation_format.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bfl_generation_format.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The trust boundary is bfl.ai and its subdomains, not equality with the submission host.
   - An existing response image lets an otherwise empty result succeed.
   - image_url is forwarded to BFL as a field; this transformation never downloads it.

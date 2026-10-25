@@ -27,11 +27,10 @@ scope:
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/messages_sse_events.rs
   - crates/betterlite-core/fuzz/corpus/messages_sse_events/**
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/messages_sse_events.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/messages_sse_events.rs
+  - tools/oracle/src/helpers/core_ops/messages_sse_events/**
   - tools/oracle/helpers/messages_sse_events.py
+  - tools/oracle/helpers/messages_sse_events/**
   - tools/oracle/cases/helpers/messages-sse-events/**
   - tools/oracle/fuzz/corpus/helper_case/messages_sse_events-*
   - tools/oracle/src/sdk_http.rs
@@ -141,6 +140,7 @@ out_of_scope:
   to B572 and sampling/forced-tool/thinking-capability methods to B688; those owners enumerate the complete callable ranges.
   This entry adds only ANTHROPIC_ERROR_STATUS_CODE_MAP and calls none of those functions.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as messages_sse_events in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_sse_events.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_sse_events.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Payload classification trusts data.type rather than the SSE event label; message-stop byte detection does the opposite.
 - An empty dict error is terminal even though it has no parsable error type.
 - Native overloaded_error maps to503, whereas constructing an overloaded Anthropic exception envelope uses529.

@@ -112,11 +112,10 @@ scope:
   - Cargo.toml
   - deny.toml
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_workload_identity.rs
-  - tools/oracle/src/helpers/openai_workload_identity/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/workload_identity.rs
+  - tools/oracle/src/helpers/openai/workload_identity/**
   - tools/oracle/helpers/openai_workload_identity.py
+  - tools/oracle/helpers/openai_workload_identity/**
   - tools/oracle/cases/helpers/providers/openai-workload-identity/**
   - tools/oracle/fuzz/corpus/helper_case/openai_workload_identity*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -350,6 +349,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_workload_identity in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/workload_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_workload_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An absent api_base allows identity exchange without parsing, but an explicitly non-HTTPS base disables it even
   if its hostname is OpenAI.
 - The identity cache is keyed by file path, not token-file contents; refreshed subject tokens must come from the

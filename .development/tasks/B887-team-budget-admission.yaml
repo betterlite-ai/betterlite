@@ -78,12 +78,11 @@ scope:
     - crates/betterlite-auth/src/team_budget_admission/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/team_budget_admission.rs
-    - tools/oracle/src/helpers/team_budget_admission/**
+    - tools/oracle/src/helpers/server/team_budget_admission.rs
+    - tools/oracle/src/helpers/server/team_budget_admission/**
     - tools/oracle/helpers/team_budget_admission.py
+    - tools/oracle/helpers/team_budget_admission/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/team-budget-admission/**
     - tools/oracle/fuzz/corpus/helper_case/team-budget-admission-*
     - crates/betterlite-server/src/auth.rs
@@ -289,6 +288,7 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as team_budget_admission in the server group. Replace the stub Op in tools/oracle/src/helpers/server/team_budget_admission.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/team_budget_admission.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A zero member override disables spending, but a zero team-member default supplies no cap.
   - Team hard equality passes while member and window equality fail.
   - Soft recipient lists retain whitespace that comma-separated strings discard.

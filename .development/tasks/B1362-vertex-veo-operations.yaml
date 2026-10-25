@@ -34,8 +34,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_veo_operation.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_veo_operation/**
-    - tools/oracle/src/helpers/{mod,vertex_veo_operation}.rs
-    - tools/oracle/helpers/{dispatch,vertex_veo_operation}.py
+    - tools/oracle/src/helpers/vertex/veo_operations.rs
+    - tools/oracle/src/helpers/vertex/veo_operations/**
+    - tools/oracle/helpers/vertex_veo_operations.py
+    - tools/oracle/helpers/vertex_veo_operations/**
     - tools/oracle/cases/helpers/vertex-veo-operation/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_veo_operation*
   lint_tables: false
@@ -88,6 +90,7 @@ out_of_scope:
   - B1361 owns image conversion, constructor, model extraction, capability/parameter/size mapping, validation, URL construction and create/edit request bodies.
   - videos/__init__.py only re-exports the configuration assembled from these two tasks; B093 owns public video routes and request execution.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_veo_operations in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/veo_operations.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_veo_operations.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A completed operation with a truthy error is failed rather than completed.
   - Duration zero falls back to the configured eight-second default for usage.
   - Content retrieval rejects GCS-only output even though edit accepts that same GCS reference.

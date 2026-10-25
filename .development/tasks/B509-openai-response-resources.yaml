@@ -81,11 +81,10 @@ scope:
   - crates/betterlite-openai/src/response_resources.rs
   - crates/betterlite-openai/src/response_resources/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_response_resources.rs
-  - tools/oracle/src/helpers/openai_response_resources/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/response_resources.rs
+  - tools/oracle/src/helpers/openai/response_resources/**
   - tools/oracle/helpers/openai_response_resources.py
+  - tools/oracle/helpers/openai_response_resources/**
   - tools/oracle/cases/helpers/providers/openai-response-resources/**
   - tools/oracle/fuzz/corpus/helper_case/openai_response_resources*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -265,6 +264,7 @@ out_of_scope:
   L673-L730; OpenAIResponsesAPIConfig.should_fake_stream L732-L752; OpenAIResponsesAPIConfig.supports_native_websocket
   L754-L756 belong to B508.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_response_resources in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/response_resources.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_response_resources.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - GET/cancel validation happens outside their JSON exception wrapper and has no lax fallback; reusing compact response
   conversion changes failures.
 - Only compact edits the URL path structurally; a shared query-aware URL join would alter the other resource helpers.

@@ -20,8 +20,10 @@ scope:
   - crates/betterlite-prompts/src/response_tool_calls.rs
   - crates/betterlite-prompts/src/response_tool_calls/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/prompts/response_tool_calls.rs
+  - tools/oracle/src/helpers/prompts/response_tool_calls/**
+  - tools/oracle/helpers/response_tool_calls.py
+  - tools/oracle/helpers/response_tool_calls/**
   - tools/oracle/cases/helpers/response-tool-calls/**
   - tools/oracle/fuzz/corpus/helper_case/**
   - crates/betterlite-prompts/fuzz/**
@@ -89,6 +91,7 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B180 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as response_tool_calls in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/response_tool_calls.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/response_tool_calls.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.

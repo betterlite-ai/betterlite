@@ -93,11 +93,10 @@ scope:
   - crates/betterlite-openai/src/files.rs
   - crates/betterlite-openai/src/files/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_files.rs
-  - tools/oracle/src/helpers/openai_files/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/files.rs
+  - tools/oracle/src/helpers/openai/files/**
   - tools/oracle/helpers/openai_files.py
+  - tools/oracle/helpers/openai_files/**
   - tools/oracle/cases/helpers/providers/openai-files/**
   - tools/oracle/fuzz/corpus/helper_case/openai_files*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -319,6 +318,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_files in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/files.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_files.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The synchronous paths use a type cast rather than an isinstance guard, so the async-client ValueError must not
   be invented for sync retrieve/list.
 - The chunk iterator owns context exit; closing only the outer FileContentStreamingResult would leak an entered

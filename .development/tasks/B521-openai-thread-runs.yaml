@@ -70,11 +70,10 @@ scope:
   - crates/betterlite-openai/src/thread_runs.rs
   - crates/betterlite-openai/src/thread_runs/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_thread_runs.rs
-  - tools/oracle/src/helpers/openai_thread_runs/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/thread_runs.rs
+  - tools/oracle/src/helpers/openai/thread_runs/**
   - tools/oracle/helpers/openai_thread_runs.py
+  - tools/oracle/helpers/openai_thread_runs/**
   - tools/oracle/cases/helpers/providers/openai-thread-runs/**
   - tools/oracle/fuzz/corpus/helper_case/openai_thread_runs*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -257,6 +256,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_thread_runs in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/thread_runs.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_thread_runs.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - async_run_thread_stream is a regular function returning a manager, so awaiting it changes the SDK seam.
 - The stream parameter is accepted by arun_thread but never forwarded to create_and_poll.
 budget:

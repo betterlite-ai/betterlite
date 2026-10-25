@@ -119,11 +119,8 @@ scope:
   - crates/betterlite-server/fuzz/fuzz_targets/request_form.rs
   - crates/betterlite-server/fuzz/corpus/request_form/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/request_form.rs
-  - tools/oracle/src/helpers/request_form/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/server/request_form.rs
+  - tools/oracle/src/helpers/server/request_form/**
   - tools/oracle/helpers/request_form.py
   - tools/oracle/helpers/request_form/**
   - tools/oracle/fuzz/corpus/helper_case/request_form-*
@@ -291,6 +288,7 @@ out_of_scope:
   L331-L340, rewrite_request_model L343-L358, _safe_get_request_headers L361-L387.'
 - B082, B083 and B1032 own image, transcription and file-upload HTTP routing and authentication.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as request_form in the server group. Replace the stub Op in tools/oracle/src/helpers/server/request_form.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/request_form.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Metadata conflicts are order-sensitive; sorting form keys changes which subtree survives and whether a warning is emitted.
 - Python float("nan") succeeds; leaving the original string is not equivalent to carrying a non-finite numeric value.
 - max_file_size_mb is checked with > after converting bytes to MiB; an equal-sized file is allowed once the premium gate is removed.

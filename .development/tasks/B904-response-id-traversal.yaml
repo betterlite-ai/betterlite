@@ -28,11 +28,10 @@ scope:
   - crates/betterlite-core/src/api/response_id_traversal.rs
   - crates/betterlite-core/src/api/response_id_traversal/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/response_id_traversal.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/response_id_traversal.rs
+  - tools/oracle/src/helpers/core_ops/response_id_traversal/**
   - tools/oracle/helpers/response_id_traversal.py
+  - tools/oracle/helpers/response_id_traversal/**
   - tools/oracle/fuzz/corpus/helper_case/response_id_traversal-*
   - tools/oracle/cases/helpers/response-id-traversal/**
   lint_tables: false
@@ -107,6 +106,7 @@ out_of_scope:
 - B905 owns prompt/parameter helpers and _is_object_dict/_is_object_sequence; B906 owns token-detail and usage helpers in the same file.
 - B929 authorizes response IDs and B930 chooses deployment affinity; these traversal methods perform neither check.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as response_id_traversal in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/response_id_traversal.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/response_id_traversal.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Rebuilding a new reasoning list would leave the router's fallback snapshot holding the original encrypted items.
 - An already encoded response ID skips container rewriting too; checking each nested field first changes that early return.
 - List text blocks use truthiness, so a whitespace-only block counts as readable while a whitespace-only summary string does not.

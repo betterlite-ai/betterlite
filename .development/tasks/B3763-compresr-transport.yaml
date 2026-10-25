@@ -1,0 +1,99 @@
+id: B3763
+title: Compresr query projection and compression transport
+description: >-
+  Build Compresr's query-aware message selection, trusted API endpoint validation, and HTTP compression transport with safe failure handling. The compression request is query-aware: tool outputs are compressed against the intent of the tool call that produced them (resolved via tool_call_id), falling back to the last user message for everything else.
+  Validate the api_base parameter to reject non-http(s) schemes and cloud-metadata hosts/IPs (including alternate encodings like integer IPv4, IPv4-mapped IPv6), accepting private ranges for on-prem. This is defense-in-depth, not SSRF-complete: the shared httpx client follows redirects and may re-resolve DNS.
+  Compress single or batch contexts through POST to /api/compress/question-specific/ or /api/compress/question-specific/batch, sending the message content as context and the selected query; passthrough extra compression_params forwarded to the API verbatim, but never let them override context/query/inputs.
+  Validate response cardinality: batch responses must return one result dict per input, aligned by position, or fail_open/fail_closed applies. When fail_open is configured, log and forward the request uncompressed; when fail_closed (the default), raise 502 with a generic error message. Keep upstream response bodies and API keys out of client-visible errors, writing full details only to server logs.
+  IP and URL validation retain LiteLLM's accepted private-network deployments and its documented DNS/redirect limitations. A malformed-but-200 response must not raise when fail_open applies; defensively parse token-stat fields so error handling after a successful HTTP response does not surface as a 500.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/compresr_transport.rs
+    - crates/betterlite-guardrails/src/lib.rs
+    - crates/betterlite-guardrails/Cargo.toml
+    - tools/oracle/cases/helpers/compresr-transport/**
+    - tools/oracle/src/helpers/guardrails/compresr_transport.rs
+    - tools/oracle/src/helpers/guardrails/compresr_transport/**
+    - tools/oracle/helpers/compresr_transport.py
+    - tools/oracle/helpers/compresr_transport/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L109-L144
+    why: IP address parsing and api_base validation, including blocked cloud-metadata hosts and alternate IP encodings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L171-L220
+    why: Query selection for compression (tool intent vs. last user message fallback) and tool intent rendering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L155-L168
+    why: Writing compressed text back into content, preserving shape (string vs. text-part list).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L719-L829
+    why: HTTP compression request with single/batch payloads, response validation, and error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L601-L621
+    why: Request header construction and fail_open/fail_closed error handling, keeping upstream details from client-visible 502.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L237-L246
+    why: Safe response body extraction for logging without letting corrupted Content-Encoding raise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L223-L234
+    why: Defensive parsing of token-stat fields from the compression response.
+dod:
+  - text: api_base validation rejects non-http(s) schemes, cloud-metadata IPs (169.254.169.254, fd00:ec2::254, 100.100.100.200, 168.63.129.16), and cloud-metadata hostnames (metadata.google.internal, metadata.goog, metadata.azure.com, metadata.azure.internal), but accepts private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16).
+    proof: [compresr-transport-tests]
+  - text: Alternate IP encodings (decimal/hex single-integer IPv4, IPv4-mapped IPv6) are parsed and validated the same way as dotted notation.
+    proof: [compresr-transport-tests]
+  - text: Query selection resolves tool outputs via tool_call_id on prior assistant messages, falling back to the last user message.
+    proof: [compresr-transport-tests]
+  - text: Batch compression requests return one result dict per input, in the same order. Mismatched cardinality triggers fail_open/fail_closed.
+    proof: [compresr-transport-tests]
+  - text: Compression requests pass extra compression_params to the API, but never let them override context, query, or inputs.
+    proof: [compresr-transport-tests]
+  - text: fail_open logs the error and returns None (caller forwards uncompressed); fail_closed logs and raises 502 with a generic message, never the upstream response body.
+    proof: [compresr-transport-tests]
+  - text: Response body extraction never raises even when Content-Encoding is corrupt; token-stat fields are parsed defensively.
+    proof: [compresr-transport-tests]
+  - text: Content shape is preserved when writing compressed text back (string stays string; all-text part list merges into one part with cache_control breakpoint from the last part).
+    proof: [compresr-transport-tests]
+checks:
+  optional: []
+  commands:
+    - id: compresr-transport-tests
+      why: The transport and query-selection tests fail, do not exist, or do not cover the required cases
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_transport::/) or test(/^compresr_query_selection::/) or test(/^compresr_content_shape::/) or test(/^compresr_failure_handling::/)' --no-capture
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/compresr_transport.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/compresr-transport/ip-literal-decimal-encoding.yaml
+  - tools/oracle/cases/helpers/compresr-transport/ip-literal-hex-encoding.yaml
+  - tools/oracle/cases/helpers/compresr-transport/ipv4-mapped-ipv6.yaml
+  - tools/oracle/cases/helpers/compresr-transport/blocked-metadata-host.yaml
+  - tools/oracle/cases/helpers/compresr-transport/query-for-tool-output-resolves-tool-call-id.yaml
+  - tools/oracle/cases/helpers/compresr-transport/query-for-tool-output-legacy-function-call.yaml
+  - tools/oracle/cases/helpers/compresr-transport/query-fallback-to-last-user-message.yaml
+  - tools/oracle/cases/helpers/compresr-transport/render-tool-intent-name-and-args.yaml
+  - tools/oracle/cases/helpers/compresr-transport/batch-response-cardinality-mismatch.yaml
+  - tools/oracle/cases/helpers/compresr-transport/safe-response-text-undecodable-encoding.yaml
+  - tools/oracle/cases/helpers/compresr-transport/safe-int-malformed-token-stat.yaml
+  - tools/oracle/cases/helpers/compresr-transport/content-shape-string-preservation.yaml
+  - tools/oracle/cases/helpers/compresr-transport/content-shape-all-text-parts-merge.yaml
+  - tools/oracle/cases/helpers/compresr-transport/fail-open-logs-and-returns-none.yaml
+  - tools/oracle/cases/helpers/compresr-transport/fail-closed-raises-502.yaml
+deviations:
+  - what: betterlite parses and validates IP literals the same way LiteLLM does but names the restrictions clearly in tests rather than relying on socket layer behavior.
+    why: The socket layer's implicit handling of decimal/hex/mapped IPv6 addresses is implicit; explicit tests guard against misunderstandings.
+out_of_scope:
+  - "Content text utilities (is_all_text_parts, merge_rewritten_text_parts, content_to_text): B3663 owns these functions. _replace_text_in_content calls them but does not reimplement them."
+  - "Recovery store, retrieval planning, and tool injection: B3764 owns the recovery store; B3765 owns tool injection and message writeback."
+  - "Initialization of the guardrail, configuration loading, and registration in the callback pipeline: B3765 owns initialization."
+  - "The apply_guardrail body and lifecycle hook registration: B107 owns those higher-level orchestration points."
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as compresr_transport in the guardrails group. Replace the stub Op in tools/oracle/src/helpers/guardrails/compresr_transport.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/compresr_transport.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - "Cloud-metadata IP checking must handle alternate formats. `ipaddress.ip_address(int(host, 0))` parses both decimal (e.g. \"2130706433\") and hex (e.g. \"0x7f000001\") single-integer IPv4. IPv4-mapped IPv6 addresses map to their IPv4 equivalent before the block check."
+  - "Tool call intent selection walks backwards from the target message to find a matching assistant turn. Legacy function_call (non-tool_calls) is a fallback that requires name match to avoid false attribution. Both are checked together in _query_for_target."
+  - "Query-aware compression joins tool name and arguments on colon; malformed argument data is stringified rather than rejecting the query."
+  - "Batch cardinality checking is strict: the response must have exactly one result dict per input, in the same position. \"results\": null or results with mismatched length both trigger fail_open/fail_closed."
+  - "_safe_response_text bounds the returned body to 500 chars and truncates undecodable Content-Encoding before it escapes a log line. A limit exists because malformed-but-200 responses must not raise when fail_open applies."
+  - "Compressed text is written back unchanged into string content. For all-text part lists, is_all_text_parts guards against multipart content; merge_rewritten_text_parts collapses parts but preserves the cache_control breakpoint from the last part."
+  - "The fail_open/fail_closed decision happens at the HTTP-failure point; a 200 response with unexpected shape is still handled by the fail policy, not by a separate \"bad shape\" path."
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

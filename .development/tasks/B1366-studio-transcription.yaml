@@ -30,8 +30,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/studio_transcription.rs
     - crates/betterlite-vertex/fuzz/corpus/studio_transcription/**
-    - tools/oracle/src/helpers/{mod,studio_transcription}.rs
-    - tools/oracle/helpers/{dispatch,studio_transcription}.py
+    - tools/oracle/src/helpers/vertex/studio_transcription.rs
+    - tools/oracle/src/helpers/vertex/studio_transcription/**
+    - tools/oracle/helpers/studio_transcription.py
+    - tools/oracle/helpers/studio_transcription/**
     - tools/oracle/cases/helpers/studio-transcription/**
     - tools/oracle/fuzz/corpus/helper_case/studio_transcription*
   lint_tables: false
@@ -76,6 +78,7 @@ out_of_scope:
   - All functions and dedicated transcription types belong to this task; generic subtitle rendering remains B1002.
   - B035 connects B1001 audio preparation and B1122 transcription capabilities to these leaf transformations.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as studio_transcription in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/studio_transcription.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/studio_transcription.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Word timestamp mode is enabled by a list containing word, not by any arbitrary timestamp_granularities value.
   - An empty text content item participates in transcript spacing.
   - A missing last-word end omits duration even if an earlier word has a valid end.

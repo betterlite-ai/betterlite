@@ -91,11 +91,10 @@ scope:
   - crates/betterlite-openai/src/output_limits.rs
   - crates/betterlite-openai/src/output_limits/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_output_limits.rs
-  - tools/oracle/src/helpers/openai_output_limits/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/output_limits.rs
+  - tools/oracle/src/helpers/openai/output_limits/**
   - tools/oracle/helpers/openai_output_limits.py
+  - tools/oracle/helpers/openai_output_limits/**
   - tools/oracle/cases/helpers/providers/openai-output-limits/**
   - tools/oracle/fuzz/corpus/helper_case/openai_output_limits*
   - crates/betterlite-openai/src/chat.rs
@@ -331,6 +330,7 @@ out_of_scope:
   L358-L377 belong to B500.'
 - 'Function ownership inventory litellm/llms/openai/common_utils.py: OpenAIError.__init__ L57-L84 belong to B668.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_output_limits in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/output_limits.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_output_limits.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The decoder validates only detail[0] before iterating every entry, so a later scalar must not be silently ignored.
 - Recovery is based on the complete message marker, with no GPT-5 model-name guard despite its motivating example.
 - Streaming recovery still calls token_counter before returning its one chunk, although that chunk contains no usage.

@@ -96,10 +96,10 @@ scope:
     - crates/betterlite-config/src/database_urls.rs
     - crates/betterlite-config/src/database_urls/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/database-urls-*
-    - tools/oracle/src/helpers/database_urls.rs
+    - tools/oracle/src/helpers/db/database_urls.rs
+    - tools/oracle/src/helpers/db/database_urls/**
     - tools/oracle/helpers/database_urls.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/helpers/database_urls/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/database-urls/**
     - tools/oracle/fuzz/corpus/helper_case/database-urls-*
@@ -182,6 +182,7 @@ out_of_scope:
     remaining proxy utility functions outside construct_database_url_from_env_vars. They are not
     dependencies of password construction.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as database_urls in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_urls.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_urls.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - DATABASE_USER and DATABASE_PORT affect DatabaseURLSettings but not the older CLI password builder.
   - An empty replica password inherits the writer password because the fallback uses truthiness.
   - The CLI does not apply DATABASE_MAX_IDLE_CONNECTION_LIFETIME as its idle-timeout fallback.

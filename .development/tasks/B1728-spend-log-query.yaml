@@ -43,8 +43,10 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/spend_log_query.rs
     - crates/betterlite-server/fuzz/corpus/spend_log_query/**
-    - tools/oracle/src/helpers/{mod.rs,log_predicates.rs}
-    - tools/oracle/helpers/{dispatch.py,log_predicates.py}
+    - tools/oracle/src/helpers/server/spend_log_query.rs
+    - tools/oracle/src/helpers/server/spend_log_query/**
+    - tools/oracle/helpers/spend_log_query.py
+    - tools/oracle/helpers/spend_log_query/**
     - tools/oracle/cases/helpers/log-predicates/**
     - tools/oracle/fuzz/corpus/helper_case/log-predicates-*
   lint_tables: false
@@ -88,6 +90,7 @@ out_of_scope:
   - B1732 owns ui_view_spend_logs decorators and L2766-L3075 authorization/execution; B1729 detail/daily projection, B1730 response enrichment/legacy listing and B1731 session pagination own the other log functions.
   - B1704 retains visibility; B1721-B1727 own reports and B069 capture rate/composition.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_log_query in the server group. Replace the stub Op in tools/oracle/src/helpers/server/spend_log_query.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_log_query.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A UI request_id lookup without search ignores even malformed supplied date strings.
   - The search helper's unbounded request_id arm does not remove the public v2 route's outer time restriction.
 budget:

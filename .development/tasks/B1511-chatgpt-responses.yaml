@@ -31,10 +31,10 @@ scope:
     - crates/betterlite-core/src/api.rs
     - crates/betterlite-core/src/api/chatgpt_responses.rs
     - crates/betterlite-core/src/api/chatgpt_responses/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/chatgpt_responses.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/chatgpt_responses.rs
+    - tools/oracle/src/helpers/core_ops/chatgpt_responses/**
     - tools/oracle/helpers/chatgpt_responses.py
+    - tools/oracle/helpers/chatgpt_responses/**
     - tools/oracle/cases/helpers/chatgpt-responses/**
     - tools/oracle/fuzz/corpus/helper_case/chatgpt_responses*
   lint_tables: false
@@ -66,6 +66,7 @@ deviations: []
 out_of_scope:
   - B919 owns parse_sse_json_chunk and the output recovery helpers in litellm/responses/sse_output_recovery.py; B045 installs this service into dispatch.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as chatgpt_responses in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/chatgpt_responses.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/chatgpt_responses.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A response.completed event ends the search even if a later event contains a valid response.
   - stream=true in the upstream body does not mean a nonstreaming caller should receive SSE.
   - The instruction check is substring containment rather than equality or a prefix test.

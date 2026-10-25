@@ -104,11 +104,10 @@ scope:
   - crates/betterlite-bedrock/src/titan_embeddings.rs
   - crates/betterlite-bedrock/src/titan_embeddings/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_other_titan_embeddings.rs
-  - tools/oracle/src/helpers/bedrock_other_titan_embeddings/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/other_titan_embeddings.rs
+  - tools/oracle/src/helpers/bedrock/other_titan_embeddings/**
   - tools/oracle/helpers/bedrock_other_titan_embeddings.py
+  - tools/oracle/helpers/bedrock_other_titan_embeddings/**
   - tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_titan_embeddings*
   - crates/betterlite-config/Cargo.toml
@@ -289,6 +288,7 @@ out_of_scope:
 - 'litellm/llms/bedrock/embed/cohere_transformation.py: BedrockCohereEmbeddingConfig._is_v3_model L30-L31 have no
   caller at the pin; do not port them.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_other_titan_embeddings in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/other_titan_embeddings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_other_titan_embeddings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The AWS documentation defaults for Titan V2 are not LiteLLM constructor defaults; injecting them changes the request.
 - A nonempty mixed Cohere input list is classified by its last item by the delegated native implementation.
 budget:

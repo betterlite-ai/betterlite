@@ -276,6 +276,7 @@ out_of_scope:
   L501-L511; set_provider_response_headers_in_hidden_params L779-L790; get_provider_response_headers_from_hidden_params
   L793-L799 belong to B206.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as request_records in the context group. Replace the stub Op in tools/oracle/src/helpers/context/request_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/request_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Filtering drops ordinary JSON null values as well as nonserializable objects; replacing it with a no-op typed
   clone changes provider bodies.
 - safe_deep_copy and independent_snapshot restore span identities differently when both metadata buckets exist.
@@ -310,11 +311,10 @@ scope:
   - crates/betterlite-context/src/request_records.rs
   - crates/betterlite-context/src/request_records/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/request_records.rs
-  - tools/oracle/src/helpers/request_records/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/context/request_records.rs
+  - tools/oracle/src/helpers/context/request_records/**
   - tools/oracle/helpers/request_records.py
+  - tools/oracle/helpers/request_records/**
   - tools/oracle/cases/helpers/providers/request-records/**
   - tools/oracle/fuzz/corpus/helper_case/request_records*
   - crates/betterlite-config/Cargo.toml

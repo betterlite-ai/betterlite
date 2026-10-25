@@ -42,10 +42,10 @@ scope:
     - crates/betterlite-foundry/src/lib.rs
     - crates/betterlite-foundry/src/pricing.rs
     - crates/betterlite-foundry/src/pricing/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/foundry_router_cost.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/foundry/router_cost.rs
+    - tools/oracle/src/helpers/foundry/router_cost/**
     - tools/oracle/helpers/foundry_router_cost.py
+    - tools/oracle/helpers/foundry_router_cost/**
     - tools/oracle/cases/helpers/foundry-router-cost/**
     - tools/oracle/fuzz/corpus/helper_case/foundry-router-cost-*
   lint_tables: false
@@ -88,6 +88,7 @@ out_of_scope:
   - B562 owns AzureModelRouterConfig.transform_request and transform_response, including selected-model hidden metadata; this task owns only calculate_additional_costs in that file.
   - The central cost_calculator.py keeps custom flat prices in B1673, adjustments in B1649, image defaults in B1674, seconds/transcription/video in B1676, OCR in B1678, batches in B1679, usage merging in B1680 and realtime in B1681. Context/storage is B1682, usage diagnostics B1683, token/vector/rerank dispatch B1686, preparation B1688 and replicate/early completion charges B1689; the outer completion/response functions are B068.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as foundry_router_cost in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/router_cost.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_router_cost.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Model-router substring detection is broader than the exact fee-entry check used to prevent double charging.
   - The additional-cost hook reports only a positive fee, even though a direct fee calculation can return a negative amount for negative prompt counts.
 budget:

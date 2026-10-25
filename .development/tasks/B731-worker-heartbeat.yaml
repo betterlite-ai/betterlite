@@ -99,10 +99,10 @@ scope:
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/database_diagnostics.rs
     - crates/betterlite-config/src/database_diagnostics/**
-    - tools/oracle/src/helpers/database_diagnostics.rs
-    - tools/oracle/helpers/database_diagnostics.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/src/helpers/db/worker_heartbeat.rs
+    - tools/oracle/src/helpers/db/worker_heartbeat/**
+    - tools/oracle/helpers/worker_heartbeat.py
+    - tools/oracle/helpers/worker_heartbeat/**
     - tools/oracle/cases/helpers/database-diagnostics/**
     - tools/oracle/fuzz/corpus/helper_case/database-diagnostics-*
   lint_tables: false
@@ -182,6 +182,7 @@ out_of_scope:
   - B124 owns job scheduling and shutdown invocation, B130 owns warning/HTTP presentation,
     B051 installs database startup diagnostics, and B012 owns core logging outside proxy-extras.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as worker_heartbeat in the db group. Replace the stub Op in tools/oracle/src/helpers/db/worker_heartbeat.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/worker_heartbeat.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Upsert conflict does not update hostname, even when a new process reuses the same worker_id.
   - A count at exactly the 180-second threshold is excluded; pruning waits strictly beyond 3600 seconds.
   - Missing litellm.json_logs returns false without consulting JSON_LOGS; only import/attribute exceptions take the fallback.

@@ -1,0 +1,15 @@
+kind: helper
+name: fuzz-seed
+call:
+  bedrock_request_policy:
+    fields: [user_api_key_hash, spend_logs_metadata]
+    step:
+      resolve:
+        litellm_params:
+          metadata:
+            user_api_key_hash: hash
+            spend_logs_metadata: {team: a}
+        caller: {trace: "1"}
+env: {}
+compare:
+  ignore: []

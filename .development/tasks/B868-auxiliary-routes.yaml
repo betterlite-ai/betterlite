@@ -103,12 +103,11 @@ scope:
     - crates/betterlite-auth/src/auxiliary_routes/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auxiliary_routes.rs
-    - tools/oracle/src/helpers/auxiliary_routes/**
+    - tools/oracle/src/helpers/auth/auxiliary_routes.rs
+    - tools/oracle/src/helpers/auth/auxiliary_routes/**
     - tools/oracle/helpers/auxiliary_routes.py
+    - tools/oracle/helpers/auxiliary_routes/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auxiliary-routes/**
     - tools/oracle/fuzz/corpus/helper_case/auxiliary-routes-*
   lint_tables: false
@@ -243,6 +242,7 @@ out_of_scope:
     (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
     (L5766-L5772).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auxiliary_routes in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/auxiliary_routes.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auxiliary_routes.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - /mcp/sse/messages and /mcp/sse/messages/ are separate literals; normalizing slashes changes matching.
   - public_routes is a frozenset, so an ordered oracle assertion would depend on Python hash randomization.
   - self_managed_routes includes writes whose handlers still authorize the caller; it is not a public-route expansion.

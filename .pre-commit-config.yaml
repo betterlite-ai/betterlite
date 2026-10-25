@@ -12,8 +12,9 @@ repos:
       - id: check-json
       - id: check-added-large-files
       # Codex keeps .codex/ read-only for its agents, and these two fixers open every file for writing
+      # rustfmt ends every .rs file, and an empty one as a single newline that this fixer would strip again
       - id: end-of-file-fixer
-        exclude: ^\.codex/
+        exclude: ^\.codex/|\.rs$
       - id: trailing-whitespace
         exclude: ^\.codex/
 
@@ -26,6 +27,13 @@ repos:
         language: system
         types: [text]
         exclude: (^|/)Cargo\.lock$|\.md$|^LICENSE$
+      # parallel tasks add dependencies to the same manifests; in name order they rarely touch the same gap
+      - id: sorted-dependencies
+        name: dependency tables in name order
+        entry: >-
+          env LC_ALL=C awk 'FNR==1{t=0} /^\[/{t=/dependencies\]$/; p=""; next} !NF{p=""} t&&/^[A-Za-z0-9_-]/{k=$0; sub(/[ .=].*/,"",k); if(p!=""&&k<p){print FILENAME": "k" goes before "p; e=1} p=k} END{exit e}'
+        language: system
+        files: (^|/)Cargo\.toml$
       - id: no-tests-in-implementation
         name: implementation files carry no test code
         entry: >-

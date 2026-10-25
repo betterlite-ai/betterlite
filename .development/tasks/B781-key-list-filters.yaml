@@ -80,12 +80,11 @@ scope:
     - crates/betterlite-server/src/key_list_filters/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/key_list_filters.rs
-    - tools/oracle/src/helpers/key_list_filters/**
+    - tools/oracle/src/helpers/server/key_list_filters.rs
+    - tools/oracle/src/helpers/server/key_list_filters/**
     - tools/oracle/helpers/key_list_filters.py
+    - tools/oracle/helpers/key_list_filters/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/keys.rs
-    - tools/oracle/helpers/management/keys.py
     - tools/oracle/cases/helpers/key-list-filters/**
     - tools/oracle/fuzz/corpus/helper_case/key-list-filters-*
   lint_tables: false
@@ -243,6 +242,7 @@ out_of_scope:
     no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as key_list_filters in the server group. Replace the stub Op in tools/oracle/src/helpers/server/key_list_filters.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/key_list_filters.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A non-admin member with /key/list permission does receive full visibility for that team in the list route.
   - A failed key-hash database query is intentionally indistinguishable from a missing hash in this helper.
 budget:

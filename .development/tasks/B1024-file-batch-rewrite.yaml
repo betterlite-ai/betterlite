@@ -33,11 +33,10 @@ scope:
   - crates/betterlite-core/src/api/file_batch_rewrite.rs
   - crates/betterlite-core/src/api/file_batch_rewrite/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/file_batch_rewrite.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/file_batch_rewrite.rs
+  - tools/oracle/src/helpers/core_ops/file_batch_rewrite/**
   - tools/oracle/helpers/file_batch_rewrite.py
+  - tools/oracle/helpers/file_batch_rewrite/**
   - tools/oracle/fuzz/corpus/helper_case/file_batch_rewrite-*
   - tools/oracle/cases/helpers/file-batch-rewrite/**
   - Cargo.lock
@@ -104,6 +103,7 @@ out_of_scope:
 - B1023 owns every earlier class/function in batch_guardrails.py, including line iteration, _scan_record, public errors and report generation.
 - B1031 attaches scan reports and submits files; B1032 compares the resulting HTTP upload behavior.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as file_batch_rewrite in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/file_batch_rewrite.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/file_batch_rewrite.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An exception at a later line outranks an earlier shape failure; earliest-line ordering applies only within the winning category.
 - rstrip removes LF only, so an untouched CRLF record keeps CR in the rewritten file.
 - A no-change scan returns a result containing a closed redaction spool; consumers must not read it when changes is empty.

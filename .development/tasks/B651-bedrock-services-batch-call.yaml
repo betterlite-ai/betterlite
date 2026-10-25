@@ -111,11 +111,10 @@ scope:
   - crates/betterlite-bedrock/src/batch_call.rs
   - crates/betterlite-bedrock/src/batch_call/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_batch_call.rs
-  - tools/oracle/src/helpers/bedrock_services_batch_call/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_batch_call.rs
+  - tools/oracle/src/helpers/bedrock/services_batch_call/**
   - tools/oracle/helpers/bedrock_services_batch_call.py
+  - tools/oracle/helpers/bedrock_services_batch_call/**
   - tools/oracle/cases/helpers/providers/bedrock-services-batch-call/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_call*
   lint_tables: false
@@ -289,6 +288,7 @@ out_of_scope:
   L42-L50; _extract_job_id_from_arn L53-L57; _predict_output_file_uri L60-L79; _record_counts_from_response L82-L92;
   _to_epoch L95-L102 belong to B650.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_batch_call in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_batch_call.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_batch_call.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The handler comment claims its status table mirrors creation, but Scheduled is validating here and in_progress
   in the generic config.
 - Cancellation tolerates only two AWS error codes, and only after a terminal-or-cancelling status lookup confirms

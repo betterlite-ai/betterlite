@@ -148,11 +148,10 @@ scope:
   - crates/betterlite-core/src/operation.rs
   - crates/betterlite-core/Cargo.toml
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_provider.rs
-  - tools/oracle/src/helpers/openai_provider/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/openai_provider.rs
+  - tools/oracle/src/helpers/provider/openai_provider/**
   - tools/oracle/helpers/openai_provider.py
+  - tools/oracle/helpers/openai_provider/**
   - tools/oracle/cases/helpers/providers/openai-provider/**
   - tools/oracle/fuzz/corpus/helper_case/openai_provider*
   - tools/oracle/cases/chat/openai_provider-dispatch-http.yaml
@@ -686,6 +685,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/utils.py: _handle_new_key_with_scan L5621-L5637 have no caller at the pin;
   do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_provider in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/openai_provider.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_provider.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty cleaned requester_metadata map falls back to cleaning the entire metadata map.
 - Chat logs async calls here only when stream is truthy; text also logs acompletion=True.
 budget:

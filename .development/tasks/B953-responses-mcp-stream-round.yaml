@@ -79,11 +79,8 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_mcp_stream_round.rs
-  - tools/oracle/src/helpers/responses_mcp_stream_round/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_mcp_stream_round.rs
+  - tools/oracle/src/helpers/core_ops/responses_mcp_stream_round/**
   - tools/oracle/helpers/responses_mcp_stream_round.py
   - tools/oracle/helpers/responses_mcp_stream_round/**
   - tools/oracle/fuzz/corpus/helper_case/responses_mcp_stream_round-*
@@ -224,6 +221,7 @@ out_of_scope:
 - 'Gateway route registration, authentication envelopes, all response route aliases and HTTP status mapping remain with B955 and the Responses route tasks; this task adds only the provider transcript required for its SDK call.'
 - 'No enterprise-only hook, callback or deployment branch is read or implemented.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_mcp_stream_round in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_mcp_stream_round.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_mcp_stream_round.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - 'The source suppresses response.completed only after _generate_tool_execution_events marks the current collected response as the tool-result source; suppressing every completed event would lose a final text response.'
 - 'A streamed output_index can exceed len(response.output)-1; width must retain max(_round_max_output_index + 1, len(output)) or the next MCP item collides with a prior index.'
 - 'Tool headers update raw_headers after request headers and after server-specific extraction, so x-mcp-alpha-x-api-key="tool-key" wins without replacing x-mcp-alpha-authorization="Bearer scoped".'

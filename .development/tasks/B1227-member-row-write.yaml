@@ -104,12 +104,11 @@ scope:
     - crates/betterlite-server/src/member_row_write/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/member_row_write.rs
-    - tools/oracle/src/helpers/member_row_write/**
+    - tools/oracle/src/helpers/server/member_row_write.rs
+    - tools/oracle/src/helpers/server/member_row_write/**
     - tools/oracle/helpers/member_row_write.py
+    - tools/oracle/helpers/member_row_write/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/teams.rs
-    - tools/oracle/helpers/management/teams.py
     - tools/oracle/cases/helpers/member-row-write/**
     - tools/oracle/fuzz/corpus/helper_case/member-row-write-*
     - crates/betterlite-server/src/member_row_write/fixtures/**
@@ -246,6 +245,7 @@ out_of_scope:
     implement the injected alert and OTel transports.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as member_row_write in the server group. Replace the stub Op in tools/oracle/src/helpers/server/member_row_write.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/member_row_write.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty upsert update can become a racy SELECT then INSERT; retain the user_id assignment.
   - The membership update is empty, so resolving a fresh budget does not replace an existing membership's budget_id.
   - A returned existing user is the snapshot from before teams is appended.

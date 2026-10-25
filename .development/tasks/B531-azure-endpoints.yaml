@@ -104,11 +104,10 @@ scope:
   - crates/betterlite-azure/src/endpoints.rs
   - crates/betterlite-azure/src/endpoints/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_endpoints.rs
-  - tools/oracle/src/helpers/azure_endpoints/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/endpoints.rs
+  - tools/oracle/src/helpers/azure/endpoints/**
   - tools/oracle/helpers/azure_endpoints.py
+  - tools/oracle/helpers/azure_endpoints/**
   - tools/oracle/cases/helpers/providers/azure-endpoints/**
   - tools/oracle/fuzz/corpus/helper_case/azure_endpoints*
   - crates/betterlite-config/Cargo.toml
@@ -321,6 +320,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/azure/common_utils.py: BaseAzureLLM._try_get_default_azure_credential_provider
   L450-L478 belong to B677.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_endpoints in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/endpoints.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_endpoints.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Client-family selection uses the original api_version argument, not the value later resolved from AZURE_API_VERSION.
 - The v1 SDK base concatenation can retain a deployment suffix or double slash; B2200 image URL normalization must
   not be applied to it.

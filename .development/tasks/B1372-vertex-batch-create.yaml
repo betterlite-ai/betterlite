@@ -32,8 +32,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_payload.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_batch_payload/**
-    - tools/oracle/src/helpers/{mod,vertex_batch_target}.rs
-    - tools/oracle/helpers/{dispatch,vertex_batch_target}.py
+    - tools/oracle/src/helpers/vertex/batch_create.rs
+    - tools/oracle/src/helpers/vertex/batch_create/**
+    - tools/oracle/helpers/vertex_batch_create.py
+    - tools/oracle/helpers/vertex_batch_create/**
     - tools/oracle/cases/helpers/vertex-batch-target/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_batch_target*
   lint_tables: false
@@ -74,6 +76,7 @@ out_of_scope:
   - B1373 owns _vertex_batch_list_payload at L79-L80 and retrieve/list/cancel methods from L293 onward.
   - B1371 owns all pure batch record and model-path conversion; B086 owns managed-batch interception and public batch routes.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_batch_create in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/batch_create.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_batch_create.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Endpoint resolution selects deployedModels[0] rather than searching for any nonempty deployed model.
   - A custom /v1 base swallows the default version segment, while an arbitrary mount path retains it.
   - The create wrapper's timeout and max_retries do not reach either HTTP call at this pin.

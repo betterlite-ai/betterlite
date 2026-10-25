@@ -18,10 +18,10 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/vector_file_provider.rs
   - crates/betterlite-core/src/api/vector_file_provider/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/vector_file_provider.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/vector_file_provider.rs
+  - tools/oracle/src/helpers/core_ops/vector_file_provider/**
   - tools/oracle/helpers/vector_file_provider.py
+  - tools/oracle/helpers/vector_file_provider/**
   - tools/oracle/fuzz/corpus/helper_case/vector_file_provider-*
   - tools/oracle/cases/helpers/vector-file-provider/**
   lint_tables: false
@@ -68,6 +68,7 @@ out_of_scope:
 - B1072 owns create/acreate/list/alist in vector_store_files/main.py, B1073 retrieve/aretrieve/retrieve_content/aretrieve_content, and B1074 update/aupdate/delete/adelete.
 - B1062 owns get_credentials_for_vector_store and config/database registry loading; this task consumes that lookup without changing its policy.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as vector_file_provider in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_file_provider.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_file_provider.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty provider string defaults to openai, but an unknown nonempty string survives until the SDK operation validates it.
 - Registry credentials replace explicit caller credentials; an exception during lookup is silently ignored.
 review_level: security

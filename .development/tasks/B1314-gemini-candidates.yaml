@@ -22,8 +22,10 @@ scope:
   paths:
     - crates/betterlite-vertex/src/{lib,gemini_candidates}.rs
     - crates/betterlite-vertex/src/gemini_candidates/**
-    - tools/oracle/src/helpers/{mod,gemini_candidates}.rs
-    - tools/oracle/helpers/{dispatch,gemini_candidates}.py
+    - tools/oracle/src/helpers/vertex/gemini_candidates.rs
+    - tools/oracle/src/helpers/vertex/gemini_candidates/**
+    - tools/oracle/helpers/gemini_candidates.py
+    - tools/oracle/helpers/gemini_candidates/**
     - tools/oracle/cases/helpers/gemini-candidates/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_candidates*
   lint_tables: false
@@ -67,6 +69,7 @@ out_of_scope:
   - B1313/B1322/B1323 own parts, accounting and metadata; B1326 owns the envelope, B1315 streaming and B1316 transport/translate_exception_str.
   - B1305/B1308-B1310 own the configuration methods before these response methods; B206 owns the common finish mapper, injected by B031 to avoid a leaf-to-core dependency.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as gemini_candidates in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_candidates.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_candidates.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A safety reason on a later candidate does not trigger the first-candidate early return.
   - The streamed Delta does not automatically acquire every field emitted in a complete Message.
   - Native function calls override a simultaneous native STOP finish reason.

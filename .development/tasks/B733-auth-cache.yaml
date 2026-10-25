@@ -103,12 +103,11 @@ scope:
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_cache.rs
-    - tools/oracle/src/helpers/auth_cache/**
+    - tools/oracle/src/helpers/auth/cache.rs
+    - tools/oracle/src/helpers/auth/cache/**
     - tools/oracle/helpers/auth_cache.py
+    - tools/oracle/helpers/auth_cache/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-cache/**
     - tools/oracle/fuzz/corpus/helper_case/auth-cache-*
     - crates/betterlite-config/Cargo.toml
@@ -415,6 +414,7 @@ out_of_scope:
   - 'litellm/proxy/auth/auth_checks.py::model_in_access_group: no production caller at the pinned commit;
     repository-wide identifier search finds only this definition.'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_cache in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/cache.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_cache.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Both memory partitions share literal Redis keys; adding a key-object Redis prefix would break cross-worker auth sharing.
   - A failed typed cache read leaves the bad value in place and can log again on the next read.
   - The auth membership key orders team before user, while the reservation key orders user before team.

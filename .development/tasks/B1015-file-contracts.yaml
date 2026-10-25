@@ -48,11 +48,10 @@ scope:
   - crates/betterlite-provider/src/operation.rs
   - crates/betterlite-provider/src/prepared.rs
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/file_contracts.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/file_contracts.rs
+  - tools/oracle/src/helpers/provider/file_contracts/**
   - tools/oracle/helpers/file_contracts.py
+  - tools/oracle/helpers/file_contracts/**
   - tools/oracle/fuzz/corpus/helper_case/file_contracts-*
   - tools/oracle/cases/helpers/file-contracts/**
   - Cargo.lock
@@ -159,6 +158,7 @@ out_of_scope:
 - Provider-specific implementations of the abstract file transforms and OpenAI wire decoding belong to the provider leaves and file route tasks; this task defines only the shared method surface and executable base defaults.
 - The abstract BaseFileEndpoints methods have no MIT implementation and therefore have no base error response, database write or warning to reproduce here; caller-specific behavior stays with B1032, B1033, B1034 and B087.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as file_contracts in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/file_contracts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/file_contracts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - MIME comparison uses the six literal strings without lowercasing or stripping parameters, so "TEXT/PLAIN" and "application/json;charset=utf-8" are rejected.
 - Both batch predicates test is not None rather than truthiness, so b"" counts as present content and an empty file value counts as present metadata.
 - is_batch_jsonl_request only inspects the file field and never reads a lazy handle; consuming it in the predicate changes the contract.

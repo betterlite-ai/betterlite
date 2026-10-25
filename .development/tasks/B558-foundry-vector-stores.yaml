@@ -96,11 +96,10 @@ scope:
   - crates/betterlite-foundry/src/vector_stores.rs
   - crates/betterlite-foundry/src/vector_stores/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_vector_stores.rs
-  - tools/oracle/src/helpers/foundry_vector_stores/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/foundry/vector_stores.rs
+  - tools/oracle/src/helpers/foundry/vector_stores/**
   - tools/oracle/helpers/foundry_vector_stores.py
+  - tools/oracle/helpers/foundry_vector_stores/**
   - tools/oracle/cases/helpers/providers/foundry-vector-stores/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_vector_stores*
   - crates/betterlite-foundry/fuzz/Cargo.toml
@@ -281,6 +280,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_vector_stores in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/vector_stores.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_vector_stores.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Metadata exclusion always removes the literal contentVector, even when azure_search_vector_field names a different
   vector column.
 - The index ID is interpolated without path encoding in this source; adding encoding silently would alter the captured

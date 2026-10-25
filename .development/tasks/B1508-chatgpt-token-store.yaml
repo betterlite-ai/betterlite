@@ -42,10 +42,10 @@ scope:
     - crates/betterlite-config/src/providers/chatgpt/token_store.rs
     - crates/betterlite-config/src/providers/chatgpt/token_store/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/chatgpt_token_store*
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/chatgpt_token_store.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/openai/chatgpt_token_store.rs
+    - tools/oracle/src/helpers/openai/chatgpt_token_store/**
     - tools/oracle/helpers/chatgpt_token_store.py
+    - tools/oracle/helpers/chatgpt_token_store/**
     - tools/oracle/cases/helpers/chatgpt-token-store/**
     - tools/oracle/fuzz/corpus/helper_case/chatgpt_token_store*
   lint_tables: false
@@ -90,6 +90,7 @@ deviations:
 out_of_scope:
   - B1509 implements get_access_token, _login_device_code, _request_device_code, _poll_for_authorization_code, _exchange_code_for_tokens and _refresh_tokens in this same covered file.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as chatgpt_token_store in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/chatgpt_token_store.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/chatgpt_token_store.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Token payload claims are decoded without signature verification only to determine refresh timing and the outbound account hint.
   - A failed auth-file write is logged and swallowed rather than invalidating a successfully refreshed token.
   - The 60-second expiry skew uses greater-than-or-equal at its boundary.

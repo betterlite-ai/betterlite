@@ -1,0 +1,134 @@
+id: B3720
+title: Bedrock guardrail records and chunk reconstruction
+description: >-
+  Build Bedrock ApplyGuardrail and InvokeGuardrailChecks request/response typed records
+  (all of them) and the pure chunk packing, splitting and reconstruction operations.
+  Preserve positional masking across arbitrarily nested fragments, unknown usage counters,
+  extension response fields and the contextual-grounding exclusion from chunking.
+
+  The records cover the full type hierarchy of BedrockRequest, BedrockGuardrailResponse,
+  BedrockChecksViolation and their nested structures, including qualifier metadata
+  that tags content items for contextual grounding. Implement static utilities for
+  content chunking: conservative bin-packing at a configurable budget chars (default
+  25,000 matching AWS's text-unit quota), recursive bisection fallback when AWS
+  rejects an oversized batch, and whitespace-aware text splitting to avoid severing
+  words.
+
+  Merge per-chunk responses into a single response preserving per-item output alignment:
+  each content item contributes one entry to the merged outputs list even when unmasked
+  (falling back to original text), so later chunks' masked text stays in its original
+  global position. Group fragment chunks back to their original content items
+  (supporting arbitrary nesting depth from repeated bisection), sum usage counters
+  field-by-field across chunks (taking keys from responses), and select the action
+  value: GUARDRAIL_INTERVENED if present anywhere, otherwise the last action, or
+  absent if none reported. Do not call AWS, construct guardrails, or invoke execution
+  hooks; these are building blocks consumed by higher-level operations.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/lib.rs
+    - crates/betterlite-guardrails/src/bedrock_records.rs
+    - crates/betterlite-guardrails/src/bedrock_records/**
+    - crates/betterlite-guardrails/src/bedrock_chunking.rs
+    - crates/betterlite-guardrails/src/bedrock_chunking/**
+    - crates/betterlite-guardrails/Cargo.toml
+    - tools/oracle/src/helpers/guardrails/bedrock_guardrail_chunks.rs
+    - tools/oracle/src/helpers/guardrails/bedrock_guardrail_chunks/**
+    - tools/oracle/helpers/bedrock_guardrail_chunks.py
+    - tools/oracle/helpers/bedrock_guardrail_chunks/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/bedrock-chunking/**
+    - tools/oracle/fuzz/corpus/helper_case/bedrock-chunking-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1-L209
+    why: All ApplyGuardrail and InvokeGuardrailChecks TypedDict records and qualifier literals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L150-L196
+    why: Named tuple records QualifiedTextBlock, GuardrailMessageFilterResult, BedrockContentChunkResult, ApplyGuardrailMessageSelection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1389-L1447
+    why: _content_uses_contextual_grounding, _bin_pack_bedrock_content, assign nested function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1448-L1535
+    why: _split_bedrock_content, fragment nested function, _nearest_whitespace_split_index.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1537-L1635
+    why: _is_input_too_large_error, _merge_bedrock_guardrail_responses, _sum_bedrock_guardrail_usage, _sum_usage_counters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1659-L1738
+    why: _group_fragment_units, advance nested function, _merge_logical_unit_outputs, fragment_outputs and fragment_text nested functions.
+
+dod:
+  - text: >-
+      All Bedrock request/response TypedDict structures and named tuples are built
+      with their pinned field names, types, and optional markers, preserving unknown
+      usage counters and extension fields in merged responses.
+    proof: [bedrock-records-tests, oracle]
+  - text: >-
+      Bin-packing groups whole content items in order into batches staying within
+      a configurable budget, and bisection splits content by list length or by
+      whitespace-aware text splitting at the nearest safe boundary.
+    proof: [bedrock-chunking-tests, oracle, bedrock-chunking-corpus]
+  - text: >-
+      Merged responses align every content item (masked or unmasked) to one entry
+      in the output list at its original global position, sum usage counters
+      field-by-field, group arbitrary-depth fragment chunks back to original items,
+      and select actions with GUARDRAIL_INTERVENED taking precedence.
+    proof: [bedrock-chunking-tests, oracle, bedrock-chunking-corpus]
+  - text: >-
+      Whitespace boundaries avoid word severance, fragment groups support repeated
+      bisection to arbitrary nesting depth, and contextual grounding qualifiers
+      are carried through splits.
+    proof: [bedrock-chunking-tests, oracle, bedrock-chunking-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: bedrock-records-tests
+      why: TypedDict or named tuple field names, types or optional markers do not match the source.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_records::tests::/)
+        - test(/replays_the_/)'
+    - id: bedrock-chunking-tests
+      why: Chunking, merging, or grouping logic mismatches AWS's ApplyGuardrail contract or the source fallbacks.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_chunking::tests::/)
+        - test(/replays_the_/)'
+    - id: bedrock-chunking-corpus
+      why: The task added no new chunking seed or production helper replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock-chunking-*")"
+        && grep -rlq "bin_pack\|split\|merge" tools/oracle/fuzz/corpus/helper_case/bedrock-chunking-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/bedrock_chunking.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/bedrock-chunking/bin-pack-preserves-order-within-budget.yaml
+  - tools/oracle/cases/helpers/bedrock-chunking/oversized-item-becomes-own-batch.yaml
+  - tools/oracle/cases/helpers/bedrock-chunking/whitespace-boundary-avoids-word-severance.yaml
+  - tools/oracle/cases/helpers/bedrock-chunking/fragment-group-reassembly-arbitrary-depth.yaml
+  - tools/oracle/cases/helpers/bedrock-chunking/output-alignment-preserves-unmasked-positions.yaml
+  - tools/oracle/cases/helpers/bedrock-chunking/usage-counters-summed-field-by-field.yaml
+  - tools/oracle/cases/helpers/bedrock-chunking/action-precedence-guardrail-intervened.yaml
+  - tools/oracle/cases/helpers/bedrock-chunking/contextual-grounding-carried-through-split.yaml
+
+deviations: []
+
+out_of_scope:
+  - "Message selection, content extraction and text write-back: owned by B3721 (_select_messages_for_apply_guardrail, _create_bedrock_input_content_request, _apply_masking_to_messages, _update_messages_with_updated_bedrock_guardrail_response)."
+  - "Policy-block classification, assessment redaction and usage telemetry: owned by B3722 (_redact_assessment_match_fields, _log_apply_guardrail_attempt, _log_apply_guardrail_success, _get_http_exception_for_blocked_guardrail)."
+  - "Guardrail construction, credential resolution, ApplyGuardrail target preparation and signed HTTP transport: owned by B3723 (BedrockGuardrail.__init__, _load_credentials, _prepare_request, _sign_and_post)."
+  - "ApplyGuardrail whole-content probe, reactive splitting, throttle retry and consolidated logging: owned by B3724 (make_bedrock_api_request, _make_apply_guardrail_request, _apply_guardrail_content_with_chunking)."
+  - "InvokeGuardrailChecks request shaping, score thresholds and response handling: owned by B3725 (_chunk_texts_into_checks_messages, _build_invoke_guardrail_checks_messages, _make_invoke_guardrail_checks_request)."
+  - "Native pre/during/post hooks and buffered streaming: owned by B3726 (async_pre_call_hook, async_moderation_hook, async_post_call_streaming_iterator_hook)."
+  - "Session-deduplicated scanning and generic batch application: owned by B3727 (apply_guardrail, _apply_incremental_request_scan)."
+
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as bedrock_guardrail_chunks in the guardrails group. Replace the stub Op in tools/oracle/src/helpers/guardrails/bedrock_guardrail_chunks.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_guardrail_chunks.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - Whitespace splitting falls back to the raw midpoint when no safe boundary exists, which leaves multi-word denied phrases that straddle the cut unguarded.
+  - Output alignment requires that every content item contribute exactly one entry to the merged outputs list, even when unmasked, so later chunks' positions are preserved.
+  - A single content item can be bisected multiple times; grouping assumes fragment_group_size counts, not fixed pairs, so repeated splitting into four fragments is grouped correctly.
+  - Unknown usage counter keys are summed from responses as they appear, so a new AWS counter is automatically included without code changes.
+
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: standard

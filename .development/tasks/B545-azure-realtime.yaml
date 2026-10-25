@@ -106,11 +106,10 @@ scope:
   - crates/betterlite-azure/src/realtime.rs
   - crates/betterlite-azure/src/realtime/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_realtime.rs
-  - tools/oracle/src/helpers/azure_realtime/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/realtime.rs
+  - tools/oracle/src/helpers/azure/realtime/**
   - tools/oracle/helpers/azure_realtime.py
+  - tools/oracle/helpers/azure_realtime/**
   - tools/oracle/cases/helpers/providers/azure-realtime/**
   - tools/oracle/fuzz/corpus/helper_case/azure_realtime*
   lint_tables: false
@@ -284,6 +283,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/azure/realtime/handler.py: forward_messages L31-L39 have no caller
   at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_realtime in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/realtime.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_realtime.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A supplied empty query mapping suppresses GA model insertion, while None inserts the requested deployment.
 - Unlike the OpenAI websocket URL builder, Azure concatenates paths without clearing an existing path or query.
 budget:

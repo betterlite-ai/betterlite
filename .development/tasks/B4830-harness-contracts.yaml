@@ -1,0 +1,117 @@
+id: B4830
+title: Define harness events, state, options and execution contracts
+description: >-
+  Build crates/betterlite-harness with typed data structures and protocol definitions
+  for agent harnesses: event types (Text, Reasoning, ToolCall, ToolResult, FileChange,
+  Compaction, Approval, Done), the frozen Result and State records, Usage counters,
+  exception hierarchy, the Harness enum (CLAUDE_CODE, CODEX, OPENCODE, DEEPAGENTS),
+  per-harness options (ClaudeCodeOptions, CodexOptions, OpenCodeOptions, DeepAgentsOptions),
+  and protocol contracts for Sandbox (workdir, exec, run, read, write, host_url, which,
+  snapshot, tempdir, close), Process (stdin/stdout/stderr, wait, kill), BaseHarnessHandler
+  (start, turn, stop, native_session_id, resume, optional history), and BaseHarnessConfig
+  (harness, capabilities, options_type, get_options, validate_environment, and the abstract
+  BaseCLIHarnessConfig methods for CLI runtimes: get_binary, get_install_hint,
+  transform_session_setup, transform_turn_request, create_stream_state,
+  transform_stream_line, get_native_session_id, transform_turn_response).
+  Preserve enum-only harness selection, state version 1 and STATE_VERSION constant,
+  cross-thread approval resolution with asyncio.Future and call_soon_threadsafe,
+  Approval.allow/deny/wait/answered/answered property, frozen dataclasses where
+  LiteLLM uses them, and standalone helper functions (require_harness, event_list,
+  usage_from_body and SSE parsing in endpoint for B4841). The session context
+  SessionContext and ApprovalHandler type alias are shared state with handler and
+  config but own no implementation beyond their declaration and fields.
+scope:
+  paths:
+    - crates/betterlite-harness/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py#L16-L214
+    why: StopReason/PermissionMode/FileChangeKind, STATE_VERSION, Harness enum, require_harness, Event/Result/State/Usage types, Approval protocol, Done wrapper
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/errors.py#L1-L46
+    why: Exception hierarchy from HarnessError base (CapabilityUnsupported, OptionsMismatch, HarnessInstallFailed, SandboxError, SessionClosed, StateIncompatible, OutputInvalid)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/transformation.py#L39-L40
+    why: HarnessTurnError exception raised by transform_turn_response implementations
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/context.py#L1-L63
+    why: SessionContext, GatewayTarget, ApprovalHandler type alias
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/options.py#L1-L38
+    why: Per-harness option records (ClaudeCodeOptions, CodexOptions, OpenCodeOptions, DeepAgentsOptions) and union
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/base.py#L1-L63
+    why: Sandbox and Process protocol methods (declarations only, no implementations)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/base.py#L1-L43
+    why: BaseHarnessHandler abstract class and methods
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/transformation.py#L1-L152
+    why: BaseHarnessConfig and BaseCLIHarnessConfig abstract classes, HarnessSessionSetup/HarnessTurnRequest/HarnessTurnResponse records, event_list helper
+dod:
+  - text: crates/betterlite-harness compiles with no errors.
+    proof: [harness-build]
+  - text: All frozen dataclass types that mirror LiteLLM match the field names, types and defaults at the pinned commit.
+    proof: [harness-tests]
+  - text: Harness enum has four members (CLAUDE_CODE, CODEX, OPENCODE, DEEPAGENTS) with their exact string values from LiteLLM.
+    proof: [harness-tests]
+  - text: State.dumps encodes to JSON bytes and State.loads decodes them back, preserving harness, native_session_id, workdir, model and version.
+    proof: [harness-tests]
+  - text: State.loads rejects missing required fields, incompatible version numbers and invalid UTF-8 with StateIncompatible error; unknown fields are silently ignored.
+    proof: [harness-tests]
+  - text: Approval.allow and Approval.deny set the result through asyncio Future with call_soon_threadsafe; Approval.answered is a property that returns _decision.done().
+    proof: [harness-tests]
+  - text: Approval._resolve calls _set_result through loop.call_soon_threadsafe and _set_result checks if done before setting.
+    proof: [harness-tests]
+  - text: Usage.total_tokens returns the sum of input_tokens and output_tokens, and all dataclass fields have their LiteLLM defaults.
+    proof: [harness-tests]
+  - text: require_harness returns the input if it is a Harness member, else raises TypeError with a hint for string names that normalize to a member.
+    proof: [harness-tests]
+  - text: BaseHarnessHandler.__init__ accepts a config and stores it; abstract methods (start, turn, stop, native_session_id, resume) are declared.
+    proof: [harness-tests]
+  - text: BaseHarnessConfig.get_options returns ctx.options if it is the right type, else raises OptionsMismatch; a default is created by options_type().
+    proof: [harness-tests]
+  - text: BaseHarnessConfig.validate_environment calls get_options and may be overridden by subclasses (concrete configs override it).
+    proof: [harness-tests]
+  - text: BaseCLIHarnessConfig abstract methods (get_binary, get_install_hint, transform_session_setup, transform_turn_request, create_stream_state, transform_stream_line, get_native_session_id, transform_turn_response) are declared.
+    proof: [harness-tests]
+  - text: HarnessSessionSetup, HarnessTurnRequest, HarnessTurnResponse frozen dataclasses match their LiteLLM definitions exactly.
+    proof: [harness-tests]
+  - text: Sandbox and Process protocol methods have the right signatures and are marked runtime_checkable.
+    proof: [harness-tests]
+  - text: Exception classes (HarnessError base, CapabilityUnsupported, OptionsMismatch, HarnessInstallFailed, SandboxError, SessionClosed, StateIncompatible, OutputInvalid) are defined with their docstrings.
+    proof: [harness-tests]
+  - text: OutputInvalid.__init__ accepts message, raw and optional result and stores them as attributes.
+    proof: [harness-tests]
+  - text: Per-harness options records (ClaudeCodeOptions, CodexOptions, OpenCodeOptions, DeepAgentsOptions) are frozen dataclasses with their exact fields and defaults.
+    proof: [harness-tests]
+  - text: HarnessTurnError is a HarnessError subclass raised by transform_turn_response implementations when a turn fails; the runtime maps it to stop_reason='runtime_error'.
+    proof: [harness-tests]
+  - text: BaseHarnessHandler.history() fallback method raises CapabilityUnsupported with the harness name for handlers (CLI, Codex, OpenCode) that do not override it.
+    proof: [harness-tests]
+checks:
+  optional: []
+  commands:
+    - id: harness-build
+      why: crates/betterlite-harness fails to compile or does not exist
+      run: cargo build --locked -p betterlite-harness
+    - id: harness-tests
+      why: type definitions do not match LiteLLM or tests fail
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - BaseHarnessConfig.validate_environment base implementation. No concrete config calls super(); every one overrides it.
+pitfalls:
+  - >-
+    Approval._decision is an asyncio.Future; tests must control the event loop
+    and turn code calls _resolve from a non-async context via call_soon_threadsafe.
+  - >-
+    State.dumps and State.loads must symmetrically carry harness, native_session_id,
+    workdir, model and version in that order; any reorder breaks resume.
+  - >-
+    Harness enum values are capitalized (CLAUDE_CODE, not claude_code);
+    require_harness normalizes input but the enum value is the source of truth.
+  - >-
+    SessionContext.endpoint and on_approval are forward references to ModelEndpoint
+    and ApprovalHandler; their implementation belongs in B4841 and B4843.
+  - >-
+    HarnessOptions is a union type; get_options type-checks at runtime
+    and raises OptionsMismatch if called with the wrong options type.
+review_level: security
+budget:
+  max_changed_lines: 600
+  max_new_expects: 1

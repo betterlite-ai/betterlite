@@ -1,0 +1,154 @@
+id: B3151
+title: ROI identity matching and report summaries
+description: >-
+  Build deterministic identity matching and report aggregation in `betterlite-roi::summary`,
+  with the summary response models it returns. Keep manual overrides via identity-map lookups,
+  ambiguous-email outcomes when a person has multiple emails in the spend and pulls,
+  eligible-cohort rules (spend known, estimated pulls exist, all pending pulls reviewed),
+  unavailable-repository suppression of cost/efficiency ratios, sorting by hours descending
+  then person id ascending for people and by merge date descending for pulls, and deduplication
+  of logins and match methods by first occurrence preserving insertion order.
+
+  match_identity consults mappings first (override by GitHub login casefolded), then matches
+  candidate emails against observed gateway emails (from spend records), returning address
+  and method: manual/profile email/commit email/ambiguous emails/email unavailable/no gateway match.
+  An ambiguous result stops processing for that pull and flags it unmatched; email unavailable
+  means no email candidates found; no gateway match means candidates exist but do not overlap
+  observed emails. _person_key collapses identities: a normalized email if available, otherwise
+  gateway:<user_id> or github:<login_casefolded>.
+
+  summarize assembles the ROISummary response by building person records from spend and pull
+  records keyed by _person_key, aggregating hours/spend/pull counts per person, computing
+  cohort eligibility (spend non-null, estimated_prs > 0, pending_prs == 0), and selecting
+  cost_per_hour only for eligible people with spend and hours > 0 and complete scope (all
+  repositories available). Daily trend sums eligible spend and estimated hours by date, and
+  ratio metrics (cost_per_hour, hours_per_dollar) return null when denominators are zero or
+  scope is incomplete (unavailable_repos present). ROIIdentityMapUpdate and ROIIdentityMapResponse
+  transmit identity-map edits to the API with login normalization and embed summary results
+  in the response.
+
+  Preserve the email match logic, cohort-only metrics, person-key collapsing, and the exact
+  sort order; test every path through match_identity and the four ratio-null conditions.
+
+scope:
+  paths:
+    - crates/betterlite-roi/src/summary.rs
+    - crates/betterlite-roi/src/lib.rs
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/analytics.py#L27-L44
+    why: match_identity with manual override, email matching, and four outcomes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/analytics.py#L47-L48
+    why: _person_key collapses identities to email or gateway/github prefix key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/analytics.py#L51-L77
+    why: _pull_summary builds a pull record with email and match method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/analytics.py#L80-L118
+    why: _summarize_person aggregates spend and pulls by person key, counts estimates, computes cohort eligibility and cost_per_hour.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/analytics.py#L121-L215
+    why: summarize orchestrates identity matching, person/pull aggregation, trend/metrics calculation and final sorting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L261-L273
+    why: ROIPersonSummary with hours, spend, estimated/pending counts, match methods and cost_per_hour.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L275-L295
+    why: ROIPullSummary with all pull metadata, email and match method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L297-L310
+    why: ROISummaryMetrics with matched/excluded spend, cost/hours ratios, counts of people/prs/estimates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L313-L334
+    why: ROITrendDay and ROISummary response with trends, metrics and sorted people/pulls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L337-L420
+    why: Response model versions of person, pull, metrics, trend and summary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L423-L425
+    why: ROIReportResponse wrapping optional summary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L255-L259
+    why: "ROIIdentityMatch tuple (unused, no caller at the pin)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L427-L435
+    why: ROIIdentityMapUpdate BaseModel with github_login and email, normalize_login validator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L437-L439
+    why: ROIIdentityMapResponse embedding summary and identity_map dict.
+
+dod:
+  - text: match_identity returns manual override address when a mapping exists for the pull login (casefolded), with method "manual".
+    proof: [identity-matching]
+  - text: match_identity returns "ambiguous emails" when a pull has multiple email candidates in observed spend emails.
+    proof: [identity-matching]
+  - text: match_identity returns "email unavailable" when pull has no email candidates after normalization.
+    proof: [identity-matching]
+  - text: match_identity returns "no gateway match" when pull has email candidates but none in observed set.
+    proof: [identity-matching]
+  - text: match_identity returns "profile email" or "commit email" when exactly one candidate matches, based on profile_email equality.
+    proof: [identity-matching]
+  - text: _person_key returns normalized email if non-empty, otherwise returns "gateway:<user_id>" or "github:<login_casefolded>".
+    proof: [person-key]
+  - text: _pull_summary constructs a pull record with email, match_method and matched flag set from _person_key and observed.
+    proof: [pull-summary]
+  - text: _summarize_person computes hours sum from estimated pulls, counts pending_prs as non-estimated pulls, and computes cost_per_hour only when spend and hours both > 0 and complete_scope is true.
+    proof: [person-summary]
+  - text: _summarize_person deduplicates logins and match methods by first occurrence, preserving insertion order (enumerate + slice membership test, no sorting).
+    proof: [person-summary]
+  - text: _summarize_person marks eligible=true only when spend is non-null, estimated_prs > 0 and pending_prs == 0.
+    proof: [person-summary]
+  - text: summarize returns null cost_per_hour and hours_per_dollar metrics when complete_scope is false (unavailable_repos present) or denominators are zero.
+    proof: [ratio-metrics]
+  - text: summarize returns people sorted by hours descending then id ascending, and pulls sorted by merged_at descending.
+    proof: [summary-sorting]
+  - text: summarize builds trend by date with spend and hours summed only for eligible people.
+    proof: [summary-behavior-tests]
+  - text: ROIIdentityMapUpdate.normalize_login validates and normalizes the github_login field.
+    proof: [identity-map-models]
+  - text: ROIIdentityMapResponse and ROIReportResponse serialize correctly and never expose raw identities.
+    proof: [identity-map-models]
+
+checks:
+  optional: []
+  commands:
+    - id: summary-tests
+      why: identity matching, person/pull/metrics aggregation or sorting tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^summary::tests::/) - test(/replays_the_.*_corpus/)'
+    - id: identity-matching
+      why: match_identity missing, wrong outcomes, or manual override not consulted first
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^summary::tests::identity_matching(::|$)/) - test(/replays_the_/)'
+    - id: person-key
+      why: _person_key missing or wrong collapsing logic (email, gateway prefix or github prefix)
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^summary::tests::person_key(::|$)/) - test(/replays_the_/)'
+    - id: pull-summary
+      why: _pull_summary missing or does not include email, match_method and matched fields
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^summary::tests::pull_summary(::|$)/) - test(/replays_the_/)'
+    - id: person-summary
+      why: _summarize_person wrong on hours, spend, eligible, cost_per_hour, dedup order, or pending/estimated counts
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^summary::tests::person_summary(::|$)/) - test(/replays_the_/)'
+    - id: ratio-metrics
+      why: cost_per_hour or hours_per_dollar not null when scope incomplete or denominators zero
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^summary::tests::ratio_metrics(::|$)/) - test(/replays_the_/)'
+    - id: summary-sorting
+      why: people not sorted by hours descending then id ascending, or pulls not sorted by merged_at descending
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^summary::tests::summary_sorting(::|$)/) - test(/replays_the_/)'
+    - id: summary-behavior-tests
+      why: summarize does not aggregate eligible people, compute trend, or return correct metrics
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^summary::tests::/) - test(/replays_the_/)'
+    - id: identity-map-models
+      why: ROIIdentityMapUpdate/Response missing, normalize_login not called, or models serialize wrong
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^summary::tests::identity_map_models(::|$)/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "ROIIdentityMatch (litellm/types/roi_calculator.py:255-259) has no caller at the pin and is left unbuilt."
+  - "B3150 owns the foundational ROISettings validators and normalized email/login helpers that B3151 consumes; this task owns only aggregation and response serialization."
+  - "B3154 owns estimator result records and validation; this task consumes ROIEstimate records."
+
+pitfalls:
+  - "match_identity returns the first hit from mappings.get(login.casefold()); override takes absolute precedence and the method is 'manual' regardless of whether the email appears in candidate emails."
+  - "Deduplication of logins and methods preserves insertion order: for each value at index, keep it only if the value does not appear in values[:index], so the first occurrence stays and later duplicates are dropped."
+  - "_person_key returns the empty string for a missing/invalid normalized email as a falsy value; callers must check and fallback to the gateway: or github: key, not assume email is always non-empty."
+  - "Eligible cohort has three independent conditions all true: spend is non-null (spend record exists), estimated_prs > 0 (at least one complete pull estimate), and pending_prs == 0 (all others are estimated/skipped, none pending review)."
+  - "Ratio metrics (cost_per_hour, hours_per_dollar) return null not zero when: complete_scope is false (unavailable_repos present), denominators are zero, or spend/hours are both invalid, so callers see null, not nan or infinity."
+  - "Trend is built from spend and pull records that both pass eligibility: spend goes to the daily bucket only if the spend row's normalized email is in eligible_emails, and pull hours go only if the pull is estimated and merged in that eligible cohort."
+  - "summarize passes the complete_scope flag (not report.get('unavailable_repos')) as a single condition; a call must not check scope twice or invert the logic."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 333
+  max_new_expects: 0

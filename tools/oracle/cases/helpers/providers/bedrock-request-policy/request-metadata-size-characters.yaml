@@ -1,0 +1,99 @@
+kind: helper
+name: bedrock-request-metadata-size-characters
+call:
+  bedrock_request_policy:
+    fields: []
+    step:
+      validate:
+        metadata:
+          - not a mapping
+          - []
+          - {k00: v, k01: v, k02: v, k03: v, k04: v, k05: v, k06: v, k07: v, k08: v, k09: v, k10: v, k11: v, k12: v, k13: v, k14: v, k15: v, k16: v}
+          - {k00: v, k01: v, k02: v, k03: v, k04: v, k05: v, k06: v, k07: v, k08: v, k09: v, k10: v, k11: v, k12: v, k13: v, k14: v, k15: v}
+          - {ok: v, number: 1}
+          - {"": v}
+          - ? "kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              k"
+            : v
+          - k: "vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              v"
+          - ? "kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk\
+              kkkkkkkkkkkkkkkk"
+            : "vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv\
+              vvvvvvvvvvvvvvvv"
+            empty: ""
+          - {"a\U00003000b\x1c": " \t\n\x0b\xa0\x85\U00002028\x1f:_@$#=/+,.-"}
+          - {"bad!": v}
+          - {k: "zero\U0000200bwidth"}
+          - {k: "caf\xe9"}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/0/message, why: betterlite writes its own error message}
+    - {pointer: /value/1/message, why: betterlite writes its own error message}
+    - {pointer: /value/2/message, why: betterlite writes its own error message}
+    - {pointer: /value/4/message, why: betterlite writes its own error message}
+    - {pointer: /value/5/message, why: betterlite writes its own error message}
+    - {pointer: /value/6/message, why: betterlite writes its own error message}
+    - {pointer: /value/7/message, why: betterlite writes its own error message}
+    - {pointer: /value/10/message, why: betterlite writes its own error message}
+    - {pointer: /value/11/message, why: betterlite writes its own error message}
+    - {pointer: /value/12/message, why: betterlite writes its own error message}

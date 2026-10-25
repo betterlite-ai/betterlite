@@ -140,11 +140,10 @@ scope:
   - crates/betterlite-bedrock/src/s3_signing.rs
   - crates/betterlite-bedrock/src/s3_signing/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_s3_signing.rs
-  - tools/oracle/src/helpers/bedrock_services_s3_signing/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_s3_signing.rs
+  - tools/oracle/src/helpers/bedrock/services_s3_signing/**
   - tools/oracle/helpers/bedrock_services_s3_signing.py
+  - tools/oracle/helpers/bedrock_services_s3_signing/**
   - tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_signing*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -498,6 +497,7 @@ out_of_scope:
   L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_s3_signing in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_s3_signing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_s3_signing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Upload destination selection reads litellm_params directly, while download authorization requires a trusted snapshot.
 - The standard-AWS URL regex captures query and fragment text as part of the key, while custom-endpoint fallback
   does not.

@@ -30,8 +30,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/legacy_prediction.rs
     - crates/betterlite-vertex/fuzz/corpus/legacy_prediction/**
-    - tools/oracle/src/helpers/{mod,legacy_prediction_result}.rs
-    - tools/oracle/helpers/{dispatch,legacy_prediction_result}.py
+    - tools/oracle/src/helpers/vertex/legacy_results.rs
+    - tools/oracle/src/helpers/vertex/legacy_results/**
+    - tools/oracle/helpers/vertex_legacy_results.py
+    - tools/oracle/helpers/vertex_legacy_results/**
     - tools/oracle/cases/helpers/legacy-prediction-result/**
     - tools/oracle/fuzz/corpus/helper_case/legacy_prediction_result*
   lint_tables: false
@@ -77,6 +79,7 @@ out_of_scope:
   - B1320 owns completion and cache lookup at L58-L424; _set_client_in_cache has no caller at the pin.
   - B157 supplies Python SDK object bindings; native prediction requests and replies remain in this task.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_legacy_results in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/legacy_results.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_legacy_results.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - TextStreamer.split() discards whitespace and yields bare words without adding spaces.
   - Async private streaming removes stream from the first instance as well as the option map.
   - Async completion maps arbitrary failures to 500 while the synchronous outer wrapper uses APIConnectionError.

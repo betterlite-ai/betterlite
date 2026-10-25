@@ -1,4 +1,5 @@
 mod attempt;
+mod overlap;
 mod prompt;
 mod review;
 mod runner;
@@ -208,6 +209,16 @@ pub(crate) fn dispatch(
     let agents: Agents = read_yaml(&development.root.join(".development/agents.yaml"))?;
     let file = ready_file(development, task_id)?;
     let task: Task = development.task(task_id)?;
+    let clashes = overlap::overlaps(development, &task)?;
+    if !clashes.is_empty() {
+        return Err(GateError::Dispatch {
+            task: task_id.to_owned(),
+            reason: format!(
+                "its scope overlaps work in progress: {}",
+                clashes.join("; ")
+            ),
+        });
+    }
     let (worktree, branch) = worktree::ensure(&development.root, &agents.worktrees, &task)?;
     let base = resolve_base(&worktree)?;
     let journal = journal_dir(&development.root, task_id)?;

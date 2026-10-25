@@ -108,11 +108,10 @@ scope:
   - crates/betterlite-azure/src/passthrough.rs
   - crates/betterlite-azure/src/passthrough/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_passthrough.rs
-  - tools/oracle/src/helpers/azure_passthrough/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/passthrough.rs
+  - tools/oracle/src/helpers/azure/passthrough/**
   - tools/oracle/helpers/azure_passthrough.py
+  - tools/oracle/helpers/azure_passthrough/**
   - tools/oracle/cases/helpers/providers/azure-passthrough/**
   - tools/oracle/fuzz/corpus/helper_case/azure_passthrough*
   lint_tables: false
@@ -264,6 +263,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_passthrough in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/passthrough.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_passthrough.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The foreign-deployment comparison case-folds served model names, while router path matching remains exact-case.
 - Caller api-version wins only when truthy; preserving an empty override as active changes which base query is removed.
 budget:

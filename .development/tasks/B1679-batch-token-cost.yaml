@@ -41,10 +41,10 @@ scope:
     - crates/betterlite-core/src/cost.rs
     - crates/betterlite-core/src/cost/batch.rs
     - crates/betterlite-core/src/cost/batch/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/batch_token_cost.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/batch_token_cost.rs
+    - tools/oracle/src/helpers/core_ops/batch_token_cost/**
     - tools/oracle/helpers/batch_token_cost.py
+    - tools/oracle/helpers/batch_token_cost/**
     - tools/oracle/cases/helpers/batch-token-cost/**
     - tools/oracle/fuzz/corpus/helper_case/batch-token-cost-*
   lint_tables: false
@@ -85,6 +85,7 @@ out_of_scope:
   - B1670 owns thresholded batch-rate selection in utils.py; this task consumes its four rates rather than rediscovering thresholds.
   - Beyond the batch functions, cost_calculator.py assigns adjustments to B1649, custom prices to B1673, image defaults to B1674, timed/transcription/video costs to B1676, additional fees to B1677 and OCR to B1678. Usage aggregation is B1680, realtime B1681, identity/breakdown storage B1682, usage/tier diagnostics B1683, token/vector/rerank dispatch B1686, input preparation B1688, replicate/early-call charging B1689 and outer response/completion composition B068.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as batch_token_cost in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/batch_token_cost.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/batch_token_cost.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Supplying only modality or cache prices still permits the public table to replace the entire supplied model-info record.
   - Explicit batch cache-rate absence and explicit zero differ, while the legacy write fallback treats zero like missing.
 budget:

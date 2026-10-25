@@ -43,11 +43,10 @@ scope:
   - crates/betterlite-openai/fuzz/corpus/responses_objects/**
   - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_objects.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/responses_objects.rs
+  - tools/oracle/src/helpers/openai/responses_objects/**
   - tools/oracle/helpers/responses_objects.py
+  - tools/oracle/helpers/responses_objects/**
   - tools/oracle/fuzz/corpus/helper_case/responses_objects-*
   - tools/oracle/cases/helpers/responses-objects/**
   lint_tables: false
@@ -110,6 +109,7 @@ out_of_scope:
 - B902 owns the imported generic output, function, image, interpreter and custom-tool records in types/responses/main.py.
 - B905 selects request parameters; no request dispatch or provider HTTP belongs to these record constructors.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_objects in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/responses_objects.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_objects.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - ResponsesAPIResponse.status accepts arbitrary strings; enforcing ResponsesAPIStatus on that field would reject provider extensions.
 - Null stripping applies only to reasoning output and exactly status, content and encrypted_content.
 - A cost mapping without total_cost yields null, not zero and not the original mapping.

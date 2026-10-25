@@ -98,11 +98,10 @@ scope:
   - crates/betterlite-anthropic/src/stream_state.rs
   - crates/betterlite-anthropic/src/stream_state/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_stream_state.rs
-  - tools/oracle/src/helpers/anthropic_stream_state/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/stream_state.rs
+  - tools/oracle/src/helpers/anthropic/stream_state/**
   - tools/oracle/helpers/anthropic_stream_state.py
+  - tools/oracle/helpers/anthropic_stream_state/**
   - tools/oracle/cases/helpers/providers/anthropic-stream-state/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_stream_state*
   lint_tables: false
@@ -286,6 +285,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197;
   AnthropicChatCompletion.acompletion_stream_function L204-L252 belong to B689.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_stream_state in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/stream_state.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_stream_state.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Text-key deltas return before entering the block buffer, regardless of their declared type.
 - Cumulative usage merging is shallow, so new nested usage detail replaces the previous nested mapping.
 budget:

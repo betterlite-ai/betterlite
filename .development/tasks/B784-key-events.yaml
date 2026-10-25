@@ -97,12 +97,11 @@ scope:
     - crates/betterlite-server/src/key_events/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/key_events.rs
-    - tools/oracle/src/helpers/key_events/**
+    - tools/oracle/src/helpers/server/key_events.rs
+    - tools/oracle/src/helpers/server/key_events/**
     - tools/oracle/helpers/key_events.py
+    - tools/oracle/helpers/key_events/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/keys.rs
-    - tools/oracle/helpers/management/keys.py
     - tools/oracle/cases/helpers/key-events/**
     - tools/oracle/fuzz/corpus/helper_case/key-events-*
   lint_tables: false
@@ -183,6 +182,7 @@ out_of_scope:
     (L517-L589), KeyManagementEventHooks._send_key_rotated_email (L592-L645).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as key_events in the server group. Replace the stub Op in tools/oracle/src/helpers/server/key_events.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/key_events.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Generated/updated audits use caller.api_key, but rotated/deleted audits use caller.token.
   - A null project_id detach must survive exclude_none and the audit masking pass.
 budget:

@@ -82,11 +82,11 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/user_record.rs
     - crates/betterlite-db/fuzz/corpus/user_record/**
-    - tools/oracle/src/helpers/user_repository.rs
+    - tools/oracle/src/helpers/db/user_repository.rs
+    - tools/oracle/src/helpers/db/user_repository/**
     - tools/oracle/helpers/user_repository.py
+    - tools/oracle/helpers/user_repository/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
     - tools/oracle/cases/helpers/user-repository/**
     - tools/oracle/fuzz/corpus/helper_case/user-repository-*
   lint_tables: false
@@ -160,6 +160,7 @@ out_of_scope:
   - ProjectRepository.find_by_alias, find_by_team_id, create_project, update_project,
     delete_project and update_spend have no caller at the pin.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as user_repository in the db group. Replace the stub Op in tools/oracle/src/helpers/db/user_repository.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/user_repository.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Case-sensitive input deduplication can return one user twice when differently cased emails fall in different pages.
   - A placeholder with any key is excluded even when that key is expired or blocked.
   - Billable-user counting uses two reads, so concurrent changes can exercise the explicit zero floor.

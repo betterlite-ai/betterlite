@@ -47,8 +47,10 @@ scope:
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,native_messages_hosts}.rs
     - crates/betterlite-config/tests/native_messages_hosts_settings.rs
-    - tools/oracle/src/helpers/{mod,native_messages_hosts}.rs
-    - tools/oracle/helpers/{dispatch,native_messages_hosts}.py
+    - tools/oracle/src/helpers/core_ops/native_messages_hosts.rs
+    - tools/oracle/src/helpers/core_ops/native_messages_hosts/**
+    - tools/oracle/helpers/native_messages_hosts.py
+    - tools/oracle/helpers/native_messages_hosts/**
     - tools/oracle/cases/helpers/native-messages-hosts/**
     - tools/oracle/fuzz/corpus/helper_case/native_messages_hosts*
   lint_tables: false
@@ -92,6 +94,7 @@ out_of_scope:
   - B038 and B043 bind their respective providers into Messages selection and booted HTTP cases; this task adds no route.
   - B960, B961 and B962 own inherited beta, authentication and native wire algorithms.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as native_messages_hosts in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/native_messages_hosts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/native_messages_hosts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - DeepSeek's lowercase authorization lookup is less permissive than Tencent's inherited header-name check.
   - MiniMax does not remove /v1 before appending its Messages suffix.
   - Only a tool with exact type=custom loses its discriminator after DeepSeek's parent transform.

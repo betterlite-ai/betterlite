@@ -132,11 +132,10 @@ scope:
   - crates/betterlite-anthropic/src/anthropic_capability_catalog.rs
   - crates/betterlite-anthropic/src/anthropic_capability_catalog/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_capability_catalog.rs
-  - tools/oracle/src/helpers/anthropic_capability_catalog/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/capability_catalog.rs
+  - tools/oracle/src/helpers/anthropic/capability_catalog/**
   - tools/oracle/helpers/anthropic_capability_catalog.py
+  - tools/oracle/helpers/anthropic_capability_catalog/**
   - tools/oracle/cases/helpers/providers/anthropic-capability-catalog/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_capability_catalog*
   - crates/betterlite-config/Cargo.toml
@@ -406,6 +405,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_token_counter L1202-L1213
   belong to B585.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_capability_catalog in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/capability_catalog.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_capability_catalog.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An existing output_config.effort=None overrides the effort inferred from a legacy budget.
 - The sampling drop is silent; forced-tool and disabled-thinking drops each log their own warning.
 budget:

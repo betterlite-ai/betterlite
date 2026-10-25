@@ -101,11 +101,10 @@ scope:
   - crates/betterlite-azure/src/images.rs
   - crates/betterlite-azure/src/images/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_images.rs
-  - tools/oracle/src/helpers/azure_images/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/images.rs
+  - tools/oracle/src/helpers/azure/images/**
   - tools/oracle/helpers/azure_images.py
+  - tools/oracle/helpers/azure_images/**
   - tools/oracle/cases/helpers/providers/azure-images/**
   - tools/oracle/fuzz/corpus/helper_case/azure_images*
   lint_tables: false
@@ -295,6 +294,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/azure/image_generation/http_utils.py: azure_deployment_image_generation_json_body
   L6-L30 belong to B535.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_images in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/images.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_images.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - get_azure_image_generation_config never returns None, making the async generic-response fallback unreachable for
   valid string models.
 - The image-edit docstring says an empty deployment key falls back to the positional key, but the executable condition

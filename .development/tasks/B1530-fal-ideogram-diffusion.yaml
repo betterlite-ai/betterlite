@@ -36,10 +36,10 @@ scope:
     - crates/betterlite-core/src/api/fal/{ideogram,stable_diffusion}.rs
     - crates/betterlite-core/src/api/fal/ideogram/**
     - crates/betterlite-core/src/api/fal/stable_diffusion/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/fal_render_profiles.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/fal_render_profiles.py
+    - tools/oracle/src/helpers/core_ops/fal_ideogram_diffusion.rs
+    - tools/oracle/src/helpers/core_ops/fal_ideogram_diffusion/**
+    - tools/oracle/helpers/fal_ideogram_diffusion.py
+    - tools/oracle/helpers/fal_ideogram_diffusion/**
     - tools/oracle/cases/helpers/fal-render-profiles/**
     - tools/oracle/fuzz/corpus/helper_case/fal_render_profiles*
   lint_tables: false
@@ -73,6 +73,7 @@ deviations: []
 out_of_scope:
   - B046's Fal factory chooses between these profiles; B1525 handles the wire JSON and credential layer.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as fal_ideogram_diffusion in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/fal_ideogram_diffusion.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fal_ideogram_diffusion.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Ideogram accepts boolean dimensions in a size object even though generic Fal result dimensions exclude booleans.
   - Stable Diffusion leaves custom/model paths intact instead of forcing a fal-ai/ prefix.
   - Ideogram does not skip an integer image-list member before constructing its ImageObject.

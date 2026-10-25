@@ -92,10 +92,10 @@ scope:
     - crates/betterlite-auth/src/budget_snapshots.rs
     - crates/betterlite-auth/src/budget_snapshots/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/carried_policy_records.rs
+    - tools/oracle/src/helpers/auth/carried_policy_records.rs
+    - tools/oracle/src/helpers/auth/carried_policy_records/**
     - tools/oracle/helpers/carried_policy_records.py
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/helpers/carried_policy_records/**
     - tools/oracle/cases/helpers/carried-policy-records/**
     - tools/oracle/fuzz/corpus/helper_case/carried-policy-records-*
   lint_tables: false
@@ -166,6 +166,7 @@ out_of_scope:
     this task owns every function in types/proxy/carried_budget_state.py.
   - B732 owns principals and auth-stage interfaces; later auth models reference these lower records.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as carried_policy_records in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/carried_policy_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/carried_policy_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - AgentResponse.agent_card_params is an open dictionary, not the stricter AgentCard TypedDict.
   - Nullable budget snapshot fields are required, so missing metadata and explicit null metadata differ.
   - Kill-switch URL validation preserves the supplied string and does not itself authorize an outbound call.

@@ -52,12 +52,11 @@ scope:
     - crates/betterlite-auth/src/master_key_boot/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/master_key_boot.rs
-    - tools/oracle/src/helpers/master_key_boot/**
+    - tools/oracle/src/helpers/auth/master_key_boot.rs
+    - tools/oracle/src/helpers/auth/master_key_boot/**
     - tools/oracle/helpers/master_key_boot.py
+    - tools/oracle/helpers/master_key_boot/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/master-key-boot/**
     - tools/oracle/fuzz/corpus/helper_case/master-key-boot-*
   lint_tables: false
@@ -137,6 +136,7 @@ out_of_scope:
     and the stored-value counting/migration service; use its lower config field instead of defining it here.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as master_key_boot in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/master_key_boot.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/master_key_boot.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Only the stripped known default sk-1234 is specially refused; do not invent minimum entropy rules.
 budget:
   max_changed_lines: 400

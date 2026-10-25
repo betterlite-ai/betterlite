@@ -108,11 +108,10 @@ scope:
   - crates/betterlite-bedrock/src/image_edits.rs
   - crates/betterlite-bedrock/src/image_edits/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_other_image_edits.rs
-  - tools/oracle/src/helpers/bedrock_other_image_edits/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/other_image_edits.rs
+  - tools/oracle/src/helpers/bedrock/other_image_edits/**
   - tools/oracle/helpers/bedrock_other_image_edits.py
+  - tools/oracle/helpers/bedrock_other_image_edits/**
   - tools/oracle/cases/helpers/providers/bedrock-other-image-edits/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_edits*
   lint_tables: false
@@ -272,6 +271,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_other_image_edits in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/other_image_edits.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_other_image_edits.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The execution layer decodes once before the family transform decodes again, changing malformed-JSON error priority.
 - Only the first input image reaches the selected provider config.
 budget:

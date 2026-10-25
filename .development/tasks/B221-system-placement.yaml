@@ -18,8 +18,10 @@ scope:
   - crates/betterlite-prompts/src/system_placement.rs
   - crates/betterlite-prompts/src/system_placement/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/prompts/system_placement.rs
+  - tools/oracle/src/helpers/prompts/system_placement/**
+  - tools/oracle/helpers/system_placement.py
+  - tools/oracle/helpers/system_placement/**
   - tools/oracle/cases/helpers/system-placement/**
   - tools/oracle/fuzz/corpus/helper_case/**
   - crates/betterlite-openai/**
@@ -85,6 +87,7 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B179 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as system_placement in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/system_placement.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/system_placement.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.

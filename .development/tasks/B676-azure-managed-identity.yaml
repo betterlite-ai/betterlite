@@ -133,11 +133,10 @@ scope:
   - crates/betterlite-azure/src/azure_managed_identity.rs
   - crates/betterlite-azure/src/azure_managed_identity/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_managed_identity.rs
-  - tools/oracle/src/helpers/azure_managed_identity/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/managed_identity.rs
+  - tools/oracle/src/helpers/azure/managed_identity/**
   - tools/oracle/helpers/azure_managed_identity.py
+  - tools/oracle/helpers/azure_managed_identity/**
   - tools/oracle/cases/helpers/providers/azure-managed-identity/**
   - tools/oracle/fuzz/corpus/helper_case/azure_managed_identity*
   - crates/betterlite-azure/fuzz/Cargo.toml
@@ -393,6 +392,7 @@ oracle_cases:
 deviations: []
 out_of_scope: []
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_managed_identity in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/managed_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_managed_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The SDK outer selector tests truthiness, but MSAL protocol selection tests environment-key presence.
 - A configured pod authority skips the availability probe even when its value is empty.
 budget:

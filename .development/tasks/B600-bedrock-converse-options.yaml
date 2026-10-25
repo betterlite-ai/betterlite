@@ -139,11 +139,10 @@ scope:
   - crates/betterlite-bedrock/src/converse_options.rs
   - crates/betterlite-bedrock/src/converse_options/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_converse_options.rs
-  - tools/oracle/src/helpers/bedrock_converse_options/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/converse_options.rs
+  - tools/oracle/src/helpers/bedrock/converse_options/**
   - tools/oracle/helpers/bedrock_converse_options.py
+  - tools/oracle/helpers/bedrock_converse_options/**
   - tools/oracle/cases/helpers/providers/bedrock-converse-options/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_converse_options*
   - crates/betterlite-config/Cargo.toml
@@ -435,6 +434,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta
   L1686-L1827; AmazonConverseConfig._filter_context_management_for_bedrock_converse L1829-L1859 belong to B683.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_converse_options in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/converse_options.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_converse_options.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The Nova2 detector recognizes only us., eu. and apac. wrappers, while Nova grounding accepts any nova substring.
 - Adaptive effort keeps an existing output_config.effort; this differs from the direct Anthropic mapper that replaces
   it.

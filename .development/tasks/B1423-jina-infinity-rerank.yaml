@@ -50,8 +50,10 @@ scope:
     - crates/betterlite-config/src/resolve.rs
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/tests/embedding_host_settings.rs
-    - tools/oracle/src/helpers/{mod,host_rerank_record}.rs
-    - tools/oracle/helpers/{dispatch,host_rerank_record}.py
+    - tools/oracle/src/helpers/openai/jina_infinity_rerank.rs
+    - tools/oracle/src/helpers/openai/jina_infinity_rerank/**
+    - tools/oracle/helpers/jina_infinity_rerank.py
+    - tools/oracle/helpers/jina_infinity_rerank/**
     - tools/oracle/cases/helpers/host-rerank-record/**
     - tools/oracle/fuzz/corpus/helper_case/host_rerank_record*
   lint_tables: false
@@ -95,6 +97,7 @@ deviations: []
 out_of_scope:
   - B1419 owns inherited Cohere V1 request construction and B1422 the common Infinity error; B037 handles dispatch and provider key resolution.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as jina_infinity_rerank in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/jina_infinity_rerank.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/jina_infinity_rerank.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Infinity's check for cohere_results is None cannot fire because the list was initialized before the loop.
   - Jina ignores a formal top_n value if non_default_params does not contain that key.
   - Infinity can report negative output_tokens when total_tokens is below prompt_tokens.

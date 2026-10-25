@@ -123,12 +123,11 @@ scope:
     - crates/betterlite-auth/src/auth_key_budgets/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_key_budgets.rs
-    - tools/oracle/src/helpers/auth_key_budgets/**
+    - tools/oracle/src/helpers/auth/key_budgets.rs
+    - tools/oracle/src/helpers/auth/key_budgets/**
     - tools/oracle/helpers/auth_key_budgets.py
+    - tools/oracle/helpers/auth_key_budgets/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-key-budgets/**
     - tools/oracle/fuzz/corpus/helper_case/auth-key-budgets-*
     - crates/betterlite-server/src/auth.rs
@@ -452,6 +451,7 @@ out_of_scope:
   - 'litellm/proxy/auth/user_api_key_auth.py: B1225 owns _noop_none (L3113-L3116), _apply_key_end_user_default_budget_to_token
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_key_budgets in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/key_budgets.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_key_budgets.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Soft-budget thresholds emit alerts without becoming hard admission denials.
 budget:
   max_changed_lines: 800

@@ -92,11 +92,10 @@ scope:
   - crates/betterlite-provider/src/bedrock_agent_dispatch.rs
   - crates/betterlite-provider/src/bedrock_agent_dispatch/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_agent_dispatch.rs
-  - tools/oracle/src/helpers/bedrock_agent_dispatch/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/bedrock_agent_dispatch.rs
+  - tools/oracle/src/helpers/provider/bedrock_agent_dispatch/**
   - tools/oracle/helpers/bedrock_agent_dispatch.py
+  - tools/oracle/helpers/bedrock_agent_dispatch/**
   - tools/oracle/cases/helpers/providers/bedrock-agent-dispatch/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_agent_dispatch*
   lint_tables: false
@@ -230,6 +229,7 @@ out_of_scope:
   L106-L123; BedrockClaudePlatformMixin.get_complete_url L125-L145; BedrockClaudePlatformMixin.sign_request L147-L170
   belong to B2211.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_agent_dispatch in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/bedrock_agent_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_agent_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - AgentCore and InvokeAgent use different signing services and runtime path shapes.
 budget:
   max_changed_lines: 550

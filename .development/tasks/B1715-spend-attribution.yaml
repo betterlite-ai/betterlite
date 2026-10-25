@@ -62,8 +62,10 @@ scope:
     - crates/betterlite-config/src/spend_attribution.rs
     - crates/betterlite-config/src/spend_attribution/**
     - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/spend_proxy_selection.rs,corpus/spend_proxy_selection/**}
-    - tools/oracle/src/helpers/{mod.rs,spend_attribution.rs}
-    - tools/oracle/helpers/{dispatch.py,spend_attribution.py}
+    - tools/oracle/src/helpers/logging/spend_attribution.rs
+    - tools/oracle/src/helpers/logging/spend_attribution/**
+    - tools/oracle/helpers/spend_attribution.py
+    - tools/oracle/helpers/spend_attribution/**
     - tools/oracle/cases/helpers/spend-attribution/**
     - tools/oracle/fuzz/corpus/helper_case/spend-attribution-*
   lint_tables: false
@@ -112,6 +114,7 @@ out_of_scope:
   - B124 and its existing contract leaves retain all other _types.py records; B1716 owns SpendLogsPayload. Other proxy/utils.py functions remain with their repository/job owners.
   - B044 retains every other litellm_proxy provider method; B253 must consume the extracted access-group helpers, while B1710 owns the shared digest validator.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_attribution in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/spend_attribution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_attribution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A hash-shaped untrusted key is hashed again unless the trusted metadata hash equals it.
   - metadata=None and metadata={} have different status/default-field projections.
 budget:

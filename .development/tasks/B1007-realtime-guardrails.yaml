@@ -27,8 +27,10 @@ scope:
   - crates/betterlite-core/src/api/realtime_guardrails/**
   - tools/oracle/src/websocket_driver.rs
   - tools/oracle/src/websocket_driver/realtime_guardrails.rs
-  - tools/oracle/helpers/websocket_dispatch.py
-  - tools/oracle/helpers/realtime_guardrails_websocket.py
+  - tools/oracle/src/helpers/core_ops/realtime_guardrails.rs
+  - tools/oracle/src/helpers/core_ops/realtime_guardrails/**
+  - tools/oracle/helpers/realtime_guardrails.py
+  - tools/oracle/helpers/realtime_guardrails/**
   - tools/oracle/cases/websocket/realtime-guardrails/**
   - tools/oracle/fuzz/corpus/websocket_oracle/realtime-guardrails-*
   lint_tables: false
@@ -95,6 +97,7 @@ out_of_scope:
 - B2455 owns callback predicates and setup modifications; _has_realtime_guardrails has no caller at the pin. B1110 owns _maybe_send_guardrail_turn_detection_update and all sends.
 - B1004 contracts, B1005 beta mappings, B1006 logging/state, B1124 buffering, B1008 backend relay and B1009 client relay own the rest of realtime_streaming.py.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as realtime_guardrails in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/realtime_guardrails.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/realtime_guardrails.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An exception having detail but no status_code is not necessarily a policy block; only ValueError gets that special treatment.
 - Duplicate callback objects run once, but two different objects with the same configured name can both run.
 - A blocked tool result must reach the backend before response.cancel or any synthetic user message.

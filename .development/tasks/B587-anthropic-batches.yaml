@@ -115,11 +115,10 @@ scope:
   - crates/betterlite-anthropic/src/batches.rs
   - crates/betterlite-anthropic/src/batches/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_batches.rs
-  - tools/oracle/src/helpers/anthropic_batches/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/batches.rs
+  - tools/oracle/src/helpers/anthropic/batches/**
   - tools/oracle/helpers/anthropic_batches.py
+  - tools/oracle/helpers/anthropic_batches/**
   - tools/oracle/cases/helpers/providers/anthropic-batches/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_batches*
   - crates/betterlite-anthropic/fuzz/Cargo.toml
@@ -300,6 +299,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_batches in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/batches.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_batches.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The async retrieve wrapper requires an API key before its auth-token-capable validator can run.
 - output_file_id is set for every status, and result-row conversion keeps the last projected message while summing
   usage.

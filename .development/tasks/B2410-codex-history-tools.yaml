@@ -22,11 +22,10 @@ scope:
   - crates/betterlite-core/src/api/codex_history_tools.rs
   - crates/betterlite-core/src/api/codex_history_tools/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/codex_history_tools.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/codex_history_tools.rs
+  - tools/oracle/src/helpers/core_ops/codex_history_tools/**
   - tools/oracle/helpers/codex_history_tools.py
+  - tools/oracle/helpers/codex_history_tools/**
   - tools/oracle/fuzz/corpus/helper_case/codex_history_tools-*
   - tools/oracle/cases/helpers/codex-history-tools/**
   lint_tables: false
@@ -83,6 +82,7 @@ deviations: []
 out_of_scope:
 - B907 retains custom-tool schemas, argument parsing and tool choices; provider tasks own logging decisions for the reported rewritten/dropped types.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as codex_history_tools in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/codex_history_tools.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/codex_history_tools.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A malformed additional_tools item is removed even when its tool list cannot validate.
 - Codex encrypted_content in agent messages is treated as plaintext fallback here; this helper performs no decryption.
 - Dropped items still contribute their type to rewritten_types, so deriving diagnostics from retained output loses information.

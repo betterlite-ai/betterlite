@@ -54,10 +54,10 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/mcp_stored_contract.rs
     - crates/betterlite-db/fuzz/corpus/mcp_stored_contract/**
-    - tools/oracle/src/helpers/mcp_stored_contracts.rs
-    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/src/helpers/db/mcp_stored_contracts.rs
+    - tools/oracle/src/helpers/db/mcp_stored_contracts/**
     - tools/oracle/helpers/mcp_stored_contracts.py
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/helpers/mcp_stored_contracts/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/mcp-stored-contracts/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-stored-contracts-*
@@ -112,6 +112,7 @@ out_of_scope:
     MCPOAuthMetadata, MCPOAuthIdentityBinding, header/origin helpers and transport operations.
   - B858 owns the database MCP server row that calls these validators; B2303 owns secret-map encryption.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as mcp_stored_contracts in the db group. Replace the stub Op in tools/oracle/src/helpers/db/mcp_stored_contracts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/mcp_stored_contracts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The stored credentials record does not apply the egress defaults described in its field docstrings.
   - MCPInfo's upstream protocol literal excludes 2026-07-28 even though MCPSpecVersion lists it.
   - A falsey malformed-looking pinned-tools value becomes None, but whitespace JSON is an error.

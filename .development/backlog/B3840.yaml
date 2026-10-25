@@ -1,7 +1,7 @@
 id: B3840
 milestone: M7 observability
 title: OTel semantic vocabulary and span roles
-status: todo
+status: in-progress
 depends_on: []
 file: tasks/B3840-otel-semantic-vocabulary.yaml
 covers:

@@ -93,11 +93,10 @@ scope:
   - crates/betterlite-anthropic/src/files.rs
   - crates/betterlite-anthropic/src/files/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_files.rs
-  - tools/oracle/src/helpers/anthropic_files/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/files.rs
+  - tools/oracle/src/helpers/anthropic/files/**
   - tools/oracle/helpers/anthropic_files.py
+  - tools/oracle/helpers/anthropic_files/**
   - tools/oracle/cases/helpers/providers/anthropic-files/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_files*
   - crates/betterlite-anthropic/fuzz/Cargo.toml
@@ -257,6 +256,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_files in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/files.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_files.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - File timestamps discard offset and fractional seconds before treating the remaining wall time as UTC.
 - List pagination metadata is discarded, and msgbatch_ file ids route to batch results.
 budget:

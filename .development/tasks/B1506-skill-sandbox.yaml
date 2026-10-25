@@ -41,10 +41,10 @@ scope:
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/generated_paths.rs
     - crates/betterlite-core/fuzz/corpus/generated_paths/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/skill_sandbox.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/skill_sandbox.rs
+    - tools/oracle/src/helpers/core_ops/skill_sandbox/**
     - tools/oracle/helpers/skill_sandbox.py
+    - tools/oracle/helpers/skill_sandbox/**
     - tools/oracle/cases/helpers/skill-sandbox/**
     - tools/oracle/fuzz/corpus/helper_case/skill_sandbox*
   lint_tables: false
@@ -90,6 +90,7 @@ out_of_scope:
   - B095 performs LLM follow-up calls; this service executes one code submission and returns its files.
   - B165 owns interpreter lifecycle, callable handles and bounded off-runtime SDK invocation; no Python subprocess bridge is added here.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as skill_sandbox in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/skill_sandbox.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/skill_sandbox.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - backend and timeout are stored but never included in session_kwargs at the pin.
   - Generated files are collected after an unsuccessful code exit as well as a successful one.
   - The MIME table knows txt even though the generated-file listing excludes .txt.

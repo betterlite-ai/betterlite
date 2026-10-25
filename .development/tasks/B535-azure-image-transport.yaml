@@ -117,11 +117,10 @@ scope:
   - crates/betterlite-azure/src/image_transport.rs
   - crates/betterlite-azure/src/image_transport/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_image_transport.rs
-  - tools/oracle/src/helpers/azure_image_transport/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/image_transport.rs
+  - tools/oracle/src/helpers/azure/image_transport/**
   - tools/oracle/helpers/azure_image_transport.py
+  - tools/oracle/helpers/azure_image_transport/**
   - tools/oracle/cases/helpers/providers/azure-image-transport/**
   - tools/oracle/fuzz/corpus/helper_case/azure_image_transport*
   - crates/betterlite-azure/fuzz/Cargo.toml
@@ -531,6 +530,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/utils.py: _handle_new_key_with_scan L5621-L5637 have no caller at the pin;
   do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_image_transport in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/image_transport.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_image_transport.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The timeout clock starts after the first operation GET and uses >, not >=, so a terminal result is not rejected
   by the loop deadline.
 - Only the initial poll explicitly guards a missing status; applying that 502 guard to every iteration would change

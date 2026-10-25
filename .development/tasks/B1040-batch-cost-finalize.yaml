@@ -96,11 +96,8 @@ scope:
   - crates/betterlite-config/src/api/batch_cost_finalize/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/batch-cost-finalize-*
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/batch_cost_finalize.rs
-  - tools/oracle/src/helpers/batch_cost_finalize/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/batch_cost_finalize.rs
+  - tools/oracle/src/helpers/core_ops/batch_cost_finalize/**
   - tools/oracle/helpers/batch_cost_finalize.py
   - tools/oracle/helpers/batch_cost_finalize/**
   - tools/oracle/fuzz/corpus/helper_case/batch_cost_finalize-*
@@ -217,6 +214,7 @@ out_of_scope:
 - Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
   never stand in for those HTTP comparisons.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as batch_cost_finalize in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/batch_cost_finalize.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/batch_cost_finalize.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - 'batch_utils.py:431 emits the diagnostic ''Extracted LLM output file ID from unified file ID: %s''; retain its
   level and fallback instead of turning it into a hard error.'
 - 'batch_utils.py:506 emits the diagnostic ''Failed to fetch batch error file %s: %s''; retain its level and fallback

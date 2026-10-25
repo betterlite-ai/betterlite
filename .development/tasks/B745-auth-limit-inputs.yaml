@@ -85,12 +85,11 @@ scope:
     - crates/betterlite-auth/src/auth_limit_inputs/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_limit_inputs.rs
-    - tools/oracle/src/helpers/auth_limit_inputs/**
+    - tools/oracle/src/helpers/auth/limit_inputs.rs
+    - tools/oracle/src/helpers/auth/limit_inputs/**
     - tools/oracle/helpers/auth_limit_inputs.py
+    - tools/oracle/helpers/auth_limit_inputs/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-limit-inputs/**
     - tools/oracle/fuzz/corpus/helper_case/auth-limit-inputs-*
     - crates/betterlite-config/src/auth_limit_inputs.rs
@@ -274,6 +273,7 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_limit_inputs in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/limit_inputs.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_limit_inputs.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An unchanged estimate resent by a non-admin is allowed, but replacing metadata without that field can be a forbidden removal.
   - Empty key model-limit metadata falls through, whereas an empty team model-limit map blocks deployment inheritance.
 budget:

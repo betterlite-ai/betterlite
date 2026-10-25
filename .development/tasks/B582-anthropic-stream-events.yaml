@@ -95,11 +95,10 @@ scope:
   - crates/betterlite-anthropic/src/stream_events.rs
   - crates/betterlite-anthropic/src/stream_events/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_stream_events.rs
-  - tools/oracle/src/helpers/anthropic_stream_events/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/stream_events.rs
+  - tools/oracle/src/helpers/anthropic/stream_events/**
   - tools/oracle/helpers/anthropic_stream_events.py
+  - tools/oracle/helpers/anthropic_stream_events/**
   - tools/oracle/cases/helpers/providers/anthropic-stream-events/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_stream_events*
   - crates/betterlite-anthropic/fuzz/Cargo.toml
@@ -324,6 +323,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197;
   AnthropicChatCompletion.acompletion_stream_function L204-L252 belong to B689.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_stream_events in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/stream_events.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_stream_events.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A tool block with no deltas emits no {} stop fragment because the empty-args predicate returns false for an empty
   buffer.
 - message_stop is an empty chunk; message_delta supplies finish_reason and EOF ends iteration.

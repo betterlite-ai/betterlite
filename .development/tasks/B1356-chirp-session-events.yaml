@@ -28,8 +28,10 @@ scope:
     - crates/betterlite-core/src/api.rs
     - crates/betterlite-core/src/api/vertex_chirp_protocol.rs
     - crates/betterlite-core/src/api/vertex_chirp_protocol/**
-    - tools/oracle/src/helpers/{mod,chirp_events}.rs
-    - tools/oracle/helpers/{dispatch,chirp_events}.py
+    - tools/oracle/src/helpers/core_ops/chirp_session_events.rs
+    - tools/oracle/src/helpers/core_ops/chirp_session_events/**
+    - tools/oracle/helpers/chirp_session_events.py
+    - tools/oracle/helpers/chirp_session_events/**
     - tools/oracle/cases/helpers/chirp-events/**
     - tools/oracle/fuzz/corpus/helper_case/chirp_events*
   lint_tables: false
@@ -69,6 +71,7 @@ out_of_scope:
   - B1358 owns SpeechStreamingTarget at L70-L74 and the SDK stream event records; B1359 owns backend command records at speech types L45-L69.
   - B1354 owns the recognize-only types at speech types L8-L42.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as chirp_session_events in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/chirp_session_events.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/chirp_session_events.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Punctuation and case changes inside a shared word prefix do not emit a correction delta.
   - With server_vad, a final result can complete a turn before an interim result in the same frame starts another.
   - Discarded audio can still contribute billable duration reported at session close.

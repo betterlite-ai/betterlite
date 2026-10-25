@@ -38,10 +38,10 @@ scope:
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/fal_chat_reply.rs
     - crates/betterlite-core/fuzz/corpus/fal_chat_reply/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/fal_vision_chat.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/fal_vision_chat.rs
+    - tools/oracle/src/helpers/core_ops/fal_vision_chat/**
     - tools/oracle/helpers/fal_vision_chat.py
+    - tools/oracle/helpers/fal_vision_chat/**
     - tools/oracle/cases/helpers/fal-vision-chat/**
     - tools/oracle/fuzz/corpus/helper_case/fal_vision_chat*
   lint_tables: false
@@ -77,6 +77,7 @@ deviations: []
 out_of_scope:
   - B046 retains _complete_fal_ai in main.py and selects this adapter through the upper-layer provider dispatcher.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as fal_vision_chat in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/fal_vision_chat.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fal_vision_chat.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - reasoning_effort=none must serialize reasoning=false rather than dropping the field as falsey.
   - A content list with one empty image_url string satisfies the image-count requirement.
   - The source validates usage_info even when output is an empty string.

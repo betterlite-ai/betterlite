@@ -115,11 +115,10 @@ scope:
   - crates/betterlite-foundry/src/agent_runs.rs
   - crates/betterlite-foundry/src/agent_runs/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_agent_runs.rs
-  - tools/oracle/src/helpers/foundry_agent_runs/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/foundry/agent_runs.rs
+  - tools/oracle/src/helpers/foundry/agent_runs/**
   - tools/oracle/helpers/foundry_agent_runs.py
+  - tools/oracle/helpers/foundry_agent_runs/**
   - tools/oracle/cases/helpers/providers/foundry-agent-runs/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_agent_runs*
   - crates/betterlite-foundry/fuzz/Cargo.toml
@@ -307,6 +306,7 @@ out_of_scope:
   L277-L280; AzureAIAgentsConfig.supports_stream_param_in_request_body L282-L287; AzureAIAgentsConfig.transform_response
   L289-L307 belong to B559.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_agent_runs in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/agent_runs.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_agent_runs.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The last unsuccessful poll also sleeps before the for/else raises 408.
 - The empty thread-creation mapping becomes no POST body because the closure tests truthiness.
 budget:

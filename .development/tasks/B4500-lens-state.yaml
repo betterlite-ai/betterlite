@@ -1,0 +1,138 @@
+id: B4500
+title: Lens records, job transitions and finding identity
+description: >-
+  Build the shared Lens wire records and pure state transitions that underpin all
+  Lens analysis tasks. Implement strict extra-field rejection across all records,
+  deterministic finding identity from lens id/check id/kind/title hashes with legacy
+  backwards compatibility, and lease tracking with three-attempt reclaim limits.
+  Preserve the two-minute settling window for execution lookback, five-minute worker
+  leases with renewal through progress updates, and budget month tracking for monthly
+  spend renewal. Keep all defaults: source=traces, lookback_hours=24, interval_minutes=15,
+  sample_size=null, sample_percent=100, concurrency=8, monthly_budget=100. Findings
+  reopen only when resolved and new supporting execution evidence arrives. Occurrence
+  sets track only support evidence, not counterexamples. The record decoder must support
+  byte-string decoding for shared use by server routes and the worker executable with
+  no duplicate record definitions. Use Decimal for monetary amounts throughout. Pure
+  state functions take and return immutable records, never modify in place.
+scope:
+  paths:
+    - crates/betterlite-lens/Cargo.toml
+    - crates/betterlite-lens/src/lib.rs
+    - crates/betterlite-lens/src/models.rs
+    - crates/betterlite-lens/src/models/**
+    - crates/betterlite-lens/src/state.rs
+    - crates/betterlite-lens/src/state/**
+    - crates/betterlite-lens/fuzz/corpus/lens_model/lens-record-*
+    - tools/oracle/src/helpers/lens/state.rs
+    - tools/oracle/src/helpers/lens/state/**
+    - tools/oracle/helpers/lens_state.py
+    - tools/oracle/helpers/lens_state/**
+    - tools/oracle/cases/helpers/lens-state/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/models.py#L1-L251
+    why: Complete record definitions with validation, defaults and field constraints.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/state.py#L1-L151
+    why: Pure state transitions including lease/budget renewal, job queuing, and finding merge logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/state.py#L48-L81
+    why: Claim job lease attempt tracking and three-attempt reclaim limit on failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/state.py#L91-L135
+    why: Deterministic finding identity computation, occurrence deduplication and status reopening.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/state.py#L138-L151
+    why: snapshot_finding overwrites fields from draft and resets occurrence tracking, distinct from merge behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/models.py#L47-L55
+    why: "LensSettings.unique_checks validator: duplicate ID, missing-enabled-check, and reserved ID errors."
+dod:
+  - text: All records decode from JSON and bytes without accepting extra fields, every field with a constraint validates that constraint, and all defaults match the pinned source.
+    proof: [records-validation-tests, lens-decode-tests]
+  - text: State transitions preserve job lease timeouts, budget month renewal, three-attempt reclaim, and finding identity matching with legacy backwards compatibility.
+    proof: [state-transition-tests, finding-identity-tests]
+  - text: "snapshot_finding overwrites merged finding fields from draft and resets first_seen, last_seen and occurrences to draft's support evidence, discarding accumulated occurrence history."
+    proof: [snapshot-finding-tests]
+  - text: "LensSettings.unique_checks rejects duplicate check IDs, empty context with no enabled check, and reserved \"expected_behavior\" check IDs with distinct error messages."
+    proof: [check-validation-tests]
+  - text: "merge_finding evidence deduplication caps the final list at 20 entries; entries beyond the 20 most recent are discarded."
+    proof: [evidence-cap-tests]
+  - text: Record decoders support both JSON and raw byte input, with separate fuzzing corpus for the byte path.
+    proof: [lens-decode-fuzz, lens-decode-corpus]
+checks:
+  optional: []
+  commands:
+    - id: records-validation-tests
+      why: Record field constraints (lengths, patterns, ranges, enums) or extra-field rejection are missing.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^models::/)'
+    - id: state-transition-tests
+      why: Job queuing, claiming with lease renewal, budget renewal, or attempt limits are absent.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^state::transitions::/)'
+    - id: finding-identity-tests
+      why: Finding identity determinism, legacy hash compatibility, occurrence dedup or status reopening are missing.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^state::finding_identity::/)'
+    - id: snapshot-finding-tests
+      why: snapshot_finding does not overwrite draft fields or reset occurrences correctly.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^state::snapshot_finding::/)'
+    - id: check-validation-tests
+      why: "LensSettings.unique_checks does not validate all three conditions: duplicate IDs, missing enabled check with empty context, and reserved \"expected_behavior\" ID."
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^models::check_validation::/)'
+    - id: evidence-cap-tests
+      why: merge_finding does not cap evidence at 20 entries or discard older entries correctly.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^state::evidence_cap::/)'
+    - id: lens-decode-tests
+      why: Record JSON decoding with constraint validation or rejection of extra fields is absent.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^models::decode::/)'
+    - id: lens-decode-fuzz
+      why: Byte-string record decoder lacks implementation or test harness.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(replays_the_lens_model_corpus)'
+    - id: lens-decode-corpus
+      why: No seed corpus exists for byte-string record decoding.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-lens/fuzz/corpus/lens_model/lens-record-*)"
+oracle_cases:
+  - tools/oracle/cases/helpers/lens-state/scope-access-same-team.yaml
+  - tools/oracle/cases/helpers/lens-state/scope-access-all-teams.yaml
+  - tools/oracle/cases/helpers/lens-state/scope-access-different-team.yaml
+  - tools/oracle/cases/helpers/lens-state/queue-job-with-lookback-override.yaml
+  - tools/oracle/cases/helpers/lens-state/queue-job-default-lookback.yaml
+  - tools/oracle/cases/helpers/lens-state/queue-job-settling-window.yaml
+  - tools/oracle/cases/helpers/lens-state/claim-job-lease-timeout.yaml
+  - tools/oracle/cases/helpers/lens-state/claim-job-attempt-limit.yaml
+  - tools/oracle/cases/helpers/lens-state/claim-job-already-running.yaml
+  - tools/oracle/cases/helpers/lens-state/claim-job-scope-denied.yaml
+  - tools/oracle/cases/helpers/lens-state/budget-month-renewal.yaml
+  - tools/oracle/cases/helpers/lens-state/budget-month-same-month.yaml
+  - tools/oracle/cases/helpers/lens-state/finding-identity-determinism.yaml
+  - tools/oracle/cases/helpers/lens-state/finding-identity-legacy-hash.yaml
+  - tools/oracle/cases/helpers/lens-state/finding-reopen-on-new-evidence.yaml
+  - tools/oracle/cases/helpers/lens-state/finding-occurrence-support-only.yaml
+  - tools/oracle/cases/helpers/lens-state/finding-evidence-dedup.yaml
+  - tools/oracle/cases/helpers/lens-state/check-id-uniqueness.yaml
+  - tools/oracle/cases/helpers/lens-state/check-id-empty-context.yaml
+  - tools/oracle/cases/helpers/lens-state/check-id-reserved-expected-behavior.yaml
+  - tools/oracle/cases/helpers/lens-state/finding-snapshot-overwrite.yaml
+  - tools/oracle/cases/helpers/lens-state/finding-evidence-cap-20-entries.yaml
+  - tools/oracle/cases/helpers/lens-state/check-enabled-filtering.yaml
+  - tools/oracle/cases/helpers/lens-state/metadata-filter-constraints.yaml
+deviations:
+  - what: Record decoding uses Rust's `serde` with `#[serde(deny_unknown_fields)]` instead of Pydantic's extra="forbid"; the behavior is equivalent.
+    why: Pydantic is Python-only; Rust's serde provides the same strict validation across both server and worker.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/models.py#L7-L8
+  - what: Monetary amounts use `rust_decimal::Decimal` instead of Python float to avoid precision loss in budget tracking and spend calculations.
+    why: Budgets and spend are financial values that must round-trip and sum correctly; floats introduce precision errors that accumulate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/models.py#L45
+out_of_scope:
+  - B4501 owns job persistence, repository queries and optimistic updates; these state functions are pure and own no database access.
+  - B4502 owns source storage integration and sample/evidence fetching; record construction here is separated from retrieval.
+  - B4503/B4505/B4504 own HTTP routes, authorization and billing; they call these state functions as pure operations.
+  - B132 owns worker implementation and the server's route factories; these records are shared by both.
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as lens_state in the lens group. Replace the stub Op in tools/oracle/src/helpers/lens/state.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/lens_state.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - Claim job only succeeds if the worker has access to the lens scope; denial does not error, it returns the original lens unchanged.
+  - Finding identity uses a 24-character SHA256 prefix, and legacy identity uses a different hash to support finding migration from older versions.
+  - Occurrence sets deduplicate by execution_id and must be sorted for determinism; they contain only support evidence, not counterexamples.
+  - Budget month format uses strftime("%Y-%m") so renewal happens exactly at calendar month boundaries, not rolling 30-day windows.
+  - The settling window of two minutes before now ensures executions from shortly before the job creation time are included in the analysis.
+  - "snapshot_finding overwrites the merged finding's title, description, suggestion, limitation and evidence from the draft, then resets first_seen, last_seen and occurrences to the draft's support evidence only, discarding all accumulated occurrence history. This is distinct from merge_finding's accumulation behavior."
+  - "merge_finding evidence deduplication deduplicates on (execution_id, span_id, quote) using a dict key and caps the final list at 20 entries with [-20:], so evidence older than the 20 most recent is discarded once a finding accumulates more than 20 pieces."
+  - "LensSettings.unique_checks has three distinct validation errors with different literal messages: 'Each check must have a unique ID' for duplicate IDs, 'Describe expected behavior or add an enabled check' for empty context with no enabled check, and 'expected_behavior is reserved for the behavior description' for a check ID of 'expected_behavior'."
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

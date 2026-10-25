@@ -19,11 +19,10 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/summary_history.rs
   - crates/betterlite-core/src/api/summary_history/**
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/summary_history.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/summary_history.rs
+  - tools/oracle/src/helpers/core_ops/summary_history/**
   - tools/oracle/helpers/summary_history.py
+  - tools/oracle/helpers/summary_history/**
   - tools/oracle/fuzz/corpus/helper_case/summary_history-*
   - tools/oracle/cases/helpers/summary-history/**
   lint_tables: false
@@ -137,6 +136,7 @@ out_of_scope:
 - B2432 owns compact.py L1019-L1111 and L1160-L1380 provider calls/execution, and B972 owns dispatcher.py.
 - B013 owns tokenization and model metadata; B964/B2431 own adapter message/tool conversion and their internal warnings.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as summary_history in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/summary_history.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/summary_history.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A compaction block can appear on any role and within a larger content array; slicing only whole turns loses the boundary.
 - Counted system blocks use one newline, whereas summary-request system blocks use two.
 - A successful summary needs one eligible user turn; slice-only forwarding must keep the entire recent tail.

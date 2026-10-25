@@ -122,11 +122,10 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - deny.toml
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_provider.rs
-  - tools/oracle/src/helpers/anthropic_provider/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/anthropic_provider.rs
+  - tools/oracle/src/helpers/provider/anthropic_provider/**
   - tools/oracle/helpers/anthropic_provider.py
+  - tools/oracle/helpers/anthropic_provider/**
   - tools/oracle/cases/helpers/providers/anthropic-provider/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_provider*
   - tools/oracle/cases/chat/anthropic_provider-dispatch-http.yaml
@@ -430,6 +429,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/main.py: _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base
   L1069-L1080 belong to B500.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_provider in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/anthropic_provider.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_provider.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The calculated caller custom_prompt_dict is not the value passed to Anthropic chat; the source passes the global
   map.
 - The batch-results selector tests substrings anywhere in the URL, not an endpoint suffix.

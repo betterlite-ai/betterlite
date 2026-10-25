@@ -22,11 +22,10 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_stream_hooks.rs
   - crates/betterlite-core/src/api/responses_stream_hooks/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_stream_hooks.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_stream_hooks.rs
+  - tools/oracle/src/helpers/core_ops/responses_stream_hooks/**
   - tools/oracle/helpers/responses_stream_hooks.py
+  - tools/oracle/helpers/responses_stream_hooks/**
   - tools/oracle/fuzz/corpus/helper_case/responses_stream_hooks-*
   - tools/oracle/cases/helpers/responses-stream-hooks/**
   lint_tables: false
@@ -125,6 +124,7 @@ out_of_scope:
 - Both call_post_streaming_hooks_for_testing facades L801-L807 and L995-L1006 have no production caller at the pin; their tested live callee remains owned here.
 - B125 owns cache backend/eligibility/task creation, B068 the calculator and B157 the shared post-success callback dispatcher; their missing detailed plans are explicit integration seams.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_stream_hooks in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_stream_hooks.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_stream_hooks.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - logged is latched before the cache write, so a failed write must not enable a second success dispatch.
 - A chunk hook exception stops the chain silently and keeps any earlier replacement.
 - Error-event fallback uses yielded_first_chunk, while transport fallback also considers whether output actually started.

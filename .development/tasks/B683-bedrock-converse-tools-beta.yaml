@@ -76,11 +76,10 @@ scope:
   - crates/betterlite-bedrock/src/bedrock_converse_tools_beta.rs
   - crates/betterlite-bedrock/src/bedrock_converse_tools_beta/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_converse_tools_beta.rs
-  - tools/oracle/src/helpers/bedrock_converse_tools_beta/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/converse_tools_beta.rs
+  - tools/oracle/src/helpers/bedrock/converse_tools_beta/**
   - tools/oracle/helpers/bedrock_converse_tools_beta.py
+  - tools/oracle/helpers/bedrock_converse_tools_beta/**
   - tools/oracle/cases/helpers/providers/bedrock-converse-tools-beta/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_converse_tools_beta*
   lint_tables: false
@@ -254,6 +253,7 @@ out_of_scope:
   AmazonConverseConfig.validate_environment L2711-L2724; AmazonConverseConfig.should_fake_stream L2726-L2752 belong
   to B607.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_converse_tools_beta in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/converse_tools_beta.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_converse_tools_beta.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A systemTool key is sufficient for pass-through even when its value is None.
 - Computer beta values may duplicate a caller value, while eager, effort and compact beta additions explicitly deduplicate.
 budget:

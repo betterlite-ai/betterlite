@@ -50,8 +50,10 @@ scope:
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/tests/vertex_search_settings.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_search*
-    - tools/oracle/src/helpers/{mod,vertex_discovery_search}.rs
-    - tools/oracle/helpers/{dispatch,vertex_discovery_search}.py
+    - tools/oracle/src/helpers/vertex/discovery_search.rs
+    - tools/oracle/src/helpers/vertex/discovery_search/**
+    - tools/oracle/helpers/vertex_discovery_search.py
+    - tools/oracle/helpers/vertex_discovery_search/**
     - tools/oracle/cases/helpers/vertex-discovery-search/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_discovery_search*
   lint_tables: false
@@ -107,6 +109,7 @@ out_of_scope:
   - B1058 owns the shared vector request/result types; B034 binds this read-only provider to B1064 search execution.
   - RAG corpus creation is B1388, not an alternative implementation of this provider's unsupported create methods.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_discovery_search in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/discovery_search.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_discovery_search.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A None target-selecting value is dropped before rejection, while an empty string is rejected.
   - A present empty snippet suppresses htmlSnippet fallback for that snippet.
   - Native extra_body.query changes both the upstream query and returned search_query.

@@ -35,8 +35,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_agent_buffer.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_agent_buffer/**
-    - tools/oracle/src/helpers/{mod,vertex_agent_records}.rs
-    - tools/oracle/helpers/{dispatch,vertex_agent_records}.py
+    - tools/oracle/src/helpers/vertex/agent_engine_records.rs
+    - tools/oracle/src/helpers/vertex/agent_engine_records/**
+    - tools/oracle/helpers/vertex_agent_engine_records.py
+    - tools/oracle/helpers/vertex_agent_engine_records/**
     - tools/oracle/cases/helpers/vertex-agent-records/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_agent_records*
   lint_tables: false
@@ -85,6 +87,7 @@ out_of_scope:
   - B1387 owns get_streaming_response and both custom stream wrappers at L346-L478 plus sse_iterator.py.
   - B031 owns _complete_vertex_ai's Agent Engine selection; B034 composes its non-chat service operations.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_agent_engine_records in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/agent_engine_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_agent_engine_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A fully qualified resource does not override the host region chosen from configuration.
   - Buffered responses ignore data:-prefixed lines even though the streaming iterator accepts them.
   - An empty first text part prevents state_delta fallback for that object.

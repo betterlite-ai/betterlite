@@ -108,11 +108,10 @@ scope:
   - crates/betterlite-azure/src/oidc_exchange.rs
   - crates/betterlite-azure/src/oidc_exchange/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_oidc_exchange.rs
-  - tools/oracle/src/helpers/azure_oidc_exchange/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/oidc_exchange.rs
+  - tools/oracle/src/helpers/azure/oidc_exchange/**
   - tools/oracle/helpers/azure_oidc_exchange.py
+  - tools/oracle/helpers/azure_oidc_exchange/**
   - tools/oracle/cases/helpers/providers/azure-oidc-exchange/**
   - tools/oracle/fuzz/corpus/helper_case/azure_oidc_exchange*
   - crates/betterlite-azure/fuzz/Cargo.toml
@@ -326,6 +325,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/azure/common_utils.py: BaseAzureLLM._try_get_default_azure_credential_provider
   L450-L478 belong to B677.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_oidc_exchange in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/oidc_exchange.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_oidc_exchange.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty token or empty tenant environment value passes this helper because it rejects None, not falsy values.
 - The cache stores the provider expires_in value directly; do not introduce a refresh margin in this layer.
 budget:

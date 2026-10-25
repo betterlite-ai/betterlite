@@ -42,10 +42,10 @@ scope:
     - crates/betterlite-config/src/cost_adjustments/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/cost-adjustment-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/cost_adjustments.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/cost/adjustments.rs
+    - tools/oracle/src/helpers/cost/adjustments/**
     - tools/oracle/helpers/cost_adjustments.py
+    - tools/oracle/helpers/cost_adjustments/**
     - tools/oracle/cases/helpers/cost-adjustments/**
     - tools/oracle/fuzz/corpus/helper_case/cost-adjustments-*
   lint_tables: false
@@ -90,6 +90,7 @@ out_of_scope:
   - B068 owns all remaining cost_calculator.py functions outside L1121-L1218 until its call-graph parts assign them; no provider selection or token pricing belongs to this leaf.
   - B1650 owns management validation and persistence for cost adjustment maps, which intentionally impose stricter ranges than direct configuration.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as cost_adjustments in the cost group. Replace the stub Op in tools/oracle/src/helpers/cost/adjustments.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cost_adjustments.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Testing a provider entry by truthiness instead of membership incorrectly exposes the global margin when the provider explicitly supplies null or an empty object.
   - A fixed margin still applies when the base cost is zero, so skipping zero-cost requests before this helper changes billing.
 budget:

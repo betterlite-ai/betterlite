@@ -89,11 +89,10 @@ scope:
   - crates/betterlite-foundry/src/model_router.rs
   - crates/betterlite-foundry/src/model_router/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_model_router.rs
-  - tools/oracle/src/helpers/foundry_model_router/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/foundry/model_router.rs
+  - tools/oracle/src/helpers/foundry/model_router/**
   - tools/oracle/helpers/foundry_model_router.py
+  - tools/oracle/helpers/foundry_model_router/**
   - tools/oracle/cases/helpers/providers/foundry-model-router/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_model_router*
   lint_tables: false
@@ -221,6 +220,7 @@ out_of_scope:
   L154-L159; AzureFoundryModelInfo.get_api_base L228-L230; AzureFoundryModelInfo.get_api_key L232-L234 belong to
   B549.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_model_router in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/model_router.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_model_router.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Despite its name, strip_model_router_prefix matches anywhere, with underscore spelling taking priority.
 - The selected model stamp is read after the parent has applied its own model projection.
 budget:

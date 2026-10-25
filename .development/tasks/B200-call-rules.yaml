@@ -24,8 +24,10 @@ scope:
   - crates/betterlite-core/fuzz/**
   - crates/betterlite-openai/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/core_ops/call_rules.rs
+  - tools/oracle/src/helpers/core_ops/call_rules/**
+  - tools/oracle/helpers/call_rules.py
+  - tools/oracle/helpers/call_rules/**
   - tools/oracle/cases/helpers/call-rules/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -99,6 +101,7 @@ out_of_scope:
 - Provider-generated structured-output retries and fallbacks are B017-B018.
 - Mock chat/stream/embedding and client permission gate are B255; image mocks B082.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as call_rules in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/call_rules.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/call_rules.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The pre-call and post-call rule functions do not interpret every decision shape identically.
 - >-
   A JSON Schema validator may fetch remote references by default; disable both HTTP and file retrieval explicitly.

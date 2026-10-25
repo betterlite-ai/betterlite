@@ -113,11 +113,10 @@ scope:
   - crates/betterlite-azure/src/azure_chat_base_policy.rs
   - crates/betterlite-azure/src/azure_chat_base_policy/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_chat_base_policy.rs
-  - tools/oracle/src/helpers/azure_chat_base_policy/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/chat_base_policy.rs
+  - tools/oracle/src/helpers/azure/chat_base_policy/**
   - tools/oracle/helpers/azure_chat_base_policy.py
+  - tools/oracle/helpers/azure_chat_base_policy/**
   - tools/oracle/cases/helpers/providers/azure-chat-base-policy/**
   - tools/oracle/fuzz/corpus/helper_case/azure_chat_base_policy*
   lint_tables: false
@@ -326,6 +325,7 @@ out_of_scope:
   with no caller at the pin: AzureChatCompletion owns both operations via B533/B685/B531; do not add oracle cases
   or use these placeholders as generic handler fallbacks.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_chat_base_policy in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/chat_base_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_chat_base_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The response_format docstring promises catalog lookup, but the executable test only excludes the gpt-3.5/gpt-35
   spellings.
 - tool_choice date checks compare strings, while response_format date checks convert year/month to integers.

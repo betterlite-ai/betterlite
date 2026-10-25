@@ -108,12 +108,11 @@ scope:
     - crates/betterlite-auth/src/jwt_provisioning/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/jwt_provisioning.rs
-    - tools/oracle/src/helpers/jwt_provisioning/**
+    - tools/oracle/src/helpers/auth/jwt_provisioning.rs
+    - tools/oracle/src/helpers/auth/jwt_provisioning/**
     - tools/oracle/helpers/jwt_provisioning.py
+    - tools/oracle/helpers/jwt_provisioning/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/jwt.rs
-    - tools/oracle/helpers/management/jwt.py
     - tools/oracle/cases/helpers/jwt-provisioning/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-provisioning-*
     - crates/betterlite-server/src/auth.rs
@@ -300,6 +299,7 @@ out_of_scope:
     (L2374-L2388).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as jwt_provisioning in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/jwt_provisioning.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/jwt_provisioning.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - With fallback_to_db_teams=false, a singular-only claim is ignored by synchronization and existing DB teams are removed.
   - SCIM's default failure suppression can leave cached claim teams ahead of actual roster writes.
 budget:

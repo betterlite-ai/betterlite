@@ -43,10 +43,10 @@ scope:
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/apiserpent_reply.rs
     - crates/betterlite-core/fuzz/corpus/apiserpent_reply/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/apiserpent_search.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/apiserpent_search.rs
+    - tools/oracle/src/helpers/core_ops/apiserpent_search/**
     - tools/oracle/helpers/apiserpent_search.py
+    - tools/oracle/helpers/apiserpent_search/**
     - tools/oracle/cases/helpers/apiserpent-search/**
     - tools/oracle/fuzz/corpus/helper_case/apiserpent_search*
   lint_tables: false
@@ -87,6 +87,7 @@ deviations: []
 out_of_scope:
   - The root apiserpent package initializer stays with B048; shared search contracts, credential policy and HTTP routes remain B091.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as apiserpent_search in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/apiserpent_search.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/apiserpent_search.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - deep=true with num=2 is accepted unless max_results is also supplied.
   - APISerpent's domain clause is juxtaposed with the query rather than joined with AND.
   - An invalid engine string is not rejected by the dataclass's Literal annotation.

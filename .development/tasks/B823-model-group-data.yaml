@@ -104,12 +104,11 @@ scope:
     - crates/betterlite-server/src/model_group_data/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/model_group_data.rs
-    - tools/oracle/src/helpers/model_group_data/**
+    - tools/oracle/src/helpers/server/model_group_data.rs
+    - tools/oracle/src/helpers/server/model_group_data/**
     - tools/oracle/helpers/model_group_data.py
+    - tools/oracle/helpers/model_group_data/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/model-group-data/**
     - tools/oracle/fuzz/corpus/helper_case/model-group-data-*
     - crates/betterlite-server/src/model_group_data/fixtures/**
@@ -268,6 +267,7 @@ out_of_scope:
     (L1093-L1120), set_access_group_budget (L1128-L1198), delete_access_group_budget (L1206-L1244).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as model_group_data in the server group. Replace the stub Op in tools/oracle/src/helpers/server/model_group_data.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_group_data.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - ID-based tagging validates each row immediately before its write, so a later missing ID leaves earlier tags committed.
   - Removing one duplicate group tag leaves the remaining occurrence, and discovery counts both occurrences separately.
 budget:

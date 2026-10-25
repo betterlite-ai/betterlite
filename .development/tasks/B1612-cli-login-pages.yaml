@@ -25,10 +25,10 @@ scope:
     - crates/betterlite-server/src/cli_login_pages.rs
     - crates/betterlite-server/src/cli_login_pages/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/cli_login_page.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/cli_login_page.py
+    - tools/oracle/src/helpers/server/cli_login_pages.rs
+    - tools/oracle/src/helpers/server/cli_login_pages/**
+    - tools/oracle/helpers/cli_login_pages.py
+    - tools/oracle/helpers/cli_login_pages/**
     - tools/oracle/cases/helpers/cli-login-pages/**
     - tools/oracle/fuzz/corpus/helper_case/cli-login-page-*
   lint_tables: false
@@ -70,6 +70,7 @@ out_of_scope:
   - B1613 verifies browser_complete_token and B1615 supplies the verification page; B137 owns native-client approval handling.
   - Functions elsewhere in ui_sso.py retain the assignments in B063's ownership inventory.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as cli_login_pages in the server group. Replace the stub Op in tools/oracle/src/helpers/server/cli_login_pages.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cli_login_pages.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A single team must use a hidden team_id control even though its human-readable label remains visible.
   - The flow handle is an attribute value inside a POST form, never a query parameter in the complete_url.
 budget:

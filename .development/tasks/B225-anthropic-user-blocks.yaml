@@ -18,8 +18,10 @@ scope:
   - crates/betterlite-prompts/src/anthropic_user_blocks.rs
   - crates/betterlite-prompts/src/anthropic_user_blocks/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/prompts/anthropic_user_blocks.rs
+  - tools/oracle/src/helpers/prompts/anthropic_user_blocks/**
+  - tools/oracle/helpers/anthropic_user_blocks.py
+  - tools/oracle/helpers/anthropic_user_blocks/**
   - tools/oracle/cases/helpers/anthropic-user-blocks/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -79,6 +81,7 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B180 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_user_blocks in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/anthropic_user_blocks.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_user_blocks.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.

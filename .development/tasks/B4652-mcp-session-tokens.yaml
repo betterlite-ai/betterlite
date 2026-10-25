@@ -1,0 +1,131 @@
+id: B4652
+title: MCP gateway session token signing and verification
+description: >-
+  Implement pure session token signing and verification for the MCP gateway's aggregate DCR front door. Session tokens
+  are identity-only credentials minted after SSO login: each token carries only a litellm user id and the DCR client
+  it was issued to, never an upstream credential (those are vaulted server-side in LiteLLM_MCPUserCredentials and
+  resolved at call time). The token is a reference, not an authorization: live policy is enforced when the token is used,
+  allowing immediate session termination upon user or team deactivation without maintaining a revocation store. Wire shape is llm_session_ (access) or llm_srefresh_ (refresh) prefix plus a JWT signed with
+  either a HS256 master-key-derived secret (the default, matching envelope signing) or operator-provided RS256 RSA keys
+  where RS256 mode requires only the public key for downstream verification. Claims are iss/iat/exp plus jti (per-mint uniqueness, stable
+  revocation handle), kind (session or session_refresh), user_id, client_id (binds refresh to the issuing DCR client),
+  resource_server_id (RFC 8707 per-server restriction, optional), audience (proxy_api for proxy-CLI refresh, None for
+  MCP, optional), and team_id (optional). Signatures are the only secret in a session token; reprs never print minted
+  tokens (SecretStr). Implement three modules in crates/betterlite-mcp/src: session_tokens.rs (pure functions), types.rs
+  (pydantic-like models), and errors.rs (validation errors). All functions are pure, total over hostile input, and take
+  all key material and the clock as explicit parameters. PyJWT's iat/nbf/exp validators are disabled (hostile claim types,
+  wall-clock comparison); a strict pydantic-equivalent claims model is the sole type gate. Prefix checks are O(1) cheap
+  routes for the admission edge and token endpoint before any cryptography. Define oracle cases for both symmetric (HS256)
+  and asymmetric (RS256) signing, token rotation, expiry, kind mismatch, and hostile input. Write the behavior rstest
+  functions session_token_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure in
+  the DoD.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-mcp/**
+  - tools/oracle/cases/session-tokens/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/session_token.py#L1-L100
+  why: Module docstring, constants (prefixes, TTLs, size caps, algorithms), type aliases and SessionTokenKind.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/session_token.py#L100-L200
+  why: Session principal, key material models (SessionKeys, AsymmetricSessionKeys, SessionRotatedPublicKey).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/session_token.py#L200-L280
+  why: Minted and opened token shapes, error types (SessionTokenMintError, SessionTokenOpenError).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/session_token.py#L280-L385
+  why: Public mint and open APIs (mint_session_token, open_session_token, refresh variants), cheap prefix checks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/session_token.py#L385-L470
+  why: Shared mint and open helpers, JWT signing (_sign_claims), _SessionClaims model, claim validation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/session_token.py#L470-L548
+  why: Verification material selection, RSA public-key extraction, kid-matched key routing, signature and claim decoding.
+dod:
+- text: >-
+    Every successful minting case (symmetric HS256, asymmetric RS256, refresh kind) produces a token matching
+    LiteLLM's signature and claims exactly.
+  proof:
+  - oracle
+  - session-token-tests
+- text: >-
+    Minting with a client_id large enough to push the serialized token beyond MAX_SESSION_TOKEN_BYTES (4096) returns
+    SessionTokenTooLarge with size_bytes and max_bytes fields matching LiteLLM's output.
+  proof:
+  - oracle
+  - session-token-tests
+- text: >-
+    Every opening case (valid token, expired token, wrong kind, bad signature, wrong prefix, malformed JWT, oversized
+    input) returns the matching error or a valid OpenedSessionToken with the exact claims from the mint.
+  proof:
+  - oracle
+  - session-token-tests
+- text: >-
+    RS256 key rotation with previous_public_keys accepts tokens signed by the current key and every previous key within
+    the rotation window, rejects unknown kids, and extracts the current public half from the private key without storing it.
+  proof:
+  - session-token-tests
+- text: >-
+    Prefix checks (is_session_token, is_session_refresh_token) are O(1) string prefix operations that never decode the
+    JWT.
+  proof:
+  - session-token-tests
+- text: >-
+    All public and private functions are pure (no globals, no side effects), total over hostile input (never raise on
+    bad input), and take all key material and the clock as explicit parameters.
+  proof:
+  - clippy
+  - session-token-tests
+deviations: []
+out_of_scope:
+- Provider upstream credential vaulting and per-call resolution (B4658).
+- Refresh grant token endpoint handling (B4657, B4676).
+- Integration with DCR registration (B4674) or OAuth flows (B4660, B4662, B4665).
+- Audience-specific refresh behavior (proxy-API vs MCP switching).
+- Revocation lists or blacklisting; deactivation gates at admission time, not here.
+pitfalls:
+- >-
+  Never compare exp against the wall clock. Tests pass the wall-clock ``now`` as a parameter, and every comparison
+  must use it, not ``datetime.now()`` or equivalent.
+- >-
+  RS256 public-key extraction is a pure function (no cache) because the key comes from the private key, not an external
+  store. Only the derived public half is ever shared downstream.
+- >-
+  The ``kid`` (key id) in the RS256 JOSE header is the only place key rotation is visible; mismatch routes to
+  SessionBadSignature, not SessionMalformed, because a bad ``kid`` is a foreign key, not a JWT defect.
+- >-
+  Size bounds are enforced before JWT parsing: character count for fast rejection, byte count for exact boundary.
+  Oversized tokens map to SessionMalformed, not SessionTokenTooLarge (which is only for minting overflow).
+- >-
+  The ``jti`` claim is a random 16-byte URL-safe token per mint, guaranteed unique; its purpose is a future revocation
+  list handle and a collision detector across tokens minted in the same second. Never inline it; always mint fresh.
+- >-
+  PyJWT's registered-claim validators are disabled because they compare against the wall clock instead of the injected
+  ``now``. The strict pydantic-equivalent claims model is the sole type gate.
+review_level: security
+budget:
+  max_changed_lines: 600
+  max_new_expects: 2
+oracle_cases:
+- tools/oracle/cases/session-tokens/symmetric-hs256-access.yaml
+- tools/oracle/cases/session-tokens/symmetric-hs256-refresh.yaml
+- tools/oracle/cases/session-tokens/asymmetric-rs256-access.yaml
+- tools/oracle/cases/session-tokens/asymmetric-rs256-refresh.yaml
+- tools/oracle/cases/session-tokens/rs256-rotation-current.yaml
+- tools/oracle/cases/session-tokens/rs256-rotation-previous.yaml
+- tools/oracle/cases/session-tokens/expired-access-token.yaml
+- tools/oracle/cases/session-tokens/wrong-kind-access.yaml
+- tools/oracle/cases/session-tokens/bad-signature-hs256.yaml
+- tools/oracle/cases/session-tokens/bad-signature-rs256.yaml
+- tools/oracle/cases/session-tokens/wrong-prefix-session.yaml
+- tools/oracle/cases/session-tokens/wrong-issuer.yaml
+- tools/oracle/cases/session-tokens/malformed-jwt-invalid-base64.yaml
+- tools/oracle/cases/session-tokens/malformed-jwt-missing-exp.yaml
+- tools/oracle/cases/session-tokens/mint-size-overflow.yaml
+- tools/oracle/cases/session-tokens/oversized-token.yaml
+- tools/oracle/cases/session-tokens/with-resource-server-id.yaml
+- tools/oracle/cases/session-tokens/with-audience-proxy-api.yaml
+- tools/oracle/cases/session-tokens/with-team-id.yaml
+checks:
+  optional: []
+  commands:
+  - id: session-token-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/::session_token_tests_behavior($|::)/)'

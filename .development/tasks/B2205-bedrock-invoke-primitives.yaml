@@ -287,6 +287,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
   AmazonInvokeConfig.transform_response L281-L419 belong to B612.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_invoke_primitives in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/invoke_primitives.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_invoke_primitives.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The computed proxy_endpoint_url is not the return value of get_complete_url.
 - The Bedrock template branch is outside the later factory fallback catch.
 references:
@@ -350,11 +351,10 @@ scope:
   - crates/betterlite-bedrock/src/invoke_primitives.rs
   - crates/betterlite-bedrock/src/invoke_primitives/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_invoke_primitives.rs
-  - tools/oracle/src/helpers/bedrock_invoke_primitives/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/invoke_primitives.rs
+  - tools/oracle/src/helpers/bedrock/invoke_primitives/**
   - tools/oracle/helpers/bedrock_invoke_primitives.py
+  - tools/oracle/helpers/bedrock_invoke_primitives/**
   - tools/oracle/cases/helpers/providers/bedrock-invoke-primitives/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_primitives*
 title: Bedrock Invoke shared request primitives

@@ -44,8 +44,10 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/cohere_chat_v1.rs
     - crates/betterlite-openai/fuzz/corpus/cohere_chat_v1/**
-    - tools/oracle/src/helpers/{mod,cohere_v1_chat}.rs
-    - tools/oracle/helpers/{dispatch,cohere_v1_chat}.py
+    - tools/oracle/src/helpers/openai/cohere_chat_v1.rs
+    - tools/oracle/src/helpers/openai/cohere_chat_v1/**
+    - tools/oracle/helpers/cohere_chat_v1.py
+    - tools/oracle/helpers/cohere_chat_v1/**
     - tools/oracle/cases/helpers/cohere-v1-chat/**
     - tools/oracle/fuzz/corpus/helper_case/cohere_v1_chat*
   lint_tables: false
@@ -87,6 +89,7 @@ out_of_scope:
   - B1416 owns the v2 response declarations after L44 of types/llms/cohere.py; B182 owns prompt history construction, including its input-mutation boundary.
   - B037 handles COHERE_API_KEY/CO_API_KEY and main.py selection; this config adds no environment lookup or HTTP route.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as cohere_chat_v1 in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/cohere_chat_v1.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cohere_chat_v1.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Cohere v1 advertises tool_choice without copying it in map_openai_params.
   - The response cannot omit text merely because tool_calls will later erase that text.
   - A USER history tail forces force_single_step even for a plain-string final message.

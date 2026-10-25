@@ -81,12 +81,11 @@ scope:
     - crates/betterlite-server/src/resource_delegation/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/resource_delegation.rs
-    - tools/oracle/src/helpers/resource_delegation/**
+    - tools/oracle/src/helpers/server/resource_delegation.rs
+    - tools/oracle/src/helpers/server/resource_delegation/**
     - tools/oracle/helpers/resource_delegation.py
+    - tools/oracle/helpers/resource_delegation/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/resource-delegation/**
     - tools/oracle/fuzz/corpus/helper_case/resource-delegation-*
   lint_tables: false
@@ -166,6 +165,7 @@ out_of_scope:
     _get_all_mcp_server_ids (L475-L481), _existing_object_permission_mcp_servers (L484-L495).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as resource_delegation in the server group. Replace the stub Op in tools/oracle/src/helpers/server/resource_delegation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/resource_delegation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The stale-server cleanup mutates the incoming permission object before a later server/group/toolset denial.
   - Empty team MCP toolset and search-tool lists impose no ceiling, while empty MCP server grants permit only global allow_all_keys servers.
 budget:

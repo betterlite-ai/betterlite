@@ -1,0 +1,104 @@
+id: B3690
+title: Content filter and built-in guardrail configuration records
+description: >-
+  Add typed representations for content filter detections, competitor intent results, and the three built-in guardrail configuration models to betterlite-config so they can be embedded in guardrail initialization and configuration.
+
+  Build Rust serde types matching the LiteLLM types at the pinned commit:
+  - ContentFilterGuardrailConfig: regex pattern matching and category-based detection configuration with traditional keywords, category lists, severity thresholds and optional competitor intent configuration. Maps from LiteLLM's LitellmContentFilterGuardrailConfigModel.
+  - BlockCodeExecGuardrailConfig: fenced code block detection with language list, action (block/mask), confidence threshold and execution-intent flags. Maps from LiteLLM's BlockCodeExecutionGuardrailConfigModel.
+  - HideSecretsGuardrailConfig: secret detection configuration with optional detect-secrets plugin overrides. Maps from LiteLLM's HideSecretsGuardrailConfigModel; the executable initializer is an enterprise-import branch outside this entry.
+
+  Also define the low-level input records and detection types:
+  - ContentFilterDetection: union of PatternDetection, BlockedWordDetection, CategoryKeywordDetection and CompetitorIntentDetection for logged match details.
+  - CodeBlockDetection and CodeBlockActionTaken for code block execution logging: detection output with language, confidence, action taken and evidence.
+  - ContentFilterCategoryConfig: pydantic model for category configuration with enabled/action/severity_threshold/category_file fields.
+  - ConditionalCategoryConfig, CompiledPatternEntry, _PatternExtraLookup, _CategoryConfigView (internal intermediate types for category loading and pattern compilation).
+  - CategoryFileData: parsed YAML category file with keywords, exceptions, severity inheritance and phrase patterns.
+
+  The three ui_friendly_name implementations return "LiteLLM Content Filter", "Block Code Execution" and "Hide Secrets" respectively. Do not copy the base GuardrailConfigModel schema from LiteLLM; B104 must settle the boundary and own that type definition. These records are data contracts consumed by category loading and pattern compilation; they construct nothing final.
+
+scope:
+  paths:
+    - crates/betterlite-config/src/**
+    - Cargo.toml
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/litellm_content_filter.py
+    why: "Complete LitellmContentFilterGuardrailConfigModel and detection type definitions"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/block_code_execution.py
+    why: "BlockCodeExecutionGuardrailConfigModel, CodeBlockActionTaken and CodeBlockDetection types"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/hide_secrets.py
+    why: "HideSecretsGuardrailConfigModel definition and ui_friendly_name"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L102-L156
+    why: "ConditionalCategoryConfig, CompiledPatternEntry, _PatternExtraLookup, _CategoryConfigView and CategoryFileData TypedDict definitions"
+
+dod:
+  - text: Rust serde types for ContentFilterGuardrailConfig, BlockCodeExecGuardrailConfig and HideSecretsGuardrailConfig exist in betterlite-config and deserialize from LiteLLM's field names and structures.
+    proof: [config-types-exist]
+  - text: All three ui_friendly_name methods are present and return the correct strings ("LiteLLM Content Filter", "Block Code Execution", "Hide Secrets").
+    proof: [ui-names-present]
+  - text: Detection union types (PatternDetection, BlockedWordDetection, CategoryKeywordDetection, CompetitorIntentDetection, CodeBlockDetection) exist and their variants match LiteLLM's type definitions.
+    proof: [detection-types-exist]
+  - text: CodeBlockActionTaken (literal union of "block", "allow", "log_only") is defined and matches LiteLLM's type.
+    proof: [code-action-type-exists]
+  - text: ContentFilterCategoryConfig with fields category, enabled (default true), action (BLOCK/MASK), severity_threshold (default medium), category_file exists and matches LiteLLM's structure.
+    proof: [category-config-exists]
+  - text: CategoryFileData and intermediate category/pattern types (ConditionalCategoryConfig, CompiledPatternEntry, _PatternExtraLookup, _CategoryConfigView) are defined and match LiteLLM's structure.
+    proof: [category-types-exist]
+  - text: All types have test coverage for deserialization from valid configurations.
+    proof: [config-types-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: config-types-exist
+      why: The guardrail configuration types are missing or incomplete
+      run: grep -q "struct ContentFilterGuardrailConfig" crates/betterlite-config/src/*.rs && grep -q "struct BlockCodeExecGuardrailConfig" crates/betterlite-config/src/*.rs && grep -q "struct HideSecretsGuardrailConfig" crates/betterlite-config/src/*.rs
+    - id: ui-names-present
+      why: The ui_friendly_name implementations are missing or incorrect
+      run: grep -q '"LiteLLM Content Filter"' crates/betterlite-config/src/*.rs && grep -q '"Block Code Execution"' crates/betterlite-config/src/*.rs && grep -q '"Hide Secrets"' crates/betterlite-config/src/*.rs
+    - id: detection-types-exist
+      why: Detection types or the detection union is missing
+      run: grep -q "PatternDetection" crates/betterlite-config/src/*.rs && grep -q "BlockedWordDetection" crates/betterlite-config/src/*.rs && grep -q "CategoryKeywordDetection" crates/betterlite-config/src/*.rs && grep -q "CompetitorIntentDetection" crates/betterlite-config/src/*.rs
+    - id: code-action-type-exists
+      why: CodeBlockActionTaken type is missing
+      run: grep -q "CodeBlockActionTaken" crates/betterlite-config/src/*.rs
+    - id: category-config-exists
+      why: ContentFilterCategoryConfig type is missing or incomplete
+      run: grep -q "struct ContentFilterCategoryConfig" crates/betterlite-config/src/*.rs && grep -q "enabled" crates/betterlite-config/src/*.rs && grep -q "severity_threshold" crates/betterlite-config/src/*.rs
+    - id: category-types-exist
+      why: Category file data or intermediate types are missing
+      run: grep -q "CategoryFileData" crates/betterlite-config/src/*.rs && grep -q "ConditionalCategoryConfig" crates/betterlite-config/src/*.rs
+    - id: config-types-tests
+      why: Type tests do not exist or do not pass
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^config_types::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "LiteLLM's category file schema includes phase_patterns (regex phrases for paraphrases), inherit_from (inheritance chains), and exceptions (substring exemptions). The schema maps fields to lowercase and merges YAML/JSON sources; betterlite defines the same field names for serde mapping."
+    why: "The structure is read from configuration files; matching LiteLLM's field names ensures the configuration keeps working across the two implementations."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L145-L156"
+
+out_of_scope:
+  - "GuardrailConfigModel base class (belongs to B104)"
+  - "ContentFilterAction and BlockedWord contracts (belong to B104)"
+  - "CodeBlockDetection executable logging and accumulation logic (belongs to B3701)"
+  - "Category loading logic (belongs to B3692)"
+  - "Pattern compilation and matching (belongs to B3693 and later)"
+
+pitfalls:
+  - "LiteLLM uses Python TypedDict for detection records with total=False fields, which are all optional in Rust. Map these to serde with #[serde(default)] and Option<T> carefully to distinguish required from optional."
+  - "The ui_friendly_name methods in LiteLLM are static methods returning string literals; port them as const fn or static strings in Rust to match the intention."
+  - "ContentFilterCategoryConfig has enabled (default true) and severity_threshold (default medium) with specific literal variants (BLOCK, MASK for action; high/medium/low for severity); ensure defaults deserialize correctly."
+  - "CompetitorIntentResult and CompetitorIntentEvidenceEntry in litellm_content_filter.py are TypedDict with type/key/value/match fields that carry union types; ensure the evidence list deserializes correctly from nested JSON."
+  - "ConditionalCategoryConfig uses Sequence[str] in LiteLLM; it does not have a serde implementation, so Rust must use Vec<String> with appropriate defaults for missing fields."
+  - "CodeBlockActionTaken is a literal union type (block | allow | log_only), not a model struct; it belongs alongside CodeBlockDetection in the detection type enum."
+  - "Rust identifier names must not exceed 30 characters; use ContentFilterGuardrailConfig, BlockCodeExecGuardrailConfig, HideSecretsGuardrailConfig, not the full LiteLLM class names."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

@@ -1,0 +1,144 @@
+id: B3754
+title: Cato inspection projections and request redaction
+description: >-
+  Build Cato's constructor initialization, trusted user-email selection, TLS settings for websocket
+  connections, inspection message flattening and request redaction writeback helpers. The constructor
+  reads api_key (required, CATO_API_KEY env), api_base (optional, default https://api.aisec.catonetworks.com,
+  CATO_API_BASE env) and inspect_embeddings (boolean, default false). Convert api_base to websocket URLs
+  by replacing http:// with ws:// and https:// with wss://, and resolve SSL context settings to pass to
+  websockets.connect.
+
+  Inspection message flattening extracts text from multimodal chat message content and appends synthetic
+  user messages for Responses-API input/instructions, legacy completion prompts, and tool/function/response_format
+  schema strings (description, title, const, default, enum and examples fields). Each source yields
+  messages in a fixed order so redaction slices map back to their origin field, preserving the distinction
+  between input, instructions, prompt and schema_strings for writeback.
+
+  Request redaction writes anonymized text back to messages (by index), Responses input (via apply_redacted_messages_back),
+  instructions (string), prompt (string or list of strings), and schema strings (in-place per their container).
+  Batch-size validation rejects when redacted message count does not match inspected message count and the
+  call is string-only. Log detection violations with the enabled-policies list. Raise 400 on block action
+  with the detection message.
+
+  Headers for the Cato API include Authorization (Bearer token), x-cato-litellm-hook (pre_call, moderation
+  or output), x-cato-litellm-version (litellm version), x-cato-call-id (litellm_call_id if present),
+  x-cato-user-email (key-bound user email if present) and x-cato-gateway-key-alias (key_alias if present).
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/lib.rs
+    - crates/betterlite-guardrails/src/cato.rs
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/types.rs
+    - crates/betterlite-config/src/loader.rs
+    - tools/oracle/cases/guardrails/cato/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/cato_networks.py#L95-L512
+    why: The complete CatoNetworksGuardrail class, constructor, TLS setup, inspection message building, and header construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/cato_networks.py
+    why: The CatoNetworksGuardrailConfigModel with api_key, api_base and inspect_embeddings fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/_content_utils.py
+    why: The build_inspection_messages, apply_redacted_messages_back, is_string_batch_input and is_non_conversational_call_type functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py
+    why: The CustomGuardrail base class and its timeout field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py
+    why: The get_async_httpx_client and get_ssl_configuration functions for HTTP and websocket transport.
+dod:
+  - text: Constructor initializes api_key (required, CATO_API_KEY env), api_base (optional, default https://api.aisec.catonetworks.com,
+      CATO_API_BASE env), inspect_embeddings (boolean, default false) and raises CatoNetworksGuardrailMissingSecrets
+      when api_key is absent.
+    proof: [cato-tests, config-load]
+  - text: Websocket SSL context is resolved from ssl_verify setting, matching HTTP client configuration for consistency.
+    proof: [cato-tests]
+  - text: API base is normalized by stripping trailing slashes and converted to websocket URLs by replacing http(s) protocols.
+    proof: [cato-tests]
+  - text: Inspection messages flatten multimodal list content into plain text and preserve chat messages 1:1 by index.
+    proof: [oracle]
+  - text: Extra inspection sources (input, instructions, prompt, schema strings) are appended as synthetic messages in fixed order
+      so redaction slices map back to their origin field.
+    proof: [cato-tests]
+  - text: Schema string references are found recursively in tool/function and response_format JSON schemas, yielding description,
+      title, const, default, enum and examples fields.
+    proof: [cato-tests]
+  - text: Request redaction applies anonymized text to messages by index, Responses input via apply_redacted_messages_back,
+      instructions as a string, prompt as string or list, and schema strings in-place.
+    proof: [cato-tests]
+  - text: Batch-size validation rejects anonymize action when redacted message count does not match inspected message count
+      and the call is string-only.
+    proof: [cato-tests]
+  - text: Block action raises 400 invalid_request_error with the detection message and logs enabled policies.
+    proof: [oracle]
+  - text: Headers for Cato include Authorization, x-cato-litellm-hook, x-cato-litellm-version, x-cato-call-id (if present),
+      x-cato-user-email (if present) and x-cato-gateway-key-alias (if present).
+    proof: [cato-tests]
+  - text: Trusted user email is resolved from key-bound user_email only, never from caller-supplied end_user_id.
+    proof: [cato-tests]
+  - text: Configuration loads api_key (required, CATO_API_KEY env), api_base (optional, CATO_API_BASE env, default https://api.aisec.catonetworks.com),
+      and inspect_embeddings (default false).
+    proof: [cato-tests, config-load]
+  - text: Unrecognized action_type (not in {monitor_action, block_action, anonymize_action}) is logged at error level and
+      the request passes through unchanged.
+    proof: [cato-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: cato-tests
+      why: the cato guardrail tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-server --no-tests=fail -E 'test(/cato_guardrail/)'
+    - id: config-load
+      why: the Cato configuration does not load from files or environment
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/cato.*config/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/cato/pre-call-inspection-messages.yaml
+  - tools/oracle/cases/guardrails/cato/pre-call-message-flattening.yaml
+  - tools/oracle/cases/guardrails/cato/pre-call-input-inspection.yaml
+  - tools/oracle/cases/guardrails/cato/pre-call-instructions-inspection.yaml
+  - tools/oracle/cases/guardrails/cato/pre-call-prompt-inspection.yaml
+  - tools/oracle/cases/guardrails/cato/pre-call-schema-string-inspection.yaml
+  - tools/oracle/cases/guardrails/cato/anonymize-action-messages.yaml
+  - tools/oracle/cases/guardrails/cato/anonymize-action-input.yaml
+  - tools/oracle/cases/guardrails/cato/anonymize-action-instructions.yaml
+  - tools/oracle/cases/guardrails/cato/anonymize-action-prompt-string.yaml
+  - tools/oracle/cases/guardrails/cato/anonymize-action-prompt-list.yaml
+  - tools/oracle/cases/guardrails/cato/anonymize-action-schema-strings.yaml
+  - tools/oracle/cases/guardrails/cato/anonymize-action-batch-size-mismatch.yaml
+  - tools/oracle/cases/guardrails/cato/block-action.yaml
+  - tools/oracle/cases/guardrails/cato/monitor-action.yaml
+  - tools/oracle/cases/guardrails/cato/missing-api-key.yaml
+  - tools/oracle/cases/guardrails/cato/ssl-verification.yaml
+  - tools/oracle/cases/guardrails/cato/unknown-action-type-warn-and-drop.yaml
+deviations:
+  - what: Cato configuration returns detection_message with betterlite's own wording, not LiteLLM's.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status and code unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/cato_networks.py#L327-L338
+out_of_scope:
+  - Lifecycle hook entry points (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook, async_post_call_streaming_iterator_hook
+    wrapper logic); B3755 orchestrates when Cato guardrails are invoked.
+  - Output inspection and redaction (call_cato_guardrail_on_output, _inspect_output_text, output fragment handling); B3755 owns those.
+  - Websocket streaming and response handling (forward_the_stream_to_cato, _await_cato_message, stream message parsing); B3755 owns those.
+  - Threshold-based decision whether to run inspection on a particular request; other tasks handle that.
+  - Other guardrail providers (AIM, Akto, Cisco, etc.); each gets its own task.
+pitfalls:
+  - Schema string references must be found recursively, walking description, title, const, default, enum and examples fields,
+    not stopping at the first level.
+  - Inspection message flattening must preserve chat messages 1:1 by index, only flattening multimodal list content to plain text.
+  - Extra inspection sources (input, instructions, prompt, schema strings) must be appended in fixed order so redaction slices
+    map correctly back to their origin field.
+  - Prompt inspection must handle both string (single prompt) and list (multiple prompts) forms correctly.
+  - Batch-size validation error must check only when the call is string-only (is_string_batch_input), not for conversational calls.
+  - Request redaction for schema strings must iterate through redactions in order, skipping missing ones, and only update if
+    the redaction content is non-null.
+  - Trusted user email must come from key-bound user_api_key_dict.user_email only, never from caller-supplied end_user_id,
+    which is spoofable.
+  - CATO_API_KEY must never be logged or shown in Debug output. Mark the field as SecretString and use it only in the
+    Authorization header construction.
+  - API base normalization must strip trailing slashes before converting to websocket URLs.
+  - Websocket SSL kwargs must be resolved from the same ssl_verify setting as the HTTP client for consistency.
+  - Unrecognized action_type must be logged at error level and the request passed through unchanged, not treated as a failure.
+  - CATO_API_KEY secret handling requires security review due to its use in Authorization headers and the user identity resolution
+    logic that prevents spoofing via caller-supplied end_user_id.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 1

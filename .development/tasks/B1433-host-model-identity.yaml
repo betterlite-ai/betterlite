@@ -51,8 +51,10 @@ scope:
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,host_identity}.rs
     - crates/betterlite-config/tests/host_identity_settings.rs
-    - tools/oracle/src/helpers/{mod,host_model_identity}.rs
-    - tools/oracle/helpers/{dispatch,host_model_identity}.py
+    - tools/oracle/src/helpers/openai/host_model_identity.rs
+    - tools/oracle/src/helpers/openai/host_model_identity/**
+    - tools/oracle/helpers/host_model_identity.py
+    - tools/oracle/helpers/host_model_identity/**
     - tools/oracle/cases/helpers/host-model-identity/**
     - tools/oracle/fuzz/corpus/helper_case/host_model_identity*
   lint_tables: false
@@ -99,6 +101,7 @@ out_of_scope:
   - ClarifaiConfig.get_api_key and get_api_base have no caller at the pin; its live identity method resolves the equivalent values itself.
   - B038 composes these policies with executable chat calls; B503 and B1425 retain their inherited request and response behavior.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as host_model_identity in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/host_model_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/host_model_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - CompactifAI uses a missing-only default for function.arguments, so an explicit null is not an empty string.
   - Clarifai must not prefix a response model that is None.
   - DataRobot's single replacement pass can leave double slashes when the input path contains a longer slash run.

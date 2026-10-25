@@ -58,10 +58,10 @@ scope:
     - crates/betterlite-db/src/combined_key_read/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - tools/oracle/src/helpers/combined_key_read.rs
+    - tools/oracle/src/helpers/db/combined_key_read.rs
+    - tools/oracle/src/helpers/db/combined_key_read/**
     - tools/oracle/helpers/combined_key_read.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/helpers/combined_key_read/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/combined-key-read/**
     - tools/oracle/fuzz/corpus/helper_case/combined-key-read-*
@@ -113,6 +113,7 @@ out_of_scope:
   - B124 owns all remaining utils.py functions/get_data branches, except reconnect policy moved to B2323 and this entry's explicit ranges.
   - B738 owns request auth caching, permissions and transport retry; B2314 owns the verification record and hash format.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as combined_key_read in the db group. Replace the stub Op in tools/oracle/src/helpers/db/combined_key_read.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/combined_key_read.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Returning the recursive typed grace result through dictionary normalization crashes a valid deprecated key.
 budget:
   max_changed_lines: 775

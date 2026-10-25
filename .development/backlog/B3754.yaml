@@ -2,8 +2,8 @@ id: B3754
 milestone: M6 guardrails
 title: Cato inspection projections and request redaction
 status: todo
-depends_on: []
-file: null
+depends_on: [B3664]
+file: tasks/B3754-cato-projections.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/cato_networks/cato_networks.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/cato_networks.py"

@@ -100,11 +100,10 @@ scope:
   - crates/betterlite-bedrock/src/pegasus.rs
   - crates/betterlite-bedrock/src/pegasus/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_pegasus.rs
-  - tools/oracle/src/helpers/bedrock_pegasus/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/pegasus.rs
+  - tools/oracle/src/helpers/bedrock/pegasus/**
   - tools/oracle/helpers/bedrock_pegasus.py
+  - tools/oracle/helpers/bedrock_pegasus/**
   - tools/oracle/cases/helpers/providers/bedrock-pegasus/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_pegasus*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -274,6 +273,7 @@ out_of_scope:
 - 'litellm/llms/base_llm/base_utils.py: type_to_response_format_param Python class-object conversion L193-L211 belongs
   to B160; B2202 owns the parsed None/dict branches. Python SDK classes are converted before this HTTP-record adapter.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_pegasus in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/pegasus.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_pegasus.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A truthy mediaSource of the wrong type shadows media_source before fallback to base64/S3.
 - The response-format normalizer looks for json_schema regardless of the supplied type field.
 budget:

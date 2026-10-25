@@ -1,0 +1,123 @@
+id: B4561
+title: Routed session status line and stop-hook output
+description: >-
+  Build the statusline_script module for betterlite-management-cli, a standard-library-only
+  Python script that renders Claude Code's status line and Codex's Stop hook from routed
+  session metadata. The script reads credentials from environment (ANTHROPIC_AUTH_TOKEN,
+  ANTHROPIC_API_KEY, and ANTHROPIC_BASE_URL for Claude; OPENAI_API_KEY and OPENAI_BASE_URL
+  for Codex), fetches the session record from GET /auto_router/session on the proxy with
+  5-second caching keyed per credential/session pair, and renders a status line with model label,
+  cost bar and estimated savings. Codex output is a systemMessage JSON wrapper instead. On any
+  error, Claude Code gets a quiet fallback label and Codex gets an empty string. The script is
+  stateless: storage, time, HTTP and stdin are injected so tests mock them. Session records hold
+  router_name, last_model, spend, baseline_spend, baseline_model, turns and savings fields that
+  feed the render logic; definitive 4xx responses (no session, no access) are cached as definite
+  misses, while 5xx and network errors do not. Model labels come from Claude Code's own
+  ~/.claude/cache/gateway-models.json. Cache entries are staged beside the target and renamed
+  into place to avoid torn writes. The cache directory is private-mode on POSIX (0o700, owned
+  by the current user) and pre-existing on Windows; symlinks are rejected. The script is
+  installed with a version header by configure_claude_settings.install_statusline_script (B4562),
+  and stays under 443 lines so it fits in this task's budget.
+scope:
+  paths:
+    - tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L1-L443
+    why: The complete script implementation, split by function ranges in the functions list below.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L64-L86
+    why: Session, Credentials and Fetched NamedTuple definitions and validation logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L115-L135
+    why: Credential resolution for Claude and Codex from environment key precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L137-L185
+    why: Transcript model extraction, model label lookup from gateway-models.json cache and baseline label formatting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L187-L207
+    why: Session fetch with 4xx definitive caching, 5xx retry logic and transport error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L248-L320
+    why: Cache path hashing, private directory ownership checks, read and write with atomic rename.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L323-L381
+    why: Status bar rendering with width scaling, savings computation and multi-row text formatting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L384-L439
+    why: Color control, status_line and codex_stop_message entry points and run orchestration.
+dod:
+  - text: >-
+      The script parses stdin as JSON and branches on hook_event_name: "Stop" for Codex or missing/other for Claude Code.
+    proof: [script-io]
+  - text: >-
+      Claude credentials resolve from ANTHROPIC_AUTH_TOKEN, then ANTHROPIC_API_KEY for the key, and ANTHROPIC_BASE_URL
+      for the endpoint; Codex from OPENAI_API_KEY and OPENAI_BASE_URL.
+    proof: [credential-resolution]
+  - text: >-
+      Session fetch sends GET /auto_router/session?session_id=... with Authorization Bearer token and Accept
+      application/json headers.
+    proof: [fetch-http]
+  - text: >-
+      4xx responses (400-499) are cached as definite misses; successful responses with a valid session object or
+      successful responses with invalid payload are cached based on whether session is not None; 5xx and network
+      errors do not cache.
+    proof: [cache-definitive]
+  - text: Cache entries are private-mode (0o700) on POSIX and pre-existing on Windows; symlinks are rejected.
+    proof: [cache-security]
+  - text: Model labels are read from ~/.claude/cache/gateway-models.json; missing file returns model basename.
+    proof: [model-labels]
+  - text: >-
+      Status line includes "Routed to" label, savings bar when baseline data is complete and turns/coverage when estimated.
+    proof: [status-rendering]
+  - text: >-
+      Codex output is JSON with systemMessage field wrapping rendered text or empty string on failure.
+    proof: [codex-output]
+  - text: Control characters in model names and all external input are filtered as non-printable before display.
+    proof: [terminal-safety]
+checks:
+  optional: []
+  commands:
+    - id: script-io
+      why: the script does not correctly detect Claude vs Codex mode or parse JSON input
+      run: grep -qF 'hook_event_name' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py && grep -qF 'json.loads' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py
+    - id: credential-resolution
+      why: environment key precedence or credential resolution does not match LiteLLM
+      run: grep -qF 'ANTHROPIC_AUTH_TOKEN' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py && grep -qF 'OPENAI_API_KEY' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py && grep -qF 'ANTHROPIC_BASE_URL' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py && grep -qF 'OPENAI_BASE_URL' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py
+    - id: fetch-http
+      why: session fetch does not send the correct request headers or endpoint
+      run: grep -qF 'Authorization' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py && grep -qF '/auto_router/session' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py && grep -qF 'Bearer' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py && grep -qF 'application/json' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py
+    - id: cache-definitive
+      why: definitive flag does not distinguish 4xx/successful from 5xx/retryable, or the session payload parsing does not set it correctly
+      run: grep -qF '400 <= error.code < 500' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py && grep -qF 'session is not None' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py
+    - id: cache-security
+      why: cache directory is not private-mode on POSIX or symlinks are not rejected
+      run: grep -qF '0o700' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py && grep -qF 'os.path.islink' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py
+    - id: model-labels
+      why: model labels are not looked up in ~/.claude/cache/gateway-models.json
+      run: grep -qF 'gateway-models.json' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py
+    - id: status-rendering
+      why: status line does not include routed model, savings bar or turn coverage
+      run: grep -qF 'Routed to:' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py && grep -qF 'BAR' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py && grep -qF 'turns' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py
+    - id: codex-output
+      why: Codex output is not JSON with systemMessage or empty on error
+      run: grep -qF 'systemMessage' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py && grep -qF 'json.dumps' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py
+    - id: terminal-safety
+      why: control characters or non-printable input are not filtered from display
+      run: grep -qF 'isprintable' tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - The management client HTTPClient. Fetch is injected so tests provide a mock; the real implementation calls urllib in the module's own scope.
+  - Registration with Claude Code and Codex. That is B4562's install_statusline_script task.
+  - The CLI version header prepended to the script at copy time.
+  - Model sync/discovery from the proxy. Model labels come from the local gateway-models.json cache only.
+pitfalls:
+  - The script must use only the Python standard library (no requests, toml, click or litellm imports) to run in any environment after betterlite copies it.
+  - Every input source (stdin, environment, transcript file, cache file, model list file) is untrusted; parse carefully, validate JSON, ignore missing files and reject control characters before display.
+  - The 5-second cache TTL means the status line can lag by up to TTL plus proxy async flush latency; this is expected and never fails a human action.
+  - Claude Code re-runs the status line every ~300ms (on keystroke), so spawning anything here causes lag and duplicated prompts; the environment fixture comes from configure_claude_settings.
+  - Codex's Stop hook runs once per turn with hook_event_name, not the status refresh payload, and does not use cache; it always shows current turn's spend.
+  - Windows has no os.getuid() or mode bits; cache_dir_name and _own_private_dir branch on hasattr(os, 'getuid') so do not assume POSIX-only paths.
+  - >-
+      The model label comes from the transcript's latest foreground assistant message (not sidechain, agent, or <synthetic>),
+      falling back to input model.display_name. Missing or corrupt transcript uses fallback. ANSI color terminal detection checks both TERM and NO_COLOR env vars.
+  - Cache entries hash sha256(base_url + api_key + session_id) so tests predetermine cache paths; the hash proxies for secret credentials.
+  - as_mapping and as_str convert falsy values to empty dict/str (not None); load_json returns None on parse failure, not an exception.
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

@@ -78,11 +78,8 @@ scope:
   - crates/betterlite-config/src/api/messages_mcp/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/messages-mcp-*
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/messages_mcp.rs
-  - tools/oracle/src/helpers/messages_mcp/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/messages_mcp.rs
+  - tools/oracle/src/helpers/core_ops/messages_mcp/**
   - tools/oracle/helpers/messages_mcp.py
   - tools/oracle/helpers/messages_mcp/**
   - tools/oracle/fuzz/corpus/helper_case/messages_mcp-*
@@ -177,6 +174,7 @@ out_of_scope:
 - Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
   never stand in for those HTTP comparisons.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as messages_mcp in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_mcp.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_mcp.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - mcp_handler.py:176 emits the diagnostic 'MCP tool loop hit its %s iteration cap for model %s; returning the last
   response'; retain its level and fallback instead of turning it into a hard error.
 - Within _get_response_content\'s not isinstance(content, list) branch, preserve return () and its nested guards.

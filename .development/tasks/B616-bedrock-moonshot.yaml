@@ -90,11 +90,10 @@ scope:
   - crates/betterlite-bedrock/src/moonshot.rs
   - crates/betterlite-bedrock/src/moonshot/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_moonshot.rs
-  - tools/oracle/src/helpers/bedrock_moonshot/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/moonshot.rs
+  - tools/oracle/src/helpers/bedrock/moonshot/**
   - tools/oracle/helpers/bedrock_moonshot.py
+  - tools/oracle/helpers/bedrock_moonshot/**
   - tools/oracle/cases/helpers/providers/bedrock-moonshot/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_moonshot*
   lint_tables: false
@@ -226,6 +225,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_moonshot in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/moonshot.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_moonshot.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - super(MoonshotChatConfig,self) deliberately skips the native Moonshot supported-parameter override.
 - An empty <reasoning></reasoning> block remains in visible content because the caller tests the extracted string
   for truthiness.

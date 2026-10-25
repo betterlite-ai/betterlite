@@ -51,10 +51,10 @@ scope:
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/resource_hint.rs
     - crates/betterlite-auth/fuzz/corpus/resource_hint/**
-    - tools/oracle/src/helpers/resource_hints.rs
-    - tools/oracle/helpers/resource_hints.py
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/src/helpers/auth/resource_hints.rs
+    - tools/oracle/src/helpers/auth/resource_hints/**
+    - tools/oracle/helpers/auth_resource_hints.py
+    - tools/oracle/helpers/auth_resource_hints/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/resource-hints/**
     - tools/oracle/fuzz/corpus/helper_case/resource-hints-*
@@ -108,6 +108,7 @@ out_of_scope:
   - B102 retains all other llm_passthrough_endpoints.py functions and streaming-action dispatch.
   - B746 resolves router IDs and combines hints; B1016/B1019 decode other managed IDs. Managed files/batches remain disabled without the enterprise hook pending Max's decision.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_resource_hints in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/resource_hints.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_resource_hints.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The application-inference-profile branch uses fixed slice positions rather than searching for the profile segment.
 budget:
   max_changed_lines: 750

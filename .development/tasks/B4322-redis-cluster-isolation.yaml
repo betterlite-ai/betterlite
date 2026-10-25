@@ -1,0 +1,119 @@
+id: B4322
+title: Isolate Redis Cluster node failures and preserve redirects
+description: 'Implement the transport policy that confines transient failures to the affected
+  Cluster node while preserving MOVED, ASK, CLUSTERDOWN and retry exhaustion. Cover both
+  pinned library branches: older clients disconnect only the failed node, while the newer
+  wrapper tolerates two consecutive node timeouts without erasing another request''s pending
+  reinitialization. The two versions select at runtime by testing whether redis-py ClusterNode
+  has update_active_connections_for_reconnect (8.x+) versus the 5.3.1 branch that requires
+  an override copy. No configuration, environment, or external constructor calls. Preserve
+  the RedisClusterRequestTTL loop semantics, slot-not-covered sleep duration, async sleep
+  scaling and per-node timeout tracking across the two code paths. Implement the native betterlite-redis
+  helper in tools/oracle/src/helpers/ (registration and naming deferred to the architect).
+  Handle protocol mismatches between redis-py versions by emitting the version-unknown warning
+  when pinned 5.3.1 differs from the installed library; omit silent fallback.'
+scope:
+  paths:
+  - crates/betterlite-redis/src/redis_cluster_node_isolation.rs
+  - crates/betterlite-redis/src/redis_cluster_node_isolation/tests.rs
+  - crates/betterlite-redis/src/lib.rs
+  - crates/betterlite-redis/Cargo.toml
+  - tools/oracle/src/helpers/redis/cluster_isolation.rs
+  - tools/oracle/src/helpers/redis/cluster_isolation/**
+  - tools/oracle/helpers/redis_cluster_isolation.py
+  - tools/oracle/helpers/redis_cluster_isolation/**
+  - tools/oracle/cases/helpers/redis-cluster-node-isolation/**
+  - Cargo.toml
+  - deny.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cluster_node_isolation.py#L86-L260
+  why: Complete module and implementation boundaries verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cluster_node_isolation.py#L82-L83
+  why: Version guard constants _VERIFIED_REDIS_VERSIONS and _CONSECUTIVE_TIMEOUTS_BEFORE_REINIT.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cluster_node_isolation.py#L31-L76
+  why: Protocol definitions and imports for typing cluster/node behavior.
+pitfalls:
+- 'The oracle helper for this task is pre-registered as redis_cluster_isolation in the redis group. Replace the stub Op in tools/oracle/src/helpers/redis/cluster_isolation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/redis_cluster_isolation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- The timeout-tolerant wrapper always re-raises every TimeoutError; what it suppresses
+  is only the shared cluster-wide _initialize reinit flag for the first two consecutive
+  timeouts per node (tracked in _litellm_consecutive_timeouts). The third and later consecutive
+  timeouts on the same node drop the per-node counter and leave the reinit flag set, allowing
+  upstream to proceed. Version branches are selected not by version string comparison but by
+  testing for the update_active_connections_for_reconnect method.
+- Consecutive timeout counts are tracked per-node (by name) in the newer branch; a successful
+  command on a different node or on a later command must clear that node's counter, not all
+  counters.
+- MovedError and MOVED slot redirects trigger full-cluster reinitialization checks using reinitialize_counter
+  and reinitialize_steps only when reinitialize_steps is nonzero; slots and their redirects are
+  permanent topology updates, not transient node errors.
+- TryAgainError after exhausting half the TTL (RedisClusterRequestTTL/2 elapsed retries) sleeps
+  0.05 seconds, not a per-error sleep; this pattern is in the older 5.3.1 branch only.
+- The overridden _execute_command methods mirror upstream redis-py protocol contracts and pass
+  **kwargs through untouched; kwargs include internal redis-py request metadata, not user-facing
+  betterlite configuration.
+- Disconnect is await node.disconnect(), not node.close() or manual pooling. ClusterDownError
+  and SlotNotCoveredError trigger full aclose(), not node disconnect.
+- The factory function returns the selected subclass itself (not an instance), so test harnesses
+  and adapters call it once at client construction, not per-command.
+dod:
+- text: Write tests named redis_cluster_node_isolation_behaviors and redis_cluster_node_isolation_boundaries
+    under the redis_cluster_node_isolation module. The first asserts successful paths, redirects
+    preserved, and per-node timeout counts; the second asserts version detection, protocol errors
+    and boundary conditions (TTL exhaustion, reinit steps, read replicas). Use rstest cases
+    for tables.
+  proof:
+  - cluster-isolation-behaviors
+  - cluster-isolation-boundaries
+- text: Every listed oracle case exercises the helper against the production redis-py library
+    selected at runtime and asserts exact node isolation, redirect preservation, error classification
+    and version-specific code paths. No test isolation means using real mock cluster fixtures
+    or stubbed redis-py interfaces.
+  proof:
+  - oracle
+- text: The task adapter invokes production helper logic and passes strict ruff/basedpyright
+    without Any or broad suppressions.
+  proof:
+  - helper-python
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: cluster-isolation-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/::redis_cluster_node_isolation_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: cluster-isolation-boundaries
+    why: the task-specific boundary test is absent or fails
+    run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/::redis_cluster_node_isolation_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: helper-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/helpers/redis_cluster_node_isolation.py && test -n "$(git
+      diff --name-only "$GATE_BASE" -- tools/oracle/helpers/redis_cluster_node_isolation.py)"
+      && uv run --locked --project tools/oracle ruff check tools/oracle/helpers && uv
+      run --locked --project tools/oracle basedpyright tools/oracle/helpers
+oracle_cases:
+- tools/oracle/cases/helpers/redis-cluster-node-isolation/node-timeout-isolation.yaml
+- tools/oracle/cases/helpers/redis-cluster-node-isolation/moved-redirect-preserves-topology.yaml
+- tools/oracle/cases/helpers/redis-cluster-node-isolation/ask-sequence-requesting.yaml
+- tools/oracle/cases/helpers/redis-cluster-node-isolation/clusterdown-full-reinit.yaml
+- tools/oracle/cases/helpers/redis-cluster-node-isolation/redis-5x-timeout-copy-behavior.yaml
+- tools/oracle/cases/helpers/redis-cluster-node-isolation/redis-8x-wrapper-tolerance.yaml
+deviations:
+- what: redis-py version detection relies on hasattr(node_class, "update_active_connections_for_reconnect")
+    rather than string version comparison; warning is emitted when redis.__version__ is
+    not in _VERIFIED_REDIS_VERSIONS ({"5.3.1"}).
+  why: The pinned checkout uses two code paths selected at factory runtime; betterlite emits
+    a warning to users about untested versions but does not silently skip or disable the feature
+    when installed redis-py differs from the verified set, preserving the policy from LiteLLM.
+out_of_scope:
+- Connection pool recovery and persistent retry logic beyond per-node disconnect; B4323
+  and B4325 handle topology triggers and state recovery.
+- Redis Cluster topology updates triggered by other mechanisms; B4323 owns client factory
+  and pool construction that receive the returned class.
+- Configuration and diagnostic output; B4323 constructs the client and provides settings.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

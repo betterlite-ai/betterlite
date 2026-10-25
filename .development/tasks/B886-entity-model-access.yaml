@@ -77,12 +77,11 @@ scope:
     - crates/betterlite-auth/src/entity_model_access/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/entity_model_access.rs
-    - tools/oracle/src/helpers/entity_model_access/**
+    - tools/oracle/src/helpers/server/entity_model_access.rs
+    - tools/oracle/src/helpers/server/entity_model_access/**
     - tools/oracle/helpers/entity_model_access.py
+    - tools/oracle/helpers/entity_model_access/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/entity-model-access/**
     - tools/oracle/fuzz/corpus/helper_case/entity-model-access-*
     - crates/betterlite-server/src/auth.rs
@@ -291,6 +290,7 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as entity_model_access in the server group. Replace the stub Op in tools/oracle/src/helpers/server/entity_model_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/entity_model_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Key-group fallback replaces the key allowlist, while team-group fallback unions with the team's existing list.
   - A reconstructed team after a lookup error deliberately skips the member-scope query; do not confuse it with a live lookup result.
 budget:

@@ -107,11 +107,10 @@ scope:
   - crates/betterlite-azure/src/azure_certificate.rs
   - crates/betterlite-azure/src/azure_certificate/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_certificate.rs
-  - tools/oracle/src/helpers/azure_certificate/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/certificate.rs
+  - tools/oracle/src/helpers/azure/certificate/**
   - tools/oracle/helpers/azure_certificate.py
+  - tools/oracle/helpers/azure_certificate/**
   - tools/oracle/cases/helpers/providers/azure-certificate/**
   - tools/oracle/fuzz/corpus/helper_case/azure_certificate*
   - crates/betterlite-azure/fuzz/Cargo.toml
@@ -276,6 +275,7 @@ oracle_cases:
 deviations: []
 out_of_scope: []
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_certificate in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/certificate.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_certificate.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The x5t value retains base64 padding even though the JWT segments themselves do not.
 - PKCS#12 detection is based on absence of -----BEGIN, not the file extension.
 budget:

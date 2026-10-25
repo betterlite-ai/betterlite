@@ -72,11 +72,10 @@ scope:
   - crates/betterlite-context/src/bedrock_config_selection.rs
   - crates/betterlite-context/src/bedrock_config_selection/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_config_selection.rs
-  - tools/oracle/src/helpers/bedrock_config_selection/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/context/bedrock_config_selection.rs
+  - tools/oracle/src/helpers/context/bedrock_config_selection/**
   - tools/oracle/helpers/bedrock_config_selection.py
+  - tools/oracle/helpers/bedrock_config_selection/**
   - tools/oracle/cases/helpers/providers/bedrock-config-selection/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_config_selection*
   lint_tables: false
@@ -234,6 +233,7 @@ out_of_scope:
   CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
   or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_config_selection in the context group. Replace the stub Op in tools/oracle/src/helpers/context/bedrock_config_selection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_config_selection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Provider/base extraction happens before the explicit route branches, so an extraction error is not bypassed by
   an explicit route.
 budget:

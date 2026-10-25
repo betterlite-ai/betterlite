@@ -1,0 +1,13 @@
+kind: helper
+name: lowercase-precedence
+call:
+  proxy_policy:
+    url: https://api.example.com/v1/chat/completions
+    environment:
+      HTTPS_PROXY: http://upper.local:1111
+      https_proxy: http://lower.local:2222
+    aiohttp_trust_env: false
+    disable_aiohttp_trust_env: false
+env: {}
+compare:
+  ignore: []

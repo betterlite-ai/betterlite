@@ -1,0 +1,108 @@
+id: B3750
+title: AIM inspection transport and redaction
+description: >-
+  Implement AIM guardrail's HTTP POST transport to /fw/v1/analyze, role projection for validation, request and output
+  anonymization by applying redacted message batches, and websocket streaming for output inspection. Preserve batch-size
+  validation (redacted count must match inspected message count) and multimodal rejection (anonymize action fails on
+  non-text content unless the batch input is string-only, so text rewrites never silently drop audio/images).
+
+
+  Configuration carries api_key (required, reads AIM_API_KEY), api_base (optional, default https://api.aim.security,
+  reads AIM_API_BASE) and inspect_embeddings (boolean, default false, whether to send /embeddings input to Aim).
+  HTTP headers include Authorization (Bearer token), x-aim-litellm-hook (pre_call, moderation, or output),
+  x-aim-litellm-version (litellm version), x-aim-call-id (litellm_call_id if present), x-aim-user-email
+  (from metadata.headers.x-aim-user-email if present) and x-aim-gateway-key-alias (key_alias if present).
+
+
+  Role projection: OpenAI schema rejects bare tool/function roles without their required fields. Flatten the inspection
+  message list and rewrite roles outside {system, user, assistant} to user so AIM validation succeeds. Required actions
+  from /fw/v1/analyze are: monitor_action (log and continue), block_action (raise 400 invalid_request_error with
+  detection_message), anonymize_action (apply redacted_chat.all_redacted_messages to the request, or on output return
+  the single redacted message content). Validation error on malformed redacted response raises 400.
+
+
+  Request anonymization calls apply_redacted_messages_back (from B3664) to write both messages and input fields,
+  since Responses API calls read input. Output anonymization returns redacted message content or detection_message.
+  Websocket forwarding sends inspection messages plus the output message to Aim's /fw/v1/analyze/stream, reads
+  verified_chunk (yield as ModelResponseStream) or blocking_message (raise StreamingCallbackError), and cancels
+  the sender task if Aim stops sending verified chunks.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/aim.rs
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/types.rs
+    - crates/betterlite-config/src/loader.rs
+    - tools/oracle/cases/guardrails/aim/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aim/aim.py#L105-L465
+    why: The complete AimGuardrail class and all method implementations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/aim.py
+    why: The AimGuardrailConfigModel with api_key, api_base and inspect_embeddings fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/_content_utils.py
+    why: The build_inspection_messages, apply_redacted_messages_back, has_non_string_content and is_string_batch_input functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py
+    why: The CustomGuardrail base class and its timeout field.
+dod:
+  - text: Request anonymization with role projection matches LiteLLM on the analysis request sent to /fw/v1/analyze.
+    proof: [oracle]
+  - text: Block action on input raises 400 invalid_request_error with the detection message.
+    proof: [oracle]
+  - text: Anonymize action applies redacted messages to both messages and input fields of the request.
+    proof: [aim-tests]
+  - text: Multimodal input with anonymize action and non-string content raises 400 instead of silently dropping audio/images.
+    proof: [aim-tests]
+  - text: Output anonymization redacts a single response message or returns detection_message on block.
+    proof: [aim-tests]
+  - text: Websocket output streaming reads verified_chunk, yields them as ModelResponseStream, handles blocking_message
+      and cancels the sender when Aim stops sending chunks.
+    proof: [aim-tests]
+  - text: Batch-size validation rejects anonymize action when redacted message count does not match inspected input count.
+    proof: [aim-tests]
+  - text: Configuration loads api_key (required, AIM_API_KEY env), api_base (default https://api.aim.security, AIM_API_BASE env),
+      and inspect_embeddings (default false).
+    proof: [aim-tests, config-load]
+checks:
+  optional: []
+  commands:
+    - id: aim-tests
+      why: the aim guardrail tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-server --no-tests=fail -E 'test(/aim_guardrail/)'
+    - id: config-load
+      why: the AIM configuration does not load from files or environment
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/aim.*config/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/aim/pre-call-analysis-success.yaml
+  - tools/oracle/cases/guardrails/aim/role-projection.yaml
+  - tools/oracle/cases/guardrails/aim/block-action.yaml
+  - tools/oracle/cases/guardrails/aim/anonymize-action.yaml
+  - tools/oracle/cases/guardrails/aim/anonymize-multimodal-rejection.yaml
+  - tools/oracle/cases/guardrails/aim/output-block-action.yaml
+  - tools/oracle/cases/guardrails/aim/output-anonymize-action.yaml
+  - tools/oracle/cases/guardrails/aim/output-streaming-verified-chunks.yaml
+  - tools/oracle/cases/guardrails/aim/output-streaming-blocking-message.yaml
+  - tools/oracle/cases/guardrails/aim/missing-api-key.yaml
+deviations:
+  - what: AIM configuration returns detection_message with betterlite's own wording, not LiteLLM's.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status and code unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aim/aim.py#L213-L229
+out_of_scope:
+  - Lifecycle hook entry points (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook wrapper logic);
+    B107 orchestrates when AIM guardrails are invoked.
+  - The threshold-based decision whether to run inspection on a particular request; B219 and other tasks handle that.
+  - Other guardrail providers (Akto, Cisco, etc.); each gets its own task.
+pitfalls:
+  - Role projection must map any role outside {system, user, assistant} to user, not drop the message or error.
+  - apply_redacted_messages_back must write to both messages and input fields because Responses API reads from input.
+  - Multimodal requests with anonymize action and non-string content must raise 400, not silently drop parts.
+  - Websocket streaming sender task must be canceled if Aim stops sending verified chunks, to prevent background
+    leaks.
+  - Configuration api_base must handle both http:// and https:// prefixes when converting to ws:// or wss:// for
+    websocket.
+  - AIM_API_KEY must never be logged or shown in Debug output. Mark the field as SecretString and use it only in
+    the Authorization header construction.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 1

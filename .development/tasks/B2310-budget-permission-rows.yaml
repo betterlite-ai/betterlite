@@ -69,10 +69,10 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/budget_permission_rows.rs
     - crates/betterlite-db/fuzz/corpus/budget_permission_rows/**
-    - tools/oracle/src/helpers/budget_permission_rows.rs
+    - tools/oracle/src/helpers/db/budget_permission_rows.rs
+    - tools/oracle/src/helpers/db/budget_permission_rows/**
     - tools/oracle/helpers/budget_permission_rows.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/helpers/budget_permission_rows/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/budget-permission-rows/**
     - tools/oracle/fuzz/corpus/helper_case/budget-permission-rows-*
@@ -136,6 +136,7 @@ out_of_scope:
   - B720 owns user, end-user and verification-token rows; B721 owns organization, project, model,
     config, credential and access-group rows. None is needed to decode this task's generic membership user payload.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as budget_permission_rows in the db group. Replace the stub Op in tools/oracle/src/helpers/db/budget_permission_rows.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/budget_permission_rows.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An expired temporary increase is zero at equality, but a future negative increase reduces the effective maximum.
   - Membership email assignment occurs after validation and can preserve a nested non-string value.
   - Permission null lists are different from their omitted-field empty-list defaults.

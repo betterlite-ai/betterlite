@@ -101,11 +101,10 @@ scope:
   - crates/betterlite-azure/src/chat_call.rs
   - crates/betterlite-azure/src/chat_call/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_chat_call.rs
-  - tools/oracle/src/helpers/azure_chat_call/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/chat_call.rs
+  - tools/oracle/src/helpers/azure/chat_call/**
   - tools/oracle/helpers/azure_chat_call.py
+  - tools/oracle/helpers/azure_chat_call/**
   - tools/oracle/cases/helpers/providers/azure-chat-call/**
   - tools/oracle/fuzz/corpus/helper_case/azure_chat_call*
   lint_tables: false
@@ -343,6 +342,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
   L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_chat_call in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/chat_call.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_chat_call.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The send-wrapper docstrings mention return_response_headers, but both bodies unconditionally call with_raw_response.create.
 - The sync exception wrapper and async status-bearing rethrow preserve different exception identities; collapsing
   them loses observable error metadata.

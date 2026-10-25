@@ -69,11 +69,11 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/token_record.rs
     - crates/betterlite-db/fuzz/corpus/token_record/**
-    - tools/oracle/src/helpers/key_repository.rs
+    - tools/oracle/src/helpers/db/key_repository.rs
+    - tools/oracle/src/helpers/db/key_repository/**
     - tools/oracle/helpers/key_repository.py
+    - tools/oracle/helpers/key_repository/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
     - tools/oracle/cases/helpers/key-repository/**
     - tools/oracle/fuzz/corpus/helper_case/key-repository-*
   lint_tables: false
@@ -136,6 +136,7 @@ out_of_scope:
   - B124 owns hash_token/_hash_token_if_needed and PrismaClient's higher-level raw table policy;
     this repository does not call those helpers. B777 owns the live key archive/delete workflow.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as key_repository in the db group. Replace the stub Op in tools/oracle/src/helpers/db/key_repository.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/key_repository.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - budget_fallbacks is a token dict field but is absent from the repository's JSON-string decode allowlist.
   - An empty org_id wins over organization_id because precedence checks None, not truthiness.
   - Raw table access bypasses the repository's JSON conversion and does not hash a supplied identifier.

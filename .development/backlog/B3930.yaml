@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Datadog tags and active trace context
 status: todo
 depends_on: [B002]
-file: null
+file: tasks/B3930-datadog-tags-tracing.yaml
 covers:
   - "litellm/integrations/datadog/datadog_handler.py"
   - "litellm/litellm_core_utils/dd_tracing.py"

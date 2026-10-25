@@ -110,11 +110,10 @@ scope:
   - crates/betterlite-openai/src/reasoning_models.rs
   - crates/betterlite-openai/src/reasoning_models/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_reasoning_models.rs
-  - tools/oracle/src/helpers/openai_reasoning_models/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/reasoning_models.rs
+  - tools/oracle/src/helpers/openai/reasoning_models/**
   - tools/oracle/helpers/openai_reasoning_models.py
+  - tools/oracle/helpers/openai_reasoning_models/**
   - tools/oracle/cases/helpers/providers/openai-reasoning-models/**
   - tools/oracle/fuzz/corpus/helper_case/openai_reasoning_models*
   lint_tables: false
@@ -348,6 +347,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/openai/chat/o_series_transformation.py: OpenAIOSeriesConfig.is_model_o_series_model
   L117-L124 belong to B668.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_reasoning_models in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/reasoning_models.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_reasoning_models.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The catalogue-wide presence of default_reasoning_effort changes the fallback even when the requested model has
   no entry.
 - GPT-5 uses truthiness for drop_params while the O-series temperature branch uses is True; do not silently equate

@@ -1,0 +1,13 @@
+model_list:
+  - model_name: claude
+    litellm_params:
+      model: bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0
+litellm_settings:
+  bedrock_request_metadata_fields:
+    - user_api_key_hash
+    - user_api_key_team_id
+    - spend_logs_metadata
+    - user_api_key_hash
+    - 7
+    - true
+    - ~

@@ -73,12 +73,11 @@ scope:
     - crates/betterlite-auth/src/auth_team_lookup/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_team_lookup.rs
-    - tools/oracle/src/helpers/auth_team_lookup/**
+    - tools/oracle/src/helpers/auth/team_lookup.rs
+    - tools/oracle/src/helpers/auth/team_lookup/**
     - tools/oracle/helpers/auth_team_lookup.py
+    - tools/oracle/helpers/auth_team_lookup/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-team-lookup/**
     - tools/oracle/fuzz/corpus/helper_case/auth-team-lookup-*
   lint_tables: false
@@ -257,6 +256,7 @@ out_of_scope:
     the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_team_lookup in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/team_lookup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_team_lookup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - check_db_only does not bypass _should_check_db; a recent DB read can still produce the ordinary team 404.
   - Alias cache writes do not use _cache_team_object, so their TTL is DEFAULT_IN_MEMORY_TTL rather than the team-cache policy.
 budget:

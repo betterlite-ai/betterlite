@@ -47,8 +47,10 @@ scope:
     - crates/betterlite-openai/fuzz/fuzz_targets/voyage_rerank.rs
     - crates/betterlite-openai/fuzz/corpus/{voyage_rerank,voyage_embedding_reply}/**
     - crates/betterlite-config/tests/voyage_credentials.rs
-    - tools/oracle/src/helpers/{mod,voyage_media_rank}.rs
-    - tools/oracle/helpers/{dispatch,voyage_media_rank}.py
+    - tools/oracle/src/helpers/openai/voyage_media_rerank.rs
+    - tools/oracle/src/helpers/openai/voyage_media_rerank/**
+    - tools/oracle/helpers/voyage_media_rerank.py
+    - tools/oracle/helpers/voyage_media_rerank/**
     - tools/oracle/cases/helpers/voyage-media-rank/**
     - tools/oracle/fuzz/corpus/helper_case/voyage_media_rank*
   lint_tables: false
@@ -92,6 +94,7 @@ deviations: []
 out_of_scope:
   - B1420 retains text/contextual embedding methods; B1013 supplies rerank wire records and B037 installs the executable provider variants.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as voyage_media_rerank in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/voyage_media_rerank.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/voyage_media_rerank.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A data:image/ value without a comma produces an empty image_base64 string rather than a local decoding error.
   - Voyage rerank does not consult VOYAGE_AI_TOKEN even though every embedding variant does.
   - HTTP 201 fails before post_call in the rerank response method.

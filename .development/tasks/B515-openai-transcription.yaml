@@ -105,11 +105,10 @@ scope:
   - crates/betterlite-openai/src/transcription.rs
   - crates/betterlite-openai/src/transcription/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_transcription.rs
-  - tools/oracle/src/helpers/openai_transcription/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/transcription.rs
+  - tools/oracle/src/helpers/openai/transcription/**
   - tools/oracle/helpers/openai_transcription.py
+  - tools/oracle/helpers/openai_transcription/**
   - tools/oracle/cases/helpers/providers/openai-transcription/**
   - tools/oracle/fuzz/corpus/helper_case/openai_transcription*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -473,6 +472,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/utils.py: _handle_new_key_with_scan L5621-L5637 have no caller at the pin;
   do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_transcription in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/transcription.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_transcription.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Only the asynchronous SDK branch extracts SRT/VTT duration from a string result; applying it to sync changes hidden
   metadata.
 - A JSON-decodable object with an unexpected shape is not a textual fallback even when Content-Type is text/plain.

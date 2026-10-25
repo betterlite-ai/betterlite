@@ -101,11 +101,10 @@ scope:
   - crates/betterlite-bedrock/src/realtime_input.rs
   - crates/betterlite-bedrock/src/realtime_input/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_realtime_input.rs
-  - tools/oracle/src/helpers/bedrock_services_realtime_input/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_realtime_input.rs
+  - tools/oracle/src/helpers/bedrock/services_realtime_input/**
   - tools/oracle/helpers/bedrock_services_realtime_input.py
+  - tools/oracle/helpers/bedrock_services_realtime_input/**
   - tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_input*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -329,6 +328,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_realtime_response
   L1275-L1415 belong to B665.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_realtime_input in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_realtime_input.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_realtime_input.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A client append marks the session as having audio even when its content is empty, permanently disabling the synthetic
   ready trigger for that session.
 - Committing audio closes the current content but does not change its contentName before a later append.

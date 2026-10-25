@@ -32,11 +32,10 @@ scope:
     - crates/betterlite-vertex/src/aws_federation.rs
     - crates/betterlite-vertex/src/aws_federation/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/vertex_aws_federation.rs
-    - tools/oracle/src/helpers/vertex_aws_federation/**
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/vertex/aws_federation.rs
+    - tools/oracle/src/helpers/vertex/aws_federation/**
     - tools/oracle/helpers/vertex_aws_federation.py
+    - tools/oracle/helpers/vertex_aws_federation/**
     - tools/oracle/cases/helpers/vertex-aws-federation/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_aws_federation*
   lint_tables: false
@@ -76,6 +75,7 @@ out_of_scope:
   - B594 resolves AWS profiles, AssumeRole and web identity; this task supplies its resulting credentials to Google.
   - B1301 owns VertexBase.load_auth and its external_account dispatch in vertex_llm_base.py.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_aws_federation in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/aws_federation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_aws_federation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Supplying only aws_region_name still selects explicit AWS federation and must not silently select Google metadata credentials.
   - A supplier captured as a frozen access-key tuple loses later aws_session_token rotations.
   - The universe_domain field is a federation option, not a replacement inference api_base.

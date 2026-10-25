@@ -1,0 +1,55 @@
+id: B4231
+title: Pinned OpenAPI registry catalog
+description: >-
+  Package the immutable OpenAPI picker catalog as a Rust resource with a typed representation that preserves record order, OAuth metadata, tool descriptions, and the distinction between absent OAuth and empty OAuth records.
+  The catalog holds 14 entries: GitHub, Atlassian, Figma, Gmail, Google Sheets, Google Drive, Google Calendar, Google Docs, Stripe, HubSpot, Notion, Slack, Shopify and Snowflake, each with a name, title, description, icon URL, spec URL, optional OAuth metadata (Shopify and Snowflake omit it), and ordered key tools with their descriptions.
+  Include the Slack icon URL as-is rather than normalizing, and preserve each OAuth pkce boolean. Load the resource once on demand and cache it; on failure return an empty API list. The catalog is data, not a route, so do not register an endpoint here. The consumer task that owns /v1/mcp/openapi-registry depends on this resource.
+scope:
+  paths:
+    - crates/betterlite-server/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openapi_registry.json
+    why: The complete 305-line catalog with all 14 entries, OAuth metadata, tool descriptions and order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L3243-L3268
+    why: >-
+      The reader function _load_openapi_registry that loads the file, caches it with lru_cache(maxsize=1), and the endpoint get_openapi_registry that returns it to authenticated admin/viewer users with a {"apis": []} fallback on error.
+dod:
+  - text: The 14 entries, in order, load from a packaged resource with all names, titles, descriptions, icon URLs, spec URLs, and tool lists preserved byte-for-byte from the pinned LiteLLM catalog.
+    proof: [catalog-corpus]
+  - text: OAuth metadata (authorization_url, token_url, pkce, docs_url) is present for GitHub, Atlassian, Figma, Gmail, Google Sheets, Google Drive, Google Calendar, Google Docs, Stripe, HubSpot, Notion and Slack; absent for Shopify and Snowflake, and this absence is distinct from an empty OAuth record.
+    proof: [catalog-tests]
+  - text: >-
+      A consuming function can load and cache the catalog and return an empty apis list if loading fails.
+    proof: [catalog-tests]
+checks:
+  optional: []
+  commands:
+    - id: catalog-corpus
+      why: the catalog resource is missing or does not match the pinned LiteLLM entry
+      run: |
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(openapi_registry_)' && sha256sum --check --quiet <<'SUMS'
+        458d22bbb9015f598cdaa49c9d05798d1f0231bf662478dc9ff6d837b2de2d47  ../litellm/litellm/proxy/openapi_registry.json
+        SUMS
+    - id: catalog-tests
+      why: the catalog tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(openapi_registry)'
+oracle_cases: []
+deviations:
+  - what: betterlite loads and caches the catalog on first access with Rust's native serialization, not LiteLLM's Python json.load with lru_cache.
+    why: Rust does not have Python's function-level caching; the resource is loaded once per process and cached in memory. The HTTP consumer is responsible for any per-request caching or reloading if needed.
+out_of_scope:
+  - Implementation of /v1/mcp/openapi-registry and its authentication (admin/viewer access). That endpoint is owned by the MCP management leaf.
+  - Fetching the referenced OpenAPI specifications (spec_url).
+  - OAuth flow implementation or token exchange.
+  - The HTTP route that serves the catalog; this task packages the data only.
+pitfalls:
+  - Shopify and Snowflake entries have no "oauth" field at all. Do not add an empty oauth object or an omitted-oauth marker; the absence is the signal.
+  - The Slack icon_url is "https://cdn.simpleicons.org/slack" (not a normalized constant). Preserve it exactly.
+  - Each entry in key_tools has a name and description; keep them in the same order as the pinned file.
+  - The catalog must be loaded from a static resource, not synthesized at runtime, to match LiteLLM's byte-for-byte catalog.
+  - A consumer that caches the catalog should do so at the application level, not here.
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

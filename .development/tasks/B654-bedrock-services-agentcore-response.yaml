@@ -96,11 +96,10 @@ scope:
   - crates/betterlite-bedrock/src/agentcore_response.rs
   - crates/betterlite-bedrock/src/agentcore_response/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_agentcore_response.rs
-  - tools/oracle/src/helpers/bedrock_services_agentcore_response/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_agentcore_response.rs
+  - tools/oracle/src/helpers/bedrock/services_agentcore_response/**
   - tools/oracle/helpers/bedrock_services_agentcore_response.py
+  - tools/oracle/helpers/bedrock_services_agentcore_response/**
   - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_response*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -313,6 +312,7 @@ out_of_scope:
   L531-L632; AmazonAgentCoreConfig.get_sync_custom_stream_wrapper L634-L750; AmazonAgentCoreConfig._stream_agentcore_response
   L752-L853; AmazonAgentCoreConfig.get_async_custom_stream_wrapper L855-L971 belong to B655.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_agentcore_response in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_agentcore_response.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_agentcore_response.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A JSON content-type selects parsing before body inspection, while text/plain JSON is treated as SSE and can yield
   empty content.
 - A truthy final message replaces all collected deltas even when it has no readable text content.

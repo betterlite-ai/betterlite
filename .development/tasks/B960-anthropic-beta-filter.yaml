@@ -26,11 +26,10 @@ scope:
   - crates/betterlite-core/src/api/anthropic_beta_filter.rs
   - crates/betterlite-core/src/api/anthropic_beta_filter/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_beta_filter.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/anthropic_beta_filter.rs
+  - tools/oracle/src/helpers/core_ops/anthropic_beta_filter/**
   - tools/oracle/helpers/anthropic_beta_filter.py
+  - tools/oracle/helpers/anthropic_beta_filter/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_beta_filter-*
   - tools/oracle/cases/helpers/anthropic-beta-filter/**
   - Cargo.lock
@@ -115,6 +114,7 @@ out_of_scope:
 - B961 owns messages/transformation.py L59-L284 preparation; B2430 owns L287-L570 request transformation; B962 owns L572-L608 response transformation and iterator construction.
 - B568 owns common_utils.py feature predicates and types/llms/anthropic_tool_search.py provider-specific beta selection.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_beta_filter in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/anthropic_beta_filter.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_beta_filter.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The structured-output enum member contains 2025_09_25 but its wire value is structured-outputs-2025-11-13.
 - Empty anthropic_beta=[] survives while a nonempty list whose entries all drop is removed.
 - Native header merging is case-insensitive; the separate matrix updater is case-sensitive.

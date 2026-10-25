@@ -26,10 +26,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/cache_page.rs
     - crates/betterlite-vertex/fuzz/corpus/cache_page/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/vertex_cache_lookup.rs
-    - tools/oracle/src/helpers/vertex_cache_lookup/**
-    - tools/oracle/helpers/{dispatch,vertex_cache_lookup}.py
+    - tools/oracle/src/helpers/vertex/gemini_cache_lookup.rs
+    - tools/oracle/src/helpers/vertex/gemini_cache_lookup/**
+    - tools/oracle/helpers/gemini_cache_lookup.py
+    - tools/oracle/helpers/gemini_cache_lookup/**
     - tools/oracle/cases/helpers/vertex-cache-lookup/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_cache_lookup*
   lint_tables: false
@@ -68,6 +68,7 @@ out_of_scope:
   - check_and_create_cache and async_check_and_create_cache are B1324; prefix and request transformations are B1317.
   - get_cache and async_get_cache at L592-L597 have no caller at the pin and contain only pass.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as gemini_cache_lookup in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_cache_lookup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_cache_lookup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A 403 cache list response permits the later create path instead of failing inference immediately.
   - A matching displayName with no name stops the search with no usable cache name.
   - Cache list pagination is bounded at 100 even if the provider repeats its nextPageToken forever.

@@ -110,11 +110,10 @@ scope:
   - crates/betterlite-bedrock/src/realtime_events.rs
   - crates/betterlite-bedrock/src/realtime_events/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_realtime_events.rs
-  - tools/oracle/src/helpers/bedrock_services_realtime_events/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_realtime_events.rs
+  - tools/oracle/src/helpers/bedrock/services_realtime_events/**
   - tools/oracle/helpers/bedrock_services_realtime_events.py
+  - tools/oracle/helpers/bedrock_services_realtime_events/**
   - tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_events*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -343,6 +342,7 @@ out_of_scope:
   L1001-L1101; BedrockRealtimeConfig.transform_prompt_end_event L1103-L1127; BedrockRealtimeConfig._response_done_events
   L1129-L1157; BedrockRealtimeConfig.transform_tool_use_event L1159-L1210 belong to B664.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_realtime_events in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_realtime_events.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_realtime_events.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The session becomes committed before modalities validation or ack delivery, so an ack failure must not make the
   attempt replayable.
 - Provider event dispatch silently ignores unknown events, while client event dispatch in B662 warns about unknown

@@ -1,7 +1,7 @@
 id: B3600
 milestone: M5 api families
 title: Pass-through wire records and response helpers
-status: todo
+status: in-progress
 depends_on: []
 file: tasks/B3600-passthrough-wire-helpers.yaml
 covers:

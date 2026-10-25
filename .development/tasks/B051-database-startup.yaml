@@ -98,12 +98,11 @@ scope:
     - tools/betterlite-db-admin/src/database_startup.rs
     - tools/betterlite-db-admin/src/database_startup/**
     - crates/betterlite-server/src/database_startup/fixtures/**
-    - tools/oracle/src/helpers/database_startup.rs
-    - tools/oracle/src/helpers/database_startup/**
+    - tools/oracle/src/helpers/server/database_startup.rs
+    - tools/oracle/src/helpers/server/database_startup/**
     - tools/oracle/helpers/database_startup.py
+    - tools/oracle/helpers/database_startup/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/database-startup/**
     - tools/oracle/fuzz/corpus/helper_case/database-startup-*
     - crates/betterlite-config/Cargo.toml
@@ -400,6 +399,7 @@ out_of_scope:
   - 'litellm/proxy/prisma_migration.py: B1232 owns main as the executable/exit boundary; this task installs
     the native migration backend.'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as database_startup in the server group. Replace the stub Op in tools/oracle/src/helpers/server/database_startup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_startup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An explicit false disable_prisma_schema_update overrides an enabled DISABLE_SCHEMA_UPDATE environment
     value.
   - The index job is awaited by the migration command but does not delay serving readiness.

@@ -29,8 +29,10 @@ scope:
   - crates/betterlite-logging/tests/fixtures/**
   - crates/betterlite-config/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/logging/callback_registry.rs
+  - tools/oracle/src/helpers/logging/callback_registry/**
+  - tools/oracle/helpers/callback_registry.py
+  - tools/oracle/helpers/callback_registry/**
   - tools/oracle/cases/helpers/callback-registry/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -122,6 +124,7 @@ out_of_scope:
   All standalone callback_config_validation functions are B246; exporter initialization branches are B110-B118;
   Python callable import/CustomLogger execution is B164-B165.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as callback_registry in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/callback_registry.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/callback_registry.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Known callback metadata must not make an unavailable exporter silently accepted.
 - Treat two aliases for the same credential family as one security boundary.
 - Runtime-only Python callables are not a reason to replace the closed native callback enum with Box<dyn Trait>.

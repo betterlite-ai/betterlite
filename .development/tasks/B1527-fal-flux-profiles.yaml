@@ -33,10 +33,10 @@ scope:
     - crates/betterlite-core/src/api/fal.rs
     - crates/betterlite-core/src/api/fal/flux.rs
     - crates/betterlite-core/src/api/fal/flux/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/fal_flux.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/fal_flux.py
+    - tools/oracle/src/helpers/core_ops/fal_flux_profiles.rs
+    - tools/oracle/src/helpers/core_ops/fal_flux_profiles/**
+    - tools/oracle/helpers/fal_flux_profiles.py
+    - tools/oracle/helpers/fal_flux_profiles/**
     - tools/oracle/cases/helpers/fal-flux/**
     - tools/oracle/fuzz/corpus/helper_case/fal_flux*
   lint_tables: false
@@ -74,6 +74,7 @@ deviations: []
 out_of_scope:
   - B046 selects Flux variants from model names; this task supplies the four profiles without owning the shared factory.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as fal_flux_profiles in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/fal_flux_profiles.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fal_flux_profiles.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Ultra's later 1.4-to-1.6 ratio branch is shadowed by the earlier 1.3-to-1.7 branch.
   - A dimension object survives Pro/Schnell mapping instead of being coerced into an aspect ratio.
   - Default seed and safety values mentioned in the Flux docstring are not inserted into requests.

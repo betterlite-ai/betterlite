@@ -24,11 +24,10 @@ scope:
   - crates/betterlite-provider/src/api/file_provider_selection.rs
   - crates/betterlite-provider/src/api/file_provider_selection/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/file_provider_selection.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/file_provider_selection.rs
+  - tools/oracle/src/helpers/provider/file_provider_selection/**
   - tools/oracle/helpers/file_provider_selection.py
+  - tools/oracle/helpers/file_provider_selection/**
   - tools/oracle/cases/helpers/file-provider-selection/**
   - tools/oracle/fuzz/corpus/helper_case/file_provider_selection-*
   - Cargo.lock
@@ -79,6 +78,7 @@ out_of_scope:
 - B1367 owns Gemini files, B1376 Vertex file config, B644-B646 Bedrock file operations, B588 Anthropic files, B1407 xAI, B1411 Mistral and B050 Manus. Their constructors/config records are reused, never reconstructed from this task's fixture table.
 - Other utils.py functions keep their existing owners; only the two whole functions referenced above move here. B1028/B1029/B1030 own SDK timeout coercion and subsequent provider dispatch.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as file_provider_selection in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/file_provider_selection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/file_provider_selection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Registry None is normal for Azure and OpenAI; those SDK dispatchers have separate handlers.
 - hosted_vllm is OpenAI-compatible for files but is absent from supports_httpx_timeout's three strings.
 review_level: standard

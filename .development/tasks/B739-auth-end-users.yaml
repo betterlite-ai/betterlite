@@ -91,12 +91,11 @@ scope:
     - crates/betterlite-auth/src/auth_end_users/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_end_users.rs
-    - tools/oracle/src/helpers/auth_end_users/**
+    - tools/oracle/src/helpers/server/auth_end_users.rs
+    - tools/oracle/src/helpers/server/auth_end_users/**
     - tools/oracle/helpers/auth_end_users.py
+    - tools/oracle/helpers/auth_end_users/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-end-users/**
     - tools/oracle/fuzz/corpus/helper_case/auth-end-users-*
     - crates/betterlite-server/src/auth.rs
@@ -386,6 +385,7 @@ out_of_scope:
     commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_end_users in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_end_users.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_end_users.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A default end-user cache-write failure returns None, but the equivalent team-member write failure escapes.
   - A cache hit can receive a key-specific budget only on a copy; caching that copy leaks one key's policy to another.
 budget:

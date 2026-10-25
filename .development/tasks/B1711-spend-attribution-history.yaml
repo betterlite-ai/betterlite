@@ -38,8 +38,10 @@ scope:
     - crates/betterlite-db/src/key_attribution.rs
     - crates/betterlite-db/src/key_attribution/history.rs
     - crates/betterlite-db/src/key_attribution/history/**
-    - tools/oracle/src/helpers/{mod.rs,history_attribution.rs}
-    - tools/oracle/helpers/{dispatch.py,history_attribution.py}
+    - tools/oracle/src/helpers/db/spend_attribution_history.rs
+    - tools/oracle/src/helpers/db/spend_attribution_history/**
+    - tools/oracle/helpers/spend_attribution_history.py
+    - tools/oracle/helpers/spend_attribution_history/**
     - tools/oracle/cases/helpers/history-attribution/**
     - tools/oracle/fuzz/corpus/helper_case/history-attribution-*
   lint_tables: false
@@ -77,6 +79,7 @@ deviations: []
 out_of_scope:
   - B1710 owns all remaining key_metadata_recovery.py functions and the shared records/timeout primitive; reporting routes decide when recovery is needed.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_attribution_history in the db group. Replace the stub Op in tools/oracle/src/helpers/db/spend_attribution_history.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_attribution_history.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A cached empty mapping is a hit that suppresses a query but is omitted from returned attribution.
   - The descending probe starts at the oldest probe's stopping point, not necessarily at the requested window start.
 budget:

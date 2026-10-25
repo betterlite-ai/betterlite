@@ -28,10 +28,10 @@ scope:
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/vector_store_access.rs
   - crates/betterlite-core/fuzz/corpus/vector_store_access/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/vector_store_access.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/vector_store_access.rs
+  - tools/oracle/src/helpers/core_ops/vector_store_access/**
   - tools/oracle/helpers/vector_store_access.py
+  - tools/oracle/helpers/vector_store_access/**
   - tools/oracle/cases/helpers/vector-store-access/**
   - tools/oracle/fuzz/corpus/helper_case/vector_store_access-*
   lint_tables: false
@@ -104,6 +104,7 @@ out_of_scope:
 - B1061 owns utils.py:260-559 managed-id resolution and endpoint allowlist checks; route tasks own their final HTTP responses.
 - B735/B737 own permission/team cache and database lookups. B137 owns UI-session identification and team membership; native policy receives those results through an injected seam.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as vector_store_access in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_store_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_store_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A teamless store is directly accessible but hidden from ordinary listing without an explicit grant.
 - Inline empty permission objects prevent id-based permission reload; absence and emptiness are different.
 - The lifecycle matcher accepts the exact index path or query suffix, but not an otherwise similar trailing slash.

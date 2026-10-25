@@ -28,8 +28,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/lyria_audio.rs
     - crates/betterlite-vertex/fuzz/corpus/lyria_audio/**
-    - tools/oracle/src/helpers/{mod,lyria_speech}.rs
-    - tools/oracle/helpers/{dispatch,lyria_speech}.py
+    - tools/oracle/src/helpers/vertex/lyria_speech.rs
+    - tools/oracle/src/helpers/vertex/lyria_speech/**
+    - tools/oracle/helpers/vertex_lyria_speech.py
+    - tools/oracle/helpers/vertex_lyria_speech/**
     - tools/oracle/cases/helpers/lyria-speech/**
     - tools/oracle/fuzz/corpus/helper_case/lyria_speech*
   lint_tables: false
@@ -71,6 +73,7 @@ out_of_scope:
   - B1352 owns the inherited Cloud TTS methods outside dispatch_text_to_speech, which B033 composes.
   - B1369 owns the interactions URL builder; B1306 owns Lyria metadata discovery and B175 owns the drop_params setting loader.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_lyria_speech in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/lyria_speech.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_lyria_speech.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Predict's sample_count uses an underscore and is always one.
   - An interactions response selects its last audio item, while predict inspects its first prediction only.
   - Resolving an interactions URL uses global even when a different Vertex location was configured.

@@ -104,11 +104,10 @@ scope:
   - crates/betterlite-azure/src/chat_params.rs
   - crates/betterlite-azure/src/chat_params/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_chat_params.rs
-  - tools/oracle/src/helpers/azure_chat_params/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/chat_params.rs
+  - tools/oracle/src/helpers/azure/chat_params/**
   - tools/oracle/helpers/azure_chat_params.py
+  - tools/oracle/helpers/azure_chat_params/**
   - tools/oracle/cases/helpers/providers/azure-chat-params/**
   - tools/oracle/fuzz/corpus/helper_case/azure_chat_params*
   lint_tables: false
@@ -261,6 +260,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/azure/chat/o_series_transformation.py: AzureOpenAIO1Config.is_o_series_model
   L100-L101 belong to B2230.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_chat_params in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/chat_params.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_chat_params.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - 'The should_fake_stream docstring is stale: the executable o3 branch allows native streaming.'
 - Azure GPT5 parameter lists can contain duplicate logprobs/top_logprobs after extension; a set projection would
   hide that behavior.

@@ -35,8 +35,10 @@ scope:
   - crates/betterlite-models/fuzz/**
   - crates/betterlite-config/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/models/catalog_refresh.rs
+  - tools/oracle/src/helpers/models/catalog_refresh/**
+  - tools/oracle/helpers/catalog_refresh.py
+  - tools/oracle/helpers/catalog_refresh/**
   - tools/oracle/cases/helpers/catalog-refresh/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -136,6 +138,7 @@ out_of_scope:
   Fetch response classification, retry calculation, raw revisions and integrity checks are B257; local asset/snapshot
   access is B193; CLI process-name inspection is not used because startup policy is explicit.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as catalog_refresh in the models group. Replace the stub Op in tools/oracle/src/helpers/models/catalog_refresh.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/catalog_refresh.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Revision hashes cover the original bytes, not a reformatted serialized map.
 - A reload failure must not replace a good runtime catalog with the packaged fallback.
 - The model resolver depends only on the catalog data, never on the HTTP reload service's mutable state.

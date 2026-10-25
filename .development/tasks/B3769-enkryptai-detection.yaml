@@ -1,0 +1,106 @@
+id: B3769
+title: EnkryptAI detection and unified evaluation
+description: >-
+  Implement EnkryptAI guardrail's detection request to /guardrails/policy/detect, structured response
+  parsing for summary (toxicity, policy violations, PII, keyword detection, bias, injections, jailbreak)
+  and details, status determination, and formatted error messages from detected attacks. Build the unified
+  text-batch evaluation for apply_guardrail, handling multiple texts in a single request loop.
+
+
+  Configuration carries api_key (required, reads ENKRYPTAI_API_KEY), api_base (optional, default
+  https://api.enkryptai.com, reads ENKRYPTAI_API_BASE), policy_name (optional, sent via x-enkrypt-policy
+  header if set). Additional fields in the config model (deployment_name, detectors, block_on_violation)
+  are present but not used to modify the outgoing detection call at this pin; B107 owns any wiring of
+  those toggles to the detection behavior. HTTP headers include Content-Type (application/json), apikey
+  (the API key value, not Bearer), and x-enkrypt-policy (if policy_name is set).
+
+
+  Response parsing extracts the summary dict with keys like toxicity (empty list or list of types),
+  policy_violation/pii/keyword_detected/bias/prompt_injection/jailbreak (0 or 1), and the details dict
+  grouping per-attack-type metadata. Toxicity is detected when the list is non-empty; others when the
+  integer is 1. Status determination returns "success" (no attacks detected), "guardrail_intervened"
+  (attacks found), or "guardrail_failed_to_respond" (exception or malformed response). Error messages
+  format detected attacks with their details: policy violations include policy and explanation, PII
+  includes the pii dict, toxicity includes toxicity scores above 0.5, keywords and bias include their
+  fields as found, and unknown attacks use their full details dict.
+
+
+  On both success and HTTP failure paths, _call_enkryptai_guardrails writes standard logging guardrail
+  information to request_data via add_standard_logging_guardrail_information_to_request_data (from B3664)
+  with the guardrail_provider, raw response/error JSON, guardrail_status (mapped via _determine_guardrail_status
+  on success; literal "guardrail_failed_to_respond" on HTTP failure), and timestamps with duration.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/enkryptai.rs
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/types.rs
+    - crates/betterlite-config/src/loader.rs
+    - tools/oracle/cases/guardrails/enkryptai/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/enkryptai/enkryptai.py#L45-L499
+    why: The complete EnkryptAIGuardrails class with __init__, _call_enkryptai_guardrails, _process_enkryptai_guardrails_response, _determine_guardrail_status, _create_error_message, apply_guardrail, get_config_model and get_supported_event_hooks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/enkryptai.py
+    why: The EnkryptAIGuardrailConfigModel and all response/detail TypedDicts for parsing the API response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py
+    why: The CustomGuardrail base class with timeout field and the API signature for get_config_model.
+dod:
+  - text: Detection request to /guardrails/policy/detect includes Content-Type, apikey header, and optional x-enkrypt-policy.
+    proof: [oracle]
+  - text: Response parsing correctly identifies toxicity (non-empty list), policy_violation/pii/keyword/bias (value=1), and extracts details for each attack type.
+    proof: [oracle]
+  - text: Status determination returns "success" when no attacks detected, "guardrail_intervened" when attacks found, "guardrail_failed_to_respond" on exception or malformed response.
+    proof: [enkryptai-tests]
+  - text: Error message formatting includes policy/explanation for policy violations, pii dict for PII, toxicity scores >0.5 for toxicity, detected_keywords for keyword_detected, bias_detected for bias.
+    proof: [enkryptai-tests]
+  - text: Unified text-batch evaluation calls the detection API once per text in inputs.texts and raises error if any text has attacks detected.
+    proof: [oracle]
+  - text: Standard logging guardrail information is recorded on both success and HTTP failure paths with guardrail_provider, response JSON, status and timestamps.
+    proof: [enkryptai-tests]
+  - text: Configuration loads api_key (required, ENKRYPTAI_API_KEY env), api_base (optional, default https://api.enkryptai.com, ENKRYPTAI_API_BASE env), policy_name (optional).
+    proof: [enkryptai-tests, config-load]
+checks:
+  optional: []
+  commands:
+    - id: enkryptai-tests
+      why: the enkryptai guardrail tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-server --no-tests=fail -E 'test(/enkryptai_guardrail/)'
+    - id: config-load
+      why: the EnkryptAI configuration does not load from files or environment
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/enkryptai.*config/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/enkryptai/detection-no-attacks-success.yaml
+  - tools/oracle/cases/guardrails/enkryptai/detection-policy-violation.yaml
+  - tools/oracle/cases/guardrails/enkryptai/detection-pii-detected.yaml
+  - tools/oracle/cases/guardrails/enkryptai/detection-toxicity-detected.yaml
+  - tools/oracle/cases/guardrails/enkryptai/detection-keyword-and-bias.yaml
+  - tools/oracle/cases/guardrails/enkryptai/detection-prompt-injection.yaml
+  - tools/oracle/cases/guardrails/enkryptai/detection-jailbreak.yaml
+  - tools/oracle/cases/guardrails/enkryptai/unified-evaluation-batch-texts.yaml
+  - tools/oracle/cases/guardrails/enkryptai/response-parsing-missing-fields.yaml
+  - tools/oracle/cases/guardrails/enkryptai/api-error-http-failure.yaml
+  - tools/oracle/cases/guardrails/enkryptai/missing-api-key.yaml
+deviations:
+  - what: EnkryptAI error messages use betterlite's own wording when attacks are detected, not LiteLLM's exact ValueError text.
+    why: Error messages are betterlite's own per rule errors-match-litellm, and ValueError exceptions are resurfaced with custom formatting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/enkryptai/enkryptai.py#L232-L268
+out_of_scope:
+  - Lifecycle hook entry points (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook, async_post_call_streaming_iterator_hook wrapper logic);
+    B107 orchestrates when EnkryptAI guardrails are invoked.
+  - The threshold-based decision whether to run EnkryptAI on a particular request; B219 and other tasks handle that.
+  - Whether to actually block when block_on_violation is set or when detectors dict enables/disables specific checks; those toggles remain unobserved at this pin.
+  - The deployment_name field and X-Enkrypt-Deployment header wiring; declared but not used in the detection call at the pinned code.
+  - Other guardrail providers (Cisco, AIM, etc.); each gets its own task.
+pitfalls:
+  - The summary key toxicity is a list, not an integer; detect it by checking list length > 0, not value == 1.
+  - The policy_name/x-enkrypt-policy header is optional and must only be sent when policy_name is set; do not send empty string.
+  - Error message formatting for toxicity must only include scores > 0.5, not all scores returned by the API.
+  - Configuration api_base must be preserved as-is; do not strip protocols or convert http:// to https://.
+  - ENKRYPTAI_API_KEY must never be logged or shown in Debug output; mark the field as SecretString and use it only in the apikey header.
+  - Multiple texts in apply_guardrail must each call the detection API independently, not batched into a single payload.
+  - Malformed or non-dict responses must return "guardrail_failed_to_respond", not raise an exception.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 1

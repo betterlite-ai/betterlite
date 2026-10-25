@@ -1,0 +1,88 @@
+id: B4590
+title: CLI keyring access and verified secret storage
+description: >-
+  Own crates/betterlite-cli/src/keyring.rs. Build a Rust module that SDK code and CLI commands use to store and retrieve the credential from the OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service). The `keyring` crate is optional and imported only when needed, so importing this module never pulls it in.
+
+  The module defines enum types for every outcome: SecretFound(blob), SecretMissing, SecretStored, SecretErased, SecretStranded, KeyringNotInstalled, KeyringDisabled, KeyringUnreachable, KeyringDiscardsWrites. Type aliases SecretRead, SecretWrite, SecretErase and KeyringUnusable group the union types that each operation can return. A SecretVault trait defines three methods: read(), write(blob: str), erase().
+
+  KeyringVault is the only implementation of SecretVault, with a read() method that returns the secret or a reason it is unreachable, write(blob) that stores only after verifying the keychain answered the write, and erase() that removes the entry and reports whether it succeeded. The service name is "litellm-cli" and account name is "credential"; a preflight probe is stored under "credential-preflight" to check whether the keychain answers writes within 5 seconds.
+
+  Respect the original design: a write is only reported SecretStored after read-back confirms the value matches. A keychain that accepts every write and keeps nothing (null backend, `keyring --disable`, LITELLM_CLI_DISABLE_KEYRING=1 in headless CI) is detected because read-back returns nothing and the operation falls back to the token file. A keychain that blocks forever on write (the case for LOGIN keychains with no usable $HOME in containers, `sudo -H`, service accounts) is detected with a 5-second preflight, and the result is cached as KeyringUnreachable for the rest of the process to avoid blocking on the main thread. The preflight probe entry is deleted immediately after a successful preflight and before the real write; delete failures are silently suppressed since the preflight value is worthless.
+
+  The keyring crate's Python bindings or a wrapper crate can be used; if keyring is not available, KeyringNotInstalled results on every operation. Reads succeed with SecretMissing (no entry) or SecretFound(blob). Writes catch every exception and return either KeyringUnreachable (read-back failed) or KeyringDiscardsWrites (the keychain kept nothing). Erasures return SecretErased (gone), SecretStranded (could not delete, entry still exists), or the reason the keychain is unreachable.
+
+  Add a test module that stubs the keyring API, verifies preflight timeout behavior, catches every exception path and proves read-back detection works. The oracle is deferred because keyring integration requires secrets and CI setup; only unit tests run here.
+
+  Consume this module from B4591 (token records), B4592 (credential lifecycle) and B4594 (setup wizard).
+
+scope:
+  paths:
+    - crates/betterlite-cli/src/keyring.rs
+    - crates/betterlite-cli/Cargo.toml
+    - Cargo.toml
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_keyring.py#L1-30
+    why: Module docstring and keyring service/account constant names (litellm-cli, credential, credential-preflight, preflight, disabled-value set).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_keyring.py#L34-82
+    why: Result type definitions and type aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_keyring.py#L85-101
+    why: SecretVault and KeyringApi protocols.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_keyring.py#L103-141
+    why: Disabled check, import, API selection and preflight logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_keyring.py#L142-150
+    why: Preflight deletion (delete_password for credential-preflight) before the real write, with suppressed exceptions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_keyring.py#L153-229
+    why: "KeyringVault implementation: read, write with preflight and read-back, erase."
+
+dod:
+  - text: SecretVault is a trait with read(), write(blob), erase() methods matching LiteLLM's behavior.
+    proof: [keyring-unit-tests]
+  - text: Read returns SecretFound(blob), SecretMissing, KeyringNotInstalled, KeyringDisabled or KeyringUnreachable.
+    proof: [keyring-unit-tests]
+  - text: Write preflights with a 5-second timeout, reports stored only after read-back confirms the value, and detects null backends that discard writes.
+    proof: [keyring-unit-tests]
+  - text: Erase returns SecretErased, SecretStranded or an unusable keyring, never reports unreachable after detecting one.
+    proof: [keyring-unit-tests]
+  - text: LITELLM_CLI_DISABLE_KEYRING=1 (case-insensitive, whitespace-trimmed) disables the keyring and all three operations fall back.
+    proof: [keyring-unit-tests]
+  - text: Every exception from the keyring API is caught and returns an unusable result, never panics.
+    proof: [keyring-unit-tests]
+  - text: The preflight timeout is 5 seconds by default, configurable on KeyringVault for testing, and cached as stopped_answering for the lifetime of the instance.
+    proof: [keyring-unit-tests]
+  - text: Preflight deletion (delete_password for credential-preflight) happens before the real write and suppresses exceptions.
+    proof: [keyring-unit-tests]
+  - text: "Named cases: read_found_and_missing, read_import_missing_and_disabled, read_exception_unreachable, write_preflight_timeout_cached, write_preflight_delete_failure_suppressed, write_stored_after_readback, write_readback_mismatch_discards_writes, write_exception_in_set, write_disabled_missing_and_cache, erase_confirms_deletion_after_found, erase_missing_already_gone, erase_stranded_on_delete_failure, erase_unusable_never_tried."
+    proof: [keyring-unit-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: keyring-unit-tests
+      why: Keyring read, write, erase or preflight behavior differs from source or panics.
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^keyring::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Keyring exceptions are never raised to callers; they are caught and returned as enum variants.
+    why: Python's exceptions are a control-flow mechanism and add verbosity; Rust enum variants are more explicit. The caller still has every information they need to fall back to the token file.
+
+out_of_scope:
+  - B4591 owns token record storage and loading; B4592 owns credential lifecycle (save, migrate, logout).
+  - B4594 owns setup wizard terminal input and provider selection.
+  - B003 owns server routes; keyring access is local SDK only.
+  - Testing keyring integration against a real OS keychain is deferred to a later task.
+
+pitfalls:
+  - "A keychain that blocks forever on writes (LOGIN keychain with no usable $HOME) must be detected with a preflight probe, or `lite login` blocks forever. The 5-second timeout is the only detector."
+  - "A null backend accepts every write and keeps nothing. Read-back is the only way to tell if a keychain actually stored the credential."
+  - "A preflight probe that times out is still running in a background thread and blocking the keychain against the main thread. Mark it as stopped_answering and never ask again, or read() would block forever on the main thread."
+  - "The preflight entry must be deleted before the real write, because a keychain that discards writes will have created it during preflight. Suppress exceptions on deletion because the entry may not have been stored."
+  - "LITELLM_CLI_DISABLE_KEYRING must be case-insensitive and trimmed; whitespace and mixed case are common in CI setup."
+
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

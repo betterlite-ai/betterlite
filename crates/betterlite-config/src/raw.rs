@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
+use crate::providers::bedrock::request_policy::RawMetadataField;
 use crate::types::{RouterFallback, RoutingStrategy};
 
 #[derive(Debug, Deserialize, Default)]
@@ -76,6 +77,12 @@ pub(super) struct RawLiteLlm {
     pub(super) num_retries: Option<RawNumber>,
     pub(super) request_timeout: Option<RawNumber>,
     pub(super) drop_params: Option<bool>,
+    #[serde(default)]
+    pub(super) aiohttp_trust_env: bool,
+    #[serde(default)]
+    pub(super) disable_aiohttp_trust_env: bool,
+    #[serde(rename = "bedrock_request_metadata_fields")]
+    pub(super) bedrock_metadata_fields: Option<Vec<RawMetadataField>>,
     pub(super) modify_params: Option<bool>,
 }
 

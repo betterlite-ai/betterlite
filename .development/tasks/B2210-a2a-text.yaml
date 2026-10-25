@@ -66,11 +66,10 @@ scope:
   - crates/betterlite-context/src/a2a_text.rs
   - crates/betterlite-context/src/a2a_text/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/a2a_text.rs
-  - tools/oracle/src/helpers/a2a_text/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/context/a2a_text.rs
+  - tools/oracle/src/helpers/context/a2a_text/**
   - tools/oracle/helpers/a2a_text.py
+  - tools/oracle/helpers/a2a_text/**
   - tools/oracle/cases/helpers/providers/a2a-text/**
   - tools/oracle/fuzz/corpus/helper_case/a2a_text*
   lint_tables: false
@@ -160,6 +159,7 @@ out_of_scope:
 - litellm/a2a_protocol/utils.py contains separate compatibility wrappers and A2ARequestUtils behavior owned B142;
   do not substitute those differently shaped functions for these helpers.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as a2a_text in the context group. Replace the stub Op in tools/oracle/src/helpers/context/a2a_text.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/a2a_text.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty result.parts list is authoritative and prevents a later message/artifact from supplying text.
 - Empty text parts still add join separators, while empty recursively extracted parts are omitted.
 budget:

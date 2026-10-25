@@ -30,11 +30,10 @@ scope:
   - crates/betterlite-provider/src/prepared.rs
   - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_provider_contract.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/responses_provider_contract.rs
+  - tools/oracle/src/helpers/provider/responses_provider_contract/**
   - tools/oracle/helpers/responses_provider_contract.py
+  - tools/oracle/helpers/responses_provider_contract/**
   - tools/oracle/fuzz/corpus/helper_case/responses_provider_contract-*
   - tools/oracle/cases/helpers/responses-provider-contract/**
   lint_tables: false
@@ -95,6 +94,7 @@ out_of_scope:
 - B2202 owns BaseResponsesAPIConfig.__init__ L31-L32; it has no state or observable operation.
 - Provider overrides execute through their provider tasks, including OpenAI B508/B509; this task's test subclass does no provider I/O.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_provider_contract in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/responses_provider_contract.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_provider_contract.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - sign_request's null signed body means the finalized request still needs ordinary serialization; it is not an empty body.
 - Namespace removal is shallow and matches only type=custom_tool_call; function_call.namespace remains.
 - get_websocket_url calls the provider's complete-URL override before replacing scheme strings.

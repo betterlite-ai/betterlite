@@ -73,10 +73,10 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/resource_config_json.rs
     - crates/betterlite-db/fuzz/corpus/resource_config_json/**
-    - tools/oracle/src/helpers/resource_repository.rs
+    - tools/oracle/src/helpers/db/resource_repository.rs
+    - tools/oracle/src/helpers/db/resource_repository/**
     - tools/oracle/helpers/resource_repository.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/helpers/resource_repository/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/resource-repository/**
     - tools/oracle/fuzz/corpus/helper_case/resource-repository-*
@@ -147,6 +147,7 @@ out_of_scope:
   - B700 owns BaseRepository and record_to_dict; B714 owns reader/writer handle selection; B726 owns PrismaTableRepository including publication wiring.
   - B2303 owns decryption; B061's credential routes and B836's model writes own encryption before raw storage.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as resource_repository in the db group. Replace the stub Op in tools/oracle/src/helpers/db/resource_repository.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/resource_repository.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A credential repository write preserves the caller's bytes and cannot be credited with at-rest encryption.
   - The model repository's encryption_key constructor argument is not used by read decryption.
   - set_param accepts a bare string that get_param later rejects as invalid JSON.

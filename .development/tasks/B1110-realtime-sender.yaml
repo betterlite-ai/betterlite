@@ -27,8 +27,10 @@ scope:
   - crates/betterlite-core/src/api/realtime_sender/**
   - tools/oracle/src/websocket_driver.rs
   - tools/oracle/src/websocket_driver/realtime_sender.rs
-  - tools/oracle/helpers/websocket_dispatch.py
-  - tools/oracle/helpers/realtime_sender_websocket.py
+  - tools/oracle/src/helpers/core_ops/realtime_sender.rs
+  - tools/oracle/src/helpers/core_ops/realtime_sender/**
+  - tools/oracle/helpers/realtime_sender.py
+  - tools/oracle/helpers/realtime_sender/**
   - tools/oracle/cases/websocket/realtime-sender/**
   - tools/oracle/fuzz/corpus/websocket_oracle/realtime-sender-*
   lint_tables: false
@@ -100,6 +102,7 @@ out_of_scope:
 - B2455 owns _make_disable_auto_response_message,_maybe_inject_guardrail_auto_response_disable and guardrail predicates; B1007 owns the runner. _has_realtime_guardrails has no caller at the pin.
 - Remaining realtime_streaming.py functions are B1004 contracts, B1005 beta transforms, B1006 state/logging, B1124 buffering, B1008 backend relay and B1009 client relay.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as realtime_sender in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/realtime_sender.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/realtime_sender.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A failed beta client send enters the same warning/fallback branch as a translation failure and can cause a second send attempt.
 - Authorized transcription enforcement rewrites existing nested dictionaries but does not insert missing ones.
 - Guardrail setup injection and successful-send cache mutation intentionally have different commit points.

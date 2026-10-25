@@ -39,12 +39,11 @@ scope:
     - crates/betterlite-server/src/login_form/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/login_form.rs
-    - tools/oracle/src/helpers/login_form/**
+    - tools/oracle/src/helpers/server/login_form.rs
+    - tools/oracle/src/helpers/server/login_form/**
     - tools/oracle/helpers/login_form.py
+    - tools/oracle/helpers/login_form/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/login-form/**
     - tools/oracle/fuzz/corpus/helper_case/login-form-*
     - crates/betterlite-config/Cargo.toml
@@ -110,6 +109,7 @@ out_of_scope:
   - B124 supplies get_custom_url and its root-path collaborators; B899 registers login handlers and
     B788 owns password authentication. Neither covered form file has another function.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as login_form in the server group. Replace the stub Op in tools/oracle/src/helpers/server/login_form.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/login_form.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The form action uses literal concatenation while the banner URL uses join_paths, so slash behavior differs.
   - A present but empty UI_PASSWORD must still display the default-credential hint.
 budget:

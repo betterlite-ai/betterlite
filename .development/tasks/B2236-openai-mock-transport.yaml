@@ -78,11 +78,10 @@ scope:
   - crates/betterlite-http/src/openai_mock_transport.rs
   - crates/betterlite-http/src/openai_mock_transport/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_mock_transport.rs
-  - tools/oracle/src/helpers/openai_mock_transport/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/http/openai_mock_transport.rs
+  - tools/oracle/src/helpers/http/openai_mock_transport/**
   - tools/oracle/helpers/openai_mock_transport.py
+  - tools/oracle/helpers/openai_mock_transport/**
   - tools/oracle/cases/helpers/providers/openai-mock-transport/**
   - tools/oracle/fuzz/corpus/helper_case/openai_mock_transport*
   - crates/betterlite-config/Cargo.toml
@@ -198,6 +197,7 @@ out_of_scope:
 - BaseOpenAILLM._get_async_http_client and _get_sync_http_client remain B173; the source mock transport is complete
   in this task. Real provider responses and transport pooling remain their existing owners.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_mock_transport in the http group. Replace the stub Op in tools/oracle/src/helpers/http/openai_mock_transport.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_mock_transport.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - stream=true still returns buffered JSON because _parse_request always returns false; do not synthesize mock SSE.
 budget:
   max_changed_lines: 525

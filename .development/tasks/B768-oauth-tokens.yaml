@@ -129,12 +129,11 @@ scope:
     - crates/betterlite-auth/src/oauth_tokens/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/oauth_tokens.rs
-    - tools/oracle/src/helpers/oauth_tokens/**
+    - tools/oracle/src/helpers/auth/oauth_tokens.rs
+    - tools/oracle/src/helpers/auth/oauth_tokens/**
     - tools/oracle/helpers/oauth_tokens.py
+    - tools/oracle/helpers/oauth_tokens/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/jwt.rs
-    - tools/oracle/helpers/management/jwt.py
     - tools/oracle/cases/helpers/oauth-tokens/**
     - tools/oracle/fuzz/corpus/helper_case/oauth-tokens-*
     - crates/betterlite-server/src/auth.rs
@@ -294,6 +293,7 @@ deviations:
 out_of_scope:
   - B743 owns trusted_proxy_ranges parsing and direct-peer trust; B2314 owns UserAPIKeyAuth validation.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as oauth_tokens in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/oauth_tokens.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/oauth_tokens.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Endpoint selection tests credential presence, but Basic authentication tests truthiness; empty secrets take different branches.
   - The config dictionary keys are identity fields despite the source docstring describing the opposite direction.
 budget:

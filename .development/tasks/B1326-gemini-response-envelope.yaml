@@ -27,8 +27,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/generate_content.rs
     - crates/betterlite-vertex/fuzz/corpus/generate_content/**
-    - tools/oracle/src/helpers/{mod,gemini_response}.rs
-    - tools/oracle/helpers/{dispatch,gemini_response}.py
+    - tools/oracle/src/helpers/vertex/gemini_response_envelope.rs
+    - tools/oracle/src/helpers/vertex/gemini_response_envelope/**
+    - tools/oracle/helpers/gemini_response_envelope.py
+    - tools/oracle/helpers/gemini_response_envelope/**
     - tools/oracle/cases/helpers/gemini-response/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_response*
   lint_tables: false
@@ -75,6 +77,7 @@ out_of_scope:
   - In the shared configuration file B1305/B1308-B1310 own options, B1313 parts, B1314 candidates, B1322 usage and B1323 metadata.
   - Other vertex_ai.py declarations follow their consumers in B1307-B1312/B1317/B1318/B1324 and the fine-tuning, embeddings and Live parts of B033/B034.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as gemini_response_envelope in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_response_envelope.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_response_envelope.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Empty ordinary replies still require usageMetadata and still receive empty hidden metadata arrays.
   - modelVersion is an accepted runtime field despite its absence from GenerateContentResponseBody's TypedDict.
   - Content-filter early returns do not receive the later service_tier mapping.

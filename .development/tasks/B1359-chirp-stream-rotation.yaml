@@ -30,8 +30,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/chirp_command.rs
     - crates/betterlite-vertex/fuzz/corpus/chirp_command/**
-    - tools/oracle/src/helpers/{mod,chirp_backend_policy}.rs
-    - tools/oracle/helpers/{dispatch,chirp_backend_policy}.py
+    - tools/oracle/src/helpers/vertex/chirp_stream_rotation.rs
+    - tools/oracle/src/helpers/vertex/chirp_stream_rotation/**
+    - tools/oracle/helpers/chirp_stream_rotation.py
+    - tools/oracle/helpers/chirp_stream_rotation/**
     - tools/oracle/cases/helpers/chirp-backend-policy/**
     - tools/oracle/fuzz/corpus/helper_case/chirp_backend_policy*
   lint_tables: false
@@ -77,6 +79,7 @@ out_of_scope:
   - B1358 owns open_speech_client, SDK projections, _RecognizeStream, protocol declarations and _normal_closure in L1-L237.
   - B1356 transforms transcript events; B1357 connects this backend to the existing realtime operation without creating a route.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as chirp_stream_rotation in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/chirp_stream_rotation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/chirp_stream_rotation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Soft rotation is blocked by speech activity until the hard 280-second deadline.
   - Discard removes its suppression marker only when the ordered discard event becomes deliverable.
   - Configuring a stream does not mint credentials or establish gRPC until audio arrives.

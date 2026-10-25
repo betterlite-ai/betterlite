@@ -40,8 +40,10 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/xai_callback.rs
     - crates/betterlite-openai/fuzz/corpus/xai_callback/**
-    - tools/oracle/src/helpers/{mod,xai_login_url}.rs
-    - tools/oracle/helpers/{dispatch,xai_login_url}.py
+    - tools/oracle/src/helpers/openai/xai_oauth_login.rs
+    - tools/oracle/src/helpers/openai/xai_oauth_login/**
+    - tools/oracle/helpers/xai_oauth_login.py
+    - tools/oracle/helpers/xai_oauth_login/**
     - tools/oracle/fixtures/xai-login/**
     - tools/oracle/cases/helpers/xai-login-url/**
     - tools/oracle/fuzz/corpus/helper_case/xai_login_url*
@@ -86,6 +88,7 @@ out_of_scope:
   - Token/discovery records and all remaining XAIOAuthAuthenticator methods in oauth.py belong to B1400.
   - B151 installs the xai-oauth login CLI command and its browser-opening frontend; this task supplies its callable service.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as xai_oauth_login in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/xai_oauth_login.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/xai_oauth_login.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A callback with matching state and error still receives HTTP 200 before login reports the authorization failure.
   - parse_qs discards blank values, so code=&code=ok selects ok.
   - A failed refresh only triggers interactive authorization when its error is an XAIOAuthError.

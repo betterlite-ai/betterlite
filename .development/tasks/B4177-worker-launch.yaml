@@ -1,0 +1,86 @@
+id: B4177
+title: Alternate worker launch and metrics process preparation
+description: >-
+  Build backend-specific launch plans and Prometheus multi-worker directory preparation, preserving TLS-pair validation and backend warning differences.
+  Hypercorn serves HTTP/1.1 and HTTP/2 over asyncio, configured with optional SSL cert/key pair and optional ciphers (ciphers only if both TLS files are present).
+  Granian runs a Rust-backed ASGI server with at least one worker and optional per-worker runtime threads; unsupported features (max_requests_before_restart, ciphers) trigger warnings.
+  Gunicorn uses preload to fork workers, default timeout 600 seconds, optional max_requests and jitter, conditional Prometheus cleanup callback on child exit, and fork-guard registration for native Rust pre-work.
+  Prometheus callback configuration detection checks litellm_settings keys callbacks, success_callback and failure_callback for "prometheus" string or list membership.
+  Multi-worker directory setup creates PROMETHEUS_MULTIPROC_DIR (environment or auto-created temp), recognizes case-insensitive env-var names, and prepares shared samples when separate metrics listener or multi-worker setup needs it.
+scope:
+  paths:
+    - crates/betterlite-server/**
+    - tools/oracle/cases/worker/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L435-L466
+    why: "_init_hypercorn_server: Hypercorn configuration, TLS setup, and asyncio serving."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L468-L516
+    why: "_init_granian_server: Granian ASGI server with worker count, runtime threads, TLS, and unsupported-feature warnings."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L518-L632
+    why: "_run_gunicorn_server: Gunicorn preload, workers, timeout, max_requests/jitter, child-exit callback for Prometheus cleanup, and fork reservation."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L660-L672
+    why: "_prometheus_callback_configured: Detect prometheus in callbacks, success_callback or failure_callback settings."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L674-L702
+    why: "_maybe_setup_prometheus_multiproc_dir: Create and wipe PROMETHEUS_MULTIPROC_DIR, recognize env-var case variants, message on auto-create vs existing."
+dod:
+  - text: Hypercorn server binds to the given host:port with optional SSL cert/key, applies ciphers only when both TLS files are present, and serves with asyncio.
+    proof: [worker-launch-oracle]
+  - text: Granian server runs with num_workers (minimum 1), optional runtime_threads, optional SSL with both files required, and warns about unsupported max_requests/ciphers.
+    proof: [worker-launch-oracle]
+  - text: Gunicorn server preloads the app, forks num_workers, sets 600-second default timeout, applies optional max_requests and jitter, and configures Prometheus cleanup callback when PROMETHEUS_MULTIPROC_DIR is set.
+    proof: [worker-launch-oracle]
+  - text: Prometheus callback detection checks all three callback settings (callbacks, success_callback, failure_callback) for the string "prometheus" or list membership.
+    proof: [worker-launch-oracle]
+  - text: Prometheus multiproc directory is auto-created in temp when needed, respects configured PROMETHEUS_MULTIPROC_DIR or prometheus_multiproc_dir, and is prepared for multi-process use.
+    proof: [worker-launch-oracle]
+  - text: Start message names the backend (Hypercorn, Granian, Gunicorn) and reports host:port, worker count (when applicable), and metrics port if separate.
+    proof: [worker-launch-oracle]
+  - text: Granian requires both cert and key files and raises ClickException on incomplete pairs; Hypercorn and Gunicorn silently continue without SSL if either file is missing.
+    proof: [worker-launch-oracle]
+  - text: Prometheus directory creation recognizes both case variants (PROMETHEUS_MULTIPROC_DIR and prometheus_multiproc_dir) and messages "Using existing" vs "Auto-created".
+    proof: [worker-launch-oracle]
+checks:
+  optional: []
+  commands:
+    - id: worker-launch-oracle
+      why: backend launch paths, TLS validation, Prometheus callback detection or multiproc directory setup fails or does not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^worker_launch::/)' && test -n "$(ls tools/oracle/cases/worker 2>/dev/null | head -1)"
+oracle_cases:
+  - tools/oracle/cases/worker/hypercorn-startup.yaml
+  - tools/oracle/cases/worker/hypercorn-ssl-missing-cert.yaml
+  - tools/oracle/cases/worker/hypercorn-ssl-missing-key.yaml
+  - tools/oracle/cases/worker/granian-startup.yaml
+  - tools/oracle/cases/worker/granian-runtime-threads.yaml
+  - tools/oracle/cases/worker/granian-ssl-missing-half.yaml
+  - tools/oracle/cases/worker/granian-no-max-requests.yaml
+  - tools/oracle/cases/worker/granian-no-ciphers.yaml
+  - tools/oracle/cases/worker/prometheus-callback-string.yaml
+  - tools/oracle/cases/worker/prometheus-callback-list.yaml
+  - tools/oracle/cases/worker/prometheus-no-callback.yaml
+  - tools/oracle/cases/worker/prometheus-multiproc-auto-create.yaml
+  - tools/oracle/cases/worker/prometheus-multiproc-existing.yaml
+  - tools/oracle/cases/worker/prometheus-multiproc-case-variants.yaml
+deviations:
+  - what: Multi-worker modes (num_workers > 1 or OS-level process forking) are rejected at startup with exit code 2 and error code unsupported_runtime.
+    why: ".development/rules.yaml rule no-subprocess forbids spawning processes in gateway code, and native async runtime replaces multi-process workers with async tasks. Single-worker native Rust equivalents for Hypercorn, Granian, and Gunicorn implement TLS, ciphers, and callback configuration as described in DoD 1-3."
+  - what: Fork-guard and start_query_engine_reaper calls in gunicorn code are omitted because native Rust pools have no Prisma process to protect.
+    why: B713 already decided that native execution has no Prisma fork-reaping requirement; these Python helper calls are preserved in upstream but not built here."
+  - what: Ollama serve subprocess spawning in B4175's _run_ollama_serve remains unsupported; only pre-running Ollama services are accessible.
+    why: "Matches the no-subprocess rule; users must start Ollama separately."
+out_of_scope:
+  - "start_query_engine_reaper: B713 already decided native pools need no Prisma process spawning."
+  - "reserve_process_for_forking: Native Rust does not use Python multiprocessing; this gunicorn helper call has no owner and no native equivalent."
+  - "wipe_directory and mark_worker_exit implementation: This task configures the Prometheus cleanup callback trigger and the multiproc directory decision logic (DoD 3 and 5 cover detection and callback registration). The actual cleanup helper functions in litellm.proxy.prometheus_cleanup remain unowned; B3887 will own them once it exists. This task's scope is the launch decision, not the cleanup operation."
+  - "get_finished_spans: The installed exporter's method is outside scope; spans are gathered by the exporter, not by launch code."
+pitfalls:
+  - "Granian raises ClickException if one TLS file is given without the other. Hypercorn and Gunicorn silently skip SSL if either file is missing; they do not error. Ciphers are only applied when both files are present."
+  - "Granian's minimum is one worker, not zero; num_workers=0 becomes 1. Gunicorn and Hypercorn accept any non-negative count but betterlite rejects multi-worker modes at startup."
+  - "PROMETHEUS_MULTIPROC_DIR can be set as uppercase or lowercase env-var names; both must be checked with getenv. Existing value is reused without wiping; only new auto-created directories are wiped."
+  - "Gunicorn child_exit callback is only registered when PROMETHEUS_MULTIPROC_DIR is set; no callback exists without it, so workers exiting without multiproc metrics do not call mark_worker_exit."
+  - "Prometheus callback detection returns true only if the setting is the exact string 'prometheus' or a sequence containing it; a typo like 'prometheu' matches nothing."
+  - "Granian warnings for unsupported options are printed once at startup; they do not affect subsequent behavior. The flags are still parsed and validated by clap, so wrong values still raise click errors before the launch code runs."
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

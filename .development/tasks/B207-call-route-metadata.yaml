@@ -27,8 +27,10 @@ scope:
   - crates/betterlite-core/fixtures/**
   - crates/betterlite-core/fuzz/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/core_ops/route_metadata.rs
+  - tools/oracle/src/helpers/core_ops/route_metadata/**
+  - tools/oracle/helpers/route_metadata.py
+  - tools/oracle/helpers/route_metadata/**
   - tools/oracle/cases/helpers/route-metadata/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -105,6 +107,7 @@ out_of_scope:
 - HTTP route installation is done by endpoint tasks; shared execution is B014.
 - Metadata call types do not imply native implementations for every endpoint.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as route_metadata in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/route_metadata.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/route_metadata.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Only a suffixed tail placeholder may absorb several path segments in the pinned matcher.
 - Exact entries are checked before pattern iteration.
 - A fixture may contain generated metadata but not executable Rust hidden from the line budget.

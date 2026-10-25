@@ -41,10 +41,10 @@ scope:
     - crates/betterlite-core/fuzz/corpus/recraft_images/**
     - crates/betterlite-config/src/providers.rs
     - crates/betterlite-config/src/providers/recraft.rs
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/recraft.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/recraft.py
+    - tools/oracle/src/helpers/core_ops/recraft_images.rs
+    - tools/oracle/src/helpers/core_ops/recraft_images/**
+    - tools/oracle/helpers/recraft_images.py
+    - tools/oracle/helpers/recraft_images/**
     - tools/oracle/cases/helpers/recraft/**
     - tools/oracle/fuzz/corpus/helper_case/recraft*
   lint_tables: false
@@ -85,6 +85,7 @@ deviations: []
 out_of_scope:
   - B046 selects these operations for generation and editing; B068 retains shared model-info resolution and total-cost routing.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as recraft_images in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/recraft_images.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/recraft_images.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - RecraftImageEditRequestParams is not a validator for the documented strength or image-count ranges.
   - The generation path retains preexisting images, but the edit path constructs a new response.
   - A requested n does not determine billing when the provider returns fewer images.

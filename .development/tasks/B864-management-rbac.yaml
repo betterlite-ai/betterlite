@@ -57,12 +57,11 @@ scope:
     - crates/betterlite-server/src/management_rbac/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/management_rbac.rs
-    - tools/oracle/src/helpers/management_rbac/**
+    - tools/oracle/src/helpers/server/management_rbac.rs
+    - tools/oracle/src/helpers/server/management_rbac/**
     - tools/oracle/helpers/management_rbac.py
+    - tools/oracle/helpers/management_rbac/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/management-rbac/**
     - tools/oracle/fuzz/corpus/helper_case/management-rbac-*
     - crates/betterlite-config/Cargo.toml
@@ -145,6 +144,7 @@ deviations: []
 out_of_scope:
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as management_rbac in the server group. Replace the stub Op in tools/oracle/src/helpers/server/management_rbac.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/management_rbac.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - allow_agents_for_team_admins also exempts an organization administrator found by B863.
   - disable_key_generate_for_org_admin checks the global role, not membership rows.
   - A nonempty string 'false' is truthy in the source's runtime settings map.

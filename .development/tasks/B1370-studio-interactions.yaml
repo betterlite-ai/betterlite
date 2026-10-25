@@ -35,8 +35,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/studio_interaction.rs
     - crates/betterlite-vertex/fuzz/corpus/studio_interaction/**
-    - tools/oracle/src/helpers/{mod,studio_interactions}.rs
-    - tools/oracle/helpers/{dispatch,studio_interactions}.py
+    - tools/oracle/src/helpers/vertex/studio_interactions.rs
+    - tools/oracle/src/helpers/vertex/studio_interactions/**
+    - tools/oracle/helpers/studio_interactions.py
+    - tools/oracle/helpers/studio_interactions/**
     - tools/oracle/cases/helpers/studio-interactions/**
     - tools/oracle/fuzz/corpus/helper_case/studio_interactions*
   lint_tables: false
@@ -81,6 +83,7 @@ out_of_scope:
   - All Studio interactions functions and local protocol declarations are owned here; B1369 replaces identity and URL methods for Vertex.
   - B098 owns SSE framing, HTTP methods and public native routes; B034/B035 inject B206 response-header processing into this leaf adapter.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as studio_interactions in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/studio_interactions.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/studio_interactions.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - response_format lists suppress response_mime_type wrapping even when they contain no MIME entry.
   - An image_config type field overwrites the initially supplied image type in the moved format.
   - Delete success does not depend on receiving valid JSON.

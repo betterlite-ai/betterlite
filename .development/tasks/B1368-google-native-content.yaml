@@ -34,8 +34,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/google_native_content.rs
     - crates/betterlite-vertex/fuzz/corpus/google_native_content/**
-    - tools/oracle/src/helpers/{mod,google_native_content}.rs
-    - tools/oracle/helpers/{dispatch,google_native_content}.py
+    - tools/oracle/src/helpers/vertex/google_native_content.rs
+    - tools/oracle/src/helpers/vertex/google_native_content/**
+    - tools/oracle/helpers/google_native_content.py
+    - tools/oracle/helpers/google_native_content/**
     - tools/oracle/cases/helpers/google-native-content/**
     - tools/oracle/fuzz/corpus/helper_case/google_native_content*
   lint_tables: false
@@ -83,6 +85,7 @@ out_of_scope:
   - B1331 owns Studio validate_environment and _get_google_ai_studio_api_key at L146-L176; every other method in both native transformation files belongs here.
   - B098 owns generic native GenAI API contracts and public routes; B034/B035 expose the provider preparation and response hooks for that caller.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as google_native_content in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/google_native_content.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/google_native_content.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Vertex's native option map preserves unsupported keys while Studio filters them.
   - A present non-object responseSchema prevents schema normalization rather than falling through to response_schema.
   - Studio retains tools null and an empty generationConfig where Vertex omits them.

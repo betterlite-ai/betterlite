@@ -25,11 +25,10 @@ scope:
   - crates/betterlite-core/src/api/messages_chat_output.rs
   - crates/betterlite-core/src/api/messages_chat_output/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/messages_chat_output.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/messages_chat_output.rs
+  - tools/oracle/src/helpers/core_ops/messages_chat_output/**
   - tools/oracle/helpers/messages_chat_output.py
+  - tools/oracle/helpers/messages_chat_output/**
   - tools/oracle/fuzz/corpus/helper_case/messages_chat_output-*
   - tools/oracle/cases/helpers/messages-chat-output/**
   - Cargo.lock
@@ -133,6 +132,7 @@ out_of_scope:
 - create_tool_name_mapping and translate_thinking_for_model have no caller at the pin; B977 owns network-backed stream iteration.
 - B216 owns argument JSON decoding/repair; B068 owns the two server_tool_use accessor functions in llm_cost_calc/utils.py.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as messages_chat_output in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_chat_output.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_chat_output.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A present empty thinking_blocks attribute prevents the reasoning_content fallback in streaming block selection.
 - A second choice with tool calls resets partial_json instead of appending to the prior choice's arguments.
 - Cache counters are selected independently, then both subtracted; selecting only one changes billed input tokens.
