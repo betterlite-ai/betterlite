@@ -37,6 +37,27 @@ class Enterprise(BaseModel):
     manager: Manager | None = None
 
 
+class Name(BaseModel):
+    familyName: str | None = None
+    givenName: str | None = None
+    formatted: str | None = None
+    middleName: str | None = None
+    honorificPrefix: str | None = None
+    honorificSuffix: str | None = None
+
+
+class Email(BaseModel):
+    value: str
+    type: str | None = None
+    primary: bool | None = None
+
+
+class GroupReference(BaseModel):
+    value: str
+    display: str | None = None
+    type: str | None = "direct"
+
+
 class User(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     schemas: list[str]
@@ -44,7 +65,11 @@ class User(BaseModel):
     externalId: str | None = None
     meta: dict[str, Any] | None = None
     userName: str | None = None
+    name: Name | None = None
+    displayName: str | None = None
     active: bool = True
+    emails: list[Email] | None = None
+    groups: list[GroupReference] | None = None
     entitlements: list[MultiValue] | None = None
     roles: list[MultiValue] | None = None
     enterprise: Enterprise | None = Field(default=None, alias=ENTERPRISE)
@@ -81,6 +106,9 @@ class Member(BaseModel):
 
 class Group(BaseModel):
     schemas: list[str]
+    id: str | None = None
+    externalId: str | None = None
+    meta: dict[str, Any] | None = None
     displayName: str
     members: list[Member] | None = None
 
@@ -108,7 +136,7 @@ def run(input_value: dict[str, Any]) -> Any:
     kind = input_value["kind"]
     value = input_value["value"]
     if kind == "user":
-        return User.model_validate(value).model_dump(by_alias=True)
+        return User.model_validate(value).model_dump()
     if kind == "group":
         return Group.model_validate(value).model_dump()
     if kind == "patch":

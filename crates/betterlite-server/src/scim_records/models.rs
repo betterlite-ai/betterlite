@@ -1,5 +1,6 @@
 use serde::de::{Error as DeError, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::ser::SerializeMap as _;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::fmt::{self, Formatter};
 
@@ -173,7 +174,7 @@ fn default_direct() -> Option<String> {
     ["direct"].first().map(|value| (*value).to_owned())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub enum ScimMultiValuedAttribute {
     Object {
@@ -189,6 +190,41 @@ pub enum ScimMultiValuedAttribute {
         extra: BTreeMap<String, ScimValue>,
     },
     String(String),
+}
+
+impl Serialize for ScimMultiValuedAttribute {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::Object {
+                value,
+                display,
+                kind,
+                primary,
+                extra,
+            } => {
+                let mut state = serializer.serialize_map(Some(extra.len().saturating_add(4)))?;
+                state.serialize_entry("value", value)?;
+                state.serialize_entry("display", display)?;
+                state.serialize_entry("type", kind)?;
+                state.serialize_entry("primary", primary)?;
+                for (key, extra_value) in extra {
+                    state.serialize_entry(key, extra_value)?;
+                }
+                state.end()
+            }
+            Self::String(value) => {
+                let mut state = serializer.serialize_map(Some(4))?;
+                state.serialize_entry("value", value)?;
+                state.serialize_entry("display", &Option::<String>::None)?;
+                state.serialize_entry("type", &Option::<String>::None)?;
+                state.serialize_entry("primary", &Option::<bool>::None)?;
+                state.end()
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -225,7 +261,7 @@ pub struct ScimMember {
     pub value: String,
     #[serde(default)]
     pub display: Option<String>,
-    #[serde(default, deserialize_with = "string_or_none")]
+    #[serde(default, rename = "type", deserialize_with = "string_or_none")]
     pub kind: Option<String>,
 }
 fn string_or_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
