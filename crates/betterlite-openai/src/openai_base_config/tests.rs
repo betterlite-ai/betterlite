@@ -115,6 +115,7 @@ fn openai_base_config_credential_identity_isolation() {
 #[test]
 fn openai_base_config_secret_safe_failure() {
     assert!(!format!("{:?}", config(ConfigFamily::OpenAi)).contains("fixture-secret"));
+    assert!(format!("{:?}", config(ConfigFamily::OpenAi)).contains("OpenAiConfig"));
 }
 #[test]
 fn openai_base_config_forward_response_uses_projection() {

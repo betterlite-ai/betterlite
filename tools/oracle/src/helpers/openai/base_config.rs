@@ -103,11 +103,7 @@ fn mapped(fields: &Object) -> Value {
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
-    let requested = fields
-        .get("requested")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
+    let requested = fields.get("requested").and_then(Value::as_object).cloned().unwrap_or_default();
     config.map_params(
         fields
             .get("model")

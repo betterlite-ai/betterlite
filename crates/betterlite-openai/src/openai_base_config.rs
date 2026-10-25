@@ -14,6 +14,7 @@ pub struct CatalogCapabilities {
     pub text_models: BTreeSet<String>,
 }
 impl CatalogCapabilities {
+    #[must_use]
     pub fn new(chat_models: BTreeSet<String>, text_models: BTreeSet<String>) -> Self {
         let normalized_chat_models = chat_models.into_iter().collect();
         Self {
