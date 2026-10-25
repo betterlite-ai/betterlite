@@ -4,6 +4,8 @@ use betterlite_secrets::secret_codec::CipherSettings;
 use secrecy::SecretString;
 use serde::Deserialize;
 
+use crate::sections::Sections;
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub model_list: Vec<ModelDeployment>,
@@ -11,6 +13,7 @@ pub struct Config {
     pub router_settings: RouterSettings,
     pub litellm_settings: LiteLlmSettings,
     pub environment_variables: BTreeMap<String, Option<SecretString>>,
+    pub sections: Sections,
 }
 
 #[derive(Debug, Clone)]

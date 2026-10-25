@@ -97,6 +97,10 @@ scope:
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/access-group-write/**
     - crates/betterlite-server/src/access_group_write/fixtures/**
+    - tools/oracle/helpers/b822.py
+    - tools/oracle/helpers/b822/**
+    - tools/oracle/src/helpers/server/b822.rs
+    - tools/oracle/src/helpers/server/b822/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L317-L577

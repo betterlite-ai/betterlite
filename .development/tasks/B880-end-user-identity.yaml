@@ -98,21 +98,11 @@ scope:
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/end-user-identity/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/end_user_identity.rs
-    - crates/betterlite-config/src/end_user_identity/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/end-user-identity-*
     - crates/betterlite-server/src/auth/end_user_identity.rs
     - crates/betterlite-server/src/auth/end_user_identity/**
+    - crates/betterlite-config/src/sections/end_user_identity.rs
+    - crates/betterlite-config/src/sections/end_user_identity/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1981-L2041
@@ -192,7 +182,7 @@ checks:
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^end_user_identity::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::end_user_identity::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.

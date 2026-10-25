@@ -116,6 +116,10 @@ scope:
   - Cargo.lock
   - tools/oracle/cases/api/messages-token-route/**
   - tools/oracle/fixtures/messages-token-route/**
+  - tools/oracle/helpers/b996.py
+  - tools/oracle/helpers/b996/**
+  - tools/oracle/src/helpers/server/b996.rs
+  - tools/oracle/src/helpers/server/b996/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L289-L389

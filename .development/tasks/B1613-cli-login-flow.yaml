@@ -34,6 +34,10 @@ scope:
     - crates/betterlite-config/src/cli_login_flow/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/cli-login-flow-*
     - tools/oracle/cases/sso/cli-flow/**
+    - tools/oracle/helpers/b1613.py
+    - tools/oracle/helpers/b1613/**
+    - tools/oracle/src/helpers/server/b1613.rs
+    - tools/oracle/src/helpers/server/b1613/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L261-L401

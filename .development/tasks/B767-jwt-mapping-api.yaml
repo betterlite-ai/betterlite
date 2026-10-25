@@ -131,6 +131,10 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/jwt_mapping_api.rs
     - crates/betterlite-server/fuzz/corpus/jwt_mapping_api/**
+    - tools/oracle/helpers/b767.py
+    - tools/oracle/helpers/b767/**
+    - tools/oracle/src/helpers/server/b767.rs
+    - tools/oracle/src/helpers/server/b767/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L1-L365

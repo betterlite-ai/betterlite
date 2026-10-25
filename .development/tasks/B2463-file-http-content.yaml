@@ -28,6 +28,10 @@ scope:
   - tools/oracle/sdk_http/file_http_content.py
   - tools/oracle/cases/sdk-http/file-http-content/**
   - tools/oracle/fuzz/corpus/sdk_http_case/file-http-content-*
+  - tools/oracle/helpers/b2463.py
+  - tools/oracle/helpers/b2463/**
+  - tools/oracle/src/helpers/core_ops/b2463.rs
+  - tools/oracle/src/helpers/core_ops/b2463/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L386-L417

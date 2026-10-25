@@ -29,6 +29,10 @@ scope:
   - tools/oracle/cases/sdk-http/file-provider-write/**
   - tools/oracle/fuzz/corpus/sdk_http_case/file-provider-write-*
   - Cargo.lock
+  - tools/oracle/helpers/b1028.py
+  - tools/oracle/helpers/b1028/**
+  - tools/oracle/src/helpers/core_ops/b1028.rs
+  - tools/oracle/src/helpers/core_ops/b1028/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L115-L295

@@ -29,6 +29,10 @@ scope:
   - crates/betterlite-server/**
   - tools/oracle/cases/completions/**
   - crates/betterlite-core/**
+  - tools/oracle/helpers/b202.py
+  - tools/oracle/helpers/b202/**
+  - tools/oracle/src/helpers/oracle/b202.rs
+  - tools/oracle/src/helpers/oracle/b202/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12099-L12175
