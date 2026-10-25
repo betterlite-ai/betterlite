@@ -1,0 +1,8 @@
+kind: helper
+name: aggregate-limits-and-sentinel
+call:
+  daily_activity_sql:
+    function: where
+    scope: {table: litellm_dailyteamspend, entity_id_field: team_id, entity_ids: [], exclude_entity_ids: [], api_keys: [], start_date: '2026-01-01', end_date: '2026-01-31', model: '', timezone_offset_minutes: null, include_current_utc_day: false}
+env: {}
+compare: {ignore: []}

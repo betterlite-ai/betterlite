@@ -1,0 +1,8 @@
+kind: helper
+name: filter-presence-and-bind-order
+call:
+  daily_activity_sql:
+    function: where
+    scope: {table: litellm_dailyuserspend, entity_id_field: user_id, entity_ids: [a, b], exclude_entity_ids: [x], api_keys: [k], start_date: '2026-01-01', end_date: '2026-01-31', model: gpt, timezone_offset_minutes: null, include_current_utc_day: false}
+env: {}
+compare: {ignore: []}

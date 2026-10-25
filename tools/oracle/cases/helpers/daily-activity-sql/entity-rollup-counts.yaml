@@ -1,0 +1,8 @@
+kind: helper
+name: entity-rollup-counts
+call:
+  daily_activity_sql:
+    function: where
+    scope: {table: litellm_dailyorganizationspend, entity_id_field: organization_id, entity_ids: null, exclude_entity_ids: [x], api_keys: null, start_date: '2026-01-01', end_date: '2026-01-31', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
+env: {}
+compare: {ignore: []}
