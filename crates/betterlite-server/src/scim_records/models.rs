@@ -1,5 +1,7 @@
+use serde::de::{Error as DeError, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::Value;
+use std::collections::BTreeMap;
+use std::fmt::{self, Formatter};
 
 pub(super) const PATCH_SCHEMA: &str = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
 
@@ -10,15 +12,26 @@ pub enum ResourceKind {
     Patch,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum DecodedScimResource {
-    User(User),
-    Group(Group),
-    Patch(Patch),
+    User(Box<User>),
+    Group(Box<Group>),
+    Patch(Box<Patch>),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ScimValue {
+    Null,
+    Bool(bool),
+    Number(serde_json::Number),
+    String(String),
+    Array(Vec<Self>),
+    Object(BTreeMap<String, Self>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScimResource {
     pub schemas: Vec<String>,
     #[serde(default)]
@@ -26,10 +39,10 @@ pub struct ScimResource {
     #[serde(default)]
     pub external_id: Option<String>,
     #[serde(default)]
-    pub meta: Option<Value>,
+    pub meta: Option<ScimValue>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct User {
     pub schemas: Vec<String>,
     #[serde(default)]
@@ -37,7 +50,7 @@ pub struct User {
     #[serde(default, rename = "externalId")]
     pub external_id: Option<String>,
     #[serde(default)]
-    pub meta: Option<Value>,
+    pub meta: Option<ScimValue>,
     #[serde(default, rename = "userName")]
     pub user_name: Option<String>,
     #[serde(default)]
@@ -64,40 +77,44 @@ pub struct User {
     pub enterprise_user: Option<ScimEnterpriseUser>,
 }
 
+#[derive(Deserialize)]
+struct UserInput {
+    schemas: Vec<String>,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default, rename = "externalId")]
+    external_id: Option<String>,
+    #[serde(default)]
+    meta: Option<ScimValue>,
+    #[serde(default, rename = "userName")]
+    user_name: Option<String>,
+    #[serde(default)]
+    name: Option<UserName>,
+    #[serde(default, rename = "displayName")]
+    display_name: Option<String>,
+    #[serde(default)]
+    active: Option<bool>,
+    #[serde(default)]
+    emails: Option<Vec<UserEmail>>,
+    #[serde(default)]
+    groups: Option<Vec<UserGroup>>,
+    #[serde(default)]
+    entitlements: Option<Vec<ScimMultiValuedAttribute>>,
+    #[serde(default)]
+    roles: Option<Vec<ScimMultiValuedAttribute>>,
+    #[serde(
+        default,
+        rename = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
+    )]
+    enterprise_user: Option<ScimEnterpriseUser>,
+}
+
 impl<'de> Deserialize<'de> for User {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        struct Input {
-            schemas: Vec<String>,
-            #[serde(default)]
-            id: Option<String>,
-            #[serde(default, rename = "externalId")]
-            external_id: Option<String>,
-            #[serde(default)]
-            meta: Option<Value>,
-            #[serde(default, rename = "userName")]
-            user_name: Option<String>,
-            #[serde(default)]
-            name: Option<UserName>,
-            #[serde(default, rename = "displayName")]
-            display_name: Option<String>,
-            #[serde(default)]
-            active: Option<bool>,
-            #[serde(default)]
-            emails: Option<Vec<UserEmail>>,
-            #[serde(default)]
-            groups: Option<Vec<UserGroup>>,
-            #[serde(default)]
-            entitlements: Option<Vec<ScimMultiValuedAttribute>>,
-            #[serde(default)]
-            roles: Option<Vec<ScimMultiValuedAttribute>>,
-            #[serde(
-                default,
-                rename = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
-            )]
-            enterprise_user: Option<ScimEnterpriseUser>,
-        }
-        let input = Input::deserialize(deserializer)?;
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let input = UserInput::deserialize(deserializer)?;
         Ok(Self {
             schemas: input.schemas,
             id: input.id,
@@ -117,7 +134,7 @@ impl<'de> Deserialize<'de> for User {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserName {
     #[serde(default)]
@@ -134,7 +151,7 @@ pub struct UserName {
     pub honorific_suffix: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserEmail {
     pub value: String,
@@ -144,7 +161,7 @@ pub struct UserEmail {
     pub primary: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserGroup {
     pub value: String,
     #[serde(default)]
@@ -153,10 +170,10 @@ pub struct UserGroup {
     pub kind: Option<String>,
 }
 fn default_direct() -> Option<String> {
-    Some("direct".to_owned())
+    ["direct"].first().map(|value| (*value).to_owned())
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ScimMultiValuedAttribute {
     Object {
@@ -169,12 +186,12 @@ pub enum ScimMultiValuedAttribute {
         #[serde(default)]
         primary: Option<bool>,
         #[serde(flatten)]
-        extra: std::collections::BTreeMap<String, Value>,
+        extra: BTreeMap<String, ScimValue>,
     },
     String(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserManager {
     #[serde(default)]
@@ -185,7 +202,7 @@ pub struct UserManager {
     pub reference: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScimEnterpriseUser {
     #[serde(default, rename = "employeeNumber")]
@@ -202,7 +219,7 @@ pub struct ScimEnterpriseUser {
     pub manager: Option<UserManager>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScimMember {
     pub value: String,
@@ -211,11 +228,38 @@ pub struct ScimMember {
     #[serde(default, deserialize_with = "string_or_none")]
     pub kind: Option<String>,
 }
-fn string_or_none<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
-    Ok(Option::<String>::deserialize(deserializer).unwrap_or(None))
+fn string_or_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_option(StringOrNoneVisitor)
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct StringOrNoneVisitor;
+
+impl<'de> Visitor<'de> for StringOrNoneVisitor {
+    type Value = Option<String>;
+
+    fn expecting(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a string or null")
+    }
+
+    fn visit_none<E>(self) -> Result<Self::Value, E>
+    where
+        E: DeError,
+    {
+        Ok(None)
+    }
+
+    fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(String::deserialize(deserializer).ok())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Group {
     pub schemas: Vec<String>,
     #[serde(default)]
@@ -223,14 +267,14 @@ pub struct Group {
     #[serde(default, rename = "externalId")]
     pub external_id: Option<String>,
     #[serde(default)]
-    pub meta: Option<Value>,
+    pub meta: Option<ScimValue>,
     #[serde(rename = "displayName")]
     pub display_name: String,
     #[serde(default)]
     pub members: Option<Vec<ScimMember>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Patch {
     #[serde(default = "patch_schema")]
     pub schemas: Vec<String>,
@@ -240,28 +284,29 @@ pub struct Patch {
 fn patch_schema() -> Vec<String> {
     vec![PATCH_SCHEMA.to_owned()]
 }
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PatchOperation {
     pub op: String,
     pub path: Option<String>,
-    pub value: Option<Value>,
+    pub value: Option<ScimValue>,
 }
 impl<'de> Deserialize<'de> for PatchOperation {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         #[derive(Deserialize)]
         struct Input {
             op: String,
             #[serde(default)]
             path: Option<String>,
             #[serde(default)]
-            value: Option<Value>,
+            value: Option<ScimValue>,
         }
         let input = Input::deserialize(deserializer)?;
         let op = input.op.to_lowercase();
         if !matches!(op.as_str(), "add" | "remove" | "replace") {
-            return Err(serde::de::Error::custom(
-                "op must be add, remove, or replace",
-            ));
+            return Err(DeError::custom("op must be add, remove, or replace"));
         }
         Ok(Self {
             op,
@@ -271,13 +316,13 @@ impl<'de> Deserialize<'de> for PatchOperation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScimSchemaExtension {
     #[serde(rename = "schema", alias = "schema_")]
     pub schema_: String,
     pub required: bool,
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScimResourceType {
     #[serde(default = "resource_type_schema")]
     pub schemas: Vec<String>,
@@ -291,12 +336,12 @@ pub struct ScimResourceType {
     #[serde(default, rename = "schemaExtensions")]
     pub schema_extensions: Option<Vec<ScimSchemaExtension>>,
     #[serde(default)]
-    pub meta: Option<Value>,
+    pub meta: Option<ScimValue>,
 }
 fn resource_type_schema() -> Vec<String> {
     vec!["urn:ietf:params:scim:schemas:core:2.0:ResourceType".to_owned()]
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScimSchemaAttribute {
     pub name: String,
     #[serde(rename = "type")]
@@ -314,7 +359,7 @@ pub struct ScimSchemaAttribute {
     #[serde(default = "default_unique")]
     pub uniqueness: String,
     #[serde(default, rename = "subAttributes")]
-    pub sub_attributes: Option<Vec<ScimSchemaAttribute>>,
+    pub sub_attributes: Option<Vec<Self>>,
 }
 fn default_read_write() -> String {
     "readWrite".to_owned()
@@ -325,7 +370,7 @@ fn default_returned() -> String {
 fn default_unique() -> String {
     "none".to_owned()
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScimSchema {
     #[serde(default = "schema_schema")]
     pub schemas: Vec<String>,
@@ -336,7 +381,7 @@ pub struct ScimSchema {
     #[serde(default)]
     pub attributes: Vec<ScimSchemaAttribute>,
     #[serde(default)]
-    pub meta: Option<Value>,
+    pub meta: Option<ScimValue>,
 }
 fn schema_schema() -> Vec<String> {
     vec!["urn:ietf:params:scim:schemas:core:2.0:Schema".to_owned()]

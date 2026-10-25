@@ -1,22 +1,22 @@
-mod models;
+pub mod models;
 
-pub use models::{
-    DecodedScimResource, Group, Patch, PatchOperation, ResourceKind, ScimEnterpriseUser,
-    ScimMember, ScimMultiValuedAttribute, ScimResource, ScimResourceType, ScimSchema,
-    ScimSchemaAttribute, ScimSchemaExtension, User, UserEmail, UserGroup, UserManager, UserName,
-};
-
+use models::{DecodedScimResource, Group, Patch, ResourceKind, User};
 use serde_json::Error;
 
 pub fn decode_scim_resource(
     bytes: &[u8],
     kind: ResourceKind,
 ) -> Result<DecodedScimResource, Error> {
-    let value: serde_json::Value = serde_json::from_slice(bytes)?;
     match kind {
-        ResourceKind::User => Ok(DecodedScimResource::User(serde_json::from_value(value)?)),
-        ResourceKind::Group => Ok(DecodedScimResource::Group(serde_json::from_value(value)?)),
-        ResourceKind::Patch => Ok(DecodedScimResource::Patch(serde_json::from_value(value)?)),
+        ResourceKind::User => Ok(DecodedScimResource::User(Box::new(
+            serde_json::from_slice::<User>(bytes)?,
+        ))),
+        ResourceKind::Group => Ok(DecodedScimResource::Group(Box::new(
+            serde_json::from_slice::<Group>(bytes)?,
+        ))),
+        ResourceKind::Patch => Ok(DecodedScimResource::Patch(Box::new(
+            serde_json::from_slice::<Patch>(bytes)?,
+        ))),
     }
 }
 

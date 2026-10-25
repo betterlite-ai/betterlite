@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{DecodedScimResource, ResourceKind, decode_scim_resource};
+use super::{decode_scim_resource, models::DecodedScimResource, models::ResourceKind};
 use std::fs;
 
 #[test]
@@ -33,9 +33,8 @@ fn patch_operation_lowercases_without_trimming() {
     };
     assert_eq!(patch.operations[0].op, "replace");
     assert_eq!(patch.schemas, vec![super::models::PATCH_SCHEMA]);
-    assert!(
-        decode_scim_resource(br#"{"Operations":[{"op":" add"}]}"#, ResourceKind::Patch).is_err()
-    );
+    let result = decode_scim_resource(br#"{"Operations":[{"op":" add"}]}"#, ResourceKind::Patch);
+    result.unwrap_err();
 }
 
 #[test]
