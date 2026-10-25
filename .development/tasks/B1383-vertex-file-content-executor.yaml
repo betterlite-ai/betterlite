@@ -34,6 +34,7 @@ scope:
     - crates/betterlite-config/src/{config,settings,env,providers,tests}.rs
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/tests/vertex_file_read_settings.rs
+    - crates/betterlite-config/src/tests/vertex_file_read_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_file_read*
     - tools/oracle/src/helpers/vertex/file_read_settings.rs
     - tools/oracle/src/helpers/vertex/file_read_settings/**

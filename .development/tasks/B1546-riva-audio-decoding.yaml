@@ -37,6 +37,7 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/api/riva.rs
+    - crates/betterlite-core/src/api/riva/**
     - crates/betterlite-core/src/api/riva/audio.rs
     - crates/betterlite-core/src/api/riva/audio/**
     - crates/betterlite-core/fuzz/Cargo.toml

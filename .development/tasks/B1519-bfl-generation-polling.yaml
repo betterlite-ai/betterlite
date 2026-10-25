@@ -31,6 +31,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/bfl.rs
+    - crates/betterlite-core/src/api/bfl/**
     - crates/betterlite-core/src/api/bfl/{generation_call,poll}.rs
     - crates/betterlite-core/src/api/bfl/generation_call.rs
     - crates/betterlite-core/src/api/bfl/generation_call/**

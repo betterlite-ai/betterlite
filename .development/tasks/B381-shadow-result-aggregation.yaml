@@ -21,8 +21,11 @@ scope:
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/shadow_result_aggregation.rs
   - crates/betterlite-server/src/routing/shadow_result_aggregation/**
   - tools/oracle/src/router_probes/shadow_result_aggregation.rs

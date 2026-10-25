@@ -50,6 +50,7 @@ scope:
   - crates/betterlite-core/src/api/chat_mcp_loop.rs
   - crates/betterlite-core/src/api/chat_mcp_loop/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml

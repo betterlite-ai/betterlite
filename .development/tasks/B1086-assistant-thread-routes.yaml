@@ -20,7 +20,9 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/api/assistant_thread_routes.rs
   - crates/betterlite-server/src/api/assistant_thread_routes/**
   - crates/betterlite-server/fuzz/corpus/assistant_body/message-*

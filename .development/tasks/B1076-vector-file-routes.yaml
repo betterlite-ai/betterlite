@@ -18,6 +18,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/vector_file_routes.rs
   - crates/betterlite-server/src/api/vector_file_routes/**
   - tools/oracle/cases/api/vector-file-routes/**

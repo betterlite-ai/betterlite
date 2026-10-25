@@ -40,10 +40,13 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/media_providers.rs
     - crates/betterlite-core/src/api/media_providers/**
     - crates/betterlite-provider/src/provider.rs
+    - crates/betterlite-provider/src/provider/**
     - crates/betterlite-provider/src/dispatch.rs
+    - crates/betterlite-provider/src/dispatch/**
     - crates/betterlite-server/src/media_providers.rs
     - crates/betterlite-server/src/media_providers/**
     - crates/betterlite-server/src/lib.rs
