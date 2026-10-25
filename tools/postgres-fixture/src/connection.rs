@@ -6,7 +6,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use testcontainers::{ContainerAsync, GenericImage};
 use tokio::runtime::Builder;
 use tokio::task::JoinSet;
-use tokio_postgres::Config;
+use tokio_postgres::{Config, config::SslMode};
 use url::Url;
 use uuid::Uuid;
 
@@ -71,8 +71,13 @@ impl ConnectionOptions {
     fn from_url(raw: &str) -> Result<Self, FixtureError> {
         let tls_mode = tls_mode(raw);
         let config_source = tls::normalized_config_source(raw, tls_mode);
-        let config = Config::from_str(&config_source)
+        let mut config = Config::from_str(&config_source)
             .map_err(|source| FixtureError::InvalidConfiguredUrl { source })?;
+        config.ssl_mode(match tls_mode {
+            TlsMode::Disable => SslMode::Disable,
+            TlsMode::Prefer => SslMode::Prefer,
+            TlsMode::Require | TlsMode::VerifyCa | TlsMode::VerifyFull => SslMode::Require,
+        });
         let parsed_url = Url::parse(raw).map_err(|source| FixtureError::InvalidUrl { source })?;
         Ok(Self {
             config,
@@ -216,6 +221,7 @@ impl PostgresFixture {
         combine_errors(combine_errors(driver_error, cleanup), container_cleanup)
     }
 }
+
 pub(crate) fn quote_identifier(value: &str) -> String {
     let escaped = value.replace('"', "\"\"");
     format!("\"{escaped}\"")

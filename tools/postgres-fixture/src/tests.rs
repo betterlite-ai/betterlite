@@ -1,5 +1,11 @@
 #![cfg(test)]
 
+use std::{path::Path, process::Stdio};
+
+use testcontainers::core::{IntoContainerPort as _, WaitFor};
+use testcontainers::{CopyTargetOptions, GenericImage, ImageExt as _, runners::AsyncRunner as _};
+use tokio::process::Command;
+
 use crate::connection::{FixtureSource, PostgresFixture, select_source};
 use crate::error::FixtureError;
 use crate::seed::{FixtureSeed, KeyRow, Membership, TeamRow, UserRow};
@@ -221,35 +227,114 @@ fn duplicate_membership_identity_fails_before_connection() {
     assert!(seed.validate().is_err());
 }
 
-#[test]
-fn trusted_ca_matching_hostname_requires_tls() {
-    let FixtureSource::Configured(options) = select_source(Some(
-        "postgresql://u:p@db.example.test/db?sslmode=verify-full&sslrootcert=/fixture/ca.pem",
-    ))
-    .unwrap() else {
+#[tokio::test]
+async fn trusted_ca_matching_hostname() {
+    let (_server, fixture_url) = tls_postgres().await;
+    let connection_url = format!(
+        "{fixture_url}?sslmode=verify-full&sslrootcert={}",
+        ca_path().display()
+    );
+    let FixtureSource::Configured(options) = select_source(Some(&connection_url)).unwrap() else {
         panic!("configured source")
     };
     assert!(options.uses_tls());
+    assert!(tls_probe(&connection_url, ca_path(), "localhost").await);
 }
 
-#[test]
-fn untrusted_ca_rejected_before_connection() {
-    let FixtureSource::Configured(options) = select_source(Some(
-        "postgresql://u:p@db.example.test/db?sslmode=verify-ca",
-    ))
-    .unwrap() else {
+#[tokio::test]
+async fn untrusted_ca_rejected() {
+    let (_server, fixture_url) = tls_postgres().await;
+    let connection_url = format!(
+        "{fixture_url}?sslmode=verify-ca&sslrootcert={}",
+        server_path().display()
+    );
+    let FixtureSource::Configured(options) = select_source(Some(&connection_url)).unwrap() else {
         panic!("configured source")
     };
     assert!(options.uses_tls());
+    assert!(!tls_probe(&connection_url, server_path(), "127.0.0.1").await);
 }
 
-#[test]
-fn wrong_hostname_rejected_before_connection() {
-    let FixtureSource::Configured(options) = select_source(Some(
-        "postgresql://wrong.example.test/db?sslmode=verify-full",
-    ))
-    .unwrap() else {
+#[tokio::test]
+async fn wrong_hostname_rejected() {
+    let (_server, fixture_url) = tls_postgres().await;
+    let connection_url = format!(
+        "{fixture_url}?sslmode=verify-full&sslrootcert={}",
+        ca_path().display()
+    )
+    .replace("localhost", "127.0.0.1");
+    let FixtureSource::Configured(options) = select_source(Some(&connection_url)).unwrap() else {
         panic!("configured source")
     };
     assert!(options.uses_tls());
+    assert!(!tls_probe(&connection_url, ca_path(), "wrong.example.test").await);
+}
+
+fn ca_path() -> &'static Path {
+    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/tls/ca.pem"))
+}
+
+fn server_path() -> &'static Path {
+    Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/fixtures/tls/server.pem"
+    ))
+}
+
+async fn tls_postgres() -> (testcontainers::ContainerAsync<GenericImage>, String) {
+    let image = GenericImage::new("postgres", "17")
+        .with_wait_for(WaitFor::message_on_stdout("database system is ready"))
+        .with_wait_for(WaitFor::seconds(2))
+        .with_exposed_port(5432.tcp())
+        .with_entrypoint("/bin/bash")
+        .with_env_var("POSTGRES_USER", "fixture")
+        .with_env_var("POSTGRES_PASSWORD", "fixture")
+        .with_env_var("POSTGRES_DB", "postgres")
+        .with_cmd([
+            "-c",
+            "cp /tls/server.key /var/lib/postgresql/server.key && chown postgres:postgres /var/lib/postgresql/server.key && chmod 600 /var/lib/postgresql/server.key && exec /usr/local/bin/docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/tls/server.pem -c ssl_key_file=/var/lib/postgresql/server.key",
+        ])
+        .with_copy_to(
+            CopyTargetOptions::new("/tls/ca.pem").with_mode(0o644),
+            ca_path(),
+        )
+        .with_copy_to(
+            CopyTargetOptions::new("/tls/server.pem").with_mode(0o644),
+            server_path(),
+        )
+        .with_copy_to(
+            CopyTargetOptions::new("/tls/server.key").with_mode(0o600),
+            Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/tls/server.key")),
+        );
+    let server = image.start().await.unwrap();
+    let host = server.get_host().await.unwrap();
+    let port = server.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    (
+        server,
+        format!("postgresql://fixture:fixture@{host}:{port}/postgres"),
+    )
+}
+
+async fn tls_probe(url: &str, root: &Path, hostname: &str) -> bool {
+    let parsed = url::Url::parse(url).unwrap();
+    let port = parsed.port().unwrap();
+    let address = format!("127.0.0.1:{port}");
+    let output = Command::new("openssl")
+        .args([
+            "s_client",
+            "-connect",
+            &address,
+            "-servername",
+            hostname,
+            "-CAfile",
+            root.to_str().unwrap(),
+            "-verify_return_error",
+            "-verify_hostname",
+            hostname,
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .await
+        .unwrap();
+    output.status.success()
 }
