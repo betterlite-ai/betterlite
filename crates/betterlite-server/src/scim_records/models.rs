@@ -92,16 +92,22 @@ struct UserInput {
 }
 impl From<UserInput> for User {
     fn from(input: UserInput) -> Self {
+        let active_present = input.active.is_some();
+        let active = input.active.unwrap_or(true);
+        let schemas = match input.schemas.len() {
+            0 => Vec::new(),
+            _ => input.schemas,
+        };
         Self {
-            schemas: input.schemas,
+            schemas,
             id: input.id,
             external_id: input.external_id,
             meta: input.meta,
             user_name: input.user_name,
             name: input.name,
             display_name: input.display_name,
-            active_present: input.active.is_some(),
-            active: input.active.unwrap_or(true),
+            active_present,
+            active,
             emails: input.emails,
             groups: input.groups,
             entitlements: input.entitlements,
@@ -184,6 +190,7 @@ enum ScimMultiValuedAttributeInput {
 }
 impl From<ScimMultiValuedAttributeInput> for ScimMultiValuedAttribute {
     fn from(input: ScimMultiValuedAttributeInput) -> Self {
+        let default_extra = BTreeMap::new();
         match input {
             ScimMultiValuedAttributeInput::Object {
                 value,
@@ -203,7 +210,7 @@ impl From<ScimMultiValuedAttributeInput> for ScimMultiValuedAttribute {
                 display: None,
                 kind: None,
                 primary: None,
-                extra: BTreeMap::new(),
+                extra: default_extra,
             },
         }
     }
@@ -254,10 +261,13 @@ struct ScimMemberInput {
 }
 impl From<ScimMemberInput> for ScimMember {
     fn from(input: ScimMemberInput) -> Self {
+        let value = input.value;
+        let display = input.display;
+        let kind = input.kind;
         Self {
-            value: input.value,
-            display: input.display,
-            kind: match input.kind {
+            value,
+            display,
+            kind: match kind {
                 Some(ScimValue::String(value)) => Some(value),
                 _ => None,
             },

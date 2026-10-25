@@ -1,5 +1,10 @@
 from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# pyright: reportAny=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
+# ruff: noqa: ANN401, N815
+
 ENTERPRISE = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
 PATCH = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 class MultiValue(BaseModel):
