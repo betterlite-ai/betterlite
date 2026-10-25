@@ -2,6 +2,6 @@ kind: helper
 name: output-alignment-preserves-unmasked-positions
 call:
   bedrock_chunking:
-    step: {"operation": "merge", "chunks": [{"content": [{"text": {"text": "safe"}}], "response": {"outputs": [], "actionReason": "earlier", "future": {"nested": [true, null, 2.5]}}, "fragment_group_size": 1}, {"content": [{"text": {"text": "secret"}}], "response": {"outputs": [{"text": "MASK"}]}, "fragment_group_size": 1}]}
+    step: {"merge": {"chunks": [{"content": [{"text": {"text": "safe"}}], "response": {"outputs": [], "actionReason": "earlier", "future": {"nested": [true, null, 2.5]}, "assessments": [{"contextualGroundingPolicy": {"filters": [{"type": "GROUNDING", "threshold": 1, "score": 0.25}]}, "automatedReasoningPolicy": {"findings": []}}]}, "fragment_group_size": 1}, {"content": [{"text": {"text": "secret"}}], "response": {"outputs": [{"text": "MASK"}]}, "fragment_group_size": 1}]}}
 env: {}
 compare: {ignore: []}

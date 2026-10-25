@@ -2,6 +2,6 @@ kind: helper
 name: contextual-grounding-carried-through-split
 call:
   bedrock_chunking:
-    step: {operation: split, content: [{text: {text: "a b", qualifiers: [query]}}]}
+    step: {"split": {"content": [{"text": {"text": "a b", "qualifiers": ["query"]}}]}}
 env: {}
 compare: {ignore: []}

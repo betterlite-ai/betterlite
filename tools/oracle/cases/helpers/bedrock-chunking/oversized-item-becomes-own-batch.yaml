@@ -2,9 +2,6 @@ kind: helper
 name: oversized-item-becomes-own-batch
 call:
   bedrock_chunking:
-    step:
-      operation: bin_pack
-      content: [{text: {text: abcdef}}]
-      budget: 3
+    step: {"bin_pack": {"content": [{"text": {"text": "ab"}}, {"text": {"text": "abcdef"}}, {"text": {"text": "g"}}], "budget": 3}}
 env: {}
 compare: {ignore: []}
