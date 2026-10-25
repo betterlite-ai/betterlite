@@ -414,6 +414,6 @@ pitfalls:
 - Bearer _sign_request bypasses validation entirely, while bearer _get_boto_credentials_from_optional_params still
   validates and removes AWS parameters.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

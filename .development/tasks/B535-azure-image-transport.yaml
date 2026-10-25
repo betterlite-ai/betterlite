@@ -525,6 +525,6 @@ pitfalls:
 - The preview branch mutates data by popping model, while the direct deployment-body helper returns a new mapping
   only when it rewrites model.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

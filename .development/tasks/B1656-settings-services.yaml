@@ -87,6 +87,6 @@ pitfalls:
   - Saving failure leaves the new runtime setting in place because _update_litellm_setting assigns before save_config.
   - Referenced array definitions contribute enum only; copying their full schema changes the UI response.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

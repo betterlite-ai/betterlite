@@ -128,6 +128,6 @@ pitfalls:
   - Supplying budget_id for an already linked group fails on a duplicate constructor keyword, even for the same ID.
   - PUT excludes nulls, so an all-null payload cannot clear an existing group's budget.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

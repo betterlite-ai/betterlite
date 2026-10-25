@@ -181,6 +181,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as database_faults in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_faults.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_faults.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A data error is not a connection outage and must never enable the restricted fallback token.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

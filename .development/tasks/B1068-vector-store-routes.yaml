@@ -89,5 +89,5 @@ pitfalls:
 - The list handler does not constrain order to asc or desc and does not clamp limit=0.
 review_level: security
 budget:
-  max_changed_lines: 640
+  max_changed_lines: 1000
   max_new_expects: 0

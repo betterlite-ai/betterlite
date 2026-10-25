@@ -52,5 +52,5 @@ pitfalls:
   - Deep copy the upstream card to avoid mutating the input; deep copy defaults and security schemes so the caller may reuse the same object without field overwrites.
 review_level: security
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -244,6 +244,6 @@ pitfalls:
   - Members/me accepts an email match even when the roster entry has a different non-null user_id; it uses OR.
   - An empty available_teams setting still requires a user row, while an absent setting returns before that lookup.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

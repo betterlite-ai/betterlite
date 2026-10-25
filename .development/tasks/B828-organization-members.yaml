@@ -200,6 +200,6 @@ pitfalls:
   - add_member_to_organization wraps its own HTTPException in ValueError, so its email-row 400 becomes a route-level 500.
   - A role patch is already persisted when the delegated budget route rejects a negative max_budget.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

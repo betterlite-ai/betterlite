@@ -372,6 +372,6 @@ pitfalls:
 - Titan pops imageGenerationConfig twice, so the apparent second override is empty in ordinary execution.
 - TypedDict construction does not enforce the listed Nova parameter annotations or reject unknown fields.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

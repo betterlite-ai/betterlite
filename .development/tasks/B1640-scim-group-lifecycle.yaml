@@ -76,6 +76,6 @@ pitfalls:
   - PUT serializes the team object returned before roster reconciliation, whereas PATCH performs a final reread.
   - Deleting a group uses a direct team-row delete after user updates, so substituting the broader team-delete service changes both effects and failures.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

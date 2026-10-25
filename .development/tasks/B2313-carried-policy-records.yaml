@@ -169,6 +169,6 @@ pitfalls:
   - Nullable budget snapshot fields are required, so missing metadata and explicit null metadata differ.
   - Kill-switch URL validation preserves the supplied string and does not itself authorize an outbound call.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

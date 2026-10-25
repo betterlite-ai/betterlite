@@ -120,6 +120,6 @@ pitfalls:
   - A hash-shaped untrusted key is hashed again unless the trusted metadata hash equals it.
   - metadata=None and metadata={} have different status/default-field projections.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -144,5 +144,5 @@ pitfalls:
 - A helper stdin adapter is not provider parity; sdk_http must record each actual outbound request.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0

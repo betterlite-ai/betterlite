@@ -159,6 +159,6 @@ pitfalls:
   - Malformed aliases/config/permissions/model_aliases text fails before those extra fields can be ignored.
   - A malformed full-only budget field can disappear when the membership union successfully falls back to the base budget.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

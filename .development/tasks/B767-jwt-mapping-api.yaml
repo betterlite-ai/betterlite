@@ -320,6 +320,6 @@ pitfalls:
   - Null issuer is stored as the empty string but serialized as null; omitting it on update leaves the old issuer.
   - Do not expose token in the response even though the mapping table needs it as a foreign key.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

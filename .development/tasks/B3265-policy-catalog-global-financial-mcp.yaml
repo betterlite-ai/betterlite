@@ -160,5 +160,5 @@ pitfalls:
   - Catalog loading must not initialize the referenced providers or gate data display on their availability. The guardrail types referenced (litellm_content_filter, mcp_security) are only instantiated when actually applied to a request, never during catalog load.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

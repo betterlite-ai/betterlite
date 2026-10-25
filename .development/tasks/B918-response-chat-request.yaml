@@ -131,5 +131,5 @@ pitfalls:
 - The previous-response warning says the ID is ignored but it remains in the request.
 review_level: standard
 budget:
-  max_changed_lines: 730
+  max_changed_lines: 1000
   max_new_expects: 1

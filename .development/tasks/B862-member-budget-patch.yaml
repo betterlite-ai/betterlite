@@ -224,6 +224,6 @@ pitfalls:
   - allowed_models=[] is an explicit creation limit but not a meaningful remaining limit during patching.
   - General-entity relinking updates the old budget before returning the new id.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

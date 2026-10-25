@@ -336,6 +336,6 @@ pitfalls:
 - The legacy exported selector lacks the Moonshot branch and drops json_mode for the base decoder.
 - MockResponseIterator marks itself done before parsing, so a failed first next cannot be retried.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

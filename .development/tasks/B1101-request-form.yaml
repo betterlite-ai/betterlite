@@ -289,5 +289,5 @@ pitfalls:
 - max_file_size_mb is checked with > after converting bytes to MiB; an equal-sized file is allowed once the premium gate is removed.
 review_level: security
 budget:
-  max_changed_lines: 730
+  max_changed_lines: 1000
   max_new_expects: 1

@@ -393,6 +393,6 @@ pitfalls:
   - A null virtual_key_claim_field still defeats the deprecated jwt_client_id_field alias.
   - Requiring a nonempty audience would reject issuer configurations the source accepts with '' or [].
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

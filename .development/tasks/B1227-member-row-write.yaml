@@ -244,6 +244,6 @@ pitfalls:
   - The membership update is empty, so resolving a fresh budget does not replace an existing membership's budget_id.
   - A returned existing user is the snapshot from before teams is appended.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -335,6 +335,6 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as model_catalog_keys in the models group. Replace the stub Op in tools/oracle/src/helpers/models/model_catalog_keys.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_catalog_keys.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A missing case-insensitive key is not enough to rebuild the index; only a stale matched key triggers the rebuild.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard
