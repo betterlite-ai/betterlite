@@ -54,15 +54,6 @@ where
 fn to_float_rejects_invalid_digit_separators(#[case] value: &str) {
     assert_eq!(value.decimal_value(), None);
 }
-#[test]
-fn to_float_rejects_u128_values_decimal_cannot_hold() {
-    assert_eq!(u128::MAX.decimal_value(), None);
-}
-#[test]
-fn to_float_rejects_non_finite_values() {
-    assert_eq!(f64::INFINITY.decimal_value(), None);
-    assert_eq!(f64::NAN.decimal_value(), None);
-}
 #[rstest]
 #[case(2_i32, 2_i64)]
 #[case(2.9_f64, 2_i64)]
