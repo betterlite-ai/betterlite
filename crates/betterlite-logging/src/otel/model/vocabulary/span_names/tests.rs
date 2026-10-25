@@ -1,55 +1,22 @@
 #![cfg(test)]
 
-use crate::otel::model::{
-    GuardrailSpanData, LlmCallSpanData, McpListToolsSpanData, McpToolCallSpanData,
-    ProxyRequestSpanData, ServiceSpanData,
-};
-use crate::otel::vocabulary::constants::{GenAIOperation, MCPMethod};
-use crate::otel::vocabulary::span_names::{
-    guardrail_span_name, llm_call_span_name, mcp_list_tools_span_name, mcp_tool_call_span_name,
-    proxy_request_span_name, service_span_name,
-};
+use rstest::rstest;
 
-#[test]
-fn span_names_follow_role_conventions_and_strip_empty_values() {
-    assert_eq!(
-        llm_call_span_name(&LlmCallSpanData {
-            operation: GenAIOperation::CHAT,
-            request_model: None
-        }),
-        "chat"
-    );
-    assert_eq!(
-        mcp_tool_call_span_name(&McpToolCallSpanData {
-            method: MCPMethod::TOOLS_CALL,
-            tool_name: String::new()
-        }),
-        "tools/call"
-    );
-    assert_eq!(
-        mcp_list_tools_span_name(&McpListToolsSpanData {
-            method: MCPMethod::TOOLS_LIST
-        }),
-        "tools/list"
-    );
-    assert_eq!(
-        proxy_request_span_name(&ProxyRequestSpanData {
-            http_method: "GET".to_owned(),
-            route: "/health".to_owned()
-        }),
-        "GET /health"
-    );
-    assert_eq!(
-        guardrail_span_name(&GuardrailSpanData {
-            guardrail_name: "pii".to_owned()
-        }),
-        "execute_guardrail pii"
-    );
-    assert_eq!(
-        service_span_name(&ServiceSpanData {
-            service_name: "redis".to_owned(),
-            call_type: None
-        }),
-        "redis"
-    );
+use crate::otel::vocabulary::constants::{GenAIOperation, MCPMethod};
+use crate::otel::vocabulary::span_names::NamedSpan;
+
+#[rstest]
+#[case::llm(NamedSpan::LlmCall { operation: GenAIOperation::Embeddings, request_model: "text-embedding-3" }, "embeddings text-embedding-3")]
+#[case::llm_without_model(NamedSpan::LlmCall { operation: GenAIOperation::Chat, request_model: "" }, "chat")]
+#[case::tool(NamedSpan::McpToolCall { method: MCPMethod::ToolsCall, tool_name: "get-weather" }, "tools/call get-weather")]
+#[case::tool_without_name(NamedSpan::McpToolCall { method: MCPMethod::ToolsCall, tool_name: "" }, "tools/call")]
+#[case::list_tools(NamedSpan::McpListTools { method: MCPMethod::ToolsList }, "tools/list")]
+#[case::proxy(NamedSpan::ProxyRequest { http_method: "POST", route: "/chat/completions" }, "POST /chat/completions")]
+#[case::guardrail(NamedSpan::Guardrail { guardrail_name: "pii" }, "execute_guardrail pii")]
+#[case::guardrail_without_name(NamedSpan::Guardrail { guardrail_name: "" }, "execute_guardrail")]
+#[case::service(NamedSpan::Service { service_name: "redis", call_type: "set" }, "redis set")]
+#[case::service_without_call_type(NamedSpan::Service { service_name: "redis", call_type: "" }, "redis")]
+#[case::python_strip(NamedSpan::Service { service_name: "\u{1f}redis", call_type: " \u{1c}" }, "redis")]
+fn span_names_follow_the_conventions(#[case] span: NamedSpan<'_>, #[case] expected: &str) {
+    assert_eq!(span.name(), expected);
 }

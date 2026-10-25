@@ -1,5 +1,5 @@
 kind: helper
 name: otel-vocabulary-provider-seed
-call: {otel_vocabulary: {function: Provider, custom_llm_provider: vendor_new}}
+call: {otel_vocabulary: {function: Provider, values: [vendor_new, BEDROCK, null]}}
 env: {}
 compare: {ignore: []}

@@ -1,13 +1,22 @@
 from types import SimpleNamespace
-from typing import cast
+from typing import TypeAlias, cast
 
+from litellm.integrations.opentelemetry_utils.gen_ai_semconv import parse_semconv_opt_in
+from litellm.integrations.otel.model.payloads import (
+    GuardrailSpanData,
+    LLMCallSpanData,
+    MCPListToolsSpanData,
+    MCPToolCallSpanData,
+    ProxyRequestSpanData,
+    ServiceSpanData,
+)
 from litellm.integrations.otel.model.semconv import (
     resolve_operation,
     resolve_output_type,
     resolve_provider,
 )
-from litellm.integrations.opentelemetry_utils.gen_ai_semconv import parse_semconv_opt_in
 from litellm.integrations.otel.model.spans import (
+    SPAN_REGISTRY,
     SpanRole,
     child_roles,
     db_system,
@@ -22,53 +31,102 @@ from litellm.integrations.otel.model.spans import (
     validate_registry,
 )
 
-
-def run(input_data: dict[str, object]) -> object:
-    function = cast(str, input_data["function"])
-    if function == "Provider":
-        return resolve_provider(cast(str | None, input_data.get("custom_llm_provider")))
-    if function == "Operation":
-        return resolve_operation(cast(str | None, input_data.get("call_type"))).value
-    if function == "OutputType":
-        output_type = resolve_output_type(cast(str | None, input_data.get("call_type")))
-        return output_type.value if output_type is not None else None
-    if function == "DbSystem":
-        return db_system(cast(str, input_data["service_name"]))
-    if function == "SpanRole":
-        role = span_role_for_service(cast(str, input_data["service_name"]))
-        return role.value if role is not None else None
-    if function == "Registry":
-        return {
-            "valid": _registry_is_valid(),
-            "roots": [role.value for role in root_roles()],
-            "children": [role.value for role in child_roles(SpanRole.PROXY_REQUEST)],
-        }
-    if function == "SpanName":
-        return _span_name(input_data)
-    if function == "Semconv":
-        return [category.value for category in parse_semconv_opt_in(cast(str | None, input_data.get("raw")))]
-    raise ValueError(f"unknown function {function}")
+Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
-def _registry_is_valid() -> bool:
+def text(value: Json) -> str:
+    if not isinstance(value, str):
+        raise ValueError("expected a string")
+    return value
+
+
+def optional_text(value: Json) -> str | None:
+    return None if value is None else text(value)
+
+
+def listed(input_value: dict[str, Json], name: str) -> list[Json]:
+    values = input_value[name]
+    if not isinstance(values, list):
+        raise ValueError(f"{name} must be a list")
+    return values
+
+
+def span_name(span: Json) -> str:
+    if not isinstance(span, dict):
+        raise ValueError("a span must be an object")
+    role = span["role"]
+    if role == "llm_call":
+        operation = resolve_operation(text(span["call_type"]))
+        llm = SimpleNamespace(operation=operation, request_model=optional_text(span["request_model"]))
+        return llm_call_span_name(cast("LLMCallSpanData", llm))
+    if role == "mcp_tool_call":
+        tool = SimpleNamespace(method=text(span["method"]), tool_name=text(span["tool_name"]))
+        return mcp_tool_call_span_name(cast("MCPToolCallSpanData", tool))
+    if role == "mcp_list_tools":
+        listing = SimpleNamespace(method=text(span["method"]))
+        return mcp_list_tools_span_name(cast("MCPListToolsSpanData", listing))
+    if role == "proxy_request":
+        request = ProxyRequestSpanData(http_method=text(span["http_method"]), route=text(span["route"]))
+        return proxy_request_span_name(request)
+    if role == "guardrail":
+        guardrail = GuardrailSpanData(guardrail_name=text(span["guardrail_name"]))
+        return guardrail_span_name(guardrail)
+    if role == "service":
+        service = ServiceSpanData(
+            service_name=text(span["service_name"]), call_type=optional_text(span["call_type"])
+        )
+        return service_span_name(service)
+    raise ValueError(f"unknown span role {role}")
+
+
+def registry() -> Json:
     validate_registry()
-    return True
+    entries: list[Json] = [
+        {
+            "role": spec.role.value,
+            "kind": spec.kind.value,
+            "parent": None if spec.parent is None else spec.parent.value,
+        }
+        for spec in SPAN_REGISTRY.values()
+    ]
+    return {
+        "valid": True,
+        "entries": entries,
+        "roots": [role.value for role in root_roles()],
+        "children": [role.value for role in child_roles(SpanRole.PROXY_REQUEST)],
+    }
 
 
-def _span_name(input_data: dict[str, object]) -> str:
-    kind = cast(str, input_data["kind"])
-    if kind == "llm":
-        data = SimpleNamespace(operation=resolve_operation(cast(str | None, input_data.get("call_type"))), request_model=cast(str | None, input_data.get("model")))
-        return llm_call_span_name(data)
-    if kind == "mcp_tool":
-        data = SimpleNamespace(method=cast(str, input_data.get("method", "tools/call")), tool_name=cast(str, input_data.get("tool", "")))
-        return mcp_tool_call_span_name(data)
-    if kind == "mcp_list":
-        return mcp_list_tools_span_name(SimpleNamespace(method="tools/list"))
-    if kind == "proxy":
-        data = SimpleNamespace(http_method=cast(str, input_data.get("http_method", "")), route=cast(str, input_data.get("route", "")))
-        return proxy_request_span_name(data)
-    if kind == "guardrail":
-        return guardrail_span_name(SimpleNamespace(guardrail_name=cast(str, input_data.get("guardrail", ""))))
-    data = SimpleNamespace(service_name=cast(str, input_data.get("service", "")), call_type=cast(str | None, input_data.get("call_type")))
-    return service_span_name(data)
+def output_type(call_type: str | None) -> str | None:
+    resolved = resolve_output_type(call_type)
+    return None if resolved is None else resolved.value
+
+
+def span_role(service_name: str) -> str | None:
+    role = span_role_for_service(service_name)
+    return None if role is None else role.value
+
+
+def run(input_value: dict[str, Json]) -> Json:
+    function = input_value["function"]
+    if function == "Registry":
+        return registry()
+    if function == "SpanName":
+        return [span_name(span) for span in listed(input_value, "spans")]
+    values = listed(input_value, "values")
+    if function == "Provider":
+        return [resolve_provider(optional_text(value)) for value in values]
+    if function == "Operation":
+        return [resolve_operation(optional_text(value)).value for value in values]
+    if function == "OutputType":
+        return [output_type(optional_text(value)) for value in values]
+    if function == "DbSystem":
+        return [db_system(text(value)) for value in values]
+    if function == "SpanRole":
+        return [span_role(text(value)) for value in values]
+    if function == "Semconv":
+        return [
+            sorted(category.value for category in parse_semconv_opt_in(optional_text(value)))
+            for value in values
+        ]
+    raise ValueError(f"unknown otel_vocabulary function {function}")

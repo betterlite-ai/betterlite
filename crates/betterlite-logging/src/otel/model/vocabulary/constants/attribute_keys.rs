@@ -1,7 +1,10 @@
-pub struct GenAI;
-impl GenAI {
+#[path = "attribute_keys/tests.rs"]
+mod tests;
+
+pub mod gen_ai {
     pub const OPERATION_NAME: &str = "gen_ai.operation.name";
     pub const PROVIDER_NAME: &str = "gen_ai.provider.name";
+    // deprecated by the convention for PROVIDER_NAME; kept so already shipped series still resolve
     pub const SYSTEM: &str = "gen_ai.system";
     pub const REQUEST_MODEL: &str = "gen_ai.request.model";
     pub const REQUEST_TEMPERATURE: &str = "gen_ai.request.temperature";
@@ -20,7 +23,7 @@ impl GenAI {
     pub const RESPONSE_TIME_TO_FIRST_CHUNK: &str = "gen_ai.response.time_to_first_chunk";
     pub const USAGE_INPUT_TOKENS: &str = "gen_ai.usage.input_tokens";
     pub const USAGE_OUTPUT_TOKENS: &str = "gen_ai.usage.output_tokens";
-    pub const USAGE_CACHE_CREATION_INPUT_TOKENS: &str = "gen_ai.usage.cache_creation.input_tokens";
+    pub const USAGE_CACHE_CREATION_TOKENS: &str = "gen_ai.usage.cache_creation.input_tokens";
     pub const USAGE_CACHE_READ_INPUT_TOKENS: &str = "gen_ai.usage.cache_read.input_tokens";
     pub const INPUT_MESSAGES: &str = "gen_ai.input.messages";
     pub const OUTPUT_MESSAGES: &str = "gen_ai.output.messages";
@@ -35,76 +38,77 @@ impl GenAI {
     pub const TOOL_CALL_RESULT: &str = "gen_ai.tool.call.result";
     pub const PROMPT_NAME: &str = "gen_ai.prompt.name";
 }
-pub struct MCP;
-impl MCP {
+
+pub mod mcp {
     pub const METHOD_NAME: &str = "mcp.method.name";
     pub const SESSION_ID: &str = "mcp.session.id";
     pub const PROTOCOL_VERSION: &str = "mcp.protocol.version";
     pub const RESOURCE_URI: &str = "mcp.resource.uri";
 }
-pub struct JsonRpc;
-impl JsonRpc {
+
+pub mod json_rpc {
+    // the convention puts the system and the status code under rpc.*, not jsonrpc.*
     pub const SYSTEM: &str = "rpc.system";
     pub const REQUEST_ID: &str = "jsonrpc.request.id";
     pub const PROTOCOL_VERSION: &str = "jsonrpc.protocol.version";
     pub const RESPONSE_STATUS_CODE: &str = "rpc.response.status_code";
 }
-pub struct Network;
-impl Network {
+
+pub mod network {
     pub const PROTOCOL_NAME: &str = "network.protocol.name";
     pub const PROTOCOL_VERSION: &str = "network.protocol.version";
     pub const TRANSPORT: &str = "network.transport";
 }
-pub struct Client;
-impl Client {
+
+pub mod client {
     pub const ADDRESS: &str = "client.address";
     pub const PORT: &str = "client.port";
 }
-pub struct Error;
-impl Error {
+
+pub mod error {
     pub const TYPE: &str = "error.type";
     pub const MESSAGE: &str = "error.message";
     pub const MESSAGE_LEGACY: &str = "error";
 }
-pub struct LiteLLMError;
-impl LiteLLMError {
+
+pub mod litellm_error {
     pub const CODE: &str = "litellm.provider.error.code";
     pub const STACK_TRACE: &str = "litellm.provider.error.stack_trace";
     pub const LLM_PROVIDER: &str = "litellm.provider.error.llm_provider";
 }
-pub struct ExceptionEvent;
-impl ExceptionEvent {
+
+pub mod exception_event {
     pub const NAME: &str = "exception";
     pub const TYPE: &str = "exception.type";
     pub const MESSAGE: &str = "exception.message";
     pub const STACKTRACE: &str = "exception.stacktrace";
 }
-pub struct GenAIEvent;
-impl GenAIEvent {
+
+pub mod gen_ai_event {
     pub const NAME_KEY: &str = "event.name";
     pub const OPERATION_EXCEPTION: &str = "gen_ai.client.operation.exception";
 }
-pub struct Server;
-impl Server {
+
+pub mod server {
     pub const ADDRESS: &str = "server.address";
     pub const PORT: &str = "server.port";
 }
-pub struct DB;
-impl DB {
+
+pub mod db {
     pub const SYSTEM_NAME: &str = "db.system.name";
     pub const SYSTEM_LEGACY: &str = "db.system";
     pub const OPERATION_NAME: &str = "db.operation.name";
     pub const NAMESPACE: &str = "db.namespace";
 }
-pub struct HTTP;
-impl HTTP {
+
+pub mod http {
     pub const REQUEST_METHOD: &str = "http.request.method";
     pub const ROUTE: &str = "http.route";
     pub const RESPONSE_STATUS_CODE: &str = "http.response.status_code";
     pub const URL_PATH: &str = "url.path";
 }
-pub struct LiteLLM;
-impl LiteLLM {
+
+pub mod litellm {
     pub const CALL_ID: &str = "litellm.call_id";
     pub const CALL_TYPE: &str = "litellm.call_type";
     pub const COST_PREFIX: &str = "litellm.cost.";
@@ -141,12 +145,14 @@ impl LiteLLM {
     pub const PREPROCESSING_MS: &str = "litellm.preprocessing.duration_ms";
     pub const MCP_SERVER_NAME: &str = "litellm.mcp.server.name";
 }
-pub struct Metric;
-impl Metric {
+
+pub mod metric {
     pub const TOKEN_USAGE: &str = "gen_ai.client.token.usage";
     pub const OPERATION_DURATION: &str = "gen_ai.client.operation.duration";
+    // cost has no semconv instrument, so it takes the name backends already query for spend
     pub const TOKEN_COST: &str = "gen_ai.usage.cost";
     pub const TIME_TO_FIRST_TOKEN: &str = "gen_ai.server.time_to_first_token";
     pub const TIME_PER_OUTPUT_TOKEN: &str = "gen_ai.server.time_per_output_token";
+    // gen_ai.server.request.duration would collide in meaning with OPERATION_DURATION
     pub const RESPONSE_DURATION: &str = "gen_ai.client.response.duration";
 }

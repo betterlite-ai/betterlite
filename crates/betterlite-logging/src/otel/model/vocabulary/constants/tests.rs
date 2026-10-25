@@ -1,22 +1,26 @@
 #![cfg(test)]
 
-use crate::otel::vocabulary::attribute_keys::{DB, GenAI, HTTP, MCP};
+use rstest::rstest;
+
 use crate::otel::vocabulary::constants::{
-    GenAIOperation, GenAIProvider, LITELLM_PROXY_REQUEST_SPAN_NAME, MCPMethod, NetworkTransport,
+    GenAIOperation, GenAIOutputType, GenAIProvider, MCPMethod, NetworkTransport, RpcSystem,
 };
 
-#[test]
-fn enum_values_and_attribute_keys_match_semconv() {
-    assert_eq!(GenAIOperation::CHAT.value(), "chat");
-    assert_eq!(GenAIProvider::AWS_BEDROCK.value(), "aws.bedrock");
-    assert_eq!(MCPMethod::TOOLS_CALL.value(), "tools/call");
-    assert_eq!(NetworkTransport::PIPE.value(), "pipe");
-    assert_eq!(GenAI::OPERATION_NAME, "gen_ai.operation.name");
-    assert_eq!(MCP::METHOD_NAME, "mcp.method.name");
-    assert_eq!(DB::SYSTEM_NAME, "db.system.name");
-    assert_eq!(HTTP::RESPONSE_STATUS_CODE, "http.response.status_code");
-    assert_eq!(
-        LITELLM_PROXY_REQUEST_SPAN_NAME,
-        "Received Proxy Server Request"
-    );
+#[rstest]
+#[case::text_completion(GenAIOperation::TextCompletion.to_string(), "text_completion")]
+#[case::create_agent(GenAIOperation::CreateAgent.to_string(), "create_agent")]
+#[case::vendor_file_management(
+    GenAIOperation::LitellmVectorStoreFileManagement.to_string(),
+    "litellm.vector_store_file_management"
+)]
+#[case::json_output(GenAIOutputType::Json.to_string(), "json")]
+#[case::mistral(GenAIProvider::MistralAi.to_string(), "mistral_ai")]
+#[case::xai(GenAIProvider::XAi.to_string(), "x_ai")]
+#[case::vertex(GenAIProvider::GcpVertexAi.to_string(), "gcp.vertex_ai")]
+#[case::watsonx(GenAIProvider::IbmWatsonxAi.to_string(), "ibm.watsonx.ai")]
+#[case::prompts_get(MCPMethod::PromptsGet.to_string(), "prompts/get")]
+#[case::jsonrpc(RpcSystem::JsonRpc.to_string(), "jsonrpc")]
+#[case::quic(NetworkTransport::Quic.to_string(), "quic")]
+fn enum_values_are_spelled_as_litellm_sends_them(#[case] value: String, #[case] expected: &str) {
+    assert_eq!(value, expected);
 }

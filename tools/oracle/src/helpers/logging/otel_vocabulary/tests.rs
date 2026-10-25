@@ -1,26 +1,26 @@
 #![cfg(test)]
 
-use super::{Input, Op};
+use crate::helpers::{HelperCall, invoke};
 
 #[test]
-fn provider_passthrough_matches_helper_contract() {
-    let input = Input::Provider {
-        custom_llm_provider: Some("vendor_new".to_owned()),
-    };
-    let output = <Op as crate::helpers::Helper>::run(&input).unwrap();
-    assert_eq!(output, serde_json::json!("vendor_new"));
+fn span_names_decode_mcp_methods_from_their_wire_values() {
+    let output = invoke(&HelperCall {
+        operation: "otel_vocabulary".to_owned(),
+        input: serde_json::json!({"function": "SpanName", "spans": [
+            {"role": "mcp_list_tools", "method": "tools/list"},
+            {"role": "service", "service_name": "redis", "call_type": null},
+        ]}),
+    });
+    assert_eq!(output.value, Some(serde_json::json!(["tools/list", "redis"])));
 }
 
 #[test]
-fn metrics_only_role_is_null() {
-    let input = Input::SpanRole {
-        service_name: "router".to_owned(),
-    };
-    let output = <Op as crate::helpers::Helper>::run(&input).unwrap();
-    assert_eq!(output, serde_json::Value::Null);
-    let invoked = crate::helpers::invoke(&crate::helpers::HelperCall {
+fn unknown_mcp_methods_are_refused() {
+    let output = invoke(&HelperCall {
         operation: "otel_vocabulary".to_owned(),
-        input: serde_json::json!({"function": "SpanRole", "service_name": "router"}),
+        input: serde_json::json!({"function": "SpanName", "spans": [
+            {"role": "mcp_list_tools", "method": "resources/list"},
+        ]}),
     });
-    assert_eq!(invoked.value, Some(serde_json::Value::Null));
+    assert_eq!(output.value, None);
 }

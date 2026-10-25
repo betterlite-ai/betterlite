@@ -1,5 +1,23 @@
 kind: helper
 name: span-names-strip-empty-model-tool
-call: {otel_vocabulary: {function: SpanName, kind: llm, call_type: completion, model: ""}}
+call:
+  otel_vocabulary:
+    function: SpanName
+    spans:
+      - {role: llm_call, call_type: completion, request_model: gpt-4o}
+      - {role: llm_call, call_type: completion, request_model: ""}
+      - {role: llm_call, call_type: aembedding, request_model: null}
+      - {role: llm_call, call_type: avector_store_create, request_model: " padded "}
+      - {role: mcp_tool_call, method: tools/call, tool_name: get-weather}
+      - {role: mcp_tool_call, method: prompts/get, tool_name: ""}
+      - {role: mcp_list_tools, method: tools/list}
+      - {role: mcp_list_tools, method: prompts/list}
+      - {role: proxy_request, http_method: POST, route: /chat/completions}
+      - {role: proxy_request, http_method: GET, route: ""}
+      - {role: guardrail, guardrail_name: pii}
+      - {role: guardrail, guardrail_name: ""}
+      - {role: service, service_name: redis, call_type: set}
+      - {role: service, service_name: redis, call_type: null}
+      - {role: service, service_name: "\u001fredis", call_type: " \u001c"}
 env: {}
 compare: {ignore: []}

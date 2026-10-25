@@ -1,26 +1,27 @@
 use std::collections::BTreeSet;
+use std::str::FromStr as _;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+use crate::otel::vocabulary::span_names::is_python_space;
+
+#[path = "semconv/tests.rs"]
+mod tests;
+
+pub const OTEL_SEMCONV_STABILITY_OPT_IN_ENV: &str = "OTEL_SEMCONV_STABILITY_OPT_IN";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, strum::Display, strum::EnumString)]
+#[strum(serialize_all = "snake_case")]
 pub enum OTELSemconvCategory {
     GenAiLatestExperimental,
 }
-impl OTELSemconvCategory {
-    pub const GEN_AI_LATEST_EXPERIMENTAL: Self = Self::GenAiLatestExperimental;
-}
 
 #[must_use]
-pub fn parse_semconv_opt_in(raw_value: Option<&str>) -> BTreeSet<OTELSemconvCategory> {
+pub fn parse_semconv_opt_in(raw: &str) -> BTreeSet<OTELSemconvCategory> {
     let mut categories = BTreeSet::new();
-    if let Some(raw) = raw_value {
-        for token in raw.split(',').map(str::trim) {
-            if token == "gen_ai_latest_experimental" {
-                categories.insert(OTELSemconvCategory::GEN_AI_LATEST_EXPERIMENTAL);
-            }
+    // the convention ignores opt-in tokens it does not know
+    for token in raw.split(',') {
+        if let Ok(category) = OTELSemconvCategory::from_str(token.trim_matches(is_python_space)) {
+            categories.insert(category);
         }
     }
     categories
 }
-
-#[cfg(test)]
-#[path = "semconv/tests.rs"]
-mod tests;

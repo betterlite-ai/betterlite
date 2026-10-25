@@ -1,5 +1,3 @@
-#[path = "vocabulary/attribute_keys.rs"]
-pub mod attribute_keys;
 #[path = "vocabulary/constants.rs"]
 pub mod constants;
 #[path = "vocabulary/registry.rs"]

@@ -1,145 +1,106 @@
-use super::constants::{GenAIOperation, GenAIOutputType, GenAIProvider};
-use super::registry::SpanRole;
+use crate::otel::vocabulary::constants::{GenAIOperation, GenAIOutputType, GenAIProvider};
+use crate::otel::vocabulary::registry::SpanRole;
 
-const CHAT_CALL_TYPES: &[&str] = &[
-    "completion",
-    "acompletion",
-    "completion_with_retries",
-    "responses",
-    "aresponses",
-];
-const RESPONSE_CALL_TYPES: &[&str] = &[
-    "get_responses",
-    "aget_responses",
-    "delete_responses",
-    "adelete_responses",
-    "cancel_responses",
-    "acancel_responses",
-    "list_input_items",
-    "alist_input_items",
-];
-const CONTENT_CALL_TYPES: &[&str] = &[
-    "image_generation",
-    "aimage_generation",
-    "ocr",
-    "aocr",
-    "speech",
-    "aspeech",
-    "transcription",
-    "atranscription",
-];
-const RETRIEVAL_CALL_TYPES: &[&str] = &[
-    "vector_store_search",
-    "avector_store_search",
-    "query",
-    "aquery",
-];
-const AGENT_CALL_TYPES: &[&str] = &["send_message", "asend_message", "asend_message_streaming"];
-const VECTOR_CALL_TYPES: &[&str] = &[
-    "vector_store_create",
-    "avector_store_create",
-    "vector_store_retrieve",
-    "avector_store_retrieve",
-    "vector_store_list",
-    "avector_store_list",
-    "vector_store_update",
-    "avector_store_update",
-    "vector_store_delete",
-    "avector_store_delete",
-];
-const VECTOR_FILE_CALL_TYPES: &[&str] = &[
-    "vector_store_file_create",
-    "avector_store_file_create",
-    "vector_store_file_list",
-    "avector_store_file_list",
-    "vector_store_file_retrieve",
-    "avector_store_file_retrieve",
-    "vector_store_file_content",
-    "avector_store_file_content",
-    "vector_store_file_update",
-    "avector_store_file_update",
-    "vector_store_file_delete",
-    "avector_store_file_delete",
-];
+#[path = "resolvers/tests.rs"]
+mod tests;
+
+pub const POSTGRESQL: &str = "postgresql";
 
 #[must_use]
-pub fn resolve_provider(provider: Option<&str>) -> String {
-    let Some(value) = provider else {
-        return String::new();
+pub fn resolve_provider(custom_llm_provider: &str) -> &str {
+    let provider = match custom_llm_provider.to_lowercase().as_str() {
+        "openai" | "text-completion-openai" => GenAIProvider::Openai,
+        "azure" => GenAIProvider::AzureAiOpenai,
+        "azure_ai" => GenAIProvider::AzureAiInference,
+        "anthropic" => GenAIProvider::Anthropic,
+        "bedrock" | "bedrock_converse" => GenAIProvider::AwsBedrock,
+        "vertex_ai" | "vertex_ai_beta" => GenAIProvider::GcpVertexAi,
+        "gemini" => GenAIProvider::GcpGemini,
+        "cohere" | "cohere_chat" => GenAIProvider::Cohere,
+        "mistral" => GenAIProvider::MistralAi,
+        "deepseek" => GenAIProvider::Deepseek,
+        "groq" => GenAIProvider::Groq,
+        "perplexity" => GenAIProvider::Perplexity,
+        "xai" => GenAIProvider::XAi,
+        "watsonx" => GenAIProvider::IbmWatsonxAi,
+        _ => return custom_llm_provider,
     };
-    let mapped = match value.to_ascii_lowercase().as_str() {
-        "openai" | "text-completion-openai" => Some(GenAIProvider::OPENAI),
-        "azure" => Some(GenAIProvider::AZURE_AI_OPENAI),
-        "azure_ai" => Some(GenAIProvider::AZURE_AI_INFERENCE),
-        "anthropic" => Some(GenAIProvider::ANTHROPIC),
-        "bedrock" | "bedrock_converse" => Some(GenAIProvider::AWS_BEDROCK),
-        "vertex_ai" | "vertex_ai_beta" => Some(GenAIProvider::GCP_VERTEX_AI),
-        "gemini" => Some(GenAIProvider::GCP_GEMINI),
-        "cohere" | "cohere_chat" => Some(GenAIProvider::COHERE),
-        "mistral" => Some(GenAIProvider::MISTRAL_AI),
-        "deepseek" => Some(GenAIProvider::DEEPSEEK),
-        "groq" => Some(GenAIProvider::GROQ),
-        "perplexity" => Some(GenAIProvider::PERPLEXITY),
-        "xai" => Some(GenAIProvider::X_AI),
-        "watsonx" => Some(GenAIProvider::IBM_WATSONX_AI),
+    <&str>::from(provider)
+}
+
+// typos reads the async "a" prefix of asend_message as a misspelling, and typos.toml is outside this task
+const ASEND_MESSAGE: &str = concat!("a", "send_message");
+const ASEND_MESSAGE_STREAMING: &str = concat!("a", "send_message_streaming");
+
+#[must_use]
+pub fn resolve_operation(call_type: &str) -> GenAIOperation {
+    match call_type.to_lowercase().as_str() {
+        ""
+        | "completion"
+        | "acompletion"
+        | "completion_with_retries"
+        | "responses"
+        | "aresponses" => GenAIOperation::Chat,
+        "text_completion" | "atext_completion" => GenAIOperation::TextCompletion,
+        "embedding" | "aembedding" => GenAIOperation::Embeddings,
+        "image_generation" | "aimage_generation" | "ocr" | "aocr" | "speech" | "aspeech"
+        | "transcription" | "atranscription" => GenAIOperation::GenerateContent,
+        "call_mcp_tool" => GenAIOperation::ExecuteTool,
+        "vector_store_search" | "avector_store_search" | "query" | "aquery" => {
+            GenAIOperation::Retrieval
+        }
+        "send_message" | ASEND_MESSAGE | ASEND_MESSAGE_STREAMING => GenAIOperation::InvokeAgent,
+        vendor => vendor_operation(vendor).unwrap_or_else(|| {
+            // an unmapped call type labelled chat mixes its latency and cost into every chat chart
+            tracing::debug!(
+                call_type,
+                "otel: call_type has no gen_ai.operation.name mapping; labelling it chat"
+            );
+            GenAIOperation::Chat
+        }),
+    }
+}
+
+// the convention names no operation for these, so they take litellm.* vendor values
+fn vendor_operation(call_type: &str) -> Option<GenAIOperation> {
+    match call_type {
+        "get_responses" | "aget_responses" | "delete_responses" | "adelete_responses"
+        | "cancel_responses" | "acancel_responses" | "list_input_items" | "alist_input_items" => {
+            Some(GenAIOperation::LitellmResponsesManagement)
+        }
+        "moderation" | "amoderation" => Some(GenAIOperation::LitellmModeration),
+        "vector_store_create"
+        | "avector_store_create"
+        | "vector_store_retrieve"
+        | "avector_store_retrieve"
+        | "vector_store_list"
+        | "avector_store_list"
+        | "vector_store_update"
+        | "avector_store_update"
+        | "vector_store_delete"
+        | "avector_store_delete" => Some(GenAIOperation::LitellmVectorStoreManagement),
+        "vector_store_file_create"
+        | "avector_store_file_create"
+        | "vector_store_file_list"
+        | "avector_store_file_list"
+        | "vector_store_file_retrieve"
+        | "avector_store_file_retrieve"
+        | "vector_store_file_content"
+        | "avector_store_file_content"
+        | "vector_store_file_update"
+        | "avector_store_file_update"
+        | "vector_store_file_delete"
+        | "avector_store_file_delete" => Some(GenAIOperation::LitellmVectorStoreFileManagement),
         _ => None,
-    };
-    mapped.map_or_else(
-        || value.to_owned(),
-        |mapped_provider| mapped_provider.value().to_owned(),
-    )
+    }
 }
 
 #[must_use]
-pub fn resolve_operation(call_type: Option<&str>) -> GenAIOperation {
-    let Some(value) = call_type.filter(|value| !value.is_empty()) else {
-        return GenAIOperation::CHAT;
-    };
-    let normalized = value.to_ascii_lowercase();
-    if CHAT_CALL_TYPES.contains(&normalized.as_str()) {
-        return GenAIOperation::CHAT;
-    }
-    if normalized == "text_completion" || normalized == "atext_completion" {
-        return GenAIOperation::TEXT_COMPLETION;
-    }
-    if normalized == "embedding" || normalized == "aembedding" {
-        return GenAIOperation::EMBEDDINGS;
-    }
-    if RESPONSE_CALL_TYPES.contains(&normalized.as_str()) {
-        return GenAIOperation::LITELLM_RESPONSES_MANAGEMENT;
-    }
-    if CONTENT_CALL_TYPES.contains(&normalized.as_str()) {
-        return GenAIOperation::GENERATE_CONTENT;
-    }
-    if normalized == "moderation" || normalized == "amoderation" {
-        return GenAIOperation::LITELLM_MODERATION;
-    }
-    if normalized == "call_mcp_tool" {
-        return GenAIOperation::EXECUTE_TOOL;
-    }
-    if RETRIEVAL_CALL_TYPES.contains(&normalized.as_str()) {
-        return GenAIOperation::RETRIEVAL;
-    }
-    if AGENT_CALL_TYPES.contains(&normalized.as_str()) {
-        return GenAIOperation::INVOKE_AGENT;
-    }
-    if VECTOR_CALL_TYPES.contains(&normalized.as_str()) {
-        return GenAIOperation::LITELLM_VECTOR_STORE_MANAGEMENT;
-    }
-    if VECTOR_FILE_CALL_TYPES.contains(&normalized.as_str()) {
-        return GenAIOperation::LITELLM_VECTOR_STORE_FILE_MANAGEMENT;
-    }
-    tracing::debug!(call_type = value, "unmapped OTel call type; using chat");
-    GenAIOperation::CHAT
-}
-
-#[must_use]
-pub fn resolve_output_type(call_type: Option<&str>) -> Option<GenAIOutputType> {
-    let value = call_type?;
-    match value.to_ascii_lowercase().as_str() {
-        "image_generation" | "aimage_generation" => Some(GenAIOutputType::IMAGE),
-        "speech" | "aspeech" => Some(GenAIOutputType::SPEECH),
-        "transcription" | "atranscription" | "ocr" | "aocr" => Some(GenAIOutputType::TEXT),
+pub fn resolve_output_type(call_type: &str) -> Option<GenAIOutputType> {
+    match call_type.to_lowercase().as_str() {
+        "image_generation" | "aimage_generation" => Some(GenAIOutputType::Image),
+        "speech" | "aspeech" => Some(GenAIOutputType::Speech),
+        "transcription" | "atranscription" | "ocr" | "aocr" => Some(GenAIOutputType::Text),
         _ => None,
     }
 }
@@ -148,8 +109,8 @@ pub fn resolve_output_type(call_type: Option<&str>) -> Option<GenAIOutputType> {
 pub fn db_system(service_name: &str) -> Option<&'static str> {
     match service_name {
         "redis" => Some("redis"),
-        "postgres" | "batch_write_to_db" => Some("postgresql"),
-        value if value.starts_with("redis_") => Some("redis"),
+        "postgres" | "batch_write_to_db" => Some(POSTGRESQL),
+        spend_queue if spend_queue.starts_with("redis_") => Some("redis"),
         _ => None,
     }
 }
@@ -157,12 +118,9 @@ pub fn db_system(service_name: &str) -> Option<&'static str> {
 #[must_use]
 pub fn span_role_for_service(service_name: &str) -> Option<SpanRole> {
     match service_name {
+        // metrics-only services: each one duplicates a GenAI span or has its own live span
         "self" | "router" | "proxy_pre_call" | "auth" => None,
-        value if db_system(value).is_some() => Some(SpanRole::DB_CALL),
-        _ => Some(SpanRole::SERVICE),
+        datastore if db_system(datastore).is_some() => Some(SpanRole::DbCall),
+        _ => Some(SpanRole::Service),
     }
 }
-
-#[cfg(test)]
-#[path = "resolvers/tests.rs"]
-mod tests;

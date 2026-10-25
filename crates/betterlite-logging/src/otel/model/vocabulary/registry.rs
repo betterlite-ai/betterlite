@@ -1,6 +1,10 @@
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
+use strum::{Display, EnumIter, IntoEnumIterator as _};
+
+#[path = "registry/tests.rs"]
+mod tests;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display, EnumIter)]
+#[strum(serialize_all = "snake_case")]
 pub enum SpanRole {
     ProxyRequest,
     LlmCall,
@@ -10,18 +14,9 @@ pub enum SpanRole {
     DbCall,
     Service,
 }
-impl SpanRole {
-    pub const PROXY_REQUEST: Self = Self::ProxyRequest;
-    pub const LLM_CALL: Self = Self::LlmCall;
-    pub const MCP_TOOL_CALL: Self = Self::McpToolCall;
-    pub const MCP_LIST_TOOLS: Self = Self::McpListTools;
-    pub const GUARDRAIL: Self = Self::Guardrail;
-    pub const DB_CALL: Self = Self::DbCall;
-    pub const SERVICE: Self = Self::Service;
-}
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[strum(serialize_all = "snake_case")]
 pub enum LiteLLMSpanKind {
     Server,
     Client,
@@ -29,108 +24,88 @@ pub enum LiteLLMSpanKind {
     Producer,
     Consumer,
 }
-impl LiteLLMSpanKind {
-    pub const SERVER: Self = Self::Server;
-    pub const CLIENT: Self = Self::Client;
-    pub const INTERNAL: Self = Self::Internal;
-    pub const PRODUCER: Self = Self::Producer;
-    pub const CONSUMER: Self = Self::Consumer;
-}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpanSpec {
     pub role: SpanRole,
     pub kind: LiteLLMSpanKind,
     pub parent: Option<SpanRole>,
 }
-pub static SPAN_REGISTRY: &[SpanSpec] = &[
+
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum RegistryError {
+    #[error("span role {role} is declared more than once")]
+    DuplicateRole { role: SpanRole },
+    #[error("span role {role} declares unknown parent {parent}")]
+    UnknownParent { role: SpanRole, parent: SpanRole },
+    #[error("the span registry is missing roles {roles:?}")]
+    MissingRoles { roles: Vec<SpanRole> },
+}
+
+// MCP spans are CLIENT spans because the proxy is an MCP client of the upstream server
+pub const SPAN_REGISTRY: [SpanSpec; 7] = [
     SpanSpec {
-        role: SpanRole::PROXY_REQUEST,
-        kind: LiteLLMSpanKind::SERVER,
+        role: SpanRole::ProxyRequest,
+        kind: LiteLLMSpanKind::Server,
         parent: None,
     },
     SpanSpec {
-        role: SpanRole::LLM_CALL,
-        kind: LiteLLMSpanKind::CLIENT,
-        parent: Some(SpanRole::PROXY_REQUEST),
+        role: SpanRole::LlmCall,
+        kind: LiteLLMSpanKind::Client,
+        parent: Some(SpanRole::ProxyRequest),
     },
     SpanSpec {
-        role: SpanRole::MCP_TOOL_CALL,
-        kind: LiteLLMSpanKind::CLIENT,
-        parent: Some(SpanRole::PROXY_REQUEST),
+        role: SpanRole::McpToolCall,
+        kind: LiteLLMSpanKind::Client,
+        parent: Some(SpanRole::ProxyRequest),
     },
     SpanSpec {
-        role: SpanRole::MCP_LIST_TOOLS,
-        kind: LiteLLMSpanKind::CLIENT,
-        parent: Some(SpanRole::PROXY_REQUEST),
+        role: SpanRole::McpListTools,
+        kind: LiteLLMSpanKind::Client,
+        parent: Some(SpanRole::ProxyRequest),
     },
     SpanSpec {
-        role: SpanRole::GUARDRAIL,
-        kind: LiteLLMSpanKind::INTERNAL,
-        parent: Some(SpanRole::PROXY_REQUEST),
+        role: SpanRole::Guardrail,
+        kind: LiteLLMSpanKind::Internal,
+        parent: Some(SpanRole::ProxyRequest),
     },
     SpanSpec {
-        role: SpanRole::DB_CALL,
-        kind: LiteLLMSpanKind::CLIENT,
-        parent: Some(SpanRole::PROXY_REQUEST),
+        role: SpanRole::DbCall,
+        kind: LiteLLMSpanKind::Client,
+        parent: Some(SpanRole::ProxyRequest),
     },
     SpanSpec {
-        role: SpanRole::SERVICE,
-        kind: LiteLLMSpanKind::INTERNAL,
-        parent: Some(SpanRole::PROXY_REQUEST),
+        role: SpanRole::Service,
+        kind: LiteLLMSpanKind::Internal,
+        parent: Some(SpanRole::ProxyRequest),
     },
 ];
-#[must_use]
-pub fn root_roles() -> Vec<SpanRole> {
-    SPAN_REGISTRY
-        .iter()
-        .filter(|spec| spec.parent.is_none())
-        .map(|spec| spec.role)
-        .collect()
-}
-#[must_use]
-pub fn child_roles(parent: SpanRole) -> Vec<SpanRole> {
-    SPAN_REGISTRY
-        .iter()
-        .filter(|spec| spec.parent == Some(parent))
-        .map(|spec| spec.role)
-        .collect()
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RegistryError {
-    MismatchedRole,
-    UnknownParent,
-    MissingRole,
-}
-pub fn validate_registry() -> Result<(), RegistryError> {
-    let roles = [
-        SpanRole::PROXY_REQUEST,
-        SpanRole::LLM_CALL,
-        SpanRole::MCP_TOOL_CALL,
-        SpanRole::MCP_LIST_TOOLS,
-        SpanRole::GUARDRAIL,
-        SpanRole::DB_CALL,
-        SpanRole::SERVICE,
-    ];
-    for spec in SPAN_REGISTRY {
-        if !roles.contains(&spec.role) {
-            return Err(RegistryError::MismatchedRole);
+
+pub fn validate_registry(registry: &[SpanSpec]) -> Result<(), RegistryError> {
+    for spec in registry {
+        if registry
+            .iter()
+            .filter(|other| other.role == spec.role)
+            .count()
+            > 1
+        {
+            return Err(RegistryError::DuplicateRole { role: spec.role });
         }
         if let Some(parent) = spec.parent
-            && !SPAN_REGISTRY
-                .iter()
-                .any(|candidate| candidate.role == parent)
+            && !registry.iter().any(|other| other.role == parent)
         {
-            return Err(RegistryError::UnknownParent);
+            return Err(RegistryError::UnknownParent {
+                role: spec.role,
+                parent,
+            });
         }
     }
-    if roles
-        .iter()
-        .any(|role| !SPAN_REGISTRY.iter().any(|spec| spec.role == *role))
-    {
-        return Err(RegistryError::MissingRole);
+    let missing: Vec<SpanRole> = SpanRole::iter()
+        .filter(|role| !registry.iter().any(|spec| spec.role == *role))
+        .collect();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(RegistryError::MissingRoles { roles: missing })
     }
-    Ok(())
 }
-#[cfg(test)]
-#[path = "registry/tests.rs"]
-mod tests;
