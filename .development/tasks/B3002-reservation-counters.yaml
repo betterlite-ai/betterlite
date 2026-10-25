@@ -108,115 +108,115 @@ checks:
   commands:
     - id: counter-key
       why: key counters not collected, budgets not positive-capped, or budget_limits windows missing
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && key)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(key)'
     - id: counter-team
       why: team counters not collected, budgets not positive-capped, or budget_limits windows missing
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && team && !member && !budget)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(team) & !test(member) & !test(budget)'
     - id: counter-user-conditional
       why: user counter logic does not apply unless team key condition met
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && user_conditional)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(user_conditional)'
     - id: counter-user-team-key
       why: user budget skipped when key is team key and apply_user_budget_to_team_keys is false
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && user_team_key)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(user_team_key)'
     - id: counter-user-override
       why: user budget collected when apply_user_budget_to_team_keys=true even with team key
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && user_override)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(user_override)'
     - id: counter-enduser-token-id
       why: end-user counter resolves from valid_token.end_user_id
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && enduser_token)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(enduser_token)'
     - id: counter-enduser-param-id
       why: end-user counter resolves from end_user_id parameter over valid_token
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && enduser_param)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(enduser_param)'
     - id: counter-enduser-fallback-table
       why: end-user budget falls back to litellm_budget_table.max_budget when token has none
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && enduser_fallback)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(enduser_fallback)'
     - id: counter-enduser-skip-zero
       why: end-user counter skipped when budget <= 0
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && enduser_skip)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(enduser_skip)'
     - id: counter-tag-dedup
       why: tag names deduplicated, order preserved, duplicates skipped on first seen
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && tag_dedup)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(tag_dedup)'
     - id: counter-tag-batch
       why: tags batch-fetched via get_tag_objects_batch, missing tags skipped
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && tag_batch)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(tag_batch)'
     - id: counter-tag-skip-zero
       why: tag counter skipped when budget <= 0
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && tag_skip)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(tag_skip)'
     - id: counter-accessgroup-matched
       why: access group counters use valid_token.matched_model_access_groups only, not request-derived groups
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && group_matched)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(group_matched)'
     - id: counter-accessgroup-batch
       why: access groups batch-fetched via get_model_access_group_budgets_batch
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && group_batch)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(group_batch)'
     - id: counter-accessgroup-skip-zero
       why: access group counter skipped when budget <= 0
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && group_skip)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(group_skip)'
     - id: counter-member-cache
       why: team member budget loaded from UserApiKeyCache using team_membership_reservation_cache_key
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && member_cache)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(member_cache)'
     - id: counter-member-effective
       why: team member effective_max_budget called when membership row exists
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && member_effective)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(member_effective)'
     - id: counter-member-temp-increase
       why: team member budget includes active_temp_budget_increase from membership row
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && member_temp)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(member_temp)'
     - id: counter-member-token-user-id
       why: team member counter skipped when valid_token.user_id is None even if user_object is set
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && member_token_user)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(member_token_user)'
     - id: counter-member-skip-zero
       why: team member counter skipped when final budget <= 0
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && member_skip)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(member_skip)'
     - id: counter-org-token-id
       why: organization counter prefers valid_token.org_id
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && org_token)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(org_token)'
     - id: counter-org-team-id
       why: organization counter falls back to team_object.organization_id when token.org_id missing
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && org_team)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(org_team)'
     - id: counter-org-cache
       why: organization row loaded from cache key org_id:with_budget
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && org_cache)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(org_cache)'
     - id: counter-org-skip-zero
       why: organization counter skipped when budget <= 0 or budget_table missing
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && org_skip)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(org_skip)'
     - id: counter-project-id
       why: project counter loads from cache via valid_token.project_id
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && project_id)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(project_id)'
     - id: counter-project-finite
       why: project budget checked with math.isfinite before inclusion
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && project_finite)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(project_finite)'
     - id: counter-project-skip-zero
       why: project counter skipped when budget is None, <= 0, or not finite
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && project_skip)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(project_skip)'
     - id: counter-window-parse
       why: windows parsed from entity.budget_limits, budget_duration extracted and duration_in_seconds called
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && window_parse)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(window_parse)'
     - id: counter-window-start
       why: window_start calculated as reset_at - duration, or (now - duration) if reset_at is None
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && window_start)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(window_start)'
     - id: counter-window-utc
       why: reset_at coerced to UTC if tzinfo is None
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && window_utc)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(window_utc)'
     - id: counter-window-skip-invalid
       why: windows with unparseable durations skipped with verbose warning, budget_duration empty
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && window_skip)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(window_skip)'
     - id: counter-order
       why: counters ordered as key, team, user, enduser, tag, accessgroup, member, org, project
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && order)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(order)'
     - id: counter-keys
       why: counter_key has correct format for each entity type
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && keys)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(keys)'
     - id: counter-cache-keys
       why: source_cache_key set for non-window counters, matches expected key constructors
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && cache_keys)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(cache_keys)'
     - id: counter-window-metadata
       why: window counters have spend_log_entity_id, window_duration, window_start set
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && window_metadata)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(window_metadata)'
     - id: counter-fallback-spend
       why: fallback spend values coerced via _to_float and default to 0.0 when None or invalid
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && fallback)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(fallback)'
     - id: counter-entity-types
       why: entity_type strings match _COUNTER_ENTITY_TYPES mapping
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && entity_types)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/) & test(entity_types)'
 oracle_cases: []
 deviations: []
 out_of_scope:

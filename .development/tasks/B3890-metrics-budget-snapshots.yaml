@@ -23,6 +23,7 @@ scope:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/proxy.rs
     - crates/betterlite-core/src/proxy/carried_budget_state.rs
+    - crates/betterlite-core/src/proxy/carried_budget_state/**
     - crates/betterlite-core/src/proxy/**
     - Cargo.toml
   lint_tables: false

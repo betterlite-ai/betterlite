@@ -39,6 +39,7 @@ scope:
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/**
     - crates/betterlite-config/src/tests/vertex_gcs_settings.rs
+    - crates/betterlite-config/src/tests/vertex_gcs_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_gcs*
     - tools/oracle/src/helpers/vertex/gcs_access.rs
     - tools/oracle/src/helpers/vertex/gcs_access/**

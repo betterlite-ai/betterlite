@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/soniox.rs
+    - crates/betterlite-core/src/api/soniox/**
     - crates/betterlite-core/src/api/soniox/remote.rs
     - crates/betterlite-core/src/api/soniox/remote/**
     - tools/oracle/src/helpers/core_ops/soniox_remote.rs

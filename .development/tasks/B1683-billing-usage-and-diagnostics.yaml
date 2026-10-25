@@ -49,6 +49,7 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/**
     - crates/betterlite-core/src/cost/usage.rs
     - crates/betterlite-core/src/cost/usage/**
     - crates/betterlite-models/src/zero_cost.rs

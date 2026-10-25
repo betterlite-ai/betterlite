@@ -16,6 +16,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/chat_response_stream_items.rs
   - crates/betterlite-core/src/api/chat_response_stream_items/**
   - tools/oracle/src/helpers/core_ops/chat_response_stream_items.rs

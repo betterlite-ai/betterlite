@@ -31,6 +31,7 @@ scope:
     - crates/betterlite-vertex/src/vertex_live.rs
     - crates/betterlite-vertex/src/vertex_live/**
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/vertex_realtime_factory.rs
     - crates/betterlite-core/src/api/vertex_realtime_factory/**
     - tools/oracle/src/helpers/core_ops/vertex_live.rs

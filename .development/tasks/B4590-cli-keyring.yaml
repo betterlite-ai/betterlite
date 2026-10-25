@@ -18,6 +18,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-cli/src/keyring.rs
+    - crates/betterlite-cli/src/keyring/**
     - crates/betterlite-cli/Cargo.toml
     - Cargo.toml
   lint_tables: false
