@@ -1,7 +1,7 @@
 use crate::helpers::HelperError;
 use betterlite_context::owned_parameter_names::{
-    OwnedParameterNamesError, OwnedRoot, Owner, is_litellm_owned_kwarg, owned_names,
-    owned_wire_names, wire, wire_names,
+    AGENTIC_LOOP_KWARG_NAMES, BEDROCK_BATCH_KWARG_NAMES, OwnedParameterNamesError, Owner,
+    WireMetadata, is_litellm_owned_kwarg, owned_names, owned_wire_names, wire_names,
 };
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +13,7 @@ pub(crate) enum Input {
     WireNameProjection {
         name: String,
         owner: Owner,
-        root: Option<OwnedRoot>,
+        root: Option<Owner>,
     },
     OwnedNameRegistry {
         names: Vec<String>,
@@ -25,62 +25,52 @@ pub(crate) enum Input {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct Projection {
-    wire: betterlite_context::owned_parameter_names::WireMetadata,
-    names: Vec<String>,
-    owned: Option<Vec<String>>,
-}
-#[derive(Debug, Clone, Serialize)]
-struct Registry {
-    names: Vec<String>,
-    owned: Vec<bool>,
-}
-#[derive(Debug, Clone, Serialize)]
-struct Membership {
-    owned: Vec<bool>,
-}
-#[derive(Debug, Clone, Serialize)]
-struct Subsets {
-    agentic_loop: Vec<String>,
-    bedrock_batch: Vec<String>,
-}
-#[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
-enum Output {
-    Projection(Projection),
-    Registry(Registry),
-    Membership(Membership),
-    Subsets(Subsets),
+enum Output<'input> {
+    Projection {
+        wire: WireMetadata<'input>,
+        names: Vec<String>,
+        owned: Option<Vec<String>>,
+    },
+    Registry {
+        names: Vec<String>,
+        owned: Vec<bool>,
+    },
+    Membership {
+        owned: Vec<bool>,
+    },
+    Subsets {
+        agentic_loop: Vec<String>,
+        bedrock_batch: Vec<String>,
+    },
 }
 
-fn run(input: &Input) -> Result<Output, OwnedParameterNamesError> {
+fn run(input: &Input) -> Result<Output<'_>, OwnedParameterNamesError> {
     match input {
-        Input::WireNameProjection { name, owner, root } => Ok(Output::Projection(Projection {
-            wire: wire(name),
-            names: wire_names(*owner)?,
-            owned: root.map(owned_wire_names).transpose()?,
-        })),
-        Input::OwnedNameRegistry { names } => Ok(Output::Registry(Registry {
-            names: owned_names()?,
+        Input::WireNameProjection { name, owner, root } => Ok(Output::Projection {
+            wire: WireMetadata { wire_name: name },
+            names: wire_names(*owner),
+            owned: root
+                .map(|root_owner| owned_wire_names(root_owner.record()))
+                .transpose()?,
+        }),
+        Input::OwnedNameRegistry { names } => Ok(Output::Registry {
+            names: owned_names(),
             owned: names
                 .iter()
                 .map(|name| is_litellm_owned_kwarg(name))
-                .collect::<Result<Vec<_>, _>>()?,
-        })),
-        Input::InternalPrefixMembership { names } => Ok(Output::Membership(Membership {
+                .collect(),
+        }),
+        Input::InternalPrefixMembership { names } => Ok(Output::Membership {
             owned: names
                 .iter()
                 .map(|name| is_litellm_owned_kwarg(name))
-                .collect::<Result<Vec<_>, _>>()?,
-        })),
-        Input::SubsetRegistries => {
-            let mut agentic_loop = wire_names(Owner::AgenticLoopState)?;
-            agentic_loop.extend(wire_names(Owner::AgenticLoopOptions)?);
-            Ok(Output::Subsets(Subsets {
-                agentic_loop,
-                bedrock_batch: wire_names(Owner::BedrockBatchConnection)?,
-            }))
-        }
+                .collect(),
+        }),
+        Input::SubsetRegistries => Ok(Output::Subsets {
+            agentic_loop: AGENTIC_LOOP_KWARG_NAMES.names(),
+            bedrock_batch: BEDROCK_BATCH_KWARG_NAMES.names(),
+        }),
     }
 }
 

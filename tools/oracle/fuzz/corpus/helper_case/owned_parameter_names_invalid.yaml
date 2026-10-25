@@ -4,8 +4,8 @@ call:
   owned_parameter_names:
     function: wire_name_projection
     name: no-log
-    owner: observability
-    root: invalid_leaf
+    owner: observability_options
+    root: provider_connection
 env: {}
 compare:
   ignore: []
