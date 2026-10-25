@@ -13,7 +13,6 @@ use cache_plan_validation::{cache_ttl, valid_shape};
 mod tests;
 
 pub type JsonObject = Map<String, Value>;
-pub const DEFAULT_ANTHROPIC_API_VERSION: &str = "2023-06-01";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CacheBoundary {
