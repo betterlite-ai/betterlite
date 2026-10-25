@@ -1,4 +1,8 @@
+mod tests;
+
 use std::collections::BTreeMap;
+
+use secrecy::SecretString;
 
 use crate::context::SessionContext;
 use crate::errors::HarnessError;
@@ -14,19 +18,19 @@ pub struct PersistedDir {
 }
 
 // relative paths are inside the session's private_dir
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub struct HarnessSessionSetup {
     pub files: BTreeMap<String, Vec<u8>>,
     pub persisted_dirs: Vec<PersistedDir>,
     pub skills_dir: Option<String>,
     // values may contain {private_dir}
-    pub env: BTreeMap<String, String>,
+    pub env: BTreeMap<String, SecretString>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct HarnessTurnRequest {
     pub argv: Vec<String>,
-    pub env: BTreeMap<String, String>,
+    pub env: BTreeMap<String, SecretString>,
     pub stdin: String,
     pub cwd: Option<String>,
 }
@@ -101,12 +105,4 @@ pub trait BaseCLIHarnessConfig: BaseHarnessConfig {
         exit_code: i32,
         stderr_tail: &[String],
     ) -> Result<HarnessTurnResponse, HarnessError>;
-}
-
-#[must_use]
-pub fn event_list(events: Vec<Event>) -> Vec<Event> {
-    if events.is_empty() {
-        return Vec::new();
-    }
-    events
 }

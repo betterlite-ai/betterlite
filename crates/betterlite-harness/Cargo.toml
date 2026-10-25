@@ -15,8 +15,9 @@ thiserror.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
-futures-util = { version = "0.3.34", default-features = false }
+futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
 rstest = "=0.27.0"
+tokio = { workspace = true, features = ["time"] }
 
 [lints]
 workspace = true

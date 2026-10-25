@@ -9,7 +9,7 @@ deviations:
   - what: Structured output uses a JSON schema and JSON object rather than a pydantic model class and instance.
     why: Rust represents structured output as schema data and validated JSON.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/context.py#L50
-  - what: State JSON is compact because serde_json::to_vec omits spaces.
+  - what: State JSON is compact because serde_json::to_writer omits spaces.
     why: Field order and load behavior remain compatible, but formatting differs from json.dumps.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py#L187-L196
   - what: Missing workdir returns StateIncompatible instead of LiteLLM's bare KeyError.
@@ -21,3 +21,6 @@ deviations:
   - what: Usage::total_tokens returns TokenOverflow past u64::MAX.
     why: Rust avoids unchecked arithmetic; Python integers do not overflow.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py#L47-L55
+  - what: Session setup and turn request environment values use SecretString.
+    why: Per-session endpoint tokens must remain secret in memory and Debug output.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/transformation.py#L43-L70

@@ -29,32 +29,20 @@ pub struct Approval {
 
 impl Approval {
     pub fn allow(&self) {
-        let decision = Decision::Allow;
-        self.resolve(decision);
+        self.set_result(Decision::Allow);
     }
 
     pub fn deny(&self, reason: String) {
-        let decision = Decision::Deny { reason };
-        self.resolve(decision);
+        self.set_result(Decision::Deny { reason });
     }
 
     pub async fn wait(&self) -> Decision {
-        let decision = self.decision.wait().await;
-        decision.clone()
+        self.decision.wait().await.clone()
     }
 
     #[must_use]
     pub fn answered(&self) -> bool {
-        let initialized = self.decision.initialized();
-        if initialized && self.decision.get().is_some() {
-            return true;
-        }
-        false
-    }
-
-    fn resolve(&self, decision: Decision) {
-        let result = decision;
-        self.set_result(result);
+        self.decision.initialized()
     }
 
     fn set_result(&self, decision: Decision) {
@@ -108,5 +96,3 @@ pub enum Event {
         result: RunResult,
     },
 }
-
-pub type Done = Event;

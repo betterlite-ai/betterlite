@@ -90,26 +90,16 @@ fn a_new_session_has_litellm_defaults() {
     } = context(None);
     assert_eq!(settings.permissions, PermissionMode::Full);
     assert!(settings.model.is_none() && settings.skills.is_empty() && settings.metadata.is_empty());
-    let empty = TurnOutcome {
-        final_text: String::new(),
-        output_json: None,
-        usage: Usage::default(),
-        cost: Decimal::ZERO,
-    };
-    assert_eq!(outcome, empty);
+    assert!(outcome.final_text.is_empty() && outcome.output_json.is_none());
+    assert_eq!(outcome.usage, Usage::default());
+    assert_eq!(outcome.cost, Decimal::ZERO);
 }
 
 #[test]
 fn get_options_defaults_when_the_session_has_none() {
     let options = OpenCodeConfig.get_options(&context(None)).unwrap();
-    assert_eq!(
-        options,
-        OpenCodeOptions {
-            agent: "build".to_owned(),
-            config: JsonObject::new(),
-            env: BTreeMap::new()
-        }
-    );
+    assert_eq!(options.agent, "build");
+    assert!(options.config.is_empty() && options.env.is_empty());
 }
 
 #[test]
@@ -137,23 +127,11 @@ fn validate_environment_rejects_options_of_another_harness() {
 
 #[test]
 fn option_records_keep_litellm_defaults() {
-    assert_eq!(
-        ClaudeCodeOptions::default(),
-        ClaudeCodeOptions {
-            config: JsonObject::new(),
-            env: BTreeMap::new()
-        }
-    );
+    let claude = ClaudeCodeOptions::default();
+    assert!(claude.config.is_empty() && claude.env.is_empty());
     let codex = CodexOptions::default();
-    assert_eq!(
-        (
-            codex.reasoning_effort,
-            codex.web_search,
-            codex.config.len(),
-            codex.env.len()
-        ),
-        (None, false, 0, 0)
-    );
+    assert!(codex.reasoning_effort.is_none() && !codex.web_search);
+    assert!(codex.config.is_empty() && codex.env.is_empty());
     let setup = HarnessSessionSetup::default();
     assert!(
         setup.files.is_empty() && setup.persisted_dirs.is_empty() && setup.skills_dir.is_none()

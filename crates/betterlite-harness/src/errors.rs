@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::events::RunResult;
-use crate::state::STATE_VERSION;
+use crate::state::Incompatibility;
 use crate::types::{Capability, Harness, Usage};
 
 #[derive(Debug, Error)]
@@ -23,10 +23,10 @@ pub enum HarnessError {
     Sandbox { reason: String },
     #[error("a turn was started on a session that is closed or detached")]
     SessionClosed,
-    #[error("the harness state is unreadable")]
-    StateIncompatible { source: serde_json::Error },
-    #[error("harness state version {found} is not supported, expected {STATE_VERSION}")]
-    StateVersion { found: u32 },
+    #[error("{source}")]
+    StateIncompatible { source: Incompatibility },
+    #[error("the harness state could not be encoded")]
+    StateEncode { source: serde_json::Error },
     #[error("the final answer did not validate against the output schema: {message}")]
     OutputInvalid {
         message: String,

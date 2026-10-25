@@ -2,7 +2,7 @@
 use rstest::rstest;
 
 use crate::errors::HarnessError;
-use crate::state::{STATE_VERSION, State};
+use crate::state::{Incompatibility, STATE_VERSION, State};
 use crate::types::Harness;
 
 #[test]
@@ -14,7 +14,7 @@ fn dumps_in_litellm_field_order_and_loads_back() {
         model: Some("gpt-5".to_owned()),
         version: STATE_VERSION,
     };
-    let bytes = serde_json::to_vec(&state).unwrap();
+    let bytes = state.dumps().unwrap();
     assert_eq!(
         bytes,
         br#"{"harness":"codex","native_session_id":"thread-1","workdir":"/work","model":"gpt-5","version":1}"#
@@ -46,7 +46,9 @@ fn loads_ignores_unknown_fields_and_defaults_optional_ones() {
 fn loads_rejects_unreadable_state(#[case] data: &[u8]) {
     assert!(matches!(
         State::loads(data),
-        Err(HarnessError::StateIncompatible { .. })
+        Err(HarnessError::StateIncompatible {
+            source: Incompatibility::Unreadable { .. }
+        })
     ));
 }
 
@@ -55,6 +57,8 @@ fn loads_rejects_other_versions() {
     let loaded = State::loads(br#"{"harness":"codex","workdir":"/w","version":2}"#);
     assert!(matches!(
         loaded,
-        Err(HarnessError::StateVersion { found: 2 })
+        Err(HarnessError::StateIncompatible {
+            source: Incompatibility::Version { found: 2 }
+        })
     ));
 }

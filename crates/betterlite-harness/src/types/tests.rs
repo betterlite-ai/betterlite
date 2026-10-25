@@ -50,24 +50,17 @@ fn require_harness_names_the_hint_or_none() {
 
 #[test]
 fn usage_defaults_to_zero_and_sums_tokens() {
+    let empty = Usage::default();
     assert_eq!(
-        Usage::default(),
-        Usage {
-            input_tokens: 0,
-            output_tokens: 0,
-            calls: 0
-        }
+        (empty.input_tokens, empty.output_tokens, empty.calls),
+        (0, 0, 0)
     );
-    assert_eq!(
-        Usage {
-            input_tokens: 2,
-            output_tokens: 3,
-            calls: 1
-        }
-        .total_tokens()
-        .unwrap(),
-        5
-    );
+    let counted = Usage {
+        input_tokens: 2,
+        output_tokens: 3,
+        calls: 1,
+    };
+    assert_eq!(counted.total_tokens().unwrap(), 5);
     let huge = Usage {
         input_tokens: u64::MAX,
         output_tokens: 1,
