@@ -1,0 +1,120 @@
+id: B4230
+title: OpenAPI schema components and inline request bodies
+description: >-
+  Build a shared betterlite-openapi schema-transform module that accepts typed schema trees
+  (JSON objects and arrays), merges component definitions, and expands request bodies for documentation
+  without changing runtime validation. Expose both component-based decoration via `add_schema_to_components`,
+  `add_request_body_to_paths` and `add_request_schema`, and self-contained inline request bodies via
+  `inline_request_body`, so decision routes and proxy documentation can use it independently of the server.
+  Preserve namespace prefixes in collisions, remove `$defs`, retain only path parameters in expanded forms,
+  skip absent POST operations, and handle schema-generation failures gracefully. The inline expansion has
+  a depth limit of 32, sibling field overrides, removal of discriminator mappings, and a required example-only
+  body when schema generation fails. A missing referenced definition raises; do not silently synthesize it.
+  Direct dependencies are none; TypeAdapter schema generation is a third-party boundary. B123's three
+  endpoint-specific decorators call `add_request_schema` through this task; route callers depend on B4230,
+  not on B123. All owned helper calls stay internal; neither mutual reference-rewrite recursion nor
+  fixed-point recursion crosses a task boundary. Add oracle helper support to tools/oracle/src/helpers/mod.rs
+  to call the openapi_schema_transforms operations, and create YAML helper cases under
+  tools/oracle/cases/helpers/openapi-schema-transforms/ for each behavior, validating both Rust and LiteLLM
+  implementations produce identical output.
+scope:
+  paths:
+    - crates/betterlite-openapi/Cargo.toml
+    - crates/betterlite-openapi/src/lib.rs
+    - crates/betterlite-openapi/src/schema_transforms.rs
+    - crates/betterlite-openapi/src/schema_transforms/**
+    - crates/betterlite-openapi/src/inline_expansion.rs
+    - crates/betterlite-openapi/src/inline_expansion/**
+    - crates/betterlite-openapi/fuzz/corpus/openapi_schema/*
+    - tools/oracle/src/helpers/openapi/schema_transforms.rs
+    - tools/oracle/src/helpers/openapi/schema_transforms/**
+    - tools/oracle/helpers/openapi_schema_transforms.py
+    - tools/oracle/helpers/openapi_schema_transforms/**
+    - tools/oracle/cases/helpers/openapi-schema-transforms/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/custom_openapi_spec.py#L36-L42
+    why: "Utility methods: _as_object, _as_array guard against type mismatches in JSON traversal."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/custom_openapi_spec.py#L44-L47
+    why: "_components_schemas ensures components/schemas structure exists and returns the schemas map."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/custom_openapi_spec.py#L49-L66
+    why: "get_pydantic_schema wraps TypeAdapter schema generation and logs/suppresses exceptions."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/custom_openapi_spec.py#L68-L99
+    why: "add_schema_to_components and _expanded_request_field: move defs to components and preserve messages example."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/custom_openapi_spec.py#L101-L154
+    why: "add_request_body_to_paths extracts field definitions and builds expanded inline schemas for swagger UI."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/custom_openapi_spec.py#L156-L216
+    why: "Collision detection and fixed-point renaming: _move_defs_to_components, _def_collisions, _same_shape, _fixed_renames."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/custom_openapi_spec.py#L218-L247
+    why: "Reference rewriting: _rewritten_defs_entry and _rewrite_defs_refs convert #/$defs/* to #/components/schemas/*."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/custom_openapi_spec.py#L277-L290
+    why: "_expand_field_definition returns field definition copy for inline swagger UI rendering."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/custom_openapi_spec.py#L292-L335
+    why: "add_request_schema orchestrates schema generation, component registration and request body decoration."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/custom_openapi_spec.py#L445-L477
+    why: "_inlined and inline_request_body expand all $defs in place with 32-depth limit and discriminator removal."
+dod:
+  - text: >-
+      Collision detection iterates to fixed point, comparing property names and required-field sets (not full schemas).
+      Moving defs with namespace prefixes preserves discrimination between overlapping names. Same-named defs with identical
+      properties and required fields reuse existing components; different shapes trigger renames. Orphaned references raise.
+    proof: [collision-tests, reference-rewrite-tests, oracle]
+  - text: >-
+      The messages field receives a constant example [{"role": "user", "content": "Hello, how are you?"}] that overrides
+      normal expansion. All other fields are expanded in place for Swagger UI. Schemas with generation failures return
+      required-only requestBody with example fallback. Depth 32 terminates inline expansion; references beyond remain as $ref.
+    proof: [inline-expansion-tests, fallback-tests, oracle]
+  - text: >-
+      POST operations missing from a path are skipped; path parameters are retained in expanded forms; conflicting query
+      parameters are removed. Inline expansion respects depth limits (exact boundary at 32), expands all $defs in place,
+      removes discriminator mappings, and produces minimal fallback when generation fails.
+    proof: [inline-expansion-tests, fallback-tests, openapi-corpus, oracle]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: collision-tests
+      why: Collision detection must reach fixed point and discriminate by shape.
+      run: cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(/^schema_transforms::tests::.*collision($|::)/)'
+    - id: reference-rewrite-tests
+      why: References must be rewritten with correct namespace and orphaned defs must be rejected.
+      run: cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(/^schema_transforms::tests::.*rewrite($|::)/)'
+    - id: inline-expansion-tests
+      why: Inline expansion must respect depth limit and expand all references in place.
+      run: cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(/^inline_expansion::tests::/) - test(/::replays_corpus$/)'
+    - id: fallback-tests
+      why: Schema generation failures must produce minimal requestBody with example.
+      run: cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(/^schema_transforms::tests::.*fallback($|::)/)'
+    - id: api-tests
+      why: Public API surface must be present and free of one-line forwarding functions.
+      run: cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(/^lib::tests::/) - test(/::replays_corpus$/)'
+    - id: openapi-corpus
+      why: Fuzz targets must exist and replay their corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openapi/fuzz/corpus/openapi_schema/*)" && cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(replays_the_openapi_schema_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/openapi-schema-transforms/collision-same-shape.yaml
+  - tools/oracle/cases/helpers/openapi-schema-transforms/collision-different-shape.yaml
+  - tools/oracle/cases/helpers/openapi-schema-transforms/fixed-point-rename.yaml
+  - tools/oracle/cases/helpers/openapi-schema-transforms/messages-example.yaml
+  - tools/oracle/cases/helpers/openapi-schema-transforms/path-parameters-handling.yaml
+  - tools/oracle/cases/helpers/openapi-schema-transforms/inline-depth-limit.yaml
+  - tools/oracle/cases/helpers/openapi-schema-transforms/discriminator-removal.yaml
+  - tools/oracle/cases/helpers/openapi-schema-transforms/missing-reference.yaml
+  - tools/oracle/cases/helpers/openapi-schema-transforms/schema-generation-fallback.yaml
+deviations: []
+out_of_scope:
+  - "litellm/proxy/common_utils/custom_openapi_spec.py:249-275, _extract_field_schema:
+    no caller at the pin."
+  - "The source's Pydantic schema generation through TypeAdapter is a third-party dependency
+    boundary; betterlite does not depend on TypeAdapter itself at this task's layer."
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as openapi_schema_transforms in the openapi group. Replace the stub Op in tools/oracle/src/helpers/openapi/schema_transforms.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openapi_schema_transforms.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - Collision detection must iterate to fixed point because renamed references appear in newly added defs.
+  - The messages field requires a constant example overriding normal expansion to match LiteLLM's swagger display.
+  - Depth limits in inline expansion are exact; hitting 32 stops further traversal to prevent unbounded recursion.
+  - Missing referenced definitions raise rather than returning empty schemas to surface schema composition errors.
+  - Discriminator mappings are dropped during inlining because Swagger UI cannot resolve them in inline schemas.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,161 @@
+id: B3865
+title: OTLP ingest normalization and trace response types
+description: >-
+  Normalize OTLP payloads into bounded span rows and build the trace response type family. The decoder accepts gzip and identity content encodings and invokes a native codec to parse spans; it normalizes their fields, truncates oversized attributes and message arrays to fit storage, and stamps each span into a SpanRow. Build the message content type algebra so span input/output renders as chat messages, field/value pairs or plain text. Provide OTLP-conformant responses with the correct media type and protobuf or JSON error bodies.
+
+  Owned functions cover message parsing (ChatRole constants and content_text), span-row construction from normalized spans (_span_row with truncation and timestamp handling), attribute value truncation (_truncate for the 64KB limit), message array elision with the newest messages kept (_truncate_payload, _newest_that_fit, _elided), content encoding dispatch (gzip with bounds checks), OTLP response encoding (native protobuf or JSON), and the trace/span/agent tree record types (Span, SpanRow, TraceSummary, Trace, TraceScope, AgentNode, TracePage, SpanDetail, SpendLogRecord and error page).
+
+  Tests snapshot the decode behavior on valid and oversized attributes, gzip boundaries, malformed payloads and message-array elision. A fuzz target feeds the decoder arbitrary bytes, seeded with OTLP fixtures. Oracle helpers validate truncation, role mapping, content parsing and response encoding against LiteLLM at the pinned commit.
+
+scope:
+  paths:
+    - crates/betterlite-logging/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/logging/otlp_normalization.rs
+    - tools/oracle/src/helpers/logging/otlp_normalization/**
+    - tools/oracle/helpers/otlp_normalization.py
+    - tools/oracle/helpers/otlp_normalization/**
+    - tools/oracle/cases/helpers/otlp-normalization/**
+    - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/decode.py#L19-L198
+    why: Payload decoding, truncation, encoding of OTLP responses and span-row construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/messages.py#L8-L39
+    why: ChatRole type and role mapping; content_text projection for message blocks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/ui_format.py#L13-L158
+    why: UI format records and conversion to messages, fields or text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/types.py#L19-L175
+    why: SpanType, SpanStatus, Span, AgentNode, TraceSummary, Trace, SpanRow and error page types.
+  - url: https://docs.rs/gzip/latest/gzip/
+    why: Decoding gzip content encoding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py
+    why: OTLP_MAX_ATTRIBUTE_VALUE_BYTES and OTLP_MAX_BODY_BYTES limits.
+
+dod:
+  - text: Gzip decoding rejects bodies larger than OTLP_MAX_BODY_BYTES before decompression and after.
+    proof: [otlp-decode-tests]
+  - text: Attribute values over 64KB (65536 bytes) are truncated with an ellipsis marker showing byte count.
+    proof: [otlp-decode-tests, otlp-truncation-helper]
+  - text: Message arrays keep the first message, an elision marker and the newest trailing messages that fit the 64KB (65536-byte) limit, or a shortened first and last if nothing else fits.
+    proof: [otlp-decode-tests, otlp-payload-elision-helper]
+  - text: Attribute truncation in SpanRow uses only consumed_attributes, excluding the rest even if oversized.
+    proof: [otlp-decode-tests]
+  - text: Content encoding "identity" and missing encoding both return the body unchanged; "gzip" decompresses; others raise InvalidOTLPPayloadError.
+    proof: [otlp-decode-tests]
+  - text: >-
+      OTLP response with media type application/json and no error returns empty JSON object;
+      with error returns `{"message": error_text}`.
+    proof: [otlp-response-tests]
+  - text: OTLP response with media type application/x-protobuf and no error returns empty bytes; with error returns native_encode_error output.
+    proof: [otlp-response-tests]
+  - text: Message content_text from Responses-style blocks keeps only text blocks; returns JSON for mixed content.
+    proof: [message-content-tests]
+  - text: UIContent conversion handles chat messages, key/value fields and plain text, respecting message roles (system, user, assistant, tool) and tool call structure.
+    proof: [ui-format-tests]
+  - text: Oversized OTLP payloads (body > max) raise OTLPPayloadTooLargeError; malformed JSON raises InvalidOTLPPayloadError; gzip decode errors raise InvalidOTLPPayloadError.
+    proof: [otlp-error-tests]
+  - text: A fuzz target at crates/betterlite-logging/fuzz/fuzz_targets/otlp_decode.rs feeds arbitrary bytes to decode_otlp and replays_the_otlp_decode_corpus loads every file in its corpus without panic.
+    proof: [otlp-fuzz-corpus]
+  - text: Oracle helper for _truncate validates truncation to the OTLP_MAX_ATTRIBUTE_VALUE_BYTES limit (64KB) against LiteLLM's implementation.
+    proof: [otlp-truncation-helper]
+  - text: Oracle helper for _truncate_payload validates message array elision behavior against LiteLLM's payload truncation.
+    proof: [otlp-payload-elision-helper]
+  - text: Oracle helper for content_text validates ChatRole mapping and message content extraction against LiteLLM's implementation.
+    proof: [otlp-content-text-helper]
+  - text: Oracle helper for to_ui_content validates conversion to chat messages, fields and text against LiteLLM's UI formatting.
+    proof: [otlp-ui-content-helper]
+  - text: Oracle helper for encode_otlp_response validates response encoding dispatch (JSON and protobuf) against LiteLLM's implementation.
+    proof: [otlp-response-encoding-helper]
+  - text: Every mutant in truncation, role mapping, content parsing and response encoding is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: otlp-fuzz-corpus
+      why: the OTLP decode fuzz target or corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-logging/fuzz/fuzz_targets/otlp_decode.rs && test "$(ls crates/betterlite-logging/fuzz/corpus/otlp_decode | wc -l)" -ge 5 && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_otlp_decode_corpus)'
+    - id: otlp-decode-tests
+      why: decode behavior tests fail, do not exist, or snapshots were not accepted
+      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otlp_normalize::/'
+    - id: otlp-response-tests
+      why: OTLP response encoding tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otlp_response::/'
+    - id: message-content-tests
+      why: message content extraction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^message_content::/'
+    - id: ui-format-tests
+      why: UI format conversion tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^ui_content::/'
+    - id: otlp-error-tests
+      why: error handling tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otlp_errors::/'
+    - id: helper-python
+      why: the oracle adapters fail strict Python checks
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: otlp-truncation-helper
+      why: the _truncate oracle helper case or corpus is missing, or replay fails
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -rlq 'otlp_truncate' tools/oracle/fuzz/corpus/helper_case && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_truncate_helper/)'
+    - id: otlp-payload-elision-helper
+      why: the _truncate_payload oracle helper case or corpus is missing, or replay fails
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -rlq 'otlp_elision' tools/oracle/fuzz/corpus/helper_case && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_elision_helper/)'
+    - id: otlp-content-text-helper
+      why: the content_text oracle helper case or corpus is missing, or replay fails
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -rlq 'otlp_content_text' tools/oracle/fuzz/corpus/helper_case && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_content_text_helper/)'
+    - id: otlp-ui-content-helper
+      why: the to_ui_content oracle helper case or corpus is missing, or replay fails
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -rlq 'otlp_ui_content' tools/oracle/fuzz/corpus/helper_case && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_ui_content_helper/)'
+    - id: otlp-response-encoding-helper
+      why: the encode_otlp_response oracle helper case or corpus is missing, or replay fails
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -rlq 'otlp_response_encoding' tools/oracle/fuzz/corpus/helper_case && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_response_encoding_helper/)'
+    - id: helper-case-corpus
+      why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/otlp-normalization/truncate-simple.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/truncate-64kb-boundary.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/truncate-invalid-utf8.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/payload-elision-first-newest.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/payload-elision-shortened.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/content-text-plain.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/content-text-mixed.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/role-mapping-openai.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/role-mapping-langchain.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/ui-content-messages.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/ui-content-fields.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/ui-content-text.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/response-encoding-json-no-error.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/response-encoding-json-with-error.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/response-encoding-protobuf-no-error.yaml
+  - tools/oracle/cases/helpers/otlp-normalization/response-encoding-protobuf-with-error.yaml
+
+deviations:
+  - what: Oversized OTLP payloads raise OTLPPayloadTooLargeError instead of silently dropping them.
+    why: LiteLLM silently ignores payloads larger than the limit; betterlite fails loudly so operators see the breach instead of missing traces.
+  - what: Message array elision prioritizes the first message and newest trailing messages; LiteLLM's behavior is identical in this task's pinned version.
+    why: Preserving message context for the operator's debugging while fitting storage constraints.
+
+out_of_scope:
+  - Storage of span rows or spend records; B3866 owns that port.
+  - Native OTLP decode and error encoding; supplied through the native codec boundary (G2).
+  - Projection of AgentNode, TracePage, and SpanDetail from stored span rows; B3866 uses these types to build trace/query records and agent trees.
+  - Langfuse root span input/output specialization; B110 owns that override.
+  - HTTP request/response handling and auth; B3867 owns the ingest route.
+
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as otlp_normalization in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/otlp_normalization.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/otlp_normalization.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - "OTLP_MAX_ATTRIBUTE_VALUE_BYTES and OTLP_MAX_BODY_BYTES come from litellm.constants, not local defaults. Use them as the exact thresholds."
+  - "Message array truncation calculates escape overhead (up to 6 bytes per character for JSON encoding). If content is cut, the overflow marker itself counts toward the 64KB (65536-byte) limit."
+  - "Role mapping includes LangChain types (human→user, ai→assistant) alongside OpenAI roles. Anything unmapped defaults to user for no tool calls, assistant if the message has tool_calls."
+  - "content_text from a Responses block list returns only text content; mixed content (reasoning blocks, tool calls) returns JSON. This preserves readability in the UI."
+  - "gzip decompression reads past OTLP_MAX_BODY_BYTES as a check; the exception message names the limit."
+  - "The native codec raises OverflowError for payload size and ValueError for malformed content; both wrap into user-facing OTLP errors."
+  - "Invalid UTF-8 in attribute values decodes with the ignore strategy, not replace. Truncation keeps only the valid prefix."
+
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 2

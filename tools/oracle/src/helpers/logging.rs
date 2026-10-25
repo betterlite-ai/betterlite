@@ -17,6 +17,7 @@ helper_group! {
     "logging_success" => success,
     "logging_worker" => worker,
     "otel_semantic_vocabulary" => otel_semantic_vocabulary,
+    "otlp_normalization" => otlp_normalization,
     "private_json" => private_json,
     "service_logging" => service_logging,
     "spend_attribution" => spend_attribution,

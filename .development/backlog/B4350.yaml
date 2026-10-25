@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Store response cache objects in S3
 status: todo
 depends_on: [B002]
-file: null
+file: tasks/B4350-s3-response-cache.yaml
 covers:
   - "litellm/caching/s3_cache.py"
 parent: B127

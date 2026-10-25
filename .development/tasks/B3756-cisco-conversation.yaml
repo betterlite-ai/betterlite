@@ -1,0 +1,213 @@
+id: B3756
+title: Cisco conversation extraction and Responses conversion
+description: >-
+  Implement pure extraction helpers for chat, text-completion and Responses API
+  text, reasoning and tool arguments, plus low-level Responses input rewrite
+  conversions. These transformations sit below both request redaction (B3757) and
+  stream inspection (B3762), and use no LiteLLM callbacks or shared guardrail
+  setup. Owned functions handle plain strings, message arrays with nested
+  content, flat content-part lists, and Responses API text-type schemas
+  (text, input_text, output_text, summary_text, reasoning_text). Extract
+  sanitized messages from verdicts and rewrite them back into request/response
+  surfaces with incomplete-rewrite fallback for policy decisions.
+scope:
+  paths:
+  - crates/betterlite-guardrails/Cargo.toml
+  - crates/betterlite-guardrails/src/lib.rs
+  - crates/betterlite-guardrails/src/cisco_conversation.rs
+  - tools/oracle/src/helpers/guardrails/cisco_conversation.rs
+  - tools/oracle/src/helpers/guardrails/cisco_conversation/**
+  - tools/oracle/helpers/cisco_conversation.py
+  - tools/oracle/helpers/cisco_conversation/**
+  - tools/oracle/cases/helpers/cisco-conversation/**
+  - tools/oracle/fuzz/corpus/helper_case/cisco-conversation-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1834-L1875
+  why: _extract_inspect_messages_from_request builds chat-shape payloads from request data, handling instructions, messages, Responses input, prompt and tool definitions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1878-L1901
+  why: _extract_tool_definition_text and _collect_strings flatten tool/function definitions into scannable text by recursing dicts and lists.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1904-L1938
+  why: _flatten_responses_input converts plain strings, message arrays and flat content-part lists into chat-shape form; non-list/non-string inputs coerce via str().
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1941-L1978
+  why: _normalize_message_content coerces multi-modal content (plain string, content-part list, nested message-shaped dicts) into plaintext for scanning.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1981-L2033
+  why: _extract_response_messages extracts assistant text, reasoning and tool arguments from ModelResponse, TextCompletionResponse and Responses API output shapes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L2036-L2108
+  why: _extract_message_reasoning_parts, _extract_message_tool_argument_parts and their field helpers pull reasoning_content, thinking_blocks, reasoning_items, tool_calls and function_call from messages.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1678-L1697
+  why: _sanitized_messages_to_responses_input converts chat-shape sanitized messages back to Responses API input shape with role-specific text types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1700-L1739
+  why: _rewrite_responses_input_text applies sanitized text to Responses API input, handling plain string, message array with last-user-item rewrite, and flat content-part list.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1831
+  why: _TEXT_PART_TYPES constant lists recognized text-type schemas for content-part selection.
+dod:
+- text: >-
+    extract_inspect_messages_from_request_chat handles instructions/system, messages
+    with role/content pairs, calls normalize_message_content on instruction and each
+    message content, and appends extract_message_tool_argument_parts. Empty instructions
+    or content produce no message; null instructions/messages use empty list. Tool and
+    function names/descriptions flatten via extract_tool_definition_text appended as
+    system role; no tools field produces empty string and no message.
+  proof: [helpers-rust, helper-python]
+- text: >-
+    extract_inspect_messages_from_request_responses_input
+    passes data.input to flatten_responses_input. Plain string "hello" becomes one user
+    message with content="hello". Message-array [{"role":"user","content":"x"}] preserves
+    role and rewrites content via normalize_message_content. Flat-list
+    [{"type":"input_text","text":"y"}] becomes one user message with concatenated text.
+    Non-list, non-string null/123 coerces to str() and wraps as user message; empty
+    string produces no message.
+  proof: [helpers-rust, helper-python, fuzz-input]
+- text: >-
+    extract_inspect_messages_from_request_prompt falls back to data.prompt when
+    messages/input are both absent; null prompt produces no fallback. With instructions
+    and prompt both present, only instructions generates a system message.
+  proof: [helpers-rust, helper-python]
+- text: >-
+    normalize_message_content_string returns the string unchanged; null/"" return "";
+    non-string returns str(value). List with no text-type parts, nested content or
+    arguments returns "".
+  proof: [helpers-rust, helper-python]
+- text: >-
+    normalize_message_content_list extracts all text-type parts (text, input_text,
+    output_text, summary_text, reasoning_text) and their values as space-joined string.
+    Skips non-dict parts, non-string text values. Recurses into nested content and
+    arguments/output fields. [{"type":"text","text":"a"},{"type":"input_text","text":"b"}]
+    becomes "a b".
+  proof: [helpers-rust, helper-python]
+- text: >-
+    extract_response_messages_chat handles ModelResponse with choices[].message: pulls
+    content via normalize_message_content, appends extract_message_tool_argument_parts
+    and extract_message_reasoning_parts, joins as "assistant" role. Empty parts produce
+    no message; null choices defaults to [].
+  proof: [helpers-rust, helper-python]
+- text: >-
+    extract_response_messages_text_completion handles TextCompletionResponse with
+    choices[].text: joins all non-empty text fields as single "assistant" role message.
+    Null choices defaults to [].
+  proof: [helpers-rust, helper-python]
+- text: >-
+    extract_response_messages_responses_api handles output shape with output[].content[],
+    output[].arguments, output[].text, output[].reasoning, output[].thinking: joins
+    all non-empty string values as single "assistant" role message. Dict and non-dict
+    getters both supported.
+  proof: [helpers-rust, helper-python]
+- text: >-
+    extract_message_reasoning_parts pulls reasoning_content string, thinking_blocks[].{thinking,reasoning,text},
+    and reasoning_items[].{summary[].text, text, reasoning, reasoning_content}. Returns
+    space-joined list; skips non-string/empty values. Null fields return [].
+  proof: [helpers-rust, helper-python]
+- text: >-
+    extract_message_tool_argument_parts pulls tool_calls[].function.arguments and
+    function_call.arguments as strings. Returns space-joined list; null fields return [].
+    Null tool_calls/function_call defaults to [].
+  proof: [helpers-rust, helper-python]
+- text: >-
+    flatten_responses_input_string_to_message plain string "hello" returns [{"role":"user","content":"hello"}];
+    empty string returns [].
+  proof: [helpers-rust, helper-python, fuzz-input]
+- text: >-
+    flatten_responses_input_message_array with ["role"] keys detects message shape.
+    List [{"role":"user","content":"x"},{"role":"assistant","content":"y"}] returns
+    messages with role preserved and content rewritten via normalize_message_content.
+    Missing/non-dict items skipped; empty content produces no message.
+  proof: [helpers-rust, helper-python]
+- text: >-
+    flatten_responses_input_content_part_list with no ["role"] key detects flat content
+    shape. List [{"type":"input_text","text":"a"},{"type":"output_text","text":"b"}]
+    becomes one user message with concatenated text via normalize_message_content.
+  proof: [helpers-rust, helper-python]
+- text: >-
+    flatten_responses_input_non_list_non_string input like integer 123 coerces to str()
+    giving "123" as single user message; null/empty string produces []. Fallback applies
+    when input is neither string nor list.
+  proof: [helpers-rust, helper-python, fuzz-input]
+- text: >-
+    flatten_responses_input_message_string_content message-array item
+    [{"role":"user","content":"hello"}] with plain string content (not list) rewrites
+    content directly via sanitized_text without searching for text-type parts. Returns
+    rewritten message in place.
+  proof: [helpers-rust, helper-python]
+- text: >-
+    sanitized_messages_to_responses_input converts [{"role":"user","content":"text"}]
+    to [{"role":"user","content":[{"type":"input_text","text":"text"}]}] and
+    [{"role":"assistant","content":"text"}] to [{"role":"assistant","content":[{"type":"output_text","text":"text"}]}].
+    Non-dict/non-content items skipped; returns None if no usable output.
+  proof: [helpers-rust, helper-python]
+- text: >-
+    rewrite_responses_input_text_string returns sanitized_text directly when
+    original_input is a plain string. Null original returns None.
+  proof: [helpers-rust, helper-python]
+- text: >-
+    rewrite_responses_input_text_message_array_list_content detects last user item
+    in [{"role":"user","content":[{"type":"input_text","text":"x"}]}] and rewrites
+    first text-type part with sanitized_text. Returns None if no user item or no
+    text-type part found.
+  proof: [helpers-rust, helper-python]
+- text: >-
+    rewrite_responses_input_text_message_array_string_content detects last user item
+    in [{"role":"user","content":"x"}] with plain string content (not list) and
+    replaces it directly with sanitized_text. Does not recurse into content structure.
+  proof: [helpers-rust, helper-python]
+- text: >-
+    rewrite_responses_input_text_flat_content_list rewrites first text-type part in
+    [{"type":"input_text","text":"x"}] with sanitized_text. Returns None if no
+    text-type part found.
+  proof: [helpers-rust, helper-python]
+- text: >-
+    extract_tool_definition_text flattens data.tools and data.functions into a single
+    space-joined string by recursing dicts and lists, extracting all string values.
+    Empty or missing fields return "".
+  proof: [helpers-rust, helper-python]
+checks:
+  optional: []
+  commands:
+  - id: helpers-rust
+    why: Rust extraction and conversion helpers are missing or do not match LiteLLM behavior
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^cisco_conversation::tests::/) - test(/::replays_corpus$/)'
+  - id: helper-python
+    why: Python oracle helpers lack implementations or fail on LiteLLM comparison
+    run: test -f tools/oracle/helpers/cisco_conversation.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: fuzz-input
+    why: Responses input decoder corpus is missing or corpus replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/cisco-conversation-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/cisco-conversation/extract-inspect-messages-from-request-chat.yaml
+- tools/oracle/cases/helpers/cisco-conversation/extract-inspect-messages-from-request-responses-input.yaml
+- tools/oracle/cases/helpers/cisco-conversation/extract-inspect-messages-from-request-prompt.yaml
+- tools/oracle/cases/helpers/cisco-conversation/normalize-message-content-string.yaml
+- tools/oracle/cases/helpers/cisco-conversation/normalize-message-content-list.yaml
+- tools/oracle/cases/helpers/cisco-conversation/extract-response-messages-chat.yaml
+- tools/oracle/cases/helpers/cisco-conversation/extract-response-messages-text-completion.yaml
+- tools/oracle/cases/helpers/cisco-conversation/extract-response-messages-responses-api.yaml
+- tools/oracle/cases/helpers/cisco-conversation/extract-message-reasoning-parts.yaml
+- tools/oracle/cases/helpers/cisco-conversation/extract-message-tool-argument-parts.yaml
+- tools/oracle/cases/helpers/cisco-conversation/flatten-responses-input-string-to-message.yaml
+- tools/oracle/cases/helpers/cisco-conversation/flatten-responses-input-message-array.yaml
+- tools/oracle/cases/helpers/cisco-conversation/flatten-responses-input-content-part-list.yaml
+- tools/oracle/cases/helpers/cisco-conversation/flatten-responses-input-non-list-non-string.yaml
+- tools/oracle/cases/helpers/cisco-conversation/flatten-responses-input-message-string-content.yaml
+- tools/oracle/cases/helpers/cisco-conversation/sanitized-messages-to-responses-input.yaml
+- tools/oracle/cases/helpers/cisco-conversation/rewrite-responses-input-text-string.yaml
+- tools/oracle/cases/helpers/cisco-conversation/rewrite-responses-input-text-message-array-list-content.yaml
+- tools/oracle/cases/helpers/cisco-conversation/rewrite-responses-input-text-message-array-string-content.yaml
+- tools/oracle/cases/helpers/cisco-conversation/rewrite-responses-input-text-flat-content-list.yaml
+- tools/oracle/cases/helpers/cisco-conversation/extract-tool-definition-text.yaml
+deviations: []
+out_of_scope:
+- field and field_list are structural accessors for both dict and object-shaped messages; they remain in this part as internal helpers.
+- B3757 owns redact_chat_input and redact_chat_output which call these extraction functions, plus handling of block payloads and incomplete-rewrite fallback.
+- B3761 owns MCP envelope projection, not Cisco extraction; it imports these helpers for message/content handling.
+- B3762 owns the constructor, async_pre_call_hook and async_moderation_hook that call inspect_chat and manage verdict lifecycle.
+pitfalls:
+- 'The oracle helper for this task is pre-registered as cisco_conversation in the guardrails group. Replace the stub Op in tools/oracle/src/helpers/guardrails/cisco_conversation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cisco_conversation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- flatten_responses_input coerces non-list, non-string inputs via str() and wraps as user messages, not treated as parse error.
+- rewrite_responses_input_text handles plain-string message content (not wrapped in a list) as a direct replacement path separate from list/text-type detection.
+- normalize_message_content recurses into nested content fields and handles both role-based messages and flat content-part schemas in one function.
+- Text-type detection checks a fixed set of types (text, input_text, output_text, summary_text, reasoning_text) and skips unrecognized types.
+- Tool definition extraction is recursive over both dicts and lists to find all string values, including deeply nested schema descriptions.
+review_level: standard
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0

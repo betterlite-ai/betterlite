@@ -1,0 +1,103 @@
+id: B4261
+title: Cached semantic text ranking
+description: >-
+  Add betterlite-semantic, a utility crate for embedding-similarity ranking over short texts with vector caching.
+  The SemanticTextIndex holds at most max_entries vectors across all embedding models combined (default 5000),
+  evicting the least recently searched texts first when the combined total exceeds the limit.
+  Cache keys are (embedding_model, text) pairs, so different models keep separate vectors for the same text.
+  It takes an Embedder, an async callable that converts a sequence of texts to a sequence of vectors (tuples of floats).
+  The public method scores(query, texts, embed, embedding_model) returns cosine similarity scores for the query against each text in order.
+  On the first search for a text, both are embedded. On subsequent searches with the same model, only the query is embedded and cached texts are reused.
+  If newly embedded and cached vectors have different dimensions (detected by the embedder changing its output dimension), the index retries with only the unique texts.
+  Embeddings that raise HTTP exceptions propagate immediately. Other errors (OpenAI SDK errors, budget exceeded, mismatched counts) return an EmbeddingFailed result with a reason.
+  Empty input returns an empty scores tuple. Duplicate texts in the input are embedded once and their scores reused.
+  Zero norms (all-zero vectors) produce 0.0 similarity, handled by returning 0.0 when the denominator is zero.
+  Vectors are MappingProxyType (immutable) and the cache never exposes mutable state to callers.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-semantic/**
+    - tools/oracle/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/semantic_text_index.py
+    why: "The entire file: Embedder protocol, cosine_similarity, _embed_all, _same_dimension, _embed_query_and_texts, SemanticTextIndex class and all methods."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/semantic_text_index.py#L23-L26
+    why: "DEFAULT_MAX_CACHED_VECTORS constant and docstring for cache eviction order."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/semantic_text_index.py#L60-L63
+    why: "Cosine similarity: dot product divided by product of norms, zero norm returns 0.0."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/semantic_text_index.py#L104-L113
+    why: "Error handling: HTTP exceptions re-raised, other errors returned as EmbeddingFailed, mismatched vector counts also returned as EmbeddingFailed."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/semantic_text_index.py#L126-L142
+    why: "Query-first batching: embed query plus missing texts in one call, then retry with unique texts only if dimensions mismatch."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/semantic_text_index.py#L159-L173
+    why: "Cache merging: merge touched and untouched vectors, keep only same-dimension entries, enforce max_entries limit with LRU eviction from the beginning."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/semantic_text_index.py#L175-L187
+    why: "Public scores method: empty input returns empty tuple, dimension mismatch after retry returns EmbeddingFailed, successful case returns scores in input order."
+dod:
+  - text: "Cosine similarity of orthogonal and parallel vectors is correct, and zero-norm vectors return 0.0 similarity."
+    proof: [semantic-similarity-tests]
+  - text: "Empty input returns an empty scores tuple, and scores are in the same order as the input texts."
+    proof: [semantic-empty-and-order-tests]
+  - text: "Duplicate texts in the input are embedded once; their scores appear in every position they were requested."
+    proof: [semantic-dedup-tests]
+  - text: "The cache holds at most max_entries vectors across all embedding models combined, and least-recently-searched texts are evicted first when the combined total exceeds the limit."
+    proof: [semantic-cache-eviction-tests]
+  - text: "Constructing SemanticTextIndex with no max_entries argument caps the cache at 5000 entries, matching DEFAULT_MAX_CACHED_VECTORS."
+    proof: [semantic-default-max-entries]
+  - text: "When the embedder returns vectors with mixed dimensions, the index retries with unique texts only and returns the correct scores."
+    proof: [semantic-dimension-mismatch-tests]
+  - text: "HTTP exceptions from the embedder are propagated immediately as errors; other exceptions return EmbeddingFailed with the exception message; mismatched vector counts return EmbeddingFailed."
+    proof: [semantic-error-tests]
+  - text: "Query-first batching: on the first search, both query and texts are embedded in one batch; on the second search with the same model, only the query is embedded and cached texts are reused."
+    proof: [semantic-batching-tests]
+checks:
+  optional: []
+  commands:
+    - id: semantic-similarity-tests
+      why: "cosine similarity calculation or zero-norm handling is incorrect"
+      run: cargo nextest run --locked -p betterlite-semantic --no-tests=fail -E 'test(/semantic_similarity/)'
+    - id: semantic-empty-and-order-tests
+      why: "empty input or score ordering is incorrect"
+      run: cargo nextest run --locked -p betterlite-semantic --no-tests=fail -E 'test(/semantic_empty|semantic_order/)'
+    - id: semantic-dedup-tests
+      why: "duplicate text deduplication is broken"
+      run: cargo nextest run --locked -p betterlite-semantic --no-tests=fail -E 'test(/semantic_dedup/)'
+    - id: semantic-cache-eviction-tests
+      why: "LRU cache eviction or max_entries enforcement across all models is broken"
+      run: cargo nextest run --locked -p betterlite-semantic --no-tests=fail -E 'test(/semantic_cache|semantic_eviction|semantic_lru/)'
+    - id: semantic-default-max-entries
+      why: "default max_entries of 5000 is not enforced"
+      run: cargo nextest run --locked -p betterlite-semantic --no-tests=fail -E 'test(/semantic_default_max_entries/)'
+    - id: semantic-dimension-mismatch-tests
+      why: "dimension mismatch detection or retry logic is broken"
+      run: cargo nextest run --locked -p betterlite-semantic --no-tests=fail -E 'test(/semantic_dimension|semantic_mismatch/)'
+    - id: semantic-error-tests
+      why: "error handling for embedder failures is broken"
+      run: cargo nextest run --locked -p betterlite-semantic --no-tests=fail -E 'test(/semantic_error|semantic_http|semantic_budget/)'
+    - id: semantic-batching-tests
+      why: "query-first batching or caching reuse is broken"
+      run: cargo nextest run --locked -p betterlite-semantic --no-tests=fail -E 'test(/semantic_batch|semantic_reuse/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Router embedder construction and metadata gathering; those are injected."
+  - "HTTP transport and budget enforcement for embeddings; those are handled by the router and pre-call hooks."
+  - "Rate limiting on the embedder; it runs through the same hooks as regular /embeddings routes."
+  - "Integration with agent search, MCP tool search, or guardrail category routing; those are callers of this core."
+pitfalls:
+  - >-
+    The cache key is (embedding_model, text); different models keep separate vectors for the same text.
+    Eviction is global across all models combined: when the total cache size exceeds max_entries, the texts
+    with the oldest access time are removed, regardless of their embedding model. An entry touched by a recent
+    search stays even if it was old overall. Test that mixing two embedding_model values in searches causes
+    entries from both to be evicted once the combined count exceeds max_entries.
+  - "Dimension mismatch detection happens after embedding the query and missing texts; retrying re-embeds both the query and all unique texts at once, then proceeds with the re-embedded vectors."
+  - "islice is used to evict from the beginning while preserving insertion order; the touched map is applied last so recently searched texts stay in cache even if they were old before."
+  - "Duplicate text handling in the input uses dict.fromkeys to preserve order and deduplicate, just as LiteLLM does."
+  - "Zero norms must be checked during similarity calculation; dividing 0 / 0 produces NaN, so return 0.0 explicitly."
+  - "Vectors are immutable from the caller's perspective; use private mutable State and expose only immutable references."
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

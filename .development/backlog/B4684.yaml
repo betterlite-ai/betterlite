@@ -2,8 +2,8 @@ id: B4684
 milestone: M9 agents and mcp
 title: MCP search ranking, tool identities and virtual schemas
 status: todo
-depends_on: []
-file: null
+depends_on: [B4261]
+file: tasks/B4684-mcp-search-primitives.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/tool_search.py"
 parent: B138

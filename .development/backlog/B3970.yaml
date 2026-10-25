@@ -3,7 +3,7 @@ milestone: M7 observability
 title: MLflow spans and streamed event lifecycle
 status: todo
 depends_on: []
-file: null
+file: tasks/B3970-mlflow-logging.yaml
 covers:
   - "litellm/integrations/mlflow.py"
 parent: B114

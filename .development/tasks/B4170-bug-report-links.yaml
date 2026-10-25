@@ -1,0 +1,83 @@
+id: B4170
+title: Safe bug report records and issue links
+description: >-
+  Add crates/betterlite-reporting with typed bug report records and safe issue-link formatting.
+  The module builds issue links by composing stack frames, exception type, environment metadata and optional config lines, preserving request/error text omission and URL-length bounds.
+  Two public records, EnvironmentReport and BugReport, hold immutable typed data; helper functions format them into GitHub issue URLs.
+  build_environment_report captures the surface (sdk or proxy), LiteLLM version, Python version, optional deployment type and optional config lines.
+  build_bug_report captures an exception, surface, call type, provider and stream flag, extracting exception frames and filtering to litellm package paths only.
+  bug_report_enabled reads the LITELLM_DISABLE_BUG_REPORT_LINK environment variable (case-insensitive true disables); should_report_bug checks that reporting is enabled and the exception has no status_code field (a sign of an HTTP error already reported).
+  bug_report_issue_url formats a report into a bounded GitHub issue URL by iterating candidates in two phases: first holding frames full and shrinking config lines from all down to empty, then holding config empty and shrinking frames from all-but-first down to empty, returning the first that fits under 6,000 characters.
+  strip_bug_report_notice and bug_report_notice add and remove the safe-report prefix from error messages.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-reporting/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L1-L195
+    why: The complete module from constants through all 15 functions, lines 1 to 195.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L25-L42
+    why: The EnvironmentReport and BugReport dataclass definitions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L44-L50
+    why: bug_report_enabled, should_report_bug and their eligibility condition (no status_code).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L52-L71
+    why: Frame formatting and litellm package path extraction with MAX_FRAMES=12 limit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L113-L180
+    why: Issue title, description and URL generation with 6,000-character bound.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L183-L195
+    why: Message prefix stripping and notice composition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4013-L4179
+    why: LlmProviders enum values for the provider allowlist.
+dod:
+  - text: EnvironmentReport and BugReport are immutable records with surface, litellm_version, python_version, deployment, exception_type, litellm_frames, call_type, custom_llm_provider and stream fields matching LiteLLM's types.
+    proof: [record-tests]
+  - text: bug_report_enabled returns true unless LITELLM_DISABLE_BUG_REPORT_LINK is set to case-insensitive true.
+    proof: [record-tests]
+  - text: should_report_bug returns true when reporting is enabled and the exception has no status_code attribute.
+    proof: [record-tests]
+  - text: build_environment_report captures surface, LiteLLM version from crate metadata, Python version (or 'unknown' if not available), deployment type from docker detection or surface, and config lines unchanged.
+    proof: [record-tests]
+  - text: build_bug_report captures exception type, extracts litellm package frames up to 12 maximum, filters providers to a known allowlist, and preserves call_type, stream boolean and surface.
+    proof: [record-tests]
+  - text: bug_report_issue_url returns a GitHub issue creation URL under 6,000 characters by dropping config lines then frames until it fits, never silently truncating the final URL.
+    proof: [record-tests]
+  - text: strip_bug_report_notice removes the safe-report prefix from the start of a message and returns the remainder without trailing newline.
+    proof: [record-tests]
+  - text: bug_report_notice composes the safe-report prefix with a bug_report_issue_url.
+    proof: [record-tests]
+checks:
+  optional: []
+  commands:
+    - id: record-tests
+      why: the bug report records or their public API functions are missing or tests fail
+      run: cargo nextest run --locked -p betterlite-reporting --no-tests=fail -E 'test(/^bug_report/)'
+oracle_cases: []
+deviations:
+  - what: Provider names are a static allowlist constant instead of calling a provider registry. betterlite has no provider dispatch yet, and copying allowlists is simpler than fanning out to an external module.
+    why: Decoupling bug reports from provider discovery keeps this module stable while providers are being built elsewhere.
+  - what: Stack frame extraction uses Rust backtrace, not Python traceback inspection. Rust locations report file and line number only, without function scope or code context.
+    why: Rust has no Python interpreter at runtime. Callers can supply frame information explicitly through the BugReport constructor if they have richer metadata.
+  - what: Python version detection returns 'unknown' when Python is not available. The betterlite proxy will discover Python at startup and supply it; the SDK version will depend on how the Python binding is deployed.
+    why: Rust callers cannot directly query CPython interpreter state. Version detection at startup provides the environment report once and passes it through.
+  - what: Deployment detection for Docker checks the presence of /.dockerenv. On Kubernetes or other container platforms, deployment remains None until detection is extended.
+    why: This is what LiteLLM does at the pinned commit.
+out_of_scope:
+  - Caller integration. These are callable functions, but B4171, B4174 and the SDK error handling each wire them into their own paths.
+  - Issue destination and URL base. The GitHub URL is hardcoded; betterlite identity and report destination are decisions pending with the architect.
+  - Request or error message inclusion. The message notes it carries none and invites the user to paste them later. No logic here changes that policy.
+pitfalls:
+  - >-
+    Stack traces are recursive: a frame's exception field holds the next exception's traceback. Extract every exception in the chain and collect its frames, not just the outermost one.
+  - >-
+    The URL candidate loop tries two phases: first it holds frames full and shrinks config lines from all down to empty, then it holds config empty and shrinks frames from all-but-first down to empty. If the loop runs out and the empty-config, empty-frames URL still does not fit, return it anyway instead of panicking or dropping information.
+  - >-
+    The Python provider names come from an enum. Read the enum's all values at the pinned commit and store them as a static allowlist; do not try to enumerate them at runtime.
+  - >-
+    A BugReport record is immutable and serializable for passing to callers. Never store mutable state or dynamic closures inside it.
+  - >-
+    The URL generation formats parameters with urlencode, preserving all special characters. Test URLs with spaces, ampersands and equals signs in titles and descriptions.
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

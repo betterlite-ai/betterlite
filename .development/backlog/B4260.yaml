@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Proxy filesystem paths and local image validation
 status: todo
 depends_on: []
-file: null
+file: tasks/B4260-proxy-paths-and-images.yaml
 covers:
   - "litellm/proxy/common_utils/{path_utils,static_asset_utils}.py"
 parent: B124

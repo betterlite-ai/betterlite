@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Blog feed cache and bundled fallback
 status: todo
 depends_on: []
-file: null
+file: tasks/B4264-blog-feed.yaml
 covers:
   - "litellm/blog_posts.json"
   - "litellm/litellm_core_utils/get_blog_posts.py"

@@ -1,0 +1,98 @@
+id: B3770
+title: Generic guardrail contracts and inbound header policy
+description: >-
+  Build typed request and response contracts for the generic guardrail API, implement
+  inbound header value sanitization with allowlisting, and handle echoed-row reconciliation
+  for structured message rewrites. The request contracts preserve extra tool fields via
+  explicit allow policy and include constructor settings for streaming, holdback coercion,
+  and error fallback behavior.
+
+  Headers are sanitized before forwarding to the guardrail service. A predefined allowlist
+  includes host, accept-encoding, connection, accept, content-type, user-agent, glob patterns
+  for x-stainless-* and x-litellm-*, and content-length. Headers outside the allowlist
+  (and extra_headers if provided) have their values replaced with "[present]" so the service
+  knows they existed without exposing them. Disallowed values are Falsy and become strings.
+
+  The constructor (GenericGuardrailAPI.__init__) defaults unreachable_fallback to "fail_closed"
+  and fail_on_error to True when None, setting streaming_sampling_rate to 5 and
+  streaming_transform_mode to "block_only" when unset, so unset optional_params does not
+  shadow top-level litellm_params. The async_handler is built once per instance via
+  get_async_httpx_client.
+
+  Echoed-row reconciliation preserves original message objects when the server echoes rows
+  back unchanged; a server that modifies any row returns the guardrail's version except
+  where the server echoed the shown message verbatim, in which case the original row is
+  restored for the caller to see what changed.
+scope:
+  paths:
+    - litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py
+    - litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L42-L58
+    why: The default header allowlist and placeholder for disallowed header values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L61-L104
+    why: Header allowlist matching with globs and sanitization logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L107-L150
+    why: Inbound header extraction from multiple request context paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L153-L170
+    why: Echoed-row reconciliation logic comparing original, shown and returned rows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L195-L260
+    why: Constructor, defaults for unreachable_fallback, fail_on_error, streaming settings and async_handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py
+    why: Request, response, metadata and configuration type definitions.
+dod:
+  - text: >-
+      Header allowlist matches case-insensitively, includes globs (e.g. x-stainless-*),
+      and headers outside the allowlist with values present become "[present]" in the sanitized output.
+    proof: [generic-header-cases]
+  - text: >-
+      Extra headers from litellm_params.extra_headers extend the allowlist so their values are forwarded.
+    proof: [generic-header-cases]
+  - text: >-
+      Inbound headers are extracted from proxy_server_request.headers, request metadata, litellm_metadata,
+      or logging_obj.model_call_details, in that order, and sanitized before inclusion in the guardrail request.
+    proof: [generic-header-cases]
+  - text: >-
+      The constructor defaults unreachable_fallback to "fail_closed" and fail_on_error to True when None,
+      streaming_sampling_rate to 5 when None, and streaming_transform_mode to "block_only" when None.
+    proof: [generic-constructor-defaults]
+  - text: >-
+      Echoed-row reconciliation restores original message objects when the server echoes shown rows unchanged,
+      and returns the guardrail's version when modified.
+    proof: [generic-row-reconciliation]
+  - text: >-
+      Extra tool fields in the request survive validation via GuardrailToolParam's extra="allow" config.
+    proof: [generic-tool-param]
+checks:
+  optional: []
+  commands:
+    - id: generic-header-cases
+      why: header allowlisting, sanitization and extraction fail or do not exist
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^generic_guardrail.*header/)'
+    - id: generic-constructor-defaults
+      why: constructor parameter defaults or environment variable handling is missing or wrong
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^generic_guardrail.*constructor_defaults/)'
+    - id: generic-row-reconciliation
+      why: echoed-row reconciliation fails or does not exist
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^generic_guardrail.*row_reconciliation/)'
+    - id: generic-tool-param
+      why: tool parameter validation or extra field handling fails or is missing
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^generic_guardrail.*tool_param/)'
+oracle_cases: []
+deviations:
+  - what: betterlite does not build the async_handler from a global lazy static; the async_handler is built once per GenericGuardrailAPI instance passed in through the constructor.
+    why: Dependency injection avoids globals and makes tests control HTTP behavior without side effects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L209
+out_of_scope:
+  - 'Service invocation, metadata merging, error policy and guardrail application; those belong to B3771.'
+  - The consume of coerce_stream_holdback_value; the framework holdback consumer in another task must depend on B3770 for this utility, not the reverse.
+pitfalls:
+  - Glob matching uses fnmatch.fnmatch on lowercased header names; test patterns like x-stainless-* and x-litellm-* case-insensitively.
+  - A header with a value that cannot be coerced to string (caught by try/except in _sanitize_inbound_headers) is skipped entirely rather than set to "[present]"; if presence matters, log or add the header name to extra_allowlist.
+  - The shown_messages parameter to _structured_rows_to_write_back must be the same sequence passed to GenericGuardrailAPIRequest, not a transformed copy; the comparison checks identity (==) not deep content equality.
+  - GuardrailToolParam's extra="allow" preserves fields like code_interpreter, file_search that have no function block; tests must include tools with nested config keys.
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

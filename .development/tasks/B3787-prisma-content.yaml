@@ -1,0 +1,105 @@
+id: B3787
+title: Prisma AIRS content extraction and masking
+description: >-
+  Build content projection and mutation for Prisma AIRS scanning. Initialize PanwPrismaAirsHandler with configuration
+  (api_key required from env PANW_PRISMA_AIRS_API_KEY, api_base default https://service.api.aisecurity.paloaltonetworks.com,
+  profile_name optional, app_name default "LiteLLM", mask_request_content/mask_response_content defaults false, mask_on_block
+  backwards-compatible flag, fallback_on_error default "block", timeout default 10.0, violation_message_template optional,
+  default_on default true). Extract text from messages (last user/developer message, string or list), and response message
+  content with tool call and function call arguments. Apply masking to message content lists (preserving non-text parts),
+  response message content (in-place mutation across all choices), tool call/function call arguments (preserve type),
+  and MCP tool arguments (coerce structured args back through JSON, validate parse on mask).
+
+  Resolve MCP server names from request_data fields or MCP registry. Withheld client-visible error fields:
+  response_masked_data is the model's output the operator declined to deliver, so exclude it from client errors;
+  prompt_masked_data is the caller's input and is always included when present.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/**
+    - crates/betterlite-config/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L163-L253
+    why: __init__ and configuration, including env fallbacks and validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L271-L332
+    why: _extract_text_from_messages, _extract_text_from_content_list, _extract_response_text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L554-L593
+    why: _get_mcp_server_name, resolving from request_data or MCP registry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L587-L721
+    why: _get_masked_text, _mask_content_list, _apply_mcp_masking, _apply_masking_to_messages, _apply_masking_to_response.
+
+dod:
+  - text: >-
+      Configuration keys api_key (required, env PANW_PRISMA_AIRS_API_KEY), api_base (default
+      https://service.api.aisecurity.paloaltonetworks.com, env PANW_PRISMA_AIRS_API_BASE), profile_name (optional),
+      app_name (default "LiteLLM"), mask_request_content (default false), mask_response_content (default false),
+      mask_on_block (backwards-compatible flag), fallback_on_error (default "block"), timeout (default 10.0),
+      violation_message_template (optional), and default_on (default true) are supported in betterlite-config.
+    proof: [prisma-airs-config-tests]
+
+  - text: >-
+      Text extraction from messages returns the last user/developer message (string or list flattened to string),
+      and extraction from responses returns all message content and tool call/function call arguments concatenated.
+    proof: [prisma-airs-extraction-tests]
+
+  - text: >-
+      Content masking applies to last user message (string replacement or list part replacement, preserving non-text
+      parts), response message content across all choices (string replacement or list part replacement), tool call
+      arguments and function call arguments (single field replacement), and MCP tool arguments via both arguments
+      and mcp_arguments fields (preserves original type).
+    proof: [prisma-airs-masking-tests]
+
+  - text: >-
+      MCP masking coerces masked text through json.loads when original args were dict/list; non-JSON masked text for
+      structured args returns validation error. Updates both arguments (canonical) and mcp_arguments fields when present.
+    proof: [prisma-airs-masking-tests]
+
+  - text: >-
+      MCP server name is resolved from request_data.mcp_server_name, request_data.server_name, or MCP registry
+      (global_mcp_server_manager lookup by server_id), with fallback to "unknown".
+    proof: [prisma-airs-masking-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: prisma-airs-config-tests
+      why: the config loader does not accept panw_prisma_airs configuration keys
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/panw_prisma_airs/)'
+
+    - id: prisma-airs-extraction-tests
+      why: text extraction from messages and responses is missing or incorrect
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_airs_extraction($|::)/)'
+
+    - id: prisma-airs-masking-tests
+      why: content masking or MCP server name resolution is missing or incorrect
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_airs_masking($|::)/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - PANW API calls, error categorization, and error detail construction (B3786).
+  - Pre/post call hooks, streaming hooks, deduplication logic, and hook event handling (B3788).
+  - Unified apply_guardrail method, MCP tool_event construction, and Anthropic request detection (B3789).
+  - The CustomGuardrail base class, GuardrailEventHooks enum, and guardrail framework (B2226).
+
+pitfalls:
+  - "_extract_text_from_messages extracts only the last user or developer message; system messages and prior turns are skipped."
+  - "_extract_text_from_content_list flattens the content list by concatenating text parts with spaces; non-text parts (images, documents) are ignored."
+  - "_extract_response_text concatenates message content and all tool call/function call arguments with spaces across all choices."
+  - "Masking in _apply_masking_to_messages finds the last user message in the list (not first); modifying earlier messages leaves the prompt unchanged."
+  - "Masking in _apply_masking_to_response mutates the response in-place across all choices, all tool calls, and all function calls; string content is replaced outright, list content has text parts replaced."
+  - "MCP masking via _apply_mcp_masking requires original_args type to be preserved: dict/list args are parsed back through json.loads, and non-JSON masked text for structured args raises HTTPException status 400."
+  - "_get_mcp_server_name returns the literal string unknown on any exception (ImportError for missing MCP manager, attribute errors); it never raises."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0

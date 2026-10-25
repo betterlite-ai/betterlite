@@ -1,0 +1,134 @@
+id: B3817
+title: Derive MCP identity scopes and access-token claims
+description: >-
+  Implement pure claim validation, identity resolution, least-privilege scopes, ordered claim overrides and the channel/debug projections. Accept already-resolved options, auth fields and a clock value so these helpers can be tested independently of key creation and HTTP verification.
+
+  `_validate_required_claims` checks that every claim in the configured `required_claims` list has a truthy value in the verified incoming token; missing or falsey claims raise HTTP 403 with a list of what is missing and guidance to configure the IdP. An empty or absent required_claims list passes through.
+
+  `_resolve_end_user_identity` returns the outbound JWT "sub" claim using the ordered `end_user_claim_sources` list. Each source has a prefix: `token:claim_name` reads from verified incoming JWT/introspection claims (or the LiteLLM jwt_claims context if available), `litellm:user_id` / `litellm:email` / `litellm:end_user_id` / `litellm:team_id` read the corresponding field from UserAPIKeyAuth. Unknown sources log a warning and continue. The first source that yields a truthy value is returned; if none do, fall back to a stable hash of the API token (`apikey:` prefix plus the first 16 hex chars of SHA256) for service-account callers, or `litellm-proxy` if no token exists. Stable API-key hash fallback is never logged.
+
+  `_build_scope` returns the JWT scope string. When `allowed_scopes` is configured to a nonempty list, join them verbatim. Otherwise auto-generate least-privilege scopes: tool call with a name yields `mcp:tools/call mcp:tools/<sanitized_name>:call`, a tool call without a name yields `mcp:tools/call` only (never a list permission), and a tools/list request yields `mcp:tools/list`. Tool names are sanitized by replacing characters outside [a-zA-Z0-9_-] with underscores. An explicit empty allowed_scopes list (empty but configured) produces an empty scope string.
+
+  `_apply_claim_operations` applies add_claims (insert only when key absent), set_claims (always override, highest priority), and remove_claims (delete listed keys) in that order. Modify the input dict in place and return it.
+
+  `_passthrough_optional_claims` forwards every claim named in `optional_claims` that exists in the verified incoming JWT and is absent from the outbound claims dict. Return early if either the config list or the incoming claims are absent/empty.
+
+  `_build_claims` builds JWT claims for the outbound MCP access token. Call `_resolve_end_user_identity` for "sub", include "iss", "aud", "iat", "exp", "nbf" timestamps (expiry is iat + ttl_seconds), pass "email" when user_email exists, set "act" to {sub: team_id or org_id or "litellm-proxy"}, pass "end_user_id" when set separately, call `_build_scope` for the scope claim, apply `_passthrough_optional_claims`, then apply claim operations. Accept already-resolved auth/options so these helpers can be unit tested independently.
+
+  `_build_channel_token_claims` builds claims for the channel token (two-token model). Copy sub, act, and scope from the access token (base_claims), but override aud to channel_token_audience and replace iat, exp, nbf with fresh now/channel_token_ttl timestamps.
+
+  `_build_debug_header` is a static method that formats the x-litellm-mcp-debug header value: `v=1; kid=<kid>; sub=<sub>; iss=<iss>; exp=<exp>; scope=<scope>`. Scope is truncated to 77 characters plus "..." when longer than 80 characters. Field order matters for compatibility.
+
+  All helpers accept already-resolved options so they can be tested as pure functions without constructing MCPJWTSigner or verifying incoming tokens. Tests pass a test clock as a parameter instead of calling time.time() (which B3816 calls at the signer boundary, not here).
+
+scope:
+  paths:
+    - litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py
+    - crates/betterlite/src/mcp_token_claims.rs
+    - crates/betterlite/src/mcp_token_claims/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L531-L554
+    why: "_validate_required_claims: check required claims exist with HTTP 403 on missing/falsey claim"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L560-L612
+    why: "_resolve_end_user_identity: ordered claim sources with API-key hash fallback"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L618-L650
+    why: "_build_scope: configured scopes override auto-generated least-privilege scopes"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L656-L670
+    why: "_apply_claim_operations: add/set/remove claims in order"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L676-L687
+    why: "_passthrough_optional_claims: forward optional claims from incoming JWT"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L693-L747
+    why: "_build_claims: core JWT builder with call type awareness"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L749-L767
+    why: "_build_channel_token_claims: copy base claims with separate audience/ttl"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L773-L787
+    why: "_build_debug_header: static method formatting debug header with scope truncation"
+
+dod:
+  - text: >-
+      Required claims validation rejects HTTP 403 when any claim in required_claims is absent or falsey, lists the missing claims and advises configuring the IdP. Empty required_claims passes through.
+    proof: [claim-validation-tests]
+  - text: >-
+      End-user identity resolves using the ordered end_user_claim_sources list, trying token: / litellm: prefixes in order, falling back to API-key SHA256 hash prefixed with "apikey:" for service accounts without identity, and finally "litellm-proxy". Unknown sources log a warning and continue.
+    proof: [identity-resolution-tests]
+  - text: >-
+      Scope building returns configured allowed_scopes when non-empty, else auto-generates least-privilege scopes: tool call with name yields "mcp:tools/call mcp:tools/<name>:call", tool call without name yields "mcp:tools/call" only, tools/list yields "mcp:tools/list". Tool names sanitize non-alphanumeric characters to underscores.
+    proof: [scope-building-tests]
+  - text: >-
+      Claim operations apply add_claims (insert absent keys only), set_claims (override), and remove_claims (delete) in that order.
+    proof: [claim-operations-tests]
+  - text: >-
+      Optional claims passthrough copies every claim in optional_claims that exists in the incoming JWT and is absent from the outbound claims dict.
+    proof: [optional-claims-tests]
+  - text: >-
+      Core claims builder includes iss/aud/iat/exp/nbf/sub, email when present, act delegation with team/org context, end_user_id when set, scope from _build_scope, and applies optional_claims passthrough then claim operations.
+    proof: [claims-builder-tests]
+  - text: >-
+      Channel token claims copy sub/act/scope from access token and replace aud/iat/exp/nbf with channel-specific audience and TTL.
+    proof: [channel-token-tests]
+  - text: >-
+      Debug header formats v=1; kid=<kid>; sub=<sub>; iss=<iss>; exp=<exp>; scope=<scope> with scope truncated to 77 characters plus "..." when longer than 80 characters.
+    proof: [debug-header-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: claim-validation-tests
+      why: Required claims validation fails when required claim is absent, or passes when list is empty.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::validate_required_claims::/)' 2>&1 | grep -q "test result"
+    - id: identity-resolution-tests
+      why: Identity resolves from configured sources in order, falls back to API-key hash, and warns on unknown sources.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::resolve_end_user_identity::/)' 2>&1 | grep -q "test result"
+    - id: scope-building-tests
+      why: Scope generation follows least-privilege rules, sanitizes tool names, and respects configured allowed_scopes.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::build_scope::/)' 2>&1 | grep -q "test result"
+    - id: claim-operations-tests
+      why: Add/set/remove operations apply in correct order with correct semantics.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::apply_claim_operations::/)' 2>&1 | grep -q "test result"
+    - id: optional-claims-tests
+      why: Optional claims pass through from incoming JWT when absent in outbound claims.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::passthrough_optional_claims::/)' 2>&1 | grep -q "test result"
+    - id: claims-builder-tests
+      why: Core builder combines all claim sources, timestamps, identity and scope correctly.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::build_claims::/)' 2>&1 | grep -q "test result"
+    - id: channel-token-tests
+      why: Channel token claims inherit access token claims and apply separate audience/TTL.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::build_channel_token_claims::/)' 2>&1 | grep -q "test result"
+    - id: debug-header-tests
+      why: Debug header formats correctly and truncates scope at 77 characters plus "...".
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_token_claims::build_debug_header::/)' 2>&1 | grep -q "test result"
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      Truncation of debug header scope uses 77 characters plus "..." when longer than 80 characters, preserving LiteLLM's exact limit and format.
+    why: Header safety and compatibility with MCP spec.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L785-L786
+
+out_of_scope:
+  - >-
+      Key generation and storage (B3816); these helpers accept already-resolved options. HTTP verification and OIDC discovery fetch (B3816); these helpers validate resolved claims after verification. MCPJWTSigner initialization and constructor; these helpers are pure functions accepting resolved state. Outbound signing and header injection (B109); call-site decision and composition.
+
+pitfalls:
+  - >-
+      Scope building with an explicit empty allowed_scopes list (configured but empty) produces an empty scope string, not auto-generated scopes. Check for `is not None` on the configured list, not truthiness.
+  - >-
+      Tool call without a tool name falls back to "mcp:tools/call" only (not list permission), preserving separation of concerns between tool listing and tool invocation.
+  - >-
+      Identity sources are tried in configured order and the first truthy value wins; unknown sources log a warning and continue rather than raising. API-key hash fallback is stable (SHA256 is deterministic) but never logged even for service accounts.
+  - >-
+      Claim operations run in order (add, set, remove) so set_claims can override add_claims and remove_claims can delete both. Order matters for composition with external overrides.
+  - >-
+      Optional claims fill gaps only (absent from outbound claims), so add_claims and set_claims take precedence. They run before claim operations, which have final say.
+  - >-
+      Channel token claims inherit numeric timestamps (iat/exp/nbf) from base_claims as-is but replace them with fresh now values. Only copy string/object claims like sub/act/scope; timestamps must be recalculated.
+  - >-
+      Debug header truncation preserves field order (v, kid, sub, iss, exp, scope in that sequence) and uses exactly "..." for truncation marker when scope exceeds 80 characters.
+
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

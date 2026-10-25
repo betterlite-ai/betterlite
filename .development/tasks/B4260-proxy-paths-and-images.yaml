@@ -1,0 +1,133 @@
+id: B4260
+title: Proxy filesystem paths and local image validation
+description: >-
+  Implement filesystem path confinement and validation helpers for use by proxy routes
+  that read assets from disk. Build safe_join, try_safe_join, is_within, and join_within
+  to prevent directory traversal attacks, safe_filename to sanitize uploaded filenames,
+  and the image validation layer that detects supported formats by signature and falls
+  back gracefully when images cannot be read.
+
+  The four path functions distinguish between realpath-based confinement (safe_join,
+  is_within) that follows symlinks and validates the resolved destination, and lexical
+  joining (join_within) that checks only the path components without resolving links.
+
+  Image validation reads up to 512 bytes of file header, detects PNG, GIF, JPEG, WebP
+  and ICO by signature, and logs a warning while returning None for unsupported files.
+  The resolver accepts filesystem paths from environment variables (UI_LOGO_PATH,
+  UI_LOGO_PATH_DARK, LITELLM_FAVICON_URL with empty-string defaults), expands ~ and validates that
+  the file exists and is a supported image. This fallback-to-default behavior preserves
+  LiteLLM's warn-and-drop pattern.
+
+  Inject filesystem I/O and logging; no database work, no config load, no HTTP calls.
+  These helpers have no direct callers at this layer; they are consumed by content-filter
+  loaders, guardrail setup, and the logo/favicon routes that depend on them.
+scope:
+  paths:
+  - crates/betterlite-server/src/assets.rs
+  - crates/betterlite-server/src/assets/**
+  - tools/oracle/src/helpers/server/proxy_paths_and_images.rs
+  - tools/oracle/src/helpers/server/proxy_paths_and_images/**
+  - tools/oracle/helpers/proxy_paths_and_images.py
+  - tools/oracle/helpers/proxy_paths_and_images/**
+  - tools/oracle/fuzz/corpus/helper_case/assets-*
+  - tools/oracle/cases/helpers/assets/**
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/path_utils.py#L13-L96
+  why: Owns safe_join, try_safe_join, is_within, join_within and safe_filename
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/static_asset_utils.py#L11-L52
+  why: Owns detect_local_image_media_type and resolve_validated_local_image_path (LiteLLM name); implement as resolve_local_image in betterlite, including the 512-byte header read and media type detection
+dod:
+- text: >-
+    safe_join resolves symlinks in both base_dir and the joined path, rejects paths
+    that traverse outside base_dir after resolution, rejects null bytes, and returns
+    the absolute resolved path. Null bytes in any part raise ValueError with that word.
+    A path that escapes after normalization raises ValueError with both the resolved
+    and base paths quoted.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    try_safe_join catches ValueError from safe_join and returns None instead of raising.
+    All other exceptions propagate.
+  proof: [behavior-tests, oracle]
+- text: >-
+    is_within checks whether a path, with symlinks resolved, is within base_dir (including
+    the base itself). Both paths are resolved with realpath.
+  proof: [behavior-tests, oracle]
+- text: >-
+    join_within joins path components lexically without following symlinks, rejects null bytes,
+    returns None if any component is absolute or contains .. or if the joined path leaves
+    base_dir, otherwise returns the normalized absolute path inside base_dir.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    safe_filename extracts the basename from a user-supplied path, handles both Unix and
+    Windows separators (normalizing backslash to /), rejects null bytes and paths like . or ..,
+    and raises ValueError with "Filename contains null byte" or "Empty or unsafe filename"
+    when validation fails.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    detect_local_image_media_type checks a byte header against PNG, GIF, JPEG, WebP and ICO
+    signatures and returns image/png, image/gif, image/jpeg, image/webp, image/x-icon or None.
+    GIF8a but not GIF8 (no a) is accepted at offset 5:6.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    resolve_local_image accepts a filesystem candidate, expands ~ using expanduser,
+    follows symlinks with realpath, rejects non-files and unsupported formats, reads up to
+    512 bytes, logs debug on read error and warning on unsupported format, and returns
+    (resolved_path, media_type) or None.
+  proof: [behavior-tests, oracle, helper-python]
+- text: Assets helpers and their oracle adapters are independently executed.
+  proof: [new-cases, helper-corpus, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: path confinement, filename sanitization or image detection is untested
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^assets::/) - test(/::replays_corpus$/)'
+  - id: helper-python
+    why: the asset helper adapters cannot run independently
+    run: test -f tools/oracle/helpers/assets.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: no added assets operation reaches the helper decoder
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/assets-*)" && grep -qE '^[[:space:]]+assets:' tools/oracle/fuzz/corpus/helper_case/assets-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: filesystem helpers add no oracle inputs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/assets)"
+oracle_cases:
+- tools/oracle/cases/helpers/assets/safe-join-confinement.yaml
+- tools/oracle/cases/helpers/assets/safe-join-traversal-detection.yaml
+- tools/oracle/cases/helpers/assets/safe-join-null-byte.yaml
+- tools/oracle/cases/helpers/assets/try-safe-join-fallback.yaml
+- tools/oracle/cases/helpers/assets/is-within-symlink-resolution.yaml
+- tools/oracle/cases/helpers/assets/join-within-lexical.yaml
+- tools/oracle/cases/helpers/assets/join-within-escape-detection.yaml
+- tools/oracle/cases/helpers/assets/safe-filename-basename-extraction.yaml
+- tools/oracle/cases/helpers/assets/safe-filename-separator-handling.yaml
+- tools/oracle/cases/helpers/assets/safe-filename-empty-and-dots.yaml
+- tools/oracle/cases/helpers/assets/detect-local-image-png-gif-jpeg.yaml
+- tools/oracle/cases/helpers/assets/detect-local-image-webp-ico.yaml
+- tools/oracle/cases/helpers/assets/detect-local-image-unsupported.yaml
+- tools/oracle/cases/helpers/assets/resolve-validated-local-image-success.yaml
+- tools/oracle/cases/helpers/assets/resolve-validated-local-image-missing-file.yaml
+- tools/oracle/cases/helpers/assets/resolve-validated-local-image-unsupported.yaml
+- tools/oracle/cases/helpers/assets/resolve-validated-local-image-read-error.yaml
+deviations: []
+out_of_scope:
+- >-
+  LOCAL_IMAGE_HEADER_BYTES is a constant imported from LiteLLM for the number of
+  bytes to read; betterlite uses the same 512-byte value defined at runtime or
+  compile time.
+- >-
+  verbose_proxy_logger is LiteLLM's module-level logger instance; betterlite accepts
+  a logger injected through the function interface, following the dependency injection
+  pattern, so logging behavior is testable.
+pitfalls:
+- 'The oracle helper for this task is pre-registered as proxy_paths_and_images in the server group. Replace the stub Op in tools/oracle/src/helpers/server/proxy_paths_and_images.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/proxy_paths_and_images.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- safe_join and is_within resolve symlinks, so a symlink inside base_dir pointing outside it will fail; join_within does not resolve and returns the link.
+- Directory traversal is checked after realpath resolution; path.startswith(base) is insufficient and must include os.sep or equality check.
+- GIF8a is detected by checking header[0:4] == b"GIF8" and header[5:6] == b"a" only; any other byte at offset 5:6 (including 'b') returns None.
+- detect_local_image_media_type returns None for empty headers or unrecognized signatures; the caller (resolve_validated_local_image_path) interprets None as an unsupported format and logs a warning.
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

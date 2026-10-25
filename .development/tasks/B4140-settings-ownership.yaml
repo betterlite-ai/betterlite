@@ -1,0 +1,105 @@
+id: B4140
+title: Resolve settings provenance and enforce config ownership
+description: >-
+  Build a settings-resolution module in betterlite-config with typed provenance
+  tracking, absent-versus-null semantics, and config ownership enforcement.
+  Implement SettingsStore as a typed mapping that reconciles YAML config values,
+  stored database rows (from five sections: general_settings, router_settings,
+  litellm_settings, environment_variables, ui_settings), and runtime overrides.
+  Track whether each setting came from config (owns it, read-only), database,
+  environment, a default, or is unset, so callers never couple to config
+  implementation details. Implement FieldDescriptor with per-field precedence
+  and separate empty-value policies for alerting (empty DB means cleared) and
+  SSO (empty DB means absent). Supply fixed descriptor tables for alerting
+  (email, Slack, Teams) with SMTP defaults 587 (port) and True (TLS). Enforce
+  that a key declared in the config file cannot be changed by database writes
+  or runtime updates; raise ConfigOwnedKeyError with the exact message a user
+  sees. Support the pass_through_endpoints resource-list exception (read from
+  database only) and ten UI-row aliases that map to ui_settings. Clear runtime
+  keys only for those changed in a database update (ignore unchanged rows) and
+  preserve config-owned keys through database reloads. Return a plain mapping
+  to handlers without exposing internal state. The module exports SettingsStore,
+  FieldDescriptor, FieldSource, resolve_fields, config_ownership_message,
+  source_for, and coerce_bool (the boolean normalizer for reload paths); no HTTP
+  handler dependency or B120 composition coupling.
+scope:
+  paths:
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
+    - crates/betterlite-config/tests/**
+    - crates/betterlite-config/src/settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/__init__.py#L1-L21
+    why: Public API exports (FieldDescriptor, FieldSource, SettingsStore, source_for, resolve_fields, config_ownership_message)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/_descriptors.py#L28-L75
+    why: FieldDescriptor, FieldSource type, resolve_fields function and resolution precedence logic
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/alerting.py#L1-L32
+    why: Email, Slack, Teams descriptor tables; SMTP_PORT default 587 and SMTP_TLS default True
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/changed_section_keys.py#L10-L17
+    why: changed_section_keys function to detect altered keys across baseline and new row
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/settings_rules.py#L1-L118
+    why: "Section enum (general_settings, router_settings, litellm_settings, environment_variables, ui_settings); KeyRule and Resolved; resolution precedence and absent-sentinel; dual_source_keys mapping; resource_list exception for pass_through_endpoints; coerce_bool; UI-settings alias fields"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/settings_store.py#L1-L190
+    why: SettingsStore MutableMapping contract; ConfigOwnedKeyError; load_yaml, apply_db_row, apply_runtime_values, __getitem__, __setitem__, __delitem__, __iter__, __len__, __bool__, shadows_db_value, shadowed_db_keys, resolved, source, db_value and resolve precedence
+dod:
+  - text: The module exports SettingsStore, FieldDescriptor, FieldSource, resolve_fields, config_ownership_message, source_for, and coerce_bool.
+    proof: [exports-check]
+  - text: SettingsStore implements MutableMapping and rejects writes to config-owned keys with ConfigOwnedKeyError.
+    proof: [settings-store-tests]
+  - text: Field resolution follows precedence (config wins, else DB, else env, else default, else unset) and unset values are distinguished from None.
+    proof: [settings-store-tests]
+  - text: Database row updates clear only runtime keys that changed in that row, preserving config-owned and unchanged keys.
+    proof: [settings-store-tests]
+  - text: Alerting descriptor tables define SMTP defaults (port 587, TLS True) and separate resolution policies (empty DB means cleared for alerting).
+    proof: [descriptor-tests]
+  - text: The pass_through_endpoints key reads only from database (resource-list exception) and is shadowed by config.
+    proof: [settings-store-tests]
+  - text: Iteration, length, truth value and getitem all exclude deleted runtime keys and work through the resolution logic.
+    proof: [settings-store-tests]
+  - text: source_for returns the field source, with "default" when source is unset but a default exists.
+    proof: [descriptor-tests]
+  - text: coerce_bool normalizes boolean strings ("true"/"false", case-insensitive) and other JSON values for reload paths.
+    proof: [coerce-bool-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: exports-check
+      why: The module does not export coerce_bool or other required functions
+      run: cargo build --locked -p betterlite-config && grep -q "pub.*coerce_bool" crates/betterlite-config/src/settings/rules.rs || grep -q "coerce_bool" crates/betterlite-config/src/lib.rs
+    - id: settings-store-tests
+      why: SettingsStore contract, config ownership, DB updates, resource lists, or iteration fails
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^settings_store::/)'
+    - id: descriptor-tests
+      why: Field descriptors, resolution logic, alerting tables or source tracking fails
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^settings_resolution::|^field_descriptor::/) - test(replays_the_settings_corpus)'
+    - id: coerce-bool-tests
+      why: coerce_bool does not correctly normalize boolean strings and JSON values
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^coerce_bool::/)'
+oracle_cases: []
+deviations:
+  - what: A value stored as null in the database is treated as absent (unset), not as an empty string.
+    why: LiteLLM distinguishes null from empty for SSO (null means not set, empty means cleared) and for alerting (empty means cleared). betterlite follows the same per-field policy through empty_db_is_set.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/_descriptors.py#L28-L36
+  - what: Shadow detection for db_value returns unset for non-resource-list keys (only pass_through_endpoints reads DB directly).
+    why: Other keys resolve through the store's resolution logic, and only resource-list keys expose db_value for direct access.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/settings_store.py#L165-L170
+out_of_scope:
+  - Config loading, YAML parsing, environment variable lookup and database schema. B002 owns the loader; B4142 owns include resolution; later tasks own database access.
+  - HTTP route registration, UI composition and endpoint handler coupling. B120 and its own handlers own those contracts.
+  - Field redaction and secret masking in response bodies. Field descriptors tag is_secret; masking is a handler concern.
+  - Decryption of stored secrets and SSO field parsing. B4141 owns resolve_sso_config with decryption.
+pitfalls:
+  - "The ten UI-settings alias fields (allow_public_health_readiness_details, forward_client_headers_to_llm_api, etc.) live in general_settings but stored in ui_settings. A key not in DUAL_SOURCE_KEYS uses its own section as the db_row."
+  - "LiteLLM's clear() method has no production caller at the pin. Implement it for MutableMapping compliance, but test it separately so the check can exclude clear-only cases."
+  - "A database update applies only changed keys (changed_section_keys detects them). Unchanged keys keep their resolved value; runtime keys not in changed keys are preserved."
+  - "Alerting uses empty_db_is_set=True (empty DB value wins over env); SSO uses empty_db_is_set=False (empty DB falls back to env). The field descriptor carries no policy; the caller chooses."
+  - "resource_list exception is single-key: only pass_through_endpoints. Extensions to other keys or new sections require a schema change, not a config addition."
+  - "Config ownership applies to any key in yaml_values, regardless of section. A write attempt raises ConfigOwnedKeyError with shadows_db_value=True only when a DB value exists and differs."
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

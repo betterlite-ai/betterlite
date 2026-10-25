@@ -1,0 +1,136 @@
+id: B3818
+title: Translate and redact MCP discovery calls and tool results
+description: >-
+  Project MCP discovery call arguments and tool results into unified guardrail inputs, apply guardrails, and write back only the rewrites that guardrails actually performed. Reject incompatible output lengths, excessive nesting, conflicting concurrent argument rewrites and masking of non-rewritable structured labels.
+
+  MCP tool calls and discovery scans arrive at guardrail translation with a tool name, optional description, input schema (for discovery only), and arguments (for calls only). `process_input_messages` builds a single-tool OpenAI-compatible shape with the tool definition from name/description/schema and every string leaf of arguments or schema descriptions as separate texts. The guardrail sees the full payload in a single call, applies its rules to every text, and returns a rewritten texts sequence. Write back only the argument leaves that changed, preserving the original structure; write back description and schema separately if they changed.
+
+  `process_output_response` receives a CallToolResult object with a content list and optional structuredContent. Scan every text block in the content list and every string leaf of structuredContent together in a single guardrail call. Guardrails cannot rewrite non-string labels (object keys or numeric values); detect and reject any attempt. Rewrite the result object in place (not a copy) so logging that captured it before this hook runs sees the masked version.
+
+  Tool call arguments and output responses that exceed MAX_STRUCTURED_CONTENT_SCAN_DEPTH fail closed with HTTP 400. Two guardrails running concurrently (run_in_parallel: true) cannot both rewrite the same argument leaf to different values; detect conflicts and reject. A guardrail that returns the wrong number of texts fails closed. Arguments that already hold the text this guardrail was handed, or already hold this guardrail's own replacement, are safe to write.
+
+  Own both complete files in guardrail_translation/ directory including the guardrail_translation_mappings dict that registers call_mcp_tool and list_mcp_tools operations. Count: **233 lines** (handler.py 223 + __init__.py 10).
+
+scope:
+  paths:
+    - litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py
+    - litellm/proxy/_experimental/mcp_server/guardrail_translation/__init__.py
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py#L55-L56
+    why: "_blocked: return HTTP 400 with content blocked reason"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py#L59-L63
+    why: "_too_deeply_nested: return HTTP 400 for exceeding MAX_STRUCTURED_CONTENT_SCAN_DEPTH"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py#L66-L80
+    why: "_masked_texts: extract returned texts or fail closed if count mismatches"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py#L83-L88
+    why: "_leaf_replacements: only leaves the guardrail actually rewrote"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py#L91-L98
+    why: "_schema_description_leaves: extract description-keyed leaves from input schema"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py#L101-L124
+    why: "_conflicting_rewrite_paths: detect leaves rewritten differently by concurrent guardrails"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py#L127-L134
+    why: "_conflicting_rewrite: return HTTP 400 for concurrent conflict"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py#L140-L224
+    why: "process_input_messages: translate tool call to guardrail format and apply redaction"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py#L226-L310
+    why: "process_output_response: scan and redact tool result text blocks and structuredContent"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/guardrail_translation/__init__.py
+    why: "guardrail_translation_mappings dict registering call_mcp_tool and list_mcp_tools"
+
+dod:
+  - text: >-
+      Tool call arguments and schema descriptions are projected as string leaves; tool description is prepended. Guardrails see a single OpenAI-compatible tool definition with all texts in one apply_guardrail call.
+    proof: [input-projection-tests]
+  - text: >-
+      Guardrail-returned texts that differ from originals are written back to their original positions. Descriptions and schemas are written back separately if rewritten; arguments preserve structure and field name keys.
+    proof: [input-writeback-tests]
+  - text: >-
+      Arguments exceeding MAX_STRUCTURED_CONTENT_SCAN_DEPTH fail closed with HTTP 400. Schema description scanning and discovery output also fail closed when nested too deeply.
+    proof: [nesting-depth-tests]
+  - text: >-
+      Guardrails returning wrong text count fail closed; a mismatch prevents positional write-back.
+    proof: [text-count-mismatch-tests]
+  - text: >-
+      Two concurrent guardrails cannot both rewrite the same argument leaf to different values. Detect conflicts by comparing current leaves to scanned originals and flag mismatched rewrites.
+    proof: [concurrent-conflict-tests]
+  - text: >-
+      Tool result content list text blocks and structuredContent string leaves are scanned together. Non-string labels that match a masking rule are rejected with HTTP 400.
+    proof: [output-projection-tests]
+  - text: >-
+      Tool results are rewritten in place so logging payloads captured before this hook see the masked version.
+    proof: [result-mutation-tests]
+  - text: >-
+      Absent or missing mcp_tool_name returns data unchanged. Absent mcp_arguments or empty input schema supply empty defaults to projection.
+    proof: [fallback-behavior-tests]
+  - text: >-
+      The guardrail_translation_mappings dict maps CallTypes.call_mcp_tool and CallTypes.list_mcp_tools to MCPGuardrailTranslationHandler.
+    proof: [mapping-registration-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: input-projection-tests
+      why: Tool call input (description, schema descriptions, argument leaves) is projected as separate texts in a single OpenAI-compatible tool definition.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::process_input::/)' 2>&1 | grep -q "test result"
+    - id: input-writeback-tests
+      why: Guardrail-returned texts are written back only when changed; descriptions, schemas and arguments are written separately with structure preserved.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::input_writeback::/)' 2>&1 | grep -q "test result"
+    - id: nesting-depth-tests
+      why: Arguments and schemas exceeding MAX_STRUCTURED_CONTENT_SCAN_DEPTH fail closed with HTTP 400.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::nesting_depth::/)' 2>&1 | grep -q "test result"
+    - id: text-count-mismatch-tests
+      why: Guardrails returning wrong text count fail closed and prevent positional write-back.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::text_count_mismatch::/)' 2>&1 | grep -q "test result"
+    - id: concurrent-conflict-tests
+      why: Two concurrent guardrails rewriting the same argument leaf to different values are detected and rejected with HTTP 400.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::concurrent_conflict::/)' 2>&1 | grep -q "test result"
+    - id: output-projection-tests
+      why: Tool result content and structuredContent are scanned together; non-string labels that match masking rules are rejected.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::process_output::/)' 2>&1 | grep -q "test result"
+    - id: result-mutation-tests
+      why: Tool results are rewritten in place so logging payloads see the masked version.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::result_mutation::/)' 2>&1 | grep -q "test result"
+    - id: fallback-behavior-tests
+      why: Missing mcp_tool_name returns data unchanged; missing arguments and empty schemas supply empty defaults.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::fallback_behavior::/)' 2>&1 | grep -q "test result"
+    - id: mapping-registration-tests
+      why: guardrail_translation_mappings dict maps both call_mcp_tool and list_mcp_tools to MCPGuardrailTranslationHandler.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::mapping_registration::/)' 2>&1 | grep -q "test result"
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - >-
+      CustomGuardrail.apply_guardrail contract and constructor; these are injected. BaseTranslation abstract base; its implementation and subclass hierarchy. Guardrail initialization and handler dispatch (B109). Route registration and discovery endpoint ownership (other MCP umbrella tasks).
+  - >-
+      Utility functions for JSON leaf extraction, unrewritable label detection, MCP content item and result access (json_string_leaves, json_unrewritable_labels, mcp_content_item_text, mcp_tool_result_content_list, mcp_tool_result_structured_content, set_mcp_tool_result_structured_content, with_json_string_leaves, with_mcp_content_item_text, JSONLeafPath, MAX_STRUCTURED_CONTENT_SCAN_DEPTH). These are lower transformations owned by MCP utilities.
+  - >-
+      transform_mcp_tool_to_openai_tool conversion; owned by experimental MCP client tools. ProxyLogging._convert_mcp_to_llm_format; context injection and callers.
+  - >-
+      ChatCompletionToolParam and ChatCompletionToolParamFunctionChunk wire types; provided by openai SDK types. GenericGuardrailAPIInputs wire type; provided by unified guardrails infrastructure.
+
+pitfalls:
+  - >-
+      Guardrails return the full texts array with the original length, not just the changed ones. A guardrail that returns fewer texts fails closed because positional write-back would scramble the payload.
+  - >-
+      Tool description masking is written separately from argument masking to mcp_tool_description and mcp_input_schema, not merged back into the arguments. Schema description leaves are separate from argument leaves in the texts array.
+  - >-
+      Concurrent guardrail conflicts are detected by comparing the paths of the current leaves to the scanned originals; if they do not match (structure reshaped), all replacements fail as a conflict because positional write-back would be wrong.
+  - >-
+      Non-string labels in structuredContent (object keys and numeric values) that match a masking rule trigger HTTP 400 rejection because they cannot be rewritten without breaking the payload contract.
+  - >-
+      Tool result rewriting mutates the content list and structuredContent in place rather than returning a new result. Logging that captured the object before this hook runs will see the masked version, which is the intended behavior.
+  - >-
+      Missing or empty mcp_tool_name skips projection and returns data unchanged; discovery operations with no tool name are silently skipped.
+  - >-
+      The mcp_arguments/arguments fallback applies consistently across input projection, conflict detection and writeback, preserving both field names where they coexist.
+
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+
+review_level: security

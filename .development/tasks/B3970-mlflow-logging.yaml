@@ -1,0 +1,128 @@
+id: B3970
+title: MLflow spans and streamed event lifecycle
+description: >-
+  Build MLflow parent-span selection with active-span aware child/trace branching,
+  inputs and attributes extraction, status events and one-span-per-stream tracking
+  across streaming chunks. Use the actual source lifecycle for streaming requests:
+  track the first chunk creation of a span, add subsequent chunks as events, and
+  end the span on the final chunk detected through complete_streaming_response
+  (sync) or async_complete_streaming_response (async) keys. Preserve both
+  assembled-stream response key spellings and finally-block cleanup.
+
+  Implement status callbacks for success (OK), failure (ERROR) and failure event
+  recording from exception info. Extract and set chat messages/tools from response
+  choices and input messages. Build span name from call type (litellm-completion,
+  litellm-acompletion, litellm-embeddings). Handle embeddings as EMBEDDING span
+  type; others default to LLM. Transform request tags from space/colon-separated
+  list to dictionary, keeping both key-value pairs and standalone tags mapped to
+  empty string value. Extract attributes from standard_logging_object when present,
+  falling back to kwargs fields.
+
+  Serialize streaming delta as json.dumps(choice.delta.model_dump, default=str)
+  on the bound method reference, not the called result. Pop optional_params for
+  functions, tools, stream, tool_choice and user keys (not other params).
+  Recognize literal embeddings call type. Use threading lock for _stream_id_to_span
+  dict access.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/mlflow/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L15-L21
+    why: MlflowLogger.__init__ creates MlflowClient and initializes stream tracking dict with lock.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L23-L27
+    why: log_success_event and async_log_success_event both delegate to _handle_success.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L29-L52
+    why: _handle_success dispatches to _handle_stream_event for streaming or starts span/trace for non-streaming.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L54-L69
+    why: _extract_and_set_chat_attributes sets messages from response choices and tools from inputs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L71-L75
+    why: log_failure_event and async_log_failure_event both delegate to _handle_failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L77-L102
+    why: _handle_failure starts span, records exception event, sets attributes and ends with ERROR status.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L104-L146
+    why: _handle_stream_event manages per-stream spans with double-checked locking, adds chunk events and ends on final.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L148-L160
+    why: _add_chunk_events serializes delta.model_dump method reference with default=str to JSON.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L162-L175
+    why: _construct_input pops functions, tools, stream, tool_choice, user from optional_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L177-L218
+    why: _extract_attributes uses standard_logging_object when present, falls back to kwargs fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L220-L228
+    why: _get_span_type returns EMBEDDING for embeddings call type, LLM for others.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L230-L265
+    why: _start_span_or_trace checks active span and either starts child span or new trace.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L267-L279
+    why: _transform_tag_list_to_dict parses colon-separated tags and maps tagless items to empty string.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L281-L297
+    why: _end_span_or_trace checks parent_id to dispatch to end_trace or end_span.
+
+dod:
+  - text: MlflowLogger.__init__ creates MlflowClient and initializes thread-safe streaming span map.
+    proof: [mlflow-tests]
+  - text: log_success_event and async_log_success_event both call _handle_success with identical parameters.
+    proof: [mlflow-tests]
+  - text: Non-streaming success creates span/trace, extracts chat attributes and ends with OK status.
+    proof: [mlflow-tests]
+  - text: _extract_and_set_chat_attributes constructs inputs, merges input and output messages, sets tools.
+    proof: [mlflow-tests]
+  - text: log_failure_event and async_log_failure_event both call _handle_failure with identical parameters.
+    proof: [mlflow-tests]
+  - text: Failure handler records exception as SpanEvent and ends span with ERROR status.
+    proof: [mlflow-tests]
+  - text: Streaming first chunk creates and stores span with double-checked locking on stream ID.
+    proof: [mlflow-tests]
+  - text: Streaming subsequent chunks add events to tracked span without creating new one.
+    proof: [mlflow-tests]
+  - text: Streaming final chunk (complete_streaming_response or async_complete_streaming_response present) ends span and removes from map in finally block.
+    proof: [mlflow-tests]
+  - text: _add_chunk_events serializes choice.delta.model_dump method reference with default=str.
+    proof: [mlflow-tests]
+  - text: _construct_input pops specific keys (functions, tools, stream, tool_choice, user) from optional_params.
+    proof: [mlflow-tests]
+  - text: _extract_attributes uses standard_logging_object fields when present, falls back to kwargs.
+    proof: [mlflow-tests]
+  - text: _get_span_type returns EMBEDDING for embeddings call type, LLM for completion/acompletion and others.
+    proof: [mlflow-tests]
+  - text: _start_span_or_trace checks active span and creates child span or new trace accordingly.
+    proof: [mlflow-tests]
+  - text: _transform_tag_list_to_dict parses colon-separated tags and stores tagless items with empty string value.
+    proof: [mlflow-tests]
+  - text: _end_span_or_trace dispatches to end_trace or end_span based on span parent_id.
+    proof: [mlflow-tests]
+  - text: An exception raised while building/ending a span, recording a failure event or serializing a stream chunk in _handle_success, _handle_failure or _add_chunk_events is caught and logged at debug level rather than propagated to the caller.
+    proof: [mlflow-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: mlflow-tests
+      why: the mlflow tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^mlflow_logging::/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: MLflow SDK calls (MlflowClient, get_current_active_span, start_span/start_trace, end_span/end_trace, set_span_chat_messages/set_span_chat_tools, SpanEvent) require a concrete Python SDK bridge or native execution contract before dispatch.
+    why: These external SDK calls are live behavior in LiteLLM but need explicit transport/execution contracts to be implemented in betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L16-L18
+
+out_of_scope:
+  - Python SDK bridge for MLflow client initialization and span lifecycle calls.
+  - Synchronization of streaming state across multiple worker threads (MLflow SDK responsibilities).
+
+pitfalls:
+  - _add_chunk_events serializes choice.delta.model_dump (the method reference), not calling it; this serializes the method, not the result.
+  - Final chunk detected by either complete_streaming_response (sync) or async_complete_streaming_response (async) key.
+  - Double-checked locking on _stream_id_to_span dict prevents span recreation under concurrent chunk arrivals.
+  - Finally block in _handle_stream_event ensures cleanup even when _extract_and_set_chat_attributes or _end_span_or_trace raises.
+  - _construct_input pops specific keys (functions, tools, stream, tool_choice, user) from optional_params, mutating the dict.
+  - Embeddings call type maps to EMBEDDING span type; all others including completion/acompletion map to LLM.
+  - standard_logging_object is the sole source when present; kwargs-only fallback is used only when object is missing.
+
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

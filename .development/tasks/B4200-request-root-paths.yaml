@@ -1,0 +1,104 @@
+id: B4200
+title: Resolve deployment and per-request root paths
+description: >-
+  Add configuration for scalar and per-request root paths to betterlite-config, then build a middleware layer in betterlite-server that routes requests under different URL path prefixes to the same deployment, preserving each client's prefix for outbound URL construction.
+
+  The scalar SERVER_ROOT_PATH works for deployments that expose one prefix per instance. For a shared gateway serving multiple prefixes from a single instance, a prefix list approach lets the router distinguish requests by their original path prefix and preserve it in URLs the gateway emits. The middleware consults the normalized prefix list per request and updates scope["root_path"] before routing, so Starlette's built-in base URL reconstruction puts outbound URLs (MCP discovery resources, 401 challenge metadata) under the prefix the client used to reach the gateway.
+
+  Add SERVER_ROOT_PATH (scalar, defaults to "") and SERVER_ROOT_PATHS (comma-separated prefix list, defaults to "") to betterlite-config's general_settings section and load them through the environment. The scalar fallback is owned here; get_request_root_path has no dependency on the utility umbrella task.
+
+  Build the middleware in betterlite-server. normalize_root_paths trims whitespace and trailing slashes, drops empty entries, warns and drops missing-leading-slash and bare-root entries, deduplicates and sorts longest first with stable ties. get_request_root_path returns the effective root_path for the current request, reading from a ContextVar stashed by the middleware or falling back to the scalar root. PerRequestRootPathMiddleware.__call__ matches the request path against the normalized prefixes on a whole-segment boundary; a matching prefix replaces scope["root_path"], an unmatched request retains it, and the original path remains available.
+
+  The middleware handles HTTP and WebSocket scopes; other scopes pass through untouched. The effective root (matched prefix or the scope's existing value) is stashed in a ContextVar so code that emits URLs picks the same prefix the router resolves the request under. Restore the previous context after success, failure or cancellation with a try/finally block.
+
+  Install the root middleware only for a nonempty normalized prefix list. Warn when a nonempty, non-"/" scalar root coexists with a nonempty prefix list, since both are active and confusion is likely.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-config/**
+    - crates/betterlite-server/**
+    - tools/oracle/cases/root-path/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/per_request_root_path_middleware.py
+    why: The complete implementation of per-request root path resolution, normalization and middleware.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8349-L8356
+    why: The scalar get_server_root_path helper that B4200 owns completely.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20019-L20039
+    why: Where the middleware is installed in LiteLLM's middleware stack, including the warning for both scalar and prefix-list being configured at once.
+  - url: https://starlette.io/middleware/#allowed-hosts
+    why: Starlette's ASGI middleware protocol and scope manipulation.
+dod:
+  - text: SERVER_ROOT_PATH and SERVER_ROOT_PATHS load from general_settings, defaulting to empty string, and are resolved through environment variables.
+    proof: [config-tests]
+  - text: normalize_root_paths trims whitespace and trailing slashes, drops empty entries, warns and drops missing-leading-slash and bare-root entries, deduplicates and sorts longest first.
+    proof: [normalization-tests]
+  - text: get_request_root_path returns the middleware's stashed effective root or falls back to the scalar root.
+    proof: [request-context-tests]
+  - text: PerRequestRootPathMiddleware matches request paths against prefixes on whole-segment boundaries, replacing scope["root_path"] on match and preserving it on no match.
+    proof: [middleware-tests, oracle]
+  - text: The middleware handles HTTP and WebSocket scopes; other scopes pass through untouched.
+    proof: [scope-type-tests]
+  - text: The effective root_path is restored after the downstream app completes, even on exceptions.
+    proof: [context-isolation-tests]
+  - text: The middleware is installed only when the normalized prefix list is nonempty.
+    proof: [server-tests]
+  - text: A nonempty, non-"/" scalar root coexisting with a nonempty prefix list triggers a warning.
+    proof: [warning-tests]
+  - text: Nested prefixes, exact-prefix matches, sibling-prefix rejection, scalar fallback, no-match preservation and concurrent request isolation are verified.
+    proof: [integration-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: config-tests
+      why: the config crate's root path tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(root_path)'
+    - id: normalization-tests
+      why: the normalization function does not handle all cases correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(normalize_root_paths)'
+    - id: request-context-tests
+      why: get_request_root_path does not return the correct context or scalar fallback
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(request_root_path)'
+    - id: middleware-tests
+      why: the middleware does not correctly match or route requests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(root_path_middleware)'
+    - id: scope-type-tests
+      why: the middleware does not properly handle different ASGI scope types
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(scope_type)'
+    - id: context-isolation-tests
+      why: the context var is not properly isolated between requests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(context_isolation)'
+    - id: warning-tests
+      why: the coexistence warning is not issued or is issued incorrectly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(root_path_warning)'
+    - id: server-tests
+      why: the server does not correctly install the middleware
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail
+    - id: integration-tests
+      why: the root path handling does not work end-to-end
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(root_path)'
+oracle_cases:
+  - tools/oracle/cases/root-path/health-with-prefix.yaml
+  - tools/oracle/cases/root-path/unmatched-prefix.yaml
+  - tools/oracle/cases/root-path/nested-prefixes.yaml
+  - tools/oracle/cases/root-path/longest-prefix-match.yaml
+deviations:
+  - what: betterlite's per-request root context is accessed through get_request_root_path rather than directly from a global request object, since callers are not always in an HTTP context.
+    why: Avoiding a dependency on betterlite-server from UI, SSO and MCP callers keeps the layering contract clean; they receive the context explicitly.
+  - what: When SERVER_ROOT_PATHS is empty or unset, the middleware is not installed at all, matching LiteLLM's behavior.
+    why: An empty prefix list has no effect, and skipping middleware avoids unnecessary ASGI calls.
+out_of_scope:
+  - Any URL construction or path joining. That belongs to the consumers of get_request_root_path (discovery, MCP, login flows).
+  - Modifying the original request path. Starlette handles stripping root_path during route matching.
+  - Custom routing strategies. Prefixes are matched longest-first by exact segment boundary only.
+pitfalls:
+  - normalize_root_paths warns and drops entries that don't start with "/" or that become empty after stripping the root "/"; do not silently drop them.
+  - A ContextVar set in a request must be reset in a finally block to prevent leaking into other tasks on the same thread.
+  - Matching on a whole-segment boundary means "/tenant-a" matches "/tenant-a/" and "/tenant-a/path" but not "/tenant-ab".
+  - The scalar SERVER_ROOT_PATH defaults to an empty string in the code, not "/" as the old docstring claimed.
+  - get_server_root_paths calls normalize_root_paths, so the constructor and the function both call it; avoid normalizing twice.
+  - HTTP and WebSocket are ASGI scope types to handle; lifespan, disconnect, and other scopes pass through without modification.
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

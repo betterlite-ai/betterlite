@@ -1,0 +1,102 @@
+id: B4684
+title: MCP search ranking, tool identities and virtual schemas
+description: >-
+  Build pure search projections, opaque identities, ranking and virtual tool definitions in betterlite-server::mcp::tool_search.
+  Implement core tool separation (tools placed first, outside rank limit), keyword fallback ranking (scores based on query token matches
+  in tool text), semantic ranking integration (accepts an optional SemanticToolRanker with embedder, embedding model and index state),
+  and schema projections for caller-visible results. Keep search algorithms and identity encoding separate from authorization/I/O handlers;
+  B4686 owns the handler entry points. Tool identity is SHA-256 of "server_id\0tool_name" truncated to 32 hex chars, stored in tool.meta
+  under litellm.ai/proxy_tool_identity. Search config litellm_settings.mcp_tool_search uses MCPToolSearchSettings: embedding_model absent
+  by default, top_k defaults to 5 and constrains to 1–100, similarity_threshold defaults to 0 and constrains to 0–1, core_tools defaults
+  empty. Preserve legacy coerce_top_k fallback, stable tie-breaking by score then original order, caller-visible schema stability and
+  the seven static virtual tool definition literals (mcp_tool_search, mcp_tool_call, agent_search, skill_search, search_tools,
+  get_tool_schema, call_tool).
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/mcp/**
+    - tools/oracle/src/helpers/server/mcp_search_primitives.rs
+    - tools/oracle/src/helpers/server/mcp_search_primitives/**
+    - tools/oracle/helpers/mcp_search_primitives.py
+    - tools/oracle/helpers/mcp_search_primitives/**
+    - tools/oracle/cases/mcp-search/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L48-L52
+    why: coerce_top_k converts value to int with fallback, preserves legacy behavior for direct calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L95-L99
+    why: mcp_tool_search_settings validates config from litellm.mcp_tool_search or empty defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L102-L116
+    why: Tool projection functions _tool_result and _scored_result, with and without scores.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L119-L142
+    why: Opaque identity encoding/decoding SHA-256(server_id+NUL+tool_name) and metadata storage under litellm.ai/proxy_tool_identity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L144-L186
+    why: Proxy search/schema result builders, keyword scoring, core tool splitting, top-hits selection with stable order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L196-L225
+    why: rank_mcp_tools orchestrates core separation, keyword fallback and semantic ranking; async with ranker state.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L228-L240
+    why: search_mcp_tools calls rank_mcp_tools and projects results.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L255-L374
+    why: Seven static VirtualToolDefinition constants and getter functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L377-L383
+    why: _text_tool_result formats MCP CallToolResult with text content and is_error flag.
+dod:
+  - text: >-
+      Ranking separates core tools (ordered first, outside ranked limit) from rest, skips ranking on empty query,
+      falls back to keyword matching when no embedding model is configured, delegates semantic ranking to ranker state,
+      and returns stable ranked hits. Tested with mock tools.
+    proof: [behavior-tests]
+  - text: >-
+      Tool identity encodes server_id and tool_name as SHA-256 hex (32 chars), rounds through metadata storage/retrieval,
+      and invalid identities raise TypeError with clear names.
+    proof: [behavior-tests]
+  - text: >-
+      Keyword scoring counts query tokens (case-insensitive) found in tool name and description; minimum score 1.0 to qualify.
+      Top hits preserve sorted order and respect the limit argument.
+    proof: [behavior-tests]
+  - text: >-
+      Search config defaults from litellm.mcp_tool_search carry embedding_model absent, top_k 5, similarity_threshold 0,
+      core_tools empty; validation errors are returned and propagated.
+    proof: [behavior-tests]
+  - text: >-
+      Proxy search result includes tool_id, name, description, optional score; proxy schema result adds inputSchema and
+      optional outputSchema. Text results wrap MCP CallToolResult with is_error flag.
+    proof: [behavior-tests]
+  - text: >-
+      Seven virtual tool definitions (MCP search, call, agent search, skill search, proxy search/schema/call) are built
+      as typed records with exact names, descriptions and inputSchema structures matching LiteLLM's definitions.
+    proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Ranking, identity encoding, keyword scoring and schema projection must operate without handlers or authorization.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::tool_search::/) - test(/replays_corpus$/)'
+deviations: []
+out_of_scope:
+  - "SemanticTextIndex.scores, router_embedder, and the Embedder type: owned by B4261 cached semantic text ranking"
+  - "MCPToolSearchSettings type: imported from litellm.types.mcp, defined elsewhere"
+  - "DEFAULT_AGENT_SEARCH_TOP_K, DEFAULT_SKILL_SEARCH_TOP_K, and agent/skill search: owned by agent_endpoints and skills packages"
+  - "handle_agent_search, handle_skill_search, handle_mcp_tool_search, handle_mcp_proxy_tool, handle_mcp_tool_call: owned by B4686"
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as mcp_search_primitives in the server group. Replace the stub Op in tools/oracle/src/helpers/server/mcp_search_primitives.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/mcp_search_primitives.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - Tool identity is SHA-256(server_id "\0" tool_name)[:32], not name alone; metadata key is "litellm.ai/proxy_tool_identity" with forward slash.
+  - Opaque identity extraction raises TypeError on invalid/missing metadata, not silent fallback.
+  - Keyword scoring is case-insensitive full-token match "\n".join(name, description), not substring; score is token count.
+  - Core tool names deduplicated by dict.fromkeys; rest filtered by frozenset subtraction preserving order for stable ties.
+  - Semantic ranking receives Sequence[str] _tool_text per tool, not Tool objects; ranker None when embedding_model absent/router unavailable.
+  - EmbeddingFailed propagates as-is, not swallowed.
+  - Empty query returns core_hits without rest ranking; score None for core tools, must check before projection.
+  - The MCP_TOOL_SEARCH_SETTINGS_KEY constant is "mcp_tool_search", used as litellm_settings.mcp_tool_search in YAML.
+  - Similarity threshold is inclusive (>= threshold), not exclusive.
+review_level: standard
+oracle_cases:
+  - tools/oracle/cases/mcp-search/keyword-ranking.yaml
+  - tools/oracle/cases/mcp-search/semantic-ranking.yaml
+  - tools/oracle/cases/mcp-search/core-tools-first.yaml
+  - tools/oracle/cases/mcp-search/tool-identity.yaml
+  - tools/oracle/cases/mcp-search/empty-query.yaml
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

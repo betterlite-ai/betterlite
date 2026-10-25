@@ -1,0 +1,191 @@
+id: B4111
+title: Web search tool dialects and interception records
+description: >-
+  Build three tool definitions for web search, recognition rules that differ by API surface,
+  and typed outcomes for search execution. Build the oracle helper cases for all tool detection
+  functions: create cases under tools/oracle/cases/helpers/websearch_tools/ that invoke the
+  websearch_tools helper (a pure-function oracle helper), register a new HelperCall variant in
+  the oracle, and implement tools/oracle/helpers/websearch_tools.py to call the LiteLLM builder
+  and detection functions via dispatch. The canonical tool uses the name `litellm_web_search`
+  with an input schema offering required `query`, optional `objective` and `search_queries`
+  (two to five short strings).
+
+  Export builders for the Anthropic format (plain dict with name, description, input_schema),
+  the OpenAI Chat Completions format (function type with nested function dict), and the
+  Responses format (flat function type with top-level name/parameters).
+
+  Build three recognition functions. `is_web_search_tool_responses` detects Responses-API tools:
+  OpenAI native types prefixed with `web_search_` or `litellm_web_search` as a function.
+  `is_web_search_tool_chat_completion` is strict for Chat Completions, matching only the
+  exact LiteLLM name in Anthropic or OpenAI format, never native types. `is_web_search_tool`
+  is permissive: detects LiteLLM standard, OpenAI format, native Anthropic types, Claude Code's
+  `web_search` with a type field, and the legacy `WebSearch` marker — but only when absent of
+  an `input_schema`, to avoid hijacking real Cowork client tools that carry their own schema.
+
+  Build typed records for search outcomes: `SearchSucceeded` with text and optional response,
+  `SearchFailed` with error code and message, and `SearchOutcome` as their union. Include the
+  `RichWebSearchInput` struct (or TypedDict equivalent) projecting optional objective and
+  up-to-five search_queries from tool calls. Build `AnthropicSearchQuery` and
+  `AnthropicServerToolUseBlock` for native citation blocks in web-search result messages.
+  Build the `WebSearchInterceptionConfig` struct with fields for enabled_providers,
+  search_tool_name and max_agentic_loops, used in proxy config under litellm_settings.
+
+  The exact error codes in `WebSearchToolResultErrorCode` are invalid_tool_input, unavailable,
+  max_uses_exceeded, too_many_requests, query_too_long, request_too_large.
+
+scope:
+  paths:
+    - crates/betterlite-websearch/**
+    - tools/oracle/cases/helpers/websearch_tools/**
+    - tools/oracle/src/helpers/websearch/tool_records.rs
+    - tools/oracle/src/helpers/websearch/tool_records/**
+    - tools/oracle/helpers/websearch_tool_records.py
+    - tools/oracle/helpers/websearch_tool_records/**
+    - Cargo.toml
+    - deny.toml
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L14-L17
+    why: The web search tool description constant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L20-L56
+    why: The shared input schema with query, objective and search_queries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L59-L82
+    why: The Anthropic-format tool builder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L85-L103
+    why: The OpenAI Chat Completions format with nested function dict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L106-L123
+    why: The Responses API flat function format.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L126-L160
+    why: The Responses API tool detection with native type prefixes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L163-L204
+    why: The strict Chat Completions detection matching only the LiteLLM name exactly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L228-L301
+    why: The permissive detection including native types, Claude Code name and legacy marker.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/websearch_interception.py#L15-L94
+    why: The type definitions for search queries, tool use blocks, search outcomes and config.
+
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as websearch_tool_records in the websearch group. Replace the stub Op in tools/oracle/src/helpers/websearch/tool_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/websearch_tool_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - >-
+    The legacy `WebSearch` tool name (lines 296-299 in tools.py) is a marker only when
+    `input_schema` is absent. Clients like Cowork send a real `WebSearch` with their own
+    schema and expect it to pass through unchanged; matching it would hijack the tool and
+    break citation rendering in the client when it sends its own nested `web_search_20250305`
+    request.
+  - >-
+    `is_web_search_tool_responses` accepts native types prefixed `web_search_` (e.g.
+    `web_search_20250305`, `web_search_preview_2025_03_11`), but `is_web_search_tool_chat_completion`
+    rejects them entirely. Chat Completions never sees native Anthropic types; they only come
+    through the Responses path.
+  - >-
+    `is_web_search_tool` is a union of all three: it must detect the same tool via all three
+    routes. A tool with name `litellm_web_search` should match in all three functions, but a
+    native `web_search_20250305` should only match `is_web_search_tool_responses` and the general
+    `is_web_search_tool`, never the chat-completion-strict check.
+  - >-
+    The OpenAI format has the tool name nested inside a `function` dict (line 99 in tools.py).
+    Both the Chat Completions and Responses detections must check for it; Responses additionally
+    accepts native types.
+  - >-
+    The input schema is mutable-ok in comments (line 20, tools.py) because it's returned fresh
+    each time and modified by the caller. In Rust, this suggests owned Vec/HashMap, not borrowed
+    slices.
+
+dod:
+  - text: >-
+      The three tool builders return correctly-shaped dicts: Anthropic with name/description/input_schema,
+      OpenAI Chat Completions with type/function/function.name/function.parameters, Responses with
+      type/name/description/parameters at the top level. Helper cases pass the oracle against LiteLLM
+      for each builder, matching shape and field values.
+    proof: [websearch-tools-builders, websearch-tools-oracle]
+  - text: >-
+      `is_web_search_tool_responses` detects OpenAI native types prefixed `web_search_`,
+      `web_search_preview_*` and the function `litellm_web_search`. Helper cases pass against
+      LiteLLM for native prefixes, function-format detection and rejection of non-web-search tools.
+    proof: [websearch-tools-responses, websearch-tools-oracle]
+  - text: >-
+      `is_web_search_tool_chat_completion` detects only the exact name `litellm_web_search`
+      in Anthropic format or OpenAI function format, never native types. Helper cases pass
+      against LiteLLM for exact matches, function nesting and rejection of native types.
+    proof: [websearch-tools-chat, websearch-tools-oracle]
+  - text: >-
+      `is_web_search_tool` detects all three plus Claude Code `web_search` with a type field
+      and the legacy `WebSearch` marker without `input_schema`. Helper cases pass against LiteLLM
+      for native types, legacy markers, schema-gating and rejection of client tools carrying schema.
+    proof: [websearch-tools-general, websearch-tools-oracle]
+  - text: >-
+      All type records are present: `SearchSucceeded` and `SearchFailed` for outcomes,
+      `SearchOutcome` union, `RichWebSearchInput` with optional objective and search_queries,
+      `AnthropicSearchQuery`, `AnthropicServerToolUseBlock`, `WebSearchInterceptionConfig`.
+    proof: [websearch-tools-types, behavior-tests]
+  - text: The exact error codes are `invalid_tool_input`, `unavailable`, `max_uses_exceeded`, `too_many_requests`, `query_too_long`, `request_too_large`.
+    proof: [websearch-tools-types]
+
+checks:
+  optional: []
+  commands:
+    - id: websearch-tools-builders
+      why: the tool builders do not exist or return wrong shapes
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/web_search.*builder/)'
+    - id: websearch-tools-responses
+      why: Responses-API detection does not exist or fails on the expected cases
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/web_search_tool_responses/)'
+    - id: websearch-tools-chat
+      why: Chat Completions detection does not exist or fails on the expected cases
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/web_search_tool_chat_completion/)'
+    - id: websearch-tools-general
+      why: General tool detection does not exist or fails on the expected cases
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^web_search_tool$/)'
+    - id: websearch-tools-types
+      why: Type records do not exist or fail structure tests
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/web_search.*type/)'
+    - id: behavior-tests
+      why: behavior tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail
+    - id: websearch-tools-oracle
+      why: web search tool detection helper cases fail against LiteLLM
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/helpers/websearch_tools/
+
+oracle_cases:
+  - tools/oracle/cases/helpers/websearch_tools/get_litellm_web_search_tool.yaml
+  - tools/oracle/cases/helpers/websearch_tools/get_litellm_web_search_tool_openai.yaml
+  - tools/oracle/cases/helpers/websearch_tools/get_litellm_web_search_tool_responses.yaml
+  - tools/oracle/cases/helpers/websearch_tools/is_web_search_tool_responses_native_prefix.yaml
+  - tools/oracle/cases/helpers/websearch_tools/is_web_search_tool_responses_function.yaml
+  - tools/oracle/cases/helpers/websearch_tools/is_web_search_tool_responses_false.yaml
+  - tools/oracle/cases/helpers/websearch_tools/is_web_search_tool_chat_exact_name.yaml
+  - tools/oracle/cases/helpers/websearch_tools/is_web_search_tool_chat_openai_function.yaml
+  - tools/oracle/cases/helpers/websearch_tools/is_web_search_tool_chat_false.yaml
+  - tools/oracle/cases/helpers/websearch_tools/is_web_search_tool_anthropic_native.yaml
+  - tools/oracle/cases/helpers/websearch_tools/is_web_search_tool_litellm_standard.yaml
+  - tools/oracle/cases/helpers/websearch_tools/is_web_search_tool_claude_code.yaml
+  - tools/oracle/cases/helpers/websearch_tools/is_web_search_tool_legacy_websearch.yaml
+  - tools/oracle/cases/helpers/websearch_tools/is_web_search_tool_client_websearch_schema.yaml
+  - tools/oracle/cases/helpers/websearch_tools/search_outcome_succeeded.yaml
+  - tools/oracle/cases/helpers/websearch_tools/search_outcome_failed.yaml
+  - tools/oracle/cases/helpers/websearch_tools/search_outcome_error_codes.yaml
+
+deviations:
+  - what: |-
+      betterlite exports the three tool builders as Rust functions returning serialized JSON,
+      while LiteLLM's Python returns dicts. The wire format and contracts downstream stay identical;
+      the only observable difference is that builders are functions called at tool-injection time,
+      not module-level constants.
+    why: Rust's type system requires explicit returns; dynamic dicts are not idiomatic.
+  - what: >-
+      The `input_schema` is always a newly-constructed dict in LiteLLM and consumed by callers.
+      In Rust, builders return owned values so callers can mutate them if needed.
+    why: Matching LiteLLM's mutation allowance requires owned types.
+
+out_of_scope:
+  - SearchResponse contract, the external search-execution provider record referenced by SearchSucceeded.
+  - ProviderConfigManager.get_provider_search_config and ProviderConfigManager.get_provider_anthropic_messages_config.
+  - BaseSearchConfig.supports_rich_search_input provider capability checks.
+  - The is_anthropic_native_web_search_tool function, owned by B568.
+  - Actual search execution or tool interception integration hooks.
+
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

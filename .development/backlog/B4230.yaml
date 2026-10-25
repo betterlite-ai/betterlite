@@ -3,7 +3,7 @@ milestone: M8 platform
 title: OpenAPI schema components and inline request bodies
 status: todo
 depends_on: []
-file: null
+file: tasks/B4230-openapi-schema-transforms.yaml
 covers:
   - "litellm/proxy/common_utils/custom_openapi_spec.py"
 parent: B123

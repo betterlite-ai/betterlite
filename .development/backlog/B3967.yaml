@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Lunary events and Weights and Biases trace trees
 status: todo
 depends_on: []
-file: null
+file: tasks/B3967-sdk-analytics-records.yaml
 covers:
   - "litellm/integrations/{lunary,weights_biases}.py"
 parent: B114

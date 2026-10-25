@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Component route allowlists and worker registry records
 status: todo
 depends_on: []
-file: null
+file: tasks/B4470-component-contracts.yaml
 covers:
   - "gateway/routes/**"
   - "backend/routes/**"

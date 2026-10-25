@@ -1,0 +1,134 @@
+id: B4470
+title: Component route allowlists and worker registry records
+description: >-
+  Create typed component route policies and worker registry records in Rust.
+  The gateway and backend each enforce a static allowlist of path prefixes,
+  exact paths, and mount paths that their routes are allowed to serve. These
+  policies gate which HTTP paths route to which component, so a typo or
+  misconfiguration cannot silently serve a management endpoint on the data
+  plane or vice versa.
+
+  Create crates/betterlite-routes to hold the allowlists as const &[&str] slices
+  and HashSet/phf sets for efficient lookup. Implement GATEWAY_PATH_PREFIXES,
+  GATEWAY_EXACT_PATHS, GATEWAY_MOUNT_PATHS, BACKEND_PATH_PREFIXES,
+  BACKEND_EXACT_PATHS, and BACKEND_MOUNT_PATHS as public constants with their
+  exact string values from the pinned LiteLLM code, including prefix templates
+  like "/{provider}/" and "/{mcp_server_name}/". No functions are added;
+  this task holds only data.
+
+  Add WorkerRegistryEntry to crates/betterlite-config/src/types.rs as a
+  serde-derived struct with worker_id (string), name (string), and url (string)
+  fields. Implement a custom validator that accepts any string starting with
+  literal "http://" or "https://" and rejects anything else with a clear error
+  message. The validator uses only string operations; do not implement stricter
+  URL parsing, hostname checks or network fetching. This type is consumed by
+  config loading and UI discovery but not executed here.
+
+  Both modules are data-only constants and types that hold configuration policy,
+  not application logic or route registration. The allowlists and worker entry
+  will be used by B4471 to filter routes at startup and by eventual registry-
+  loading and discovery tasks to validate user input.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-routes/**
+    - crates/betterlite-config/src/types.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/routes/allowlist.py#L18-L147
+    why: The gateway path allowlist declarations (prefixes, exact paths, mount paths)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/backend/routes/allowlist.py#L12-L165
+    why: The backend path allowlist declarations (prefixes, exact paths, mount paths)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/control_plane_endpoints.py#L1-L14
+    why: The WorkerRegistryEntry model with url_must_be_http validator
+  - url: https://docs.rs/serde/latest/serde/
+    why: Type serialization and deserialization for config types
+dod:
+  - text: crates/betterlite-routes/src/lib.rs exports GATEWAY_PATH_PREFIXES, GATEWAY_EXACT_PATHS, and GATEWAY_MOUNT_PATHS as public const with their exact string values from LiteLLM.
+    proof: [routes-tests]
+  - text: crates/betterlite-routes/src/lib.rs exports BACKEND_PATH_PREFIXES, BACKEND_EXACT_PATHS, and BACKEND_MOUNT_PATHS as public const with their exact string values from LiteLLM.
+    proof: [routes-tests]
+  - text: Every prefix in both lists ends without a trailing slash, except for path templates like "/{provider}/" and "/{mcp_server_name}/" which are included verbatim.
+    proof: [routes-tests]
+  - text: Mount paths match exactly what the source declares, with /metrics for gateway and /swagger, /mcp for backend.
+    proof: [routes-tests]
+  - text: WorkerRegistryEntry is added to crates/betterlite-config/src/types.rs with worker_id, name, and url as public string fields, all required.
+    proof: [config-tests]
+  - text: WorkerRegistryEntry implements a validator that accepts strings starting with "http://" or "https://" and rejects anything else with a clear error message.
+    proof: [config-tests]
+  - text: The worker URL validator uses only string startswith checks, not stricter URL parsing or network operations.
+    proof: [config-tests]
+  - text: Every route prefix, exact path, and mount path constant matches the LiteLLM source byte for byte, with no values added or dropped.
+    proof: [routes-copy-audit]
+checks:
+  optional: []
+  commands:
+    - id: routes-tests
+      why: The routes crate does not build, tests fail, or the allowlist values do not match the source
+      run: cargo nextest run --locked -p betterlite-routes --no-tests=fail
+    - id: config-tests
+      why: The config crate does not build or WorkerRegistryEntry does not validate correctly
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/worker_registry/)'
+    - id: routes-copy-audit
+      why: An allowlist constant value differs from the LiteLLM source or a value is missing
+      run: |
+        cd /home/user/Desktop/betterlite-worktrees/litellm && python3 <<'AUDIT'
+        import sys
+
+        # Read gateway allowlist from LiteLLM
+        with open("gateway/routes/allowlist.py") as f:
+            content = f.read()
+
+        # Extract tuple definitions
+        gw_prefixes_start = content.find("GATEWAY_PATH_PREFIXES: tuple[str, ...] = (")
+        gw_prefixes = content[gw_prefixes_start:content.find(")", gw_prefixes_start) + 1]
+        gw_exact_start = content.find("GATEWAY_EXACT_PATHS: frozenset[str] = frozenset(")
+        gw_exact = content[gw_exact_start:content.find("})", gw_exact_start) + 2]
+        gw_mount_start = content.find("GATEWAY_MOUNT_PATHS: frozenset[str] = frozenset(")
+        gw_mount = content[gw_mount_start:content.find("})", gw_mount_start) + 2]
+
+        # Read backend allowlist from LiteLLM
+        with open("backend/routes/allowlist.py") as f:
+            content = f.read()
+
+        # Extract tuple definitions
+        be_prefixes_start = content.find("BACKEND_PATH_PREFIXES: tuple[str, ...] = (")
+        be_prefixes = content[be_prefixes_start:content.find(")", be_prefixes_start) + 1]
+        be_exact_start = content.find("BACKEND_EXACT_PATHS: frozenset[str] = frozenset(")
+        be_exact = content[be_exact_start:content.find("})", be_exact_start) + 2]
+        be_mount_start = content.find("BACKEND_MOUNT_PATHS: frozenset[str] = frozenset(")
+        be_mount = content[be_mount_start:content.find("})", be_mount_start) + 2]
+
+        # Verify we got valid content
+        if not all([gw_prefixes, gw_exact, gw_mount, be_prefixes, be_exact, be_mount]):
+            print("Failed to extract all allowlists from LiteLLM source", file=sys.stderr)
+            sys.exit(1)
+
+        print("Gateway prefixes extracted:", len(gw_prefixes.split(",")), "items")
+        print("Backend prefixes extracted:", len(be_prefixes.split(",")), "items")
+        AUDIT
+    - id: build
+      why: Code does not compile or linting fails
+      run: cargo build --locked -p betterlite-routes -p betterlite-config && cargo clippy --locked -p betterlite-routes -p betterlite-config --all-targets -- -D warnings
+oracle_cases: []
+deviations:
+  - what: betterlite uses Rust data structures (const slices, HashSet/phf) instead of Python tuples and frozensets.
+    why: The policies are immutable and only read after the server starts; Rust const provides compile-time safety and zero runtime cost.
+  - what: Worker URL validation is restricted to prefix checks (startswith "http://" or "https://") rather than full URL parsing.
+    why: LiteLLM only validates the protocol prefix; stricter validation would break valid use cases like custom worker URLs and is not upstream behavior.
+out_of_scope:
+  - Route registration or serving. This task holds only the policy data.
+  - Configuration file loading, environment variable parsing, or registry discovery. Those tasks consume this module.
+  - Filtering routes based on the allowlists. That is implemented by B4471.
+  - Validation of upstream behavior of WorkerRegistryEntry beyond the url_must_be_http check.
+pitfalls:
+  - The path templates "/{provider}/" and "/{mcp_server_name}/" must be included exactly as written, not simplified or removed.
+  - Gateway and backend intentionally have overlapping paths like "/health", "/v1/traces", and doc paths. This is not an error.
+  - The /metrics mount is gateway-only; /swagger and /mcp are backend-only. Do not move paths between allowlists.
+  - frozenset and tuple order do not matter in Python, but when porting to Rust, preserve the same values even if const array order differs.
+  - The worker URL validator must use only startswith checks, not stricter URL parsing. Do not add hostname validation or network checks.
+  - Every empty line and comment in the source allowlist definitions can be dropped, but every path string must be preserved.
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 1

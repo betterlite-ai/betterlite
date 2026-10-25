@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Setup wizard terminal input and provider selection
 status: todo
 depends_on: [B002]
-file: null
+file: tasks/B4594-setup-provider-selection.yaml
 covers:
   - "litellm/setup_wizard.py"
 parent: B135

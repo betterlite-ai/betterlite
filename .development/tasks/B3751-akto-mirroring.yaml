@@ -1,0 +1,132 @@
+id: B3751
+title: Akto mirroring payloads and transport
+description: >-
+  Implement Akto guardrail's double-encoded MIRRORING payload construction for HTTP traffic mirroring,
+  account/VXLAN identifier defaults, HTTP POST transport to /api/http-proxy, response parsing including
+  the distinction between malformed JSON errors and valid non-object JSON (which permits the request),
+  unreachable fallback policy, and background fire-and-forget data ingestion.
+
+
+  Configuration carries: `akto_base_url` (required, reads AKTO_GUARDRAIL_API_BASE), `akto_api_key` (required,
+  reads AKTO_API_KEY), `akto_account_id` (optional, default "1000000", reads AKTO_ACCOUNT_ID),
+  `akto_vxlan_id` (optional, default "0", reads AKTO_VXLAN_ID), `unreachable_fallback` (fail_closed or
+  fail_open, default fail_closed), and `guardrail_timeout` (optional, default 5 seconds). HTTP headers
+  include Authorization (API key) and Content-Type (application/json).
+
+
+  Payload construction uses the MIRRORING format with double-encoding at requestPayload and responsePayload
+  fields; inner JSON bodies are wrapped as `json.dumps({"body": json.dumps(actual_body)})` to match Akto's
+  CLI hook format. Extract client IP from x-forwarded-for or x-real-ip proxy headers, handling comma-separated
+  lists by taking the first value. Build request path from metadata.user_api_key_request_route, defaulting to
+  /v1/chat/completions. Include user_id and team_id tags extracted from litellm_metadata or metadata dicts.
+
+
+  Response parsing extracts guardrailsResult.Allowed (default true) and Reason (empty string default) from
+  the JSON response. Preserve the distinction between response.status_code != 200 (error), malformed JSON
+  (JSONDecodeError raised to caller), and valid non-object or non-dict data (returns allowed=true,
+  reason=""). Scope paths are the guardrails module. Background ingestion uses fire-and-forget asyncio
+  tasks with proper tracking to prevent leaks.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/akto.rs
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/types.rs
+    - crates/betterlite-config/src/loader.rs
+    - tools/oracle/cases/guardrails/akto/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L62-L486
+    why: The complete AktoGuardrail class with __init__, build_akto_payload, send_request, handle_guardrail_response, handle_unreachable, fire_and_forget_request and apply_guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/akto.py
+    why: The AktoConfigModel with akto_base_url, akto_api_key, akto_account_id, akto_vxlan_id and unreachable_fallback fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py
+    why: The CustomGuardrail base class and the log_guardrail_information decorator.
+dod:
+  - text: >-
+      Akto payload uses double-encoding for requestPayload and responsePayload fields, with inner
+      bodies wrapped as `json.dumps({"body": json.dumps(...)})` to match CLI hook format.
+    proof: [oracle]
+  - text: >-
+      Account and VXLAN IDs default to "1000000" and "0" when not set, reading from AKTO_ACCOUNT_ID
+      and AKTO_VXLAN_ID environment variables.
+    proof: [akto-tests]
+  - text: >-
+      Response parsing returns (allowed, reason) tuple, extracting guardrailsResult.Allowed and Reason
+      from JSON, with sensible defaults on missing fields.
+    proof: [akto-tests]
+  - text: >-
+      Malformed JSON in response body raises JSONDecodeError; valid non-object/non-dict JSON returns
+      (allowed=true, reason="").
+    proof: [akto-tests]
+  - text: Unreachable Akto service follows fail_open/fail_closed policy, logging appropriately for each mode.
+    proof: [akto-tests]
+  - text: Background fire-and-forget ingestion tasks are tracked and cleaned up to prevent leaks.
+    proof: [akto-tests]
+  - text: >-
+      Client IP is extracted from x-forwarded-for or x-real-ip headers, handling comma-separated values
+      by taking the first element.
+    proof: [akto-tests]
+  - text: >-
+      Configuration loads akto_base_url (required, AKTO_GUARDRAIL_API_BASE env), akto_api_key (required,
+      AKTO_API_KEY env), akto_account_id (optional, AKTO_ACCOUNT_ID env, default "1000000"), akto_vxlan_id
+      (optional, AKTO_VXLAN_ID env, default "0"), unreachable_fallback (optional, default fail_closed), and
+      guardrail_timeout (optional, default 5).
+    proof: [akto-tests, config-load]
+checks:
+  optional: []
+  commands:
+    - id: akto-tests
+      why: the akto guardrail tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-server --no-tests=fail -E 'test(/akto_guardrail/)'
+    - id: config-load
+      why: the Akto configuration does not load from files or environment
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/akto.*config/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/akto/pre-call-guardrail-allowed.yaml
+  - tools/oracle/cases/guardrails/akto/pre-call-guardrail-blocked.yaml
+  - tools/oracle/cases/guardrails/akto/pre-call-payload-double-encoding.yaml
+  - tools/oracle/cases/guardrails/akto/post-call-ingest.yaml
+  - tools/oracle/cases/guardrails/akto/response-parsing-success.yaml
+  - tools/oracle/cases/guardrails/akto/response-malformed-json.yaml
+  - tools/oracle/cases/guardrails/akto/response-non-object-json.yaml
+  - tools/oracle/cases/guardrails/akto/client-ip-extraction.yaml
+  - tools/oracle/cases/guardrails/akto/account-vxlan-defaults.yaml
+  - tools/oracle/cases/guardrails/akto/unreachable-fail-open.yaml
+  - tools/oracle/cases/guardrails/akto/unreachable-fail-closed.yaml
+  - tools/oracle/cases/guardrails/akto/missing-api-key.yaml
+  - tools/oracle/cases/guardrails/akto/missing-base-url.yaml
+deviations:
+  - what: Akto error messages use betterlite's own wording in failure scenarios, not LiteLLM's exact text.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status codes unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L375-L379
+out_of_scope:
+  - Lifecycle hook entry points (apply_guardrail decorator, async_pre_call_hook, async_post_call_success_hook
+    wrapper logic); B107 orchestrates when Akto guardrails are invoked.
+  - The check-versus-ingest lifecycle decision (whether to combine guardrails=true with ingest_data=true);
+    B107 controls that behavior.
+  - Other guardrail providers (AIM, Cisco, etc.); each gets its own task.
+pitfalls:
+  - >-
+    Double-encoding must be applied consistently: `json.dumps({"body": json.dumps(actual_body)})` for both
+    request and response payloads, not single-encoded.
+  - Account and VXLAN defaults are string values "1000000" and "0", not integers.
+  - >-
+    Client IP extraction must handle comma-separated x-forwarded-for values by taking only the first element
+    after stripping whitespace.
+  - >-
+    Malformed JSON response (JSONDecodeError) must be raised to the caller; valid non-object JSON must return
+    `(allowed=true, reason="")`, not raise.
+  - >-
+    Background ingestion tasks must be added to self.background_tasks and unregistered on completion via
+    add_done_callback, to prevent AsyncIO warnings or resource leaks.
+  - Fire-and-forget ingestion must not re-raise errors to the caller; errors are logged only.
+  - >-
+    The unreachable_fallback policy uses exact string values: "fail_open" and "fail_closed", not boolean.
+  - >-
+    akto_api_key must never be logged or shown in Debug output; mark the field as SecretString and use it only
+    in the Authorization header.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 1

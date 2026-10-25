@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Resolve deployment and per-request root paths
 status: todo
 depends_on: [B001, B002, B003]
-file: null
+file: tasks/B4200-request-root-paths.yaml
 covers:
   - "litellm/proxy/middleware/per_request_root_path_middleware.py"
   - "litellm/proxy/utils.py"
