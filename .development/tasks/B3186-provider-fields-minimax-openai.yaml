@@ -1,0 +1,138 @@
+id: B3186
+title: Provider form catalog from MiniMax through OpenAI
+description: >-
+  Create the ordered catalog fragment for the public provider form endpoint, covering thirteen provider definitions from MiniMax through OpenAI.
+  This fragment holds credential field metadata, display names, and model placeholders for each provider, consumed by B3190's get_provider_fields function as part of its assembled catalog.
+  Preserve every credential field name, label, placeholder, tooltip, required flag, field_type and options value exactly as LiteLLM defines them at the pinned commit, including NVIDIA Riva's gRPC endpoint metadata and required api_base field with its distinct default_model_placeholder prefix.
+  Store this fragment in its own asset path crates/betterlite-server/assets/provider_create_fields_minimax_openai.json so parallel workers do not rewrite a shared file; B3190 later assembles all fragments in the source order.
+scope:
+  paths:
+    - crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L2156-L2529
+    why: All thirteen provider definitions from MINIMAX through OpenAI with their credential fields, defaults and model placeholders.
+dod:
+  - text: All thirteen provider records (MINIMAX through OpenAI) are preserved byte-for-byte from the LiteLLM source at the pinned commit.
+    proof: [provider-records-preserved]
+  - text: "Every credential field for all thirteen providers (MINIMAX, MOONSHOT, MORPH, NEBIUS, NLP_CLOUD, NOVITA, NSCALE, NVIDIA_NIM, NVIDIA_RIVA, Ollama, OLLAMA_CHAT, OOBABOOGA, OpenAI) has exact required, field_type, label, placeholder, tooltip and default_value values matching LiteLLM's field order."
+    proof: [minimax-fields, moonshot-fields, morph-fields, nebius-fields, nlp-cloud-fields, novita-fields, nscale-fields, nvidia-nim-fields, nvidia-riva-fields, ollama-fields, ollama-chat-fields, oobabooga-fields, openai-fields]
+  - text: NVIDIA Riva's default_model_placeholder is the exact value "nvidia_riva/nvidia/parakeet-ctc-1_1b-asr" with the provider prefix, and its api_base field is required with gRPC endpoint placeholder and tooltip.
+    proof: [nvidia-riva-fields]
+  - text: Ollama and Ollama Chat are distinct providers with distinct litellm_provider identifiers (ollama and ollama_chat); Ollama's api_base has the default_value "http://localhost:11434".
+    proof: [ollama-fields, ollama-chat-fields]
+  - text: The JSON file is a JSON array of thirteen provider records in the expected order.
+    proof: [provider-json-parses]
+checks:
+  optional: []
+  commands:
+    - id: provider-records-preserved
+      why: the thirteen provider records do not appear in the expected order or count
+      run: >-
+        jq -e '[.[].provider] == ["MINIMAX", "MOONSHOT", "MORPH", "NEBIUS", "NLP_CLOUD", "NOVITA", "NSCALE", "NVIDIA_NIM", "NVIDIA_RIVA", "Ollama", "OLLAMA_CHAT", "OOBABOOGA", "OpenAI"]'
+        crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: minimax-fields
+      why: MINIMAX credential fields do not match LiteLLM's exact structure
+      run: |
+        jq -e '.[0] | .provider == "MINIMAX" and .default_model_placeholder == "minimax/MiniMax-M2" and (.credential_fields | length) == 2' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[0].credential_fields[0] | .key == "api_key" and .label == "API Key" and .field_type == "password" and .required == true and .placeholder == "your-minimax-api-key"' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[0].credential_fields[1] | .key == "api_base" and .label == "API Base URL" and .field_type == "text" and .required == false and .default_value == "https://api.minimax.io/v1"' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: moonshot-fields
+      why: MOONSHOT credential fields do not match LiteLLM exactly
+      run: |
+        jq -e '.[1] | .provider == "MOONSHOT" and (.credential_fields | length) == 2' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[1].credential_fields[0] | .key == "api_base" and .label == "API Base" and .field_type == "text" and .required == false and .placeholder == null and .tooltip == null and .default_value == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[1].credential_fields[1] | .key == "api_key" and .label == "API Key" and .field_type == "password" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: morph-fields
+      why: MORPH credential fields do not match LiteLLM exactly
+      run: |
+        jq -e '.[2] | .provider == "MORPH" and (.credential_fields | length) == 2' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[2].credential_fields[0] | .key == "api_base" and .label == "API Base" and .field_type == "text" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[2].credential_fields[1] | .key == "api_key" and .label == "API Key" and .field_type == "password" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: nebius-fields
+      why: NEBIUS credential fields do not match LiteLLM exactly
+      run: |
+        jq -e '.[3] | .provider == "NEBIUS" and (.credential_fields | length) == 2' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[3].credential_fields[0] | .key == "api_base" and .label == "API Base" and .field_type == "text" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[3].credential_fields[1] | .key == "api_key" and .label == "API Key" and .field_type == "password" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: nlp-cloud-fields
+      why: NLP_CLOUD credential fields do not match LiteLLM exactly
+      run: |
+        jq -e '.[4] | .provider == "NLP_CLOUD" and (.credential_fields | length) == 2' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[4].credential_fields[0] | .key == "api_base" and .label == "API Base" and .field_type == "text" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[4].credential_fields[1] | .key == "api_key" and .label == "API Key" and .field_type == "password" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: novita-fields
+      why: NOVITA credential fields do not match LiteLLM exactly
+      run: |
+        jq -e '.[5] | .provider == "NOVITA" and (.credential_fields | length) == 2' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[5].credential_fields[0] | .key == "api_base" and .label == "API Base" and .field_type == "text" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[5].credential_fields[1] | .key == "api_key" and .label == "API Key" and .field_type == "password" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: nscale-fields
+      why: NSCALE credential fields do not match LiteLLM exactly
+      run: |
+        jq -e '.[6] | .provider == "NSCALE" and (.credential_fields | length) == 2' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[6].credential_fields[0] | .key == "api_base" and .label == "API Base" and .field_type == "text" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[6].credential_fields[1] | .key == "api_key" and .label == "API Key" and .field_type == "password" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: nvidia-nim-fields
+      why: NVIDIA_NIM credential fields do not match LiteLLM exactly
+      run: |
+        jq -e '.[7] | .provider == "NVIDIA_NIM" and (.credential_fields | length) == 2' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[7].credential_fields[0] | .key == "api_base" and .label == "API Base" and .field_type == "text" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[7].credential_fields[1] | .key == "api_key" and .label == "API Key" and .field_type == "password" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: nvidia-riva-fields
+      why: NVIDIA_RIVA credential fields, gRPC endpoint metadata or default_model_placeholder do not match LiteLLM exactly
+      run: |
+        jq -e '.[8] | .provider == "NVIDIA_RIVA" and .litellm_provider == "nvidia_riva" and .default_model_placeholder == "nvidia_riva/nvidia/parakeet-ctc-1_1b-asr" and (.credential_fields | length) == 3' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[8].credential_fields[0] | .key == "api_base" and .label == "API Base" and .field_type == "text" and .required == true and .placeholder == "grpc.nvcf.nvidia.com:443"' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[8].credential_fields[0].tooltip | contains("gRPC") and contains("Riva")' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[8].credential_fields[1] | .key == "api_key" and .label == "API Key" and .field_type == "password" and .required == false and .placeholder == "nvapi-..."' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[8].credential_fields[2] | .key == "nvcf_function_id" and .label == "NVCF Function ID" and .field_type == "text" and .required == false' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: ollama-fields
+      why: Ollama credential fields or default_value do not match LiteLLM exactly
+      run: |
+        jq -e '.[9] | .provider == "Ollama" and .litellm_provider == "ollama" and (.credential_fields | length) == 1' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[9].credential_fields[0] | .key == "api_base" and .label == "API Base" and .field_type == "text" and .required == false and .placeholder == "http://localhost:11434" and .default_value == "http://localhost:11434"' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[9].credential_fields[0].tooltip | contains("Ollama")' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: ollama-chat-fields
+      why: OLLAMA_CHAT credential fields do not match LiteLLM exactly
+      run: |
+        jq -e '.[10] | .provider == "OLLAMA_CHAT" and .litellm_provider == "ollama_chat" and (.credential_fields | length) == 2' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[10].credential_fields[0] | .key == "api_base" and .label == "API Base" and .field_type == "text" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[10].credential_fields[1] | .key == "api_key" and .label == "API Key" and .field_type == "password" and .required == false' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: oobabooga-fields
+      why: OOBABOOGA credential fields do not match LiteLLM exactly
+      run: |
+        jq -e '.[11] | .provider == "OOBABOOGA" and (.credential_fields | length) == 2' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[11].credential_fields[0] | .key == "api_base" and .label == "API Base" and .field_type == "text" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[11].credential_fields[1] | .key == "api_key" and .label == "API Key" and .field_type == "password" and .required == false and .placeholder == null and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: openai-fields
+      why: OpenAI credential fields, field order or required flags do not match LiteLLM exactly
+      run: |
+        jq -e '.[12] | .provider == "OpenAI" and .litellm_provider == "openai" and (.credential_fields | length) == 3 and .default_model_placeholder == "gpt-3.5-turbo"' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[12].credential_fields[0] | .key == "api_base" and .label == "API Base" and .field_type == "text" and .required == false and .default_value == "https://api.openai.com/v1"' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[12].credential_fields[1] | .key == "organization" and .label == "OpenAI Organization ID" and .field_type == "text" and .required == false and .placeholder == "[OPTIONAL] my-unique-org" and .tooltip == null' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json &&
+        jq -e '.[12].credential_fields[2] | .key == "api_key" and .label == "OpenAI API Key" and .field_type == "password" and .required == true' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+    - id: provider-json-parses
+      why: the JSON file does not parse or does not yield thirteen records
+      run: jq -e 'type == "array" and length == 13' crates/betterlite-server/assets/provider_create_fields_minimax_openai.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Consuming or assembling this fragment into a larger catalog. B3190 loads all fragments in source order.
+  - Network behavior or credential validation. This task only preserves the form metadata.
+  - Provider resolution or model execution. The task provides data only.
+pitfalls:
+  - "The JSON file must be a plain array, not an object with a key. B3190's loader expects JSON.load(file) to yield a list directly."
+  - "Every null value in options, placeholder or tooltip must be preserved exactly; missing the null and writing an empty string changes the wire format."
+  - >-
+    NVIDIA Riva's default_model_placeholder includes the provider prefix:
+    "nvidia_riva/nvidia/parakeet-ctc-1_1b-asr", not just
+    "nvidia/parakeet-ctc-1_1b-asr".
+  - "NVIDIA Riva's api_base field is required (unlike most other providers) and has a gRPC endpoint placeholder and detailed tooltip about NVCF vs self-hosting."
+  - "Ollama and Ollama Chat are distinct providers with distinct litellm_provider identifiers (ollama and ollama_chat); only Ollama carries a default_value for api_base."
+  - "Moonshot, Morph, Nebius, NLP_Cloud, Novita, Nscale, NVIDIA_NIM and Oobabooga all have minimal credential fields with no required fields, placeholders or tooltips (all null or false)."
+  - "OpenAI's organization field has no tooltip despite being optional; its placeholder clarifies \"[OPTIONAL]\" in the label."
+review_level: standard
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

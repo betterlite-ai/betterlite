@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Provider form catalog from MiniMax through OpenAI
 status: todo
 depends_on: []
-file: null
+file: tasks/B3186-provider-fields-minimax-openai.yaml
 covers:
   - "litellm/proxy/public_endpoints/provider_create_fields.json"
 parent: B077

@@ -1,0 +1,117 @@
+id: B3270
+title: Search records, provider hooks and credential destinations
+description: >-
+  Build crates/betterlite-openai::search with typed search response and result records, base provider-neutral
+  transformation hooks, and server-credential destination policy. Preserve extensible results, hidden response metadata
+  and base defaults for ui_friendly_name ("Unknown Search Provider"), supports_rich_search_input (False) and
+  get_http_method ("POST"). Implement the server-credential destination check using lowercase URL netloc equality and
+  injected secret lookup, including explicit-key bypass and ordered environment-key fallback.
+
+  Export from betterlite-openai::search: SearchResult (title, url, snippet, optional date/last_updated with extra
+  fields allowed), SearchResponse (results list, object="search" default, private _hidden_params attribute),
+  BaseSearchConfig class with all transformation hooks (validate_environment, sign_request, get_complete_url,
+  transform_search_request, transform_search_response, get_error_class, get_http_error_class), credential resolution
+  and trust validation, and unified Perplexity search parameters constant. Export SearchTool, SearchToolLiteLLMParams,
+  SearchToolInfoResponse and ListSearchToolsResponse typed records for tool configuration and management responses;
+  these are re-exported from their sources (config or types crates).
+
+  The server-credential check blocks sending a server-managed secret to a caller-chosen api_base unless that base
+  matches the provider default or an operator override. Explicit api_key bypasses the trust check. This is
+  security-reviewed code: do not drop the credential destination check or trust validation. Follow LiteLLM's
+  exception handling (raise when trust fails, return None when a key is optional and unset).
+
+scope:
+  paths:
+    - crates/betterlite-openai/src/search/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L1-79
+    why: Unified parameters, SearchResult type, SearchResponse type with results, object, model_config and _hidden_params fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L81-297
+    why: BaseSearchConfig class with all transformation and credential hooks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L1-78
+    why: SearchTool, SearchToolLiteLLMParams, SearchToolInfoResponse, ListSearchToolsResponse records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/__init__.py#L1-15
+    why: Package-level exports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L31-56
+    why: BaseLLMException signature and initialization for error class construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L139-150
+    why: get_secret_str behavior for server-managed secret lookup from environment or injected source.
+
+dod:
+  - text: SearchResult holds title, url, snippet, optional date and last_updated, and allows extra fields.
+    proof: [search-types-test]
+  - text: SearchResponse holds results list and object="search" by default, with private metadata attribute.
+    proof: [search-types-test]
+  - text: BaseSearchConfig.resolve_server_api_key returns caller key when provided, else first set server key or None.
+    proof: [search-credential-test]
+  - text: resolve_server_api_key raises ValueError when a server key is set but caller api_base is untrusted.
+    proof: [search-credential-test]
+  - text: A trusted api_base matches the provider default or operator override using lowercase URL netloc equality.
+    proof: [search-credential-test]
+  - text: An explicit caller api_key bypasses the api_base trust check.
+    proof: [search-credential-test]
+  - text: Missing server keys fallback through the ordered env var tuple until one is found or all are None.
+    proof: [search-credential-test]
+  - text: BaseSearchConfig.ui_friendly_name() returns "Unknown Search Provider" as the base default.
+    proof: [search-hooks-test]
+  - text: BaseSearchConfig.supports_rich_search_input() returns False as the base default.
+    proof: [search-hooks-test]
+  - text: BaseSearchConfig.get_http_method() returns "POST" as the base default.
+    proof: [search-hooks-test]
+  - text: BaseSearchConfig.validate_environment returns headers unchanged by default, and provider overrides may add auth.
+    proof: [search-hooks-test]
+  - text: BaseSearchConfig.sign_request returns (headers, None) by default for providers that do not sign.
+    proof: [search-hooks-test]
+  - text: BaseSearchConfig.get_http_error_class constructs an error from response status, text and headers.
+    proof: [search-hooks-test]
+  - text: BaseSearchConfig.get_error_class uses BaseLLMException with caller status and message.
+    proof: [search-hooks-test]
+  - text: BaseSearchConfig.get_supported_perplexity_optional_params returns the unified parameter set.
+    proof: [search-hooks-test]
+  - text: Every provider implementation overrides get_complete_url and transform_search_request and transform_search_response, or NotImplementedError raises.
+    proof: [search-hooks-test]
+
+checks:
+  optional: []
+  commands:
+    - id: search-types-test
+      why: search types tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^search_types::/ || /^search_records::/)'
+    - id: search-credential-test
+      why: search credential and trust check tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^search_credential::/ || /^search_trust::/)'
+    - id: search-hooks-test
+      why: search base hooks and error mapping tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^search_hooks::/ || /^search_defaults::/ || /^search_errors::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: betterlite resolves server-managed secrets through an injected lookup function, not os.environ directly.
+    why: Configuration and deployment need to control secret sources; direct environment access ties the binary to one host.
+  - what: Private attributes holding hidden metadata are not exposed in public serialization.
+    why: Response metadata should be available to internal handlers without leaking to the client in wire format.
+
+out_of_scope:
+  - Provider-specific transformations and hooks; each provider implements its own BaseSearchConfig subclass.
+  - HTTP transport and request dispatch; that belongs to B3272.
+  - Router selection, fallback execution and credential override from router state; that is B3273.
+  - Pricing and cost calculation; that is B3274.
+  - Management routes for search tool CRUD and connection testing; that is B3275.
+  - The "no caller at the pin" functions SearchToolRegistry.get_search_tool_by_name_from_db and AvailableSearchProvider type are not built here.
+
+pitfalls:
+  - "Trust check uses lowercase netloc equality on URL host only, not path or port; different ports/schemes to same host are different destinations."
+  - "Server key resolution respects fallback order (return caller key immediately if provided, then try each env var in order for first that resolves)."
+  - "BaseSearchConfig hooks are overridden by provider subclasses; base raises NotImplementedError for get_complete_url, transform_search_request and transform_search_response."
+  - "SearchResponse._hidden_params is private and does not round-trip through serialization; use only for internal metadata within the same process."
+  - "get_error_class takes error_message, status_code and headers as separate arguments, not raw exception; construct BaseLLMException with all three."
+  - "Support for extra fields in SearchResult and SearchResponse is explicit in model config; do not strip unknown fields."
+
+review_level: security
+
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
