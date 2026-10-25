@@ -16,14 +16,15 @@ pub enum GenAIOperation {
     CreateAgent,
     InvokeAgent,
     ExecuteTool,
+    // the convention names nothing for these, so they take litellm.* vendor values
     #[strum(serialize = "litellm.vector_store_management")]
-    LitellmVectorStoreManagement,
+    VectorStoreManagement,
     #[strum(serialize = "litellm.vector_store_file_management")]
-    LitellmVectorStoreFileManagement,
+    VectorStoreFileManagement,
     #[strum(serialize = "litellm.responses_management")]
-    LitellmResponsesManagement,
+    ResponsesManagement,
     #[strum(serialize = "litellm.moderation")]
-    LitellmModeration,
+    Moderation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]

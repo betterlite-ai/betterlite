@@ -10,7 +10,7 @@ use crate::otel::vocabulary::constants::{
 #[case::text_completion(GenAIOperation::TextCompletion.to_string(), "text_completion")]
 #[case::create_agent(GenAIOperation::CreateAgent.to_string(), "create_agent")]
 #[case::vendor_file_management(
-    GenAIOperation::LitellmVectorStoreFileManagement.to_string(),
+    GenAIOperation::VectorStoreFileManagement.to_string(),
     "litellm.vector_store_file_management"
 )]
 #[case::json_output(GenAIOutputType::Json.to_string(), "json")]

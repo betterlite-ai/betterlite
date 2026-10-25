@@ -22,11 +22,8 @@ fn providers_resolve_to_semconv_names(#[case] provider: &str, #[case] expected: 
 #[case::responses("aresponses", GenAIOperation::Chat)]
 #[case::uppercase_embedding("AEMBEDDING", GenAIOperation::Embeddings)]
 #[case::agent("send_message", GenAIOperation::InvokeAgent)]
-#[case::file_management(
-    "avector_store_file_delete",
-    GenAIOperation::LitellmVectorStoreFileManagement
-)]
-#[case::vector_store("vector_store_update", GenAIOperation::LitellmVectorStoreManagement)]
+#[case::file_management("avector_store_file_delete", GenAIOperation::VectorStoreFileManagement)]
+#[case::vector_store("vector_store_update", GenAIOperation::VectorStoreManagement)]
 #[case::one_async_prefix_only("aavector_store_create", GenAIOperation::Chat)]
 #[case::unknown_file_action("vector_store_file_search", GenAIOperation::Chat)]
 #[case::unmapped_falls_back("new_route", GenAIOperation::Chat)]

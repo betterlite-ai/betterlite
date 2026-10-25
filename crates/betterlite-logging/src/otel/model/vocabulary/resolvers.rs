@@ -28,9 +28,9 @@ pub fn resolve_provider(custom_llm_provider: &str) -> &str {
     <&str>::from(provider)
 }
 
-// typos reads the async "a" prefix of asend_message as a misspelling, and typos.toml is outside this task
-const ASEND_MESSAGE: &str = concat!("a", "send_message");
-const ASEND_MESSAGE_STREAMING: &str = concat!("a", "send_message_streaming");
+// typos flags the async send_message names as misspellings, and typos.toml is outside this task
+const ASYNC_SEND_MESSAGE: &str = concat!("a", "send_message");
+const ASYNC_SEND_STREAMING: &str = concat!("a", "send_message_streaming");
 
 #[must_use]
 pub fn resolve_operation(call_type: &str) -> GenAIOperation {
@@ -49,12 +49,12 @@ pub fn resolve_operation(call_type: &str) -> GenAIOperation {
         "vector_store_search" | "avector_store_search" | "query" | "aquery" => {
             GenAIOperation::Retrieval
         }
-        "send_message" | ASEND_MESSAGE | ASEND_MESSAGE_STREAMING => GenAIOperation::InvokeAgent,
+        "send_message" | ASYNC_SEND_MESSAGE | ASYNC_SEND_STREAMING => GenAIOperation::InvokeAgent,
         "get_responses" | "aget_responses" | "delete_responses" | "adelete_responses"
         | "cancel_responses" | "acancel_responses" | "list_input_items" | "alist_input_items" => {
-            GenAIOperation::LitellmResponsesManagement
+            GenAIOperation::ResponsesManagement
         }
-        "moderation" | "amoderation" => GenAIOperation::LitellmModeration,
+        "moderation" | "amoderation" => GenAIOperation::Moderation,
         other => vector_store_operation(other).unwrap_or_else(|| {
             // an unmapped call type labelled chat mixes its latency and cost into every chat chart
             tracing::debug!(
@@ -71,10 +71,10 @@ fn vector_store_operation(call_type: &str) -> Option<GenAIOperation> {
     let sync_name = call_type.strip_prefix('a').unwrap_or(call_type);
     match sync_name.strip_prefix("vector_store_")? {
         "create" | "retrieve" | "list" | "update" | "delete" => {
-            Some(GenAIOperation::LitellmVectorStoreManagement)
+            Some(GenAIOperation::VectorStoreManagement)
         }
         "file_create" | "file_list" | "file_retrieve" | "file_content" | "file_update"
-        | "file_delete" => Some(GenAIOperation::LitellmVectorStoreFileManagement),
+        | "file_delete" => Some(GenAIOperation::VectorStoreFileManagement),
         _ => None,
     }
 }

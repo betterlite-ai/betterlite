@@ -57,7 +57,9 @@ def span_name(span: Json) -> str:
     role = span["role"]
     if role == "llm_call":
         operation = resolve_operation(text(span["call_type"]))
-        llm = SimpleNamespace(operation=operation, request_model=optional_text(span["request_model"]))
+        llm = SimpleNamespace(
+            operation=operation, request_model=optional_text(span["request_model"])
+        )
         return llm_call_span_name(cast("LLMCallSpanData", llm))
     if role == "mcp_tool_call":
         tool = SimpleNamespace(method=text(span["method"]), tool_name=text(span["tool_name"]))
@@ -66,7 +68,9 @@ def span_name(span: Json) -> str:
         listing = SimpleNamespace(method=text(span["method"]))
         return mcp_list_tools_span_name(cast("MCPListToolsSpanData", listing))
     if role == "proxy_request":
-        request = ProxyRequestSpanData(http_method=text(span["http_method"]), route=text(span["route"]))
+        request = ProxyRequestSpanData(
+            http_method=text(span["http_method"]), route=text(span["route"])
+        )
         return proxy_request_span_name(request)
     if role == "guardrail":
         guardrail = GuardrailSpanData(guardrail_name=text(span["guardrail_name"]))
@@ -107,26 +111,35 @@ def span_role(service_name: str) -> str | None:
     return None if role is None else role.value
 
 
+def semconv(raw: str | None) -> Json:
+    values = sorted(category.value for category in parse_semconv_opt_in(raw))
+    return list[Json](values)
+
+
 def run(input_value: dict[str, Json]) -> Json:
-    function = input_value["function"]
-    if function == "Registry":
-        return registry()
-    if function == "SpanName":
-        return [span_name(span) for span in listed(input_value, "spans")]
-    values = listed(input_value, "values")
-    if function == "Provider":
-        return [resolve_provider(optional_text(value)) for value in values]
-    if function == "Operation":
-        return [resolve_operation(optional_text(value)).value for value in values]
-    if function == "OutputType":
-        return [output_type(optional_text(value)) for value in values]
-    if function == "DbSystem":
-        return [db_system(text(value)) for value in values]
-    if function == "SpanRole":
-        return [span_role(text(value)) for value in values]
-    if function == "Semconv":
-        return [
-            sorted(category.value for category in parse_semconv_opt_in(optional_text(value)))
-            for value in values
-        ]
-    raise ValueError(f"unknown otel_vocabulary function {function}")
+    result: Json
+    match input_value["function"]:
+        case "Registry":
+            result = registry()
+        case "SpanName":
+            result = [span_name(span) for span in listed(input_value, "spans")]
+        case "Provider":
+            result = [
+                resolve_provider(optional_text(value)) for value in listed(input_value, "values")
+            ]
+        case "Operation":
+            result = [
+                resolve_operation(optional_text(value)).value
+                for value in listed(input_value, "values")
+            ]
+        case "OutputType":
+            result = [output_type(optional_text(value)) for value in listed(input_value, "values")]
+        case "DbSystem":
+            result = [db_system(text(value)) for value in listed(input_value, "values")]
+        case "SpanRole":
+            result = [span_role(text(value)) for value in listed(input_value, "values")]
+        case "Semconv":
+            result = [semconv(optional_text(value)) for value in listed(input_value, "values")]
+        case function:
+            raise ValueError(f"unknown otel_vocabulary function {function}")
+    return result

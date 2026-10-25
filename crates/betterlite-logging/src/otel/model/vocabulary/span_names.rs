@@ -4,7 +4,7 @@ use crate::otel::vocabulary::constants::{GenAIOperation, MCPMethod};
 mod tests;
 
 // the FastAPI instrumentor names the root server span; nothing here creates it
-pub const LITELLM_PROXY_REQUEST_SPAN_NAME: &str = "Received Proxy Server Request";
+pub const PROXY_REQUEST_SPAN_NAME: &str = "Received Proxy Server Request";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NamedSpan<'name> {

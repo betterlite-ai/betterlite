@@ -6,7 +6,7 @@ use crate::otel::vocabulary::span_names::is_python_space;
 #[path = "semconv/tests.rs"]
 mod tests;
 
-pub const OTEL_SEMCONV_STABILITY_OPT_IN_ENV: &str = "OTEL_SEMCONV_STABILITY_OPT_IN";
+pub const STABILITY_OPT_IN_ENV: &str = "OTEL_SEMCONV_STABILITY_OPT_IN";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, strum::Display, strum::EnumString)]
 #[strum(serialize_all = "snake_case")]
