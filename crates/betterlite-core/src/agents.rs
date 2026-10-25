@@ -1,4 +1,4 @@
-use betterlite_auth::identity::{AgentIdentityBinding, EntraIdentityConfig, ExecutionMode};
+use betterlite_auth::identity;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use secrecy::SecretString;
@@ -7,373 +7,197 @@ use std::collections::BTreeMap;
 pub mod json;
 mod tests;
 mod validation;
-use json::{AgentBoolean, AgentJson, SecurityRequirements};
 
+use json::{AgentJson, SecurityRequirements};
+pub const CALLER_USER_ID_HEADER: &str = "x-litellm-user-id";
+pub const CALLER_TEAM_ID_HEADER: &str = "x-litellm-team-id";
+macro_rules! wire_enum {
+    ($(#[$attr:meta])* $name:ident { $($variants:tt)* }) => {
+        #[derive(Clone, Debug, Deserialize, Serialize)]
+        $(#[$attr])*
+        pub enum $name { $($variants)* }
+    };
+}
+macro_rules! record {
+    ($name:ident { $($fields:tt)* }) => {
+        #[derive(Clone, Debug, Deserialize, Serialize)]
+        #[serde(deny_unknown_fields)]
+        pub struct $name { $($fields)* }
+    };
+}
+macro_rules! response {
+    ($name:ident, $case:literal { $($required:tt)* } { $($field:ident: $ty:ty,)* }) => {
+        record! { $name { $($required)* $(pub $field: Option<$ty>,)* } }
+    };
+}
+macro_rules! dictionary {
+    ($name:ident, $case:literal { $($required:tt)* } { $($(#[$attr:meta])* $field:ident: $ty:ty,)* }) => {
+        #[derive(Clone, Debug, Deserialize, Serialize)]
+        #[serde(rename_all = $case, deny_unknown_fields)]
+        pub struct $name {
+            $($required)*
+            $($(#[$attr])* #[serde(default, skip_serializing_if = "Option::is_none", with = "serde_with::rust::double_option")]
+            pub $field: Option<Option<$ty>>,)*
+        }
+    };
+}
+dictionary! { AgentProvider, "camelCase" {} {
+    organization: String,
+    url: String,
+}}
+dictionary! { AgentExtension, "camelCase" {} {
+    uri: String,
+    description: String,
+    required: bool,
+    params: BTreeMap<String, AgentJson>,
+}}
+dictionary! { AgentCapabilities, "camelCase" {} {
+    streaming: bool,
+    push_notifications: bool,
+    state_transition_history: bool,
+    extensions: Vec<AgentExtension>,
+}}
+dictionary! { AgentSkill, "camelCase" {} {
+    id: String,
+    name: String,
+    description: String,
+    tags: Vec<String>,
+    examples: Vec<String>,
+    input_modes: Vec<String>,
+    output_modes: Vec<String>,
+    security: SecurityRequirements,
+}}
+dictionary! { AgentInterface, "camelCase" {} {
+    url: String,
+    transport: String,
+}}
+dictionary! { AgentCardSignature, "camelCase" {} {
+    protected: String,
+    signature: String,
+    header: BTreeMap<String, AgentJson>,
+}}
+macro_rules! cards {
+    ($name:ident { $($extra:tt)* }) => {
+        dictionary! { $name, "camelCase" { $($extra)* } {
+            protocol_version: String,
+            name: String,
+            description: String,
+            url: String,
+            version: String,
+            capabilities: AgentCapabilities,
+            default_input_modes: Vec<String>,
+            default_output_modes: Vec<String>,
+            skills: Vec<AgentSkill>,
+            preferred_transport: String,
+            additional_interfaces: Vec<AgentInterface>,
+            icon_url: String,
+            provider: AgentProvider,
+            documentation_url: String,
+            security_schemes: BTreeMap<String, SecurityScheme>,
+            security: SecurityRequirements,
+            #[serde(rename = "supportsAuthenticatedExtendedCard")] supports_authenticated_card: bool,
+            signatures: Vec<AgentCardSignature>,
+        }}
+    };
+}
+cards!(AgentCard {});
+cards!(AugmentedAgentCard { #[serde(rename = "is_public")] pub is_public: bool, });
+dictionary! { AgentObjectPermission, "snake_case" {} {
+    mcp_servers: Vec<String>,
+    mcp_access_groups: Vec<String>,
+    mcp_toolsets: Vec<String>,
+    mcp_tool_permissions: BTreeMap<String, Vec<String>>,
+    models: Vec<String>,
+    agents: Vec<String>,
+}}
+macro_rules! registration {
+    ($name:ident, $boundary:ident, $permission:ty { $($required:tt)* } { $($extra:tt)* }) => {
+        $boundary! { $name, "snake_case" { $($required)* } {
+            $($extra)*
+            litellm_params: BTreeMap<String, AgentJson>,
+            object_permission: $permission,
+            tpm_limit: i64,
+            rpm_limit: i64,
+            session_tpm_limit: i64,
+            session_rpm_limit: i64,
+            static_headers: BTreeMap<String, String>,
+            extra_headers: Vec<String>,
+            access_group_ids: Vec<String>,
+            kill_switch: AgentKillSwitchConfig,
+        }}
+    };
+}
+macro_rules! requests {
+    ($name:ident { $($required:tt)* } { $($extra:tt)* }) => {
+        registration! { $name, dictionary, AgentObjectPermission { $($required)* } {
+            $($extra)*
+            identity: identity::EntraIdentityConfig,
+            enabled: bool,
+            execution_mode: identity::ExecutionMode,
+            agent_card_params: AgentCard,
+        }}
+    };
+}
+requests!(AgentConfig { pub agent_name: String, } {});
+requests!(PatchAgentRequest {} { agent_name: String, });
+wire_enum! { #[serde(tag = "type")] SecurityScheme {
+    #[serde(rename = "apiKey")] ApiKey(SecurityApiKey),
+    #[serde(rename = "http")] Http(SecurityHttp),
+    #[serde(rename = "mutualTLS")] MutualTls(SecurityMutualTls),
+    #[serde(rename = "oauth2")] Oauth2(SecurityOauth2),
+    #[serde(rename = "openIdConnect")] OpenIdConnect(SecurityOpenIdConnect),
+}}
+dictionary! { SecurityApiKey, "camelCase" { #[serde(rename = "in_")] pub location: SecurityLocation, pub name: String, } {
+    description: String,
+}}
+dictionary! { SecurityHttp, "camelCase" { pub scheme: String, } {
+    bearer_format: String,
+    description: String,
+}}
+dictionary! { SecurityMutualTls, "camelCase" {} { description: String, }}
+dictionary! { SecurityOauth2, "camelCase" { pub flows: OAuthFlows, } {
+    oauth2_metadata_url: String,
+    description: String,
+}}
+dictionary! { OAuthFlows, "camelCase" {} {
+    authorization_code: BTreeMap<String, AgentJson>,
+    client_credentials: BTreeMap<String, AgentJson>,
+    implicit: BTreeMap<String, AgentJson>,
+    password: BTreeMap<String, AgentJson>,
+}}
+dictionary! { SecurityOpenIdConnect, "camelCase" { pub open_id_connect_url: String, } { description: String, }}
+wire_enum! { #[serde(rename_all = "lowercase")] SecurityLocation { Query, Header, Cookie } }
 fn default_api_key_header() -> String {
     let value = "x-api-key";
     String::from(value)
 }
-
-const fn default_enabled() -> AgentBoolean {
-    let value = true;
-    AgentBoolean(value)
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[serde_with::skip_serializing_none]
-pub struct AgentProvider {
-    pub organization: Option<String>,
-    pub url: Option<String>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[serde_with::skip_serializing_none]
-pub struct AgentExtension {
-    pub uri: Option<String>,
-    pub description: Option<String>,
-    pub required: Option<bool>,
-    pub params: Option<BTreeMap<String, AgentJson>>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[serde_with::skip_serializing_none]
-pub struct AgentCapabilities {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub streaming: Option<Option<bool>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub push_notifications: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub state_transition_history: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extensions: Option<Vec<AgentExtension>>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum SecurityScheme {
-    ApiKey(SecurityApiKey),
-    Http(SecurityHttp),
-    MutualTls(SecurityMutualTls),
-    Oauth2(SecurityOauth2),
-    OpenIdConnect(SecurityOpenIdConnect),
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SecurityApiKey {
-    #[serde(rename = "type")]
-    pub scheme_type: String,
-    #[serde(rename = "in")]
-    pub location: String,
-    pub name: String,
-    pub description: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SecurityHttp {
-    #[serde(rename = "type")]
-    pub scheme_type: String,
-    pub scheme: String,
-    pub bearer_format: Option<String>,
-    pub description: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SecurityMutualTls {
-    #[serde(rename = "type")]
-    pub scheme_type: String,
-    pub description: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SecurityOauth2 {
-    #[serde(rename = "type")]
-    pub scheme_type: String,
-    pub flows: BTreeMap<String, AgentJson>,
-    pub oauth2_metadata_url: Option<String>,
-    pub description: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SecurityOpenIdConnect {
-    #[serde(rename = "type")]
-    pub scheme_type: String,
-    pub open_id_connect_url: String,
-    pub description: Option<String>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[serde_with::skip_serializing_none]
-pub struct AgentSkill {
-    pub id: Option<String>,
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub tags: Option<Vec<String>>,
-    pub examples: Option<Vec<String>>,
-    pub input_modes: Option<Vec<String>>,
-    pub output_modes: Option<Vec<String>>,
-    pub security: Option<SecurityRequirements>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[serde_with::skip_serializing_none]
-pub struct AgentInterface {
-    pub url: Option<String>,
-    pub transport: Option<String>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[serde_with::skip_serializing_none]
-pub struct AgentCardSignature {
-    pub protected: Option<String>,
-    pub signature: Option<String>,
-    pub header: Option<BTreeMap<String, AgentJson>>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[serde_with::skip_serializing_none]
-pub struct AgentCard {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub protocol_version: Option<Option<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub name: Option<Option<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub description: Option<Option<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub url: Option<Option<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub version: Option<Option<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub capabilities: Option<Option<AgentCapabilities>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub default_input_modes: Option<Option<Vec<String>>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub default_output_modes: Option<Option<Vec<String>>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub skills: Option<Option<Vec<AgentSkill>>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub preferred_transport: Option<Option<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub additional_interfaces: Option<Option<Vec<AgentInterface>>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub icon_url: Option<Option<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub provider: Option<Option<AgentProvider>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub documentation_url: Option<Option<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub security_schemes: Option<Option<BTreeMap<String, SecurityScheme>>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub security: Option<Option<SecurityRequirements>>,
-    #[serde(rename = "supportsAuthenticatedExtendedCard")]
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub supports_authenticated_card: Option<Option<bool>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub signatures: Option<Option<Vec<AgentCardSignature>>>,
-}
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
-#[serde_with::skip_serializing_none]
-pub struct AugmentedAgentCard {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub protocol_version: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub url: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub capabilities: Option<Option<AgentCapabilities>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub default_input_modes: Option<Option<Vec<String>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub default_output_modes: Option<Option<Vec<String>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub skills: Option<Option<Vec<AgentSkill>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub preferred_transport: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub additional_interfaces: Option<Option<Vec<AgentInterface>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub icon_url: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider: Option<Option<AgentProvider>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub documentation_url: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub security_schemes: Option<Option<BTreeMap<String, SecurityScheme>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub security: Option<Option<SecurityRequirements>>,
-    #[serde(rename = "supportsAuthenticatedExtendedCard")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub supports_authenticated_card: Option<Option<bool>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signatures: Option<Option<Vec<AgentCardSignature>>>,
-    #[serde(rename = "is_public")]
-    pub is_public: bool,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentObjectPermission {
-    pub mcp_servers: Option<Vec<String>>,
-    pub mcp_access_groups: Option<Vec<String>>,
-    pub mcp_toolsets: Option<Vec<String>>,
-    pub mcp_tool_permissions: Option<BTreeMap<String, Vec<String>>>,
-    pub models: Option<Vec<String>>,
-    pub agents: Option<Vec<String>>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum AgentKillSwitchAuth {
-    Bearer(AgentBearerAuth),
-    ApiKey(AgentApiKeyAuth),
-    Basic(AgentBasicAuth),
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentBearerAuth {
-    #[serde(rename = "type")]
-    pub auth_type: String,
-    #[serde(skip_serializing)]
-    pub token: SecretString,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentApiKeyAuth {
-    #[serde(rename = "type")]
-    pub auth_type: String,
-    #[serde(default = "default_api_key_header")]
-    pub header_name: String,
-    #[serde(skip_serializing)]
-    pub api_key: SecretString,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentBasicAuth {
-    #[serde(rename = "type")]
-    pub auth_type: String,
-    pub username: String,
-    #[serde(skip_serializing)]
-    pub password: SecretString,
-}
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "UPPERCASE")]
-pub enum AgentKillSwitchMethod {
-    #[default]
-    Post,
-    Put,
-    Patch,
-    Delete,
-    Get,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentKillSwitchConfig {
-    #[serde(deserialize_with = "validation::absolute_http_url")]
-    pub url: String,
-    #[serde(default)]
-    pub method: AgentKillSwitchMethod,
-    #[serde(default)]
-    pub headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub query_params: BTreeMap<String, String>,
+wire_enum! { #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)] AgentKillSwitchAuth {
+    Bearer { #[serde(skip_serializing)] token: SecretString },
+    ApiKey {
+        #[serde(default = "default_api_key_header")] header_name: String,
+        #[serde(skip_serializing)] api_key: SecretString,
+    },
+    Basic { username: String, #[serde(skip_serializing)] password: SecretString },
+}}
+wire_enum! { #[derive(Default, PartialEq, Eq)] #[serde(rename_all = "UPPERCASE")] AgentKillSwitchMethod {
+    #[default] Post, Put, Patch, Delete, Get,
+}}
+record! { AgentKillSwitchConfig {
+    #[serde(deserialize_with = "validation::absolute_http_url")] pub url: String,
+    #[serde(default)] pub method: AgentKillSwitchMethod,
+    #[serde(default)] pub headers: BTreeMap<String, String>,
+    #[serde(default)] pub query_params: BTreeMap<String, String>,
     pub body: Option<BTreeMap<String, AgentJson>>,
     pub auth: Option<AgentKillSwitchAuth>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct AgentKillSwitchResult {
+}}
+record! { AgentKillSwitchResult {
     pub agent_id: String,
     pub url: String,
     pub method: AgentKillSwitchMethod,
     pub status_code: Option<u16>,
     pub response_body: Option<String>,
     pub error: Option<String>,
-}
+}}
 impl AgentKillSwitchResult {
     #[must_use]
     pub fn succeeded(&self) -> bool {
@@ -381,97 +205,38 @@ impl AgentKillSwitchResult {
         status.is_some_and(|value| (200..300).contains(&value))
     }
 }
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub struct AgentConfig {
-    pub identity: Option<EntraIdentityConfig>,
-    pub enabled: Option<bool>,
-    pub execution_mode: Option<ExecutionMode>,
-    pub agent_name: String,
-    pub agent_card_params: Option<AgentCard>,
-    pub litellm_params: Option<BTreeMap<String, AgentJson>>,
-    pub object_permission: Option<AgentObjectPermission>,
-    pub tpm_limit: Option<i64>,
-    pub rpm_limit: Option<i64>,
-    pub session_tpm_limit: Option<i64>,
-    pub session_rpm_limit: Option<i64>,
-    pub static_headers: Option<BTreeMap<String, String>>,
-    pub extra_headers: Option<Vec<String>>,
-    pub access_group_ids: Option<Vec<String>>,
-    pub kill_switch: Option<AgentKillSwitchConfig>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub struct PatchAgentRequest {
-    pub identity: Option<EntraIdentityConfig>,
-    pub enabled: Option<bool>,
-    pub execution_mode: Option<ExecutionMode>,
-    pub agent_name: Option<String>,
-    pub agent_card_params: Option<AgentCard>,
-    pub litellm_params: Option<BTreeMap<String, AgentJson>>,
-    pub object_permission: Option<AgentObjectPermission>,
-    pub tpm_limit: Option<i64>,
-    pub rpm_limit: Option<i64>,
-    pub session_tpm_limit: Option<i64>,
-    pub session_rpm_limit: Option<i64>,
-    pub static_headers: Option<BTreeMap<String, String>>,
-    pub extra_headers: Option<Vec<String>>,
-    pub access_group_ids: Option<Vec<String>>,
-    pub kill_switch: Option<AgentKillSwitchConfig>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentCaller {
+record! { AgentCaller {
     pub user_id: Option<String>,
     pub team_id: Option<String>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentKeySummary {
+}}
+record! { AgentKeySummary {
     pub token: String,
     pub key_alias: Option<String>,
     pub key_name: Option<String>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentResponse {
-    pub identity: Option<AgentIdentityBinding>,
-    #[serde(default)]
-    pub identity_managed: AgentBoolean,
-    #[serde(default = "default_enabled")]
-    pub enabled: AgentBoolean,
-    #[serde(default)]
-    pub execution_mode: ExecutionMode,
-    #[serde(default)]
-    pub jwt_auth_configured: AgentBoolean,
+}}
+registration! { AgentResponse, response, BTreeMap<String, AgentJson> {
+    pub identity: Option<identity::AgentIdentityBinding>,
+    #[serde(default)] pub identity_managed: bool,
+    #[serde(default)] pub enabled: identity::ActiveState,
+    #[serde(default)] pub execution_mode: identity::ExecutionMode,
+    #[serde(default)] pub jwt_auth_configured: bool,
     pub agent_id: String,
     pub agent_name: String,
-    pub litellm_params: Option<BTreeMap<String, AgentJson>>,
     pub agent_card_params: BTreeMap<String, AgentJson>,
-    pub object_permission: Option<BTreeMap<String, AgentJson>>,
-    pub spend: Option<Decimal>,
-    pub tpm_limit: Option<i64>,
-    pub rpm_limit: Option<i64>,
-    pub session_tpm_limit: Option<i64>,
-    pub session_rpm_limit: Option<i64>,
-    pub static_headers: Option<BTreeMap<String, String>>,
-    pub extra_headers: Option<Vec<String>>,
-    pub access_group_ids: Option<Vec<String>>,
-    pub kill_switch: Option<AgentKillSwitchConfig>,
-    pub keys: Option<Vec<AgentKeySummary>>,
-    pub search_score: Option<Decimal>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
-    pub created_by: Option<String>,
-    pub updated_by: Option<String>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct AgentMakePublicResponse {
+} {
+    spend: Decimal,
+    keys: Vec<AgentKeySummary>,
+    search_score: Decimal,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    created_by: String,
+    updated_by: String,
+}}
+record! { AgentMakePublicResponse {
     pub message: String,
     pub public_agent_groups: Vec<String>,
     pub updated_by: String,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct MakeAgentsPublicRequest {
+}}
+record! { MakeAgentsPublicRequest {
     pub agent_ids: Vec<String>,
-}
+}}
