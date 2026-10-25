@@ -14,7 +14,6 @@ axum = { version = "0.8.9", default-features = false, features = ["http1", "json
 hyper-util = "0.1.21"
 percent-encoding = "2.3.2"
 regex = "1.13.1"
-rust_decimal = { version = "1.43.0", default-features = false, features = ["serde"] }
 rust_decimal = { version = "1.43.0", features = ["serde-with-arbitrary-precision"] }
 secrecy = "0.10.3"
 serde = { version = "1.0.228", features = ["derive"] }
