@@ -1,0 +1,5 @@
+task: B3720
+deviations:
+  - what: "A usage counter that does not fit in i64, or a summed total past i64::MAX, is a ChunkingError::UsageOverflow naming the counter, where LiteLLM sums Python ints without a bound."
+    why: "AWS reports text units per request, so a total past 9.2e18 can't come from a real response. Refusing it beats returning a wrong total, and an unbounded integer type would add a dependency for a case that can't happen."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1648-L1656"

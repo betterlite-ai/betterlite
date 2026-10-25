@@ -69,20 +69,6 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/batch_provider_list.rs
-  - crates/betterlite-config/src/api/batch_provider_list/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/batch-provider-list-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/batch_provider_list.rs
@@ -91,6 +77,8 @@ scope:
   - tools/oracle/helpers/batch_provider_list/**
   - tools/oracle/fuzz/corpus/helper_case/batch_provider_list-*
   - tools/oracle/cases/helpers/batch-provider-list/**
+  - crates/betterlite-config/src/sections/batch_provider_list.rs
+  - crates/betterlite-config/src/sections/batch_provider_list/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L276-L276
@@ -162,14 +150,14 @@ checks:
   commands:
   - id: behavior-tests
     why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::batch_provider_list::/)
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::batch_provider_list::/)
       - test(/::replays_corpus$/)'
   - id: case-batch-list-after-limit
     why: the batch-list-after-limit behavior or its assertions are absent
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_provider_list::tests::batch_list_after_limit($|::)/)'
   - id: config-tests
     why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::batch_provider_list::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::batch_provider_list::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: no newly added key-bearing config seed reaches the production loader
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/batch-provider-list-*)"

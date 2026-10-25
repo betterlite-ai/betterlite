@@ -115,26 +115,9 @@ scope:
   - crates/betterlite-azure/fuzz/fuzz_targets/azure_oidc_exchange.rs
   - crates/betterlite-azure/fuzz/corpus/azure_oidc_exchange/**
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/**
-  - crates/betterlite-config/src/providers/azure.rs
-  - crates/betterlite-config/src/providers/azure/**
-  - crates/betterlite-config/src/providers/azure/oidc_exchange.rs
-  - crates/betterlite-config/src/providers/azure/oidc_exchange/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/azure_oidc_exchange_config.rs
-  - crates/betterlite-config/src/tests/azure_oidc_exchange_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/azure_oidc_exchange*
+  - crates/betterlite-config/src/sections/azure_oidc_exchange.rs
+  - crates/betterlite-config/src/sections/azure_oidc_exchange/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L199-L284

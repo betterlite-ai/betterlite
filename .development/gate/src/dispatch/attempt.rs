@@ -1,4 +1,6 @@
+use std::collections::BTreeSet;
 use std::fs;
+use std::path::Path;
 
 use crate::answer::parse_answer;
 use crate::checks;
@@ -75,6 +77,34 @@ fn failures(
     Ok(failing.chain(problems).collect())
 }
 
+fn worker_edits(worktree: &Path, start: &str) -> Result<Vec<String>, GateError> {
+    let committed = git(
+        worktree,
+        &["diff", "--name-only", start, "HEAD", "--", ".development"],
+    )?;
+    let pending = git(worktree, &["status", "--porcelain", "--", ".development"])?;
+    // a file that matches origin/main came in with a merge of main, not from the worker
+    let changed_from_main = git(
+        worktree,
+        &["diff", "--name-only", "origin/main", "--", ".development"],
+    )?;
+    let differs: BTreeSet<&str> = changed_from_main.lines().collect();
+    let pending_paths = pending.lines().filter_map(|line| {
+        let path = line.get(3..)?;
+        (line.starts_with("??") || differs.contains(path)).then_some(path)
+    });
+    Ok(committed
+        .lines()
+        .filter(|path| differs.contains(path))
+        .chain(pending_paths)
+        .map(|path| {
+            format!(
+                "The worker changed {path}; only the architect edits .development/, so revert it."
+            )
+        })
+        .collect())
+}
+
 pub(crate) fn attempt_once(
     attempt: &Attempt<'_>,
     runner: &Runner,
@@ -86,30 +116,7 @@ pub(crate) fn attempt_once(
         Ok(report) => report,
         Err(step) => return Ok(step),
     };
-    let committed = git(
-        attempt.places.worktree,
-        &[
-            "diff",
-            "--name-only",
-            start.trim(),
-            "HEAD",
-            "--",
-            ".development",
-        ],
-    )?;
-    let pending = git(
-        attempt.places.worktree,
-        &["status", "--porcelain", "--", ".development"],
-    )?;
-    let touched: Vec<String> = committed
-        .lines()
-        .chain(pending.lines())
-        .map(|path| {
-            format!(
-                "The worker changed {path}; only the architect edits .development/, so revert it."
-            )
-        })
-        .collect();
+    let touched = worker_edits(attempt.places.worktree, start.trim())?;
     if !touched.is_empty() {
         return Ok(Step::Retry(touched));
     }

@@ -32,8 +32,8 @@ scope:
   paths:
     - Cargo.toml
     - crates/betterlite-routes/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
+    - crates/betterlite-config/src/sections/component_contracts.rs
+    - crates/betterlite-config/src/sections/component_contracts/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/routes/allowlist.py#L18-L147

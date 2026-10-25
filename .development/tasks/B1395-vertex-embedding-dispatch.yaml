@@ -41,19 +41,10 @@ scope:
     - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_embedding_binding}.rs
     - crates/betterlite-provider/src/vertex_embedding_binding.rs
     - crates/betterlite-provider/src/vertex_embedding_binding/**
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/providers/vertex.rs
-    - crates/betterlite-config/src/providers/vertex/embedding/**
     - tools/oracle/cases/embeddings/vertex-dispatch/**
     - tools/oracle/fixtures/vertex-embedding-dispatch/**
+    - crates/betterlite-config/src/sections/vertex_embedding_dispatch.rs
+    - crates/betterlite-config/src/sections/vertex_embedding_dispatch/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6837-L6929

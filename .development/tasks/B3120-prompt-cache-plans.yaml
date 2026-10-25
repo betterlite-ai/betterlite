@@ -14,7 +14,7 @@ scope:
   paths:
     - Cargo.toml
     - crates/betterlite-anthropic/**
-    - tools/oracle/cases/cache-prediction/**
+    - tools/oracle/cases/helpers/cache-prediction/**
     - tools/oracle/helpers/anthropic_cache_plan.py
     - tools/oracle/helpers/anthropic_cache_plan/**
     - tools/oracle/src/helpers/anthropic/cache_plan.rs
@@ -87,18 +87,18 @@ checks:
       why: the Anthropic crate tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_plan::/) or test(/^cache_planning_behaviors/)'
 oracle_cases:
-  - tools/oracle/cases/cache-prediction/anthropic-basic-text.yaml
-  - tools/oracle/cases/cache-prediction/anthropic-content-blocks.yaml
-  - tools/oracle/cases/cache-prediction/anthropic-system-and-tools.yaml
-  - tools/oracle/cases/cache-prediction/anthropic-explicit-markers.yaml
-  - tools/oracle/cases/cache-prediction/anthropic-automatic-cache.yaml
-  - tools/oracle/cases/cache-prediction/anthropic-conflicting-ttl.yaml
-  - tools/oracle/cases/cache-prediction/anthropic-too-many-breakpoints.yaml
-  - tools/oracle/cases/cache-prediction/anthropic-reversed-ttl-order.yaml
-  - tools/oracle/cases/cache-prediction/anthropic-thinking-in-plan.yaml
-  - tools/oracle/cases/cache-prediction/anthropic-prediction-no-thinking.yaml
-  - tools/oracle/cases/cache-prediction/anthropic-prediction-multi-breakpoint.yaml
-  - tools/oracle/cases/cache-prediction/anthropic-invalid-shape.yaml
+  - tools/oracle/cases/helpers/cache-prediction/anthropic-basic-text.yaml
+  - tools/oracle/cases/helpers/cache-prediction/anthropic-content-blocks.yaml
+  - tools/oracle/cases/helpers/cache-prediction/anthropic-system-and-tools.yaml
+  - tools/oracle/cases/helpers/cache-prediction/anthropic-explicit-markers.yaml
+  - tools/oracle/cases/helpers/cache-prediction/anthropic-automatic-cache.yaml
+  - tools/oracle/cases/helpers/cache-prediction/anthropic-conflicting-ttl.yaml
+  - tools/oracle/cases/helpers/cache-prediction/anthropic-too-many-breakpoints.yaml
+  - tools/oracle/cases/helpers/cache-prediction/anthropic-reversed-ttl-order.yaml
+  - tools/oracle/cases/helpers/cache-prediction/anthropic-thinking-in-plan.yaml
+  - tools/oracle/cases/helpers/cache-prediction/anthropic-prediction-no-thinking.yaml
+  - tools/oracle/cases/helpers/cache-prediction/anthropic-prediction-multi-breakpoint.yaml
+  - tools/oracle/cases/helpers/cache-prediction/anthropic-invalid-shape.yaml
 deviations: []
 out_of_scope:
   - Token counting (B3121 owns count_prompt_tokens and count_cache_plan)
@@ -123,5 +123,5 @@ pitfalls:
   - _count_objects returns list[dict] (mutable JSONValue dicts), as required by the existing provider count API in B3121.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1400
   max_new_expects: 1

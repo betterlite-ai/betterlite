@@ -37,7 +37,9 @@ description: >-
 scope:
   paths:
     - crates/betterlite-roi/src/settings.rs
+    - crates/betterlite-roi/src/settings/**
     - crates/betterlite-roi/src/records.rs
+    - crates/betterlite-roi/src/records/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L8-L11
@@ -166,6 +168,6 @@ pitfalls:
   - "_normalize_login casefolda the input and checks the casefolded result; 'MyLogin' becomes 'mylogin' and is validated against [a-z0-9_[\\]-]+."
   - "DEFAULT_PROMPT is a module-level Final constant with exact phrasing; the estimator uses it as fallback, not as a placeholder to be replaced."
 budget:
-  max_changed_lines: 400
-  max_new_expects: 0
+  max_changed_lines: 950
+  max_new_expects: 1
 review_level: security

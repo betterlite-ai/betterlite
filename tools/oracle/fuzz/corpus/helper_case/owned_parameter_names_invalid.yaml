@@ -1,0 +1,11 @@
+kind: helper
+name: owned-parameter-names-invalid
+call:
+  owned_parameter_names:
+    function: wire_name_projection
+    name: no-log
+    owner: observability_options
+    root: provider_connection
+env: {}
+compare:
+  ignore: []
