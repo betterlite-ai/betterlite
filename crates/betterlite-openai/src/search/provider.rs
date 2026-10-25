@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, fmt};
 
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -27,12 +27,26 @@ pub enum SearchQuery {
     Multiple(Vec<String>),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct OutboundSearch<'call, Body> {
     pub api_base: &'call str,
     pub api_key: Option<&'call SecretString>,
     pub optional_params: &'call Object,
     pub body: &'call Body,
+}
+
+impl<Body> fmt::Debug for OutboundSearch<'_, Body> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OutboundSearch")
+            .field("api_base", &self.api_base)
+            .field("api_key", &self.api_key)
+            .field(
+                "optional_param_names",
+                &self.optional_params.keys().collect::<Vec<_>>(),
+            )
+            .field("body", &"<redacted>")
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
