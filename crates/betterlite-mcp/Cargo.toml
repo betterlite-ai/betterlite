@@ -1,0 +1,19 @@
+[package]
+name = "betterlite-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = "0.22.1"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+getrandom = "0.4.3"
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["rust_crypto", "use_pem"] }
+rsa = { version = "0.10.0-rc.19", default-features = false, features = ["encoding", "sha2"] }
+secrecy = { workspace = true, features = ["serde"] }
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
