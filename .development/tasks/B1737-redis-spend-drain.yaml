@@ -36,7 +36,6 @@ description: >-
   at 800 with configuration and byte-decoder checks.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/redis_spend.rs
     - crates/betterlite-db/src/redis_spend/**
     - crates/betterlite-config/src/lib.rs

@@ -41,7 +41,6 @@ description: >-
   budget 210 projections/records, 190 tests and 170 adapters/corpus cases within 625 changed lines.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/cost_usage.rs
     - crates/betterlite-models/src/cost_usage/**
     - tools/oracle/src/helpers/models/cost_usage.rs

@@ -44,7 +44,6 @@ description: >-
   and 200 differential adapters/cases, with a 775-line ceiling.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/token_cost.rs
     - crates/betterlite-models/src/token_cost/**
     - tools/oracle/src/helpers/models/token_cost.rs

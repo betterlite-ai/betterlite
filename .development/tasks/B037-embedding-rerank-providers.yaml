@@ -59,9 +59,11 @@ description: >-
 scope:
   paths:
     - crates/betterlite-provider/src/{lib,error,provider,operation,prepared,embedding_rerank_providers}.rs
+    - crates/betterlite-provider/src/embedding_rerank_providers.rs
     - crates/betterlite-provider/src/embedding_rerank_providers/**
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-core/src/{lib,dispatch,operation,embedding_rerank_providers}.rs
+    - crates/betterlite-core/src/embedding_rerank_providers.rs
     - crates/betterlite-core/src/embedding_rerank_providers/**
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-config/src/{lib,settings,providers}.rs

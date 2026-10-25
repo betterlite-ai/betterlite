@@ -112,8 +112,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-auth/Cargo.toml
-    - crates/betterlite-auth/src/lib.rs
-    - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/src/resolved_key.rs
     - crates/betterlite-auth/src/resolved_key/**
     - crates/betterlite-auth/src/user_roles.rs

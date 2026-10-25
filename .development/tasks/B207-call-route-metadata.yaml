@@ -20,8 +20,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/routes.rs
   - crates/betterlite-core/src/routes/**
   - crates/betterlite-core/fixtures/**

@@ -56,7 +56,6 @@ scope:
   paths:
     - crates/betterlite-db/src/auth_reconnect.rs
     - crates/betterlite-db/src/auth_reconnect/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-config/src/auth_reconnect.rs
     - crates/betterlite-config/src/auth_reconnect/**

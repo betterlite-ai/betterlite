@@ -84,7 +84,6 @@ scope:
   paths:
     - crates/betterlite-router/src/model_group_info.rs
     - crates/betterlite-router/src/model_group_info/**
-    - crates/betterlite-router/src/lib.rs
     - crates/betterlite-router/Cargo.toml
     - tools/oracle/src/helpers/router/model_group_info.rs
     - tools/oracle/src/helpers/router/model_group_info/**

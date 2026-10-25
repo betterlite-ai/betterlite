@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,google_genai_guardrail}.rs
+    - crates/betterlite-vertex/src/google_genai_guardrail.rs
     - crates/betterlite-vertex/src/google_genai_guardrail/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/google_guardrail_sse.rs

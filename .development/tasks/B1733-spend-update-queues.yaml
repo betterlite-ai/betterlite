@@ -36,7 +36,6 @@ description: >-
   allowing 800 changed lines for both queue implementations and their differential tests.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/spend_queues.rs
     - crates/betterlite-db/src/spend_queues/**
     - tools/oracle/src/helpers/db/spend_queue_merge.rs

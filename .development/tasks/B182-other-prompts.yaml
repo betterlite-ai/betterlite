@@ -14,8 +14,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-prompts/Cargo.toml
-  - crates/betterlite-prompts/src/lib.rs
-  - crates/betterlite-prompts/src/error.rs
   - crates/betterlite-prompts/src/azure.rs
   - crates/betterlite-prompts/src/azure/**
   - crates/betterlite-prompts/src/gemini.rs

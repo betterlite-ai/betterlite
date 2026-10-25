@@ -121,7 +121,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/jwt_verification.rs
     - crates/betterlite-auth/src/jwt_verification/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - Cargo.toml
     - deny.toml

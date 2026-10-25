@@ -41,7 +41,6 @@ description: >-
   source lines fit 340 rate logic, 260 tests and 200 adapters/cases within 800 changed lines.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/token_rates.rs
     - crates/betterlite-models/src/token_rates/**
     - tools/oracle/src/helpers/models/token_rates.rs

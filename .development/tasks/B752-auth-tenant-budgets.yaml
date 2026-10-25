@@ -85,7 +85,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_tenant_budgets.rs
     - crates/betterlite-auth/src/auth_tenant_budgets/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/auth_tenant_budgets.rs
     - tools/oracle/src/helpers/server/auth_tenant_budgets/**

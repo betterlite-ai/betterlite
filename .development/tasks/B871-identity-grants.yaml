@@ -96,7 +96,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/identity_grants.rs
     - crates/betterlite-auth/src/identity_grants/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/team_model_aliases.rs

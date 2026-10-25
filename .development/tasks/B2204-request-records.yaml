@@ -305,8 +305,6 @@ scope:
   lint_tables: false
   paths:
   - crates/betterlite-context/Cargo.toml
-  - crates/betterlite-context/src/lib.rs
-  - crates/betterlite-context/src/error.rs
   - crates/betterlite-context/src/request_records.rs
   - crates/betterlite-context/src/request_records/**
   - tools/oracle/Cargo.toml

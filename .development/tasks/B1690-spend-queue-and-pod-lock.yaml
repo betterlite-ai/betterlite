@@ -43,7 +43,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/queues.rs
     - crates/betterlite-db/src/queues/memory.rs
     - crates/betterlite-db/src/queues/memory/**

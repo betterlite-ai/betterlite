@@ -76,8 +76,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
-  - crates/betterlite-foundry/src/lib.rs
-  - crates/betterlite-foundry/src/error.rs
   - crates/betterlite-foundry/src/embeddings.rs
   - crates/betterlite-foundry/src/embeddings/**
   - tools/oracle/Cargo.toml

@@ -56,7 +56,6 @@ scope:
   paths:
     - crates/betterlite-db/src/combined_key_read.rs
     - crates/betterlite-db/src/combined_key_read/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - tools/oracle/src/helpers/db/combined_key_read.rs
     - tools/oracle/src/helpers/db/combined_key_read/**

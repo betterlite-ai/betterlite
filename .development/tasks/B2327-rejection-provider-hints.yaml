@@ -30,7 +30,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/rejection_provider.rs
     - crates/betterlite-auth/src/rejection_provider/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/rejection_provider.rs
     - tools/oracle/src/helpers/auth/rejection_provider/**

@@ -101,13 +101,9 @@ description: >-
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
   - crates/betterlite-provider/src/azure_dispatch.rs
   - crates/betterlite-provider/src/azure_dispatch/**
-  - crates/betterlite-azure/src/lib.rs
   - crates/betterlite-azure/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
   - crates/betterlite-provider/src/provider.rs
   - crates/betterlite-provider/src/operation.rs
   - crates/betterlite-provider/src/prepared.rs

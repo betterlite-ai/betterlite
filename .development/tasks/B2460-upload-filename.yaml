@@ -16,9 +16,7 @@ description: >-
   and register B171's upload_filename operation with independently called Python/Rust functions.
 scope:
   paths:
-  - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/api/upload_filename.rs
   - crates/betterlite-core/src/api/upload_filename/**
   - tools/oracle/Cargo.toml

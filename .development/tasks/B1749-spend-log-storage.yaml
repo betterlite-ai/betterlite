@@ -44,7 +44,6 @@ description: >-
   fake writer HTTP statuses, queue-budget/config tests and pure batch_claim_row cases.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/spend_log_storage.rs
     - crates/betterlite-db/src/spend_log_storage/**
     - crates/betterlite-config/src/spend_storage.rs

@@ -40,7 +40,6 @@ description: >-
   flush cycle. These stateful source methods are not exposed through a helper oracle.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/request_usage.rs
     - crates/betterlite-db/src/request_usage/**
     - crates/betterlite-db/fuzz/fuzz_targets/rollup_inputs.rs

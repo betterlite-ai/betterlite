@@ -35,8 +35,6 @@ scope:
     - Cargo.toml
     - Cargo.lock
     - crates/betterlite-vertex/Cargo.toml
-    - crates/betterlite-vertex/src/lib.rs
-    - crates/betterlite-vertex/src/error.rs
     - crates/betterlite-vertex/src/model_policy.rs
     - crates/betterlite-vertex/src/model_policy/**
     - crates/betterlite-vertex/src/request_labels.rs

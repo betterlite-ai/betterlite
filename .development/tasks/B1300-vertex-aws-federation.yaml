@@ -27,8 +27,6 @@ scope:
     - Cargo.lock
     - deny.toml
     - crates/betterlite-vertex/Cargo.toml
-    - crates/betterlite-vertex/src/lib.rs
-    - crates/betterlite-vertex/src/error.rs
     - crates/betterlite-vertex/src/aws_federation.rs
     - crates/betterlite-vertex/src/aws_federation/**
     - tools/oracle/Cargo.toml

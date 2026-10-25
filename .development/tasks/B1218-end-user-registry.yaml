@@ -73,7 +73,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/end_user_registry.rs
     - crates/betterlite-auth/src/end_user_registry/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/end_user_registry.rs
     - tools/oracle/src/helpers/auth/end_user_registry/**

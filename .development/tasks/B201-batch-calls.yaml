@@ -22,8 +22,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/batch.rs
   - crates/betterlite-core/src/batch/**
   - tools/oracle/Cargo.toml

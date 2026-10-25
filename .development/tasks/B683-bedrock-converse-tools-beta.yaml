@@ -70,8 +70,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
-  - crates/betterlite-bedrock/src/lib.rs
-  - crates/betterlite-bedrock/src/error.rs
   - crates/betterlite-bedrock/src/bedrock_converse_tools_beta.rs
   - crates/betterlite-bedrock/src/bedrock_converse_tools_beta/**
   - tools/oracle/Cargo.toml

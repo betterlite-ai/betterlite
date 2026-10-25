@@ -121,8 +121,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
-  - crates/betterlite-azure/src/lib.rs
-  - crates/betterlite-azure/src/error.rs
   - crates/betterlite-azure/src/transcription.rs
   - crates/betterlite-azure/src/transcription/**
   - tools/oracle/Cargo.toml

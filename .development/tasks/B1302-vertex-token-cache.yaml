@@ -24,8 +24,6 @@ description: >-
   lines, capped at 725. SDK response decoding stays in the selected auth library.
 scope:
   paths:
-    - crates/betterlite-vertex/src/lib.rs
-    - crates/betterlite-vertex/src/error.rs
     - crates/betterlite-vertex/src/token_cache.rs
     - crates/betterlite-vertex/src/token_cache/**
     - tools/oracle/src/helpers/vertex/token_cache.rs

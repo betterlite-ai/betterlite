@@ -63,8 +63,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-streaming/Cargo.toml
-  - crates/betterlite-streaming/src/lib.rs
-  - crates/betterlite-streaming/src/error.rs
   - crates/betterlite-streaming/src/stream_tool_assembly.rs
   - crates/betterlite-streaming/src/stream_tool_assembly/**
   - tools/oracle/Cargo.toml

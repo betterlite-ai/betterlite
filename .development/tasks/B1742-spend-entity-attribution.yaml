@@ -47,7 +47,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/spend_attribution.rs
     - crates/betterlite-db/src/spend_attribution/**
     - crates/betterlite-db/src/autorouter_facts.rs

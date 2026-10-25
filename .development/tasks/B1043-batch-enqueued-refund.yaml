@@ -51,8 +51,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/api/batch_enqueued_refund.rs
   - crates/betterlite-core/src/api/batch_enqueued_refund/**
   - crates/betterlite-core/src/api.rs

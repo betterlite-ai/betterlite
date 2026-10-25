@@ -90,8 +90,8 @@ scope:
   paths:
     - crates/betterlite-db/src/schema_budget_windows.rs
     - crates/betterlite-db/src/schema_budget_windows/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/schema_budget_windows/fixtures.rs
     - crates/betterlite-db/src/schema_budget_windows/fixtures/**
     - crates/betterlite-db/migrations/20260811172448_add_shadow_eval/migration.sql
     - crates/betterlite-db/migrations/20260813180408_add_shadow_eval_direction/migration.sql

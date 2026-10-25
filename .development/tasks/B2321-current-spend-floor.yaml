@@ -48,7 +48,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/current_spend.rs
     - crates/betterlite-auth/src/current_spend/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-server/src/auth/current_spend.rs
     - crates/betterlite-server/src/auth/current_spend/**

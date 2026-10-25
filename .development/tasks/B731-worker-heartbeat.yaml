@@ -89,7 +89,6 @@ scope:
     - crates/betterlite-db/src/worker_heartbeat/**
     - crates/betterlite-db/src/database_diagnostics.rs
     - crates/betterlite-db/src/database_diagnostics/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/loader.rs

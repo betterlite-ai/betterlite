@@ -93,7 +93,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/trusted_network.rs
     - crates/betterlite-auth/src/trusted_network/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - Cargo.toml
     - deny.toml

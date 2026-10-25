@@ -23,6 +23,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,gemini_response}.rs
+    - crates/betterlite-vertex/src/gemini_response.rs
     - crates/betterlite-vertex/src/gemini_response/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/generate_content.rs

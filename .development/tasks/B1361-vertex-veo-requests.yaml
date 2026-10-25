@@ -29,6 +29,7 @@ scope:
     - crates/betterlite-vertex/Cargo.toml
     - Cargo.lock
     - crates/betterlite-vertex/src/{lib,error,vertex_veo_request}.rs
+    - crates/betterlite-vertex/src/vertex_veo_request.rs
     - crates/betterlite-vertex/src/vertex_veo_request/**
     - tools/oracle/src/helpers/vertex/veo_request.rs
     - tools/oracle/src/helpers/vertex/veo_request/**

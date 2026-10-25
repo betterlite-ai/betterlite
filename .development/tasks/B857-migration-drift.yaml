@@ -69,8 +69,8 @@ scope:
   paths:
     - crates/betterlite-db/src/migration_drift.rs
     - crates/betterlite-db/src/migration_drift/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/migration_drift/fixtures.rs
     - crates/betterlite-db/src/migration_drift/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs

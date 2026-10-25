@@ -121,7 +121,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_key_budgets.rs
     - crates/betterlite-auth/src/auth_key_budgets/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/key_budgets.rs
     - tools/oracle/src/helpers/auth/key_budgets/**

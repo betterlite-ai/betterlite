@@ -46,6 +46,7 @@ scope:
     - crates/betterlite-openai/src/{lib,hosted_chat_options}.rs
     - crates/betterlite-openai/src/hosted_chat_options/**
     - crates/betterlite-models/src/{lib,baseten_endpoint}.rs
+    - crates/betterlite-models/src/baseten_endpoint.rs
     - crates/betterlite-models/src/baseten_endpoint/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,hosted_chat}.rs

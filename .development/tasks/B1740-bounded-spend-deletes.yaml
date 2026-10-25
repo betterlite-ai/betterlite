@@ -42,7 +42,6 @@ description: >-
   B199 duration parser cover external input; SQL identifiers never come from requests.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/spend_retention.rs
     - crates/betterlite-db/src/spend_retention/{batches.rs,batches/**}
     - crates/betterlite-config/src/spend_storage.rs

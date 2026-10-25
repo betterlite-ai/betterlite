@@ -24,7 +24,6 @@ scope:
     - crates/betterlite-config/src/raw.rs
     - crates/betterlite-config/tests/**
     - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-rate-limit/src/lib.rs
     - crates/betterlite-rate-limit/src/usage_resolution.rs
     - crates/betterlite-rate-limit/src/usage_resolution/**
     - tools/oracle/src/rate_limit_probes/usage_resolution.rs

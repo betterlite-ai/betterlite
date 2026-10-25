@@ -26,6 +26,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_recognition}.rs
+    - crates/betterlite-vertex/src/vertex_recognition.rs
     - crates/betterlite-vertex/src/vertex_recognition/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_recognition.rs

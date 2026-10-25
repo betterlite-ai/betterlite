@@ -23,7 +23,6 @@ description: >-
   and 100 fuzz/exports, within a 625-line limit.
 scope:
   paths:
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/sso_types.rs
     - crates/betterlite-auth/src/sso_types/**
     - crates/betterlite-auth/fuzz/Cargo.toml

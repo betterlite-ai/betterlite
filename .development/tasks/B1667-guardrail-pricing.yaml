@@ -35,7 +35,6 @@ description: >-
   two-line wrapper, budget 220 pricing/records, 220 tests and 210 helpers/fixtures, cap 725.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/cost_breakdown.rs
     - crates/betterlite-models/src/guardrail_pricing.rs
     - crates/betterlite-models/src/guardrail_pricing/**

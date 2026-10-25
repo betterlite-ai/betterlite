@@ -132,13 +132,9 @@ description: >-
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
   - crates/betterlite-provider/src/bedrock_dispatch.rs
   - crates/betterlite-provider/src/bedrock_dispatch/**
-  - crates/betterlite-bedrock/src/lib.rs
   - crates/betterlite-bedrock/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
   - crates/betterlite-provider/src/provider.rs
   - crates/betterlite-provider/src/operation.rs
   - crates/betterlite-provider/src/prepared.rs

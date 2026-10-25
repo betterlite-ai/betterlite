@@ -24,6 +24,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,partner_count}.rs
+    - crates/betterlite-vertex/src/partner_count.rs
     - crates/betterlite-vertex/src/partner_count/**
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/partner_count.rs

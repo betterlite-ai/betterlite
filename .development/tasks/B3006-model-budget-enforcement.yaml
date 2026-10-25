@@ -5,8 +5,6 @@ scope:
   paths:
   - crates/betterlite-auth/src/model_budget_limiter.rs
   - crates/betterlite-auth/src/model_budget_limiter/**
-  - crates/betterlite-auth/src/lib.rs
-  - crates/betterlite-auth/src/error.rs
   - tools/oracle/cases/model-budget/**
   lint_tables: false
 references:
