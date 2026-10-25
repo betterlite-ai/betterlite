@@ -33,7 +33,10 @@ enum Step {
     },
 }
 
-fn encode<Value: Serialize>(value: Value) -> HelperResult {
+fn encode<Value>(value: Value) -> HelperResult
+where
+    Value: Serialize,
+{
     let result = serde_json::to_value(value);
     result.map_err(|error| {
         Box::new(HelperError {

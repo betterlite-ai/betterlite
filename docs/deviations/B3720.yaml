@@ -1,0 +1,5 @@
+task: B3720
+deviations:
+  - {what: "Empty content splitting returns None instead of raising IndexError.", why: "The existing implementation safely handles empty input; architect acceptance is pending.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1488-L1493"}
+  - {what: "Usage sums saturate at i64 bounds instead of preserving arbitrary-size integers.", why: "Overflow handling remains unfinished in this blocked implementation.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1648-L1656"}
+  - {what: "Explicit null values in optional modeled fields serialize as absent.", why: "The inherited Option representation does not distinguish missing from null; this remains unfinished.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1-L209"}
