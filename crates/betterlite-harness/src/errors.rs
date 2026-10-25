@@ -1,11 +1,15 @@
-use std::io;
-
-use thiserror::Error;
-
 use crate::events::RunResult;
 use crate::state::Incompatibility;
 use crate::types::{Capability, Harness, Usage};
-
+use std::io;
+use thiserror::Error;
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum CappedOperation {
+    #[error("read")]
+    Read,
+    #[error("run output")]
+    RunOutput,
+}
 #[derive(Debug, Error)]
 pub enum HarnessError {
     #[error("Harness.{} does not support {capability:?}", .harness.name())]
@@ -48,7 +52,7 @@ pub enum HarnessError {
     TokenOverflow { usage: Usage },
     #[error("sandbox {operation} exceeded the {limit}-byte content limit")]
     ContentLimitExceeded {
-        operation: &'static str,
+        operation: CappedOperation,
         limit: usize,
     },
 }

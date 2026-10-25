@@ -1,14 +1,12 @@
-use std::sync::Arc;
-use std::time::Duration;
-
 use futures_core::future::BoxFuture;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
+use std::sync::Arc;
+use std::time::Duration;
 
 use crate::events::Approval;
 use crate::options::HarnessOptions;
 use crate::types::{Harness, JsonObject, PermissionMode, Usage};
-
 pub type ApprovalHandler = Arc<dyn Fn(Approval) -> BoxFuture<'static, bool> + Send + Sync>;
 
 #[derive(Clone, Debug)]
@@ -16,7 +14,6 @@ pub struct GatewayTarget {
     pub api_base: String,
     pub api_key: SecretString,
 }
-
 pub struct SessionContext<S> {
     pub harness: Harness,
     pub sandbox: S,
@@ -24,7 +21,6 @@ pub struct SessionContext<S> {
     pub settings: SessionSettings,
     pub outcome: TurnOutcome,
 }
-
 #[derive(Clone, Default)]
 pub struct SessionSettings {
     // the name the runtime gets, with the litellm_proxy/ prefix already stripped
