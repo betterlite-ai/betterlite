@@ -31,25 +31,6 @@ fn active_keeps_whether_it_was_sent(#[case] body: &str, #[case] active: Active) 
 #[case::number_two_active(r#"{"schemas":[],"active":2}"#, ResourceKind::User)]
 #[case::user_without_schemas(r#"{"userName":"ada"}"#, ResourceKind::User)]
 #[case::group_without_name(r#"{"schemas":[]}"#, ResourceKind::Group)]
-#[case::no_dot(r#"{"schemas":[],"emails":[{"value":"a@host"}]}"#, ResourceKind::User)]
-#[case::literal(
-    r#"{"schemas":[],"emails":[{"value":"a@[10.0.0.1]"}]}"#,
-    ResourceKind::User
-)]
-#[case::line_break(
-    r#"{"schemas":[],"emails":[{"value":"a@b.co\n"}]}"#,
-    ResourceKind::User
-)]
-#[case::no_at(r#"{"schemas":[],"emails":[{"value":"invalid"}]}"#, ResourceKind::User)]
-#[case::quoted(
-    r#"{"schemas":[],"emails":[{"value":"\"a b\"@b.co"}]}"#,
-    ResourceKind::User
-)]
-#[case::special_use(
-    r#"{"schemas":[],"emails":[{"value":"a@b.test"}]}"#,
-    ResourceKind::User
-)]
-#[case::numeric_tld(r#"{"schemas":[],"emails":[{"value":"a@b.123"}]}"#, ResourceKind::User)]
 #[case::padded_op(r#"{"Operations":[{"op":" add"}]}"#, ResourceKind::Patch)]
 #[case::unknown_op(r#"{"Operations":[{"op":"delete"}]}"#, ResourceKind::Patch)]
 #[case::number_op(r#"{"Operations":[{"op":1}]}"#, ResourceKind::Patch)]
@@ -58,6 +39,18 @@ fn active_keeps_whether_it_was_sent(#[case] body: &str, #[case] active: Active) 
 #[case::malformed_json(r#"{"schemas":[]"#, ResourceKind::User)]
 fn rejects_what_pydantic_rejects(#[case] body: &str, #[case] kind: ResourceKind) {
     decode_scim_resource(body.as_bytes(), kind).unwrap_err();
+}
+#[rstest]
+#[case::no_dot("a@host")]
+#[case::literal("a@[1.2.3.4]")]
+#[case::newline(r"a@b.co\n")]
+#[case::no_at("invalid")]
+#[case::quoted(r#"\"a\"@b.co"#)]
+#[case::test_tld("a@b.test")]
+#[case::numeric_tld("a@b.123")]
+fn rejects_emails_pydantic_rejects(#[case] sent: &str) {
+    let body = format!(r#"{{"schemas":[],"emails":[{{"value":"{sent}"}}]}}"#);
+    decode_scim_resource(body.as_bytes(), ResourceKind::User).unwrap_err();
 }
 #[rstest]
 #[case::mixed_case_domain("Ada.Lovelace@EXAMPLE.Com", "Ada.Lovelace@example.com")]
