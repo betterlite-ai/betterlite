@@ -3,9 +3,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-
 mod tests;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FileType {
@@ -52,7 +50,6 @@ pub enum FileType {
     Xls,
     Xlsx,
 }
-
 const EXTENSIONS: &[(FileType, &[&str])] = &[
     (FileType::Aac, &["aac"]),
     (FileType::Csv, &["csv"]),
@@ -159,7 +156,6 @@ const MIME_TYPES: &[(FileType, &str)] = &[
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ),
 ];
-
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum FileTypeError {
     #[error("Unknown file type for extension: {0}")]
@@ -167,7 +163,6 @@ pub enum FileTypeError {
     #[error("Unknown extension for mime type: {0}")]
     UnknownMime(String),
 }
-
 fn find_type(extension: &str) -> Option<FileType> {
     let lower = extension.to_lowercase();
     EXTENSIONS.iter().find_map(|(file_type, values)| {
@@ -178,26 +173,30 @@ fn find_type(extension: &str) -> Option<FileType> {
     })
 }
 pub fn type_from_extension(extension: &str) -> Result<FileType, FileTypeError> {
-    find_type(extension).ok_or_else(|| FileTypeError::UnknownExtension(extension.to_owned()))
+    let file_type = find_type(extension);
+    file_type.ok_or_else(|| FileTypeError::UnknownExtension(extension.to_owned()))
 }
 #[must_use]
 pub fn extension_from_type(file_type: FileType) -> &'static str {
-    EXTENSIONS
-        .iter()
-        .find_map(|(kind, values)| {
-            (*kind == file_type).then(|| values.first().copied().unwrap_or(""))
-        })
-        .unwrap_or("")
+    for (kind, values) in EXTENSIONS {
+        if *kind == file_type {
+            return values.first().copied().unwrap_or("");
+        }
+    }
+    ""
 }
 #[must_use]
 pub fn mime_from_type(file_type: FileType) -> &'static str {
-    MIME_TYPES
-        .iter()
-        .find_map(|(kind, mime)| (*kind == file_type).then_some(*mime))
-        .unwrap_or("")
+    for (kind, mime) in MIME_TYPES {
+        if *kind == file_type {
+            return mime;
+        }
+    }
+    ""
 }
 pub fn mime_from_extension(extension: &str) -> Result<&'static str, FileTypeError> {
-    type_from_extension(extension).map(mime_from_type)
+    let file_type = type_from_extension(extension);
+    file_type.map(mime_from_type)
 }
 pub fn extension_from_mime(mime_type: &str) -> Result<&'static str, FileTypeError> {
     let lower = mime_type.to_lowercase();
@@ -206,7 +205,6 @@ pub fn extension_from_mime(mime_type: &str) -> Result<&'static str, FileTypeErro
         .find_map(|(file_type, mime)| (*mime == lower).then(|| extension_from_type(*file_type)))
         .ok_or_else(|| FileTypeError::UnknownMime(mime_type.to_owned()))
 }
-
 const GEMINI_FILE_TYPES: &[FileType] = &[
     FileType::Png,
     FileType::Jpeg,
@@ -240,7 +238,6 @@ pub fn gemini_accepts(file_type: FileType) -> bool {
     }
     false
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FileContentProvider {

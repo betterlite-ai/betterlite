@@ -1,6 +1,5 @@
 use betterlite_openai::api::file_type_records::{
-    FileType, extension_from_mime, mime_from_extension,
-    gemini_accepts,
+    FileType, extension_from_mime, gemini_accepts, mime_from_extension,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -18,49 +17,48 @@ pub(crate) struct Input {
 }
 
 fn parse_file_type(name: &str) -> Result<FileType, String> {
-    let value = Value::String(name.to_owned());
-    serde_json::from_value(value).map_err(|error| error.to_string())
+    let file_type = match name {
+        "AAC" => FileType::Aac, "CSV" => FileType::Csv, "DOC" => FileType::Doc,
+        "DOCX" => FileType::Docx, "FLAC" => FileType::Flac, "FLV" => FileType::Flv,
+        "GIF" => FileType::Gif, "JPEG" => FileType::Jpeg, "JSON" => FileType::Json,
+        "M4A" => FileType::M4a, "MPA" => FileType::Mpa, "MP3" => FileType::Mp3,
+        "MPEG" => FileType::Mpeg, "MPGA" => FileType::Mpga, "PNG" => FileType::Png,
+        "PDF" => FileType::Pdf, "TXT" => FileType::Txt, "3GPP" => FileType::ThreeGpp,
+        "WEBP" => FileType::Webp, "WEBM" => FileType::Webm,
+        other => return Err(format!("unknown file type: {other}")),
+    };
+    Ok(file_type)
 }
 
 fn mime_table(input: &Input) -> Result<Value, String> {
-            let mut rows = Vec::new();
-            for extension in &input.extensions {
-                let mime = mime_from_extension(extension)
-                    .map_err(|error| error.to_string())?;
-                rows.push(json!({"extension": extension, "mime": mime}));
-            }
-            Ok(json!(rows))
+    let mut rows = Vec::new();
+    for extension in &input.extensions {
+        let mime = mime_from_extension(extension).map_err(|error| error.to_string())?;
+        rows.push(json!({"extension": extension, "mime": mime}));
+    }
+    Ok(json!(rows))
 }
 
 fn lookup_edges(input: &Input) -> Result<Value, String> {
-            let extensions = input
-                .extensions
-                .iter()
-                .map(|extension| {
-                    mime_from_extension(extension)
-                        .map(str::to_owned)
-                        .map_err(|error| error.to_string())
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let mimes = input
-                .mimes
-                .iter()
-                .map(|mime| {
-                    extension_from_mime(mime)
-                        .map(str::to_owned)
-                        .map_err(|error| error.to_string())
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(json!({"extensions": extensions, "mimes": mimes}))
+    let mut extensions = Vec::new();
+    for extension in &input.extensions {
+        extensions.push(mime_from_extension(extension).map_err(|error| error.to_string())?.to_owned());
+    }
+    let mut mimes = Vec::new();
+    for mime in &input.mimes {
+        mimes.push(extension_from_mime(mime).map_err(|error| error.to_string())?.to_owned());
+    }
+    Ok(json!({"extensions": extensions, "mimes": mimes}))
 }
 
 fn gemini_acceptance(input: &Input) -> Result<Value, String> {
-    input
-            .file_types
-            .iter()
-            .map(|name| parse_file_type(name).map(gemini_accepts))
-            .collect::<Result<Vec<_>, _>>()
-            .map(|accepted| json!(accepted))
+    let accepted = input
+        .file_types
+        .iter()
+        .map(|name| parse_file_type(name).map(gemini_accepts))
+        .collect::<Result<Vec<_>, _>>()
+        .map(|accepted| json!(accepted));
+    accepted
 }
 
 fn run_conversion(input: &Input) -> Result<Value, String> {
