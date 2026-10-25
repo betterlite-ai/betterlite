@@ -1,0 +1,17 @@
+kind: helper
+name: page_order_preserved
+call:
+  daily_activity_contracts:
+    step:
+      kind: key_metadata
+      value:
+        api_key: sk-test
+        key_alias: null
+        team_id: team
+        user_id: user
+        user_email: null
+        key_exists: true
+        tags: [first, first]
+env: {}
+compare:
+  ignore: []

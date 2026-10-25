@@ -1,0 +1,19 @@
+kind: helper
+name: table_field_and_relation_user
+call:
+  daily_activity_contracts:
+    step:
+      kind: scope
+      value:
+        table: litellm_dailyuserspend
+        entity_id_field: user_id
+        entity_ids: null
+        exclude_entity_ids: []
+        api_keys: null
+        start_date: "2026-01-02"
+        end_date: "2026-01-01"
+        model: null
+        timezone_offset_minutes: -90
+env: {}
+compare:
+  ignore: []

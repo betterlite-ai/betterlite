@@ -1,0 +1,19 @@
+kind: helper
+name: scope_none_empty_and_duplicate_filters
+call:
+  daily_activity_contracts:
+    step:
+      kind: scope
+      value:
+        table: litellm_dailyagentspend
+        entity_id_field: agent_id
+        entity_ids: ["", agent, agent]
+        exclude_entity_ids: [blocked, blocked]
+        api_keys: []
+        start_date: arbitrary
+        end_date: reversed
+        model: ""
+        timezone_offset_minutes: 330
+env: {}
+compare:
+  ignore: []

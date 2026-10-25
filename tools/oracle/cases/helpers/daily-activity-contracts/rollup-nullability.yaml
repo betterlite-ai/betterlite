@@ -1,0 +1,27 @@
+kind: helper
+name: rollup_ptu_only_optional_default
+call:
+  daily_activity_contracts:
+    step:
+      kind: rollup
+      value:
+        date: null
+        api_key: null
+        spend: null
+        prompt_tokens: null
+        completion_tokens: null
+        cache_read_input_tokens: null
+        cache_creation_input_tokens: null
+        compression_saved_tokens: null
+        compression_savings_spend: null
+        prompt_caching_savings_spend: null
+        gateway_injected_caching_savings_spend: null
+        autorouter_savings_spend: null
+        api_requests: null
+        successful_requests: null
+        failed_requests: null
+        total_response_time_ms: null
+        timed_requests: null
+env: {}
+compare:
+  ignore: []

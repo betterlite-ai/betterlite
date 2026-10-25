@@ -238,6 +238,12 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-db"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "betterlite-error"
@@ -305,6 +311,7 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-db",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
