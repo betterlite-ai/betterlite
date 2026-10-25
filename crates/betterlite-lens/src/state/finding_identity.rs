@@ -30,6 +30,7 @@ pub(crate) fn fresh_finding(
     revision: i64,
     now: DateTime<Utc>,
 ) -> Finding {
+    let occurrences = support(draft).into_iter().map(str::to_owned).collect();
     Finding {
         title: draft.title.clone(),
         description: draft.description.clone(),
@@ -45,7 +46,7 @@ pub(crate) fn fresh_finding(
         reason: String::new(),
         first_seen: now,
         last_seen: now,
-        occurrences: support(draft).into_iter().map(str::to_owned).collect(),
+        occurrences,
         revision,
     }
 }

@@ -69,7 +69,8 @@ fn encode<T>(value: &T) -> HelperResult
 where
     T: serde::Serialize,
 {
-    serde_json::to_value(value).or_else(|error| failure("TypeError", error.to_string()))
+    let encoded = serde_json::to_value(value);
+    encoded.or_else(|error| failure("TypeError", error.to_string()))
 }
 
 fn run(input: &Input) -> HelperResult {
@@ -81,17 +82,24 @@ fn run(input: &Input) -> HelperResult {
             now,
             job_id,
             request,
-        } => queue_job(lens, *now, job_id.clone(), request).map_or_else(overflow, |queued| encode(&queued)),
+        } => queue_job(lens, *now, job_id.clone(), request)
+            .map_or_else(overflow, |queued| encode(&queued)),
         Input::ClaimJob { lens, worker, now } => {
             claim_job(lens, worker, *now).map_or_else(overflow, |claimed| encode(&claimed))
         }
         Input::RenewBudget { lens, now } => encode(&renew_budget(lens, *now)),
-        Input::MergeFinding(call) => {
-            encode(&merge_finding(&call.lens, &call.draft, call.revision, call.now))
-        }
-        Input::SnapshotFinding(call) => {
-            encode(&snapshot_finding(&call.lens, &call.draft, call.revision, call.now))
-        }
+        Input::MergeFinding(call) => encode(&merge_finding(
+            &call.lens,
+            &call.draft,
+            call.revision,
+            call.now,
+        )),
+        Input::SnapshotFinding(call) => encode(&snapshot_finding(
+            &call.lens,
+            &call.draft,
+            call.revision,
+            call.now,
+        )),
         Input::DecodeSettings { json } => match serde_json::to_vec(json) {
             Err(error) => failure("TypeError", error.to_string()),
             Ok(bytes) => decode::<LensSettings>(&bytes).map_or_else(
