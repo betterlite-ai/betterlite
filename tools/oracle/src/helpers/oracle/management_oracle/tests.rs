@@ -6,6 +6,7 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use super::{Input, run};
+use crate::case::parse_helper_case;
 
 fn decode(value: Value) -> Result<Input, String> {
     serde_json::from_value(value).map_err(|error| error.to_string())
@@ -60,7 +61,16 @@ fn detects_effect_order() {
 #[test]
 fn detects_warning_order() {
     let mut left = output(Value::Null);
-    left.warnings = vec![json!("first"), json!("second")];
+    left.warnings = vec![
+        crate::compare::helper::HelperWarning {
+            subject: "first".to_owned(),
+            message: "first warning".to_owned(),
+        },
+        crate::compare::helper::HelperWarning {
+            subject: "second".to_owned(),
+            message: "second warning".to_owned(),
+        },
+    ];
     let mut right = left.clone();
     right.warnings.reverse();
     assert!(crate::compare::compare_helper(&left, &right, &[]).is_some());
@@ -114,10 +124,24 @@ fn rejects_unknown_operation() {
 
 #[test]
 fn rejects_duplicate_fields() {
-    let value = serde_json::from_str::<Input>(
-        r#"{"domain":"models","operation":{"path_encoding":{"function":"segment","value":"a","field_name":"id","field_name":"other"}}}"#,
-    );
-    let _error = value.unwrap_err();
+    let source = "
+kind: helper
+name: duplicate-management-field
+call:
+  management_oracle:
+    domain: models
+    operation:
+      path_encoding:
+        function: segment
+        value: a
+        field_name: id
+        field_name: other
+env: {}
+compare:
+  ignore: []
+";
+    let error = parse_helper_case(source).unwrap_err();
+    assert!(error.contains("duplicate"));
 }
 
 #[test]
@@ -160,9 +184,24 @@ fn redacts_secret_artifacts() {
     let mut right = left.clone();
     right.effects.last_mut().unwrap().fields = credential("new-secret");
     let difference = crate::compare::compare_helper(&left, &right, &[]).unwrap();
+    let left_output = serde_json::to_string(&left).unwrap();
+    let right_output = serde_json::to_string(&right).unwrap();
     let diagnostic = serde_json::to_string(&difference).unwrap();
+    assert!(!left_output.contains("old-secret"));
+    assert!(!left_output.contains("new-secret"));
+    assert!(!right_output.contains("old-secret"));
+    assert!(!right_output.contains("new-secret"));
     assert!(!diagnostic.contains("old-secret"));
     assert!(!diagnostic.contains("new-secret"));
+}
+
+#[test]
+fn rejects_unknown_effect_fields() {
+    let error = serde_json::from_str::<crate::compare::helper::HelperOutput>(
+        r#"{"ok":true,"effects":[{"kind":"marker","fields":{"name":"first","unexpected":true}}]}"#,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("unexpected"));
 }
 
 #[test]

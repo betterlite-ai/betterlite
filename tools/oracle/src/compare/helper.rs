@@ -1,7 +1,12 @@
-use std::borrow::Borrow;
-
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize as _, Deserializer as WireDecoder, Serializer as WireEncoder};
+use serde::{Deserialize as _, Deserializer as WireDecoder};
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct HelperWarning {
+    pub(crate) subject: String,
+    pub(crate) message: String,
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub(crate) struct HelperOutput {
@@ -11,12 +16,13 @@ pub(crate) struct HelperOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<HelperError>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) warnings: Vec<serde_json::Value>,
+    pub(crate) warnings: Vec<HelperWarning>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) effects: Vec<HelperEffect>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct HelperEffect {
     pub(crate) kind: String,
     pub(crate) fields: ManagementEffectFields,
@@ -30,8 +36,8 @@ pub(crate) struct ManagementEffectFields {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "parse_secret",
-        serialize_with = "redact_secret"
+        skip_serializing,
+        deserialize_with = "parse_secret"
     )]
     pub(crate) credential: Option<SecretString>,
 }
@@ -42,17 +48,6 @@ where
 {
     let value = Option::<String>::deserialize(decoder)?;
     Ok(value.map(SecretString::from))
-}
-
-fn redact_secret<S, T>(secret: T, encoder: S) -> Result<S::Ok, S::Error>
-where
-    T: Borrow<Option<SecretString>>,
-    S: WireEncoder,
-{
-    match secret.borrow() {
-        Some(_) => encoder.serialize_str("[REDACTED]"),
-        None => encoder.serialize_none(),
-    }
 }
 
 impl ManagementEffectFields {
