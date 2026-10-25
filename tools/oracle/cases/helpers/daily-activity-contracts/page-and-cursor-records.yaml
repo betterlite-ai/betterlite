@@ -1,36 +1,102 @@
-kind: helper
-name: page_order_preserved
-call:
-  daily_activity_contracts:
-    step:
-      kind: key_page
-      value:
-        total_api_keys: 2
-        rows:
-          - api_key: a
-            spend: "1.23"
-            prompt_tokens: 1
-            completion_tokens: 2
-            total_tokens: 3
-            api_requests: 1
-            successful_requests: 1
-            failed_requests: 0
-            cache_read_input_tokens: 3
-            cache_creation_input_tokens: 4
-          - api_key: b
-            spend: "2.34"
-            prompt_tokens: 1
-            completion_tokens: 2
-            total_tokens: 3
-            api_requests: 1
-            successful_requests: 1
-            failed_requests: 0
-            cache_read_input_tokens: 3
-            cache_creation_input_tokens: 4
-env: {}
-compare:
-  ignore:
-    - pointer: /value/rows/0/spend
-      why: Decimal wire representation differs between Rust and Python.
-    - pointer: /value/rows/1/spend
-      why: Decimal wire representation differs between Rust and Python.
+{
+  "kind": "helper",
+  "name": "page-and-cursor-records",
+  "call": {
+    "daily_activity_contracts": {
+      "steps": {
+        "page_order_preserved": {
+          "kind": "key_page",
+          "value": {
+            "rows": [
+              {
+                "api_key": "b",
+                "spend": "0.25",
+                "prompt_tokens": 7,
+                "completion_tokens": 7,
+                "total_tokens": 7,
+                "api_requests": 7,
+                "successful_requests": 7,
+                "failed_requests": 7,
+                "cache_read_input_tokens": 7,
+                "cache_creation_input_tokens": 7
+              },
+              {
+                "api_key": "a",
+                "spend": "0.25",
+                "prompt_tokens": 7,
+                "completion_tokens": 7,
+                "total_tokens": 7,
+                "api_requests": 7,
+                "successful_requests": 7,
+                "failed_requests": 7,
+                "cache_read_input_tokens": 7,
+                "cache_creation_input_tokens": 7
+              }
+            ],
+            "total_api_keys": 2
+          }
+        },
+        "daily_page": {
+          "kind": "daily_page",
+          "value": {
+            "total_count": 1,
+            "rows": [
+              {
+                "id": "",
+                "date": "",
+                "api_key": "",
+                "model": null,
+                "model_group": null,
+                "custom_llm_provider": null,
+                "mcp_namespaced_tool_name": null,
+                "endpoint": null,
+                "prompt_tokens": 7,
+                "completion_tokens": 7,
+                "cache_read_input_tokens": 7,
+                "cache_creation_input_tokens": 7,
+                "compression_saved_tokens": 7,
+                "compression_savings_spend": "0.25",
+                "prompt_caching_savings_spend": "0.25",
+                "gateway_injected_caching_savings_spend": "0.25",
+                "autorouter_savings_spend": "0.25",
+                "spend": "0.25",
+                "api_requests": 7,
+                "successful_requests": 7,
+                "failed_requests": 7,
+                "total_response_time_ms": 7,
+                "timed_requests": 7
+              }
+            ]
+          }
+        },
+        "cursor_empty_fields_preserved": {
+          "kind": "export_cursor",
+          "value": {
+            "date": "",
+            "entity_id": "",
+            "group_key": ""
+          }
+        },
+        "sql_parameter_order": {
+          "kind": "sql_query",
+          "value": {
+            "sql": "SELECT $1, $2, $3",
+            "params": [
+              "x",
+              3,
+              [
+                "b",
+                "a",
+                "b"
+              ]
+            ]
+          }
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

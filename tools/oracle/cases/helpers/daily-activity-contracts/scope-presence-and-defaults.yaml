@@ -1,19 +1,64 @@
-kind: helper
-name: scope_none_empty_and_duplicate_filters
-call:
-  daily_activity_contracts:
-    step:
-      kind: scope
-      value:
-        table: litellm_dailyagentspend
-        entity_id_field: agent_id
-        entity_ids: ["", agent, agent]
-        exclude_entity_ids: [blocked, blocked]
-        api_keys: []
-        start_date: arbitrary
-        end_date: reversed
-        model: ""
-        timezone_offset_minutes: 330
-env: {}
-compare:
-  ignore: []
+{
+  "kind": "helper",
+  "name": "scope-presence-and-defaults",
+  "call": {
+    "daily_activity_contracts": {
+      "steps": {
+        "scope_current_day_default_false": {
+          "kind": "scope",
+          "value": {
+            "table": "litellm_dailyuserspend",
+            "entity_id_field": "user_id",
+            "entity_ids": null,
+            "exclude_entity_ids": [],
+            "api_keys": null,
+            "start_date": "later",
+            "end_date": "earlier",
+            "model": null,
+            "timezone_offset_minutes": -90
+          }
+        },
+        "scope_none_empty_and_duplicate_filters": {
+          "kind": "scope",
+          "value": {
+            "table": "litellm_dailyuserspend",
+            "entity_id_field": "user_id",
+            "entity_ids": [
+              "",
+              "x",
+              "x"
+            ],
+            "exclude_entity_ids": [
+              "b",
+              "b"
+            ],
+            "api_keys": [],
+            "start_date": "later",
+            "end_date": "earlier",
+            "model": "",
+            "timezone_offset_minutes": -90,
+            "include_current_utc_day": true
+          }
+        },
+        "scope_dates_and_offsets_not_normalized": {
+          "kind": "scope",
+          "value": {
+            "table": "litellm_dailyuserspend",
+            "entity_id_field": "user_id",
+            "entity_ids": null,
+            "exclude_entity_ids": [],
+            "api_keys": null,
+            "start_date": "",
+            "end_date": "arbitrary",
+            "model": null,
+            "timezone_offset_minutes": 2147483648
+          }
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

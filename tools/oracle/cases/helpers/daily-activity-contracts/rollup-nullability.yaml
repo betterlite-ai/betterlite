@@ -1,27 +1,132 @@
-kind: helper
-name: rollup_ptu_only_optional_default
-call:
-  daily_activity_contracts:
-    step:
-      kind: rollup
-      value:
-        date: null
-        api_key: null
-        spend: null
-        prompt_tokens: null
-        completion_tokens: null
-        cache_read_input_tokens: null
-        cache_creation_input_tokens: null
-        compression_saved_tokens: null
-        compression_savings_spend: null
-        prompt_caching_savings_spend: null
-        gateway_injected_caching_savings_spend: null
-        autorouter_savings_spend: null
-        api_requests: null
-        successful_requests: null
-        failed_requests: null
-        total_response_time_ms: null
-        timed_requests: null
-env: {}
-compare:
-  ignore: []
+{
+  "kind": "helper",
+  "name": "rollup-nullability",
+  "call": {
+    "daily_activity_contracts": {
+      "steps": {
+        "rollup_fields": {
+          "kind": "rollup",
+          "value": {
+            "date": null,
+            "api_key": null,
+            "spend": null,
+            "ptu_flat_cost": null,
+            "prompt_tokens": null,
+            "completion_tokens": null,
+            "cache_read_input_tokens": null,
+            "cache_creation_input_tokens": null,
+            "compression_saved_tokens": null,
+            "compression_savings_spend": null,
+            "prompt_caching_savings_spend": null,
+            "gateway_injected_caching_savings_spend": null,
+            "autorouter_savings_spend": null,
+            "api_requests": null,
+            "successful_requests": null,
+            "failed_requests": null,
+            "total_response_time_ms": null,
+            "timed_requests": null
+          }
+        },
+        "grouping_fields": {
+          "kind": "grouping",
+          "value": {
+            "date": null,
+            "api_key": null,
+            "spend": null,
+            "ptu_flat_cost": null,
+            "prompt_tokens": null,
+            "completion_tokens": null,
+            "cache_read_input_tokens": null,
+            "cache_creation_input_tokens": null,
+            "compression_saved_tokens": null,
+            "compression_savings_spend": null,
+            "prompt_caching_savings_spend": null,
+            "gateway_injected_caching_savings_spend": null,
+            "autorouter_savings_spend": null,
+            "api_requests": null,
+            "successful_requests": null,
+            "failed_requests": null,
+            "total_response_time_ms": null,
+            "timed_requests": null,
+            "model": null,
+            "model_group": null,
+            "custom_llm_provider": null,
+            "mcp_namespaced_tool_name": null,
+            "endpoint": null,
+            "group_level": 7,
+            "distinct_api_keys": null
+          }
+        },
+        "entity_fields": {
+          "kind": "entity",
+          "value": {
+            "date": null,
+            "api_key": null,
+            "spend": null,
+            "ptu_flat_cost": null,
+            "prompt_tokens": null,
+            "completion_tokens": null,
+            "cache_read_input_tokens": null,
+            "cache_creation_input_tokens": null,
+            "compression_saved_tokens": null,
+            "compression_savings_spend": null,
+            "prompt_caching_savings_spend": null,
+            "gateway_injected_caching_savings_spend": null,
+            "autorouter_savings_spend": null,
+            "api_requests": null,
+            "successful_requests": null,
+            "failed_requests": null,
+            "total_response_time_ms": null,
+            "timed_requests": null,
+            "entity_id": null,
+            "api_key_rolled": 7,
+            "distinct_api_keys": null
+          }
+        },
+        "entity_rows_absent_vs_empty": {
+          "kind": "aggregated",
+          "value": {
+            "grouping_rows": [],
+            "entity_rows": null,
+            "distinct_api_keys": 0
+          }
+        },
+        "entity_rows_empty": {
+          "kind": "aggregated",
+          "value": {
+            "grouping_rows": [],
+            "entity_rows": [],
+            "distinct_api_keys": 0
+          }
+        },
+        "null_metrics_not_zero": {
+          "kind": "rollup",
+          "value": {
+            "date": null,
+            "api_key": null,
+            "spend": "0.0",
+            "ptu_flat_cost": null,
+            "prompt_tokens": null,
+            "completion_tokens": null,
+            "cache_read_input_tokens": null,
+            "cache_creation_input_tokens": null,
+            "compression_saved_tokens": null,
+            "compression_savings_spend": null,
+            "prompt_caching_savings_spend": null,
+            "gateway_injected_caching_savings_spend": null,
+            "autorouter_savings_spend": null,
+            "api_requests": 0,
+            "successful_requests": null,
+            "failed_requests": null,
+            "total_response_time_ms": null,
+            "timed_requests": null
+          }
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

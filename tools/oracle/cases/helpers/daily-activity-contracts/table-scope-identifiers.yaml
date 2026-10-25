@@ -1,19 +1,128 @@
-kind: helper
-name: table_field_and_relation_user
-call:
-  daily_activity_contracts:
-    step:
-      kind: scope
-      value:
-        table: litellm_dailyuserspend
-        entity_id_field: user_id
-        entity_ids: null
-        exclude_entity_ids: []
-        api_keys: null
-        start_date: "2026-01-02"
-        end_date: "2026-01-01"
-        model: null
-        timezone_offset_minutes: -90
-env: {}
-compare:
-  ignore: []
+{
+  "kind": "helper",
+  "name": "table-scope-identifiers",
+  "call": {
+    "daily_activity_contracts": {
+      "steps": {
+        "table_field_and_relation_user": {
+          "kind": "scope",
+          "value": {
+            "table": "litellm_dailyuserspend",
+            "entity_id_field": "user_id",
+            "entity_ids": null,
+            "exclude_entity_ids": [],
+            "api_keys": null,
+            "start_date": "later",
+            "end_date": "earlier",
+            "model": null,
+            "timezone_offset_minutes": -90
+          }
+        },
+        "table_field_and_relation_team": {
+          "kind": "scope",
+          "value": {
+            "table": "litellm_dailyteamspend",
+            "entity_id_field": "team_id",
+            "entity_ids": null,
+            "exclude_entity_ids": [],
+            "api_keys": null,
+            "start_date": "later",
+            "end_date": "earlier",
+            "model": null,
+            "timezone_offset_minutes": -90
+          }
+        },
+        "table_field_and_relation_tag": {
+          "kind": "scope",
+          "value": {
+            "table": "litellm_dailytagspend",
+            "entity_id_field": "tag",
+            "entity_ids": null,
+            "exclude_entity_ids": [],
+            "api_keys": null,
+            "start_date": "later",
+            "end_date": "earlier",
+            "model": null,
+            "timezone_offset_minutes": -90
+          }
+        },
+        "table_field_and_relation_organization": {
+          "kind": "scope",
+          "value": {
+            "table": "litellm_dailyorganizationspend",
+            "entity_id_field": "organization_id",
+            "entity_ids": null,
+            "exclude_entity_ids": [],
+            "api_keys": null,
+            "start_date": "later",
+            "end_date": "earlier",
+            "model": null,
+            "timezone_offset_minutes": -90
+          }
+        },
+        "table_field_and_relation_customer": {
+          "kind": "scope",
+          "value": {
+            "table": "litellm_dailyenduserspend",
+            "entity_id_field": "end_user_id",
+            "entity_ids": null,
+            "exclude_entity_ids": [],
+            "api_keys": null,
+            "start_date": "later",
+            "end_date": "earlier",
+            "model": null,
+            "timezone_offset_minutes": -90
+          }
+        },
+        "table_field_and_relation_agent": {
+          "kind": "scope",
+          "value": {
+            "table": "litellm_dailyagentspend",
+            "entity_id_field": "agent_id",
+            "entity_ids": null,
+            "exclude_entity_ids": [],
+            "api_keys": null,
+            "start_date": "later",
+            "end_date": "earlier",
+            "model": null,
+            "timezone_offset_minutes": -90
+          }
+        },
+        "mismatched_entity_field_rejected": {
+          "kind": "scope",
+          "value": {
+            "table": "litellm_dailyuserspend",
+            "entity_id_field": "team_id",
+            "entity_ids": null,
+            "exclude_entity_ids": [],
+            "api_keys": null,
+            "start_date": "later",
+            "end_date": "earlier",
+            "model": null,
+            "timezone_offset_minutes": -90,
+            "include_current_utc_day": false
+          }
+        },
+        "injected_identifier_rejected": {
+          "kind": "scope",
+          "value": {
+            "table": "litellm_dailyuserspend",
+            "entity_id_field": "user_id;DROP TABLE x",
+            "entity_ids": null,
+            "exclude_entity_ids": [],
+            "api_keys": null,
+            "start_date": "later",
+            "end_date": "earlier",
+            "model": null,
+            "timezone_offset_minutes": -90,
+            "include_current_utc_day": false
+          }
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
