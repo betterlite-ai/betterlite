@@ -89,6 +89,16 @@ fn config(input: &ConfigInput) -> OpenAiConfig {
         settings: OpenAiSettings::default(),
     }
 }
+fn invalid_error(error: impl std::fmt::Display) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: String::from("InvalidInput"),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
+}
 fn error_value(input: &ErrorInput) -> Result<Value, Box<HelperError>> {
     let record = OpenAiErrorRecord::from_parts(OpenAiErrorParts {
         status_code: input.status_code,
@@ -98,16 +108,7 @@ fn error_value(input: &ErrorInput) -> Result<Value, Box<HelperError>> {
         response: None,
         body: input.body.clone(),
     });
-    serde_json::to_value(record).map_err(|error| {
-        Box::new(HelperError {
-            class: String::from("InvalidInput"),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    })
+    serde_json::to_value(record).map_err(invalid_error)
 }
 fn forwarding(input: &ProjectionInput) -> Value {
     let events = Rc::new(RefCell::new(Vec::new()));
@@ -201,30 +202,13 @@ fn invoke(input: &BaseCall) -> Result<Value, Box<HelperError>> {
         ))),
         BaseCall::OpenaiErrorDefaults(value) => error_value(value),
         BaseCall::MetadataFilterLimit(value) => {
-            serde_json::to_value(metadata_filter_limit(value.metadata.as_ref())).map_err(|error| {
-                Box::new(HelperError {
-                    class: String::from("InvalidInput"),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                })
-            })
+            serde_json::to_value(metadata_filter_limit(value.metadata.as_ref()))
+                .map_err(invalid_error)
         }
         BaseCall::OverlappingApiBasePath(value) => {
             overlapping_api_base_path(&value.api_base, &value.ending_path)
                 .map(Value::String)
-                .map_err(|error| {
-                    Box::new(HelperError {
-                        class: String::from("InvalidInput"),
-                        status: None,
-                        error_type: None,
-                        param: None,
-                        code: None,
-                        message: error.to_string(),
-                    })
-                })
+                .map_err(invalid_error)
         }
     }
 }
