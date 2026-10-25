@@ -134,7 +134,9 @@ impl CallerRole {
 impl FixtureSeed {
     pub fn validate(&self) -> Result<(), FixtureError> {
         unique(self.users.iter().map(|row| row.user_id.as_str()), "user")?;
+        unique(self.keys.iter().map(|row| row.token.expose_secret()), "key")?;
         unique(self.teams.iter().map(|row| row.team_id.as_str()), "team")?;
+        unique_memberships(&self.memberships)?;
         unique(
             self.budgets.iter().map(|row| row.budget_id.as_str()),
             "budget",
@@ -212,6 +214,19 @@ fn unique<'item>(values: impl Iterator<Item = &'item str>, kind: &str) -> Result
         if !seen.insert(value) {
             return Err(FixtureError::Seed(format!(
                 "duplicate {kind} identity {value}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn unique_memberships(memberships: &[Membership]) -> Result<(), FixtureError> {
+    let mut seen = BTreeSet::new();
+    for membership in memberships {
+        if !seen.insert((membership.user_id.as_str(), membership.team_id.as_str())) {
+            return Err(FixtureError::Seed(format!(
+                "duplicate membership identity {}/{}",
+                membership.user_id, membership.team_id
             )));
         }
     }

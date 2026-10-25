@@ -19,6 +19,14 @@ pub(crate) async fn seed_database(client: &Client, seed: &FixtureSeed) -> Result
         .batch_execute(BASELINE)
         .await
         .map_err(FixtureError::Database)?;
+    if !seed.jwt_mappings.is_empty() {
+        client
+            .batch_execute(
+                "CREATE TABLE IF NOT EXISTS \"LiteLLM_JWTMapping\" (\"subject\" TEXT PRIMARY KEY, \"user_id\" TEXT NOT NULL REFERENCES \"LiteLLM_UserTable\"(\"user_id\"))",
+            )
+            .await
+            .map_err(FixtureError::Database)?;
+    }
     seed_rows(client, seed).await?;
     keys(client, seed).await?;
     Ok(())

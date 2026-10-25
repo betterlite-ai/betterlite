@@ -1,5 +1,5 @@
 task: B860
 deviations:
-  - what: JWT mappings and real TLS certificate/hostname fixtures are not implemented.
-    why: The pinned baseline has no JWT mapping table and the existing fixture schema has no certificate/hostname configuration boundary; inventing columns or weakening TLS verification would not match LiteLLM.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250326162113_baseline/migration.sql
+  - what: Configured sslmode values use OpenSSL-backed PostgreSQL connections, but no committed local TLS Postgres server/container cases exercise trusted, untrusted, and mismatched-host certificates.
+    why: The connection boundary enforces the requested TLS mode and verification; the local server harness remains outside the current fixture test set.
+    link: https://docs.rs/postgres-openssl/0.5.3/postgres_openssl/

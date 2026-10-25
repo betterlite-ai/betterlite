@@ -13,7 +13,9 @@ publish = false
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 hex = "0.4.3"
 hyper-util = "0.1.21"
+openssl = "0.10.75"
 percent-encoding = "2.3.2"
+postgres-openssl = "0.5.3"
 regex = "1.13.1"
 rust_decimal = "1.43.0"
 secrecy = { version = "0.10.3", features = ["serde"] }

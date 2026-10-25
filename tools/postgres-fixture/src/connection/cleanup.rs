@@ -37,13 +37,13 @@ pub(super) async fn cleanup_setup_driver(
 }
 
 pub(super) async fn drain_drivers(
-    drivers: &mut JoinSet<Result<(), tokio_postgres::Error>>,
+    drivers: &mut JoinSet<Result<(), FixtureError>>,
 ) -> Result<(), FixtureError> {
     let mut first = None;
     while let Some(result) = drivers.join_next().await {
         let error = match result {
             Ok(Ok(())) => continue,
-            Ok(Err(error)) => FixtureError::Driver(error),
+            Ok(Err(error)) => error,
             Err(error) => FixtureError::DriverJoin(error),
         };
         if first.is_none() {

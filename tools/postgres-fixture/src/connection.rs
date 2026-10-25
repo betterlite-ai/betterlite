@@ -4,6 +4,8 @@ use std::pin::Pin;
 use std::str::FromStr as _;
 use std::time::Duration;
 
+use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
+use postgres_openssl::MakeTlsConnector;
 use secrecy::{ExposeSecret as _, SecretString};
 use testcontainers::core::{IntoContainerPort as _, WaitFor};
 use testcontainers::{ContainerAsync, GenericImage, ImageExt as _, runners::AsyncRunner as _};
@@ -38,6 +40,17 @@ impl DatabaseNameGenerator for RandomDatabaseName {
 pub struct ConnectionOptions {
     config: Config,
     url: SecretString,
+    root_certificate: Option<String>,
+    tls_mode: TlsMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TlsMode {
+    Disable,
+    Prefer,
+    Require,
+    VerifyCa,
+    VerifyFull,
 }
 
 impl fmt::Debug for ConnectionOptions {
@@ -63,12 +76,24 @@ impl ConnectionOptions {
         self.url.clone()
     }
 
+    #[must_use]
+    pub const fn uses_tls(&self) -> bool {
+        match self.tls_mode {
+            TlsMode::Disable | TlsMode::Prefer => false,
+            TlsMode::Require | TlsMode::VerifyCa | TlsMode::VerifyFull => true,
+        }
+    }
+
     fn from_url(raw: &str) -> Result<Self, FixtureError> {
-        let config = Config::from_str(raw)
+        let tls_mode = tls_mode(raw);
+        let config_source = normalized_config_source(raw, tls_mode);
+        let config = Config::from_str(&config_source)
             .map_err(|source| FixtureError::InvalidConfiguredUrl { source })?;
         Ok(Self {
             config,
             url: SecretString::from(raw.to_owned()),
+            root_certificate: query_value(raw, "sslrootcert"),
+            tls_mode,
         })
     }
 
@@ -87,6 +112,8 @@ impl ConnectionOptions {
         Self {
             config,
             url: SecretString::from(url),
+            root_certificate: self.root_certificate.clone(),
+            tls_mode: self.tls_mode,
         }
     }
 }
@@ -111,7 +138,7 @@ pub struct PostgresFixture {
     pub options: ConnectionOptions,
     pub database: String,
     pub container: Option<ContainerAsync<GenericImage>>,
-    pub drivers: JoinSet<Result<(), tokio_postgres::Error>>,
+    pub drivers: JoinSet<Result<(), FixtureError>>,
 }
 
 impl fmt::Debug for PostgresFixture {
@@ -244,14 +271,85 @@ async fn source_connection(
 
 async fn connect(
     options: &ConnectionOptions,
-    drivers: &mut JoinSet<Result<(), tokio_postgres::Error>>,
+    drivers: &mut JoinSet<Result<(), FixtureError>>,
 ) -> Result<Client, FixtureError> {
-    let connected = timed("connect", options.config.connect(NoTls))
-        .await?
-        .map_err(FixtureError::Connect)?;
-    let (client, connection) = connected;
-    drivers.spawn(connection);
-    Ok(client)
+    match options.tls_mode {
+        TlsMode::Disable | TlsMode::Prefer => {
+            let connected = timed("connect", options.config.connect(NoTls))
+                .await?
+                .map_err(FixtureError::Connect)?;
+            let (client, connection) = connected;
+            drivers.spawn(async move { connection.await.map_err(FixtureError::Driver) });
+            Ok(client)
+        }
+        TlsMode::Require | TlsMode::VerifyCa | TlsMode::VerifyFull => {
+            let connector = tls_connector(options)?;
+            let connected = timed("connect", options.config.connect(connector))
+                .await?
+                .map_err(FixtureError::Connect)?;
+            let (client, connection) = connected;
+            drivers.spawn(async move { connection.await.map_err(FixtureError::Driver) });
+            Ok(client)
+        }
+    }
+}
+
+fn tls_connector(options: &ConnectionOptions) -> Result<MakeTlsConnector, FixtureError> {
+    let mut builder = SslConnector::builder(SslMethod::tls()).map_err(FixtureError::Tls)?;
+    if let Some(root_certificate) = &options.root_certificate {
+        builder
+            .set_ca_file(root_certificate)
+            .map_err(FixtureError::Tls)?;
+    }
+    if options.tls_mode == TlsMode::Require {
+        builder.set_verify(SslVerifyMode::NONE);
+    } else {
+        builder.set_verify(SslVerifyMode::PEER);
+    }
+    Ok(MakeTlsConnector::new(builder.build()))
+}
+
+fn tls_mode(raw: &str) -> TlsMode {
+    match query_value(raw, "sslmode").as_deref() {
+        Some("disable") => TlsMode::Disable,
+        Some("require") => TlsMode::Require,
+        Some("verify-ca") => TlsMode::VerifyCa,
+        Some("verify-full") => TlsMode::VerifyFull,
+        _ => TlsMode::Prefer,
+    }
+}
+
+fn query_value(raw: &str, key: &str) -> Option<String> {
+    raw.split_once('?')?.1.split('&').find_map(|part| {
+        let (name, value) = part.split_once('=')?;
+        (name == key).then(|| value.to_owned())
+    })
+}
+
+fn normalized_config_source(raw: &str, tls_mode: TlsMode) -> String {
+    let Some((base, query)) = raw.split_once('?') else {
+        return raw.to_owned();
+    };
+    let parameters = query
+        .split('&')
+        .filter_map(|parameter| {
+            let (name, configured_value) = parameter.split_once('=')?;
+            if name == "sslrootcert" {
+                return None;
+            }
+            let normalized_value = if name == "sslmode" && tls_mode != TlsMode::Disable {
+                "require"
+            } else {
+                configured_value
+            };
+            Some(format!("{name}={normalized_value}"))
+        })
+        .collect::<Vec<_>>();
+    if parameters.is_empty() {
+        base.to_owned()
+    } else {
+        format!("{base}?{}", parameters.join("&"))
+    }
 }
 
 async fn create_database(client: &Client, database: &str) -> Result<(), FixtureError> {
