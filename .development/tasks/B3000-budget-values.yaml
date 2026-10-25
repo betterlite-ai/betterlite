@@ -47,10 +47,10 @@ checks:
   commands:
     - id: counter-structure-tests
       why: BudgetCounter structure or field names do not match the source
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^budget_counter::.*structure/)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^budget_counter::.*structure)'
     - id: counter-entity-tests
       why: Entity type mapping is missing, does not cover all nine types, or fails on "Model access group"
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^budget_counter::.*entity/)' && grep -q '"Model access group"' crates/betterlite-auth/src/budget_counter.rs
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^budget_counter::.*entity)' && grep -q '"Model access group"' crates/betterlite-auth/src/budget_counter.rs
     - id: coercion-tests
       why: Coercion functions are missing, fail on valid inputs, or do not return None on type mismatches
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^budget_counter::.*to_float/) | test(/^budget_counter::.*to_int/) | test(/^budget_counter::.*get_value/)'
