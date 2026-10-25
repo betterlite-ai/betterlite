@@ -11,7 +11,10 @@ fn span_names_decode_mcp_methods_from_their_wire_values() {
             {"role": "service", "service_name": "redis", "call_type": null},
         ]}),
     });
-    assert_eq!(output.value, Some(serde_json::json!(["tools/list", "redis"])));
+    assert_eq!(
+        output.value,
+        Some(serde_json::json!(["tools/list", "redis"]))
+    );
 }
 
 #[test]

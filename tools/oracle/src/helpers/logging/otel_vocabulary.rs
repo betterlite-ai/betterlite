@@ -59,14 +59,56 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Input) -> crate::helpers::HelperResult {
         let output = match input {
-            Input::Provider { values } => serde_json::json!(values.iter().map(|value| resolve_provider(value.as_deref().unwrap_or_default())).collect::<Vec<_>>()),
-            Input::Operation { values } => serde_json::json!(values.iter().map(|value| resolve_operation(value.as_deref().unwrap_or_default()).to_string()).collect::<Vec<_>>()),
-            Input::OutputType { values } => serde_json::json!(values.iter().map(|value| resolve_output_type(value.as_deref().unwrap_or_default()).map(|output| output.to_string())).collect::<Vec<_>>()),
-            Input::DbSystem { values } => serde_json::json!(values.iter().map(|value| db_system(value)).collect::<Vec<_>>()),
-            Input::SpanRole { values } => serde_json::json!(values.iter().map(|value| span_role_for_service(value).map(|role| role.to_string())).collect::<Vec<_>>()),
+            Input::Provider { values } => serde_json::json!(
+                values
+                    .iter()
+                    .map(|value| resolve_provider(value.as_deref().unwrap_or_default()))
+                    .collect::<Vec<_>>()
+            ),
+            Input::Operation { values } => serde_json::json!(
+                values
+                    .iter()
+                    .map(
+                        |value| resolve_operation(value.as_deref().unwrap_or_default()).to_string()
+                    )
+                    .collect::<Vec<_>>()
+            ),
+            Input::OutputType { values } => serde_json::json!(
+                values
+                    .iter()
+                    .map(
+                        |value| resolve_output_type(value.as_deref().unwrap_or_default())
+                            .map(|output| output.to_string())
+                    )
+                    .collect::<Vec<_>>()
+            ),
+            Input::DbSystem { values } => serde_json::json!(
+                values
+                    .iter()
+                    .map(|value| db_system(value))
+                    .collect::<Vec<_>>()
+            ),
+            Input::SpanRole { values } => serde_json::json!(
+                values
+                    .iter()
+                    .map(|value| span_role_for_service(value).map(|role| role.to_string()))
+                    .collect::<Vec<_>>()
+            ),
             Input::Registry => registry(),
-            Input::SpanName { spans } => serde_json::json!(spans.iter().map(span_name).collect::<Vec<_>>()),
-            Input::Semconv { values } => serde_json::json!(values.iter().map(|value| parse_semconv_opt_in(value.as_deref().unwrap_or_default()).iter().map(ToString::to_string).collect::<Vec<_>>()).collect::<Vec<_>>()),
+            Input::SpanName { spans } => {
+                serde_json::json!(spans.iter().map(span_name).collect::<Vec<_>>())
+            }
+            Input::Semconv { values } => serde_json::json!(
+                values
+                    .iter()
+                    .map(
+                        |value| parse_semconv_opt_in(value.as_deref().unwrap_or_default())
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                    )
+                    .collect::<Vec<_>>()
+            ),
         };
         Ok(output)
     }
@@ -80,8 +122,16 @@ fn registry() -> serde_json::Value {
             serde_json::json!({"role": spec.role.to_string(), "kind": spec.kind.to_string(), "parent": parent})
         })
         .collect();
-    let roots: Vec<String> = SPAN_REGISTRY.iter().filter(|spec| spec.parent.is_none()).map(|spec| spec.role.to_string()).collect();
-    let children: Vec<String> = SPAN_REGISTRY.iter().filter(|spec| spec.parent == Some(SpanRole::ProxyRequest)).map(|spec| spec.role.to_string()).collect();
+    let roots: Vec<String> = SPAN_REGISTRY
+        .iter()
+        .filter(|spec| spec.parent.is_none())
+        .map(|spec| spec.role.to_string())
+        .collect();
+    let children: Vec<String> = SPAN_REGISTRY
+        .iter()
+        .filter(|spec| spec.parent == Some(SpanRole::ProxyRequest))
+        .map(|spec| spec.role.to_string())
+        .collect();
     let valid = validate_registry(&SPAN_REGISTRY).is_ok();
     serde_json::json!({"valid": valid, "entries": entries, "roots": roots, "children": children})
 }
