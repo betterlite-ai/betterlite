@@ -12,4 +12,8 @@ fn enum_values_and_attribute_keys_match_semconv() {
     assert_eq!(MCP::METHOD_NAME, "mcp.method.name");
     assert_eq!(DB::SYSTEM_NAME, "db.system.name");
     assert_eq!(HTTP::RESPONSE_STATUS_CODE, "http.response.status_code");
+    assert_eq!(
+        LITELLM_PROXY_REQUEST_SPAN_NAME,
+        "Received Proxy Server Request"
+    );
 }
