@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use serde_with::rust::double_option;
 use std::collections::BTreeMap;
 pub mod json;
 mod tests;
@@ -36,7 +37,7 @@ macro_rules! dictionary {
         #[serde(rename_all = $case, deny_unknown_fields)]
         pub struct $name {
             $($required)*
-            $($(#[$attr])* #[serde(default, skip_serializing_if = "Option::is_none", with = "serde_with::rust::double_option")]
+            $($(#[$attr])* #[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")]
             pub $field: Option<Option<$ty>>,)*
         }
     };

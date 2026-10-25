@@ -1,5 +1,4 @@
-use serde::Deserialize as _;
-use serde::{Deserializer, de::Error};
+use serde::{Deserialize as _, Deserializer, de::Error};
 use url::Url;
 pub(super) fn absolute_http_url<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
