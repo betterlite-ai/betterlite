@@ -26,7 +26,7 @@ roles:
     ladder:
       - runner: codex-worker
         model: gpt-reserve
-        effort: high
+        effort: medium
         attempts: 3
         timeout_minutes: 90
       - runner: codex-worker

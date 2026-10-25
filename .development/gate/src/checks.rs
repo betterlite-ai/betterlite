@@ -98,20 +98,42 @@ pub(crate) fn run(
         ("GATE_LOG_DIR", log_dir.display().to_string()),
         ("GATE_ORACLE_CASES", task.oracle_cases.join(" ")),
     ];
-    for command in commands(development, task)?
+    let (later, first): (Vec<&Command>, Vec<&Command>) = commands(development, task)?
         .into_iter()
         .filter(|check| only.is_empty() || only.contains(&check.id))
-    {
+        .partition(|check| check.after_green);
+    for command in first {
         let started = Instant::now();
-        let outcome = match &command.when_exists {
-            Some(path) if !root.join(path).exists() => {
-                Outcome::Skip(format!("{path} does not exist"))
-            }
-            Some(_) | None => execute::execute(root, &log_dir, command, &environment)?,
+        let outcome = run_command(root, &log_dir, command, &environment)?;
+        outcomes.push((command.id.clone(), started.elapsed().as_secs(), outcome));
+    }
+    let red = outcomes
+        .iter()
+        .any(|(_, _, outcome)| matches!(outcome, Outcome::Fail { .. }));
+    for command in later {
+        let started = Instant::now();
+        let outcome = if red {
+            Outcome::Skip("runs once every other check passes".to_owned())
+        } else {
+            run_command(root, &log_dir, command, &environment)?
         };
         outcomes.push((command.id.clone(), started.elapsed().as_secs(), outcome));
     }
     Ok(render(task, &facts.base, &log_dir, outcomes))
+}
+
+fn run_command(
+    root: &Path,
+    log_dir: &Path,
+    command: &Command,
+    environment: &[(&str, String)],
+) -> Result<Outcome, GateError> {
+    match &command.when_exists {
+        Some(path) if !root.join(path).exists() => {
+            Ok(Outcome::Skip(format!("{path} does not exist")))
+        }
+        Some(_) | None => execute::execute(root, log_dir, command, environment),
+    }
 }
 
 fn render(
