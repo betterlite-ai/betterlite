@@ -64,10 +64,10 @@ scope:
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/current-spend-*
-    - tools/oracle/src/helpers/auth/current_spend_floor.rs
-    - tools/oracle/src/helpers/auth/current_spend_floor/**
-    - tools/oracle/helpers/current_spend_floor.py
-    - tools/oracle/helpers/current_spend_floor/**
+    - tools/oracle/src/helpers/auth/current_spend.rs
+    - tools/oracle/src/helpers/auth/current_spend/**
+    - tools/oracle/helpers/current_spend.py
+    - tools/oracle/helpers/current_spend/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/current-spend/**
     - tools/oracle/cases/auth/current-spend/**
@@ -121,7 +121,7 @@ out_of_scope:
   - B124 retains other proxy_server.py functions, including reseed_spend_counter_from_db L2915-L2936.
   - B2322 owns database reseeds; B2316 batch state; B126 SET MAX; B733 cache decoding.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as current_spend_floor in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/current_spend_floor.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/current_spend_floor.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as current_spend in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/current_spend.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/current_spend.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Strict mode still returns a higher caller fallback when no authoritative floor is available.
   - A floor read racing a reset must recheck the marker before storing its old value.
 budget:

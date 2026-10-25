@@ -34,10 +34,10 @@ scope:
   paths:
     - crates/betterlite-vertex/src/{lib,gemini_live_content}.rs
     - crates/betterlite-vertex/src/gemini_live_content/**
-    - tools/oracle/src/helpers/vertex/gemini_live_content_events.rs
-    - tools/oracle/src/helpers/vertex/gemini_live_content_events/**
-    - tools/oracle/helpers/gemini_live_content_events.py
-    - tools/oracle/helpers/gemini_live_content_events/**
+    - tools/oracle/src/helpers/vertex/gemini_live_content.rs
+    - tools/oracle/src/helpers/vertex/gemini_live_content/**
+    - tools/oracle/helpers/gemini_live_content.py
+    - tools/oracle/helpers/gemini_live_content/**
     - tools/oracle/cases/helpers/gemini-live-content/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_live_content*
   lint_tables: false
@@ -67,7 +67,7 @@ checks:
       run: test -f tools/oracle/helpers/gemini_live_content.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Helpers invoke individual pinned content transforms rather than copying the state-transition logic.
     - id: live-content-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_content*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_live_content::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_content*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_live_content::/)'
       why: Shared corpus assertions require the call.gemini_live_content variant on added cases.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-live-content/first-part-warning.yaml
@@ -84,7 +84,7 @@ out_of_scope:
   - _is_new_content_delta at L679-L687 has no caller at the pin and receives no implementation or cases.
   - B1378 owns setup/session creation; B1379 owns client parsing/state; B1381 owns tool and usage helpers; B1382 owns transform_realtime_response.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as gemini_live_content_events in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_live_content_events.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_live_content_events.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as gemini_live_content in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_live_content.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_live_content.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - conversation.item.added must precede content_part.added; the source does not emit conversation.item.created.
   - An explicit false generationComplete still matches the fallback presence-based event mapping.
   - List-based state updates discard earlier text deltas rather than retaining a whole-turn transcript.

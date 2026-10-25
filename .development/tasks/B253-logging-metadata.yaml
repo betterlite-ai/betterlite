@@ -8,7 +8,7 @@ description: >-
   key construction remain B068/B115. B190 owns standard payload redaction after assembly. Budget 280 logic/types,
   120 Rust/Python adapters, 300 tests and 60 wiring (760 total). Write the behavior rstest functions logging_metadata_behavior_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
-  separate names. Register helper operations logging_metadata in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  separate names. The helper operation logging_metadata is already registered;
   each operation has its own Rust and Python adapter file and corpus seed. Also own provider request-ID extraction
   297-317, router model-ID projection 871-886/903-908, response header/hidden-metadata projection 2361-2393, trace-ID
   extraction 3965-3981 and hash-shape check 5599-5601.

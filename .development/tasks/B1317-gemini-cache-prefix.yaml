@@ -71,7 +71,7 @@ checks:
       run: test -f tools/oracle/helpers/gemini_cache_prefix.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Python prefix fixtures must control the clock and retain source message order.
     - id: prefix-corpora
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/cache_ttl)" && test -f crates/betterlite-vertex/fuzz/fuzz_targets/cache_ttl.rs && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_cache_ttl_corpus)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_cache_prefix*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_cache_prefix::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/cache_ttl)" && test -f crates/betterlite-vertex/fuzz/fuzz_targets/cache_ttl.rs && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_cache_ttl_corpus)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_cache_prefix*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_cache_prefix::/)'
       why: Both the TTL decoder and cache-prefix helper must consume new corpus files.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-cache-prefix/disjoint-markers.yaml

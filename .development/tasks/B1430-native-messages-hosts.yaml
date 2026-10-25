@@ -81,7 +81,7 @@ checks:
       run: test -f tools/oracle/helpers/native_messages_hosts.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The oracle must call the parent authentication path for Tencent and MiniMax.
     - id: messages-host-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/native_messages_hosts*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::native_messages_hosts::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/native_messages_hosts*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::native_messages_hosts::/)'
       why: Parsed seeds assert the native_messages_hosts variant and nonzero coverage per provider.
 oracle_cases:
   - tools/oracle/cases/helpers/native-messages-hosts/deepseek-beta-and-anthropic-paths.yaml

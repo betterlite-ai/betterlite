@@ -73,7 +73,7 @@ dod:
 - text: >-
     quick-xml crate is added to Cargo.toml and deny.toml to enable RSS XML parsing.
   proof: [dependency-check]
-- text: Blog feed helper operation is registered in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py
+- text: Blog feed helper operation runs through its registered stub module and adapter
   proof: [new-cases, helper-corpus, oracle, helper-python]
 checks:
   optional: []

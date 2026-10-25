@@ -58,7 +58,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_gemini_transcription.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_gemini_transcription)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_gemini_transcription_corpus)'
       why: The production decoder is the sole replay entry for provider transcript bytes.
     - id: gemini-transcription-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_gemini_transcription*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_gemini_transcription::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_gemini_transcription*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_transcription::/)'
       why: Added seeds must select vertex_gemini_transcription under call.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-gemini-transcription/global-default.yaml

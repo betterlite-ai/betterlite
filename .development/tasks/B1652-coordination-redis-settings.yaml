@@ -42,10 +42,10 @@ scope:
     - crates/betterlite-config/src/tests/coordination_redis_settings.rs
     - crates/betterlite-config/src/tests.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/coordination-redis-*
-    - tools/oracle/src/helpers/server/coordination_redis_settings.rs
-    - tools/oracle/src/helpers/server/coordination_redis_settings/**
-    - tools/oracle/helpers/coordination_redis_settings.py
-    - tools/oracle/helpers/coordination_redis_settings/**
+    - tools/oracle/src/helpers/server/coordination_settings.rs
+    - tools/oracle/src/helpers/server/coordination_settings/**
+    - tools/oracle/helpers/coordination_settings.py
+    - tools/oracle/helpers/coordination_settings/**
     - tools/oracle/cases/helpers/coordination-settings/**
     - tools/oracle/fuzz/corpus/helper_case/coordination-settings-*
   lint_tables: false
@@ -88,7 +88,7 @@ out_of_scope:
   - B1653 owns _enforce_proxy_admin L68-L73, audit functions L228-L270, route request/response models L273-L290 and all handlers with decorators L292-L441.
   - B124 owns CoordinationRedisParams and Redis startup/client selection; B126 supplies Redis clients and B129 resolves secret references.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as coordination_redis_settings in the server group. Replace the stub Op in tools/oracle/src/helpers/server/coordination_redis_settings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/coordination_redis_settings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as coordination_settings in the server group. Replace the stub Op in tools/oracle/src/helpers/server/coordination_settings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/coordination_settings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A saved empty coordination_redis object is authoritative for current_settings even though source reporting treats it as false.
   - An incoming ***REDACTED*** with no saved value remains the literal marker rather than becoming null.
 budget:

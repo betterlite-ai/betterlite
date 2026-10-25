@@ -10,7 +10,7 @@ description: >-
   Own pending, dequeued and running events through cancellation, flush and stop; join or account for each by the
   deadline. Implement source 27-265 and 448-531 with typed tracing replacing _safe_log; delayed retries/aggressive
   clears 267-446 are intentionally replaced by bounded admission, and _flush_on_exit is replaced by explicit shutdown.
-  Register worker_trace in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py with separate Rust/Python
+  The helper operation worker_trace is already registered with separate Rust/Python
   adapters and a new seed. Compare event counts, final status and delivered set, not elapsed timing. Write logging_worker_tests_behavior
   rstest cases in adjacent tests.rs, separate from replay. Budget 320 worker, 100 adapters, 290 tests and 60 wiring
   (770 total).
@@ -24,10 +24,10 @@ scope:
   - crates/betterlite-logging/src/worker/**
   - crates/betterlite-logging/tests/fixtures/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/logging/worker.rs
-  - tools/oracle/src/helpers/logging/worker/**
-  - tools/oracle/helpers/logging_worker.py
-  - tools/oracle/helpers/logging_worker/**
+  - tools/oracle/src/helpers/logging/worker_trace.rs
+  - tools/oracle/src/helpers/logging/worker_trace/**
+  - tools/oracle/helpers/worker_trace.py
+  - tools/oracle/helpers/worker_trace/**
   - tools/oracle/cases/helpers/logging-worker/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -122,7 +122,7 @@ out_of_scope:
   tests: their Rust equivalents are injected transport fixtures owned by each exporter task, not production mocks
   here. test_httpx.py is empty at the pin.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as logging_worker in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/worker.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/logging_worker.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as worker_trace in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/worker_trace.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/worker_trace.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   A dequeued event waiting for a semaphore still belongs to the worker and must be included in shutdown accounting.
 - Callback context must be captured before enqueue, not read from whichever task later runs it.

@@ -58,7 +58,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/image_options.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/image_options)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_image_options_corpus)'
       why: External imageConfig JSON and dimension strings must exercise decode_image_options.
     - id: image-policy-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_image_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_image_policy::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_image_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_image_policy::/)'
       why: Shared corpus parsing must invoke the image-policy helper variant.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-image-policy/exact-portrait-table.yaml

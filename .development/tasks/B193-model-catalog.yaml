@@ -12,8 +12,7 @@ description: >-
   and replay it through the common typed parser. Bundled-map tests reject unknown fields; runtime remote maps accept
   unknown fields with warnings listing their full paths, per B205. Duplicate keys remain explicit errors. Write
   the behavior rstest functions model_catalog_tests_behavior in adjacent tests.rs files, with a named case
-  for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
-  model_catalog in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its
+  for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation model_catalog is already registered; each operation has its
   own Rust and Python adapter file and corpus seed. Budget 280 catalog, 100 adapters, 260 tests and 100 fuzz/replay
   wiring (740 total).
 

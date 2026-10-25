@@ -42,10 +42,10 @@ scope:
   - tools/oracle/sdk_http/responses_create.py
   - tools/oracle/cases/sdk-http/responses-create/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-create-*
-  - tools/oracle/src/helpers/core_ops/responses_create_plan.rs
-  - tools/oracle/src/helpers/core_ops/responses_create_plan/**
-  - tools/oracle/helpers/responses_create_plan.py
-  - tools/oracle/helpers/responses_create_plan/**
+  - tools/oracle/src/helpers/core_ops/responses_create_literals.rs
+  - tools/oracle/src/helpers/core_ops/responses_create_literals/**
+  - tools/oracle/helpers/responses_create_literals.py
+  - tools/oracle/helpers/responses_create_literals/**
   - tools/oracle/cases/helpers/responses-create-literals/**
   - tools/oracle/fuzz/corpus/helper_case/responses_create_literals-*
   - Cargo.lock
@@ -159,7 +159,7 @@ out_of_scope:
 - The defensive custom_llm_provider=null native-send error is unreachable after a null config selects chat; do not invent a production branch to test it.
 - B234 owns supplied managed-file mappings behind B931; managed storage and URL downloads are not performed by this create function.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as responses_create_plan in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_create_plan.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_create_plan.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as responses_create_literals in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_create_literals.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_create_literals.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Mock response returns before full model resolution and response-ID stamping, but after prompt and affinity processing.
 - Native timeout=0 falls back while chat-bridge timeout=0 is preserved.
 - MCP receives bound reasoning before reasoning_effort mapping and omits four arguments present in file-search dispatch.

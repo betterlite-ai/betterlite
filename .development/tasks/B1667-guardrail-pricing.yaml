@@ -39,10 +39,10 @@ scope:
     - crates/betterlite-models/src/cost_breakdown.rs
     - crates/betterlite-models/src/guardrail_pricing.rs
     - crates/betterlite-models/src/guardrail_pricing/**
-    - tools/oracle/src/helpers/models/guardrail_pricing.rs
-    - tools/oracle/src/helpers/models/guardrail_pricing/**
-    - tools/oracle/helpers/guardrail_pricing.py
-    - tools/oracle/helpers/guardrail_pricing/**
+    - tools/oracle/src/helpers/models/guardrail_costs.rs
+    - tools/oracle/src/helpers/models/guardrail_costs/**
+    - tools/oracle/helpers/guardrail_costs.py
+    - tools/oracle/helpers/guardrail_costs/**
     - tools/oracle/cases/helpers/guardrail-costs/**
     - tools/oracle/fuzz/corpus/helper_case/guardrail-costs-*
   lint_tables: false
@@ -85,7 +85,7 @@ out_of_scope:
   - bedrock_guardrail_cost L94-L95 has no caller at the pin and is omitted; callers use the by-unit function and explicit total.
   - B068's final calculator and B069's spend paths consume these results; guardrail hooks and usage-rollup writers keep their existing execution ownership.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as guardrail_pricing in the models group. Replace the stub Op in tools/oracle/src/helpers/models/guardrail_pricing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/guardrail_pricing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as guardrail_costs in the models group. Replace the stub Op in tools/oracle/src/helpers/models/guardrail_costs.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/guardrail_costs.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A valid empty regional guardrail price map blocks global fallback, leaving every counter unpriced.
   - The breakdown helper overwrites guardrail_cost but adds to total_cost without removing a previously recorded guardrail amount.
 budget:

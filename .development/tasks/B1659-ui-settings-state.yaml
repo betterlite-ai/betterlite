@@ -50,10 +50,10 @@ scope:
     - crates/betterlite-config/src/ui_settings.rs
     - crates/betterlite-config/src/ui_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/ui-settings-*
-    - tools/oracle/src/helpers/server/ui_settings_state.rs
-    - tools/oracle/src/helpers/server/ui_settings_state/**
-    - tools/oracle/helpers/ui_settings_state.py
-    - tools/oracle/helpers/ui_settings_state/**
+    - tools/oracle/src/helpers/server/ui_settings_record.rs
+    - tools/oracle/src/helpers/server/ui_settings_record/**
+    - tools/oracle/helpers/ui_settings_record.py
+    - tools/oracle/helpers/ui_settings_record/**
     - tools/oracle/cases/helpers/ui-settings-record/**
     - tools/oracle/fuzz/corpus/helper_case/ui-settings-record-*
   lint_tables: false
@@ -92,7 +92,7 @@ out_of_scope:
   - "The rest of proxy_setting_endpoints.py is assigned to B1656 (L88-L127, L723-L783, L800-L849, L1001-L1072), B1657 (L858-L998, L1080-L1127), B1658 (L591-L720), B1660 (L1750-L1961), B1661 (L1136-L1322), B1662 (L141-L167, L1330-L1463, L1969-L2024), and B1663 (L548-L582, L1472-L1664)."
   - register_extra_ui_setting L439-L450 has no caller at the pin; its extension-only branch in _get_effective_ui_settings_class is omitted with the absent enterprise package.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as ui_settings_state in the server group. Replace the stub Op in tools/oracle/src/helpers/server/ui_settings_state.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/ui_settings_state.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as ui_settings_record in the server group. Replace the stub Op in tools/oracle/src/helpers/server/ui_settings_record.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/ui_settings_record.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The cache-hit path returns a dictionary without reapplying the allowlist, unlike a fresh database read.
   - scope_user_search_to_org is a persisted UI flag but is not one of the ten flags copied into general_settings.
 budget:

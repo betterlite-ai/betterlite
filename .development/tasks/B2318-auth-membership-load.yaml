@@ -71,10 +71,10 @@ scope:
     - crates/betterlite-auth/src/membership_load.rs
     - crates/betterlite-auth/src/membership_load/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/auth/membership_load.rs
-    - tools/oracle/src/helpers/auth/membership_load/**
-    - tools/oracle/helpers/auth_membership_load.py
-    - tools/oracle/helpers/auth_membership_load/**
+    - tools/oracle/src/helpers/auth/membership_cache.rs
+    - tools/oracle/src/helpers/auth/membership_cache/**
+    - tools/oracle/helpers/membership_cache.py
+    - tools/oracle/helpers/membership_cache/**
     - tools/oracle/cases/helpers/membership-cache/**
     - tools/oracle/fuzz/corpus/helper_case/membership-cache-*
   lint_tables: false
@@ -136,7 +136,7 @@ out_of_scope:
   - B2315 owns typed shared-result projection and the deadline-bound repository adapter.
   - B736 owns the user lookup and its last_db_access_time cadence state; the remaining auth_checks.py ownership is enumerated there.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as auth_membership_load in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/membership_load.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_membership_load.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as membership_cache in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/membership_cache.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/membership_cache.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A present membership write omits ttl even though an absent membership write explicitly uses the management TTL.
   - A reset can remove a running load and let a replacement begin before the old load callback runs.
 budget:

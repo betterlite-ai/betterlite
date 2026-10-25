@@ -66,7 +66,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/codestral_record.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/codestral_record)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_codestral_record_corpus)'
       why: Both response and event payload forms need production-decoder replay.
     - id: codestral-record-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/codestral_records*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::codestral_records::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/codestral_records*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::codestral_records::/)'
       why: The new seeds must select call.codestral_records rather than generic text completion.
 oracle_cases:
   - tools/oracle/cases/helpers/codestral-records/min-tokens-and-seed.yaml

@@ -44,10 +44,10 @@ scope:
     - crates/betterlite-models/src/billed_tokens/**
     - crates/betterlite-models/src/cost_usage.rs
     - crates/betterlite-models/src/cost_usage/**
-    - tools/oracle/src/helpers/models/billed_token_breakdown.rs
-    - tools/oracle/src/helpers/models/billed_token_breakdown/**
-    - tools/oracle/helpers/billed_token_breakdown.py
-    - tools/oracle/helpers/billed_token_breakdown/**
+    - tools/oracle/src/helpers/models/billed_tokens.rs
+    - tools/oracle/src/helpers/models/billed_tokens/**
+    - tools/oracle/helpers/billed_tokens.py
+    - tools/oracle/helpers/billed_tokens/**
     - tools/oracle/cases/helpers/billed-tokens/**
     - tools/oracle/fuzz/corpus/helper_case/billed-tokens-*
   lint_tables: false
@@ -91,7 +91,7 @@ out_of_scope:
   - utils.py's earlier rate/detail/generic blocks remain B1669-B1672; image rate/usage arithmetic belongs to B1674, web-search counters to B1675, character selection/pricing to B1676, and requested-image fields plus CostCalculatorUtils to B1687.
   - cost_calculator.py separates additional fees (B1677), usage/tier diagnostics (B1683), OCR (B1678), seconds/transcription/video (B1676), token/vector/rerank dispatch (B1686), replicate/early completion branches (B1689), model context/breakdown storage (B1682), adjustments (B1649), image defaults (B1674), batch math (B1679), usage aggregation (B1680), realtime (B1681) and completion preparation (B1688); B068 owns the public response/completion composition around those pieces.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as billed_token_breakdown in the models group. Replace the stub Op in tools/oracle/src/helpers/models/billed_token_breakdown.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/billed_token_breakdown.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as billed_tokens in the models group. Replace the stub Op in tools/oracle/src/helpers/models/billed_tokens.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/billed_tokens.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The breakdown catches lookup failures but does not catch errors from subsequent threshold or multiplier resolution.
   - Caching savings substitutes the input price for a zero write price while actual custom billing preserves that zero as free.
   - A zero detail cache counter permits fallback to the private top-level counter; the check is truthiness rather than presence.

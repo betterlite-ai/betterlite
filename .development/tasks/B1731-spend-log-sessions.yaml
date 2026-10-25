@@ -42,10 +42,10 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/session_inputs.rs
     - crates/betterlite-server/fuzz/corpus/session_inputs/**
-    - tools/oracle/src/helpers/server/spend_log_sessions.rs
-    - tools/oracle/src/helpers/server/spend_log_sessions/**
-    - tools/oracle/helpers/spend_log_sessions.py
-    - tools/oracle/helpers/spend_log_sessions/**
+    - tools/oracle/src/helpers/server/session_cursor.rs
+    - tools/oracle/src/helpers/server/session_cursor/**
+    - tools/oracle/helpers/session_cursor.py
+    - tools/oracle/helpers/session_cursor/**
     - tools/oracle/cases/helpers/session-cursor/**
     - tools/oracle/fuzz/corpus/helper_case/session-cursor-*
     - tools/oracle/cases/http/spend-session/**
@@ -87,7 +87,7 @@ out_of_scope:
   - B1732 selects when the grouped pager applies and constructs its filters; B1730 owns aggregate enrichment and legacy exports, B1729 payload hydration and B1728 shared query constants.
   - B1704 owns row/team visibility and B1721-B1727/B069 retain other report endpoints.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as spend_log_sessions in the server group. Replace the stub Op in tools/oracle/src/helpers/server/spend_log_sessions.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_log_sessions.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as session_cursor in the server group. Replace the stub Op in tools/oracle/src/helpers/server/session_cursor.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/session_cursor.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The cursor encodes API key before session key but binds session key before API key to the SQL comparison.
   - A page beyond the end still runs the count query because its empty result cannot establish the total.
 budget:

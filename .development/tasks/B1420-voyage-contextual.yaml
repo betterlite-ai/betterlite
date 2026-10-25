@@ -78,7 +78,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/voyage_embedding_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/voyage_embedding_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_voyage_embedding_reply_corpus)'
       why: The shared Voyage decoder needs new malformed and nullable-field examples.
     - id: voyage-context-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/voyage_contextual*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::voyage_contextual::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/voyage_contextual*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::voyage_contextual::/)'
       why: Each new helper seed must parse as voyage_contextual and the collection cannot be empty.
 oracle_cases:
   - tools/oracle/cases/helpers/voyage-contextual/flat-empty-and-nested-documents.yaml

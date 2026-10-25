@@ -29,10 +29,10 @@ scope:
     - crates/betterlite-db/fuzz/fuzz_targets/migration_json.rs
     - crates/betterlite-db/fuzz/corpus/migration_json/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/db/encryption_scan.rs
-    - tools/oracle/src/helpers/db/encryption_scan/**
-    - tools/oracle/helpers/encryption_scan.py
-    - tools/oracle/helpers/encryption_scan/**
+    - tools/oracle/src/helpers/db/encryption_classification.rs
+    - tools/oracle/src/helpers/db/encryption_classification/**
+    - tools/oracle/helpers/encryption_classification.py
+    - tools/oracle/helpers/encryption_classification/**
     - tools/oracle/cases/helpers/encryption-classification/**
     - tools/oracle/fuzz/corpus/helper_case/encryption-classification-*
   lint_tables: false
@@ -74,7 +74,7 @@ out_of_scope:
   - reencrypt_selective_dict has no caller at the pin and is not ported.
   - B061 owns _assert_aes_gate_enabled, _migrate_config_settings_row, _migrate_sso_config, _migrate_callback_vars_table, _migrate_covered_tables, migrate_encryption and check_encryption in the same file.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as encryption_scan in the db group. Replace the stub Op in tools/oracle/src/helpers/db/encryption_scan.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/encryption_scan.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as encryption_classification in the db group. Replace the stub Op in tools/oracle/src/helpers/db/encryption_classification.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/encryption_classification.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - "An invalid v2:gcm: payload is classified as migrated by the general scanner, so this count is not an authentication test."
   - MCP static_headers and env count one encrypted map, not each member secret.
 budget:

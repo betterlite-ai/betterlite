@@ -29,10 +29,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/embedding_http.rs
     - crates/betterlite-vertex/fuzz/corpus/embedding_http/**
-    - tools/oracle/src/helpers/vertex/gemini_embedding_calls.rs
-    - tools/oracle/src/helpers/vertex/gemini_embedding_calls/**
-    - tools/oracle/helpers/gemini_embedding_calls.py
-    - tools/oracle/helpers/gemini_embedding_calls/**
+    - tools/oracle/src/helpers/vertex/gemini_embedding_call_plan.rs
+    - tools/oracle/src/helpers/vertex/gemini_embedding_call_plan/**
+    - tools/oracle/helpers/gemini_embedding_call_plan.py
+    - tools/oracle/helpers/gemini_embedding_call_plan/**
     - tools/oracle/cases/helpers/gemini-embedding-call-plan/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_embedding_call_plan*
   lint_tables: false
@@ -62,7 +62,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/embedding_http.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/embedding_http)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_embedding_http_corpus)'
       why: Both file metadata and embedding response variants must replay through decode_embedding_http.
     - id: embedding-call-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_embedding_call_plan*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_embedding_call_plan::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_embedding_call_plan*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_embedding_call_plan::/)'
       why: New planned-call fixtures must select the corresponding helper variant.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-embedding-call-plan/nested-file-refs.yaml
@@ -73,7 +73,7 @@ deviations: []
 out_of_scope:
   - B1340 owns content/usage transformations and B033/B035 install the embedding operation into their provider dispatchers.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as gemini_embedding_calls in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_embedding_calls.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_embedding_calls.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as gemini_embedding_call_plan in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_embedding_call_plan.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_embedding_call_plan.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Studio file metadata lookup uses the fixed Google API host even when embeddings use a custom api_base.
   - The async timeout fallback local variable is unused by the pinned client construction.
   - Repeated files/ references are not deduplicated before metadata GETs.

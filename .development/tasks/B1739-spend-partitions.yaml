@@ -45,10 +45,10 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/partition_bound.rs
     - crates/betterlite-db/fuzz/corpus/partition_bound/**
-    - tools/oracle/src/helpers/db/spend_partitions.rs
-    - tools/oracle/src/helpers/db/spend_partitions/**
-    - tools/oracle/helpers/spend_partitions.py
-    - tools/oracle/helpers/spend_partitions/**
+    - tools/oracle/src/helpers/db/partition_calendar.rs
+    - tools/oracle/src/helpers/db/partition_calendar/**
+    - tools/oracle/helpers/partition_calendar.py
+    - tools/oracle/helpers/partition_calendar/**
     - tools/oracle/cases/helpers/partition-calendar/**
     - tools/oracle/fuzz/corpus/helper_case/partition-calendar-*
   lint_tables: false
@@ -100,7 +100,7 @@ out_of_scope:
   - B1740/B1741 own cleanup bounds, retention decisions and job coordination in spend_log_cleanup.py.
   - B111 supplies the metrics registry and exporter; this task owns only retention-specific instruments.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as spend_partitions in the db group. Replace the stub Op in tools/oracle/src/helpers/db/spend_partitions.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_partitions.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as partition_calendar in the db group. Replace the stub Op in tools/oracle/src/helpers/db/partition_calendar.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/partition_calendar.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - DEFAULT must be retained even when other text in its catalog expression resembles a timestamp bound.
   - is_partitioned returns false on a catalog failure, while _list_partitions lets its failure terminate that cleanup attempt.
 budget:

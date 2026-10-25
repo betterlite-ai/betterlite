@@ -15,8 +15,7 @@ description: >-
   config. The class attribute MAX_CALLBACKS=30 is dead; use the imported constant. Budget 270 registry, 90 config,
   140 synthetic Python CustomLogger/Rust adapters and 280 tests (780 total). Write the behavior rstest functions
   callback_registry_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
-  in the DoD; corpus replay tests have separate names. Register helper operations callback_registry in tools/oracle/src/helpers/mod.rs
-  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  in the DoD; corpus replay tests have separate names. The helper operation callback_registry is already registered; each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml

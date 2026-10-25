@@ -35,10 +35,10 @@ scope:
     - crates/betterlite-server/src/list_api.rs
     - crates/betterlite-server/src/list_api/{sql,memory,execute}.rs
     - crates/betterlite-server/src/list_api/{sql,memory,execute}/**
-    - tools/oracle/src/helpers/server/management_list_execution.rs
-    - tools/oracle/src/helpers/server/management_list_execution/**
-    - tools/oracle/helpers/management_list_execution.py
-    - tools/oracle/helpers/management_list_execution/**
+    - tools/oracle/src/helpers/server/management_executor.rs
+    - tools/oracle/src/helpers/server/management_executor/**
+    - tools/oracle/helpers/management_executor.py
+    - tools/oracle/helpers/management_executor/**
     - tools/oracle/cases/helpers/management-executor/**
     - tools/oracle/fuzz/corpus/helper_case/management-executor-*
   lint_tables: false
@@ -75,7 +75,7 @@ deviations: []
 out_of_scope:
   - B1701 owns common.py and the remaining list_framework planning/types; B1665 owns all output records, and callers own authorization policy and database queries.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as management_list_execution in the server group. Replace the stub Op in tools/oracle/src/helpers/server/management_list_execution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/management_list_execution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as management_executor in the server group. Replace the stub Op in tools/oracle/src/helpers/server/management_executor.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/management_executor.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Facet validation reaches caller scope later than counted-list validation does.
   - An empty repeated cell differs from an absent cell for is_null.
   - Enrichment must never run over rows discarded by pagination.

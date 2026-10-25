@@ -7,7 +7,7 @@ description: >-
   adapters, 300 tests/fuzz and 60 wiring (710 total). Add the gemini_tool_invokes cargo-fuzz target, call the production
   parser, and commit/replay malformed and boundary seeds. Write the behavior rstest functions gemini_tool_invokes_behavior_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
-  separate names. Register helper operations gemini_tool_invokes in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  separate names. The helper operation gemini_tool_invokes is already registered;
   each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:

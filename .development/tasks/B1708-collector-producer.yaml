@@ -46,10 +46,10 @@ scope:
     - crates/betterlite-config/src/collector.rs
     - crates/betterlite-config/src/collector/**
     - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/collector_settings.rs,corpus/collector_settings/**}
-    - tools/oracle/src/helpers/logging/collector_producer.rs
-    - tools/oracle/src/helpers/logging/collector_producer/**
-    - tools/oracle/helpers/collector_producer.py
-    - tools/oracle/helpers/collector_producer/**
+    - tools/oracle/src/helpers/logging/collector_policy.rs
+    - tools/oracle/src/helpers/logging/collector_policy/**
+    - tools/oracle/helpers/collector_policy.py
+    - tools/oracle/helpers/collector_policy/**
     - tools/oracle/cases/helpers/collector-policy/**
     - tools/oracle/fuzz/corpus/helper_case/collector-policy-*
   lint_tables: false
@@ -83,7 +83,7 @@ deviations: []
 out_of_scope:
   - B1707 defines event bytes; B069 installs the producer and failure callback, while the collector consumer task owns socket listening and process startup.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as collector_producer in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/collector_producer.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/collector_producer.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as collector_policy in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/collector_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/collector_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Falling back after a fully sent line can double-charge even when the peer disappears immediately afterward.
   - Debug logging disables traceback suppression for both console output and stored failure metadata.
 budget:

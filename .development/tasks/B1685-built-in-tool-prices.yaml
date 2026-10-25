@@ -63,10 +63,10 @@ scope:
     - crates/betterlite-config/fuzz/Cargo.toml
     - crates/betterlite-config/fuzz/fuzz_targets/tool_prices.rs
     - crates/betterlite-config/fuzz/corpus/tool_prices/**
-    - tools/oracle/src/helpers/models/built_in_tool_prices.rs
-    - tools/oracle/src/helpers/models/built_in_tool_prices/**
-    - tools/oracle/helpers/built_in_tool_prices.py
-    - tools/oracle/helpers/built_in_tool_prices/**
+    - tools/oracle/src/helpers/models/tool_fees.rs
+    - tools/oracle/src/helpers/models/tool_fees/**
+    - tools/oracle/helpers/tool_fees.py
+    - tools/oracle/helpers/tool_fees/**
     - tools/oracle/cases/helpers/tool-fees/**
     - tools/oracle/fuzz/corpus/helper_case/tool-fees-*
   lint_tables: false
@@ -121,7 +121,7 @@ out_of_scope:
   - B1684 owns all response/search probes, count/quantity extractors and kwargs tool-selection helpers; chat_completion_response_includes_annotations has no caller at the pin.
   - Provider-specific web-search/Maps formulas and their registry dispatch remain with their provider owners; B068 injects those policies into ToolPricePolicy instead of making the low model crate depend on provider execution.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as built_in_tool_prices in the models group. Replace the stub Op in tools/oracle/src/helpers/models/built_in_tool_prices.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/built_in_tool_prices.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as tool_fees in the models group. Replace the stub Op in tools/oracle/src/helpers/models/tool_fees.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/tool_fees.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The actual Azure computer-use defaults are 3 and 12, a thousand times the nearby comment's stated amounts.
   - A model's file_search_cost_per_1k_calls value is returned directly by the source and must not be divided by 1000 a second time.
   - A provider-specific web-search cost of zero is a complete answer, whereas None requests generic per-call fallback.

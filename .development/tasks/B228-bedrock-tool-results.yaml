@@ -4,8 +4,7 @@ description: >-
   Implement _convert_to_bedrock_tool_call_invoke and every tool-result media/content builder through _convert_to_bedrock_tool_call_result,
   plus _sanitize_bedrock_tool_use_id (1539-1549). Budget 280 transforms/types, 100 adapters, 300 tests/fuzz and
   70 wiring (750 total). Write the behavior rstest functions bedrock_tool_results_behavior_tests_behavior in adjacent tests.rs files,
-  with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
-  helper operations bedrock_tool_results in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation bedrock_tool_results is already registered;
   each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:

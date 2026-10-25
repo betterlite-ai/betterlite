@@ -57,7 +57,7 @@ checks:
       run: test -f tools/oracle/helpers/xai_responses.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The oracle must exercise XAIResponsesAPIConfig rather than the inherited OpenAI config.
     - id: xai-responses-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_responses*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::xai_responses::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_responses*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::xai_responses::/)'
       why: New fixtures must deserialize to the Responses-specific helper variant.
 oracle_cases:
   - tools/oracle/cases/helpers/xai-responses/nested-filters-win.yaml
