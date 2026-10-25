@@ -25,6 +25,8 @@ pub enum FixtureError {
     Driver(#[source] tokio_postgres::Error),
     #[error("fixture TLS certificate file failed: {0}")]
     TlsIo(#[source] io::Error),
+    #[error("fixture TLS certificate PEM failed: {0}")]
+    TlsPem(#[source] rustls::pki_types::pem::Error),
     #[error("fixture TLS certificate was rejected: {0}")]
     TlsCertificate(#[source] rustls::Error),
     #[error("fixture TLS has no trusted root certificates")]

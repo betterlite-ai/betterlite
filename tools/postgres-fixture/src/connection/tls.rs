@@ -1,7 +1,7 @@
-use std::fs::File;
-use std::io::BufReader;
-
-use rustls::{ClientConfig, RootCertStore};
+use rustls::{
+    ClientConfig, RootCertStore,
+    pki_types::{CertificateDer, pem::PemObject},
+};
 use tokio_postgres_rustls_improved::MakeRustlsConnect;
 
 use super::ConnectionOptions;
@@ -72,10 +72,9 @@ pub(super) fn tls_connector(
 fn trusted_roots(options: &ConnectionOptions) -> Result<RootCertStore, FixtureError> {
     let mut roots = RootCertStore::empty();
     if let Some(path) = &options.root_certificate {
-        let file = File::open(path).map_err(FixtureError::TlsIo)?;
-        let mut reader = BufReader::new(file);
-        for certificate_result in rustls_pemfile::certs(&mut reader) {
-            let certificate = certificate_result.map_err(FixtureError::TlsIo)?;
+        let certificates = CertificateDer::pem_file_iter(path).map_err(FixtureError::TlsPem)?;
+        for certificate_result in certificates {
+            let certificate = certificate_result.map_err(FixtureError::TlsPem)?;
             roots
                 .add(certificate)
                 .map_err(FixtureError::TlsCertificate)?;
