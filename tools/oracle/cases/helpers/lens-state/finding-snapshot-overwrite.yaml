@@ -32,6 +32,8 @@ call:
         evidence:
           - {execution_id: exec-2, span_id: span-7, quote: still waiting}
           - {execution_id: exec-3, span_id: span-9, quote: answered at once, role: counterexample}
+          - {execution_id: exec-0, span_id: span-6, quote: waiting earlier}
+          - {execution_id: exec-2, span_id: span-8, quote: another wait}
       revision: 9
       now: "2026-01-15T10:00:00Z"
 env: {}

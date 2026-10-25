@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use chrono::{DateTime, Utc};
 
 use crate::models::finding::Role;
@@ -28,12 +30,11 @@ pub fn snapshot_finding(
         revision,
         first_seen: now,
         last_seen: now,
-        occurrences: draft
-            .evidence
-            .iter()
-            .filter(|evidence| evidence.role == Role::Support)
-            .map(|evidence| evidence.execution_id.clone())
-            .collect(),
+        occurrences: BTreeSet::from_iter(draft.evidence.iter().filter_map(|evidence| {
+            (evidence.role == Role::Support).then_some(evidence.execution_id.clone())
+        }))
+        .into_iter()
+        .collect(),
         status: merged.status,
         reason: merged.reason,
         ..merged

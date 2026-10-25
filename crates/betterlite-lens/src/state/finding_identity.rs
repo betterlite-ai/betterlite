@@ -14,7 +14,10 @@ fn short_digest(text: &str) -> String {
     hex::encode(digest.iter().take(12).copied().collect::<Vec<u8>>())
 }
 
-fn identity_parts(lens: &Lens, draft: &FindingDraft) -> (String, String) {
+fn identity_parts<'finding>(
+    lens: &'finding Lens,
+    draft: &FindingDraft,
+) -> (String, Option<&'finding Finding>) {
     let kind = match draft.kind {
         Kind::Issue => "issue",
         Kind::Pattern => "pattern",
@@ -23,25 +26,13 @@ fn identity_parts(lens: &Lens, draft: &FindingDraft) -> (String, String) {
     let identity = short_digest(&format!("{}:{}:{kind}:{title}", lens.id, draft.check_id));
     // findings stored before the kind joined the hash keep their old id
     let legacy = short_digest(&format!("{}:{}:{title}", lens.id, draft.check_id));
-    (identity, legacy)
-}
-
-fn matching_finding<'finding>(
-    lens: &'finding Lens,
-    draft: &FindingDraft,
-    identity: &str,
-    legacy: &str,
-) -> Option<&'finding Finding> {
-    for finding in &lens.findings {
+    let previous = lens.findings.iter().find(|finding| {
         let named = draft.existing_finding_id.as_ref() == Some(&finding.id);
-        if (named || finding.id == identity || finding.id == legacy)
+        (named || finding.id == identity || finding.id == legacy)
             && finding.kind == draft.kind
             && finding.check_id == draft.check_id
-        {
-            return Some(finding);
-        }
-    }
-    None
+    });
+    (identity, previous)
 }
 
 #[must_use]
@@ -51,11 +42,11 @@ pub fn merge_finding(
     revision: i64,
     now: DateTime<Utc>,
 ) -> Finding {
-    let (identity, legacy) = identity_parts(lens, draft);
+    let (identity, matched) = identity_parts(lens, draft);
     let supporting = BTreeSet::from_iter(draft.evidence.iter().filter_map(|evidence| {
         (evidence.role == Role::Support).then_some(evidence.execution_id.as_str())
     }));
-    let Some(previous) = matching_finding(lens, draft, &identity, &legacy) else {
+    let Some(previous) = matched else {
         return Finding {
             title: draft.title.clone(),
             description: draft.description.clone(),

@@ -30,3 +30,23 @@ fn a_snapshot_takes_the_draft_and_restarts_its_history() {
         (FindingStatus::Open, "fixed in the January release")
     );
 }
+
+#[test]
+fn snapshot_occurrences_are_sorted_unique_support_ids() {
+    let lens: Lens = serde_json::from_str(include_str!("../fixtures/lens.json")).unwrap();
+    let mut draft: FindingDraft =
+        serde_json::from_str(include_str!("../fixtures/draft.json")).unwrap();
+    let now: DateTime<Utc> = "2026-01-15T10:00:00Z".parse().unwrap();
+    let mut earlier = draft.evidence[0].clone();
+    earlier.execution_id = "exec-0".to_owned();
+    draft.evidence.push(earlier);
+    let mut repeated = draft.evidence[0].clone();
+    repeated.span_id = "span-8".to_owned();
+    repeated.quote = "another wait".to_owned();
+    draft.evidence.push(repeated);
+
+    let finding = snapshot_finding(&lens, &draft, 9, now);
+
+    assert_eq!(finding.occurrences, ["exec-0", "exec-2"]);
+    assert_eq!(finding.evidence, draft.evidence);
+}
