@@ -11,6 +11,7 @@ use crate::raw::{
 use crate::resolve::{
     parse_float, parse_integer, resolve_number as number, resolve_secret, resolve_string,
 };
+use crate::secret_codec::general_settings;
 use crate::types::{
     Config, GeneralSettings, LiteLlmParams, LiteLlmSettings, ModelDeployment, ModelInfo,
     ProxyTrust, RouterSettings,
@@ -179,7 +180,11 @@ where
     L: EnvironmentLookup,
 {
     let master_key = resolve_secret(raw.master_key, "general_settings.master_key", lookup)?;
-    Ok(GeneralSettings { master_key })
+    Ok(general_settings(
+        raw.encryption_algorithm,
+        master_key,
+        lookup,
+    ))
 }
 
 fn convert_router<L>(raw: RawRouter, lookup: &L) -> Result<RouterSettings, ConfigError>

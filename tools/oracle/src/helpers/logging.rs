@@ -5,6 +5,7 @@ helper_group! {
     "callback_registry" => callback_registry,
     "callback_validation" => callback_validation,
     "collector_policy" => collector_policy,
+    "datadog_tags" => datadog_tags,
     "dynamic_callbacks" => dynamic_callbacks,
     "logging_failure" => failure,
     "logging_fields" => fields,
