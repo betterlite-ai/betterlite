@@ -1,0 +1,5 @@
+kind: helper
+name: catalog-user-only
+call: {openai_base_config: {catalog_user_only: {model: responses/gpt-4o, chat_models: [gpt-4o], text_models: []}}}
+env: {}
+compare: {ignore: []}

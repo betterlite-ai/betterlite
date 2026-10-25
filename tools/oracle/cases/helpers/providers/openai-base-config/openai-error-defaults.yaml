@@ -1,0 +1,5 @@
+kind: helper
+name: openai-error-defaults
+call: {openai_base_config: {openai_error_defaults: {status_code: 429, message: busy}}}
+env: {}
+compare: {ignore: []}

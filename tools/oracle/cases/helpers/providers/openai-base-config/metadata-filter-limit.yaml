@@ -1,0 +1,5 @@
+kind: helper
+name: metadata-filter-limit
+call: {openai_base_config: {metadata_filter_limit: {metadata: {first: kept, hidden_params: hidden, number: 3}}}}
+env: {}
+compare: {ignore: []}

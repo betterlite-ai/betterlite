@@ -1,0 +1,5 @@
+kind: helper
+name: old-gpt-response-format-drop
+call: {openai_base_config: {old_gpt_response_format_drop: {model: gpt-4, chat_models: [gpt-4], text_models: []}}}
+env: {}
+compare: {ignore: []}

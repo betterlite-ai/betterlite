@@ -6,9 +6,11 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+secrecy.workspace = true
 serde.workspace = true
 serde_json = "1.0.154"
 thiserror.workspace = true
+url = "2.5.8"
 
 [dev-dependencies]
 betterlite-config = { path = "../betterlite-config" }
