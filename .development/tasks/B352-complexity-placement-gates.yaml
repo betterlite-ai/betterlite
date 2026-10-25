@@ -50,6 +50,10 @@ scope:
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/complexity_placement_gates.rs
   - crates/betterlite-config/src/sections/complexity_placement_gates/**
+  - tools/oracle/helpers/b352.py
+  - tools/oracle/helpers/b352/**
+  - tools/oracle/src/helpers/router/b352.rs
+  - tools/oracle/src/helpers/router/b352/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L3500-L3892

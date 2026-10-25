@@ -53,6 +53,10 @@ scope:
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/routing_state_store.rs
   - crates/betterlite-config/src/sections/routing_state_store/**
+  - tools/oracle/helpers/b360.py
+  - tools/oracle/helpers/b360/**
+  - tools/oracle/src/helpers/router/b360.rs
+  - tools/oracle/src/helpers/router/b360/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L607-L674

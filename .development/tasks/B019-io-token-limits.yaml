@@ -38,6 +38,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/io_token_limits.py
   - tools/oracle/cases/routing/io-token-limits/**
+  - tools/oracle/helpers/b019.py
+  - tools/oracle/helpers/b019/**
+  - tools/oracle/src/helpers/router/b019.rs
+  - tools/oracle/src/helpers/router/b019/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py#L528-L738

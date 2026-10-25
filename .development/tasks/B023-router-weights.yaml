@@ -54,6 +54,10 @@ scope:
   - crates/betterlite-openai/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/router_weights.rs
   - crates/betterlite-config/src/sections/router_weights/**
+  - tools/oracle/helpers/b023.py
+  - tools/oracle/helpers/b023/**
+  - tools/oracle/src/helpers/server/b023.rs
+  - tools/oracle/src/helpers/server/b023/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L67-L129

@@ -43,6 +43,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/spend_totals_query.rs
     - crates/betterlite-server/fuzz/corpus/spend_totals_query/**
     - tools/oracle/cases/http/spend-totals/**
+    - tools/oracle/helpers/b1724.py
+    - tools/oracle/helpers/b1724/**
+    - tools/oracle/src/helpers/server/b1724.rs
+    - tools/oracle/src/helpers/server/b1724/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3802-L4155

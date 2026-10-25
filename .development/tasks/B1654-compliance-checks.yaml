@@ -40,6 +40,10 @@ scope:
     - crates/betterlite-server/fuzz/corpus/compliance_request/**
     - tools/oracle/cases/management/compliance/**
     - tools/oracle/fuzz/corpus/http_case/compliance-*
+    - tools/oracle/helpers/b1654.py
+    - tools/oracle/helpers/b1654/**
+    - tools/oracle/src/helpers/server/b1654.rs
+    - tools/oracle/src/helpers/server/b1654/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/compliance_checks.py#L16-L243

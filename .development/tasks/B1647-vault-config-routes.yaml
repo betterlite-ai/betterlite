@@ -41,6 +41,10 @@ scope:
     - crates/betterlite-server/fuzz/corpus/config_override/vault-routes-*
     - tools/oracle/cases/management/vault-config/**
     - tools/oracle/fuzz/corpus/http_case/vault-config-*
+    - tools/oracle/helpers/b1647.py
+    - tools/oracle/helpers/b1647/**
+    - tools/oracle/src/helpers/server/b1647.rs
+    - tools/oracle/src/helpers/server/b1647/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L328-L645

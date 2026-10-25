@@ -20,6 +20,10 @@ scope:
     - crates/betterlite-auth/src/session_budget.rs
     - crates/betterlite-auth/src/session_budget/**
     - tools/oracle/cases/auth/session-budget/**
+    - tools/oracle/helpers/b3007.py
+    - tools/oracle/helpers/b3007/**
+    - tools/oracle/src/helpers/auth/b3007.rs
+    - tools/oracle/src/helpers/auth/b3007/**
   lint_tables: false
 
 references:

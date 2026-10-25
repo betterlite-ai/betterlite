@@ -69,6 +69,10 @@ scope:
   - tools/oracle/cases/sdk-http/responses-public-dispatch/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-public-dispatch-*
   - Cargo.lock
+  - tools/oracle/helpers/b080.py
+  - tools/oracle/helpers/b080/**
+  - tools/oracle/src/helpers/server/b080.rs
+  - tools/oracle/src/helpers/server/b080/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L194-L458

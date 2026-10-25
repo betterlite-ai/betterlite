@@ -43,6 +43,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/strategy_dispatch.py
   - tools/oracle/cases/routing/strategy-dispatch/**
+  - tools/oracle/helpers/b395.py
+  - tools/oracle/helpers/b395/**
+  - tools/oracle/src/helpers/router/b395.rs
+  - tools/oracle/src/helpers/router/b395/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1335-L1473

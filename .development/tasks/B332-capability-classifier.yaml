@@ -44,6 +44,10 @@ scope:
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/capability_classifier.rs
   - crates/betterlite-config/src/sections/capability_classifier/**
+  - tools/oracle/helpers/b332.py
+  - tools/oracle/helpers/b332/**
+  - tools/oracle/src/helpers/router/b332.rs
+  - tools/oracle/src/helpers/router/b332/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2046-L2104

@@ -152,6 +152,10 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/team-create-*
     - crates/betterlite-config/src/sections/team_create.rs
     - crates/betterlite-config/src/sections/team_create/**
+    - tools/oracle/helpers/b804.py
+    - tools/oracle/helpers/b804/**
+    - tools/oracle/src/helpers/server/b804.rs
+    - tools/oracle/src/helpers/server/b804/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1330-L1791
