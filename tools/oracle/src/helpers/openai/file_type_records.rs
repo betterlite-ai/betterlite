@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Input {
+pub(super) struct Input {
     function: String,
     #[serde(default)]
     extensions: Vec<String>,
@@ -22,9 +22,7 @@ fn parse_file_type(name: &str) -> Result<FileType, String> {
     serde_json::from_value(value).map_err(|error| error.to_string())
 }
 
-fn run_conversion(input: &Input) -> Result<Value, String> {
-    match input.function.as_str() {
-        "mime_extension_table" => {
+fn mime_table(input: &Input) -> Result<Value, String> {
             let mut rows = Vec::new();
             for extension in &input.extensions {
                 let mime = mime_from_extension(extension)
@@ -32,8 +30,9 @@ fn run_conversion(input: &Input) -> Result<Value, String> {
                 rows.push(json!({"extension": extension, "mime": mime}));
             }
             Ok(json!(rows))
-        }
-        "mime_lookup_edges" => {
+}
+
+fn lookup_edges(input: &Input) -> Result<Value, String> {
             let extensions = input
                 .extensions
                 .iter()
@@ -42,8 +41,7 @@ fn run_conversion(input: &Input) -> Result<Value, String> {
                         .map(str::to_owned)
                         .map_err(|error| error.to_string())
                 })
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| error.to_string())?;
+                .collect::<Result<Vec<_>, _>>()?;
             let mimes = input
                 .mimes
                 .iter()
@@ -52,16 +50,24 @@ fn run_conversion(input: &Input) -> Result<Value, String> {
                         .map(str::to_owned)
                         .map_err(|error| error.to_string())
                 })
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| error.to_string())?;
+                .collect::<Result<Vec<_>, _>>()?;
             Ok(json!({"extensions": extensions, "mimes": mimes}))
-        }
-        "gemini_file_acceptance" => input
+}
+
+fn gemini_acceptance(input: &Input) -> Result<Value, String> {
+    input
             .file_types
             .iter()
             .map(|name| parse_file_type(name).map(gemini_accepts))
             .collect::<Result<Vec<_>, _>>()
-            .map(|accepted| json!(accepted)),
+            .map(|accepted| json!(accepted))
+}
+
+fn run_conversion(input: &Input) -> Result<Value, String> {
+    match input.function.as_str() {
+        "mime_extension_table" => mime_table(input),
+        "mime_lookup_edges" => lookup_edges(input),
+        "gemini_file_acceptance" => gemini_acceptance(input),
         other => Err(format!("unknown file_type_records function: {other}")),
     }
 }
