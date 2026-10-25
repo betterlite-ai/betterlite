@@ -198,7 +198,7 @@ fn redacts_secret_artifacts() {
 #[test]
 fn rejects_unknown_effect_fields() {
     let error = serde_json::from_str::<crate::compare::helper::HelperOutput>(
-        r#"{"ok":true,"effects":[{"kind":"marker","fields":{"name":"first","unexpected":true}}]}"#,
+        r#"{"ok":true,"effects":[{"kind":"marker","fields":{"name":"first"},"unexpected":true}]}"#,
     )
     .unwrap_err();
     assert!(error.to_string().contains("unexpected"));
