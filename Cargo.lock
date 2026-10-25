@@ -165,18 +165,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "betterlite-anthropic"
-version = "0.1.0"
-
-[[package]]
-name = "betterlite-auth"
-version = "0.1.0"
-
-[[package]]
-name = "betterlite-azure"
-version = "0.1.0"
-
-[[package]]
 name = "betterlite-bedrock"
 version = "0.1.0"
 dependencies = [
@@ -188,14 +176,6 @@ dependencies = [
  "serde_json",
  "thiserror",
 ]
-
-[[package]]
-name = "betterlite-billing"
-version = "0.1.0"
-
-[[package]]
-name = "betterlite-compression"
-version = "0.1.0"
 
 [[package]]
 name = "betterlite-config"
@@ -226,26 +206,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "betterlite-core"
-version = "0.1.0"
-
-[[package]]
-name = "betterlite-cost"
-version = "0.1.0"
-
-[[package]]
-name = "betterlite-db"
-version = "0.1.0"
-
-[[package]]
-name = "betterlite-error"
-version = "0.1.0"
-
-[[package]]
-name = "betterlite-foundry"
-version = "0.1.0"
-
-[[package]]
 name = "betterlite-http"
 version = "0.1.0"
 dependencies = [
@@ -261,10 +221,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "betterlite-logging"
-version = "0.1.0"
-
-[[package]]
 name = "betterlite-models"
 version = "0.1.0"
 dependencies = [
@@ -274,10 +230,6 @@ dependencies = [
  "thiserror",
  "tracing",
 ]
-
-[[package]]
-name = "betterlite-ocr"
-version = "0.1.0"
 
 [[package]]
 name = "betterlite-openai"
@@ -295,33 +247,13 @@ name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "axum",
- "betterlite-anthropic",
- "betterlite-auth",
- "betterlite-azure",
  "betterlite-bedrock",
- "betterlite-billing",
- "betterlite-compression",
  "betterlite-config",
  "betterlite-context",
- "betterlite-core",
- "betterlite-cost",
- "betterlite-db",
- "betterlite-error",
- "betterlite-foundry",
  "betterlite-http",
- "betterlite-logging",
  "betterlite-models",
- "betterlite-ocr",
  "betterlite-openai",
  "betterlite-paths",
- "betterlite-prompts",
- "betterlite-provider",
- "betterlite-rate-limit",
- "betterlite-redact",
- "betterlite-router",
- "betterlite-streaming",
- "betterlite-tokenizer",
- "betterlite-vertex",
  "clap",
  "futures-util",
  "reqwest",
@@ -348,26 +280,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "betterlite-prompts"
-version = "0.1.0"
-
-[[package]]
-name = "betterlite-provider"
-version = "0.1.0"
-
-[[package]]
-name = "betterlite-rate-limit"
-version = "0.1.0"
-
-[[package]]
-name = "betterlite-redact"
-version = "0.1.0"
-
-[[package]]
-name = "betterlite-router"
-version = "0.1.0"
-
-[[package]]
 name = "betterlite-server"
 version = "0.1.0"
 dependencies = [
@@ -387,18 +299,6 @@ dependencies = [
  "tower",
  "tracing",
 ]
-
-[[package]]
-name = "betterlite-streaming"
-version = "0.1.0"
-
-[[package]]
-name = "betterlite-tokenizer"
-version = "0.1.0"
-
-[[package]]
-name = "betterlite-vertex"
-version = "0.1.0"
 
 [[package]]
 name = "bit-set"
