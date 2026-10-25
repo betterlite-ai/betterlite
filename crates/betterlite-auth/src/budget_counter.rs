@@ -39,7 +39,6 @@ impl FloatInput for f32 {
         Some(f64::from(self))
     }
 }
-
 impl FloatInput for bool {
     fn float_value(self) -> Option<f64> {
         Some(if self { 1.0 } else { 0.0 })
@@ -59,7 +58,6 @@ macro_rules! float_integer {
 float_integer!(
     i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize
 );
-
 macro_rules! float_text {
     ($($type:ty),*) => {
         $(impl FloatInput for $type {
@@ -69,7 +67,6 @@ macro_rules! float_text {
 }
 
 float_text!(String, &str);
-
 impl FloatInput for Vec<u8> {
     fn float_value(self) -> Option<f64> {
         str::from_utf8(&self).ok()?.parse().ok()
@@ -81,7 +78,6 @@ impl FloatInput for &[u8] {
         str::from_utf8(self).ok()?.parse().ok()
     }
 }
-
 pub fn _to_float<T>(value: T) -> Option<f64>
 where
     T: FloatInput,
