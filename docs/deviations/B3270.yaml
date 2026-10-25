@@ -1,17 +1,7 @@
 task: B3270
 deviations:
-  - what: betterlite resolves server-managed search keys and the api_base override through the injected EnvironmentLookup from betterlite-config, not os.environ through get_secret_str.
-    why: Configuration and deployment control where secrets come from, and rule inject-dependencies keeps environment reads out of provider code.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L139-L150
-  - what: SearchResponse hidden_params is a public field skipped by serde instead of a pydantic PrivateAttr, so it never reaches the wire but other crates can set it.
-    why: Rust has no private attribute that other crates can write; serde skip keeps the same wire result.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L66-L78
-  - what: The trust check takes the netloc from the WHATWG parse of the url crate, so https://host:443 matches https://host, a percent-encoded host matches its decoded form, and a scheme-relative //host has no netloc and is refused, where urlsplit compares the raw text.
-    why: The url crate is the parser the HTTP client uses, so the compared netloc is the host the key would actually go to.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L31-L51
-  - what: get_complete_url, transform_search_request and transform_search_response are required methods of the SearchProvider trait, so a provider that skips one fails to compile instead of raising NotImplementedError at request time.
-    why: The compiler catches the missing hook before a request can hit it.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L221-L277
-  - what: SearchTool, SearchToolInfoResponse and ListSearchToolsResponse refuse unknown keys with a serde error that names the key, where the TypedDicts carry any key unchecked. SearchToolLiteLLMParams keeps unknown keys in extra.
-    why: Rule no-silent-drops; litellm_params keeps extras because providers read their own keys from it, such as search_engine_id for Google PSE.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L17-L70
+  - {what: server-managed search keys resolve through injected EnvironmentLookup, not os.environ, why: dependency injection keeps secret sources under configuration control, link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L139-L150}
+  - {what: hidden_params is public but serde-skipped, why: Rust callers need to set internal metadata while it remains off the wire, link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L66-L78}
+  - {what: url netloc trust uses url crate parsing, including normalized default ports, why: the HTTP client destination is the security boundary, link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L31-L51}
+  - {what: required provider hooks fail at compile time instead of runtime, why: the trait enforces complete provider implementations, link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L221-L277}
+  - {what: tool management records reject unknown keys while litellm_params preserves provider extras, why: no-silent-drops and provider-specific keys, link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L17-L70}

@@ -20,7 +20,6 @@ pub struct SearchToolLiteLLMParams {
     #[serde(flatten)]
     pub extra: Object,
 }
-
 impl fmt::Debug for SearchToolLiteLLMParams {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SearchToolLiteLLMParams")
@@ -33,7 +32,6 @@ impl fmt::Debug for SearchToolLiteLLMParams {
             .finish()
     }
 }
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SearchTool {
@@ -48,7 +46,6 @@ pub struct SearchTool {
     #[serde(default)]
     pub updated_at: Option<String>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SearchToolInfoResponse {
@@ -65,7 +62,6 @@ pub struct SearchToolInfoResponse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_from_config: Option<bool>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListSearchToolsResponse {

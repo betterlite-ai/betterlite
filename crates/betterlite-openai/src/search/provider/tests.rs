@@ -1,5 +1,4 @@
 #![cfg(test)]
-
 use std::collections::BTreeMap;
 
 use secrecy::SecretString;
@@ -10,7 +9,6 @@ use crate::search::provider::{
     HttpMethod, OutboundSearch, PERPLEXITY_PARAMS, ProviderResponse, SearchProvider, SearchQuery,
 };
 use crate::search::records::SearchResponse;
-
 struct EchoSearch;
 
 impl SearchProvider for EchoSearch {
@@ -42,11 +40,9 @@ impl SearchProvider for EchoSearch {
         serde_json::from_str(response.text)
     }
 }
-
 fn headers(name: &str, value: &str) -> Headers {
     BTreeMap::from([(name.to_owned(), value.to_owned())])
 }
-
 #[test]
 fn base_defaults_match_litellm() {
     assert_eq!(EchoSearch::ui_friendly_name(), "Unknown Search Provider");
@@ -55,7 +51,6 @@ fn base_defaults_match_litellm() {
     let expected = "max_results search_domain_filter country max_tokens_per_page";
     assert_eq!(PERPLEXITY_PARAMS.join(" "), expected);
 }
-
 #[test]
 fn base_hooks_pass_headers_through_unsigned() {
     let sent = headers("content-type", "application/json");
@@ -74,7 +69,6 @@ fn base_hooks_pass_headers_through_unsigned() {
         (sent, None)
     );
 }
-
 #[test]
 fn provider_hooks_build_url_body_and_response() {
     let single: SearchQuery = serde_json::from_str(r#""latest rust""#).unwrap();
@@ -94,7 +88,6 @@ fn provider_hooks_build_url_body_and_response() {
     let parsed = EchoSearch.transform_search_response(&response).unwrap();
     assert!(parsed.results.is_empty());
 }
-
 #[test]
 fn search_errors_carry_status_text_and_headers() {
     let retry = headers("retry-after", "3");

@@ -13,20 +13,17 @@ pub const PERPLEXITY_PARAMS: [&str; 4] = [
     "country",
     "max_tokens_per_page",
 ];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HttpMethod {
     Get,
     Post,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SearchQuery {
     Single(String),
     Multiple(Vec<String>),
 }
-
 #[derive(Clone, Copy)]
 pub struct OutboundSearch<'call, Body> {
     pub api_base: &'call str,
@@ -34,7 +31,6 @@ pub struct OutboundSearch<'call, Body> {
     pub optional_params: &'call Object,
     pub body: &'call Body,
 }
-
 impl<Body> fmt::Debug for OutboundSearch<'_, Body> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OutboundSearch")
@@ -48,7 +44,6 @@ impl<Body> fmt::Debug for OutboundSearch<'_, Body> {
             .finish()
     }
 }
-
 #[derive(Debug, Clone, Copy)]
 pub struct ProviderResponse<'call> {
     pub status_code: u16,

@@ -13,14 +13,12 @@ pub enum CredentialError {
         api_base: String,
     },
 }
-
 #[derive(Debug, Clone, Copy)]
 pub struct ServerCredential {
     pub key_vars: &'static [&'static str],
     pub base_var: Option<&'static str>,
     pub default_base: Option<&'static str>,
 }
-
 impl ServerCredential {
     pub fn resolve(
         &self,
@@ -65,7 +63,6 @@ impl ServerCredential {
             .any(|base| netloc(base).as_ref() == Some(&candidate))
     }
 }
-
 fn netloc(url: &str) -> Option<String> {
     let parsed = Url::parse(url).ok()?;
     Some(parsed[Position::BeforeUsername..Position::AfterPort].to_lowercase())

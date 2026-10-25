@@ -1,18 +1,15 @@
 #![cfg(test)]
-
 use std::collections::BTreeMap;
 
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::search::credentials::{CredentialError, ServerCredential};
-
 const TAVILY: ServerCredential = ServerCredential {
     key_vars: &["TAVILY_API_KEY", "TAVILY_KEY"],
     base_var: Some("TAVILY_API_BASE"),
     default_base: Some("https://api.tavily.com/search"),
 };
-
 fn resolve(
     credential: &ServerCredential,
     caller_key: Option<&str>,
@@ -28,7 +25,6 @@ fn resolve(
         .resolve(key, caller_base, &lookup)
         .map(|resolved| resolved.map(|secret| secret.expose_secret().to_owned()))
 }
-
 #[rstest]
 #[case::caller_key_skips_trust(Some("sk-caller"), Some("https://evil.example"), &[("TAVILY_API_KEY", "sk-server")], Some("sk-caller"))]
 #[case::empty_caller_key_falls_back(Some(""), None, &[("TAVILY_API_KEY", "sk-server")], Some("sk-server"))]
@@ -47,7 +43,6 @@ fn credential_resolves_in_order(
     let resolved = resolve(&TAVILY, caller_key, caller_base, environment).unwrap();
     assert_eq!(resolved.as_deref(), expected);
 }
-
 #[test]
 fn credential_error_names_first_var_and_base() {
     let environment = [("TAVILY_KEY", "sk-server")];
@@ -61,7 +56,6 @@ fn credential_error_names_first_var_and_base() {
     );
     assert!(!error.to_string().contains("sk-server"));
 }
-
 #[rstest]
 #[case::default_host_other_path("https://API.Tavily.com/v2/custom", &[], true)]
 #[case::other_scheme_same_netloc("http://api.tavily.com", &[], true)]
@@ -83,7 +77,6 @@ fn search_trust_compares_lowercase_netloc(
     let resolved = resolve(&TAVILY, None, Some(caller_base), &environment);
     assert_eq!(resolved.is_ok(), trusted, "{resolved:?}");
 }
-
 #[test]
 fn search_trust_without_default_or_override_refuses() {
     let unconfigured = ServerCredential {

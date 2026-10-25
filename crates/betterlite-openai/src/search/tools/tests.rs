@@ -1,15 +1,12 @@
 #![cfg(test)]
-
 use rust_decimal::Decimal;
 use secrecy::ExposeSecret;
 use serde_json::Value;
 
 use crate::search::tools::{ListSearchToolsResponse, SearchTool};
-
 fn value(text: &str) -> Value {
     serde_json::from_str(text).unwrap()
 }
-
 #[test]
 fn search_tool_reads_config_entry() {
     let tool: SearchTool = serde_json::from_str(
@@ -40,7 +37,6 @@ fn search_tool_reads_config_entry() {
     );
     assert!(unknown.unwrap_err().to_string().contains("owner"));
 }
-
 #[test]
 fn list_response_round_trips_without_absent_keys() {
     let body = value(

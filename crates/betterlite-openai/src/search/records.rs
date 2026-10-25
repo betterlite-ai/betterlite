@@ -14,17 +14,14 @@ pub struct SearchResult {
     #[serde(flatten)]
     pub extra: Object,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SearchObject(pub String);
-
 impl Default for SearchObject {
     fn default() -> Self {
         Self(String::from("search"))
     }
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchResponse {
     pub results: Vec<SearchResult>,
