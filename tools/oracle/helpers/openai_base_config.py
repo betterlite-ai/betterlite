@@ -56,7 +56,6 @@ def error(fields: Object) -> Json:
             "response": {"status_code": failure.response.status_code,
                          "request": {"method": failure.response.request.method, "url": str(failure.response.request.url)}},  # noqa: E501
             "body": None}
-
 def metadata(fields: Object) -> Json:
     value = fields.get("metadata")
     return cast("Json", add_openai_metadata(None if value is None else obj(value)))

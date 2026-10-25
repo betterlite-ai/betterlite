@@ -31,11 +31,9 @@ pub(crate) enum BaseCall {
     AzureGpt5RoutePredicate(Object),
 }
 fn invalid_input(message: String) -> HelperError {
-    let class = String::from("InvalidInput");
     HelperError {
-        class,
-        status: None,
-        error_type: None,
+        class: String::from("InvalidInput"),
+        status: None, error_type: None,
         param: None,
         code: None,
         message,
@@ -128,26 +126,28 @@ fn request(fields: &Object, model: &str) -> Value {
     json!(configuration(fields).request_body(model, messages, &optional,))
 }
 fn error(status_code: u16, message: String) -> Result<Value, Box<HelperError>> {
-    let record = OpenAiErrorRecord::from_parts(OpenAiErrorParts {
+    serde_json::to_value(OpenAiErrorRecord::from_parts(OpenAiErrorParts {
         status_code,
         message,
         headers: None,
         request: None,
         response: None,
         body: None,
-    });
-    serde_json::to_value(record).map_err(|error| Box::new(invalid_input(error.to_string())))
+    }))
+    .map_err(|error| Box::new(invalid_input(error.to_string())))
 }
 fn metadata(fields: &Object) -> Result<Value, Box<HelperError>> {
     let value = metadata_filter_limit(fields.get("metadata").and_then(Value::as_object));
     serde_json::to_value(value).map_err(|error| Box::new(invalid_input(error.to_string())))
 }
 fn openai_error(fields: &Object) -> Result<Value, Box<HelperError>> {
-    let status = match fields.get("status_code").and_then(Value::as_u64) {
-        Some(raw_status) => u16::try_from(raw_status)
-            .map_err(|_| Box::new(invalid_input(String::from("status too large"))))?,
-        None => 500,
-    };
+    let status = fields
+        .get("status_code")
+        .and_then(Value::as_u64)
+        .map_or(Ok(500), |raw_status| {
+            u16::try_from(raw_status)
+                .map_err(|_| Box::new(invalid_input(String::from("status too large"))))
+        })?;
     error(status, text(fields, "message")?.to_owned())
 }
 fn overlap(fields: &Object) -> Result<Value, Box<HelperError>> {

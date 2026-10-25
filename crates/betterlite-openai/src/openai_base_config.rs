@@ -72,12 +72,11 @@ impl OpenAiConfig {
         headers: Headers,
         settings: Object,
     ) -> Self {
-        let normalized_settings = settings.into_iter().collect();
         Self {
             family,
             api_key,
             headers,
-            settings: normalized_settings,
+            settings: settings.into_iter().collect(),
         }
     }
     #[must_use]
