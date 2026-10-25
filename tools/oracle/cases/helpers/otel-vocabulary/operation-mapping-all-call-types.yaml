@@ -1,0 +1,5 @@
+kind: helper
+name: operation-mapping-all-call-types
+call: {otel_vocabulary: {function: Operation, call_type: aembedding}}
+env: {}
+compare: {ignore: []}

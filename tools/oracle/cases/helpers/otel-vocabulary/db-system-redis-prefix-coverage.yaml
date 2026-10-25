@@ -1,0 +1,5 @@
+kind: helper
+name: db-system-redis-prefix-coverage
+call: {otel_vocabulary: {function: DbSystem, service_name: redis_spend_queue}}
+env: {}
+compare: {ignore: []}

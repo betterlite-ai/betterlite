@@ -1,0 +1,5 @@
+kind: helper
+name: output-type-only-modality-routes
+call: {otel_vocabulary: {function: OutputType, call_type: atranscription}}
+env: {}
+compare: {ignore: []}

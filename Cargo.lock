@@ -221,6 +221,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-logging"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tracing",
+]
+
+[[package]]
 name = "betterlite-models"
 version = "0.1.0"
 dependencies = [
@@ -251,6 +259,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-paths",

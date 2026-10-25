@@ -1,0 +1,5 @@
+kind: helper
+name: span-role-excludes-metrics-only
+call: {otel_vocabulary: {function: SpanRole, service_name: router}}
+env: {}
+compare: {ignore: [{pointer: /value, why: "null is omitted by the shared helper wire type"}]}

@@ -1,0 +1,5 @@
+kind: helper
+name: span-names-strip-empty-model-tool
+call: {otel_vocabulary: {function: SpanName, kind: llm, call_type: completion, model: ""}}
+env: {}
+compare: {ignore: []}
