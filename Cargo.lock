@@ -230,6 +230,11 @@ dependencies = [
 [[package]]
 name = "betterlite-core"
 version = "0.1.0"
+dependencies = [
+ "secrecy",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "betterlite-cost"
@@ -305,6 +310,7 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",

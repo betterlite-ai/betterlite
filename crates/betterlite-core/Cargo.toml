@@ -5,5 +5,10 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[dependencies]
+secrecy.workspace = true
+serde.workspace = true
+serde_json = "1.0.145"
+
 [lints]
 workspace = true

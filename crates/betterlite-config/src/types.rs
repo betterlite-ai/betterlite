@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use secrecy::SecretString;
 use serde::Deserialize;
 
+use crate::api::resource_sdk_settings::ResourceSdkSettings;
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub model_list: Vec<ModelDeployment>,
@@ -73,6 +75,7 @@ pub struct ProxyTrust {
 
 #[derive(Debug, Clone)]
 pub struct LiteLlmSettings {
+    pub resource_sdk_settings: ResourceSdkSettings,
     pub num_retries: Option<u32>,
     pub request_timeout: Option<f64>,
     pub drop_params: Option<bool>,

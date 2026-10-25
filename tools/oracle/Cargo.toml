@@ -9,6 +9,7 @@ publish.workspace = true
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
 betterlite-bedrock = { path = "../../crates/betterlite-bedrock" }
 betterlite-config = { path = "../../crates/betterlite-config" }
+betterlite-core = { path = "../../crates/betterlite-core" }
 betterlite-context = { path = "../../crates/betterlite-context" }
 betterlite-http = { path = "../../crates/betterlite-http" }
 betterlite-models = { path = "../../crates/betterlite-models" }

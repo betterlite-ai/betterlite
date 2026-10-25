@@ -1,3 +1,4 @@
+pub mod api;
 pub mod loader;
 mod providers;
 pub mod proxy;
