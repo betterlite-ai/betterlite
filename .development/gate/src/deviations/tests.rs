@@ -47,8 +47,26 @@ fn a_log_that_differs_names_both_sides() {
         problems,
         vec![
             "docs/deviations/B003.yaml names task B004, not B003",
-            "docs/deviations/B003.yaml is missing the report's deviation: missing",
-            "docs/deviations/B003.yaml has a deviation the report doesn't list: extra",
+            "docs/deviations/B003.yaml is missing the report's deviation: what: missing; why: LiteLLM drops the header; link: ",
+            "docs/deviations/B003.yaml has a deviation the report doesn't list: what: extra; why: LiteLLM drops the header; link: ",
+        ]
+    );
+}
+
+#[test]
+fn a_log_with_another_why_shows_both_whys() {
+    let mut logged = deviation("same");
+    logged.why = "LiteLLM keeps the header".to_owned();
+    let log = DeviationLog {
+        task: "B003".to_owned(),
+        deviations: vec![logged],
+    };
+    let problems = mismatch(&[deviation("same")], Some(&log), "B003");
+    assert_eq!(
+        problems,
+        vec![
+            "docs/deviations/B003.yaml is missing the report's deviation: what: same; why: LiteLLM drops the header; link: ",
+            "docs/deviations/B003.yaml has a deviation the report doesn't list: what: same; why: LiteLLM keeps the header; link: ",
         ]
     );
 }
