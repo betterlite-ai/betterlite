@@ -1,6 +1,5 @@
 mod tests;
 
-use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
@@ -24,19 +23,13 @@ pub(crate) fn mismatch(
     task_id: &str,
 ) -> Vec<String> {
     let file = format!("docs/deviations/{task_id}.yaml");
-    let entries = |list: &[ReportDeviation]| -> BTreeSet<(String, String, String)> {
-        list.iter()
-            .map(|entry| (entry.what.clone(), entry.why.clone(), entry.link.clone()))
-            .collect()
-    };
-    let wanted = entries(reported);
     let Some(log) = logged else {
-        return if wanted.is_empty() {
+        return if reported.is_empty() {
             Vec::new()
         } else {
             vec![format!(
                 "the report lists {} deviations; write the same entries to {file}",
-                wanted.len()
+                reported.len()
             )]
         };
     };
@@ -44,16 +37,28 @@ pub(crate) fn mismatch(
     if log.task != task_id {
         problems.push(format!("{file} names task {}, not {task_id}", log.task));
     }
-    let found = entries(&log.deviations);
-    problems.extend(wanted.difference(&found).map(|(what, why, link)| {
-        format!("{file} is missing the report's deviation: what: {what}; why: {why}; link: {link}")
-    }));
-    problems.extend(found.difference(&wanted).map(|(what, why, link)| {
-        format!(
-            "{file} has a deviation the report doesn't list: what: {what}; why: {why}; link: {link}"
-        )
-    }));
+    // workers restate the log in their own words, so only the count and the links must agree
+    if links(reported) != links(&log.deviations) {
+        problems.push(format!(
+            "the report and {file} list different deviations, by count or link; report: {}; {file}: {}",
+            listing(reported),
+            listing(&log.deviations)
+        ));
+    }
     problems
+}
+
+fn links(list: &[ReportDeviation]) -> Vec<&str> {
+    let mut links: Vec<&str> = list.iter().map(|entry| entry.link.as_str()).collect();
+    links.sort_unstable();
+    links
+}
+
+fn listing(list: &[ReportDeviation]) -> String {
+    list.iter()
+        .map(|entry| format!("{} ({})", entry.what, entry.link))
+        .collect::<Vec<String>>()
+        .join(" | ")
 }
 
 fn file_problems(path: &Path, backlog: &Backlog) -> Vec<String> {
