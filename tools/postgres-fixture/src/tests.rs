@@ -2,7 +2,7 @@
 
 use std::future::{Future as _, poll_fn};
 use std::task::Poll;
-use std::{env::split_paths, ffi::OsString, path::Path, time::Duration};
+use std::{env::split_paths, ffi::OsString, path::Path, process, time::Duration};
 
 use clap::Parser;
 use rstest::rstest;
@@ -145,13 +145,17 @@ async fn createdb_privilege_failure() {
     skip_without_postgres!();
     let (_server, admin_url) = postgres_server().await;
     let (admin, _driver) = connect_client(&admin_url).await;
+    // CI shares one server across runs and its admin user isn't fixture, so the role is unique, dropped after, and built into the URL
+    let role = format!("fixture_nocreatedb_{}", process::id());
     admin
-        .batch_execute("CREATE ROLE fixture_nocreatedb LOGIN PASSWORD 'fixture+secret'")
+        .batch_execute(&format!(
+            "CREATE ROLE {role} LOGIN PASSWORD 'fixture+secret'"
+        ))
         .await
         .unwrap();
-    let restricted_url = url(&admin_url
-        .expose_secret()
-        .replace("//fixture:", "//fixture_nocreatedb:"));
+    let (scheme, address) = admin_url.expose_secret().split_once("://").unwrap();
+    let host = address.rsplit_once('@').unwrap().1;
+    let restricted_url = url(&format!("{scheme}://{role}:fixture+secret@{host}"));
     let mut generator = RandomDatabaseName;
     let result = PostgresFixture::provision_with_name_generator(
         Some(&restricted_url),
@@ -160,6 +164,10 @@ async fn createdb_privilege_failure() {
     )
     .resolve()
     .await;
+    admin
+        .batch_execute(&format!("DROP ROLE {role}"))
+        .await
+        .unwrap();
     assert!(matches!(
         result,
         Err(FixtureError::Database(_) | FixtureError::SetupCleanup { .. })
@@ -299,23 +307,30 @@ async fn existing_database_never_dropped() {
     skip_without_postgres!();
     let (_server, admin_url) = postgres_server().await;
     let (admin, _driver) = connect_client(&admin_url).await;
-    let configured = url(&admin_url.expose_secret().replace("/postgres", "/existing"));
+    // CI shares one server across runs and names its admin database differently, so the database is unique and dropped after
+    let name = format!("existing_{}", process::id());
+    let base = admin_url.expose_secret().rsplit_once('/').unwrap().0;
+    let configured = url(&format!("{base}/{name}"));
     admin
-        .batch_execute("CREATE DATABASE existing")
+        .batch_execute(&format!("CREATE DATABASE {name}"))
         .await
         .unwrap();
     let fixture = configured_fixture(&configured, &FixtureSeed::default()).await;
     fixture.close_async().await.unwrap();
-    assert!(database_exists(&admin, "existing").await);
+    assert!(database_exists(&admin, &name).await);
     let result = PostgresFixture::provision_with_name_generator(
         Some(&admin_url),
         &FixtureSeed::default(),
-        &mut FixedName("existing"),
+        &mut FixedName(name.clone()),
     )
     .resolve()
     .await;
     assert!(matches!(result, Err(FixtureError::Database(_))));
-    assert!(database_exists(&admin, "existing").await);
+    assert!(database_exists(&admin, &name).await);
+    admin
+        .batch_execute(&format!("DROP DATABASE {name}"))
+        .await
+        .unwrap();
 }
 #[tokio::test]
 async fn cleanup_after_failure() {
@@ -323,7 +338,7 @@ async fn cleanup_after_failure() {
     let mut seed = fixture_seed("contains\0nul", "token");
     seed.keys.clear();
     let (_server, admin_url) = postgres_server().await;
-    let mut generator = FixedName("failed_fixture");
+    let mut generator = FixedName("failed_fixture".to_owned());
     let result =
         PostgresFixture::provision_with_name_generator(Some(&admin_url), &seed, &mut generator)
             .resolve()
@@ -337,7 +352,7 @@ async fn cleanup_after_cancellation() {
     skip_without_postgres!();
     let (_server, admin_url) = postgres_server().await;
     let (admin, _driver) = connect_client(&admin_url).await;
-    let mut generator = FixedName("cancelled_fixture");
+    let mut generator = FixedName("cancelled_fixture".to_owned());
     let mut task = PostgresFixture::provision_with_name_generator(
         Some(&admin_url),
         &FixtureSeed::default(),
@@ -365,7 +380,7 @@ async fn cleanup_after_unclaimed_result() {
     skip_without_postgres!();
     let (_server, admin_url) = postgres_server().await;
     let (admin, _driver) = connect_client(&admin_url).await;
-    let mut generator = FixedName("unclaimed_fixture");
+    let mut generator = FixedName("unclaimed_fixture".to_owned());
     let task = PostgresFixture::provision_with_name_generator(
         Some(&admin_url),
         &FixtureSeed::default(),
@@ -375,11 +390,11 @@ async fn cleanup_after_unclaimed_result() {
     assert!(!database_exists(&admin, "unclaimed_fixture").await);
 }
 
-struct FixedName(&'static str);
+struct FixedName(String);
 
 impl DatabaseNameGenerator for FixedName {
     fn next_name(&mut self) -> String {
-        self.0.to_owned()
+        self.0.clone()
     }
 }
 #[tokio::test]
