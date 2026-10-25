@@ -18,11 +18,10 @@ pub struct CatalogCapabilities {
 impl CatalogCapabilities {
     #[must_use]
     pub const fn new(chat_models: BTreeSet<String>, text_models: BTreeSet<String>) -> Self {
-        let capabilities = Self {
+        Self {
             chat_models,
             text_models,
-        };
-        capabilities
+        }
     }
 
     #[must_use]
@@ -74,25 +73,22 @@ impl OpenAiConfig {
         headers: Headers,
         settings: Object,
     ) -> Self {
-        let config = Self {
+        Self {
             family,
             api_key,
             headers,
             settings,
-        };
-        config
+        }
     }
 
     #[must_use]
     pub fn get_config(&self) -> Object {
-        let settings = self.settings.clone();
-        settings
+        self.settings.clone()
     }
 
     #[must_use]
     pub const fn family(&self) -> ConfigFamily {
-        let family = self.family;
-        family
+        self.family
     }
     #[must_use]
     pub fn validate_environment(&self) -> Headers {

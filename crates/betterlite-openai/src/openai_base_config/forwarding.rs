@@ -26,8 +26,7 @@ pub fn forward_stream(
     projection: StreamProjection,
     response: Value,
 ) -> Result<Value, BaseConfigError> {
-    let projected = projection(response);
-    projected
+    projection(response)
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct OpenAiErrorRecord {
