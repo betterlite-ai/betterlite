@@ -2,16 +2,16 @@ task: B1632
 deviations:
   - what: A SCIM body that repeats a key, or sends both the enterprise URN and enterprise_user (or both $ref and ref), is rejected as a duplicate field.
     why: Pydantic keeps the last value or the alias; serde derives refuse duplicates and the records must stay derive-only.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L87-L117
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L87-L121
   - what: active and primary accept true, false, 0, 1 and Pydantic's boolean words, but not the floats 0.0 and 1.0.
     why: floats are denied in betterlite, and no directory sends a float boolean.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L110
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L112
   - what: EmailStr is the email_address parser plus email-validator's quoted-part, special-use, TLD and role-mailbox rules, without IDNA or NFC normalization.
     why: no Rust crate ports email-validator; the oracle cases cover the rules a directory sends in practice.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L52-L55
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L51-L54
   - what: Schema attribute mutability, returned and uniqueness only take the values RFC 7643 section 7 lists.
     why: they are closed sets, so they are enums; the handlers build these records and never parse them from a client.
     link: https://www.rfc-editor.org/rfc/rfc7643.html#section-7
   - what: meta, extra entitlement and role fields and patch values echo the JSON text as sent, and meta keys come back sorted.
     why: they are kept as raw JSON so betterlite never reads untyped data; Pydantic re-encodes numbers and keeps key order.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L66-L79
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L35-L79
