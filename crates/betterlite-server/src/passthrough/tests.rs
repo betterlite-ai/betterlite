@@ -53,6 +53,17 @@ use serde_json::json;
     Some("other"),
     EndpointType::Generic
 )]
+#[case::anthropic_similar_host(
+    "https://api.anthropic.com.example.test/v1/messages",
+    None,
+    EndpointType::Generic
+)]
+#[case::azure_subdomain("https://east.openai.azure.com/chat", None, EndpointType::Generic)]
+#[case::decisions_extra_path(
+    "https://example.test/v1/systemone/extra",
+    Some("typesafe"),
+    EndpointType::Generic
+)]
 fn passthrough_endpoint_type_behavior(
     #[case] url: &str,
     #[case] provider: Option<&str>,

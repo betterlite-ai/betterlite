@@ -72,12 +72,20 @@ fn passthrough_response_headers_custom_values_cannot_restore_excluded_headers() 
     );
 }
 
+#[test]
+fn passthrough_response_headers_reject_invalid_call_id() {
+    let headers = get_response_headers(&HeaderMap::new(), Some("bad\nvalue"), None);
+
+    assert!(!headers.contains_key("x-litellm-call-id"));
+}
+
 #[rstest]
 #[case::plain("https://up/b", "v1/x", true, "https://up/b/v1/x")]
 #[case::slashes("https://up/b/", "/v1/x/", true, "https://up/b/v1/x/")]
 #[case::dots("https://up/b", "v1/../x/./y/", true, "https://up/b/x/y/")]
 #[case::climb("https://up/b", "../../etc", true, "https://up/b/etc")]
 #[case::root("https://up/b", "/", true, "https://up/b/")]
+#[case::normalized_root("https://up/b", "v1/..", true, "https://up/b/")]
 #[case::excluded("https://up/b", "v1", false, "https://up/b")]
 #[case::empty("https://up/b", "", true, "https://up/b")]
 fn passthrough_url_joining_behavior(
@@ -103,6 +111,7 @@ fn passthrough_url_joining_behavior(
 #[case::root_parent("https://up/", "../x", "/x")]
 #[case::root_parent_with_trailing_slash("https://up/", "../x/", "/x/")]
 #[case::base_parent_preserves_base("https://up/api", "../../", "/api/")]
+#[case::base_parent_with_name("https://up/api", "../api/", "/api/")]
 fn passthrough_url_joining_behavior_base(
     #[case] base: &str,
     #[case] endpoint: &str,
@@ -154,6 +163,7 @@ fn passthrough_streaming_response_without_content_type_is_false() {
 #[case::object(br#"{"ok":true}"#, Some(serde_json::from_str::<Value>(r#"{"ok":true}"#).unwrap()))]
 #[case::array(b"[1,2]", Some(serde_json::from_str::<Value>("[1,2]").unwrap()))]
 #[case::null(b"null", Some(Value::Null))]
+#[case::scalar(b"42", Some(Value::from(42)))]
 #[case::empty(b"", None)]
 #[case::invalid(b"not-json", None)]
 fn passthrough_response_body_behavior(#[case] body: &[u8], #[case] expected: Option<Value>) {
@@ -164,6 +174,7 @@ fn passthrough_response_body_behavior(#[case] body: &[u8], #[case] expected: Opt
 #[case::body_wins(serde_json::from_str::<Value>(r#"{"stream":false}"#).unwrap(), Some(false))]
 #[case::body_null(serde_json::from_str::<Value>(r#"{"stream":null}"#).unwrap(), None)]
 #[case::fallback(serde_json::from_str::<Value>("{}").unwrap(), Some(true))]
+#[case::non_boolean_falls_back(serde_json::json!({"stream": "yes"}), Some(true))]
 fn passthrough_buffering_behavior_stream(
     #[case] body_value: Value,
     #[case] expected: Option<bool>,
