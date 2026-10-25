@@ -4,8 +4,6 @@ use std::future::Future;
 
 use futures_core::Stream;
 
-// futures-core keeps the protocol independent of any async executor.
-
 use crate::context::SessionContext;
 use crate::errors::HarnessError;
 use crate::events::Event;
