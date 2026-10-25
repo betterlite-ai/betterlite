@@ -26,6 +26,9 @@ fn providers_resolve_to_semconv_names(#[case] provider: &str, #[case] expected: 
     "avector_store_file_delete",
     GenAIOperation::LitellmVectorStoreFileManagement
 )]
+#[case::vector_store("vector_store_update", GenAIOperation::LitellmVectorStoreManagement)]
+#[case::one_async_prefix_only("aavector_store_create", GenAIOperation::Chat)]
+#[case::unknown_file_action("vector_store_file_search", GenAIOperation::Chat)]
 #[case::unmapped_falls_back("new_route", GenAIOperation::Chat)]
 fn call_types_resolve_to_operations(#[case] call_type: &str, #[case] expected: GenAIOperation) {
     assert_eq!(resolve_operation(call_type), expected);

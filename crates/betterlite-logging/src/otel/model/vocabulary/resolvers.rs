@@ -50,7 +50,12 @@ pub fn resolve_operation(call_type: &str) -> GenAIOperation {
             GenAIOperation::Retrieval
         }
         "send_message" | ASEND_MESSAGE | ASEND_MESSAGE_STREAMING => GenAIOperation::InvokeAgent,
-        vendor => vendor_operation(vendor).unwrap_or_else(|| {
+        "get_responses" | "aget_responses" | "delete_responses" | "adelete_responses"
+        | "cancel_responses" | "acancel_responses" | "list_input_items" | "alist_input_items" => {
+            GenAIOperation::LitellmResponsesManagement
+        }
+        "moderation" | "amoderation" => GenAIOperation::LitellmModeration,
+        other => vector_store_operation(other).unwrap_or_else(|| {
             // an unmapped call type labelled chat mixes its latency and cost into every chat chart
             tracing::debug!(
                 call_type,
@@ -61,36 +66,15 @@ pub fn resolve_operation(call_type: &str) -> GenAIOperation {
     }
 }
 
-// the convention names no operation for these, so they take litellm.* vendor values
-fn vendor_operation(call_type: &str) -> Option<GenAIOperation> {
-    match call_type {
-        "get_responses" | "aget_responses" | "delete_responses" | "adelete_responses"
-        | "cancel_responses" | "acancel_responses" | "list_input_items" | "alist_input_items" => {
-            Some(GenAIOperation::LitellmResponsesManagement)
+// LiteLLM maps each vector store action twice, as the sync name and its "a"-prefixed async name
+fn vector_store_operation(call_type: &str) -> Option<GenAIOperation> {
+    let sync_name = call_type.strip_prefix('a').unwrap_or(call_type);
+    match sync_name.strip_prefix("vector_store_")? {
+        "create" | "retrieve" | "list" | "update" | "delete" => {
+            Some(GenAIOperation::LitellmVectorStoreManagement)
         }
-        "moderation" | "amoderation" => Some(GenAIOperation::LitellmModeration),
-        "vector_store_create"
-        | "avector_store_create"
-        | "vector_store_retrieve"
-        | "avector_store_retrieve"
-        | "vector_store_list"
-        | "avector_store_list"
-        | "vector_store_update"
-        | "avector_store_update"
-        | "vector_store_delete"
-        | "avector_store_delete" => Some(GenAIOperation::LitellmVectorStoreManagement),
-        "vector_store_file_create"
-        | "avector_store_file_create"
-        | "vector_store_file_list"
-        | "avector_store_file_list"
-        | "vector_store_file_retrieve"
-        | "avector_store_file_retrieve"
-        | "vector_store_file_content"
-        | "avector_store_file_content"
-        | "vector_store_file_update"
-        | "avector_store_file_update"
-        | "vector_store_file_delete"
-        | "avector_store_file_delete" => Some(GenAIOperation::LitellmVectorStoreFileManagement),
+        "file_create" | "file_list" | "file_retrieve" | "file_content" | "file_update"
+        | "file_delete" => Some(GenAIOperation::LitellmVectorStoreFileManagement),
         _ => None,
     }
 }
