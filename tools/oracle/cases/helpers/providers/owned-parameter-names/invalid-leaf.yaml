@@ -1,0 +1,11 @@
+kind: helper
+name: invalid-leaf
+call:
+  owned_parameter_names:
+    function: wire_name_projection
+    name: fixture-secret
+    owner: observability
+    root: invalid_leaf
+env: {}
+compare:
+  ignore: []
