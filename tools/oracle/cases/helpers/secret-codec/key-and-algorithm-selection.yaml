@@ -1,0 +1,19 @@
+kind: helper
+name: secret-codec-key-and-algorithm-selection
+call:
+  secret_codec:
+    salt_key: null
+    master_key: salt-one
+    general_settings: {encryption_algorithm: AES-256-GCM}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
+    steps:
+      - {op: encrypt_value, value: hello, new_key: null}
+      - {op: encrypt_value, value: hello, new_key: override-key}
+      - {op: encrypt_value, value: hello, new_key: ""}
+      - {op: encrypt_value, value: "héllo wörld, a longer secret value!", new_key: null}
+      - {op: decrypt_value, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj", field: api_key, report: error, keep_original: false}
+      - {op: decrypt_value, value: "v2:gcm:AAECAwQFBgcICQoLu13Sfnjzb3vLfCPO7ClYdksHnW1L", field: api_key, report: error, keep_original: false}
+      - {op: decrypt_value, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXfuRp9WUvbNm7fn_PA-d4hvaoT58a", field: api_key, report: debug, keep_original: false}
+env: {}
+compare:
+  ignore: []
