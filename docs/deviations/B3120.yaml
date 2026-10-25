@@ -1,0 +1,17 @@
+task: B3120
+deviations:
+  - what: A request object that repeats a key the typed schema knows (a block's "type" or "text", a message's "role") returns unsupported_prompt_shape. LiteLLM keeps the last value, because json.loads builds a dict, and plans the request.
+    why: The serde model refuses duplicate fields, and rule no-silent-drops says nothing overwrites an earlier entry without saying so.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L337-L341
+  - what: A duplicate key inside free-form JSON (tool input, input_schema, metadata, thinking, tool_choice, output_config) stays in the prefix body and the fingerprint with every copy as sent. LiteLLM hashes only the last value, so such a prefix gets a different fingerprint.
+    why: betterlite hashes the request's own JSON text in its key order and never rebuilds it through a map that would drop the earlier copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L421-L424
+  - what: An integer outside the 64-bit range is refused as max_tokens or top_k (unsupported_prompt_shape), and inside free-form JSON it is hashed as a float (1.8446744073709552e+19). LiteLLM keeps Python's unbounded int in both places.
+    why: serde_json without arbitrary_precision reads such numbers as f64, and enabling that feature would change number handling for every crate in the workspace.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L108-L117
+  - what: NaN, Infinity and -Infinity in the body return unsupported_prompt_shape. LiteLLM's json.loads accepts them and plans the request.
+    why: They are not JSON, and serde_json refuses them while parsing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L421-L424
+  - what: A lone UTF-16 surrogate escape such as \ud800 returns unsupported_prompt_shape. LiteLLM raises UnicodeEncodeError out of parse_cache_plan when it encodes the digest input.
+    why: The string cannot be turned into UTF-8 for hashing, and the reason value is the planner's only way to say a request cannot be planned.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L421-L424
