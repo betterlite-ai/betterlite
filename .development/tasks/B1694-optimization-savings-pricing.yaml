@@ -61,6 +61,7 @@ scope:
     - crates/betterlite-server/src/savings.rs
     - crates/betterlite-server/src/savings/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - tools/oracle/src/helpers/server/savings_pricing.rs
     - tools/oracle/src/helpers/server/savings_pricing/**
     - tools/oracle/helpers/savings_pricing.py

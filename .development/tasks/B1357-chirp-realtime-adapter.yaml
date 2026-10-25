@@ -28,6 +28,7 @@ scope:
     - crates/betterlite-core/Cargo.toml
     - Cargo.lock
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/vertex_chirp.rs
     - crates/betterlite-core/src/api/vertex_chirp/**
     - crates/betterlite-core/fuzz/Cargo.toml

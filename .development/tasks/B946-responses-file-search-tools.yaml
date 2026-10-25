@@ -130,6 +130,7 @@ scope:
   - crates/betterlite-core/src/api/responses_file_search_tools.rs
   - crates/betterlite-core/src/api/responses_file_search_tools/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml

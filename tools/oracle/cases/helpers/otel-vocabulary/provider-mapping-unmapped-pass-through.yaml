@@ -1,0 +1,8 @@
+kind: helper
+name: provider-mapping-unmapped-pass-through
+call:
+  otel_vocabulary:
+    function: Provider
+    values: [openai, text-completion-openai, azure, azure_ai, anthropic, bedrock, bedrock_converse, vertex_ai, vertex_ai_beta, gemini, cohere, cohere_chat, mistral, deepseek, groq, perplexity, xai, watsonx, BEDROCK, Vendor_New, vendor_new, "", null]
+env: {}
+compare: {ignore: []}

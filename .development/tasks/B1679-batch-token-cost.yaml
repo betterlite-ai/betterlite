@@ -38,6 +38,7 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/**
     - crates/betterlite-core/src/cost/batch.rs
     - crates/betterlite-core/src/cost/batch/**
     - tools/oracle/src/helpers/core_ops/batch_token_cost.rs

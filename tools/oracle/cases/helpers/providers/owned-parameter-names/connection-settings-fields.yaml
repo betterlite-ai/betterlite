@@ -1,0 +1,11 @@
+kind: helper
+name: connection-settings-fields
+call:
+  owned_parameter_names:
+    function: wire_name_projection
+    name: no-log
+    owner: connection_settings
+    root: connection_settings
+env: {}
+compare:
+  ignore: []

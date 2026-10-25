@@ -26,6 +26,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/copilot.rs
+    - crates/betterlite-openai/src/copilot/**
     - crates/betterlite-openai/src/copilot/api_key.rs
     - crates/betterlite-openai/src/copilot/api_key/**
     - crates/betterlite-openai/fuzz/Cargo.toml

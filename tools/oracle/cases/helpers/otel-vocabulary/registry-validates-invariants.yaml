@@ -1,0 +1,5 @@
+kind: helper
+name: registry-validates-invariants
+call: {otel_vocabulary: {function: Registry}}
+env: {}
+compare: {ignore: []}

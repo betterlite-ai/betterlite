@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/**
     - crates/betterlite-core/src/api/fal/vision_chat.rs
     - crates/betterlite-core/src/api/fal/vision_chat/**
     - crates/betterlite-core/fuzz/Cargo.toml

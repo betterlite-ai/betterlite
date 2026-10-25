@@ -24,6 +24,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_ephemeral_ids.rs
   - crates/betterlite-core/src/api/realtime_ephemeral_ids/**
   - crates/betterlite-core/fuzz/Cargo.toml

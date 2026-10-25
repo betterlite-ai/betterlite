@@ -84,6 +84,7 @@ scope:
   - crates/betterlite-core/src/api/responses_ws_managed.rs
   - crates/betterlite-core/src/api/responses_ws_managed/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/src/websocket_driver.rs

@@ -17,6 +17,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/vector_file_resolution.rs
   - crates/betterlite-server/src/api/vector_file_resolution/**
   - crates/betterlite-core/fuzz/corpus/managed_resource_ids/vector-file-*
