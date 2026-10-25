@@ -1,5 +1,11 @@
 kind: helper
-name: arguments
-call: {cisco_conversation: {function: extract_message_tool_argument_parts, value: {function_call: {arguments: '{}'}}}}
+name: cisco-tool-argument-parts
+call:
+  cisco_conversation:
+    function: tool_arguments
+    message:
+      tool_calls: [{function: {arguments: '{"a": 1}'}}, {function: {arguments: {b: [1, true]}}}, {function: {arguments: ""}}, {function: null}, x]
+      function_call: {arguments: 0}
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

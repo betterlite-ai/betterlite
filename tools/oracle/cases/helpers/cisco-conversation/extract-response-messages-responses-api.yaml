@@ -1,5 +1,14 @@
 kind: helper
-name: response-api
-call: {cisco_conversation: {function: extract_response_messages_responses_api, value: {output: [{text: hello}]}}}
+name: cisco-response-responses-api
+call:
+  cisco_conversation:
+    function: responses_output
+    response:
+      output:
+        - {type: message, content: [{type: output_text, text: hello}, {type: reasoning, reasoning: r, thinking: t}, text only]}
+        - {type: function_call, arguments: '{"a": 1}'}
+        - {type: other, text: direct, reasoning: not read}
+        - skipped
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

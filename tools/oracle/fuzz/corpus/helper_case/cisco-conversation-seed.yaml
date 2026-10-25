@@ -2,11 +2,8 @@ kind: helper
 name: cisco-conversation-seed
 call:
   cisco_conversation:
-    function: extract_response_messages_chat
-    value:
-      choices:
-        - message:
-            content: "done"
+    function: flatten
+    input: [{type: input_text, text: seed}]
 env: {}
 compare:
   ignore: []

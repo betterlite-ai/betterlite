@@ -1,5 +1,18 @@
 kind: helper
-name: chat
-call: {cisco_conversation: {function: extract_inspect_messages_from_request_chat, value: {messages: [{role: user, content: hello}]}}}
+name: cisco-request-chat
+call:
+  cisco_conversation:
+    function: request_messages
+    data:
+      instructions: [{type: input_text, text: be careful}]
+      messages:
+        - {role: user, content: [{type: text, text: hi}, {type: image_url, image_url: {url: "https://x"}}], tool_calls: [{function: {name: f, arguments: '{"a": 1}'}}]}
+        - {role: "", content: skipped}
+        - {role: assistant, content: "", function_call: {arguments: {q: 1}}}
+        - {role: tool, content: ""}
+        - not a message
+      tools: [{type: function, function: {name: lookup, description: find, parameters: {properties: {city: {type: string, description: the city}}}}}]
+      functions: [{name: legacy}]
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

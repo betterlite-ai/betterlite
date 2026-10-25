@@ -1,5 +1,10 @@
 kind: helper
-name: rewrite-flat
-call: {cisco_conversation: {function: rewrite_responses_input_text, value: {input: [{type: input_text, text: hello}], sanitized_text: safe}}}
+name: cisco-rewrite-flat-parts
+call:
+  cisco_conversation:
+    function: rewrite
+    input: [{type: input_image, image_url: "https://x"}, {type: input_text, text: x}, {type: input_text, text: y}]
+    sanitized_text: clean
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

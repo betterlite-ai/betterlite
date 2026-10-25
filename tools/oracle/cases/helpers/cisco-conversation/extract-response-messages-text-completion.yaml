@@ -1,5 +1,10 @@
 kind: helper
-name: completion
-call: {cisco_conversation: {function: extract_response_messages_text_completion, value: {choices: [{text: hello}]}}}
+name: cisco-response-text-completion
+call:
+  cisco_conversation:
+    function: text_completion
+    response:
+      choices: [{text: first, index: 0}, {text: "", index: 1}, {text: second, index: 2}]
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

@@ -1,5 +1,13 @@
 kind: helper
-name: rewrite-parts
-call: {cisco_conversation: {function: rewrite_responses_input_text, value: {input: [{role: user, content: [{type: input_text, text: hello}]}], sanitized_text: safe}}}
+name: cisco-rewrite-message-list-content
+call:
+  cisco_conversation:
+    function: rewrite
+    input:
+      - {role: user, content: [{type: input_text, text: first}], id: m1}
+      - {role: assistant, content: [{type: output_text, text: reply}]}
+      - {role: user, content: [{type: input_image, image_url: "https://x"}]}
+    sanitized_text: clean
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

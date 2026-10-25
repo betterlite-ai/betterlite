@@ -1,5 +1,17 @@
 kind: helper
-name: response-chat
-call: {cisco_conversation: {function: extract_response_messages_chat, value: {choices: [{message: {content: hello}}]}}}
+name: cisco-response-chat
+call:
+  cisco_conversation:
+    function: chat_response
+    response:
+      choices:
+        - message:
+            role: assistant
+            content: answer
+            tool_calls: [{id: call_1, type: function, function: {name: f, arguments: '{"q": 2}'}}]
+            reasoning_content: because
+            thinking_blocks: [{type: thinking, thinking: hmm, signature: sig}]
+        - message: {role: assistant, content: ""}
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

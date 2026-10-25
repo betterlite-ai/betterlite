@@ -1,5 +1,9 @@
 kind: helper
-name: flatten-parts
-call: {cisco_conversation: {function: flatten_responses_input_content_part_list, value: [{type: input_text, text: hello}]}}
+name: cisco-flatten-content-parts
+call:
+  cisco_conversation:
+    function: flatten
+    input: [{type: input_text, text: a}, {type: output_text, text: b}, {type: input_image, image_url: "https://x"}]
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

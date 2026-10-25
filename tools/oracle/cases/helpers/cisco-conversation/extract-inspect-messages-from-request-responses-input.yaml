@@ -1,5 +1,15 @@
 kind: helper
-name: responses
-call: {cisco_conversation: {function: extract_inspect_messages_from_request_responses_input, value: {input: hello}}}
+name: cisco-request-responses-input
+call:
+  cisco_conversation:
+    function: request_messages
+    data:
+      instructions: null
+      messages: null
+      input:
+        - {role: user, content: [{type: input_text, text: x}]}
+        - {role: assistant, content: [{type: output_text, text: y}]}
+        - {type: function_call_output, output: result}
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

@@ -1,5 +1,16 @@
 kind: helper
-name: tools
-call: {cisco_conversation: {function: extract_tool_definition_text, value: {tools: [{function: {name: fn, description: desc}}]}}}
+name: cisco-tool-definition-text
+call:
+  cisco_conversation:
+    function: tool_definitions
+    data:
+      tools:
+        - type: function
+          function:
+            name: get_weather
+            description: weather lookup
+            parameters: {type: object, properties: {city: {type: string, description: "", enum: [paris, rome]}, days: {type: integer, default: 3}}}
+      functions: [{name: legacy, description: old style}]
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

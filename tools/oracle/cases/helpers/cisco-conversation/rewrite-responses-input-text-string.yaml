@@ -1,5 +1,10 @@
 kind: helper
-name: rewrite-string
-call: {cisco_conversation: {function: rewrite_responses_input_text, value: {input: hello, sanitized_text: safe}}}
+name: cisco-rewrite-string
+call:
+  cisco_conversation:
+    function: rewrite
+    input: original text
+    sanitized_text: clean
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []
