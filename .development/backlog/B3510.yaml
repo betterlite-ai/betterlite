@@ -1,7 +1,7 @@
 id: B3510
 milestone: M5 api families
 title: Decisions wire records and shared intermediate representation
-status: todo
+status: done
 depends_on: []
 file: tasks/B3510-decisions-records.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/base_llm/decisions/transformation.py"
 parent: B099
 split_from: B099
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 133
