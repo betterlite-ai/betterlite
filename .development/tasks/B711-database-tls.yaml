@@ -85,19 +85,9 @@ scope:
     - tools/oracle/cases/helpers/database-tls/**
     - tools/oracle/fuzz/corpus/helper_case/database-tls-*
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/database_tls.rs
-    - crates/betterlite-config/src/database_tls/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/database-tls-*
+    - crates/betterlite-config/src/sections/database_tls.rs
+    - crates/betterlite-config/src/sections/database_tls/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L139-L254
@@ -140,7 +130,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::tls_valid_chain$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::tls_hostname_mismatch$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::tls_unknown_root$/)'
     - id: config-tests
       why: Invalid env settings must fail the real loader and valid ones must drive the native pool policy.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_tls::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::database_tls::tests::/) - test(/replays_the_/)'
     - id: helper-python
       why: Projection adapters must import pinned code and pass strict checks.
       run: test -f tools/oracle/helpers/database_tls.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
