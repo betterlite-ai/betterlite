@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const DEFAULT_PROMPT: &str = "Estimate how many hours it would take an engineer to complete the work in this pull request without AI assistance. Explain your estimate briefly.";
-
 // what Python's str.strip() and the re module's \s treat as whitespace
 const PYTHON_SPACE: [char; 29] = [
     '\t', '\n', '\u{b}', '\u{c}', '\r', '\u{1c}', '\u{1d}', '\u{1e}', '\u{1f}', ' ', '\u{85}',
@@ -46,7 +45,6 @@ pub enum SettingsError {
     #[error("Each identity needs a GitHub username and a valid gateway email.")]
     Identity,
 }
-
 pub fn normalize_login(value: &str) -> Result<String, SettingsError> {
     let login = caseless::default_case_fold_str(value.trim_matches(PYTHON_SPACE));
     let allowed = |character: char| character.is_ascii_alphanumeric() || "_[]-".contains(character);
@@ -55,7 +53,6 @@ pub fn normalize_login(value: &str) -> Result<String, SettingsError> {
     }
     Ok(login)
 }
-
 #[must_use]
 pub fn normalize_email(value: Option<&str>) -> String {
     let normalized =
@@ -76,7 +73,6 @@ pub fn normalize_email(value: Option<&str>) -> String {
     }
     normalized
 }
-
 const fn check_backfill_days(value: i64) -> Result<(), SettingsError> {
     if value < 1 {
         return Err(SettingsError::TooSmall {
@@ -92,7 +88,6 @@ const fn check_backfill_days(value: i64) -> Result<(), SettingsError> {
     }
     Ok(())
 }
-
 fn check_interval_bounds(value: f64) -> Result<(), SettingsError> {
     let field = "update_interval_minutes";
     if !value.is_finite() {
