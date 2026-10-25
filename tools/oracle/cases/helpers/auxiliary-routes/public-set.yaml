@@ -1,0 +1,8 @@
+kind: helper
+name: public-set
+call:
+  auxiliary_routes:
+    group: public_routes
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,5 @@
+kind: helper
+name: overlapping-api-base-path
+call: {openai_base_config: {overlapping_api_base_path: {api_base: 'https://example.test/a/b?q=1#frag', ending_path: /b/c}}}
+env: {}
+compare: {ignore: []}

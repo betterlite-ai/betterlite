@@ -177,6 +177,9 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-auth"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+]
 
 [[package]]
 name = "betterlite-azure"
@@ -238,6 +241,13 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-db"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-error"
@@ -272,6 +282,16 @@ name = "betterlite-lens"
 version = "0.1.0"
 
 [[package]]
+name = "betterlite-logging"
+version = "0.1.0"
+dependencies = [
+ "rstest",
+ "strum",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "betterlite-models"
 version = "0.1.0"
 dependencies = [
@@ -287,10 +307,13 @@ name = "betterlite-openai"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "indexmap",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
  "thiserror",
+ "url",
 ]
 
 [[package]]
@@ -302,16 +325,20 @@ name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "betterlite-auth",
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-db",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-paths",
  "betterlite-server",
  "clap",
  "futures-util",
+ "indexmap",
  "reqwest",
  "rstest",
  "secrecy",
@@ -363,6 +390,18 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-roi"
 version = "0.1.0"
+dependencies = [
+ "caseless",
+ "indexmap",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "thiserror",
+ "unicode-normalization",
+]
 
 [[package]]
 name = "betterlite-router"
@@ -479,6 +518,15 @@ name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
+
+[[package]]
+name = "caseless"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b6fd507454086c8edfd769ca6ada439193cdb209c7681712ef6275cccbfe5d8"
+dependencies = [
+ "unicode-normalization",
+]
 
 [[package]]
 name = "cc"
@@ -1054,6 +1102,8 @@ checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
  "hashbrown",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -1586,6 +1636,7 @@ version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e891af845473308773346dc847b2c23ee78fe442e0472ac50e22a18a93d3ae5a"
 dependencies = [
+ "serde",
  "zeroize",
 ]
 
@@ -1762,6 +1813,27 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+
+[[package]]
+name = "strum"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
+dependencies = [
+ "strum_macros",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "subtle"
@@ -2085,6 +2157,15 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75cd3fb03d5288b3ba9a1ee103ac7e9cbb59f0b03d64f8ddfcc04dd42758a85d"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "unicode-width"

@@ -1,0 +1,1 @@
+{kind: helper, name: base-auth-override, call: {openai_base_config: {base_auth_override: {model: gpt-4o, api_key: fixture-secret, headers: {Authorization: caller, x-test: "yes"}}}}, env: {}, compare: {ignore: []}}
