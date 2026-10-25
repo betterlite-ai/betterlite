@@ -89,16 +89,10 @@ fn config(input: &ConfigInput) -> OpenAiConfig {
         settings: OpenAiSettings::default(),
     }
 }
+#[rustfmt::skip]
 fn invalid_error(error: impl std::fmt::Display) -> HelperError {
     let message = error.to_string();
-    HelperError {
-        class: String::from("InvalidInput"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    }
+    HelperError { class: String::from("InvalidInput"), status: None, error_type: None, param: None, code: None, message }
 }
 fn error_value(input: &ErrorInput) -> Result<Value, Box<HelperError>> {
     let record = OpenAiErrorRecord::from_parts(OpenAiErrorParts {
