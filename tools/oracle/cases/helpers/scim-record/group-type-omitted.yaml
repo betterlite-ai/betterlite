@@ -1,0 +1,11 @@
+kind: helper
+name: group-type-omitted
+call:
+  scim_record:
+    kind: user
+    value:
+      schemas: [u]
+      groups: [{value: group-1}]
+env: {}
+compare:
+  ignore: []

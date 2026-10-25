@@ -1,0 +1,10 @@
+kind: helper
+name: patch-operation-normalization
+call:
+  scim_record:
+    kind: patch
+    value:
+      Operations: [{op: RePlAcE, path: active, value: true}]
+env: {}
+compare:
+  ignore: []

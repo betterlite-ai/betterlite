@@ -2,9 +2,16 @@ kind: helper
 name: nested-schema-dump
 call:
   scim_record:
-    kind: patch
+    kind: schema
     value:
-      Operations: [{op: RePlAcE, path: active, value: true}]
+      id: User
+      name: User
+      attributes:
+        - name: manager
+          type: complex
+          subAttributes:
+            - name: ref
+              type: string
 env: {}
 compare:
   ignore: []

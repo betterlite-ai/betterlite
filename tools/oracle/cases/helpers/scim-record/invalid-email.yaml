@@ -1,0 +1,11 @@
+kind: helper
+name: invalid-email
+call:
+  scim_record:
+    kind: user
+    value:
+      schemas: [u]
+      emails: [{value: invalid-address}]
+env: {}
+compare:
+  ignore: []
