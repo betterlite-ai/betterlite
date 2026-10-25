@@ -1,0 +1,56 @@
+id: B4811
+title: Proxy agent card merging and served protocol versions
+description: >-
+  Build pure card-merge logic that transforms an upstream A2A agent card into a proxy-fronted card. Preserve the upstream URL while replacing advertised interfaces and authentication with the proxy endpoint and virtual-key scheme.
+
+  Implement `normalize_protocol_version` to map raw semver values to canonical "0.3" or "1.0" strings, accepting bare major.minor and full semver forms with prerelease/build suffixes. Implement `resolve_served_version` to extract and validate a card's pinned version or return the default "1.0". Implement `merge_agent_card` to overlay proxy-specific security schemes, endpoint URLs, and default skills/modes, while stripping unsupported top-level fields and dropping `additionalInterfaces` to prevent auth bypass.
+
+  The `merge_agent_card` function accepts optional `name` and `description` keyword parameters that override the upstream card's values. When supplied, these user-provided overrides take precedence over the upstream card's own name and description fields.
+
+  No HTTP calls, no async, no external dependencies: this is pure record transformation using standard-library copy and version matching. The proxy's runtime invocation path reads the stored upstream URL; the public `/.well-known/agent-card.json` route (owned by B141) rewrites that field before serving to clients.
+scope:
+  paths:
+    - crates/betterlite-a2a/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/agent_card.py
+    why: The complete card-merge implementation at the pinned commit, lines 30-217.
+dod:
+  - text: normalize_protocol_version accepts bare major.minor ("0.3", "1.0"), full semver forms including prerelease and build suffixes, and returns the canonical version or None for unrecognized input.
+    proof: [card-merge-tests]
+  - text: resolve_served_version extracts a card's protocolVersion field, normalizes it, and returns the default "1.0" when absent or unrecognized.
+    proof: [card-merge-tests]
+  - text: merge_agent_card preserves the upstream URL in the returned card, overwrites securitySchemes and security with LiteLLM's bearer scheme, discards additionalInterfaces, keeps only truthy streaming capability, and fills default chat skill, text modes and version "1.0.0" when absent.
+    proof: [card-merge-tests]
+  - text: merge_agent_card accepts optional name and description keyword parameters that override the upstream card's values when supplied; caller-provided name/description take precedence over upstream card's own fields.
+    proof: [card-merge-tests]
+  - text: The merged card contains only whitelisted top-level fields from the v1.0 AgentCard schema plus supportedInterfaces; unknown upstream fields are dropped.
+    proof: [card-merge-tests]
+  - text: Every mutant in version normalization, capability filtering and field merging is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: card-merge-tests
+      why: card merge tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^agent_card::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Serving the card over HTTP or rewriting its URL field for clients; that belongs to B141's public-card route.
+  - Discovering upstream agent cards; that belongs to B4800.
+  - Validating that the upstream card conforms to any schema; invalid upstream input is passed through after filtering.
+pitfalls:
+  - >-
+    The regex for semver normalization must accept prerelease (e.g. "0.3.0-rc1") and build metadata (e.g. "1.0.1+build.42") per the full semver spec: `\d+\.\d+(?:\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)?`.
+  - Only the streaming capability is whitelisted; pushNotifications, extendedAgentCard and extensions are always dropped, even if the upstream advertises them.
+  - The additionalInterfaces field must be discarded to prevent bypassing the proxy's auth and audit. The runtime A2A invocation path reads agent_card_params['url'] to locate the upstream; that field stays on the merged card so the invoker finds it, but the public endpoint rewrites it before exposing the card to clients.
+  - supportedInterfaces is synthesized with the proxy URL and protocol version; it is not copied from upstream.
+  - >-
+    When upstream has no name, description, version, skills, defaultInputModes, defaultOutputModes or provider, the merge supplies defaults: no name/description override, version "1.0.0", chat skill with text tags, text modes, and a provider record with organization "LiteLLM Proxy" and the proxy base URL.
+  - The security field follows the OpenAPI convention (not the non-standard securityRequirements alias), and always overwrites upstream with LiteLLM's bearer-key requirement.
+  - Deep copy the upstream card to avoid mutating the input; deep copy defaults and security schemes so the caller may reuse the same object without field overwrites.
+review_level: security
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Define harness events, state, options and execution contracts
 status: todo
 depends_on: []
-file: null
+file: tasks/B4830-harness-contracts.yaml
 covers:
   - "litellm/harness/{context,errors,options,types}.py"
   - "litellm/harness/handlers/base.py"

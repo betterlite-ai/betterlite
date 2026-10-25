@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Proxy agent card merging and served protocol versions
 status: todo
 depends_on: []
-file: null
+file: tasks/B4811-a2a-proxy-cards.yaml
 covers:
   - "litellm/proxy/a2a/agent_card.py"
 parent: B142

@@ -1,0 +1,108 @@
+id: B4921
+title: Playground attachment type, size and image count validation
+description: >-
+  Build browser-side attachment validation for playground uploads: type predicates by MIME
+  or file extension (isImageFile, isPdfFile, isAudioFile), size validators for chat attachments
+  (20 MiB limit), image edits (20 MiB limit, 10-image cap), and audio files (25 MiB limit).
+  Validation messages include the filename so users know which file failed. getExtension and
+  formatMb are helpers for type detection and error display. All functions use browser File
+  API metadata and standard string, Set and Math operations. No server routes, HTTP calls or
+  promise-based async; all validation is synchronous. Write typed implementations and Vitest
+  suites that cover happy paths, boundary sizes (19.9 MiB, 20.0 MiB, 20.1 MiB for each limit),
+  count limits, type mismatches (image with .txt, PDF with image MIME), and error messages
+  naming the file.
+scope:
+  paths:
+  - ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.ts
+  - ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.test.ts
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.ts#L1-97
+  why: The validator functions with type predicates, size limits (20 MiB chat, 20 MiB image-edit,
+    25 MiB audio), 10-image edit cap, and filename-bearing error messages.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.test.ts#L1-78
+  why: Vitest suite structure with makeFile helper, test cases for each validator covering
+    happy paths, boundary sizes, type mismatches and error messages.
+- url: https://developer.mozilla.org/en-US/docs/Web/API/File
+  why: File API for type, name and size properties used by all validators.
+dod:
+- text: getExtension returns the file extension from the filename, lowercased.
+  proof:
+  - upload-validation-tests
+- text: formatMb formats byte counts as whole-number MB display (e.g. 10 MB, 20 MB).
+  proof:
+  - upload-validation-tests
+- text: isImageFile accepts exact image MIME types image/png, image/jpeg, image/jpg, image/gif,
+    image/webp or the same files by extension.
+  proof:
+  - upload-validation-tests
+- text: isPdfFile accepts application/pdf MIME or .pdf extension.
+  proof:
+  - upload-validation-tests
+- text: isAudioFile accepts audio/* MIME type prefix or extensions .mp3, .mp4, .mpeg, .mpga, .m4a,
+    .wav, .webm.
+  proof:
+  - upload-validation-tests
+- text: validateSize checks file size against a byte limit and returns an error string naming
+    the file and the limit in MB if size exceeds limit.
+  proof:
+  - upload-validation-tests
+- text: validateChatAttachment accepts images or PDFs up to 20 MiB and returns a filename-bearing
+    error if type is invalid or size exceeds 20 MiB.
+  proof:
+  - upload-validation-tests
+- text: validateImageEditFile accepts images up to 20 MiB with a 10-image count cap, returning
+    a filename-bearing error if count or size exceeds limit.
+  proof:
+  - upload-validation-tests
+- text: validateAudioFile accepts audio files up to 25 MiB and returns a filename-bearing error
+    if type is invalid or size exceeds 25 MiB.
+  proof:
+  - upload-validation-tests
+- text: CHAT_ATTACHMENT_ACCEPT is exported with MIME and extension strings matching accepted
+    types for validateChatAttachment (images, PDF).
+  proof:
+  - upload-validation-tests
+- text: IMAGE_EDIT_ACCEPT is exported with image MIME types only (no PDF) matching isImageFile.
+  proof:
+  - upload-validation-tests
+- text: AUDIO_ACCEPT is exported with audio/* MIME prefix and audio file extensions matching
+    isAudioFile.
+  proof:
+  - upload-validation-tests
+- text: MAX_CHAT_ATTACHMENT_COUNT is exported with value 1.
+  proof:
+  - upload-validation-tests
+- text: No TypeScript compiler errors (npx tsc --noEmit) and no lint or format errors (npm run
+    lint, npm run format).
+  proof:
+  - upload-validation-lint
+checks:
+  optional: []
+  commands:
+  - id: upload-validation-tests
+    why: Vitest tests fail or do not exist
+    run: npm run test --prefix ui/litellm-dashboard -- uploadValidation.test.ts --run
+  - id: upload-validation-lint
+    why: eslint or prettier rejects the code
+    run: npm run lint --prefix ui/litellm-dashboard -- ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.ts
+      && npx prettier --check ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.ts
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Integration with ChatUI, ChatImageUpload, ResponsesImageUpload (B146).
+- Server-side validation or file upload endpoints.
+- Async file reading or streaming.
+pitfalls:
+- File extensions come from filename, not MIME type. The same file can report different MIME
+  types in different browsers; extension fallback ensures predictable behavior.
+- Byte limit checks must use file.size (bytes), not MB arithmetic. 20 MiB is 20 * 1024 * 1024
+  = 20971520 bytes.
+- Error messages must include filename so users know which file failed when uploading multiple
+  files. Do not omit it for brevity.
+- Count validation for image edits is a separate cap from size; a single image over 20 MiB
+  fails size validation, while 11 valid images fail count validation.
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0
