@@ -301,7 +301,9 @@ name = "betterlite-models"
 version = "0.1.0"
 dependencies = [
  "fancy-regex",
+ "indexmap",
  "rstest",
+ "serde",
  "serde_json",
  "thiserror",
  "tracing",
