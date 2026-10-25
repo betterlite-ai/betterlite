@@ -19,37 +19,6 @@ pub(crate) async fn seed_database(client: &Client, seed: &FixtureSeed) -> Result
         .batch_execute(BASELINE)
         .await
         .map_err(FixtureError::Database)?;
-    seed_rows(client, seed).await?;
-    Ok(())
-}
-
-async fn seed_rows(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
-    seed_principals(client, seed).await?;
-    for row in &seed.keys {
-        let hash = FixtureSeed::key_hash(row.token.expose_secret());
-        let params: &[&(dyn ToSql + Sync)] = &[&hash, &row.user_id, &row.team_id];
-        client
-            .execute(
-                "INSERT INTO \"LiteLLM_VerificationToken\" (\"token\",\"user_id\",\"team_id\") VALUES ($1,$2,$3)",
-                params,
-            )
-            .await
-            .map_err(FixtureError::Database)?;
-        if let Some(role) = row.role {
-            let role_params: &[&(dyn ToSql + Sync)] = &[&role.as_wire(), &row.user_id];
-            client
-                .execute(
-                    "UPDATE \"LiteLLM_UserTable\" SET \"user_role\" = $1 WHERE \"user_id\" = $2",
-                    role_params,
-                )
-                .await
-                .map_err(FixtureError::Database)?;
-        }
-    }
-    Ok(())
-}
-
-async fn seed_principals(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
     insert_rows!(
         client,
         &seed.users,
@@ -80,5 +49,31 @@ async fn seed_principals(client: &Client, seed: &FixtureSeed) -> Result<(), Fixt
         user_id,
         user_id
     );
+    seed_keys(client, seed).await?;
+    Ok(())
+}
+
+async fn seed_keys(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
+    for row in &seed.keys {
+        let hash = FixtureSeed::key_hash(row.token.expose_secret());
+        let params: &[&(dyn ToSql + Sync)] = &[&hash, &row.user_id, &row.team_id];
+        client
+            .execute(
+                "INSERT INTO \"LiteLLM_VerificationToken\" (\"token\",\"user_id\",\"team_id\") VALUES ($1,$2,$3)",
+                params,
+            )
+            .await
+            .map_err(FixtureError::Database)?;
+        if let Some(role) = row.role {
+            let role_params: &[&(dyn ToSql + Sync)] = &[&role.as_wire(), &row.user_id];
+            client
+                .execute(
+                    "UPDATE \"LiteLLM_UserTable\" SET \"user_role\" = $1 WHERE \"user_id\" = $2",
+                    role_params,
+                )
+                .await
+                .map_err(FixtureError::Database)?;
+        }
+    }
     Ok(())
 }
