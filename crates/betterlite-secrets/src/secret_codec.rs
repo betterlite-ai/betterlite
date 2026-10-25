@@ -135,13 +135,15 @@ where
             field,
             error: &error,
         };
-        if matches!(policy.log, FailureLog::Debug) {
-            self.diagnostics.record(Level::Debug, &failed);
-        } else {
-            let unable = SecretEvent::UnableToDecrypt { field };
-            self.diagnostics.record(Level::Debug, &unable);
-            if matches!(policy.value, FailureValue::Nothing) {
-                self.diagnostics.record(Level::Error, &failed);
+        match policy.log {
+            FailureLog::Debug => self.diagnostics.record(Level::Debug, &failed),
+            FailureLog::Error => {
+                let unable = SecretEvent::UnableToDecrypt { field };
+                self.diagnostics.record(Level::Debug, &unable);
+                match policy.value {
+                    FailureValue::Nothing => self.diagnostics.record(Level::Error, &failed),
+                    FailureValue::Original => {}
+                }
             }
         }
         match policy.value {

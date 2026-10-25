@@ -205,7 +205,9 @@ fn call(
         SecretStep::DecryptWith { value, signing_key } => {
             let key = SecretString::from(signing_key.as_str());
             let opened = decrypt_if_encrypted_with(value, &key);
-            Ok(opened.as_ref().map(SecretString::expose_secret).into())
+            Ok(Value::from(
+                opened.as_ref().map(SecretString::expose_secret),
+            ))
         }
         SecretStep::EncryptBearer { value, prefix } => {
             encrypt_bearer_token(cipher, &SecretString::from(value.as_str()), prefix)
@@ -213,7 +215,9 @@ fn call(
         }
         SecretStep::DecryptBearer { value, prefix } => {
             let opened = decrypt_bearer_token(cipher, value, prefix);
-            Ok(opened.as_ref().map(SecretString::expose_secret).into())
+            Ok(Value::from(
+                opened.as_ref().map(SecretString::expose_secret),
+            ))
         }
         SecretStep::EncryptMap { value, new_key } => {
             let key = new_key.as_deref().map(SecretString::from);
@@ -247,10 +251,10 @@ fn decode_map(
 }
 
 fn stored(value: &Value) -> StoredValue<Value> {
-    let other = || StoredValue::Other(value.clone());
-    value
-        .as_str()
-        .map_or_else(other, |text| StoredValue::Text(SecretString::from(text)))
+    match value.as_str() {
+        Some(text) => StoredValue::Text(SecretString::from(text)),
+        None => StoredValue::Other(value.clone()),
+    }
 }
 
 fn plain(value: StoredValue<Value>) -> Value {
