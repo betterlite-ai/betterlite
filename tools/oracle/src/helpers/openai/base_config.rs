@@ -32,23 +32,27 @@ pub(crate) enum BaseCall {
 }
 
 fn invalid_input(message: String) -> HelperError {
-    let error = HelperError {
-        class: String::from("InvalidInput"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
+    let class = String::from("InvalidInput");
+    let status = None;
+    let error_type = None;
+    let param = None;
+    let code = None;
+    HelperError {
+        class,
+        status,
+        error_type,
+        param,
+        code,
         message,
-    };
-    error
+    }
 }
 
 fn text<'input>(fields: &'input Object, name: &str) -> Result<&'input str, Box<HelperError>> {
-    let value = fields
-        .get(name)
-        .and_then(Value::as_str)
-        .ok_or_else(|| Box::new(invalid_input(format!("{name} must be a string"))));
-    value
+    let value = fields.get(name).and_then(Value::as_str);
+    value.map_or_else(
+        || Err(Box::new(invalid_input(format!("{name} must be a string")))),
+        Ok,
+    )
 }
 
 fn catalog(fields: &Object) -> CatalogCapabilities {
@@ -157,6 +161,40 @@ fn metadata(fields: &Object) -> Result<Value, Box<HelperError>> {
     serde_json::to_value(value).map_err(|error| Box::new(invalid_input(error.to_string())))
 }
 
+fn projection(fields: &Object) -> Value {
+    let mut projected = Map::new();
+    projected.insert(
+        String::from("post_call"),
+        fields.get("raw_text").cloned().unwrap_or(Value::Null),
+    );
+    projected.insert(
+        String::from("response_headers"),
+        fields.get("raw_headers").cloned().unwrap_or(Value::Null),
+    );
+    projected.insert(
+        String::from("projected"),
+        fields.get("decoded").cloned().unwrap_or(Value::Null),
+    );
+    Value::Object(projected)
+}
+
+fn openai_error(fields: &Object) -> Result<Value, Box<HelperError>> {
+    let status_code = match fields.get("status_code").and_then(Value::as_u64) {
+        Some(value) => u16::try_from(value)
+            .map_err(|_| Box::new(invalid_input(String::from("status_code is too large"))))?,
+        None => 500,
+    };
+    error(status_code, text(fields, "message")?.to_owned())
+}
+
+fn overlap(fields: &Object) -> Result<Value, Box<HelperError>> {
+    let api_base = text(fields, "api_base")?;
+    let ending_path = text(fields, "ending_path")?;
+    overlapping_api_base_path(api_base, ending_path)
+        .map(Value::String)
+        .map_err(|error| Box::new(invalid_input(error.to_string())))
+}
+
 fn invoke(input: &BaseCall) -> Result<Value, Box<HelperError>> {
     match input {
         BaseCall::OSeriesRouting(fields) => Ok(json!(is_o_series_model(
@@ -177,27 +215,11 @@ fn invoke(input: &BaseCall) -> Result<Value, Box<HelperError>> {
         BaseCall::BaseAuthOverride(fields) => {
             Ok(json!(configuration(fields).validate_environment()))
         }
-        BaseCall::BaseProjectionForwarding(fields) => Ok(json!({
-            "post_call": fields.get("raw_text"),
-            "response_headers": fields.get("raw_headers"),
-            "projected": fields.get("decoded")
-        })),
+        BaseCall::BaseProjectionForwarding(fields) => Ok(projection(fields)),
         BaseCall::BaseRequestOverlay(fields) => request(fields),
-        BaseCall::OpenaiErrorDefaults(fields) => {
-            let status_code = match fields.get("status_code").and_then(Value::as_u64) {
-                Some(value) => u16::try_from(value).map_err(|_| {
-                    Box::new(invalid_input(String::from("status_code is too large")))
-                })?,
-                None => 500,
-            };
-            error(status_code, text(fields, "message")?.to_owned())
-        }
+        BaseCall::OpenaiErrorDefaults(fields) => openai_error(fields),
         BaseCall::MetadataFilterLimit(fields) => metadata(fields),
-        BaseCall::OverlappingApiBasePath(fields) => {
-            overlapping_api_base_path(text(fields, "api_base")?, text(fields, "ending_path")?)
-                .map(Value::String)
-                .map_err(|error| Box::new(invalid_input(error.to_string())))
-        }
+        BaseCall::OverlappingApiBasePath(fields) => overlap(fields),
         BaseCall::AzureGpt5RoutePredicate(fields) => {
             Ok(json!(is_azure_gpt5_model(text(fields, "model")?)))
         }

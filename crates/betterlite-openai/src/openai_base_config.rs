@@ -17,10 +17,12 @@ pub struct CatalogCapabilities {
 }
 impl CatalogCapabilities {
     #[must_use]
-    pub const fn new(chat_models: BTreeSet<String>, text_models: BTreeSet<String>) -> Self {
+    pub fn new(chat_models: BTreeSet<String>, text_models: BTreeSet<String>) -> Self {
+        let normalized_chat_models = chat_models.into_iter().collect();
+        let normalized_text_models = text_models.into_iter().collect();
         Self {
-            chat_models,
-            text_models,
+            chat_models: normalized_chat_models,
+            text_models: normalized_text_models,
         }
     }
 
@@ -67,28 +69,37 @@ impl fmt::Debug for OpenAiConfig {
 }
 impl OpenAiConfig {
     #[must_use]
-    pub const fn new(
+    pub fn new(
         family: ConfigFamily,
         api_key: Option<SecretString>,
         headers: Headers,
         settings: Object,
     ) -> Self {
+        let normalized_settings = settings.into_iter().collect();
         Self {
             family,
             api_key,
             headers,
-            settings,
+            settings: normalized_settings,
         }
     }
 
     #[must_use]
     pub fn get_config(&self) -> Object {
-        self.settings.clone()
+        let entries = self
+            .settings
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()));
+        entries.collect()
     }
 
     #[must_use]
     pub const fn family(&self) -> ConfigFamily {
-        self.family
+        match self.family {
+            ConfigFamily::OpenAi => ConfigFamily::OpenAi,
+            ConfigFamily::AzureAiStudio => ConfigFamily::AzureAiStudio,
+            ConfigFamily::Other => ConfigFamily::Other,
+        }
     }
     #[must_use]
     pub fn validate_environment(&self) -> Headers {
