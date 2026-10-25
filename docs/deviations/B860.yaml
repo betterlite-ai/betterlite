@@ -1,5 +1,5 @@
 task: B860
 deviations:
-  - what: Configured sslmode values use rustls-backed PostgreSQL connections, but no committed local TLS Postgres server/container cases exercise trusted, untrusted, and mismatched-host certificates.
-    why: The connection boundary enforces the requested TLS mode and verification; the local server harness remains outside the current fixture test set.
+  - what: No committed local TLS PostgreSQL server cases exercise trusted, untrusted, and mismatched-host certificates.
+    why: Configured TLS verification is enforced, but the local server harness is outside the current fixture test set.
     link: https://docs.rs/tokio-postgres-rustls-improved/0.17.1/tokio_postgres_rustls_improved/
