@@ -19,6 +19,14 @@ fn mime_extension_table(#[case] extension: &str, #[case] file_type: FileType, #[
     assert_eq!(extension_from_mime(mime), Ok(canonical_extension));
 }
 
+#[test]
+fn three_gpp_uses_litellm_wire_value() {
+    let encoded = serde_json::to_string(&FileType::ThreeGpp).unwrap();
+    assert_eq!(encoded, "\"3GPP\"");
+    let decoded: FileType = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(decoded, FileType::ThreeGpp);
+}
+
 #[rstest]
 #[case::upper_extension("JPG", Ok(FileType::Jpeg))]
 #[case::dot(".jpg", Err(FileTypeError::UnknownExtension(String::from(".jpg"))))]

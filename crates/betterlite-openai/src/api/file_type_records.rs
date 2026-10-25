@@ -41,6 +41,7 @@ pub enum FileType {
     Ppt,
     Pptx,
     Rtf,
+    #[serde(rename = "3GPP")]
     ThreeGpp,
     Txt,
     Wav,
@@ -178,7 +179,11 @@ pub enum FileContentProvider {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderUploadPayload {
     pub provider: FileContentProvider,
-    pub value: serde_json::Value,
+    pub value: ProviderUploadValue,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderUploadValue {
+    pub filename: String,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UploadData {
