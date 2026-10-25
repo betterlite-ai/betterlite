@@ -41,6 +41,13 @@ fn helper_cases_reject_unknown_and_duplicate_fields(#[case] fields: &str, #[case
     assert!(parse_helper_case(&source).unwrap_err().contains(reason));
 }
 
+#[test]
+fn management_helper_case_rejects_unknown_fields() {
+    let source = "kind: helper\nname: invalid\ncall: {management_oracle: {domain: models, operation: {path_encoding: {function: segment, value: a, field_name: id, extra: true}}}}\nenv: {}\ncompare: {ignore: []}\n";
+    let error = parse_helper_case(source).unwrap_err();
+    assert!(error.contains("unknown field"));
+}
+
 #[rstest::rstest]
 #[case::empty_name("''", "/a", "name cannot be empty")]
 #[case::relative_pointer("a", "a", "JSON pointers")]
