@@ -2,7 +2,7 @@ id: no-long-names
 language: rust
 severity: error
 message: a name past 30 characters hides the word that matters; say it in fewer words
-note: test files are exempt, since a test name reads as the sentence it checks
+note: test files are exempt, since a test name reads as the sentence it checks; a method call is exempt, since a long name of ours already fails where it is defined
 ignores:
   - "**/tests.rs"
   - "**/tests/**"
@@ -12,5 +12,11 @@ rule:
       regex: ^.{31,}$
     - kind: field_identifier
       regex: ^.{31,}$
+      not:
+        inside:
+          kind: field_expression
+          inside:
+            kind: call_expression
+            field: function
     - kind: type_identifier
       regex: ^.{31,}$
