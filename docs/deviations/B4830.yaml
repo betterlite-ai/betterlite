@@ -1,26 +1,23 @@
 task: B4830
 deviations:
-  - what: A second answer to an Approval comes back to the caller as a SetOnceError; LiteLLM ignores it without a word.
-    why: Rule no-silent-drops. The first answer still wins, as in LiteLLM.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py#L109-L131
-  - what: Sandbox::run takes a required timeout; LiteLLM's run accepts None and then waits for as long as the command runs.
-    why: Rule bounded-inputs gives every wait a timeout.
+  - what: Sandbox::run requires a timeout; LiteLLM accepts None.
+    why: Every wait has a required timeout under betterlite's bounded-inputs rule.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/base.py#L41-L48
-  - what: SessionContext has no tools field; LiteLLM accepts a list of Python callables as custom tools.
-    why: betterlite has no contract for in-process tool functions yet, and inventing one here would bind the task that builds it.
+  - what: SessionContext has no tools field; LiteLLM accepts custom Python callables.
+    why: The Rust contract has no in-process tool-function representation yet.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/context.py#L45
-  - what: SessionContext output is a JSON schema object, and RunResult output is the validated JSON object; LiteLLM passes a pydantic model class and returns a model instance.
-    why: Rust has no runtime model classes, so a structured output contract is a schema plus the JSON that matched it.
+  - what: Structured output uses a JSON schema and JSON object rather than a pydantic model class and instance.
+    why: Rust represents structured output as schema data and validated JSON.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/context.py#L50
-  - what: State is written with serde_json::to_vec, so the JSON has no spaces after colons and commas; LiteLLM's json.dumps writes them. The field order is the same and both sides load either form.
-    why: There's no State::dumps method, since rule no-one-line-functions bans a method that only wraps serde_json::to_vec.
+  - what: State JSON is compact because serde_json::to_vec omits spaces.
+    why: Field order and load behavior remain compatible, but formatting differs from json.dumps.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py#L187-L196
-  - what: State::loads fails with StateIncompatible when workdir is missing; LiteLLM reads raw["workdir"] outside its try block, so it raises a bare KeyError.
-    why: The task asks for every missing required field to be StateIncompatible, and a KeyError escaping the documented error looks like a LiteLLM bug.
+  - what: Missing workdir returns StateIncompatible instead of LiteLLM's bare KeyError.
+    why: The task requires missing required state fields to use the typed StateIncompatible error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py#L198-L214
-  - what: State::loads needs version to be a JSON integer and native_session_id and model to be strings or null; LiteLLM's int() also takes "1", 1.0 and true, and it keeps any value in the optional fields.
-    why: The state is a typed wire record, and betterlite only ever writes these types.
+  - what: State::loads strictly requires integer version and string-or-null optional fields.
+    why: The Rust state wire record is typed; LiteLLM accepts broader values.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py#L198-L214
-  - what: Usage::total_tokens fails with TokenOverflow past u64::MAX; Python integers never overflow.
-    why: Rule no-panics forbids unchecked arithmetic.
+  - what: Usage::total_tokens returns TokenOverflow past u64::MAX.
+    why: Rust avoids unchecked arithmetic; Python integers do not overflow.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py#L47-L55
