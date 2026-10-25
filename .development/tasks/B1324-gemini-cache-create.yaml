@@ -33,17 +33,8 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/cache_created.rs
     - crates/betterlite-vertex/fuzz/corpus/cache_created/**
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/providers/vertex/cache.rs
-    - crates/betterlite-config/src/providers/vertex/cache/**
+    - crates/betterlite-config/src/sections/gemini_cache_create.rs
+    - crates/betterlite-config/src/sections/gemini_cache_create/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L277-L591

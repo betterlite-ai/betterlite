@@ -119,20 +119,6 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/responses_ws_native.rs
-  - crates/betterlite-config/src/api/responses_ws_native/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-ws-native-*
   - tools/oracle/src/websocket_driver.rs
   - tools/oracle/src/websocket_driver/responses_ws_native.rs
@@ -142,6 +128,8 @@ scope:
   - tools/oracle/helpers/responses_ws_native/**
   - tools/oracle/cases/websocket/responses-ws-native/**
   - tools/oracle/fixtures/responses-ws-native/**
+  - crates/betterlite-config/src/sections/responses_ws_native.rs
+  - crates/betterlite-config/src/sections/responses_ws_native/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L2287-L2340
@@ -243,7 +231,7 @@ checks:
   commands:
   - id: behavior-tests
     why: A native relay branch or its focused production test is absent; transcript replay cannot prove every helper and ordering outcome.
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_ws_native::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::responses_ws_native::/) - test(/::replays_corpus$/)'
   - id: case-native-ws-response-create
     why: The mock handshake, None defaults, OPENAI_API_KEY fallback, timeout=7 or clean-close result is missing.
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_native::tests::native_ws_response_create($|::)/)'
@@ -267,7 +255,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_native::tests::failure_usage_logging($|::)/)'
   - id: config-tests
     why: api_base, api_key, openai_key and OPENAI_API_KEY lack explicit set and unset loader outcomes.
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_ws_native::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::responses_ws_native::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: No added config seed reaches the production loader for the three settings and OPENAI_API_KEY fallback.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-ws-native-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
