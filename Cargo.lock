@@ -177,6 +177,9 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-auth"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+]
 
 [[package]]
 name = "betterlite-azure"
@@ -302,6 +305,7 @@ name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "betterlite-auth",
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",

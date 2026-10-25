@@ -1,0 +1,8 @@
+kind: helper
+name: apply-guardrail
+call:
+  auxiliary_routes:
+    group: apply_guardrail_routes
+env: {}
+compare:
+  ignore: []
