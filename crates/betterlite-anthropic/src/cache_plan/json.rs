@@ -92,7 +92,8 @@ fn write_number(source: &str, out: &mut String) -> Result<(), JsonError> {
     Ok(())
 }
 
-pub(super) fn digest<Value>(value: &Value) -> Result<String, serde_json::Error>
+// cache_scope in LiteLLM is this digest of (caller_key_hash, deployment_id, provider_key, model, anthropic_version)
+pub fn digest<Value>(value: &Value) -> Result<String, serde_json::Error>
 where
     Value: Serialize,
 {

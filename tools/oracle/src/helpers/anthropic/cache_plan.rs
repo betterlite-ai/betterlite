@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use betterlite_anthropic::cache_plan::{cache_scope, parse_cache_plan, parse_prompt};
+use betterlite_anthropic::cache_plan::json::digest;
+use betterlite_anthropic::cache_plan::{parse_cache_plan, parse_prompt};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -40,13 +41,13 @@ impl crate::helpers::Helper for Op {
                 provider_key,
                 model,
                 anthropic_version,
-            } => cache_scope(
+            } => digest(&(
                 caller_key_hash,
                 deployment_id,
                 provider_key,
                 model,
                 anthropic_version,
-            )
+            ))
             .map(serde_json::Value::String),
         };
         value.map_err(|error| {

@@ -1,6 +1,6 @@
 mod breakpoints;
 mod decode;
-mod json;
+pub mod json;
 mod prefix;
 mod tests;
 pub mod wire;
@@ -52,7 +52,8 @@ pub enum UnsupportedCachePlan {
     #[error("a 1h cache breakpoint follows a 5m one")]
     InvalidCacheTtlOrder,
     #[error("the model's thinking cache semantics are not known")]
-    UnsupportedThinkingCacheSemantics,
+    #[serde(rename = "unsupported_thinking_cache_semantics")]
+    UnsupportedThinkingCache,
     #[error("the provider did not count the prompt tokens")]
     TokenCountUnavailable,
     #[error("a longer prefix counted fewer tokens than a shorter one")]
@@ -86,22 +87,6 @@ pub fn parse_prompt(body: &str) -> Option<PromptPrefix> {
         fingerprints: boundary.lookback_fingerprints,
         ttl_seconds: boundary.ttl_seconds,
     })
-}
-
-pub fn cache_scope(
-    caller_key_hash: &str,
-    deployment_id: &str,
-    provider_key: &str,
-    model: &str,
-    anthropic_version: &str,
-) -> Result<String, serde_json::Error> {
-    digest(&(
-        caller_key_hash,
-        deployment_id,
-        provider_key,
-        model,
-        anthropic_version,
-    ))
 }
 
 fn plan(decoded: Decoded) -> Result<PromptCachePlan, UnsupportedCachePlan> {

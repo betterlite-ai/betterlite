@@ -6,13 +6,13 @@ use std::str;
 
 use rstest::rstest;
 
+use crate::cache_plan::json::digest;
 use crate::cache_plan::{
-    CacheBoundary, PromptCachePlan, UnsupportedCachePlan, cache_scope, parse_cache_plan,
-    parse_prompt,
+    CacheBoundary, PromptCachePlan, UnsupportedCachePlan, parse_cache_plan, parse_prompt,
 };
 
 const AUTOMATIC: &str = r#"{"model":"claude","max_tokens":32,"cache_control":{"type":"ephemeral"},"messages":[{"role":"user","content":"hello"}]}"#;
-const SETTINGS: &str = r#"{"thinking":{"type":"enabled","budget_tokens":16},"output_config":{"effort":"low"},"speed":"fast","tool_choice":{"type":"auto"},"tools":[{"name":"lookup","input_schema":{"type":"object","properties":{"x":{"minimum":1e-05,"maximum":1.5e16,"default":0.5,"big":1E2,"tiny":0.0001,"wide":1e15,"small":-1.5e-7}}}}],"system":"caf\u00e9 \u001c\"\\","messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"t","signature":"s"},{"input":{"b":1,"a":-0.0},"name":"lookup","id":"call","type":"tool_use","cache_control":{"type":"ephemeral"}}]}]}"#;
+const SETTINGS: &str = r#"{"thinking":{"type":"enabled","budget_tokens":16},"output_config":{"effort":"low"},"speed":"fast","tool_choice":{"type":"auto"},"tools":[{"name":"lookup","input_schema":{"type":"object","properties":{"x":{"minimum":1e-05,"maximum":1.5e16,"default":0.5,"big":1E2,"tiny":0.0001,"wide":1e15,"small":-1.5e-7}}}}],"system":"x \u00e9 \u001c\"\\","messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"t","signature":"s"},{"input":{"b":1,"a":-0.0},"name":"lookup","id":"call","type":"tool_use","cache_control":{"type":"ephemeral"}}]}]}"#;
 const TOOL_GROUPS: &str = r#"{"messages":[{"role":"user","content":[{"type":"text","text":"a"},{"type":"tool_use","id":"one","name":"lookup","input":{}},{"type":"tool_use","id":"two","name":"lookup","input":{}},{"type":"tool_result","tool_use_id":"one","content":"done"},{"type":"tool_result","tool_use_id":"two","content":[{"type":"text","text":""}],"is_error":false,"cache_control":{"type":"ephemeral","ttl":"1h"}}]}]}"#;
 const MARKED: &str = r#"{"messages":[{"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral"}}]}]}"#;
 const HIERARCHY: &str = r#"{"tools":[{"name":"lookup","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral","ttl":"1h"}}],"system":[{"type":"text","text":"Stable instructions","cache_control":{"type":"ephemeral","ttl":"1h"}}],"messages":[{"role":"user","content":[{"type":"text","text":"First turn","cache_control":{"type":"ephemeral","ttl":"5m"}}]}]}"#;
@@ -34,8 +34,8 @@ fn only(body: &str) -> CacheBoundary {
 )]
 #[case::settings_floats_and_escapes(
     SETTINGS,
-    "663540eeb52318119c26e344c298067bd38df30af0b40e08dc3067067b18c09c",
-    "23869285f4366841f5ff445d75e42756920731ebdba48ac7741110092aa96ab8"
+    "2aef9a424765c405b50525b06f42468ac7b5f93fe104c9a9b428b8a8d1165355",
+    "9d7cdcaef14c147fca0122b1c85f71bb0d464c12b486de1df709f84d8476bba3"
 )]
 #[case::grouped_tool_blocks(
     TOOL_GROUPS,
@@ -83,7 +83,7 @@ fn prefix_body_keeps_options_sections_and_key_order() {
     let expected = concat!(
         r#"{"thinking":{"type":"enabled","budget_tokens":16},"tool_choice":{"type":"auto"},"output_config":{"effort":"low"},"#,
         r#""tools":[{"name":"lookup","input_schema":{"type":"object","properties":{"x":{"minimum":1e-05,"maximum":1.5e+16,"default":0.5,"big":100.0,"tiny":0.0001,"wide":1000000000000000.0,"small":-1.5e-07}}}}],"#,
-        r#""system":[{"type":"text","text":"caf"#,
+        r#""system":[{"type":"text","text":"x "#,
         "\u{e9}",
         r#" \u001c\"\\"}],"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"t","signature":"s"},{"input":{"b":1,"a":-0.0},"name":"lookup","id":"call","type":"tool_use"}]}]}"#,
     );
@@ -92,9 +92,9 @@ fn prefix_body_keeps_options_sections_and_key_order() {
     assert_eq!(
         boundary.lookback_content_fingerprints,
         [
-            "23869285f4366841f5ff445d75e42756920731ebdba48ac7741110092aa96ab8",
-            "a89825f65e69b62b4a8d7bb892991bb8246a6f1a59c76feb69f4ba75d95c0969",
-            "b64d33018d66efcaf1f257b7e2029e110bafbf31f9e549b4bdda550e9b50c334",
+            "9d7cdcaef14c147fca0122b1c85f71bb0d464c12b486de1df709f84d8476bba3",
+            "29bc267cad7cf3b3162235c336c55abc60e2f71aa6488cfc60cd35f3f3ff8338",
+            "c3ce393fbd9d351cfea66640875a6b625ddd01bc4245acc9f2e320ab94e83268",
             "7959b7a5a17447d8ed3aceb92b20853be882b179a784ad89405290cb01c77e65",
         ]
     );
@@ -353,15 +353,15 @@ fn prediction_reuses_the_single_breakpoint() {
 
 #[test]
 fn cache_scope_matches_litellm() {
+    let scope = (
+        "caller",
+        "deployment",
+        "key",
+        "claude-sonnet-5",
+        "2023-06-01",
+    );
     assert_eq!(
-        cache_scope(
-            "caller",
-            "deployment",
-            "key",
-            "claude-sonnet-5",
-            "2023-06-01"
-        )
-        .unwrap(),
+        digest(&scope).unwrap(),
         "fe4d5470d0c652f15fc02a884968aaa32a2aeed61d8cbbafabdf0d583203de98"
     );
 }
