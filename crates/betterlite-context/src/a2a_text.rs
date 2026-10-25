@@ -1,122 +1,220 @@
-#![expect(
-    clippy::disallowed_types,
-    reason = "A2A records are provider-defined JSON and this projection must preserve malformed shapes"
-)]
+use std::collections::BTreeMap;
 
-use serde_json::value::{Map, Value};
+use serde::Deserialize;
+use serde::de::{Deserializer, IgnoredAny};
 use thiserror::Error;
-
-pub type A2aObject = Map<String, Value>;
-pub type A2aValue = Value;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum A2aTextError {
-    #[error("A2A message parts must be an array")]
-    PartsNotArray,
-    #[error("A2A message part must be an object")]
-    PartNotObject,
     #[error("A2A message must be an object")]
     MessageNotObject,
+    #[error("A2A message parts must be iterable")]
+    PartsNotIterable,
+    #[error("A2A message part must be an object")]
+    PartNotObject,
     #[error("A2A text part text must be a string")]
     TextNotString,
+    #[error("A2A artifacts must have a length")]
+    ArtifactsNotSized,
+    #[error("A2A artifacts object has no first item")]
+    ArtifactsNotIndexed,
+}
+
+// A key set to null is still present, so a plain Option would lose it
+#[derive(Debug, Default, Deserialize)]
+#[serde(untagged)]
+pub enum Field<T> {
+    #[default]
+    #[serde(skip_deserializing)]
+    Absent,
+    Present(T),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum Shape {
+    Null,
+    Flag(bool),
+    Number(f64),
+    Text(String),
+    List(Vec<IgnoredAny>),
+    Object(KeyCount),
+}
+
+#[derive(Debug, Default)]
+pub struct KeyCount(pub usize);
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum RecordOr<T> {
+    Record(T),
+    Other(Shape),
+}
+
+pub type RecordValue = RecordOr<A2aRecord>;
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum ListValue {
+    List(Vec<RecordValue>),
+    Other(Shape),
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct A2aRecord {
+    pub kind: Field<Shape>,
+    pub text: Field<Shape>,
+    pub parts: Field<ListValue>,
+    #[serde(flatten)]
+    pub other_keys: KeyCount,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct A2aResponse {
+    pub result: Option<RecordOr<Box<A2aResult>>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct A2aResult {
+    #[serde(default)]
+    pub parts: Field<ListValue>,
+    pub message: Option<RecordValue>,
+    pub artifact: Option<RecordValue>,
+    pub status: Option<RecordOr<A2aStatus>>,
+    pub artifacts: Option<ListValue>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct A2aStatus {
+    pub message: Option<RecordValue>,
+}
+
+impl<'de> Deserialize<'de> for KeyCount {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let keys = BTreeMap::<String, IgnoredAny>::deserialize(deserializer)?;
+        Ok(Self(keys.len()))
+    }
+}
+
+impl Shape {
+    fn is_truthy(&self) -> bool {
+        match self {
+            Self::Null => false,
+            Self::Flag(flag) => *flag,
+            Self::Number(number) => *number != 0.0_f64,
+            Self::Text(text) => !text.is_empty(),
+            Self::List(items) => !items.is_empty(),
+            Self::Object(keys) => keys.0 > 0,
+        }
+    }
+}
+
+impl RecordValue {
+    fn is_truthy(&self) -> bool {
+        match self {
+            Self::Record(record) => {
+                matches!(record.kind, Field::Present(_))
+                    || matches!(record.text, Field::Present(_))
+                    || matches!(record.parts, Field::Present(_))
+                    || record.other_keys.0 > 0
+            }
+            Self::Other(shape) => shape.is_truthy(),
+        }
+    }
 }
 
 pub fn extract_text_from_a2a_message(
-    message: Option<&A2aValue>,
+    message: Option<&RecordValue>,
     depth: usize,
     max_depth: usize,
 ) -> Result<String, A2aTextError> {
-    if message.is_none() || depth >= max_depth {
-        return Ok(String::new());
+    match message {
+        None => Ok(String::new()),
+        Some(_) if depth >= max_depth => Ok(String::new()),
+        Some(RecordOr::Other(_)) => Err(A2aTextError::MessageNotObject),
+        Some(RecordOr::Record(record)) => parts_text(&record.parts, depth, max_depth),
     }
-    let message_value = message.ok_or(A2aTextError::MessageNotObject)?;
-    let object = message_value
-        .as_object()
-        .ok_or(A2aTextError::MessageNotObject)?;
-    extract_object_text(object, depth, max_depth)
 }
 
-fn extract_object_text(
-    object: &A2aObject,
+fn parts_text(
+    parts: &Field<ListValue>,
     depth: usize,
     max_depth: usize,
 ) -> Result<String, A2aTextError> {
-    let empty_parts = Value::Array(Vec::new());
-    let parts_value = object.get("parts").unwrap_or(&empty_parts);
-    let parts = parts_value.as_array().ok_or(A2aTextError::PartsNotArray)?;
-    let mut text_parts = Vec::new();
-    for part_value in parts {
-        let part = part_value.as_object().ok_or(A2aTextError::PartNotObject)?;
-        match part.get("kind") {
-            Some(Value::String(kind)) if kind == "text" => {
-                let empty_text = Value::String(String::new());
-                let text = part.get("text").unwrap_or(&empty_text);
-                text_parts.push(text.as_str().ok_or(A2aTextError::TextNotString)?.to_owned());
+    let items = match parts {
+        _ if depth >= max_depth => return Ok(String::new()),
+        Field::Present(ListValue::List(items)) => items,
+        Field::Present(ListValue::Other(Shape::Null | Shape::Flag(_) | Shape::Number(_))) => {
+            return Err(A2aTextError::PartsNotIterable);
+        }
+        // Python iterates a string or object, so only an empty one gets past the first part
+        Field::Present(ListValue::Other(shape)) if shape.is_truthy() => {
+            return Err(A2aTextError::PartNotObject);
+        }
+        Field::Absent | Field::Present(ListValue::Other(_)) => return Ok(String::new()),
+    };
+    let mut texts = Vec::new();
+    for item in items {
+        let RecordOr::Record(part) = item else {
+            return Err(A2aTextError::PartNotObject);
+        };
+        match (&part.kind, &part.parts) {
+            // LiteLLM's join raises on a non-string only after every part was read
+            (Field::Present(Shape::Text(kind)), _) if kind == "text" => {
+                texts.push(match &part.text {
+                    Field::Absent => Ok(String::new()),
+                    Field::Present(Shape::Text(text)) => Ok(text.clone()),
+                    Field::Present(_) => Err(A2aTextError::TextNotString),
+                });
             }
-            _ => {
-                let nested_result = part
-                    .get("parts")
-                    .map(|_| {
-                        let nested_object = Value::Object(part.clone());
-                        let next_depth =
-                            depth.checked_add(1).ok_or(A2aTextError::MessageNotObject)?;
-                        extract_text_from_a2a_message(Some(&nested_object), next_depth, max_depth)
-                    })
-                    .transpose()?;
-                if let Some(nested_text) = nested_result.filter(|text| !text.is_empty()) {
-                    text_parts.push(nested_text);
+            (_, Field::Absent) => {}
+            (_, nested_parts) => {
+                let nested = parts_text(nested_parts, depth.saturating_add(1), max_depth)?;
+                if !nested.is_empty() {
+                    texts.push(Ok(nested));
                 }
             }
         }
     }
-    Ok(text_parts.join(" "))
+    Ok(texts.into_iter().collect::<Result<Vec<_>, _>>()?.join(" "))
 }
 
 pub fn extract_text_from_a2a_response(
-    response: &A2aObject,
+    response: &A2aResponse,
     max_depth: usize,
 ) -> Result<String, A2aTextError> {
-    let default_result = Value::Object(Map::new());
-    let result_value = response.get("result").unwrap_or(&default_result);
-    let Some(result) = result_value.as_object() else {
+    let Some(RecordOr::Record(result)) = &response.result else {
         return Ok(String::new());
     };
-    if result.contains_key("parts") {
-        return extract_text_from_a2a_message(Some(result_value), 0, max_depth);
+    if matches!(result.parts, Field::Present(_)) {
+        return parts_text(&result.parts, 0, max_depth);
     }
-    if let Some(message) = result.get("message").filter(|value| is_truthy(value)) {
+    if let Some(message) = result.message.as_ref().filter(|value| value.is_truthy()) {
         return extract_text_from_a2a_message(Some(message), 0, max_depth);
     }
-    if let Some(artifact) = result.get("artifact").filter(|value| is_truthy(value))
-        && artifact.as_object().is_some()
+    if let Some(artifact @ RecordOr::Record(_)) =
+        result.artifact.as_ref().filter(|value| value.is_truthy())
     {
         return extract_text_from_a2a_message(Some(artifact), 0, max_depth);
     }
-    if let Some(status) = result.get("status").and_then(Value::as_object)
-        && let Some(message) = status.get("message").filter(|value| is_truthy(value))
+    if let Some(RecordOr::Record(status)) = &result.status
+        && let Some(message) = status.message.as_ref().filter(|value| value.is_truthy())
     {
         return extract_text_from_a2a_message(Some(message), 0, max_depth);
     }
-    if let Some(artifacts) = result.get("artifacts").filter(|value| is_truthy(value))
-        && let Some(first) = artifacts.as_array().and_then(|items| items.first())
-    {
-        return extract_text_from_a2a_message(Some(first), 0, max_depth);
-    }
-    Ok(String::new())
-}
-
-fn is_truthy(json_value: &Value) -> bool {
-    match json_value {
-        Value::Null => false,
-        Value::Bool(boolean) => *boolean,
-        Value::Number(number) => {
-            number.as_i64().is_some_and(|integer| integer != 0)
-                || number.as_u64().is_some_and(|integer| integer != 0)
-                || number.as_f64().is_some_and(|float| float != 0.0_f64)
-        }
-        Value::String(text) => !text.is_empty(),
-        Value::Array(items) => !items.is_empty(),
-        Value::Object(object) => !object.is_empty(),
+    match &result.artifacts {
+        Some(ListValue::List(items)) => extract_text_from_a2a_message(items.first(), 0, max_depth),
+        Some(ListValue::Other(shape)) if shape.is_truthy() => match shape {
+            Shape::Text(_) if max_depth > 0 => Err(A2aTextError::MessageNotObject),
+            Shape::Text(_) | Shape::List(_) => Ok(String::new()),
+            Shape::Object(_) => Err(A2aTextError::ArtifactsNotIndexed),
+            Shape::Null | Shape::Flag(_) | Shape::Number(_) => Err(A2aTextError::ArtifactsNotSized),
+        },
+        _ => Ok(String::new()),
     }
 }
 
