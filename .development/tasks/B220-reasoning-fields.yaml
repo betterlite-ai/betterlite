@@ -6,8 +6,7 @@ description: >-
   discard them. Keep transforms separately callable over typed messages, with bounded output and no network or shared
   mutation. Budget 280 transforms/types, 100 adapters, 300 tests and 60 wiring (740 total). Write the behavior rstest
   functions reasoning_fields_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
-  in the DoD; corpus replay tests have separate names. Register helper operations reasoning_fields in tools/oracle/src/helpers/mod.rs
-  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  in the DoD; corpus replay tests have separate names. The helper operation reasoning_fields is already registered; each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml

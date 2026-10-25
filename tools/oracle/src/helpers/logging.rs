@@ -15,7 +15,6 @@ helper_group! {
     "logging_state" => state,
     "logging_streams" => streams,
     "logging_success" => success,
-    "logging_worker" => worker,
     "otel_vocabulary" => otel_vocabulary,
     "otlp_normalization" => otlp_normalization,
     "private_json" => private_json,
@@ -26,4 +25,5 @@ helper_group! {
     "spend_payload" => spend_payload,
     "spend_sanitize" => spend_sanitize,
     "verbose_hooks" => verbose_hooks,
+    "worker_trace" => worker_trace,
 }

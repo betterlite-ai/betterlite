@@ -13,8 +13,7 @@ description: >-
   only generated IDs use presence comparison. Reuse B184 cookie/CORS security exclusions while keeping remaining
   provider and rate-limit headers. Write the behavior rstest functions error_normalization_tests_behavior in
   adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
-  separate names. Register helper operations error_normalization, error_call_id in tools/oracle/src/helpers/mod.rs
-  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  separate names. The helper operations error_normalization, error_call_id are already registered; each operation has its own Rust and Python adapter file and corpus seed.
   Budget 250 normalization/integration, 100 adapters, 300 tests and 70 wiring (720 total).
 scope:
   paths:
@@ -33,6 +32,10 @@ scope:
   - tools/oracle/src/helpers/error/normalization/**
   - tools/oracle/helpers/error_normalization.py
   - tools/oracle/helpers/error_normalization/**
+  - tools/oracle/src/helpers/error/call_id.rs
+  - tools/oracle/src/helpers/error/call_id/**
+  - tools/oracle/helpers/error_call_id.py
+  - tools/oracle/helpers/error_call_id/**
   - tools/oracle/cases/helpers/error-normalization/**
   - tools/oracle/cases/errors/**
   - tools/oracle/fuzz/corpus/helper_case/**
@@ -122,7 +125,7 @@ out_of_scope:
 - The normalized logging code is not a replacement for the LiteLLM-compatible HTTP error type/code.
 - Budget, rate-limit and auth enforcement remain in their own tasks.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as error_normalization in the error group. Replace the stub Op in tools/oracle/src/helpers/error/normalization.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/error_normalization.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as error_normalization and error_call_id in the error group. Replace the stub Op in tools/oracle/src/helpers/error/normalization.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/error_normalization.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Compare a random call id for presence in the oracle and assert header/body equality inside the real-server test.
 - >-

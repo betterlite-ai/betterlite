@@ -4,6 +4,6 @@ impl crate::helpers::Helper for Op {
     type Input = serde_json::Value;
 
     fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("call_rules")
+        Self::not_built("provider_affinity")
     }
 }
