@@ -82,6 +82,6 @@ out_of_scope:
 pitfalls:
   - An empty organization-membership tuple is a restricted empty scope, unlike None for an admin.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

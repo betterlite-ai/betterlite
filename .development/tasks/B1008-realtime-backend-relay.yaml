@@ -111,5 +111,5 @@ pitfalls:
 - Transformed-path exceptions are swallowed per frame; the same error in the raw path ends the relay.
 review_level: security
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0

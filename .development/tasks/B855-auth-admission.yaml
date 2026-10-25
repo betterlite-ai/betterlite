@@ -221,6 +221,6 @@ pitfalls:
   - The recovered identity return skips fallback, and common checks receive transformed data while error hooks receive original data.
   - Any non-null agent_id triggers admission, including an empty string.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

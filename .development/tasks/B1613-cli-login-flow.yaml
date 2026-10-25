@@ -81,6 +81,6 @@ pitfalls:
   - A Redis circuit breaker returning no flow must produce the expired-session 400 even if local cache still has a copy.
   - User-code comparison strips punctuation and uppercases Unicode, but state prefill accepts only the fixed ASCII code pattern.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

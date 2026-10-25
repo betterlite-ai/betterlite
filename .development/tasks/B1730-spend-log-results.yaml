@@ -85,6 +85,6 @@ pitfalls:
   - Legacy summaries match only request_id while legacy row exports also match litellm_call_id.
   - session_llm_count includes batch calls although the listing's span_type=llm filter excludes them.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

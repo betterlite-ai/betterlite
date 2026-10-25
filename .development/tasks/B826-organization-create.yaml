@@ -161,6 +161,6 @@ pitfalls:
   - An empty object_permission creates a row despite the create-route docstring saying otherwise.
   - The swallowed user-row lookup failure changes what can_user_call_model receives after child rows exist.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

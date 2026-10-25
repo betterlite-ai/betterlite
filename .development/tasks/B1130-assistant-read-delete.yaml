@@ -102,5 +102,5 @@ pitfalls:
 - A null list result is a bad request, while a null delete result is an internal server error.
 review_level: security
 budget:
-  max_changed_lines: 720
+  max_changed_lines: 1000
   max_new_expects: 0

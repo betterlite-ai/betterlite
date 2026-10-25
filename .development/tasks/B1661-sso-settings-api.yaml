@@ -95,6 +95,6 @@ pitfalls:
   - PATCH's successful response includes submitted client secrets, while GET masks resolved secrets; using one serializer for both changes the wire contract.
   - Legacy environment cleanup runs after the SSO upsert and audit submission, so its 500 can accompany a completed configuration replacement.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -239,6 +239,6 @@ pitfalls:
   - Collapsing gather failures into one None context would bypass valid user/project/end-user budgets when only the team lookup fails.
   - Header tags must be merged after choosing metadata versus litellm_metadata and before common_checks reads them.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

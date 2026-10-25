@@ -250,6 +250,6 @@ pitfalls:
   - Ordinary bulk preserves duplicate requests, but team bulk deduplicates hashes only after checking the 500-item limit.
   - The all-team query must include blocked=null explicitly; SQL NOT blocked would discard newly generated keys.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

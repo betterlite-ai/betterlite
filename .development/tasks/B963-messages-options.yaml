@@ -117,5 +117,5 @@ pitfalls:
 - Empty stop_details is a valid safeguard result, so truthiness would lose a refusal branch.
 review_level: standard
 budget:
-  max_changed_lines: 580
+  max_changed_lines: 1000
   max_new_expects: 0

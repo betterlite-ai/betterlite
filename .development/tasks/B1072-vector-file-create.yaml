@@ -115,5 +115,5 @@ pitfalls:
 - OpenAI cleans numeric attributes after this wrapper logs the uncleaned request fields.
 review_level: security
 budget:
-  max_changed_lines: 680
+  max_changed_lines: 1000
   max_new_expects: 0

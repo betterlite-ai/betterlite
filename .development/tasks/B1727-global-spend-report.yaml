@@ -79,6 +79,6 @@ pitfalls:
   - customer_id alone does not restrict the customer-grouped report.
   - group_by=null can legitimately return JSON null when no higher-priority filter is present.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

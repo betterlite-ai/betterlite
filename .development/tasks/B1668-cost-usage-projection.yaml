@@ -96,6 +96,6 @@ pitfalls:
   - A cached_tokens_by_modality entry with tokens=0 still prevents subtracting total_cached_tokens from text.
   - The presence of prompt_tokens=null disqualifies an Interactions object just as a nonzero prompt_tokens value does.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

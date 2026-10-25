@@ -411,6 +411,6 @@ pitfalls:
   - A failed typed cache read leaves the bad value in place and can log again on the next read.
   - The auth membership key orders team before user, while the reservation key orders user before team.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

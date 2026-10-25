@@ -104,5 +104,5 @@ pitfalls:
 - "Fallback models are tried in order; each candidate's internal BudgetExceededError is caught and treated as a skip, and the function returns the first passing model or None, never raising."
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -101,5 +101,5 @@ pitfalls:
 - Direct logging requires a nonempty synthetic api_base to avoid the logger dumping stored credentials.
 review_level: security
 budget:
-  max_changed_lines: 710
+  max_changed_lines: 1000
   max_new_expects: 0

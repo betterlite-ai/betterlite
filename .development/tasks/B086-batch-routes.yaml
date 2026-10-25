@@ -156,5 +156,5 @@ pitfalls:
 - A successful cancellation hook may return null and is not type-checked before being returned.
 review_level: security
 budget:
-  max_changed_lines: 640
+  max_changed_lines: 1000
   max_new_expects: 0

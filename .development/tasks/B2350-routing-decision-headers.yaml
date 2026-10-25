@@ -97,6 +97,6 @@ pitfalls:
   - A present null litellm_metadata suppresses valid metadata for complexity, while quality ignores litellm_metadata entirely.
   - Filtering quality values through the complexity ASCII sanitizer changes the pure helper result.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

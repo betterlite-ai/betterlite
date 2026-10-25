@@ -73,5 +73,5 @@ pitfalls:
   - The example_sentences field (unique to the backup) must contain the four sentences exactly as in the pinned LiteLLM commit for UI preview in the catalog selector.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

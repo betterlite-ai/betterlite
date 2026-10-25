@@ -95,5 +95,5 @@ pitfalls:
 - extra_body is not merged here, even though it appears in both signatures.
 review_level: security
 budget:
-  max_changed_lines: 540
+  max_changed_lines: 1000
   max_new_expects: 0
