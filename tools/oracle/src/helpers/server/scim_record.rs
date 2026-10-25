@@ -1,9 +1,9 @@
+use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_server::scim_records::discovery::{ResourceType, Schema};
 use betterlite_server::scim_records::user::{Active, User};
 use betterlite_server::scim_records::{ResourceKind, ScimResource, decode_scim_resource};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
-use crate::helpers::{Helper, HelperError, HelperResult};
 pub(crate) struct Op;
 #[derive(Deserialize)]
 pub(crate) struct Input {
