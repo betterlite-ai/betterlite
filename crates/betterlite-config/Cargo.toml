@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+betterlite-secrets = { path = "../betterlite-secrets" }
 netrc-rs = "0.1.2"
 percent-encoding.workspace = true
 secrecy.workspace = true
