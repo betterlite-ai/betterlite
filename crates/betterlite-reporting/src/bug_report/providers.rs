@@ -1,4 +1,3 @@
-// Every LlmProviders value at LiteLLM's pinned commit, separated by whitespace
 pub(crate) const KNOWN_PROVIDERS: &str = "openai chatgpt openai_like jina_ai xai zai custom_openai \
     text-completion-openai cohere cohere_chat clarifai anthropic anthropic_text bytez replicate \
     reducto aws_textract runwayml aws_polly transcribe huggingface together_ai openrouter datarobot \

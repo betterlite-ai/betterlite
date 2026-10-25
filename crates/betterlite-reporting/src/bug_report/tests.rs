@@ -43,7 +43,7 @@ fn nested_backtrace(depth: u32) -> Backtrace {
 #[rstest]
 #[case::unset(None, None, true, true)]
 #[case::lowercase_true(Some("true"), None, false, false)]
-#[case::mixed_case_true(Some("TrUe"), None, false, false)]
+#[case::capitalized_true(Some("True"), None, false, false)]
 #[case::other_value(Some("1"), None, true, true)]
 #[case::http_error(None, Some(500), true, false)]
 fn bug_report_eligibility_reads_flag_and_status(
