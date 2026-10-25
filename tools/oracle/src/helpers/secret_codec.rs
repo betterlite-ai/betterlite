@@ -247,10 +247,12 @@ fn decode_map(
 }
 
 fn stored(value: &Value) -> StoredValue<Value> {
-    value.as_str().map_or_else(
-        || StoredValue::Other(value.clone()),
-        |text| StoredValue::Text(SecretString::from(text)),
-    )
+    match value {
+        Value::String(text) => StoredValue::Text(SecretString::from(text.as_str())),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_) => {
+            StoredValue::Other(value.clone())
+        }
+    }
 }
 
 fn plain(value: StoredValue<Value>) -> Value {
