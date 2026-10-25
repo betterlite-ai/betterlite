@@ -66,6 +66,8 @@ use crate::compare;
 use crate::process::sync_litellm;
 use python::run_python;
 
+pub(crate) use crate::compare::helper::{HelperError, HelperOutput};
+
 type HelperResult = Result<serde_json::Value, Box<HelperError>>;
 
 trait Helper {
@@ -183,29 +185,23 @@ impl From<HelperCall> for BTreeMap<String, serde_json::Value> {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct HelperOutput {
-    pub(crate) ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) value: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) error: Option<HelperError>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct HelperError {
-    pub(crate) class: String,
-    pub(crate) status: Option<u16>,
-    #[serde(rename = "type")]
-    pub(crate) error_type: Option<String>,
-    pub(crate) param: Option<String>,
-    pub(crate) code: Option<String>,
-    pub(crate) message: String,
-}
-
 pub(crate) enum HelperRun {
     Match,
     Difference,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HelperLeft {
+    Native,
+    Python,
+}
+
+pub(crate) const fn left_side(self_check: bool) -> HelperLeft {
+    if self_check {
+        HelperLeft::Python
+    } else {
+        HelperLeft::Native
+    }
 }
 
 pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun, OracleError> {
@@ -213,10 +209,9 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
         serde_json::json!({"operation": case.call.operation, "input": case.call.input});
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     sync_litellm(&root)?;
-    let left = if self_check {
-        run_python(&root, &python_input, &case.env)?
-    } else {
-        invoke(&case.call)
+    let left = match left_side(self_check) {
+        HelperLeft::Native => invoke(&case.call),
+        HelperLeft::Python => run_python(&root, &python_input, &case.env)?,
     };
     let right = run_python(&root, &python_input, &case.env)?;
     if let Some(difference) = compare::compare_helper(&left, &right, &case.compare.ignore) {
@@ -249,12 +244,22 @@ pub(crate) fn invoke(call: &HelperCall) -> HelperOutput {
             ok: true,
             value: Some(value),
             error: None,
+            warnings: Vec::new(),
+            effects: Vec::new(),
         },
-        Err(error) => HelperOutput {
-            ok: false,
-            value: None,
-            error: Some(*error),
-        },
+        Err(failure) => {
+            let mut error = *failure;
+            error.error_type.get_or_insert(None);
+            error.param.get_or_insert(None);
+            error.code.get_or_insert(None);
+            HelperOutput {
+                ok: false,
+                value: None,
+                error: Some(error),
+                warnings: Vec::new(),
+                effects: Vec::new(),
+            }
+        }
     }
 }
 
