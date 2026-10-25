@@ -1,0 +1,12 @@
+kind: helper
+name: cisco-conversation-seed
+call:
+  cisco_conversation:
+    function: extract_response_messages_chat
+    value:
+      choices:
+        - message:
+            content: "done"
+env: {}
+compare:
+  ignore: []

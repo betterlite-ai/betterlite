@@ -1,0 +1,5 @@
+kind: helper
+name: flatten-messages
+call: {cisco_conversation: {function: flatten_responses_input_message_array, value: [{role: user, content: hello}]}}
+env: {}
+compare: {ignore: []}

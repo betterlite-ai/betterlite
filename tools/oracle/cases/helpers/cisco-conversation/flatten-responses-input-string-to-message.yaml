@@ -1,0 +1,5 @@
+kind: helper
+name: flatten-string
+call: {cisco_conversation: {function: flatten_responses_input_string_to_message, value: hello}}
+env: {}
+compare: {ignore: []}

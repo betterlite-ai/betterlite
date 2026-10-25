@@ -1,0 +1,5 @@
+kind: helper
+name: response-chat
+call: {cisco_conversation: {function: extract_response_messages_chat, value: {choices: [{message: {content: hello}}]}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: responses
+call: {cisco_conversation: {function: extract_inspect_messages_from_request_responses_input, value: {input: hello}}}
+env: {}
+compare: {ignore: []}

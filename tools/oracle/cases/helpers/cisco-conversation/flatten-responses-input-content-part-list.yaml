@@ -1,0 +1,5 @@
+kind: helper
+name: flatten-parts
+call: {cisco_conversation: {function: flatten_responses_input_content_part_list, value: [{type: input_text, text: hello}]}}
+env: {}
+compare: {ignore: []}

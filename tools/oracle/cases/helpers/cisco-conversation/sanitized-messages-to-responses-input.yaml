@@ -1,0 +1,5 @@
+kind: helper
+name: sanitized
+call: {cisco_conversation: {function: sanitized_messages_to_responses_input, value: [{role: user, content: safe}]}}
+env: {}
+compare: {ignore: []}

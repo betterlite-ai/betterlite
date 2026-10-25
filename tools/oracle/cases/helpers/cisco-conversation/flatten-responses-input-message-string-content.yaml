@@ -1,0 +1,5 @@
+kind: helper
+name: flatten-content
+call: {cisco_conversation: {function: flatten_responses_input_message_string_content, value: [{role: user, content: hello}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: list
+call: {cisco_conversation: {function: normalize_message_content_list, value: [{type: text, text: hello}]}}
+env: {}
+compare: {ignore: []}

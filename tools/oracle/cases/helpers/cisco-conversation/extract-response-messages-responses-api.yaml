@@ -1,0 +1,5 @@
+kind: helper
+name: response-api
+call: {cisco_conversation: {function: extract_response_messages_responses_api, value: {output: [{text: hello}]}}}
+env: {}
+compare: {ignore: []}

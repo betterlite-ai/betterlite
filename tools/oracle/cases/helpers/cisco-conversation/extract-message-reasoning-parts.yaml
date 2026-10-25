@@ -1,0 +1,5 @@
+kind: helper
+name: reasoning
+call: {cisco_conversation: {function: extract_message_reasoning_parts, value: {reasoning_content: why}}}
+env: {}
+compare: {ignore: []}

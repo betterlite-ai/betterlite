@@ -1,0 +1,5 @@
+kind: helper
+name: prompt
+call: {cisco_conversation: {function: extract_inspect_messages_from_request_prompt, value: {prompt: hello}}}
+env: {}
+compare: {ignore: []}

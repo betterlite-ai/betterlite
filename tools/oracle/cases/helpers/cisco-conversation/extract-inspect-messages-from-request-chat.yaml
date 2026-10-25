@@ -1,0 +1,5 @@
+kind: helper
+name: chat
+call: {cisco_conversation: {function: extract_inspect_messages_from_request_chat, value: {messages: [{role: user, content: hello}]}}}
+env: {}
+compare: {ignore: []}

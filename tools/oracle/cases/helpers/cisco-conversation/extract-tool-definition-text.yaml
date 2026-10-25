@@ -1,0 +1,5 @@
+kind: helper
+name: tools
+call: {cisco_conversation: {function: extract_tool_definition_text, value: {tools: [{function: {name: fn, description: desc}}]}}}
+env: {}
+compare: {ignore: []}

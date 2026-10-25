@@ -1,0 +1,5 @@
+kind: helper
+name: rewrite-parts
+call: {cisco_conversation: {function: rewrite_responses_input_text, value: {input: [{role: user, content: [{type: input_text, text: hello}]}], sanitized_text: safe}}}
+env: {}
+compare: {ignore: []}

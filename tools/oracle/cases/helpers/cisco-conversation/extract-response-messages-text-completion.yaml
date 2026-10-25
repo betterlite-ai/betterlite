@@ -1,0 +1,5 @@
+kind: helper
+name: completion
+call: {cisco_conversation: {function: extract_response_messages_text_completion, value: {choices: [{text: hello}]}}}
+env: {}
+compare: {ignore: []}

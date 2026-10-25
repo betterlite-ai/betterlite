@@ -1,0 +1,5 @@
+kind: helper
+name: arguments
+call: {cisco_conversation: {function: extract_message_tool_argument_parts, value: {function_call: {arguments: '{}'}}}}
+env: {}
+compare: {ignore: []}

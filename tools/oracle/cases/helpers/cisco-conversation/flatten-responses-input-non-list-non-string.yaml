@@ -1,0 +1,5 @@
+kind: helper
+name: flatten-number
+call: {cisco_conversation: {function: flatten_responses_input_non_list_non_string, value: 123}}
+env: {}
+compare: {ignore: []}
