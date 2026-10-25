@@ -37,6 +37,11 @@ use serde_json::json;
     Some("typesafe"),
     EndpointType::Decisions
 )]
+#[case::decisions_precede_vertex(
+    "https://example.test/v1/systemone?next=generateContent",
+    Some("typesafe"),
+    EndpointType::Decisions
+)]
 #[case::decisions_two_slashes(
     "https://example.test/v1/systemone//",
     Some("typesafe"),

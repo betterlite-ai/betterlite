@@ -110,9 +110,15 @@ fn passthrough_buffering_behavior(
     );
 }
 
+#[test]
+fn passthrough_streaming_response_without_content_type_is_false() {
+    assert!(!streaming_response(&HeaderMap::new()));
+}
+
 #[rstest]
 #[case::object(br#"{"ok":true}"#, Some(serde_json::from_str::<Value>(r#"{"ok":true}"#).unwrap()))]
 #[case::array(b"[1,2]", Some(serde_json::from_str::<Value>("[1,2]").unwrap()))]
+#[case::null(b"null", Some(Value::Null))]
 #[case::empty(b"", None)]
 #[case::invalid(b"not-json", None)]
 fn passthrough_response_body_behavior(#[case] body: &[u8], #[case] expected: Option<Value>) {
