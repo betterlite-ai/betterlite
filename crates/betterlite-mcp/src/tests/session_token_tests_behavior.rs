@@ -2,9 +2,9 @@
 
 use crate::session_tokens::{
     is_session_refresh_token, is_session_token, mint_session_refresh_token, mint_session_token,
-    open_session_refresh_token, open_session_token,
+    open_session_refresh_token, open_session_token, session_public_key_pem,
 };
-use crate::types::{SessionKeys, SessionPrincipal, SessionSigningKeys};
+use crate::types::{AsymmetricSessionKeys, SessionKeys, SessionPrincipal, SessionSigningKeys};
 use chrono::{TimeZone as _, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 fn fixture() -> (SessionSigningKeys, SessionPrincipal, chrono::DateTime<Utc>) {
@@ -28,13 +28,13 @@ fn fixture() -> (SessionSigningKeys, SessionPrincipal, chrono::DateTime<Utc>) {
 #[case::pkcs8(include_str!("../fixtures/session-private.pem"))]
 #[case::pkcs1(include_str!("../fixtures/session-pkcs1.pem"))]
 fn rsa_public_key(#[case] private: &str) {
-    let keys = crate::types::AsymmetricSessionKeys {
+    let keys = AsymmetricSessionKeys {
         private_key_pem: SecretString::from(private),
         kid: "current".to_owned(),
         previous_public_keys: Vec::new(),
     };
     assert_eq!(
-        crate::session_tokens::session_public_key_pem(&keys).unwrap(),
+        session_public_key_pem(&keys).unwrap(),
         include_str!("../fixtures/session-public.pem")
     );
     let (_, principal, now) = fixture();
