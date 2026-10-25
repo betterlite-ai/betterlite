@@ -1,0 +1,12 @@
+kind: helper
+name: member-type-number-is-discarded
+call:
+  scim_record:
+    kind: group
+    value:
+      schemas: [g]
+      displayName: Team
+      members: [{value: u1, type: 4}]
+env: {}
+compare:
+  ignore: []

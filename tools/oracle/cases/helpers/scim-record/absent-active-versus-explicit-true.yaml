@@ -1,0 +1,11 @@
+kind: helper
+name: absent-active-versus-explicit-true
+call:
+  scim_record:
+    kind: user
+    value:
+      schemas: [urn:ietf:params:scim:schemas:core:2.0:User]
+      userName: ada
+env: {}
+compare:
+  ignore: []

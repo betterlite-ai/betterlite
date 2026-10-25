@@ -1,0 +1,12 @@
+kind: helper
+name: bare-entitlements-and-extra-fields
+call:
+  scim_record:
+    kind: user
+    value:
+      schemas: [u]
+      entitlements: [admin, {value: billing, source: hr}]
+      roles: []
+env: {}
+compare:
+  ignore: []

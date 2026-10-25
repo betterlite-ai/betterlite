@@ -5,6 +5,7 @@ mod model_list;
 mod model_query;
 pub mod passthrough;
 mod routes;
+pub mod scim_records;
 pub mod server;
 mod shutdown;
 mod tests;

@@ -1,0 +1,10 @@
+kind: helper
+name: nested-schema-dump
+call:
+  scim_record:
+    kind: patch
+    value:
+      Operations: [{op: RePlAcE, path: active, value: true}]
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,13 @@
+kind: helper
+name: enterprise-manager-ref
+call:
+  scim_record:
+    kind: user
+    value:
+      schemas: [u]
+      urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:
+        manager:
+          $ref: /Users/1
+env: {}
+compare:
+  ignore: []

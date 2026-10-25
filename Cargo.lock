@@ -309,6 +309,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-paths",
+ "betterlite-server",
  "clap",
  "futures-util",
  "reqwest",
