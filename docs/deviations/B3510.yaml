@@ -1,0 +1,11 @@
+task: B3510
+deviations:
+  - what: Token counts and score probability values are unsigned 64-bit JSON numbers, so a negative count, a numeric string or an integer past 64 bits is refused where Pydantic's lax int accepts it.
+    why: Counts and level indexes can't be negative, and serde does not coerce strings to numbers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L131-L137
+  - what: The name key of an OpenAI decision answer may be left out and reads as null, where LiteLLM requires the key and only allows its value to be null.
+    why: serde fills a missing Option field with None, and betterlite builds these answers itself rather than reading them from a client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L285-L333
+  - what: decisions_text writes floats in Rust's shortest form, so 1e16 comes out as 1e16 where Python's json.dumps writes 1e+16.
+    why: serde_json formats floats with ryu; separators and ASCII escaping do match json.dumps.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L59-L60

@@ -14,14 +14,6 @@ pub mod controls;
 pub mod cost_breakdown;
 pub mod cost_usage;
 pub mod decisions;
-#[cfg(test)]
-mod decisions_hidden_metadata;
-#[cfg(test)]
-mod decisions_text;
-#[cfg(test)]
-mod decisions_types;
-#[cfg(test)]
-mod decisions_validators;
 pub mod duration_cost;
 pub mod endpoints;
 pub mod entry;

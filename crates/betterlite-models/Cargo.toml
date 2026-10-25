@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 fancy-regex = "0.19.2"
+indexmap = { version = "2.14.2", features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 thiserror.workspace = true

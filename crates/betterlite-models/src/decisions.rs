@@ -1,15 +1,33 @@
-pub mod types;
+pub mod ir;
+pub mod openai;
+pub mod systemone;
+pub mod text;
+pub mod validators;
 
-use types::DecisionsJson;
+use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 
-#[must_use]
-pub fn decisions_text(value: &DecisionsJson) -> String {
-    match value {
-        DecisionsJson::String(text) => text.clone(),
-        DecisionsJson::Null
-        | DecisionsJson::Bool(_)
-        | DecisionsJson::Number(_)
-        | DecisionsJson::Array(_)
-        | DecisionsJson::Object(_) => serde_json::to_string(value).unwrap_or_default(),
-    }
+pub const MAX_DECISION_QUESTIONS: usize = 128;
+
+pub type Extra = IndexMap<String, Json>;
+pub type HiddenParams = IndexMap<String, Json>;
+
+// serde_json's Value sorts object keys unless a workspace-wide feature is on, and LiteLLM keeps them as sent
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum Json {
+    Null,
+    Bool(bool),
+    Number(serde_json::Number),
+    Text(String),
+    List(Vec<Self>),
+    Object(IndexMap<String, Self>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum DecisionsJson {
+    Text(String),
+    Object(IndexMap<String, Json>),
+    List(Vec<Json>),
 }
