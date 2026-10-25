@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::{ParseFloatError, ParseIntError};
 
 use secrecy::SecretString;
+use serde::de::DeserializeOwned;
 use thiserror::Error;
 
 use crate::providers::bedrock::request_policy::metadata_fields;
@@ -11,6 +12,7 @@ use crate::raw::{
 use crate::resolve::{
     parse_float, parse_integer, resolve_number as number, resolve_secret, resolve_string,
 };
+use crate::sections::{RawSections, Sections};
 use crate::types::{
     Config, GeneralSettings, LiteLlmParams, LiteLlmSettings, ModelDeployment, ModelInfo,
     ProxyTrust, RouterSettings,
@@ -61,20 +63,22 @@ where
     L: EnvironmentLookup,
 {
     pub fn load(&self, source: &str) -> Result<Config, ConfigError> {
-        let raw = parse(source)?;
-        if !raw.ignored.is_empty() {
-            return Err(ConfigError::Unsupported { paths: raw.ignored });
+        let (raw, core_ignored) = parse_view::<RawConfig>(source)?;
+        let mut ignored = vec![core_ignored];
+        let raw_sections = RawSections::parse(source, &mut ignored)?;
+        let paths = unknown_paths(&ignored);
+        if !paths.is_empty() {
+            return Err(ConfigError::Unsupported { paths });
         }
-        convert(raw.value, &self.lookup)
+        let sections = raw_sections.convert(&self.lookup)?;
+        convert(raw, sections, &self.lookup)
     }
 }
 
-struct ParsedConfig {
-    value: RawConfig,
-    ignored: Vec<String>,
-}
-
-fn parse(source: &str) -> Result<ParsedConfig, ConfigError> {
+pub(crate) fn parse_view<View>(source: &str) -> Result<(View, BTreeSet<String>), ConfigError>
+where
+    View: DeserializeOwned,
+{
     let mut ignored = BTreeSet::new();
     let value = serde_saphyr::with_deserializer_from_str(source, |deserializer| {
         serde_ignored::deserialize(deserializer, |path| {
@@ -82,13 +86,37 @@ fn parse(source: &str) -> Result<ParsedConfig, ConfigError> {
         })
     })
     .map_err(|yaml_error| ConfigError::Yaml { source: yaml_error })?;
-    Ok(ParsedConfig {
-        value,
-        ignored: ignored.into_iter().collect(),
-    })
+    Ok((value, ignored))
 }
 
-fn convert<L>(raw: RawConfig, lookup: &L) -> Result<Config, ConfigError>
+// a key is unknown when every view ignored it or one of its parents; only the outermost such paths are reported
+pub(crate) fn unknown_paths(views: &[BTreeSet<String>]) -> Vec<String> {
+    let mut unknown = BTreeSet::new();
+    for path in views.iter().flatten() {
+        let prefixes: Vec<&str> = path
+            .match_indices('.')
+            .map(|(index, _)| path.get(..index).unwrap_or(path))
+            .chain([path.as_str()])
+            .collect();
+        if views
+            .iter()
+            .all(|view| prefixes.iter().any(|prefix| view.contains(*prefix)))
+        {
+            unknown.insert(path.as_str());
+        }
+    }
+    unknown
+        .iter()
+        .filter(|path| {
+            !unknown
+                .iter()
+                .any(|other| path.len() > other.len() && path.starts_with(&format!("{other}.")))
+        })
+        .map(|path| (*path).to_owned())
+        .collect()
+}
+
+fn convert<L>(raw: RawConfig, sections: Sections, lookup: &L) -> Result<Config, ConfigError>
 where
     L: EnvironmentLookup,
 {
@@ -102,6 +130,7 @@ where
         router_settings: convert_router(raw.router_settings, lookup)?,
         litellm_settings: convert_litellm(raw.litellm_settings, lookup)?,
         environment_variables: convert_environment(raw.environment_variables, lookup)?,
+        sections,
     })
 }
 

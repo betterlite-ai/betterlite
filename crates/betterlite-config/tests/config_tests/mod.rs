@@ -9,7 +9,20 @@ use std::fs::{read, read_dir, read_to_string};
 use std::io::Error;
 use std::str::from_utf8;
 
-use betterlite_config::loader::ConfigLoader;
+use betterlite_config::loader::{ConfigError, ConfigLoader};
+
+// one empty file per unsupported key, so tasks that add different keys delete different files
+fn unsupported_files(snapshot: &str) -> Vec<String> {
+    let mut names: Vec<String> = read_dir(format!("tests/fixtures/unsupported/{snapshot}"))
+        .map(|entries| {
+            entries
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names
+}
 
 macro_rules! fixture_test {
     ($test:ident, $fixture:literal, $snapshot:literal) => {
@@ -21,8 +34,15 @@ macro_rules! fixture_test {
                 lookup: BTreeMap::<String, String>::new(),
             }
             .load(&source);
+            let unsupported = unsupported_files($snapshot);
 
-            insta::assert_debug_snapshot!($snapshot, result);
+            match result {
+                Err(ConfigError::Unsupported { paths }) => assert_eq!(paths, unsupported),
+                other => {
+                    assert_eq!(unsupported, Vec::<String>::new());
+                    insta::assert_debug_snapshot!($snapshot, other);
+                }
+            }
         }
     };
 }
