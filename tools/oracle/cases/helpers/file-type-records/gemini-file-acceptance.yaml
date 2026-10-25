@@ -1,10 +1,5 @@
 kind: helper
 name: gemini-file-acceptance
-call:
-  file_type_records:
-    function: gemini_file_acceptance
-    extensions: []
-    mimes: []
-    file_types: [PNG, JPEG, GIF, M4A, MPA, PDF, TXT, JSON, 3GPP]
+call: {file_type_records: {function: gemini_file_acceptance, extensions: [], mimes: [], file_types: [PNG, JPEG, GIF, M4A, MPA, PDF, TXT, JSON, 3GPP]}}
 env: {}
 compare: {ignore: []}

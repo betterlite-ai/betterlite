@@ -1,10 +1,5 @@
 kind: helper
 name: mime-extension-table
-call:
-  file_type_records:
-    function: mime_extension_table
-    extensions: [aac, jpg, gdoc, mpa, 3gpp, xlsx]
-    mimes: []
-    file_types: []
+call: {file_type_records: {function: mime_extension_table, extensions: [aac, jpg, gdoc, mpa, 3gpp, xlsx], mimes: [], file_types: []}}
 env: {}
 compare: {ignore: []}
