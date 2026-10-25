@@ -9,7 +9,7 @@ fn entry(service: &str, account: &str) -> Result<keyring_core::Entry, KeyringApi
     #[cfg(target_os = "macos")]
     let store = apple_native_keyring_store::keychain::Store::new();
     #[cfg(target_os = "linux")]
-    let store = dbus_secret_service_keyring_store::Store::new();
+    let store = secret_service_store::Store::new();
     #[cfg(target_os = "windows")]
     let store = windows_native_keyring_store::Store::new();
     let ready = store.map_err(KeyringApiError::Native)?;
