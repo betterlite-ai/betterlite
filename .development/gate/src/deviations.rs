@@ -39,10 +39,14 @@ pub(crate) fn mismatch(
     }
     // workers restate the log in their own words, so only the count and the links must agree
     if links(reported) != links(&log.deviations) {
+        let [report_side, file_side] = [reported, log.deviations.as_slice()].map(|list| {
+            list.iter()
+                .map(|entry| format!("{} ({})", entry.what, entry.link))
+                .collect::<Vec<String>>()
+                .join(" | ")
+        });
         problems.push(format!(
-            "the report and {file} list different deviations, by count or link; report: {}; {file}: {}",
-            listing(reported),
-            listing(&log.deviations)
+            "the report and {file} list different deviations, by count or link; report: {report_side}; {file}: {file_side}"
         ));
     }
     problems
@@ -52,13 +56,6 @@ fn links(list: &[ReportDeviation]) -> Vec<&str> {
     let mut links: Vec<&str> = list.iter().map(|entry| entry.link.as_str()).collect();
     links.sort_unstable();
     links
-}
-
-fn listing(list: &[ReportDeviation]) -> String {
-    list.iter()
-        .map(|entry| format!("{} ({})", entry.what, entry.link))
-        .collect::<Vec<String>>()
-        .join(" | ")
 }
 
 fn file_problems(path: &Path, backlog: &Backlog) -> Vec<String> {
