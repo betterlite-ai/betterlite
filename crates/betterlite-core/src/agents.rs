@@ -56,22 +56,20 @@ pub struct AgentConfig {
     )]
     pub identity: Option<Option<identity::EntraIdentityConfig>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "validation::non_null_option")]
+    #[serde(with = "serde_with::rust::unwrap_or_skip")]
     pub enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "validation::non_null_option")]
+    #[serde(with = "serde_with::rust::unwrap_or_skip")]
     pub execution_mode: Option<identity::ExecutionMode>,
+    pub agent_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "validation::non_null_option")]
-    pub agent_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "validation::non_null_option")]
+    #[serde(with = "serde_with::rust::unwrap_or_skip")]
     pub agent_card_params: Option<AgentCard>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "validation::non_null_option")]
+    #[serde(with = "serde_with::rust::unwrap_or_skip")]
     pub litellm_params: Option<BTreeMap<String, AgentJson>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "validation::non_null_option")]
+    #[serde(with = "serde_with::rust::unwrap_or_skip")]
     pub object_permission: Option<AgentObjectPermission>,
     #[serde(
         default,
@@ -133,22 +131,22 @@ pub struct PatchAgentRequest {
     )]
     pub identity: Option<Option<identity::EntraIdentityConfig>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "validation::non_null_option")]
+    #[serde(with = "serde_with::rust::unwrap_or_skip")]
     pub enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "validation::non_null_option")]
+    #[serde(with = "serde_with::rust::unwrap_or_skip")]
     pub execution_mode: Option<identity::ExecutionMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "validation::non_null_option")]
+    #[serde(with = "serde_with::rust::unwrap_or_skip")]
     pub agent_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "validation::non_null_option")]
+    #[serde(with = "serde_with::rust::unwrap_or_skip")]
     pub agent_card_params: Option<AgentCard>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "validation::non_null_option")]
+    #[serde(with = "serde_with::rust::unwrap_or_skip")]
     pub litellm_params: Option<BTreeMap<String, AgentJson>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "validation::non_null_option")]
+    #[serde(with = "serde_with::rust::unwrap_or_skip")]
     pub object_permission: Option<AgentObjectPermission>,
     #[serde(
         default,

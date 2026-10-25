@@ -12,13 +12,14 @@ const CARD: &str = r#"{"protocolVersion":"1.0","name":"worker","description":"do
 fn agent_cards_preserve_nulls_and_security_variants() {
     let card: AgentCard = from_str(CARD).unwrap();
     assert_eq!(to_string(&card).unwrap(), CARD);
-    let schemes = r#"{"protocolVersion":"1.0","name":"worker","description":"does work","url":"https://agent.example","version":"1","capabilities":{},"defaultInputModes":[],"defaultOutputModes":[],"skills":[],"additionalInterfaces":[{"url":"https://agent.example","transport":"HTTP"}],"provider":{"organization":"acme","url":"https://acme.example"},"securitySchemes":{"http":{"type":"http","scheme":"bearer"},"key":{"type":"apiKey","in":"header","name":"x-key","description":null},"mtls":{"type":"mutualTLS"},"oauth":{"type":"oauth2","flows":{"authorizationCode":null}},"oidc":{"type":"openIdConnect","openIdConnectUrl":"https://issuer.example"}},"signatures":[{"protected":"p","signature":"s"}]}"#;
+    let schemes = r#"{"protocolVersion":"1.0","name":"worker","description":"does work","url":"https://agent.example","version":"1","capabilities":{},"defaultInputModes":[],"defaultOutputModes":[],"skills":[],"additionalInterfaces":[{"url":"https://agent.example","transport":"HTTP"}],"provider":{"organization":"acme","url":"https://acme.example"},"securitySchemes":{"http":{"type":"http","scheme":"bearer"},"key":{"type":"apiKey","in_":"header","name":"x-key","description":null},"mtls":{"type":"mutualTLS"},"oauth":{"type":"oauth2","flows":{"authorizationCode":null}},"oidc":{"type":"openIdConnect","openIdConnectUrl":"https://issuer.example"}},"signatures":[{"protected":"p","signature":"s"}]}"#;
     let parsed: AgentCard = from_str(schemes).unwrap();
     assert_eq!(to_string(&parsed).unwrap(), schemes);
     from_str::<AgentCard>(&schemes.replace("\"type\":\"apiKey\"", "\"type\":\"unknown\""))
         .unwrap_err();
     from_str::<AgentCard>(&schemes.replace("\"name\":\"x-key\"", "\"unknown\":\"x-key\""))
         .unwrap_err();
+    from_str::<AgentCard>(&schemes.replace("\"in_\"", "\"in\"")).unwrap_err();
     from_str::<AgentCard>(r#"{"protocolVersion":null}"#).unwrap_err();
     from_str::<AgentCard>(r#"{"provider":{"organization":null}}"#).unwrap_err();
 }
@@ -99,4 +100,15 @@ fn api_key_auth_defaults_header_and_hides_secret() {
         r#"{"type":"api_key","header_name":"x-api-key"}"#
     );
     assert!(!format!("{auth:?}").contains("secret"));
+}
+
+#[test]
+fn config_requires_name_but_patch_can_omit_it() {
+    from_str::<super::AgentConfig>("{}").unwrap_err();
+    from_str::<super::AgentConfig>(r#"{"agent_name":null}"#).unwrap_err();
+    let input = r#"{"agent_name":"worker"}"#;
+    let config: super::AgentConfig = from_str(input).unwrap();
+    assert_eq!(to_string(&config).unwrap(), input);
+    let patch: PatchAgentRequest = from_str("{}").unwrap();
+    assert_eq!(to_string(&patch).unwrap(), "{}");
 }

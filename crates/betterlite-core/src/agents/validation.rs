@@ -1,14 +1,6 @@
 use serde::{Deserialize as _, Deserializer, de::Error};
 use url::Url;
 
-pub(super) fn non_null_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: serde::Deserialize<'de>,
-{
-    let value = T::deserialize(deserializer)?;
-    Ok(Some(value))
-}
 pub(super) fn absolute_http_url<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,

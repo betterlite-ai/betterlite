@@ -1,7 +1,4 @@
-use super::{
-    json::{AgentJson, SecurityRequirements},
-    validation,
-};
+use super::json::{AgentJson, SecurityRequirements};
 use serde::{Deserialize, Serialize};
 use serde_with::rust::double_option;
 use std::collections::BTreeMap;
@@ -11,7 +8,7 @@ macro_rules! card_record {
         #[derive(Clone, Debug, Deserialize, Serialize)]
         #[serde(rename_all = "camelCase", deny_unknown_fields)]
         pub struct $name {
-            $(#[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "validation::non_null_option")] pub $required: Option<$required_ty>,)*
+            $(#[serde(default, skip_serializing_if = "Option::is_none", with = "serde_with::rust::unwrap_or_skip")] pub $required: Option<$required_ty>,)*
             $($(#[$attribute])* #[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")] pub $nullable: Option<Option<$nullable_ty>>,)*
         }
     };
@@ -41,16 +38,16 @@ pub enum SecurityScheme {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SecurityApiKey {
     #[serde(
-        rename = "in",
+        rename = "in_",
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "validation::non_null_option"
+        with = "serde_with::rust::unwrap_or_skip"
     )]
     pub location: Option<SecurityLocation>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "validation::non_null_option"
+        with = "serde_with::rust::unwrap_or_skip"
     )]
     pub name: Option<String>,
     #[serde(
