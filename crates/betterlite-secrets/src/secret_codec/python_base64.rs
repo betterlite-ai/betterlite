@@ -27,7 +27,7 @@ const fn bounded_ascii(text: &str) -> Result<(), SecretError> {
     }
 }
 
-// CPython's binascii keeps stray low bits of a final partial group, so both decoders accept them
+// These engines preserve CPython's acceptance of stray low bits in final partial groups.
 const LENIENT: GeneralPurpose = GeneralPurpose::new(
     &STANDARD,
     GeneralPurposeConfig::new()
