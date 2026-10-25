@@ -2,7 +2,7 @@ id: B1123
 title: Realtime transcription protocol
 description: >-
   Build the complete base realtime transcription_protocol.py in
-  betterlite-core::api::realtime_transcription_protocol. It parses beta/GA session updates, validates
+  betterlite-core::api::transcription_protocol. It parses beta/GA session updates, validates
   PCM16 append payloads and constructs OpenAI-compatible transcription events. Keep parsing separate
   from provider-specific model, sample-rate, language and VAD support checks. Supported transcription
   keys here are model and language; return every other key sorted, without dropping or rejecting it.
@@ -16,14 +16,14 @@ description: >-
   tests and compare ID shape/relationships in oracle fixtures. There is no provider transport here.
 
   Register HelperCall::RealtimeTranscriptionProtocol in B171 and a typed operation for parse, audio
-  decode or event construction. Tests use api::realtime_transcription_protocol::tests. Source has
+  decode or event construction. Tests use api::transcription_protocol::tests. Source has
   230 nonblank/non-comment lines including imports; budget 190 implementation,130 tests,105 fixtures,
   85 adapters,65 fuzz/replay and 25 wiring, 600 lines.
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/realtime_transcription_protocol.rs
-  - crates/betterlite-core/src/api/realtime_transcription_protocol/**
+  - crates/betterlite-core/src/api/transcription_protocol.rs
+  - crates/betterlite-core/src/api/transcription_protocol/**
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/transcription_protocol.rs
   - crates/betterlite-core/fuzz/corpus/transcription_protocol/**
@@ -82,10 +82,10 @@ checks:
   commands:
   - id: behavior-tests
     why: Layout precedence, exact failure messages and event omissions must each be asserted.
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_transcription_protocol::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::transcription_protocol::tests::/) - test(/::replays_corpus$/)'
   - id: decoder-corpus
     why: Both untrusted JSON and encoded audio need bounded panic-free parsing.
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/transcription_protocol)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_transcription_protocol::tests::replays_corpus$/)'
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/transcription_protocol)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::transcription_protocol::tests::replays_corpus$/)'
   - id: helper-python
     why: Protocol helpers need checked independent Python calls for their strict failure contract.
     run: test -f tools/oracle/helpers/realtime_transcription_protocol.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json

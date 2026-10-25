@@ -5,15 +5,12 @@ description: >-
   bytes and MIME descriptors, preserve data-URL and S3 representations. Remote HTTP fetching remains the open B183
   decision; no network path is added. Budget 280 transforms/types, 100 adapters, 300 tests/fuzz and 70 wiring (750
   total). Write the behavior rstest functions bedrock_images_behavior_tests_behavior in adjacent tests.rs files, with a named
-  case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
-  bedrock_images in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its
+  case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation bedrock_images is already registered; each operation has its
   own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
   - crates/betterlite-prompts/Cargo.toml
-  - crates/betterlite-prompts/src/lib.rs
-  - crates/betterlite-prompts/src/error.rs
   - crates/betterlite-prompts/src/bedrock_images.rs
   - crates/betterlite-prompts/src/bedrock_images/**
   - tools/oracle/Cargo.toml

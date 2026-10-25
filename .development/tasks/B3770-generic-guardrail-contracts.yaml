@@ -25,8 +25,8 @@ description: >-
   restored for the caller to see what changed.
 scope:
   paths:
-    - litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py
-    - litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py
+    - crates/betterlite-guardrails/src/generic_guardrail_contracts.rs
+    - crates/betterlite-guardrails/src/generic_guardrail_contracts/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L42-L58
@@ -69,16 +69,16 @@ checks:
   commands:
     - id: generic-header-cases
       why: header allowlisting, sanitization and extraction fail or do not exist
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^generic_guardrail.*header/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^generic_guardrail.*header/)'
     - id: generic-constructor-defaults
       why: constructor parameter defaults or environment variable handling is missing or wrong
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^generic_guardrail.*constructor_defaults/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^generic_guardrail.*constructor_defaults/)'
     - id: generic-row-reconciliation
       why: echoed-row reconciliation fails or does not exist
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^generic_guardrail.*row_reconciliation/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^generic_guardrail.*row_reconciliation/)'
     - id: generic-tool-param
       why: tool parameter validation or extra field handling fails or is missing
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^generic_guardrail.*tool_param/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^generic_guardrail.*tool_param/)'
 oracle_cases: []
 deviations:
   - what: betterlite does not build the async_handler from a global lazy static; the async_handler is built once per GenericGuardrailAPI instance passed in through the constructor.

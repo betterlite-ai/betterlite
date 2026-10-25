@@ -75,7 +75,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/mistral_chat.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/mistral_chat)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_mistral_chat_corpus)'
       why: Provider-specific content blocks must reach the native byte decoder during replay.
     - id: mistral-chat-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mistral_chat*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mistral_chat::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mistral_chat*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::mistral_chat::/)'
       why: New Mistral cases must be selected by the shared typed helper parser.
 oracle_cases:
   - tools/oracle/cases/helpers/mistral-chat/media-bypasses-name-cleanup.yaml

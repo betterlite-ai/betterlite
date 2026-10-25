@@ -20,7 +20,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openapi/Cargo.toml
-    - crates/betterlite-openapi/src/lib.rs
     - crates/betterlite-openapi/src/schema_transforms.rs
     - crates/betterlite-openapi/src/schema_transforms/**
     - crates/betterlite-openapi/src/inline_expansion.rs

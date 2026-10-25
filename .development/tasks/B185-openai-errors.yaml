@@ -8,13 +8,10 @@ description: >-
   error handling before the first stream chunk, retaining typed causes and B187 redaction. Extend provider_error
   seeds for these branches. Budget 290 OpenAI/preamble, 100 adapters, 290 tests/fuzz and 100 integration (780 total).
   Write the behavior rstest functions openai_errors_openai_error_tests_behavior in adjacent tests.rs files, with a named
-  case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
-  provider_error in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its
+  case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation provider_error is already registered; each operation has its
   own Rust and Python adapter file and corpus seed.
 scope:
   paths:
-  - crates/betterlite-error/src/lib.rs
-  - crates/betterlite-error/src/error.rs
   - crates/betterlite-error/src/openai.rs
   - crates/betterlite-error/src/openai/**
   - crates/betterlite-error/src/parse.rs

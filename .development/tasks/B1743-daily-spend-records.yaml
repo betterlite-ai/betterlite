@@ -37,16 +37,15 @@ description: >-
   adapters, savings fixtures and metadata parser tests.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/daily_records.rs
     - crates/betterlite-db/src/daily_records/**
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/daily_metadata.rs
     - crates/betterlite-db/fuzz/corpus/daily_metadata/**
-    - tools/oracle/src/helpers/db/daily_spend_records.rs
-    - tools/oracle/src/helpers/db/daily_spend_records/**
-    - tools/oracle/helpers/daily_spend_records.py
-    - tools/oracle/helpers/daily_spend_records/**
+    - tools/oracle/src/helpers/db/daily_records.rs
+    - tools/oracle/src/helpers/db/daily_records/**
+    - tools/oracle/helpers/daily_records.py
+    - tools/oracle/helpers/daily_records/**
     - tools/oracle/cases/helpers/daily-records/**
     - tools/oracle/fuzz/corpus/helper_case/daily-records-*
   lint_tables: false
@@ -99,7 +98,7 @@ out_of_scope:
   - Request-log insertion and batch-charge claims are B1749, which also owns extracted queue utilities; other proxy/utils.py functions remain B124 or their existing narrower owners.
   - B004 owns route_llm_request.py dispatch and its endpoint map; this task neither registers routes nor expands that mapping.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as daily_spend_records in the db group. Replace the stub Op in tools/oracle/src/helpers/db/daily_spend_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/daily_spend_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as daily_records in the db group. Replace the stub Op in tools/oracle/src/helpers/db/daily_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/daily_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An mcp_namespaced_tool_name key containing null still satisfies the builder's presence branch.
   - Daily status uses metadata.status while model-usage rollups use the top-level status field.
 budget:

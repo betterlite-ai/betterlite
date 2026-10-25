@@ -59,13 +59,12 @@ scope:
     - crates/betterlite-core/src/cost/call_price.rs
     - crates/betterlite-core/src/cost/call_price/**
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/lib.rs
     - crates/betterlite-provider/src/pricing.rs
     - crates/betterlite-provider/src/pricing/**
-    - tools/oracle/src/helpers/core_ops/call_price_dispatch.rs
-    - tools/oracle/src/helpers/core_ops/call_price_dispatch/**
-    - tools/oracle/helpers/call_price_dispatch.py
-    - tools/oracle/helpers/call_price_dispatch/**
+    - tools/oracle/src/helpers/core_ops/call_price.rs
+    - tools/oracle/src/helpers/core_ops/call_price/**
+    - tools/oracle/helpers/call_price.py
+    - tools/oracle/helpers/call_price/**
     - tools/oracle/cases/helpers/call-price/**
     - tools/oracle/fuzz/corpus/helper_case/call-price-*
   lint_tables: false
@@ -110,7 +109,7 @@ out_of_scope:
   - Provider-specific formulas outside this batch retain B031/B033/B035/B038-B042 and other provider owners; this task owns their typed dispatch interface and argument flow, not those formulas.
   - B1678 owns OCR, B1679 batch arithmetic, B1676 duration/character primitives and B1672/B1675/B1677 current native token policies; cost_calculator.py functions outside these owned ranges remain B068 or its previously named leaves.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as call_price_dispatch in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/call_price_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/call_price_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as call_price in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/call_price.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/call_price.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Supplying usage does not replace the explicit prompt_tokens/completion_tokens arguments used by custom pricing.
   - Region-qualified catalog lookup is attempted only when the caller supplied a provider, not when one was inferred.
   - The direct search price path turns zero query count into one, unlike completion_cost's list-query branch.

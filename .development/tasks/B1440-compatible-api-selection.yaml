@@ -48,8 +48,10 @@ description: >-
 scope:
   paths:
     - crates/betterlite-models/src/{lib,compatible_api_selection}.rs
+    - crates/betterlite-models/src/compatible_api_selection.rs
     - crates/betterlite-models/src/compatible_api_selection/**
     - crates/betterlite-provider/src/{lib,compatible_embedding_call}.rs
+    - crates/betterlite-provider/src/compatible_embedding_call.rs
     - crates/betterlite-provider/src/compatible_embedding_call/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,compatible_embeddings}.rs
@@ -96,7 +98,7 @@ checks:
       run: test -f tools/oracle/helpers/compatible_api_selection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Native selector callbacks must remain fixture projections, avoiding import-time credential or transport work.
     - id: compatible-selection-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_api_selection*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::compatible_api_selection::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_api_selection*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::models::compatible_api_selection::/)'
       why: Parse and assert compatible_api_selection with nonzero native-collision and unsupported-endpoint cases.
 oracle_cases:
   - tools/oracle/cases/helpers/compatible-api-selection/native-responses-before-json.yaml

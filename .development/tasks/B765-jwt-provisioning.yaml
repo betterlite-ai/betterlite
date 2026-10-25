@@ -106,7 +106,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/jwt_provisioning.rs
     - crates/betterlite-auth/src/jwt_provisioning/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/jwt_provisioning.rs
     - tools/oracle/src/helpers/auth/jwt_provisioning/**
@@ -119,6 +118,7 @@ scope:
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
     - tools/oracle/cases/auth/jwt-provisioning/**
+    - crates/betterlite-auth/src/jwt_provisioning/fixtures.rs
     - crates/betterlite-auth/src/jwt_provisioning/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs

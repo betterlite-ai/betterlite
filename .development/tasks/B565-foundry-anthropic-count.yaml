@@ -61,7 +61,6 @@ description: >-
   used by tests and oracle adapters.
 
 
-  Register helper operation foundry_anthropic_count in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
   The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
   transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
   model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
@@ -96,8 +95,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
-  - crates/betterlite-foundry/src/lib.rs
-  - crates/betterlite-foundry/src/error.rs
   - crates/betterlite-foundry/src/anthropic_count.rs
   - crates/betterlite-foundry/src/anthropic_count/**
   - tools/oracle/Cargo.toml

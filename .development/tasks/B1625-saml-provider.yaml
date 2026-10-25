@@ -38,7 +38,6 @@ scope:
     - Cargo.lock
     - deny.toml
     - crates/betterlite-auth/Cargo.toml
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/saml_provider.rs
     - crates/betterlite-auth/src/saml_provider/**
     - crates/betterlite-auth/fuzz/Cargo.toml

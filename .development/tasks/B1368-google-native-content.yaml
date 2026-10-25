@@ -30,6 +30,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,google_native_content}.rs
+    - crates/betterlite-vertex/src/google_native_content.rs
     - crates/betterlite-vertex/src/google_native_content/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/google_native_content.rs
@@ -68,7 +69,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/google_native_content.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/google_native_content)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_google_native_content_corpus)'
       why: Candidate citation and extension-field inputs enter decode_google_native_content during replay.
     - id: native-google-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_native_content*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::google_native_content::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_native_content*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::google_native_content::/)'
       why: The native content variant must be present in new HelperCase seeds.
 oracle_cases:
   - tools/oracle/cases/helpers/google-native-content/studio-alias-filter.yaml

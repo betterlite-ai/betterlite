@@ -19,10 +19,10 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_compaction.rs
   - crates/betterlite-core/src/api/messages_compaction/**
-  - tools/oracle/src/helpers/core_ops/messages_compaction.rs
-  - tools/oracle/src/helpers/core_ops/messages_compaction/**
-  - tools/oracle/helpers/messages_compaction.py
-  - tools/oracle/helpers/messages_compaction/**
+  - tools/oracle/src/helpers/core_ops/context_edit_dispatch.rs
+  - tools/oracle/src/helpers/core_ops/context_edit_dispatch/**
+  - tools/oracle/helpers/context_edit_dispatch.py
+  - tools/oracle/helpers/context_edit_dispatch/**
   - tools/oracle/cases/helpers/context-edit-dispatch/**
   - tools/oracle/fuzz/corpus/helper_case/context_edit_dispatch-*
   - tools/oracle/src/sdk_http.rs
@@ -98,7 +98,7 @@ out_of_scope:
 - B968 owns clear_tool_uses.py,constants.py,errors.py,placeholders.py,result.py and B2201 owns OpenAI-to-Anthropic context spec mapping.
 - B973 owns the best-effort boundary around this dispatcher and B081 the client error envelope.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as messages_compaction in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_compaction.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_compaction.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as context_edit_dispatch in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/context_edit_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/context_edit_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The most recent non-null usage list wins even when it is empty; adding usage across editors changes the response.
 - Native unknown edits log and skip, while OpenAI unknown list entries disappear during normalization.
 - The legacy clear tuple preserves system from the preceding editor, not from the original request.

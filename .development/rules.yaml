@@ -184,7 +184,7 @@ rules:
   - id: typed-errors
     title: Errors are typed and keep their cause
     statement: >-
-      Each crate has one thiserror enum. A wrapped error is a #[source] field, never a string. No anyhow, no Box<dyn Error>, no map_err to a String.
+      Each module that can fail has one thiserror enum in its own files, so parallel tasks never append to a shared enum. A wrapped error is a #[source] field, never a string. No anyhow, no Box<dyn Error>, no map_err to a String.
     why: A caller can only handle a failure it can name, and a lost source hides the root cause.
     enforced_by: [clippy]
     reviewed: true

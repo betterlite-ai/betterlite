@@ -33,14 +33,15 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,google_genai_guardrail}.rs
+    - crates/betterlite-vertex/src/google_genai_guardrail.rs
     - crates/betterlite-vertex/src/google_genai_guardrail/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/google_guardrail_sse.rs
     - crates/betterlite-vertex/fuzz/corpus/google_guardrail_sse/**
-    - tools/oracle/src/helpers/vertex/google_genai_guardrail_text.rs
-    - tools/oracle/src/helpers/vertex/google_genai_guardrail_text/**
-    - tools/oracle/helpers/google_genai_guardrail_text.py
-    - tools/oracle/helpers/google_genai_guardrail_text/**
+    - tools/oracle/src/helpers/vertex/google_guardrail_text.rs
+    - tools/oracle/src/helpers/vertex/google_guardrail_text/**
+    - tools/oracle/helpers/google_guardrail_text.py
+    - tools/oracle/helpers/google_guardrail_text/**
     - tools/oracle/cases/helpers/google-guardrail-text/**
     - tools/oracle/fuzz/corpus/helper_case/google_guardrail_text*
   lint_tables: false
@@ -72,7 +73,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/google_guardrail_sse.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/google_guardrail_sse)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_google_guardrail_sse_corpus)'
       why: decode_google_guardrail_sse sees chunk boundaries, invalid UTF-8 and non-object payloads.
     - id: google-guardrail-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_guardrail_text*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::google_guardrail_text::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_guardrail_text*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::google_guardrail_text::/)'
       why: Shared-reader tests require call.google_guardrail_text in the added fixture set.
 oracle_cases:
   - tools/oracle/cases/helpers/google-guardrail-text/system-precedence.yaml
@@ -88,7 +89,7 @@ out_of_scope:
   - B104 owns guardrail selection/execution policy and BaseTranslation user-metadata normalization; this leaf receives the resolved callback and metadata.
   - B098 owns native GenAI routes and B160 SDK object exposure; neither route registration nor Python runtime integration is introduced here.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as google_genai_guardrail_text in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/google_genai_guardrail_text.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/google_genai_guardrail_text.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as google_guardrail_text in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/google_guardrail_text.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/google_guardrail_text.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Existing context keys are preserved even when their value is None.
   - Raw SSE replacement text is discarded after detection, so rewriting a stream would change the pinned behavior.
   - Byte chunks are individually decoded with replacement before concatenation, which matters for a split multibyte character.

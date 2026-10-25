@@ -33,7 +33,6 @@ scope:
     - Cargo.toml
     - Cargo.lock
     - crates/betterlite-cost/Cargo.toml
-    - crates/betterlite-cost/src/lib.rs
     - crates/betterlite-cost/src/adjustments.rs
     - crates/betterlite-cost/src/adjustments/**
     - crates/betterlite-config/Cargo.toml

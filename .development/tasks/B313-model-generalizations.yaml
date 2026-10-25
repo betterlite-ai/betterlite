@@ -17,8 +17,6 @@ description: >-
   boundary.
 scope:
   paths:
-  - crates/betterlite-router/src/lib.rs
-  - crates/betterlite-router/src/error.rs
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/state.rs
@@ -46,8 +44,8 @@ scope:
   - Cargo.toml
   - deny.toml
   - crates/betterlite-router/Cargo.toml
-  - crates/betterlite-router/src/model_generalization_integration.rs
-  - crates/betterlite-router/src/model_generalization_integration/**
+  - crates/betterlite-router/src/generalization_integration.rs
+  - crates/betterlite-router/src/generalization_integration/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L74-L277

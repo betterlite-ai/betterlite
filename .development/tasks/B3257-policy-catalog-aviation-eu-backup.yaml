@@ -2,14 +2,16 @@ id: B3257
 title: Published aviation and local EU PII catalog records
 description: >-
   Retain published aviation operations and local EU PII records in their original catalogs.
-  The published root catalog `policy_templates.json` contains the aviation-operations-security record with brand-protection and competitor-filtering guardrails using parameterized keywords.
-  The backup file `litellm/policy_templates_backup.json` contains the EU PII record with the four example_sentences ("My French NIR number is 1 85 12 75 108 123 45", "IBAN DE89 3704 0044 0532 0130 00", "My EU passport number is FR1234567", "VAT number is DE123456789") that distinguish it from the published version in B3259.
+  LiteLLM's published root catalog `policy_templates.json` contains the aviation-operations-security record with brand-protection and competitor-filtering guardrails using parameterized keywords.
+  LiteLLM's backup file `litellm/policy_templates_backup.json` contains the EU PII record with the four example_sentences ("My French NIR number is 1 85 12 75 108 123 45", "IBAN DE89 3704 0044 0532 0130 00", "My EU passport number is FR1234567", "VAT number is DE123456789") that distinguish it from the published version in B3256.
+  Write each record to its own fragment file: `crates/betterlite-policy/assets/templates/published/aviation-operations-security.json` and `crates/betterlite-policy/assets/templates/local/gdpr-eu-pii-protection.json`. Each holds exactly one JSON object: the record as LiteLLM has it at the pinned commit, with the same keys in the same order and the same values.
+  B3252 (local lookup) and B3253 (remote catalog) assemble the fragments in LiteLLM's source order from an explicit list, so the order of records is their job, not this task's.
   Enrichment of aviation brand names and competitor discovery remains B3252's behavior; these records keep their original placeholder strings ({{brand_name}}, {{competitors_blocked_words}}, {{competitor_recommendation_words}}, {{competitor_comparison_words}}).
   Preserve the exact field order and values from the pinned LiteLLM commit. The aviation record includes the policy_name "aviation-operations-security", nine guardrails (including aviation-ops-data-protection, aviation-safety-topic-filter, airline-brand-protection-filter and six competitor filters), complexity "High", llm_enrichment for dynamic brand competition list, and guardrailDefinitions with litellm_params. The EU PII record includes the policy_name "gdpr-eu-pii-protection", four guardrails (gdpr-eu-national-identifiers, gdpr-eu-financial-data, gdpr-eu-contact-information, gdpr-eu-business-identifiers), complexity "Medium", and guardrailDefinitions with pattern_redaction_format.
 scope:
   paths:
-    - policy_templates.json
-    - litellm/policy_templates_backup.json
+    - crates/betterlite-policy/assets/templates/published/aviation-operations-security.json
+    - crates/betterlite-policy/assets/templates/local/gdpr-eu-pii-protection.json
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L1524-L1787
@@ -19,53 +21,55 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L610-L624
     why: The _load_policy_templates_from_local_backup function that loads the backup file containing the EU PII record.
 dod:
-  - text: Lines 1524-1787 of policy_templates.json contain the complete published aviation-operations-security record with all nine guardrails, llm_enrichment, and guardrailDefinitions.
+  - text: The published aviation-operations-security fragment holds the complete record with all nine guardrails, llm_enrichment, and guardrailDefinitions.
     proof: [catalog-data]
-  - text: Lines 964-1095 of litellm/policy_templates_backup.json contain the complete local EU PII record with example_sentences, all four guardrails, and guardrailDefinitions.
+  - text: The local gdpr-eu-pii-protection fragment holds the complete record with example_sentences, all four guardrails, and guardrailDefinitions.
     proof: [catalog-data]
   - text: >-
       The aviation record preserves all placeholder strings ({{brand_name}}, {{competitors_blocked_words}}, {{competitor_recommendation_words}}, {{competitor_comparison_words}})
       exactly as in the pinned commit, ready for dynamic enrichment by B3252.
     proof: [catalog-data]
-  - text: Both files are valid JSON and can be loaded without errors.
+  - text: Both fragments are valid JSON and each holds exactly one object with its catalog's keys in LiteLLM's order.
     proof: [catalog-data]
 checks:
   optional: []
   commands:
     - id: catalog-data
-      why: the catalog files are missing, have invalid JSON, or do not contain the complete aviation or EU PII records
+      why: a fragment is missing, is not one valid JSON object, or the aviation or EU PII record differs from the pinned LiteLLM record in keys, key order, guardrails, example_sentences, llm_enrichment or placeholders
       run: |-
-        test -f policy_templates.json && \
-        test -f litellm/policy_templates_backup.json && \
-        python3 -c "
-        import json
-        # Check published aviation record
-        pub = json.load(open('policy_templates.json'))
-        aviation = [t for t in pub if t.get('id') == 'aviation-operations-security']
-        assert len(aviation) == 1, 'aviation-operations-security not found in published'
-        assert len(aviation[0].get('guardrails', [])) == 9, 'wrong number of aviation guardrails'
-        assert 'llm_enrichment' in aviation[0], 'llm_enrichment missing from aviation'
-        assert '{{brand_name}}' in json.dumps(aviation[0]), 'brand_name placeholder missing'
-        # Check backup EU PII record
-        backup = json.load(open('litellm/policy_templates_backup.json'))
-        eu_pii = [t for t in backup if t.get('id') == 'gdpr-eu-pii-protection']
-        assert len(eu_pii) == 1, 'gdpr-eu-pii-protection not found in backup'
-        assert 'example_sentences' in eu_pii[0], 'example_sentences missing from EU PII'
-        assert len(eu_pii[0].get('guardrails', [])) == 4, 'wrong number of EU PII guardrails'
-        print('Catalog records valid')
-        "
+        jq -e -s 'length == 1 and (.[0]
+          | ["aviation-ops-data-protection", "aviation-safety-topic-filter", "airline-brand-protection-filter", "competitor-name-input-blocker", "competitor-name-output-blocker", "competitor-recommendation-input-filter", "competitor-recommendation-output-filter", "competitor-comparison-input-filter", "competitor-comparison-output-filter"] as $names
+          | keys_unsorted == ["id", "title", "description", "icon", "iconColor", "iconBg", "guardrails", "complexity", "parameters", "llm_enrichment", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
+          and .id == "aviation-operations-security"
+          and .guardrails == $names
+          and .complexity == "High"
+          and .llm_enrichment.parameter == "brand_name"
+          and (.llm_enrichment.prompt | contains("{{brand_name}}"))
+          and .llm_enrichment.result_key == "competitors"
+          and [.guardrailDefinitions[].guardrail_name] == $names
+          and any(.guardrailDefinitions[2].litellm_params.blocked_words[]; .keyword == "{{brand_name}} plane crash")
+          and [.guardrailDefinitions[3:][].litellm_params.blocked_words] == ["{{competitors_blocked_words}}", "{{competitors_blocked_words}}", "{{competitor_recommendation_words}}", "{{competitor_recommendation_words}}", "{{competitor_comparison_words}}", "{{competitor_comparison_words}}"]
+          and .templateData.policy_name == "aviation-operations-security")' crates/betterlite-policy/assets/templates/published/aviation-operations-security.json \
+        && jq -e -s 'length == 1 and (.[0]
+          | ["gdpr-eu-national-identifiers", "gdpr-eu-financial-data", "gdpr-eu-contact-information", "gdpr-eu-business-identifiers"] as $names
+          | keys_unsorted == ["id", "title", "description", "example_sentences", "icon", "iconColor", "iconBg", "guardrails", "complexity", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
+          and .id == "gdpr-eu-pii-protection"
+          and .example_sentences == ["My French NIR number is 1 85 12 75 108 123 45", "IBAN DE89 3704 0044 0532 0130 00", "My EU passport number is FR1234567", "VAT number is DE123456789"]
+          and .guardrails == $names
+          and .complexity == "Medium"
+          and [.guardrailDefinitions[].guardrail_name] == $names
+          and [.guardrailDefinitions[].litellm_params.pattern_redaction_format] == ["[{pattern_name}_REDACTED]", "[IBAN_REDACTED]", "[{pattern_name}_REDACTED]", "[VAT_NUMBER_REDACTED]"]
+          and .templateData.policy_name == "gdpr-eu-pii-protection")' crates/betterlite-policy/assets/templates/local/gdpr-eu-pii-protection.json
 oracle_cases: []
 deviations: []
 out_of_scope:
   - Code that loads or uses these catalog files. The local backup loader _load_policy_templates_from_local_backup is covered by B3252 which depends on this task. The routes that use the records (get_policy_templates, enrich_policy_template) are covered by B3253/B3252.
   - Enrichment of aviation brand names and competitor discovery. B3252 covers the LLM-driven enrichment and competitor word generation.
   - Guardrail implementations or pattern definitions referenced by these templates. The records only define policy patterns and metadata.
-  - The opening and closing array envelopes of policy_templates.json. The opening bracket and array structure are owned by B3255 (advanced-au-pii-protection).
+  - Assembling the fragments into catalog arrays. B3252 and B3253 do that from an explicit list.
   - Other policy templates in either file (basic-safety, australian-pii, etc.). Those are owned by other catalog tasks.
 pitfalls:
-  - Both files must be valid JSON. Syntax errors prevent loading by _load_policy_templates_from_local_backup (which returns [] on file-not-found but not on malformed JSON) and the remote fetch (which will fail to parse and fall back to the empty list).
-  - The aviation-operations-security record in policy_templates.json is at lines 1524-1787. Do not reorder templates within the published file.
-  - The gdpr-eu-pii-protection record in litellm/policy_templates_backup.json is at lines 964-1095. Do not change the file order.
+  - Both fragments must be valid JSON holding one object each. In LiteLLM, syntax errors prevent loading by _load_policy_templates_from_local_backup (which returns [] on file-not-found but not on malformed JSON) and the remote fetch (which will fail to parse and fall back to the empty list).
   - >-
     The aviation record's llm_enrichment section drives the parameter-based competitor discovery in B3252. The prompt and result_key must match exactly, and the {{brand_name}} placeholder must appear in the parameter field.
   - >-
@@ -73,7 +77,7 @@ pitfalls:
   - >-
     The aviation record's competitor filters use {{competitors_blocked_words}}, {{competitor_recommendation_words}}, and {{competitor_comparison_words}} placeholders. B3252 provides the actual list generation.
   - >-
-    The EU PII record's example_sentences field is unique to the backup. It contains four example strings with actual (but not sensitive) data patterns: French NIR number format, IBAN country code, passport format, and VAT format. These are for UI preview only and differ from the published B3259 version.
+    The EU PII record's example_sentences field is unique to the backup. It contains four example strings with actual (but not sensitive) data patterns: French NIR number format, IBAN country code, passport format, and VAT format. These are for UI preview only and differ from the published B3256 version.
   - Each guardrailDefinitions entry in both records must include the complete litellm_params block with guardrail, mode, patterns/categories array, and pattern_redaction_format. Do not omit or shorten these.
 review_level: standard
 budget:

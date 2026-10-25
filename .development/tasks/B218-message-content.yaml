@@ -6,15 +6,12 @@ description: >-
   instead of adding a second untyped field. Keep transforms separately callable over typed messages, with bounded
   output and no network or shared mutation. Budget 280 transforms/types, 100 adapters, 300 tests and 60 wiring (740
   total). Write the behavior rstest functions message_content_behavior_tests_behavior in adjacent tests.rs files, with a named
-  case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
-  message_content in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its
+  case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation message_content is already registered; each operation has its
   own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
   - crates/betterlite-prompts/Cargo.toml
-  - crates/betterlite-prompts/src/lib.rs
-  - crates/betterlite-prompts/src/error.rs
   - crates/betterlite-prompts/src/message_content.rs
   - crates/betterlite-prompts/src/message_content/**
   - tools/oracle/Cargo.toml

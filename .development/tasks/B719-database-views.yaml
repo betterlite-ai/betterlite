@@ -87,7 +87,6 @@ scope:
   paths:
     - crates/betterlite-db/src/database_views.rs
     - crates/betterlite-db/src/database_views/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - Cargo.toml
     - tools/betterlite-db-admin/Cargo.toml

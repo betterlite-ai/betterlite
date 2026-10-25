@@ -53,7 +53,7 @@ checks:
       run: test -f tools/oracle/helpers/gemini_usage.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The adapter preserves None and negative derived details from the pinned functions.
     - id: usage-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_usage*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_usage::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_usage*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_usage::/)'
       why: Corpus calls must deserialize into the new usage variant.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-usage/inclusive-thinking.yaml

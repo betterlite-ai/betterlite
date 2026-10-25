@@ -8,15 +8,12 @@ description: >-
   media. Preserve ordering and Cohere final-message/history separation without shared mutation; provider_messages
   fuzzing handles the typed result boundary. Budget 280 conversion/types, 100 adapters, 300 tests/fuzz and 60 wiring
   (740 total). Write the behavior rstest functions other_prompts_provider_message_tests_behavior in adjacent tests.rs files,
-  with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
-  helper operations provider_messages in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each
+  with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation provider_messages is already registered; each
   operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
   - crates/betterlite-prompts/Cargo.toml
-  - crates/betterlite-prompts/src/lib.rs
-  - crates/betterlite-prompts/src/error.rs
   - crates/betterlite-prompts/src/azure.rs
   - crates/betterlite-prompts/src/azure/**
   - crates/betterlite-prompts/src/gemini.rs

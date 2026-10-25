@@ -24,7 +24,6 @@ description: >-
   90 adapter and 110 config/fuzz lines inside a 650-line budget.
 scope:
   paths:
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/sso_mappings.rs
     - crates/betterlite-auth/src/sso_mappings/**
     - crates/betterlite-auth/fuzz/Cargo.toml
@@ -34,10 +33,10 @@ scope:
     - crates/betterlite-config/src/sso_mappings.rs
     - crates/betterlite-config/src/sso_mappings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-mappings-*
-    - tools/oracle/src/helpers/auth/sso_mappings.rs
-    - tools/oracle/src/helpers/auth/sso_mappings/**
-    - tools/oracle/helpers/sso_mappings.py
-    - tools/oracle/helpers/sso_mappings/**
+    - tools/oracle/src/helpers/auth/sso_mapping_input.rs
+    - tools/oracle/src/helpers/auth/sso_mapping_input/**
+    - tools/oracle/helpers/sso_mapping_input.py
+    - tools/oracle/helpers/sso_mapping_input/**
     - tools/oracle/cases/helpers/sso-mappings/**
     - tools/oracle/fuzz/corpus/helper_case/sso-mapping-*
   lint_tables: false
@@ -75,7 +74,7 @@ deviations: []
 out_of_scope:
   - B1609 consumes the resolved mappings; B1623 owns HTTP exchange errors; B063 maintains the remaining ui_sso.py ownership inventory.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as sso_mappings in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/sso_mappings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/sso_mappings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as sso_mapping_input in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/sso_mapping_input.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/sso_mapping_input.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - GENERIC_CLIENT_SECRET being absent fails even for PKCE, while an explicitly empty string passes validation.
   - GENERIC_SSO_HEADERS splits on every equals sign, so a value containing another equals sign is an error.
 budget:

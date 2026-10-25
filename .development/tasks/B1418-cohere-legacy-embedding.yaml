@@ -38,10 +38,10 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/cohere_legacy_embedding.rs
     - crates/betterlite-openai/fuzz/corpus/cohere_legacy_embedding/**
-    - tools/oracle/src/helpers/openai/cohere_legacy_embedding.rs
-    - tools/oracle/src/helpers/openai/cohere_legacy_embedding/**
-    - tools/oracle/helpers/cohere_legacy_embedding.py
-    - tools/oracle/helpers/cohere_legacy_embedding/**
+    - tools/oracle/src/helpers/openai/cohere_legacy_embed.rs
+    - tools/oracle/src/helpers/openai/cohere_legacy_embed/**
+    - tools/oracle/helpers/cohere_legacy_embed.py
+    - tools/oracle/helpers/cohere_legacy_embed/**
     - tools/oracle/cases/helpers/cohere-legacy-embed/**
     - tools/oracle/fuzz/corpus/helper_case/cohere_legacy_embed*
   lint_tables: false
@@ -70,7 +70,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/cohere_legacy_embedding.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/cohere_legacy_embedding)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_cohere_legacy_embedding_corpus)'
       why: Flat and grouped legacy responses must both enter the new byte decoder.
     - id: cohere-legacy-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_legacy_embed*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::cohere_legacy_embed::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_legacy_embed*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::cohere_legacy_embed::/)'
       why: The adapter requires at least one seed and asserts the legacy operation tag.
 oracle_cases:
   - tools/oracle/cases/helpers/cohere-legacy-embed/signed-header-casing.yaml
@@ -83,7 +83,7 @@ out_of_scope:
   - v1_transformation.CohereEmbeddingConfig.get_supported_openai_params, map_openai_params and _is_v3_model have no caller at the pin; handler.CohereError likewise has no caller.
   - B631 owns Bedrock embedding invocation and signing composition; the SageMaker provider task owns its input fallback before calling populate_embedding_response.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as cohere_legacy_embedding in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/cohere_legacy_embedding.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cohere_legacy_embedding.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as cohere_legacy_embed in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/cohere_legacy_embed.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cohere_legacy_embed.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Adding content-type alongside Content-Type can invalidate the caller's AWS signature.
   - An explicitly supplied empty data dictionary triggers request construction because selection uses truthiness.
   - The reusable populated-record entry must not emit another post_call for SageMaker.

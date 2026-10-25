@@ -67,7 +67,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/xai_batch.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/xai_batch)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_xai_batch_corpus)'
       why: Native state counters and result wrappers are external JSON, not OpenAI reply records.
     - id: xai-batch-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_batches*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::xai_batches::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_batches*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::xai_batches::/)'
       why: The shared parser must recognize batch projection fixtures by their variant tag.
 oracle_cases:
   - tools/oracle/cases/helpers/xai-batches/create-name-and-missing-input.yaml

@@ -103,7 +103,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_context_sources.rs
     - crates/betterlite-auth/src/auth_context_sources/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/context_sources.rs
     - tools/oracle/src/helpers/auth/context_sources/**

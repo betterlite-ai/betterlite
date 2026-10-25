@@ -75,7 +75,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/entity_model_access.rs
     - crates/betterlite-auth/src/entity_model_access/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/entity_model_access.rs
     - tools/oracle/src/helpers/server/entity_model_access/**

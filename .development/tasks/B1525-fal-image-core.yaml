@@ -38,7 +38,9 @@ scope:
     - crates/betterlite-core/src/api.rs
     - crates/betterlite-core/src/api/fal.rs
     - crates/betterlite-core/src/api/fal/{images,gpt_image}.rs
+    - crates/betterlite-core/src/api/fal/images.rs
     - crates/betterlite-core/src/api/fal/images/**
+    - crates/betterlite-core/src/api/fal/gpt_image.rs
     - crates/betterlite-core/src/api/fal/gpt_image/**
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/fal_image_reply.rs

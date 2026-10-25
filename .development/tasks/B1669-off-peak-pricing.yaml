@@ -37,13 +37,12 @@ scope:
     - Cargo.toml
     - Cargo.lock
     - crates/betterlite-models/Cargo.toml
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/off_peak.rs
     - crates/betterlite-models/src/off_peak/**
-    - tools/oracle/src/helpers/models/off_peak_pricing.rs
-    - tools/oracle/src/helpers/models/off_peak_pricing/**
-    - tools/oracle/helpers/off_peak_pricing.py
-    - tools/oracle/helpers/off_peak_pricing/**
+    - tools/oracle/src/helpers/models/off_peak.rs
+    - tools/oracle/src/helpers/models/off_peak/**
+    - tools/oracle/helpers/off_peak.py
+    - tools/oracle/helpers/off_peak/**
     - tools/oracle/cases/helpers/off-peak/**
     - tools/oracle/fuzz/corpus/helper_case/off-peak-*
   lint_tables: false
@@ -86,7 +85,7 @@ out_of_scope:
   - Outside the off-peak block, utils.py assigns threshold/base/reasoning rates to B1670, modality details to B1671, generic token/uplift costs to B1672, billed-rate breakdowns to B1673, image arithmetic to B1674, web-search counters to B1675, character metrics to B1676 and image dispatch to B1687.
   - The request billing clock belongs to B198; no environment or configuration key is introduced for time travel.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as off_peak_pricing in the models group. Replace the stub Op in tools/oracle/src/helpers/models/off_peak_pricing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/off_peak_pricing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as off_peak in the models group. Replace the stub Op in tools/oracle/src/helpers/models/off_peak.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/off_peak.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A Sunday UTC window can be Monday in weekday_timezone, and a window crossing midnight does not carry yesterday's weekday.
   - A one-hour cache rate of zero must survive an off-peak replacement of ordinary cache creation.
 budget:

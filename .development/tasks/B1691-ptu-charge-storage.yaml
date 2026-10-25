@@ -41,7 +41,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/ptu.rs
     - crates/betterlite-db/src/ptu/charges.rs
     - crates/betterlite-db/src/ptu/charges/**
@@ -50,10 +49,10 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/ptu_model_info.rs
     - crates/betterlite-db/fuzz/corpus/ptu_model_info/**
-    - tools/oracle/src/helpers/db/ptu_charge_storage.rs
-    - tools/oracle/src/helpers/db/ptu_charge_storage/**
-    - tools/oracle/helpers/ptu_charge_storage.py
-    - tools/oracle/helpers/ptu_charge_storage/**
+    - tools/oracle/src/helpers/db/ptu_charge.rs
+    - tools/oracle/src/helpers/db/ptu_charge/**
+    - tools/oracle/helpers/ptu_charge.py
+    - tools/oracle/helpers/ptu_charge/**
     - tools/oracle/cases/helpers/ptu-charge/**
     - tools/oracle/fuzz/corpus/helper_case/ptu-charge-*
   lint_tables: false
@@ -105,7 +104,7 @@ out_of_scope:
   - B1692 owns run_ptu_flat_cost_rollup, run_ptu_flat_cost_backfill, run_scheduled_ptu_rollup, _lock_is_held, _run_and_alert, _backfill_and_alert and _deliver_alert in this file.
   - B1664 owns PTU term validity and the attribution feature flag; this task adds no settings and does not schedule any job.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as ptu_charge_storage in the db group. Replace the stub Op in tools/oracle/src/helpers/db/ptu_charge_storage.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/ptu_charge_storage.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as ptu_charge in the db group. Replace the stub Op in tools/oracle/src/helpers/db/ptu_charge.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/ptu_charge.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - model_group is a mutable display name, while the unique sentinel model field must remain the deployment ID.
   - scanned_ids includes deployments whose PTU terms were removed, otherwise their stale rows can never be pruned.
   - A 90-day subtraction followed by an inclusive range produces up to 91 backfill dates.

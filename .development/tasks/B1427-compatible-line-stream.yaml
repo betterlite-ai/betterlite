@@ -37,10 +37,10 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/compatible_line.rs
     - crates/betterlite-openai/fuzz/corpus/compatible_line/**
-    - tools/oracle/src/helpers/openai/compatible_line_stream.rs
-    - tools/oracle/src/helpers/openai/compatible_line_stream/**
-    - tools/oracle/helpers/compatible_line_stream.py
-    - tools/oracle/helpers/compatible_line_stream/**
+    - tools/oracle/src/helpers/openai/compatible_line_chunk.rs
+    - tools/oracle/src/helpers/openai/compatible_line_chunk/**
+    - tools/oracle/helpers/compatible_line_chunk.py
+    - tools/oracle/helpers/compatible_line_chunk/**
     - tools/oracle/cases/helpers/compatible-line-chunk/**
     - tools/oracle/fuzz/corpus/helper_case/compatible_line_chunk*
   lint_tables: false
@@ -67,7 +67,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/compatible_line.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/compatible_line)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_compatible_line_corpus)'
       why: Newly added malformed lines must exercise this fallback parser rather than the OpenAI parser alone.
     - id: compatible-line-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_line_chunk*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::compatible_line_chunk::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_line_chunk*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::compatible_line_chunk::/)'
       why: Fresh seeds must select the compatible_line_chunk helper operation.
 oracle_cases:
   - tools/oracle/cases/helpers/compatible-line-chunk/done-sync-versus-async.yaml
@@ -79,7 +79,7 @@ deviations: []
 out_of_scope:
   - B1428 owns HTTP execution and stream selection; B042 retains DatabricksChatResponseIterator in chat/transformation.py, which is not this legacy iterator.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as compatible_line_stream in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/compatible_line_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/compatible_line_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as compatible_line_chunk in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/compatible_line_chunk.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/compatible_line_chunk.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Sync [DONE] yields an empty chunk while async [DONE] ends iteration.
   - Usage-only chunks stay unfinished even when they are the last upstream record.
   - A second choice or second tool call is never projected by this iterator.

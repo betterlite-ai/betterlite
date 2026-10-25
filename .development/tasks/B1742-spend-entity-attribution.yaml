@@ -47,7 +47,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/spend_attribution.rs
     - crates/betterlite-db/src/spend_attribution/**
     - crates/betterlite-db/src/autorouter_facts.rs
@@ -57,10 +56,10 @@ scope:
     - crates/betterlite-db/fuzz/corpus/enqueue_tags/**
     - crates/betterlite-db/fuzz/fuzz_targets/turn_time.rs
     - crates/betterlite-db/fuzz/corpus/turn_time/**
-    - tools/oracle/src/helpers/db/spend_entity_attribution.rs
-    - tools/oracle/src/helpers/db/spend_entity_attribution/**
-    - tools/oracle/helpers/spend_entity_attribution.py
-    - tools/oracle/helpers/spend_entity_attribution/**
+    - tools/oracle/src/helpers/db/spend_entities.rs
+    - tools/oracle/src/helpers/db/spend_entities/**
+    - tools/oracle/helpers/spend_entities.py
+    - tools/oracle/helpers/spend_entities/**
     - tools/oracle/cases/helpers/spend-entities/**
     - tools/oracle/fuzz/corpus/helper_case/spend-entities-*
   lint_tables: false
@@ -118,7 +117,7 @@ out_of_scope:
   - B1749 owns batch-row claim/log insertion helpers; B1745 owns entity SQL and cache invalidation, using B1746's retry classification and committed-table tracking.
   - B1746 owns daily SQL commits and interrupted-commit state; B1747 owns memory flush and discovery drain; B1748 owns Redis flush and handler dispatch.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as spend_entity_attribution in the db group. Replace the stub Op in tools/oracle/src/helpers/db/spend_entity_attribution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_entity_attribution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as spend_entities in the db group. Replace the stub Op in tools/oracle/src/helpers/db/spend_entities.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_entities.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Missing model_info and present model_info without access_groups have opposite effects on whether attributed groups survive.
   - Team membership keys retain raw delimiters while organization membership keys percent-encode them.
 budget:

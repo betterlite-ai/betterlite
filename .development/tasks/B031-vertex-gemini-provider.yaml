@@ -41,9 +41,11 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/{lib,dispatch,operation,vertex_completion_dispatch}.rs
+    - crates/betterlite-core/src/vertex_completion_dispatch.rs
     - crates/betterlite-core/src/vertex_completion_dispatch/**
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_dispatch}.rs
+    - crates/betterlite-provider/src/vertex_dispatch.rs
     - crates/betterlite-provider/src/vertex_dispatch/**
     - crates/betterlite-config/src/{env,settings}.rs
     - crates/betterlite-config/src/providers/{vertex,gemini}.rs

@@ -21,8 +21,7 @@ description: >-
   hop bound, and streaming non-replayable bodies. Budget 300 policy/integration, 100 oracle adapters and 350 tests/fuzz
   (750 total). Do not add behavior depending on the open remote-download decision. Write the behavior rstest functions
   http_boundaries_url_boundary_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure in
-  the DoD; corpus replay tests have separate names. Register helper operations url_origin, url_destination in tools/oracle/src/helpers/mod.rs
-  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  the DoD; corpus replay tests have separate names. The helper operations url_origin, url_destination are already registered; each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
@@ -30,10 +29,14 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-openai/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/http/boundaries.rs
-  - tools/oracle/src/helpers/http/boundaries/**
-  - tools/oracle/helpers/http_boundaries.py
-  - tools/oracle/helpers/http_boundaries/**
+  - tools/oracle/src/helpers/http/url_origin.rs
+  - tools/oracle/src/helpers/http/url_origin/**
+  - tools/oracle/helpers/url_origin.py
+  - tools/oracle/helpers/url_origin/**
+  - tools/oracle/src/helpers/http/url_destination.rs
+  - tools/oracle/src/helpers/http/url_destination/**
+  - tools/oracle/helpers/url_destination.py
+  - tools/oracle/helpers/url_destination/**
   - tools/oracle/cases/helpers/url-origin/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -142,7 +145,7 @@ out_of_scope:
   encode_url_path_segment/segments are B171; safe_get/safe_async_get, SSRF DNS resolution and their download-only
   helpers remain blocked by the open Max decision; provider follow-up URL origin checks remain in B009.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as http_boundaries in the http group. Replace the stub Op in tools/oracle/src/helpers/http/boundaries.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/http_boundaries.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as url_origin and url_destination in the http group. Replace the stub Op in tools/oracle/src/helpers/http/url_origin.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/url_origin.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An origin check compares parsed scheme, normalized host and effective port, never suffixes or string prefixes.
 - Path percent-encoding and URL joining can normalize dot segments at different times; test both before sending.
 - Do not use the user-URL private-network denylist to reject operator-configured internal inference servers.

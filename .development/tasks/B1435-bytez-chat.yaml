@@ -54,16 +54,17 @@ scope:
     - crates/betterlite-openai/src/{lib,bytez_wire}.rs
     - crates/betterlite-openai/src/bytez_wire/**
     - crates/betterlite-provider/src/{lib,bytez_stream_call}.rs
+    - crates/betterlite-provider/src/bytez_stream_call.rs
     - crates/betterlite-provider/src/bytez_stream_call/**
     - crates/betterlite-provider/Cargo.toml
     - Cargo.lock
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/bytez_reply.rs
     - crates/betterlite-openai/fuzz/corpus/bytez_reply/**
-    - tools/oracle/src/helpers/openai/bytez_chat.rs
-    - tools/oracle/src/helpers/openai/bytez_chat/**
-    - tools/oracle/helpers/bytez_chat.py
-    - tools/oracle/helpers/bytez_chat/**
+    - tools/oracle/src/helpers/openai/bytez_record.rs
+    - tools/oracle/src/helpers/openai/bytez_record/**
+    - tools/oracle/helpers/bytez_record.py
+    - tools/oracle/helpers/bytez_record/**
     - tools/oracle/cases/helpers/bytez-record/**
     - tools/oracle/fuzz/corpus/helper_case/bytez_record*
   lint_tables: false
@@ -92,7 +93,7 @@ checks:
       run: test -f crates/betterlite-openai/fuzz/fuzz_targets/bytez_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/bytez_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_bytez_reply_corpus)'
       why: Replay newly introduced Bytez response bytes through the production decoder.
     - id: bytez-helper-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/bytez_record*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::bytez_record::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/bytez_record*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::bytez_record::/)'
       why: Parsed seeds assert bytez_record and nonzero normalization and usage cases.
 oracle_cases:
   - tools/oracle/cases/helpers/bytez-record/option-overlay-and-unknown-key.yaml
@@ -106,7 +107,7 @@ out_of_scope:
   - B038 resolves BYTEZ_API_KEY in _complete_bytez and binds the custom stream wrapper to public chat execution.
   - B005 retains the generic processed-chunk lifecycle and terminal emission around Bytez's chunk_creator.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as bytez_chat in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/bytez_chat.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bytez_chat.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as bytez_record in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/bytez_record.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bytez_record.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Bytez expects image_url blocks to carry a top-level url rather than OpenAI's nested image_url object.
   - 'The literal string data: is ordinary generated text in Bytez streaming responses.'
   - A stream=false option remains duplicated in the nested params object.

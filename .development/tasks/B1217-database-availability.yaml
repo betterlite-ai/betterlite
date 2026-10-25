@@ -78,7 +78,6 @@ scope:
   paths:
     - crates/betterlite-db/src/database_availability.rs
     - crates/betterlite-db/src/database_availability/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - tools/oracle/src/helpers/db/database_availability.rs
     - tools/oracle/src/helpers/db/database_availability/**

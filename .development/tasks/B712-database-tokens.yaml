@@ -89,7 +89,6 @@ scope:
   paths:
     - crates/betterlite-db/src/database_tokens.rs
     - crates/betterlite-db/src/database_tokens/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - tools/oracle/src/helpers/db/database_tokens.rs
     - tools/oracle/src/helpers/db/database_tokens/**

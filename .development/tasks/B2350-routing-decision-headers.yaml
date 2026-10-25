@@ -36,7 +36,6 @@ scope:
   paths:
     - crates/betterlite-router/src/routing_decision_headers.rs
     - crates/betterlite-router/src/routing_decision_headers/**
-    - crates/betterlite-router/src/lib.rs
     - crates/betterlite-router/Cargo.toml
     - crates/betterlite-router/fuzz/Cargo.toml
     - crates/betterlite-router/fuzz/fuzz_targets/routing_header_value.rs

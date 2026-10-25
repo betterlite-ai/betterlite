@@ -23,14 +23,15 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,gemini_response}.rs
+    - crates/betterlite-vertex/src/gemini_response.rs
     - crates/betterlite-vertex/src/gemini_response/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/generate_content.rs
     - crates/betterlite-vertex/fuzz/corpus/generate_content/**
-    - tools/oracle/src/helpers/vertex/gemini_response_envelope.rs
-    - tools/oracle/src/helpers/vertex/gemini_response_envelope/**
-    - tools/oracle/helpers/gemini_response_envelope.py
-    - tools/oracle/helpers/gemini_response_envelope/**
+    - tools/oracle/src/helpers/vertex/gemini_response.rs
+    - tools/oracle/src/helpers/vertex/gemini_response/**
+    - tools/oracle/helpers/gemini_response.py
+    - tools/oracle/helpers/gemini_response/**
     - tools/oracle/cases/helpers/gemini-response/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_response*
   lint_tables: false
@@ -61,7 +62,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/generate_content.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/generate_content)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_generate_content_corpus)'
       why: Decoder seeds must be new on this branch and replay through decode_generate_content.
     - id: response-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_response*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_response::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_response*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_response::/)'
       why: A fixture must invoke the response-envelope helper rather than only parse JSON.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-response/served-revision.yaml
@@ -77,7 +78,7 @@ out_of_scope:
   - In the shared configuration file B1305/B1308-B1310 own options, B1313 parts, B1314 candidates, B1322 usage and B1323 metadata.
   - Other vertex_ai.py declarations follow their consumers in B1307-B1312/B1317/B1318/B1324 and the fine-tuning, embeddings and Live parts of B033/B034.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as gemini_response_envelope in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_response_envelope.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_response_envelope.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as gemini_response in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_response.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_response.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Empty ordinary replies still require usageMetadata and still receive empty hidden metadata arrays.
   - modelVersion is an accepted runtime field despite its absence from GenerateContentResponseBody's TypedDict.
   - Content-filter early returns do not receive the later service_tier mapping.

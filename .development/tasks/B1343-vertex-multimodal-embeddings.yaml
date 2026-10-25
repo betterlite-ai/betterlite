@@ -26,14 +26,15 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,multimodal_embedding_records}.rs
+    - crates/betterlite-vertex/src/multimodal_embedding_records.rs
     - crates/betterlite-vertex/src/multimodal_embedding_records/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/multimodal_embedding.rs
     - crates/betterlite-vertex/fuzz/corpus/multimodal_embedding/**
-    - tools/oracle/src/helpers/vertex/multimodal_embeddings.rs
-    - tools/oracle/src/helpers/vertex/multimodal_embeddings/**
-    - tools/oracle/helpers/vertex_multimodal_embeddings.py
-    - tools/oracle/helpers/vertex_multimodal_embeddings/**
+    - tools/oracle/src/helpers/vertex/multimodal_embedding_records.rs
+    - tools/oracle/src/helpers/vertex/multimodal_embedding_records/**
+    - tools/oracle/helpers/multimodal_embedding_records.py
+    - tools/oracle/helpers/multimodal_embedding_records/**
     - tools/oracle/cases/helpers/multimodal-embedding-records/**
     - tools/oracle/fuzz/corpus/helper_case/multimodal_embedding_records*
   lint_tables: false
@@ -64,7 +65,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/multimodal_embedding.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/multimodal_embedding)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_multimodal_embedding_corpus)'
       why: Decoder and media-classifier seeds must be added and replayed on this branch.
     - id: multimodal-record-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/multimodal_embedding_records*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::multimodal_embedding_records::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/multimodal_embedding_records*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::multimodal_embedding_records::/)'
       why: The new helper operation must be recognized in shared fixture inputs.
 oracle_cases:
   - tools/oracle/cases/helpers/multimodal-embedding-records/text-then-image.yaml
@@ -79,7 +80,7 @@ out_of_scope:
   - B1344 owns multimodal_embeddings/embedding_handler.py; this task only transforms and decodes its records.
   - Generic utils.py helpers remain B157; preserve their observed predicate/count behavior at this caller without building the Python utility module.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_multimodal_embeddings in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/multimodal_embeddings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_multimodal_embeddings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as multimodal_embedding_records in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/multimodal_embedding_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/multimodal_embedding_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A string containing gs:// anywhere is treated as GCS media by this older adapter.
   - Text and image vectors in one prediction yield only the text vector because selection uses elif.
   - Video usage sums segment durations even when textEmbedding wins the returned-vector selection.

@@ -20,6 +20,7 @@ A task is done when `cargo gate run <ID>` passes and your final answer is a vali
 - Commit in small steps, staging files by explicit path, with plain messages such as `feat(config): resolve os.environ references`.
 - While iterating, run `cargo gate run <ID> --only <check>`. Run the full gate before you stop. The first line of the gate output names the folder holding each check's full log.
 - Oracle helpers are registered up front, so a helper task never edits the registry. It replaces the stub `Op` in its own module (tools/oracle/src/helpers/<group>/<module>.rs, the path in its scope) with an `impl Helper` that sets `type Input` and writes `fn run`, and it writes `run` in tools/oracle/helpers/<operation>.py. helpers/mod.rs, the group files, dispatch.py and other tasks' modules stay as they are. A test picks its own cases by operation name.
+- Your Rust modules already exist as empty files, declared in their parents by the skeleton. Fill them; never edit a crate's lib.rs. Code in other crates reaches yours by its module path, such as betterlite_auth::auth_cache::Session, so add no re-exports. A module that can fail defines its own thiserror enum in its own files.
 
 ## LiteLLM
 

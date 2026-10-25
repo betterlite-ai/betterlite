@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Local advanced Australian PII catalog record
 status: todo
 depends_on: []
-file: null
+file: tasks/B3254-policy-catalog-local-australian-pii.yaml
 covers:
   - "litellm/policy_templates_backup.json"
 parent: B079

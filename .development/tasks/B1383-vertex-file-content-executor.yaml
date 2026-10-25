@@ -29,15 +29,16 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_file_content}.rs
+    - crates/betterlite-vertex/src/vertex_file_content.rs
     - crates/betterlite-vertex/src/vertex_file_content/**
     - crates/betterlite-config/src/{config,settings,env,providers,tests}.rs
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/tests/vertex_file_read_settings.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_file_read*
-    - tools/oracle/src/helpers/vertex/file_content_executor.rs
-    - tools/oracle/src/helpers/vertex/file_content_executor/**
-    - tools/oracle/helpers/vertex_file_content_executor.py
-    - tools/oracle/helpers/vertex_file_content_executor/**
+    - tools/oracle/src/helpers/vertex/file_read_settings.rs
+    - tools/oracle/src/helpers/vertex/file_read_settings/**
+    - tools/oracle/helpers/vertex_file_read_settings.py
+    - tools/oracle/helpers/vertex_file_read_settings/**
     - tools/oracle/cases/helpers/vertex-file-read-settings/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_file_read_settings*
   lint_tables: false
@@ -69,7 +70,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_file_read_settings.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Resolver fixtures patch source settings without constructing a logging client.
     - id: file-read-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_file_read_settings*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_file_read_settings::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_file_read_settings*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::file_read_settings::/)'
       why: New seeds decode the call.vertex_file_read_settings variant using B171's shared parser.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-file-read-settings/deployment-bucket.yaml
@@ -82,7 +83,7 @@ out_of_scope:
   - B1374 through B1377 and B1393 own FilesConfig transformations and byte decoders; this executor adds no competing parser.
   - B115 owns GCS logging/upload/delete callbacks; only their called native download behavior is composed here.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as vertex_file_content_executor in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/file_content_executor.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_file_content_executor.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as vertex_file_read_settings in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/file_read_settings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_file_read_settings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A nonstring deployment bucket falls back to environment, unlike the write resolver's truthiness-only selection.
   - The decoded gs:// identifier becomes response request metadata, never an arbitrary HTTP host to fetch.
   - Downloading zero bytes must not trigger the None-only failure branch.

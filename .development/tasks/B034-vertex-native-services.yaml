@@ -41,12 +41,13 @@ scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_service_dispatch}.rs
+    - crates/betterlite-provider/src/vertex_service_dispatch.rs
     - crates/betterlite-provider/src/vertex_service_dispatch/**
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/{dispatch,operation}.rs
     - crates/betterlite-core/src/api/{mod,vertex_service_bindings}.rs
+    - crates/betterlite-core/src/api/vertex_service_bindings.rs
     - crates/betterlite-core/src/api/vertex_service_bindings/**
-    - crates/betterlite-vertex/src/lib.rs
     - tools/oracle/cases/api/vertex-services/**
     - tools/oracle/fixtures/vertex-services/**
   lint_tables: false

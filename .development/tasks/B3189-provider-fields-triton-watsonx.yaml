@@ -68,27 +68,8 @@ checks:
     - id: provider-metadata-complete
       why: provider metadata fields are incomplete or malformed
       run: |
-        cat > /tmp/check_metadata.py << 'CHECKER'
-        import json
-        with open('crates/betterlite-server/assets/provider_create_fields_triton_watsonx.json') as f:
-            data = json.load(f)
-        expected = ['Triton', 'TypeSafe', 'V0', 'VERCEL_AI_GATEWAY', 'Vertex_AI', 'VERTEX_AI_BETA', 'Hosted_Vllm', 'VLLM', 'VolcEngine', 'Voyage', 'WANDB', 'WATSONX']
-        actual = [p.get('provider') for p in data]
-        if actual != expected:
-            print(f"Provider mismatch: expected {expected}, got {actual}")
-            exit(1)
-        for provider in data:
-            if not provider.get('litellm_provider'):
-                print(f"{provider.get('provider')} missing litellm_provider")
-                exit(1)
-            if not provider.get('provider_display_name'):
-                print(f"{provider.get('provider')} missing provider_display_name")
-                exit(1)
-            if not provider.get('default_model_placeholder'):
-                print(f"{provider.get('provider')} missing default_model_placeholder")
-                exit(1)
-        CHECKER
-        uv run --with pyyaml python /tmp/check_metadata.py
+        jq -e '[.[].provider] == ["Triton", "TypeSafe", "V0", "VERCEL_AI_GATEWAY", "Vertex_AI", "VERTEX_AI_BETA", "Hosted_Vllm", "VLLM", "VolcEngine", "Voyage", "WANDB", "WATSONX"]' crates/betterlite-server/assets/provider_create_fields_triton_watsonx.json &&
+        jq -e 'all(.[]; [.litellm_provider, .provider_display_name, .default_model_placeholder] | all(type == "string" and . != ""))' crates/betterlite-server/assets/provider_create_fields_triton_watsonx.json
 oracle_cases: []
 deviations: []
 out_of_scope:

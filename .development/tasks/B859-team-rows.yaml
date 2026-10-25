@@ -78,7 +78,6 @@ scope:
   paths:
     - crates/betterlite-db/src/team_rows.rs
     - crates/betterlite-db/src/team_rows/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - tools/oracle/src/helpers/db/team_rows.rs
     - tools/oracle/src/helpers/db/team_rows/**
