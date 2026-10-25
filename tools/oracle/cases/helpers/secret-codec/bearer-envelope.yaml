@@ -17,6 +17,9 @@ call:
       - {op: decrypt_bearer, value: "litellm_login_AAECAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam-gVqoGVzw8=", prefix: litellm_login_}
       - {op: decrypt_bearer, value: "litellm_login_AAECAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam-gVqoGVzw8==", prefix: litellm_login_}
       - {op: decrypt_bearer, value: "litellm_login_AAECAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam-gVqoGVzw9", prefix: litellm_login_}
+      - {op: decrypt_bearer, value: "litellm_login_AAEC\r\nAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam-gVqoGVzw9", prefix: litellm_login_}
+      - {op: decrypt_bearer, value: "litellm_login_AAECAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam-gVqoGVzw9=Zm8=", prefix: litellm_login_}
+      - {op: decrypt_bearer, value: "litellm_login_AAECAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam-gVqoGVzw9==", prefix: litellm_login_}
       - {op: decrypt_bearer, value: "litellm_login_AAECAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam*gVqoGVzw8", prefix: litellm_login_}
       - {op: decrypt_bearer, value: "litellm_login_AAECAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam-gVqoGVzw8AA", prefix: litellm_login_}
       - {op: decrypt_bearer, value: "litellm_login_AAECAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam-gVqoGVzw", prefix: litellm_login_}

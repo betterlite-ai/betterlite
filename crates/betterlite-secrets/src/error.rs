@@ -17,6 +17,11 @@ pub enum SecretError {
         #[source]
         source: base64::DecodeError,
     },
+    #[error("the encoded secret is not valid base64")]
+    DecodeTail {
+        #[source]
+        source: data_encoding::DecodeError,
+    },
     #[error("the secret is too short to hold its nonce")]
     Truncated,
     #[error("the ciphertext failed authentication under this key")]

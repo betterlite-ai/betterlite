@@ -170,6 +170,7 @@ fn run_step(settings: &CipherSettings, nonce: &[u8], step: &SecretStep) -> Value
                 | SecretError::TooLarge { .. }
                 | SecretError::Base64
                 | SecretError::Decode { .. }
+                | SecretError::DecodeTail { .. }
                 | SecretError::Truncated
                 | SecretError::Seal { .. }
                 | SecretError::LegacySeal { .. }

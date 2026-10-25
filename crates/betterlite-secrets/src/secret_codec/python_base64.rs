@@ -1,23 +1,11 @@
+use base64::DecodeError;
 use base64::Engine as _;
-use base64::alphabet::STANDARD;
-use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+use base64::engine::GeneralPurpose;
+use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD};
+use data_encoding::BASE64_MIME_PERMISSIVE;
 
 use crate::error::SecretError;
 use crate::secret_codec::MAX_ENCODED_BYTES;
-
-// CPython's binascii keeps the stray low bits of a final partial group, so both decoders accept them
-const LENIENT: GeneralPurpose = GeneralPurpose::new(
-    &STANDARD,
-    GeneralPurposeConfig::new()
-        .with_decode_allow_trailing_bits(true)
-        .with_decode_padding_mode(DecodePaddingMode::RequireNone),
-);
-const STRICT: GeneralPurpose = GeneralPurpose::new(
-    &STANDARD,
-    GeneralPurposeConfig::new()
-        .with_decode_allow_trailing_bits(true)
-        .with_decode_padding_mode(DecodePaddingMode::RequireCanonical),
-);
 
 #[derive(Clone, Copy)]
 enum Group {
@@ -82,9 +70,23 @@ fn finish(sextets: &str, complete: bool) -> Result<Vec<u8>, SecretError> {
     if !complete {
         return Err(SecretError::Base64);
     }
-    LENIENT
-        .decode(sextets)
-        .map_err(|source| SecretError::Decode { source })
+    decode(&STANDARD_NO_PAD, sextets)
+}
+
+fn decode(engine: &GeneralPurpose, encoded: &str) -> Result<Vec<u8>, SecretError> {
+    match engine.decode(encoded) {
+        // Only relax trailing bits after base64 has validated the alphabet, length and padding.
+        Err(DecodeError::InvalidLastSymbol { .. }) => {
+            let mut padded = encoded.to_owned();
+            while !padded.len().is_multiple_of(4) {
+                padded.push('=');
+            }
+            BASE64_MIME_PERMISSIVE
+                .decode(padded.as_bytes())
+                .map_err(|source| SecretError::DecodeTail { source })
+        }
+        outcome => outcome.map_err(|source| SecretError::Decode { source }),
+    }
 }
 
 // Python's validating b64decode with altchars "-_": both alphabets pass, padding must be canonical
@@ -101,7 +103,5 @@ pub(crate) fn decode_strict(encoded: &str) -> Result<Vec<u8>, SecretError> {
     while !padded.len().is_multiple_of(4) {
         padded.push('=');
     }
-    STRICT
-        .decode(padded)
-        .map_err(|source| SecretError::Decode { source })
+    decode(&STANDARD, &padded)
 }

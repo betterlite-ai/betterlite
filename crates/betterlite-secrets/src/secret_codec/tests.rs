@@ -17,6 +17,7 @@ use tracing::subscriber::with_default;
 use crate::error::SecretError;
 use crate::secret_codec::bearer::{decrypt_bearer_token, encrypt_bearer_token};
 use crate::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent, TracingDiagnostics};
+use crate::secret_codec::python_base64::decode_strict;
 use crate::secret_codec::sealing::{open, seal, seal_legacy};
 use crate::secret_codec::secret_map::{StoredMap, decode_secret_map, encrypt_secret_map};
 use crate::secret_codec::{
@@ -39,6 +40,22 @@ const SALT: Option<&str> = Some("salt-one");
 const LEGACY: Algorithm = Algorithm::XSalsa20Poly1305;
 const AES: Algorithm = Algorithm::Aes256Gcm;
 const REJECTED: &str = "error: Cannot decode encrypted MCP headers; check LITELLM_SALT_KEY";
+
+#[rstest]
+#[case::four_trailing_bits("Zh==", Some("f"))]
+#[case::two_trailing_bits("aGl=", Some("hi"))]
+#[case::unpadded_four_bits("Zh", Some("f"))]
+#[case::unpadded_two_bits("aGl", Some("hi"))]
+#[case::canonical("Zg==", Some("f"))]
+#[case::mime_whitespace("Z\r\nh==", None)]
+#[case::padded_concatenation("Zh==Zm8=", None)]
+#[case::excess_padding("Zh===", None)]
+#[case::nonalphabet("Zh*=", None)]
+#[case::short_group("Z===", None)]
+fn bearer_base64_acceptance(#[case] input: &str, #[case] expected: Option<&str>) {
+    let decoded = decode_strict(input).ok();
+    assert_eq!(decoded.as_deref(), expected.map(str::as_bytes));
+}
 
 struct CountingNonces;
 
