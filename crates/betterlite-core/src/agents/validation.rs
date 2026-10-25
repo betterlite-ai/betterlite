@@ -1,9 +1,4 @@
-use serde::{
-    Deserialize as _, Deserializer,
-    de::{Error, Visitor},
-};
-use std::fmt;
-use std::marker::PhantomData;
+use serde::{Deserialize as _, Deserializer, de::Error};
 use url::Url;
 
 pub(super) fn non_null_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -11,29 +6,8 @@ where
     D: Deserializer<'de>,
     T: serde::Deserialize<'de>,
 {
-    struct NonNullOption<T>(PhantomData<T>);
-    impl<'de, T> Visitor<'de> for NonNullOption<T>
-    where
-        T: serde::Deserialize<'de>,
-    {
-        type Value = Option<T>;
-        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            formatter.write_str("a non-null value")
-        }
-        fn visit_none<E>(self) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            Err(E::custom("null is not allowed"))
-        }
-        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            T::deserialize(deserializer).map(Some)
-        }
-    }
-    deserializer.deserialize_option(NonNullOption(PhantomData))
+    let value = T::deserialize(deserializer)?;
+    Ok(Some(value))
 }
 pub(super) fn absolute_http_url<'de, D>(deserializer: D) -> Result<String, D::Error>
 where

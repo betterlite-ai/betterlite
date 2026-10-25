@@ -7,12 +7,12 @@ use serde_with::rust::double_option;
 use std::collections::BTreeMap;
 
 macro_rules! card_record {
-    ($name:ident { required: { $($required:ident: $required_ty:ty),* $(,)? } nullable: { $($nullable:ident: $nullable_ty:ty),* $(,)? } }) => {
+    ($name:ident { required: { $($required:ident: $required_ty:ty),* $(,)? } nullable: { $($(#[$attribute:meta])* $nullable:ident: $nullable_ty:ty),* $(,)? } }) => {
         #[derive(Clone, Debug, Deserialize, Serialize)]
         #[serde(rename_all = "camelCase", deny_unknown_fields)]
         pub struct $name {
             $(#[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "validation::non_null_option")] pub $required: Option<$required_ty>,)*
-            $(#[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")] pub $nullable: Option<Option<$nullable_ty>>,)*
+            $($(#[$attribute])* #[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")] pub $nullable: Option<Option<$nullable_ty>>,)*
         }
     };
 }
@@ -74,119 +74,31 @@ pub enum SecurityLocation {
     Cookie,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct AgentCard {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "validation::non_null_option"
-    )]
-    pub protocol_version: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "validation::non_null_option"
-    )]
-    pub name: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "validation::non_null_option"
-    )]
-    pub description: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "validation::non_null_option"
-    )]
-    pub url: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "validation::non_null_option"
-    )]
-    pub version: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "validation::non_null_option"
-    )]
-    pub capabilities: Option<AgentCapabilities>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "validation::non_null_option"
-    )]
-    pub default_input_modes: Option<Vec<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "validation::non_null_option"
-    )]
-    pub default_output_modes: Option<Vec<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "validation::non_null_option"
-    )]
-    pub skills: Option<Vec<AgentSkill>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "double_option"
-    )]
-    pub preferred_transport: Option<Option<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "double_option"
-    )]
-    pub additional_interfaces: Option<Option<Vec<AgentInterface>>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "double_option"
-    )]
-    pub icon_url: Option<Option<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "double_option"
-    )]
-    pub provider: Option<Option<AgentProvider>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "double_option"
-    )]
-    pub documentation_url: Option<Option<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "double_option"
-    )]
-    pub security_schemes: Option<Option<BTreeMap<String, SecurityScheme>>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "double_option"
-    )]
-    pub security: Option<Option<SecurityRequirements>>,
-    #[serde(
-        rename = "supportsAuthenticatedExtendedCard",
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "double_option"
-    )]
-    pub supports_authenticated_card: Option<Option<bool>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "double_option"
-    )]
-    pub signatures: Option<Option<Vec<AgentCardSignature>>>,
-}
+card_record! { AgentCard {
+    required: {
+        protocol_version: String,
+        name: String,
+        description: String,
+        url: String,
+        version: String,
+        capabilities: AgentCapabilities,
+        default_input_modes: Vec<String>,
+        default_output_modes: Vec<String>,
+        skills: Vec<AgentSkill>,
+    }
+    nullable: {
+        preferred_transport: String,
+        additional_interfaces: Vec<AgentInterface>,
+        icon_url: String,
+        provider: AgentProvider,
+        documentation_url: String,
+        security_schemes: BTreeMap<String, SecurityScheme>,
+        security: SecurityRequirements,
+        #[serde(rename = "supportsAuthenticatedExtendedCard")]
+        supports_authenticated_card: bool,
+        signatures: Vec<AgentCardSignature>,
+    }
+} }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AugmentedAgentCard {

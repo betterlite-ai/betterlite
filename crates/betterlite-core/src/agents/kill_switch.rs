@@ -4,8 +4,13 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-fn default_api_key_header() -> String {
-    String::from("x-api-key")
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct ApiKeyHeader(pub String);
+impl Default for ApiKeyHeader {
+    fn default() -> Self {
+        Self(String::from("x-api-key"))
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -16,8 +21,8 @@ pub enum AgentKillSwitchAuth {
         token: SecretString,
     },
     ApiKey {
-        #[serde(default = "default_api_key_header")]
-        header_name: String,
+        #[serde(default)]
+        header_name: ApiKeyHeader,
         #[serde(skip_serializing)]
         api_key: SecretString,
     },
@@ -64,7 +69,9 @@ pub struct AgentKillSwitchResult {
 impl AgentKillSwitchResult {
     #[must_use]
     pub fn succeeded(&self) -> bool {
-        self.status_code
-            .is_some_and(|value| (200..300).contains(&value))
+        match self.status_code {
+            Some(value) => (200..300).contains(&value),
+            None => false,
+        }
     }
 }

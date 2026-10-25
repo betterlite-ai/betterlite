@@ -47,15 +47,6 @@ fn response_decimal_and_typed_card_round_trip() {
 fn webhook_defaults_and_url_validation() {
     let config: AgentKillSwitchConfig = from_str(r#"{"url":"http://agent.example/stop"}"#).unwrap();
     assert_eq!(config.method, super::AgentKillSwitchMethod::Post);
-    for url in [
-        "/stop",
-        "ftp://agent.example/stop",
-        "mailto:ops@example.com",
-    ] {
-        let error =
-            from_str::<AgentKillSwitchConfig>(&format!(r#"{{"url":"{url}"}}"#)).unwrap_err();
-        assert!(error.to_string().contains("absolute http(s)"));
-    }
     from_str::<AgentKillSwitchConfig>(r#"{"url":"HTTPS://agent.example"}"#).unwrap();
     let result: AgentKillSwitchResult = from_str(
         r#"{"agent_id":"agent","url":"https://agent.example","method":"POST","status_code":204}"#,
@@ -80,4 +71,32 @@ fn public_card_and_permission_round_trip() {
         to_string(&permission).unwrap(),
         r#"{"mcp_servers":["server"],"mcp_access_groups":null}"#
     );
+}
+
+#[rstest::rstest]
+#[case::relative("/stop")]
+#[case::ftp("ftp://agent.example/stop")]
+#[case::mailto("mailto:ops@example.com")]
+fn webhook_rejects_invalid_urls(#[case] url: &str) {
+    let error = from_str::<AgentKillSwitchConfig>(&format!(r#"{{"url":"{url}"}}"#)).unwrap_err();
+    assert!(error.to_string().contains("absolute http(s)"));
+}
+
+#[test]
+fn extended_card_flag_preserves_wire_name_and_null() {
+    let input = r#"{"supportsAuthenticatedExtendedCard":null}"#;
+    let card: AgentCard = from_str(input).unwrap();
+    assert_eq!(card.supports_authenticated_card, Some(None));
+    assert_eq!(to_string(&card).unwrap(), input);
+}
+
+#[test]
+fn api_key_auth_defaults_header_and_hides_secret() {
+    let auth: super::AgentKillSwitchAuth =
+        from_str(r#"{"type":"api_key","api_key":"secret"}"#).unwrap();
+    assert_eq!(
+        to_string(&auth).unwrap(),
+        r#"{"type":"api_key","header_name":"x-api-key"}"#
+    );
+    assert!(!format!("{auth:?}").contains("secret"));
 }
