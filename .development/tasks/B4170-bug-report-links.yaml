@@ -79,5 +79,5 @@ pitfalls:
     The URL generation formats parameters with urlencode, preserving all special characters. Test URLs with spaces, ampersands and equals signs in titles and descriptions.
 review_level: standard
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 650
   max_new_expects: 0
