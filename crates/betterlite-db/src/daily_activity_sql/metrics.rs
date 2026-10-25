@@ -5,8 +5,22 @@ pub fn ptu_flat_cost_select(table: DailyActivityTable, aggregate: bool) -> Strin
     match (table, aggregate) {
         (DailyActivityTable::Team, true) => "SUM(ptu_flat_cost)::float AS ptu_flat_cost".to_owned(),
         (DailyActivityTable::Team, false) => "SUM(scoped.ptu_flat_cost)::float".to_owned(),
-        (_, true) => "0::float AS ptu_flat_cost".to_owned(),
-        (_, false) => "0::float".to_owned(),
+        (
+            DailyActivityTable::User
+            | DailyActivityTable::Tag
+            | DailyActivityTable::Organization
+            | DailyActivityTable::Customer
+            | DailyActivityTable::Agent,
+            true,
+        ) => "0::float AS ptu_flat_cost".to_owned(),
+        (
+            DailyActivityTable::User
+            | DailyActivityTable::Tag
+            | DailyActivityTable::Organization
+            | DailyActivityTable::Customer
+            | DailyActivityTable::Agent,
+            false,
+        ) => "0::float".to_owned(),
     }
 }
 

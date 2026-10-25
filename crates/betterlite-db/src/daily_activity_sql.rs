@@ -1,6 +1,6 @@
 pub mod filters;
+pub mod key_page;
 pub mod metrics;
-pub mod queries;
 pub mod rollup;
 
 pub const PTU_SENTINEL_API_KEY: &str = "__ptu_flat_cost__";

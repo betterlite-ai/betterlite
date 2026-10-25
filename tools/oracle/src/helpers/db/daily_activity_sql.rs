@@ -4,7 +4,7 @@ use betterlite_db::daily_activity_sql::filters::{adjust_dates_for_timezone, buil
 use betterlite_db::daily_activity_sql::metrics::{
     KEY_SPEND_SELECT, ptu_flat_cost_select, rollup_metric_select,
 };
-use betterlite_db::daily_activity_sql::queries::build_key_page_sql;
+use betterlite_db::daily_activity_sql::key_page::build_key_page_sql;
 use betterlite_db::daily_activity_sql::rollup::{Rollup, build_rollup_sql};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
