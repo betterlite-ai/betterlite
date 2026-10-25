@@ -1,0 +1,9 @@
+kind: helper
+name: span-context-extraction
+call:
+  datadog_tags:
+    function: trace_context
+    current: {available: false, trace_id: 12, span_id: 34, set_tag_str: false, set_tag: false}
+    root: {available: true, trace_id: 56, span_id: null, set_tag_str: false, set_tag: false}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: datadog-tags-seed
+call:
+  datadog_tags:
+    function: trace_context
+    current: {available: true, trace_id: 123, span_id: 456, set_tag_str: true, set_tag: false}
+    root: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: span-tag-setting
+call:
+  datadog_tags:
+    function: span_tagging
+    current: {available: true, trace_id: "trace", span_id: "span", set_tag_str: false, set_tag: true}
+    root: null
+    call_id: call-123
+    key_alias: alias
+    key_hash: hash
+    requested_model: model
+env: {}
+compare: {ignore: []}
