@@ -177,6 +177,10 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-auth"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "rust_decimal",
+]
 
 [[package]]
 name = "betterlite-azure"
