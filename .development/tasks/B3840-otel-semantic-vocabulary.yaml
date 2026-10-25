@@ -59,6 +59,7 @@ scope:
     - tools/oracle/helpers/otel_vocabulary/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/otel-vocabulary/**
+    - tools/oracle/fuzz/corpus/helper_case/otel-vocabulary-*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/semconv.py#L14-L501
@@ -105,7 +106,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::otel_vocabulary::/)'
     - id: helper-case-corpus
       why: Oracle helper cases and corpus must replay with the new vocabulary decoder.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otel-vocabulary-* tools/oracle/fuzz/corpus/helper_case/otel-vocabulary-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otel-vocabulary/ "tools/oracle/fuzz/corpus/helper_case/otel-vocabulary-*")" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/otel-vocabulary/provider-mapping-unmapped-pass-through.yaml
   - tools/oracle/cases/helpers/otel-vocabulary/operation-mapping-all-call-types.yaml
