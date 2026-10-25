@@ -1,7 +1,5 @@
 name: anthropic-reversed-ttl-order
-config: |
-  general_settings:
-    master_key: oracle-master
+config: ""
 env: {}
 request:
   method: GET

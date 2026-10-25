@@ -1,7 +1,5 @@
 name: anthropic-conflicting-ttl
-config: |
-  general_settings:
-    master_key: oracle-master
+config: ""
 env: {}
 request:
   method: GET
