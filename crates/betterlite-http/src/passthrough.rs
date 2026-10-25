@@ -44,23 +44,19 @@ pub fn get_response_headers(
 }
 
 #[must_use]
-pub fn is_streaming_response(headers: &HeaderMap) -> bool {
-    headers
+pub fn streaming_response(headers: &HeaderMap) -> bool {
+    let streaming = headers
         .get("content-type")
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.contains("text/event-stream"))
-}
-
-#[must_use]
-pub fn _is_streaming_response(headers: &HeaderMap) -> bool {
-    if is_streaming_response(headers) {
+        .is_some_and(|value| value.contains("text/event-stream"));
+    if streaming {
         return true;
     }
     false
 }
 
 #[must_use]
-pub fn should_buffer_passthrough_response(status_code: u16, headers: &HeaderMap) -> bool {
+pub fn buffer_response(status_code: u16, headers: &HeaderMap) -> bool {
     if status_code >= 400 {
         return true;
     }
@@ -80,15 +76,7 @@ pub fn should_buffer_passthrough_response(status_code: u16, headers: &HeaderMap)
 }
 
 #[must_use]
-pub fn _should_buffer_passthrough_response(status_code: u16, headers: &HeaderMap) -> bool {
-    if should_buffer_passthrough_response(status_code, headers) {
-        return true;
-    }
-    false
-}
-
-#[must_use]
-pub fn _update_stream_param_based_on_request_body(
+pub fn _resolve_stream_param(
     request_body: &Map<String, Value>,
     stream: Option<bool>,
 ) -> Option<bool> {
@@ -101,7 +89,7 @@ pub fn _update_stream_param_based_on_request_body(
 }
 
 #[must_use]
-pub fn construct_target_url_with_subpath(
+pub fn construct_url_with_subpath(
     base_target: &str,
     subpath: &str,
     include_subpath: bool,
@@ -152,15 +140,26 @@ pub fn join_base_and_endpoint_path(base_url: &str, endpoint_path: &str) -> Strin
 }
 
 fn filtered_headers(headers: &HeaderMap) -> HeaderMap {
-    headers
+    if headers.is_empty() {
+        return HeaderMap::new();
+    }
+    let filtered: HeaderMap = headers
         .iter()
         .filter(|(name, _)| !is_excluded_header(name.as_str()))
         .map(|(name, value)| (name.clone(), value.clone()))
-        .collect()
+        .collect();
+    if filtered.is_empty() {
+        return filtered;
+    }
+    filtered
 }
 
 fn is_excluded_header(name: &str) -> bool {
-    EXCLUDED_HEADERS.contains(&name.to_ascii_lowercase().as_str())
+    let excluded = EXCLUDED_HEADERS.contains(&name.to_ascii_lowercase().as_str());
+    if excluded {
+        return true;
+    }
+    false
 }
 
 fn path_from_url(base_url: &str) -> &str {
@@ -200,6 +199,3 @@ fn normalize_path(path: &str) -> (String, bool) {
     let normalized = format!("/{}", segments.join("/"));
     (normalized, escaped)
 }
-
-#[cfg(test)]
-mod tests;

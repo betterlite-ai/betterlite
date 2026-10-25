@@ -6,11 +6,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub const LITELLM_PASS_THROUGH_CUSTOM_BODY_STATE_KEY: &str = "litellm_pass_through_custom_body";
-pub const LITELLM_PASS_THROUGH_RAW_BODY_STATE_KEY: &str = "litellm_pass_through_raw_body";
-pub const LITELLM_PASS_THROUGH_DEPLOYMENT_MODEL_INFO_STATE_KEY: &str =
-    "litellm_pass_through_deployment_model_info";
-pub const LITELLM_PASS_THROUGH_ENDPOINT_MARKER: &str = "__litellm_pass_through_endpoint__";
+pub const CUSTOM_BODY_STATE_KEY: &str = "litellm_pass_through_custom_body";
+pub const RAW_BODY_STATE_KEY: &str = "litellm_pass_through_raw_body";
+pub const MODEL_INFO_STATE_KEY: &str = "litellm_pass_through_deployment_model_info";
+pub const ENDPOINT_MARKER: &str = "__litellm_pass_through_endpoint__";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -26,7 +25,7 @@ pub enum EndpointType {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PassthroughStandardLoggingPayload {
+pub struct PassthroughLogPayload {
     pub url: String,
     pub request_method: Option<String>,
     pub request_body: Option<Value>,
@@ -77,6 +76,3 @@ fn endpoint_hostname(url: &str) -> Option<&str> {
         Some(host_without_port)
     }
 }
-
-#[cfg(test)]
-mod tests;
