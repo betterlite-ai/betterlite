@@ -3,7 +3,8 @@ use tokio::task::JoinSet;
 
 use super::cleanup::combine_errors;
 use super::operations::{create_resource, seed_fixture, source_connection};
-use super::{PostgresFixture, resource::Resource, select_source};
+use super::resource::{Ownership, Resource};
+use super::{PostgresFixture, select_source};
 use crate::error::FixtureError;
 use crate::seed::FixtureSeed;
 
@@ -55,8 +56,10 @@ pub(super) async fn provision_inner(
     }
     Ok(PostgresFixture {
         options,
-        resource,
-        admin: Box::new(admin_url),
+        ownership: Ownership {
+            resource,
+            admin: Box::new(admin_url),
+        },
         container,
     })
 }

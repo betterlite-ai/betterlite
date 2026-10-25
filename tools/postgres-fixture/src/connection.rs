@@ -16,7 +16,7 @@ use crate::seed::{DatabaseFixture, FixtureSeed};
 mod cleanup;
 mod operations;
 pub mod resource;
-use resource::Resource;
+use resource::{Ownership, Resource};
 pub mod provision;
 use provision::ProvisionTask;
 mod tls;
@@ -110,8 +110,7 @@ pub fn select_source(configured_url: Option<&SecretString>) -> Result<FixtureSou
 
 pub struct PostgresFixture {
     pub options: ConnectionOptions,
-    pub resource: Resource,
-    pub admin: Box<ConnectionOptions>,
+    pub ownership: Ownership,
     pub container: Option<ContainerAsync<GenericImage>>,
 }
 
@@ -119,7 +118,7 @@ impl fmt::Debug for PostgresFixture {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PostgresFixture")
             .field("options", &self.options)
-            .field("resource", &self.resource)
+            .field("ownership", &self.ownership)
             .finish_non_exhaustive()
     }
 }
@@ -177,7 +176,7 @@ impl PostgresFixture {
     }
 
     pub async fn close_async(self) -> Result<(), FixtureError> {
-        let cleanup = cleanup_resource(&self.admin, &self.resource).await;
+        let cleanup = cleanup_resource(&self.ownership.admin, &self.ownership.resource).await;
         let container_cleanup = match self.container {
             Some(container) => container.rm().await.map_err(FixtureError::Container),
             None => Ok(()),

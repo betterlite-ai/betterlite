@@ -31,7 +31,7 @@ fn postgres_image(image: GenericImage) -> ContainerRequest<GenericImage> {
         .with_wait_for(WaitFor::seconds(2))
         .with_exposed_port(5432.tcp())
         .with_env_var("POSTGRES_USER", "fixture")
-        .with_env_var("POSTGRES_PASSWORD", "fixture")
+        .with_env_var("POSTGRES_PASSWORD", "fixture+secret")
         .with_env_var("POSTGRES_DB", "postgres")
 }
 
@@ -47,7 +47,7 @@ async fn postgres_server() -> (testcontainers::ContainerAsync<GenericImage>, Sec
 async fn server_url(server: &testcontainers::ContainerAsync<GenericImage>) -> String {
     let host = server.get_host().await.unwrap();
     let port = server.get_host_port_ipv4(5432.tcp()).await.unwrap();
-    format!("postgresql://fixture:fixture@{host}:{port}/postgres")
+    format!("postgresql://fixture:fixture+secret@{host}:{port}/postgres")
 }
 
 async fn connect_client(connection_url: &SecretString) -> (Client, JoinSet<()>) {
@@ -117,7 +117,7 @@ async fn createdb_privilege_failure() {
     let (_server, admin_url) = postgres_server().await;
     let (admin, _driver) = connect_client(&admin_url).await;
     admin
-        .batch_execute("CREATE ROLE fixture_nocreatedb LOGIN PASSWORD 'fixture'")
+        .batch_execute("CREATE ROLE fixture_nocreatedb LOGIN PASSWORD 'fixture+secret'")
         .await
         .unwrap();
     let restricted_url = url(&admin_url
@@ -173,13 +173,8 @@ async fn isolated_schemas() {
     first.close_async().await.unwrap();
     second.close_async().await.unwrap();
     let (admin, _driver) = connect_client(&admin_url).await;
-    let schemas = admin
-        .query(
-            "SELECT 1 FROM pg_namespace WHERE nspname LIKE 'betterlite_fixture_%'",
-            &[],
-        )
-        .await
-        .unwrap();
+    let statement = "SELECT 1 FROM pg_namespace WHERE nspname LIKE 'betterlite_fixture_%'";
+    let schemas = admin.query(statement, &[]).await.unwrap();
     assert!(schemas.is_empty());
 }
 

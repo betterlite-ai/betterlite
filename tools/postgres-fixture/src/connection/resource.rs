@@ -2,7 +2,13 @@ use super::{ConnectionOptions, quote_identifier};
 use crate::error::FixtureError;
 
 #[derive(Debug)]
-pub enum Resource {
+pub struct Ownership {
+    pub(super) resource: Resource,
+    pub(super) admin: Box<ConnectionOptions>,
+}
+
+#[derive(Debug)]
+pub(super) enum Resource {
     Database(String),
     Schema(String),
 }
@@ -37,16 +43,16 @@ impl Resource {
                     .filter(|(key, _)| key != "options")
                     .map(|(key, value)| (key.into_owned(), value.into_owned()))
                     .collect::<Vec<_>>();
-                let options = format!(
-                    "{} -csearch_path={name}",
-                    admin.config.get_options().unwrap_or_default()
-                );
+                let previous = admin.config.get_options().unwrap_or_default();
+                let options = format!("{previous} -csearch_path={name}");
                 parsed
                     .query_pairs_mut()
                     .clear()
                     .extend_pairs(parameters)
                     .append_pair("options", &options);
-                ConnectionOptions::from_url(&parsed.as_str().replace('+', "%20"))
+                let query = parsed.query().unwrap_or_default().replace('+', "%20");
+                parsed.set_query(Some(&query));
+                ConnectionOptions::from_url(parsed.as_str())
             }
         }
     }
