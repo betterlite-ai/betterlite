@@ -1,1 +1,6 @@
-{name: anthropic-basic-text, config: "", env: {}, request: {method: GET, path: /not-served, headers: {API-Key: oracle-master}, body: null}, upstream: [], compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}}
+name: anthropic-basic-text
+config: ""
+env: {}
+request: {method: GET, path: /not-served, headers: {API-Key: oracle-master}, body: null}
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
