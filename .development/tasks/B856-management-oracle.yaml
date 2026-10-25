@@ -41,6 +41,10 @@ description: >-
 scope:
   paths:
     - tools/oracle/Cargo.toml
+    - tools/oracle/src/compare.rs
+    - tools/oracle/src/compare/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/tests.rs
     - tools/oracle/src/helpers/oracle/management_oracle.rs
     - tools/oracle/src/helpers/oracle/management_oracle/**
     - tools/oracle/helpers/management_oracle.py
@@ -91,6 +95,6 @@ pitfalls:
   - Comparing already-redacted effects makes two different credentials appear equal.
   - A successful Python self-check does not exercise the native management dispatcher.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security
