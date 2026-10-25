@@ -46,6 +46,10 @@ scope:
     - crates/betterlite-auth/fuzz/corpus/sso_record/settings-api-*
     - tools/oracle/cases/management/sso-settings/**
     - tools/oracle/fuzz/corpus/http_case/sso-settings-*
+    - tools/oracle/helpers/b1661.py
+    - tools/oracle/helpers/b1661/**
+    - tools/oracle/src/helpers/server/b1661.rs
+    - tools/oracle/src/helpers/server/b1661/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1130-L1322

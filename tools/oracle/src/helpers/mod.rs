@@ -45,6 +45,7 @@ mod oracle;
 mod paths;
 mod prompts;
 mod provider;
+mod rate_limit;
 mod redact;
 mod redis;
 mod router;
@@ -112,7 +113,7 @@ struct Group {
     check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
 }
 
-const GROUPS: [Group; 32] = [
+const GROUPS: [Group; 33] = [
     anthropic::GROUP,
     auth::GROUP,
     azure::GROUP,
@@ -135,6 +136,7 @@ const GROUPS: [Group; 32] = [
     paths::GROUP,
     prompts::GROUP,
     provider::GROUP,
+    rate_limit::GROUP,
     redact::GROUP,
     redis::GROUP,
     router::GROUP,

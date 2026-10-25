@@ -90,6 +90,10 @@ scope:
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-member-delete/**
     - crates/betterlite-server/src/team_member_delete/fixtures/**
+    - tools/oracle/helpers/b1207.py
+    - tools/oracle/helpers/b1207/**
+    - tools/oracle/src/helpers/server/b1207.rs
+    - tools/oracle/src/helpers/server/b1207/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3508-L3511

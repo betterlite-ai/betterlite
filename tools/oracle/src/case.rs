@@ -47,6 +47,11 @@ pub(crate) enum HelperKind {
     Helper,
 }
 
+#[derive(Deserialize)]
+struct CaseKind {
+    kind: Option<HelperKind>,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HelperCompare {
@@ -111,15 +116,14 @@ pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<LoadedCase>, OracleErr
 }
 
 pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleError> {
-    if path
-        .components()
-        .any(|component| component.as_os_str() == "helpers")
-    {
-        let case: HelperCase =
-            serde_saphyr::from_str(text).map_err(|source| OracleError::CaseParse {
-                path: path.to_owned(),
-                source: Box::new(source),
-            })?;
+    let parse_error = |source: serde_saphyr::Error| OracleError::CaseParse {
+        path: path.to_owned(),
+        source: Box::new(source),
+    };
+    // the case says what it is, so its folder never decides
+    let probe: CaseKind = serde_saphyr::from_str(text).map_err(parse_error)?;
+    if probe.kind.is_some() {
+        let case: HelperCase = serde_saphyr::from_str(text).map_err(parse_error)?;
         validate_helper(path, &case)?;
         return Ok(LoadedCase::Helper(case));
     }

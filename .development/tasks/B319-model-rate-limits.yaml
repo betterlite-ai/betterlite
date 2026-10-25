@@ -49,6 +49,10 @@ scope:
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/model_rate_limits.rs
   - crates/betterlite-config/src/sections/model_rate_limits/**
+  - tools/oracle/helpers/b319.py
+  - tools/oracle/helpers/b319/**
+  - tools/oracle/src/helpers/router/b319.rs
+  - tools/oracle/src/helpers/router/b319/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/model_rate_limit_check.py#L100-L324

@@ -9,6 +9,10 @@ scope:
     - crates/betterlite-server/**
     - crates/betterlite-openai/**
     - tools/oracle/cases/embeddings/**
+    - tools/oracle/helpers/b006.py
+    - tools/oracle/helpers/b006/**
+    - tools/oracle/src/helpers/oracle/b006.rs
+    - tools/oracle/src/helpers/oracle/b006/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1234-L1305

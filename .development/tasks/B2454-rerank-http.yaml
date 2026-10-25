@@ -32,6 +32,10 @@ scope:
   - tools/oracle/sdk_http/rerank_http.py
   - tools/oracle/cases/sdk-http/rerank-http/**
   - tools/oracle/fuzz/corpus/sdk_http_case/rerank-http-*
+  - tools/oracle/helpers/b2454.py
+  - tools/oracle/helpers/b2454/**
+  - tools/oracle/src/helpers/provider/b2454.rs
+  - tools/oracle/src/helpers/provider/b2454/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1289-L1416

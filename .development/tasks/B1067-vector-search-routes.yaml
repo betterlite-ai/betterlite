@@ -24,6 +24,10 @@ scope:
   - crates/betterlite-server/src/api/vector_search_routes/**
   - crates/betterlite-server/fuzz/corpus/request_body/vector-search-*
   - tools/oracle/cases/api/vector-search-routes/**
+  - tools/oracle/helpers/b1067.py
+  - tools/oracle/helpers/b1067/**
+  - tools/oracle/src/helpers/server/b1067.rs
+  - tools/oracle/src/helpers/server/b1067/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/endpoints.py#L30-L283

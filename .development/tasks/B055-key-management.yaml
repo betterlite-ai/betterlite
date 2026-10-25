@@ -59,6 +59,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-management/**
+    - tools/oracle/helpers/b055.py
+    - tools/oracle/helpers/b055/**
+    - tools/oracle/src/helpers/server/b055.rs
+    - tools/oracle/src/helpers/server/b055/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1940-L2150

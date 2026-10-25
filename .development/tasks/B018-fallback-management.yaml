@@ -41,6 +41,10 @@ scope:
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/fallback.rs
   - crates/betterlite-server/fuzz/corpus/fallback/fallback-management-*
+  - tools/oracle/helpers/b018.py
+  - tools/oracle/helpers/b018/**
+  - tools/oracle/src/helpers/server/b018.rs
+  - tools/oracle/src/helpers/server/b018/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/fallback_management_endpoints.py#L42-L246

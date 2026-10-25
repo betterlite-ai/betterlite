@@ -45,6 +45,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/auto_router_rollups.py
   - tools/oracle/cases/routing/auto-router-rollups/**
+  - tools/oracle/helpers/b344.py
+  - tools/oracle/helpers/b344/**
+  - tools/oracle/src/helpers/server/b344.rs
+  - tools/oracle/src/helpers/server/b344/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L117-L283

@@ -36,6 +36,10 @@ scope:
     - crates/betterlite-server/fuzz/corpus/scim_resource/user-lifecycle-*
     - tools/oracle/cases/management/scim-user-lifecycle/**
     - tools/oracle/fuzz/corpus/http_case/scim-user-lifecycle-*
+    - tools/oracle/helpers/b1638.py
+    - tools/oracle/helpers/b1638/**
+    - tools/oracle/src/helpers/server/b1638.rs
+    - tools/oracle/src/helpers/server/b1638/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L160-L232

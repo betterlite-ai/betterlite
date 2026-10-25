@@ -45,6 +45,10 @@ scope:
     - tools/oracle/fixtures/vertex-embedding-dispatch/**
     - crates/betterlite-config/src/sections/vertex_embedding_dispatch.rs
     - crates/betterlite-config/src/sections/vertex_embedding_dispatch/**
+    - tools/oracle/helpers/b1395.py
+    - tools/oracle/helpers/b1395/**
+    - tools/oracle/src/helpers/core_ops/b1395.rs
+    - tools/oracle/src/helpers/core_ops/b1395/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6837-L6929
