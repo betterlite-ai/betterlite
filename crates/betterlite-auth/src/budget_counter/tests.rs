@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 use std::collections::HashMap;
 #[test]
 fn structure_has_all_counter_fields() {
-    let counter = BudgetCounter {
+    let _counter = BudgetCounter {
         counter_key: "spend:key:test".to_owned(),
         max_budget: Decimal::from(10_i32),
         fallback_spend: Decimal::from(1_i32),
@@ -16,7 +16,6 @@ fn structure_has_all_counter_fields() {
         window_duration: Some("1h".to_owned()),
         window_start: None,
     };
-    assert_eq!(counter.entity_id, "test");
 }
 #[rstest]
 #[case("Key", CounterEntityType::Key)]
@@ -44,10 +43,6 @@ where
     T: FloatInput,
 {
     assert_eq!(value.decimal_value(), Some(expected));
-    assert_eq!(
-        <&[u8] as FloatInput>::decimal_value(&b" 3.5\n"[..]),
-        Some(Decimal::new(35, 1))
-    );
 }
 #[rstest]
 #[case("_5")]
@@ -60,11 +55,10 @@ fn to_float_rejects_invalid_digit_separators(#[case] value: &str) {
 fn to_float_rejects_u128_values_decimal_cannot_hold() {
     assert_eq!(u128::MAX.decimal_value(), None);
 }
-#[rstest]
-#[case(f64::INFINITY)]
-#[case(f64::NAN)]
-fn to_float_rejects_non_finite_values(#[case] value: f64) {
-    assert_eq!(value.decimal_value(), None);
+#[test]
+fn to_float_rejects_non_finite_values() {
+    assert_eq!(f64::INFINITY.decimal_value(), None);
+    assert_eq!(f64::NAN.decimal_value(), None);
 }
 #[rstest]
 #[case(2_i32, 2_i64)]

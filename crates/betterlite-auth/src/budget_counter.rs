@@ -2,11 +2,12 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
 use rust_decimal::prelude::ToPrimitive as _;
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::str;
 use std::str::FromStr as _;
 use std::time::SystemTime;
 mod tests;
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CounterEntityType {
     Key,
     Team,
@@ -19,6 +20,7 @@ pub enum CounterEntityType {
     Project,
 }
 impl CounterEntityType {
+    #[must_use]
     pub fn from_litellm_name(name: &str) -> Option<Self> {
         match name {
             "Key" => Some(Self::Key),
@@ -34,7 +36,7 @@ impl CounterEntityType {
         }
     }
 }
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct BudgetCounter {
     pub counter_key: String,
     pub max_budget: Decimal,
@@ -126,7 +128,7 @@ fn normalize_digit_grouping(text: &str) -> Option<String> {
 pub trait ValueLookup {
     fn value(&self, key: &str) -> Option<&String>;
 }
-impl ValueLookup for HashMap<String, String> {
+impl<S: BuildHasher> ValueLookup for HashMap<String, String, S> {
     fn value(&self, key: &str) -> Option<&String> {
         self.get(key)
     }
