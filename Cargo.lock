@@ -361,6 +361,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-harness"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "futures-util",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "betterlite-http"
 version = "0.1.0"
 dependencies = [
