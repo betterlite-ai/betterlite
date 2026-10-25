@@ -1,4 +1,3 @@
-mod secret_codec;
 macro_rules! helper_group {
     ($($operation:literal => $module:ident),* $(,)?) => {
         $(mod $module;)*
@@ -111,7 +110,7 @@ struct Group {
     check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
 }
 
-const GROUPS: [Group; 33] = [
+const GROUPS: [Group; 32] = [
     anthropic::GROUP,
     auth::GROUP,
     azure::GROUP,
@@ -138,7 +137,6 @@ const GROUPS: [Group; 33] = [
     redis::GROUP,
     router::GROUP,
     sdk::GROUP,
-    secret_codec::GROUP,
     secrets::GROUP,
     server::GROUP,
     streaming::GROUP,

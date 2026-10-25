@@ -15,25 +15,9 @@ use betterlite_secrets::secret_codec::{
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
-use super::{Helper, HelperError, HelperResult};
+use crate::helpers::{Helper, HelperError, HelperResult};
 
 mod tests;
-
-pub(super) const GROUP: super::Group = super::Group { invoke, check };
-
-fn invoke(operation: &str, input: &Value) -> Option<HelperResult> {
-    match operation {
-        "secret_codec" => Some(<Op as Helper>::decode_and_run(input)),
-        _ => None,
-    }
-}
-
-fn check(operation: &str, input: &Value) -> Option<Result<(), String>> {
-    match operation {
-        "secret_codec" => Some(<Op as Helper>::check(input)),
-        _ => None,
-    }
-}
 
 pub(crate) struct Op;
 
