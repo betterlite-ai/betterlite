@@ -77,13 +77,8 @@ pub struct FindingDraft {
 
 impl Validate for FindingDraft {
     fn validate(&self) -> Result<(), RecordError> {
-        check_draft(
-            &self.title,
-            &self.description,
-            &self.suggestion,
-            &self.limitation,
-            &self.evidence,
-        )
+        let notes = [self.suggestion.as_str(), self.limitation.as_str()];
+        check_draft(&self.title, &self.description, notes, &self.evidence)
     }
 }
 
@@ -118,21 +113,15 @@ pub struct Finding {
 
 impl Validate for Finding {
     fn validate(&self) -> Result<(), RecordError> {
-        check_draft(
-            &self.title,
-            &self.description,
-            &self.suggestion,
-            &self.limitation,
-            &self.evidence,
-        )
+        let notes = [self.suggestion.as_str(), self.limitation.as_str()];
+        check_draft(&self.title, &self.description, notes, &self.evidence)
     }
 }
 
 fn check_draft(
     title: &str,
     description: &str,
-    suggestion: &str,
-    limitation: &str,
+    [suggestion, limitation]: [&str; 2],
     evidence: &[Evidence],
 ) -> Result<(), RecordError> {
     check_length("title", title, 3, 160)?;

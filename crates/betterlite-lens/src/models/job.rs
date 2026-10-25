@@ -62,10 +62,8 @@ impl Validate for Job {
     fn validate(&self) -> Result<(), RecordError> {
         self.settings.validate()?;
         self.sample.iter().try_for_each(Validate::validate)?;
-        self.findings
-            .iter()
-            .flatten()
-            .try_for_each(Validate::validate)
+        let findings = self.findings.as_deref().unwrap_or_default();
+        findings.iter().try_for_each(Validate::validate)
     }
 }
 
@@ -117,19 +115,18 @@ pub struct Worker {
 
 impl Validate for Worker {
     fn validate(&self) -> Result<(), RecordError> {
-        let malformed = self.analysis_key_id.as_ref().is_some_and(|key| {
-            key.len() != 64
-                || !key
-                    .bytes()
-                    .all(|byte| matches!(byte, b'a'..=b'f' | b'0'..=b'9'))
-        });
-        if malformed {
-            Err(RecordError::Pattern {
-                field: "analysis_key_id",
-            })
-        } else {
-            Ok(())
+        let Some(key) = &self.analysis_key_id else {
+            return Ok(());
+        };
+        let hex = key
+            .bytes()
+            .all(|byte| matches!(byte, b'a'..=b'f' | b'0'..=b'9'));
+        if key.len() == 64 && hex {
+            return Ok(());
         }
+        Err(RecordError::Pattern {
+            field: "analysis_key_id",
+        })
     }
 }
 
