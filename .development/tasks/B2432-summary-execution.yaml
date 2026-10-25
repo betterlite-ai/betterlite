@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/summary_execution.rs
   - crates/betterlite-core/src/api/summary_execution/**
   - tools/oracle/src/sdk_http.rs

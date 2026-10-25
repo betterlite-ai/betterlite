@@ -20,6 +20,7 @@ scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/file_provider_selection.rs
   - crates/betterlite-provider/src/api/file_provider_selection/**
   - tools/oracle/Cargo.toml

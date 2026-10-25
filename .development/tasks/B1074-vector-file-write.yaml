@@ -19,9 +19,11 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_file_write.rs
   - crates/betterlite-core/src/api/vector_file_write/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/vector_file_write.rs
   - crates/betterlite-config/src/api/vector_file_write/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-write-*

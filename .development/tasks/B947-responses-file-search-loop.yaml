@@ -58,6 +58,7 @@ scope:
   - crates/betterlite-core/src/api/responses_file_search_loop.rs
   - crates/betterlite-core/src/api/responses_file_search_loop/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-core/fuzz/Cargo.toml

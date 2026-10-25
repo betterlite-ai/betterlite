@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/fine_tuning_routes.rs
   - crates/betterlite-server/src/api/fine_tuning_routes/**
   - crates/betterlite-server/fuzz/Cargo.toml

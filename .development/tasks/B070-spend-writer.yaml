@@ -43,9 +43,11 @@ scope:
     - crates/betterlite-db/src/spend_writer.rs
     - crates/betterlite-db/src/spend_writer/**
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/runtime.rs
     - crates/betterlite-server/src/spend/runtime/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/spend-writer-*

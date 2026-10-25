@@ -43,6 +43,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-db/src/spend_retention.rs
+    - crates/betterlite-db/src/spend_retention/**
     - crates/betterlite-db/src/spend_retention/{batches.rs,batches/**}
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
