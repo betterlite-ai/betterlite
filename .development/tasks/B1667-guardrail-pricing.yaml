@@ -36,6 +36,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-models/src/cost_breakdown.rs
+    - crates/betterlite-models/src/cost_breakdown/**
     - crates/betterlite-models/src/guardrail_pricing.rs
     - crates/betterlite-models/src/guardrail_pricing/**
     - tools/oracle/src/helpers/models/guardrail_costs.rs

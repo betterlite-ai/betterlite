@@ -45,8 +45,11 @@ scope:
     - crates/betterlite-openai/fuzz/corpus/xai_oauth/**
     - crates/betterlite-config/src/{lib,config,settings,model,env,providers,tests}.rs
     - crates/betterlite-config/src/providers/xai.rs
+    - crates/betterlite-config/src/providers/xai/**
     - crates/betterlite-config/src/providers/xai/oauth.rs
+    - crates/betterlite-config/src/providers/xai/oauth/**
     - crates/betterlite-config/src/tests/xai_oauth.rs
+    - crates/betterlite-config/src/tests/xai_oauth/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/xai_oauth*
     - tools/oracle/src/helpers/openai/xai_oauth_tokens.rs
     - tools/oracle/src/helpers/openai/xai_oauth_tokens/**

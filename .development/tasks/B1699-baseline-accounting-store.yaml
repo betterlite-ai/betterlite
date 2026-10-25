@@ -55,6 +55,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-db/src/baseline.rs
+    - crates/betterlite-db/src/baseline/**
     - crates/betterlite-db/src/baseline/store.rs
     - crates/betterlite-db/src/baseline/store/**
     - crates/betterlite-db/src/baseline/flush.rs

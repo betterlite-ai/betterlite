@@ -21,9 +21,11 @@ description: >-
 scope:
   paths:
   - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/image_edit_http.rs
   - crates/betterlite-provider/src/api/image_edit_http/**
   - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/**
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/image_edit_http.rs
   - tools/oracle/sdk_http/dispatch.py

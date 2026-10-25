@@ -39,6 +39,7 @@ scope:
     - crates/betterlite-config/src/{config,settings,providers,tests}.rs
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/tests/vertex_batch_download_settings.rs
+    - crates/betterlite-config/src/tests/vertex_batch_download_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_batch_download*
     - tools/oracle/src/helpers/vertex/batch_download.rs
     - tools/oracle/src/helpers/vertex/batch_download/**

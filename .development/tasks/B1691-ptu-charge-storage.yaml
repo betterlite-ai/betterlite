@@ -42,6 +42,7 @@ scope:
   paths:
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/src/ptu.rs
+    - crates/betterlite-db/src/ptu/**
     - crates/betterlite-db/src/ptu/charges.rs
     - crates/betterlite-db/src/ptu/charges/**
     - crates/betterlite-db/src/ptu/store.rs

@@ -32,6 +32,7 @@ scope:
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/api.rs
+  - crates/betterlite-openai/src/api/**
   - crates/betterlite-openai/src/api/responses_shapes.rs
   - crates/betterlite-openai/src/api/responses_shapes/**
   - crates/betterlite-openai/fuzz/Cargo.toml
