@@ -65,49 +65,57 @@ fn failure(class: &str, message: String) -> HelperResult {
     Err(Box::new(error))
 }
 
-fn encode<T>(value: &T) -> HelperResult
-where
-    T: serde::Serialize,
-{
-    let encoded = serde_json::to_value(value);
-    encoded.or_else(|error| failure("TypeError", error.to_string()))
+fn decode_settings(json: &serde_json::Value) -> HelperResult {
+    match serde_json::to_vec(json) {
+        Err(error) => failure("TypeError", error.to_string()),
+        Ok(bytes) => decode::<LensSettings>(&bytes).map_or_else(
+            |error| failure("ValidationError", error.to_string()),
+            |settings| {
+                serde_json::to_value(settings)
+                    .or_else(|error| failure("TypeError", error.to_string()))
+            },
+        ),
+    }
 }
 
 fn run(input: &Input) -> HelperResult {
     let overflow = |error: TransitionError| failure("OverflowError", error.to_string());
     match input {
-        Input::CanAccess { viewer, target } => encode(&can_access(viewer, target)),
+        Input::CanAccess { viewer, target } => serde_json::to_value(can_access(viewer, target))
+            .or_else(|error| failure("TypeError", error.to_string())),
         Input::QueueJob {
             lens,
             now,
             job_id,
             request,
-        } => queue_job(lens, *now, job_id.clone(), request)
-            .map_or_else(overflow, |queued| encode(&queued)),
+        } => queue_job(lens, *now, job_id.clone(), request).map_or_else(overflow, |queued| {
+            serde_json::to_value(queued).or_else(|error| failure("TypeError", error.to_string()))
+        }),
         Input::ClaimJob { lens, worker, now } => {
-            claim_job(lens, worker, *now).map_or_else(overflow, |claimed| encode(&claimed))
+            claim_job(lens, worker, *now).map_or_else(overflow, |claimed| {
+                serde_json::to_value(claimed)
+                    .or_else(|error| failure("TypeError", error.to_string()))
+            })
         }
-        Input::RenewBudget { lens, now } => encode(&renew_budget(lens, *now)),
-        Input::MergeFinding(call) => encode(&merge_finding(
+        Input::RenewBudget { lens, now } => serde_json::to_value(renew_budget(lens, *now))
+            .or_else(|error| failure("TypeError", error.to_string())),
+        Input::MergeFinding(call) => serde_json::to_value(merge_finding(
             &call.lens,
             &call.draft,
             call.revision,
             call.now,
-        )),
-        Input::SnapshotFinding(call) => encode(&snapshot_finding(
+        ))
+        .or_else(|error| failure("TypeError", error.to_string())),
+        Input::SnapshotFinding(call) => serde_json::to_value(snapshot_finding(
             &call.lens,
             &call.draft,
             call.revision,
             call.now,
-        )),
-        Input::DecodeSettings { json } => match serde_json::to_vec(json) {
-            Err(error) => failure("TypeError", error.to_string()),
-            Ok(bytes) => decode::<LensSettings>(&bytes).map_or_else(
-                |error| failure("ValidationError", error.to_string()),
-                |settings| encode(&settings),
-            ),
-        },
-        Input::AnalysisChecks { settings } => encode(&settings.analysis_checks()),
+        ))
+        .or_else(|error| failure("TypeError", error.to_string())),
+        Input::DecodeSettings { json } => decode_settings(json),
+        Input::AnalysisChecks { settings } => serde_json::to_value(settings.analysis_checks())
+            .or_else(|error| failure("TypeError", error.to_string())),
     }
 }
 
