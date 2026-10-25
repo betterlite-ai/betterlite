@@ -29,6 +29,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/skills.rs
+    - crates/betterlite-core/src/skills/**
     - crates/betterlite-core/src/skills/store.rs
     - crates/betterlite-core/src/skills/store/**
     - crates/betterlite-core/Cargo.toml

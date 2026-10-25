@@ -54,12 +54,16 @@ scope:
   - crates/betterlite-server/src/api/responses_read_routes.rs
   - crates/betterlite-server/src/api/responses_read_routes/**
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_read_routes.rs
   - crates/betterlite-core/src/api/responses_read_routes/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/cases/api/responses-read-routes/**

@@ -87,16 +87,23 @@ scope:
     - tools/oracle/cases/helpers/key-context/**
     - tools/oracle/fuzz/corpus/helper_case/key-context-*
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/key-context/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/loader/**
     - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/raw/**
     - crates/betterlite-config/tests/**
     - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/resolve/**
     - crates/betterlite-config/src/types.rs
+    - crates/betterlite-config/src/types/**
     - crates/betterlite-config/src/key_context.rs
     - crates/betterlite-config/src/key_context/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/key-context-*

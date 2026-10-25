@@ -85,8 +85,11 @@ scope:
     - tools/oracle/cases/helpers/team-budget-admission/**
     - tools/oracle/fuzz/corpus/helper_case/team-budget-admission-*
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/team-budget-admission/**
     - crates/betterlite-server/src/auth/team_budget_admission.rs
     - crates/betterlite-server/src/auth/team_budget_admission/**

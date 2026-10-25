@@ -22,6 +22,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_tool_selection.rs
   - crates/betterlite-core/src/api/vector_tool_selection/**
   - tools/oracle/src/helpers/core_ops/vector_tool_selection.rs

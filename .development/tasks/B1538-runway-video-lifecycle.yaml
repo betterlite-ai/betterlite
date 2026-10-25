@@ -30,6 +30,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/runway.rs
+    - crates/betterlite-core/src/api/runway/**
     - crates/betterlite-core/src/api/runway/video_lifecycle.rs
     - crates/betterlite-core/src/api/runway/video_lifecycle/**
     - tools/oracle/src/helpers/core_ops/runway_video_lifecycle.rs

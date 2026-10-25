@@ -46,12 +46,15 @@ description: >-
 scope:
   paths:
     - crates/betterlite-db/src/ptu.rs
+    - crates/betterlite-db/src/ptu/**
     - crates/betterlite-db/src/ptu/rollup.rs
     - crates/betterlite-db/src/ptu/rollup/**
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/jobs.rs
+    - crates/betterlite-server/src/jobs/**
     - crates/betterlite-server/src/jobs/ptu.rs
     - crates/betterlite-server/src/jobs/ptu/**
     - crates/betterlite-server/tests/ptu_job.rs

@@ -145,19 +145,27 @@ scope:
   - crates/betterlite-config/Cargo.toml
   - crates/betterlite-config/src/lib.rs
   - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/loader/**
   - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/raw/**
   - crates/betterlite-config/tests/**
   - crates/betterlite-config/src/resolve.rs
+  - crates/betterlite-config/src/resolve/**
   - crates/betterlite-config/src/types.rs
+  - crates/betterlite-config/src/types/**
   - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/**
   - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/**
   - crates/betterlite-config/src/providers/bedrock/search.rs
   - crates/betterlite-config/src/providers/bedrock/search/**
   - crates/betterlite-config/src/tests.rs
   - crates/betterlite-config/src/tests/bedrock_services_search_config.rs
+  - crates/betterlite-config/src/tests/bedrock_services_search_config/**
   - crates/betterlite-config/src/providers/bedrock/agentcore_gateway_credentials.rs
   - crates/betterlite-config/src/providers/bedrock/agentcore_gateway_credentials/**
   - crates/betterlite-config/src/tests/agentcore_gateway_credentials_config.rs
+  - crates/betterlite-config/src/tests/agentcore_gateway_credentials_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/agentcore_gateway_credentials*
   lint_tables: false
 references:

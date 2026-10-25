@@ -64,6 +64,7 @@ scope:
   - crates/betterlite-core/src/api/batch_input_accounting.rs
   - crates/betterlite-core/src/api/batch_input_accounting/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-core/fuzz/Cargo.toml

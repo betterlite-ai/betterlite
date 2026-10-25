@@ -36,6 +36,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/settlement.rs
     - crates/betterlite-server/src/spend/settlement/**
     - crates/betterlite-auth/src/reservation_state.rs
