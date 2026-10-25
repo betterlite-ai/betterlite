@@ -47,6 +47,31 @@ fn passthrough_response_headers_behavior(
     assert_eq!(headers, header_map(expected));
 }
 
+#[test]
+fn passthrough_response_headers_custom_values_cannot_restore_excluded_headers() {
+    let upstream = header_map(&[("content-length", "9"), ("x-up", "upstream")]);
+    let custom = header_map(&[
+        ("content-length", "1"),
+        ("server", "custom"),
+        ("x-up", "custom"),
+    ]);
+
+    let headers = get_response_headers(&upstream, Some("call"), Some(&custom));
+
+    assert!(!headers.contains_key("content-length"));
+    assert!(!headers.contains_key("server"));
+    assert_eq!(
+        headers.get("x-up").and_then(|value| value.to_str().ok()),
+        Some("custom")
+    );
+    assert_eq!(
+        headers
+            .get("x-litellm-call-id")
+            .and_then(|value| value.to_str().ok()),
+        Some("call")
+    );
+}
+
 #[rstest]
 #[case::plain("https://up/b", "v1/x", true, "https://up/b/v1/x")]
 #[case::slashes("https://up/b/", "/v1/x/", true, "https://up/b/v1/x/")]
@@ -75,6 +100,9 @@ fn passthrough_url_joining_behavior(
 #[case::climb_back("https://up/api", "../../api/x", "/api/x")]
 #[case::double_slash("https://up//api", "x", "//api/x")]
 #[case::triple_slash("https://up///api", "x", "///api/")]
+#[case::root_parent("https://up/", "../x", "/x")]
+#[case::root_parent_with_trailing_slash("https://up/", "../x/", "/x/")]
+#[case::base_parent_preserves_base("https://up/api", "../../", "/api/")]
 fn passthrough_url_joining_behavior_base(
     #[case] base: &str,
     #[case] endpoint: &str,
@@ -93,6 +121,13 @@ fn passthrough_url_joining_behavior_base(
 #[case::empty(200, "", ResponseHandling::Buffer)]
 #[case::octet(399, "application/octet-stream", ResponseHandling::Relay)]
 #[case::jsonl(200, "application/jsonl", ResponseHandling::Relay)]
+#[case::json_suffix(
+    200,
+    "application/vnd.answer+json; charset=utf-8",
+    ResponseHandling::Buffer
+)]
+#[case::amz_prefix(200, "application/x-amz-json-1.0", ResponseHandling::Buffer)]
+#[case::plain(200, "text/plain", ResponseHandling::Relay)]
 fn passthrough_buffering_behavior(
     #[case] status: u16,
     #[case] content_type: &'static str,
