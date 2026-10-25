@@ -1,0 +1,77 @@
+id: B3254
+title: Local advanced Australian PII catalog record
+description: >-
+  Retain the local backup advanced Australian PII record as a complete self-contained JSON template fixture.
+  LiteLLM's backup file `litellm/policy_templates_backup.json` serves as an offline fallback when the published remote catalog is unreachable.
+  This task owns the complete local advanced-au-pii-protection guardrail template record with all guardrailDefinitions (au-pii-tax-identifiers, au-pii-passports, international-pii-identifiers, contact-information-pii, financial-pii, credentials-api-keys, network-infrastructure-pii and protected-class-information).
+  Write it to `crates/betterlite-policy/assets/templates/local/advanced-au-pii-protection.json`, a fragment file holding exactly one JSON object: the record as LiteLLM has it at the pinned commit, with the same keys in the same order and the same values.
+  B3252 (local lookup) and B3253 (remote catalog) assemble the fragments in LiteLLM's source order from an explicit list, so the order of records is their job, not this task's.
+  The backup version includes example_sentences ("My TFN is 123 456 789, can you check it?", "Here is my ABN 51 824 753 556 for the invoice", "Medicare number 2123 45670 1", "My passport number is PA1234567") that distinguish it from the published version in B3255.
+  Preserve the exact field order and values from the pinned LiteLLM commit. The record includes the policy_name "advanced-pii-protection-australia", description text, eight guardrails in guardrails field, PII Protection and Australia tags, 1ms estimated_latency_ms, and guardrailDefinitions with complete litellm_params for each guardrail including pattern_redaction_format.
+scope:
+  paths:
+    - crates/betterlite-policy/assets/templates/local/advanced-au-pii-protection.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L2-L387
+    why: The complete advanced-au-pii-protection record in the backup file with all guardrailDefinitions and example_sentences.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L610-L624
+    why: The _load_policy_templates_from_local_backup function that loads this backup file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L632-L662
+    why: The get_policy_templates route that uses the local backup as fallback and respects LITELLM_LOCAL_POLICY_TEMPLATES env var.
+dod:
+  - text: The local fragment holds the complete advanced-au-pii-protection record including all eight guardrail definitions and example_sentences.
+    proof: [catalog-data]
+  - text: The fragment is valid JSON and holds exactly one object.
+    proof: [catalog-data]
+  - text: >-
+      The record's keys are, in this order, id, title, description, example_sentences, icon, iconColor,
+      iconBg, guardrails array, complexity, guardrailDefinitions array with eight
+      entries, templateData, tags, and estimated_latency_ms, with correct literal values.
+    proof: [catalog-data]
+  - text: The record's id is advanced-au-pii-protection, the name of its fragment file.
+    proof: [catalog-data]
+  - text: >-
+      All literal values are verified: example sentences, title "Advanced PII Protection (Australia)",
+      tags ["PII Protection", "Australia"], estimated_latency_ms value 1, pattern_redaction_format values
+      including [PASSPORT_REDACTED], [INTERNAL_IP_REDACTED], [PROTECTED_CLASS_INFO_REDACTED],
+      and [{pattern_name}_REDACTED] placeholders.
+    proof: [catalog-data]
+checks:
+  optional: []
+  commands:
+    - id: catalog-data
+      why: the local advanced-au-pii-protection fragment is missing, is not one valid JSON object, or its keys, key order or literal values differ from the pinned LiteLLM record
+      run: |-
+        jq -e -s 'length == 1 and (.[0]
+          | ["au-pii-tax-identifiers", "au-pii-passports", "international-pii-identifiers", "contact-information-pii", "financial-pii", "credentials-api-keys", "network-infrastructure-pii", "protected-class-information"] as $names
+          | keys_unsorted == ["id", "title", "description", "example_sentences", "icon", "iconColor", "iconBg", "guardrails", "complexity", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
+          and .id == "advanced-au-pii-protection"
+          and .title == "Advanced PII Protection (Australia)"
+          and (.description | contains("Australian-specific identifiers"))
+          and .example_sentences == ["My TFN is 123 456 789, can you check it?", "Here is my ABN 51 824 753 556 for the invoice", "Medicare number 2123 45670 1", "My passport number is PA1234567"]
+          and .icon == "ShieldCheckIcon"
+          and .iconColor == "text-purple-500"
+          and .iconBg == "bg-purple-50"
+          and .guardrails == $names
+          and .complexity == "High"
+          and [.guardrailDefinitions[].guardrail_name] == $names
+          and all(.guardrailDefinitions[]; has("litellm_params") and (.litellm_params | has("guardrail") and has("mode") and has("patterns")))
+          and [.guardrailDefinitions[].litellm_params.pattern_redaction_format] == ["[{pattern_name}_REDACTED]", "[PASSPORT_REDACTED]", "[{pattern_name}_REDACTED]", "[{pattern_name}_REDACTED]", "[{pattern_name}_REDACTED]", "[{pattern_name}_REDACTED]", "[INTERNAL_IP_REDACTED]", "[PROTECTED_CLASS_INFO_REDACTED]"]
+          and .templateData.policy_name == "advanced-pii-protection-australia"
+          and .tags == ["PII Protection", "Australia"]
+          and .estimated_latency_ms == 1)' crates/betterlite-policy/assets/templates/local/advanced-au-pii-protection.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Code that loads or uses this catalog file. The loading function _load_policy_templates_from_local_backup is covered by B3252 which depends on this task. The route that uses the fallback (get_policy_templates) is covered by B3253.
+  - Guardrail implementations or pattern definitions referenced by this template. The record only defines policy patterns and metadata.
+  - Other policy templates in the backup file (baseline-pii-protection, nsfw-content-filter-australia, etc.). Those are owned by other catalog tasks.
+pitfalls:
+  - The fragment must be valid JSON holding one object. LiteLLM's _load_policy_templates_from_local_backup returns an empty list on file-not-found but not on malformed JSON.
+  - Each guardrailDefinitions entry must include the complete litellm_params block with guardrail, mode, patterns array with pattern_type and pattern_name, and pattern_redaction_format. Do not omit or shorten these.
+  - The example_sentences field (unique to the backup) must contain the four sentences exactly as in the pinned LiteLLM commit for UI preview in the catalog selector.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

@@ -10,8 +10,8 @@ description: >-
   Build text extraction by joining message content (via build_inspection_messages from B3664), prompt field (string or array), instructions, tool call arguments in messages, input content items with type "input_text", and tool/function schema text (from name, description, title, const, default, enum, examples fields). Do not serialize request dicts to JSON; preserve the source's direct text.
 scope:
   paths:
-    - "litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py"
-    - "litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py"
+    - "crates/betterlite-guardrails/src/repello_content.rs"
+    - "crates/betterlite-guardrails/src/repello_content/**"
   lint_tables: false
 references:
   - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py"
@@ -61,37 +61,37 @@ checks:
     - id: config-model-fields
       why: config model is missing or fields are incorrectly defined
       run: >-
-        grep -q "class RepelloAIGuardrailConfigModel" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
-        grep -qE "api_key.*str.*None.*Field" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
-        grep -qE "unreachable_fallback.*Literal" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py
+        grep -rqs "struct RepelloAIGuardrailConfigModel" crates/betterlite-guardrails/src/repello_content.rs crates/betterlite-guardrails/src/repello_content &&
+        grep -rqs "api_key: Option<" crates/betterlite-guardrails/src/repello_content.rs crates/betterlite-guardrails/src/repello_content &&
+        grep -rqs "unreachable_fallback:" crates/betterlite-guardrails/src/repello_content.rs crates/betterlite-guardrails/src/repello_content
     - id: config-friendly-name
       why: ui_friendly_name method is missing or incorrect
       run: >-
-        grep -q "def ui_friendly_name" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
-        grep -q 'RepelloAI Argus' litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py
+        grep -rqs "fn ui_friendly_name" crates/betterlite-guardrails/src/repello_content.rs crates/betterlite-guardrails/src/repello_content &&
+        grep -rqs 'RepelloAI Argus' crates/betterlite-guardrails/src/repello_content.rs crates/betterlite-guardrails/src/repello_content
     - id: scan-data-fields
       why: RepelloAIScanData wire type is missing or incomplete
       run: >-
-        grep -q "class RepelloAIScanData" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
-        grep -q "prompt:" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py
+        grep -rqs "struct RepelloAIScanData" crates/betterlite-guardrails/src/repello_content.rs crates/betterlite-guardrails/src/repello_content &&
+        grep -rqs "prompt:" crates/betterlite-guardrails/src/repello_content.rs crates/betterlite-guardrails/src/repello_content
     - id: analyze-request-fields
       why: RepelloAIAnalyzeRequest wire type is missing or incomplete
       run: >-
-        grep -q "class RepelloAIAnalyzeRequest" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
-        grep -q "asset_id:" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py
+        grep -rqs "struct RepelloAIAnalyzeRequest" crates/betterlite-guardrails/src/repello_content.rs crates/betterlite-guardrails/src/repello_content &&
+        grep -rqs "asset_id:" crates/betterlite-guardrails/src/repello_content.rs crates/betterlite-guardrails/src/repello_content
     - id: violated-policy-fields
       why: RepelloAIViolatedPolicy wire type is missing or incomplete
       run: >-
-        grep -q "class RepelloAIViolatedPolicy" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
-        grep -q "policy_name:" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py
+        grep -rqs "struct RepelloAIViolatedPolicy" crates/betterlite-guardrails/src/repello_content.rs crates/betterlite-guardrails/src/repello_content &&
+        grep -rqs "policy_name:" crates/betterlite-guardrails/src/repello_content.rs crates/betterlite-guardrails/src/repello_content
     - id: analyze-response-fields
       why: RepelloAIAnalyzeResponse wire type is missing or incomplete
       run: >-
-        grep -q "class RepelloAIAnalyzeResponse" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py &&
-        grep -q "verdict:" litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py
+        grep -rqs "struct RepelloAIAnalyzeResponse" crates/betterlite-guardrails/src/repello_content.rs crates/betterlite-guardrails/src/repello_content &&
+        grep -rqs "verdict:" crates/betterlite-guardrails/src/repello_content.rs crates/betterlite-guardrails/src/repello_content
     - id: repello-content-tests
       why: content extraction tests fail or are missing
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^repello_content::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_content::/)'
 oracle_cases: []
 deviations: []
 out_of_scope:

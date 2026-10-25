@@ -9,12 +9,12 @@ description: >-
 
   Tool call arguments and output responses that exceed MAX_STRUCTURED_CONTENT_SCAN_DEPTH fail closed with HTTP 400. Two guardrails running concurrently (run_in_parallel: true) cannot both rewrite the same argument leaf to different values; detect conflicts and reject. A guardrail that returns the wrong number of texts fails closed. Arguments that already hold the text this guardrail was handed, or already hold this guardrail's own replacement, are safe to write.
 
-  Own both complete files in guardrail_translation/ directory including the guardrail_translation_mappings dict that registers call_mcp_tool and list_mcp_tools operations. Count: **233 lines** (handler.py 223 + __init__.py 10).
+  Port both complete files of LiteLLM's guardrail_translation/ directory into mcp_guardrail_translation, including the guardrail_translation_mappings dict that registers call_mcp_tool and list_mcp_tools operations. Count: **233 lines** (handler.py 223 + __init__.py 10).
 
 scope:
   paths:
-    - litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py
-    - litellm/proxy/_experimental/mcp_server/guardrail_translation/__init__.py
+    - crates/betterlite-guardrails/src/mcp_guardrail_translation.rs
+    - crates/betterlite-guardrails/src/mcp_guardrail_translation/**
   lint_tables: false
 
 references:
@@ -73,31 +73,31 @@ checks:
   commands:
     - id: input-projection-tests
       why: Tool call input (description, schema descriptions, argument leaves) is projected as separate texts in a single OpenAI-compatible tool definition.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::process_input::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_guardrail_translation::process_input::/)'
     - id: input-writeback-tests
       why: Guardrail-returned texts are written back only when changed; descriptions, schemas and arguments are written separately with structure preserved.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::input_writeback::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_guardrail_translation::input_writeback::/)'
     - id: nesting-depth-tests
       why: Arguments and schemas exceeding MAX_STRUCTURED_CONTENT_SCAN_DEPTH fail closed with HTTP 400.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::nesting_depth::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_guardrail_translation::nesting_depth::/)'
     - id: text-count-mismatch-tests
       why: Guardrails returning wrong text count fail closed and prevent positional write-back.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::text_count_mismatch::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_guardrail_translation::text_count_mismatch::/)'
     - id: concurrent-conflict-tests
       why: Two concurrent guardrails rewriting the same argument leaf to different values are detected and rejected with HTTP 400.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::concurrent_conflict::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_guardrail_translation::concurrent_conflict::/)'
     - id: output-projection-tests
       why: Tool result content and structuredContent are scanned together; non-string labels that match masking rules are rejected.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::process_output::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_guardrail_translation::process_output::/)'
     - id: result-mutation-tests
       why: Tool results are rewritten in place so logging payloads see the masked version.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::result_mutation::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_guardrail_translation::result_mutation::/)'
     - id: fallback-behavior-tests
       why: Missing mcp_tool_name returns data unchanged; missing arguments and empty schemas supply empty defaults.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::fallback_behavior::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_guardrail_translation::fallback_behavior::/)'
     - id: mapping-registration-tests
       why: guardrail_translation_mappings dict maps both call_mcp_tool and list_mcp_tools to MCPGuardrailTranslationHandler.
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^mcp_guardrail_translation::mapping_registration::/)' 2>&1 | grep -q "test result"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_guardrail_translation::mapping_registration::/)'
 
 oracle_cases: []
 
