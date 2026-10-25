@@ -2,7 +2,7 @@
 use super::identifiers::DailyActivityTable;
 use super::{
     AggregatedRows, DailyActivityProxyReads, DailyActivityRow, DailyActivityScope,
-    DailyActivityScopeInput, EntityRollupRow, ExportRow, ExportType, GroupingSetsRow,
+    DailyActivityScopeInput, EntityRollupRow, ExportCursor, ExportRow, ExportType, GroupingSetsRow,
     KeyMetadataRow, KeyPage, KeySpendRow, RollupMetricsRow, SpendLogsWindow, SqlParameter,
     SqlQuery,
 };

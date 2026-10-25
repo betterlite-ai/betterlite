@@ -66,9 +66,8 @@ where
         let null = serde_json::from_str::<Record>(&serde_json::to_string(&changed)?).is_ok();
         fields.insert(field.clone(), (missing, null));
     }
-    let result = Probe {
+    to_raw_value(&Probe {
         value: record,
         fields,
-    };
-    RawValue::from_string(serde_json::to_string(&result)?)
+    })
 }
