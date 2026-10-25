@@ -104,5 +104,5 @@ pub(crate) struct HelperError {
 #[serde(untagged)]
 pub(crate) enum ErrorCode {
     Text(String),
-    Number(i64),
+    Number(serde_json::Number),
 }

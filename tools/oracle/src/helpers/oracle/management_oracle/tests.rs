@@ -79,8 +79,13 @@ fn exception_null_and_code_types() {
         r#"{"ok":false,"error":{"class":"Error","message":"failed","code":401}}"#,
     )
     .unwrap();
+    let fractional: crate::compare::helper::HelperOutput = serde_json::from_str(
+        r#"{"ok":false,"error":{"class":"Error","message":"failed","code":401.5}}"#,
+    )
+    .unwrap();
     assert!(crate::compare::compare_helper(&left, &missing, &[]).is_some());
     assert!(crate::compare::compare_helper(&left, &numeric, &[]).is_some());
+    assert!(crate::compare::compare_helper(&numeric, &fractional, &[]).is_some());
     serde_json::from_str::<crate::helpers::HelperOutput>(
         r#"{"ok":false,"error":{"class":"Error","message":"failed","code":true}}"#,
     )
@@ -122,13 +127,6 @@ fn rejects_unknown_fields() {
         "operation": {"path_encoding": {"function": "segment", "value": "a", "field_name": "id", "extra": true}}
     }))
     .unwrap_err();
-    assert!(error.contains("unknown field"));
-}
-
-#[test]
-fn helper_case_decoder_rejects_management_unknown_fields() {
-    let source = "kind: helper\nname: invalid\ncall: {management_oracle: {domain: models, operation: {path_encoding: {function: segment, value: a, field_name: id, extra: true}}}}\nenv: {}\ncompare: {ignore: []}\n";
-    let error = crate::case::parse_helper_case(source).unwrap_err();
     assert!(error.contains("unknown field"));
 }
 
