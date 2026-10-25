@@ -1,20 +1,29 @@
 use crate::{error::FixtureError, seed::FixtureSeed, sql::BASELINE};
 use tokio_postgres::{Client, types::ToSql};
 
-macro_rules! insert_rows { ($client:expr, $rows:expr, $sql:expr, $($field:ident),+) => { for row in $rows { let params: &[&(dyn ToSql + Sync)] = &[$(&row.$field),+]; $client.execute($sql, params).await.map_err(FixtureError::Database)?; } }; }
+macro_rules! insert_rows {
+    ($client:expr, $rows:expr, $sql:expr, $($field:ident),+) => {
+        for row in $rows {
+            let params: &[&(dyn ToSql + Sync)] = &[$(&row.$field),+];
+            $client
+                .execute($sql, params)
+                .await
+                .map_err(FixtureError::Database)?;
+        }
+    };
+}
 
 pub(crate) async fn seed_database(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
     client
         .batch_execute(BASELINE)
         .await
         .map_err(FixtureError::Database)?;
-    principals(client, seed).await?;
+    seed_rows(client, seed).await?;
     keys(client, seed).await?;
-    relations(client, seed).await?;
     Ok(())
 }
 
-async fn principals(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
+async fn seed_rows(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
     insert_rows!(
         client,
         &seed.users,
@@ -29,10 +38,6 @@ async fn principals(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureEr
         team_id,
         team_alias
     );
-    Ok(())
-}
-
-async fn relations(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
     insert_rows!(
         client,
         &seed.memberships,
@@ -57,6 +62,7 @@ async fn relations(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureErr
     );
     Ok(())
 }
+
 async fn keys(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
     for row in &seed.keys {
         let hash = FixtureSeed::key_hash(&row.token);

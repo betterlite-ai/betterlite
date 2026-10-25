@@ -113,8 +113,7 @@ impl FixtureSeed {
             .iter()
             .map(|row| row.team_id.as_str())
             .collect::<BTreeSet<_>>();
-        validate_keys_and_memberships(&users, &teams, self)?;
-        validate_budgets_and_mappings(&users, self)?;
+        validate_references(&users, &teams, self)?;
         Ok(())
     }
 
@@ -126,18 +125,13 @@ impl FixtureSeed {
     }
 }
 
-fn validate_keys_and_memberships(
+fn validate_references(
     users: &BTreeSet<&str>,
     teams: &BTreeSet<&str>,
     seed: &FixtureSeed,
 ) -> Result<(), FixtureError> {
     for key in &seed.keys {
-        if !users.contains(key.user_id.as_str()) {
-            return Err(FixtureError::Seed(format!(
-                "key references missing user {}",
-                key.user_id
-            )));
-        }
+        ensure_reference(users, &key.user_id, "key")?;
         if let Some(team_id) = &key.team_id
             && !teams.contains(team_id.as_str())
         {
@@ -147,36 +141,27 @@ fn validate_keys_and_memberships(
         }
     }
     for membership in &seed.memberships {
-        if !users.contains(membership.user_id.as_str())
-            || !teams.contains(membership.team_id.as_str())
-        {
-            return Err(FixtureError::Seed(
-                "membership references a missing principal".to_owned(),
-            ));
-        }
+        ensure_reference(users, &membership.user_id, "membership")?;
+        ensure_reference(teams, &membership.team_id, "membership")?;
+    }
+    for budget in &seed.budgets {
+        ensure_reference(users, &budget.user_id, "budget")?;
+    }
+    for mapping in &seed.jwt_mappings {
+        ensure_reference(users, &mapping.user_id, "JWT mapping")?;
     }
     Ok(())
 }
 
-fn validate_budgets_and_mappings(
-    users: &BTreeSet<&str>,
-    seed: &FixtureSeed,
+fn ensure_reference(
+    principals: &BTreeSet<&str>,
+    identity: &str,
+    relation: &str,
 ) -> Result<(), FixtureError> {
-    for budget in &seed.budgets {
-        if !users.contains(budget.user_id.as_str()) {
-            return Err(FixtureError::Seed(format!(
-                "budget references missing user {}",
-                budget.user_id
-            )));
-        }
-    }
-    for mapping in &seed.jwt_mappings {
-        if !users.contains(mapping.user_id.as_str()) {
-            return Err(FixtureError::Seed(format!(
-                "JWT mapping references missing user {}",
-                mapping.user_id
-            )));
-        }
+    if !principals.contains(identity) {
+        return Err(FixtureError::Seed(format!(
+            "{relation} references missing principal {identity}"
+        )));
     }
     Ok(())
 }
