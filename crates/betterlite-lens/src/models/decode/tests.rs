@@ -159,6 +159,7 @@ fn replays_the_lens_model_corpus(#[files("fuzz/corpus/lens_model/*")] path: Path
     replay::<Lens>(&bytes);
     replay::<LensList>(&bytes);
     replay::<Job>(&bytes);
+    replay::<Worker>(&bytes);
     replay::<Claim>(&bytes);
     replay::<JobResult>(&bytes);
     replay::<Progress>(&bytes);
@@ -168,4 +169,6 @@ fn replays_the_lens_model_corpus(#[files("fuzz/corpus/lens_model/*")] path: Path
     replay::<ModelResult>(&bytes);
     replay::<ExecutionContent>(&bytes);
     replay::<Sample>(&bytes);
+    replay::<Evidence>(&bytes);
+    replay::<FindingDraft>(&bytes);
 }
