@@ -3,10 +3,11 @@
     reason = "pass-through bodies intentionally retain provider JSON outside betterlite's model"
 )]
 
-use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::Url;
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde_json::{Map, Value};
 
-const EXCLUDED_HEADERS: &[&str] = &[
+const EXCLUDED_HEADERS: [&str; 7] = [
     "transfer-encoding",
     "content-encoding",
     "content-length",
@@ -15,10 +16,18 @@ const EXCLUDED_HEADERS: &[&str] = &[
     "connection",
     "keep-alive",
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResponseHandling {
+    Stream,
+    Buffer,
+    Relay,
+}
+
 #[must_use]
 pub fn get_response_body(body: &[u8]) -> Option<Value> {
     let parsed = serde_json::from_slice(body);
-    if body.is_empty() {
+    if parsed.is_err() {
         return None;
     }
     parsed.ok()
@@ -30,26 +39,59 @@ pub fn get_response_headers(
     litellm_call_id: Option<&str>,
     custom_headers: Option<&HeaderMap>,
 ) -> HeaderMap {
-    let mut response_headers = filtered_headers(headers);
-    if let Some(call_id) = litellm_call_id
+    let mut response_headers = HeaderMap::new();
+    for (name, value) in headers {
+        if !EXCLUDED_HEADERS.contains(&name.as_str()) {
+            response_headers.append(name, value.clone());
+        }
+    }
+    if let Some(call_id) = litellm_call_id.filter(|call_id| !call_id.is_empty())
         && let Ok(value) = HeaderValue::try_from(call_id)
     {
         response_headers.insert("x-litellm-call-id", value);
     }
-    if let Some(custom) = custom_headers {
-        response_headers.extend(
-            custom
-                .iter()
-                .filter(|(name, _)| !is_excluded_header(name.as_str()))
-                .map(|(name, value)| (name.clone(), value.clone())),
-        );
+    if let Some(resolved_headers) = custom_headers {
+        for (name, value) in resolved_headers {
+            if !EXCLUDED_HEADERS.contains(&name.as_str()) {
+                response_headers.insert(name, value.clone());
+            }
+        }
     }
     response_headers
 }
 
 #[must_use]
+pub fn response_handling(status_code: u16, headers: &HeaderMap) -> ResponseHandling {
+    let content_type = headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    let media_type = content_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    if content_type.contains("text/event-stream") {
+        ResponseHandling::Stream
+    } else if status_code >= 400
+        || media_type.is_empty()
+        || media_type == "application/json"
+        || media_type.ends_with("+json")
+        || media_type.starts_with("application/x-amz-json")
+    {
+        ResponseHandling::Buffer
+    } else {
+        ResponseHandling::Relay
+    }
+}
+
+#[must_use]
 pub fn streaming_response(headers: &HeaderMap) -> bool {
-    let Some(content_type) = response_content_type(headers) else {
+    let Some(content_type) = headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+    else {
         return false;
     };
     content_type.contains("text/event-stream")
@@ -60,24 +102,8 @@ pub fn buffer_response(status_code: u16, headers: &HeaderMap) -> bool {
     if status_code >= 400 {
         return true;
     }
-    let media_type = response_content_type(headers)
-        .unwrap_or_default()
-        .split(';')
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .to_ascii_lowercase();
-    media_type.is_empty()
-        || media_type == "application/json"
-        || media_type.ends_with("+json")
-        || media_type.starts_with("application/x-amz-json")
-}
-
-fn response_content_type(headers: &HeaderMap) -> Option<&str> {
-    if headers.is_empty() {
-        return None;
-    }
-    headers.get("content-type")?.to_str().ok()
+    let handling = response_handling(status_code, headers);
+    handling == ResponseHandling::Buffer
 }
 
 #[must_use]
@@ -85,8 +111,8 @@ pub fn update_stream_param(
     request_body: &Map<String, Value>,
     stream: Option<bool>,
 ) -> Option<bool> {
-    let request_stream = request_body.get("stream").and_then(Value::as_bool);
-    request_stream.or(stream)
+    let stream_value = request_body.get("stream");
+    stream_value.map_or(stream, Value::as_bool)
 }
 
 #[must_use]
@@ -98,43 +124,31 @@ pub fn construct_url_with_subpath(
     if !include_subpath || subpath.is_empty() {
         return base_target.to_owned();
     }
-    let base = if base_target.ends_with('/') {
-        base_target.to_owned()
-    } else {
-        format!("{base_target}/")
-    };
-    let without_leading_slash = subpath.strip_prefix('/').unwrap_or(subpath);
-    let trailing_slash = without_leading_slash.ends_with('/');
-    let (mut normalized, _) = normalize_path(&format!("/{without_leading_slash}"));
-    if normalized == "/" {
-        normalized.clear();
-    } else {
-        normalized = normalized.trim_start_matches('/').to_owned();
-        if trailing_slash && !normalized.ends_with('/') {
-            normalized.push('/');
-        }
+    let separator = if base_target.ends_with('/') { "" } else { "/" };
+    let normalized = normalize_path(&format!("/{subpath}"));
+    let mut safe_subpath = normalized.trim_start_matches('/').to_owned();
+    if subpath.ends_with('/') && !safe_subpath.is_empty() {
+        safe_subpath.push('/');
     }
-    format!("{base}{normalized}")
+    format!("{base_target}{separator}{safe_subpath}")
 }
 
 #[must_use]
 pub fn join_base_and_endpoint_path(base_url: &str, endpoint_path: &str) -> String {
-    let base_path = path_from_url(base_url);
-    let trailing_slash = endpoint_path.ends_with('/');
-    if base_path.is_empty() || base_path == "/" {
-        let (mut normalized, _) = normalize_path(&format!("/{endpoint_path}"));
-        if trailing_slash && normalized != "/" && !normalized.ends_with('/') {
-            normalized.push('/');
-        }
-        return normalized;
-    }
-    let clean_base = base_path.trim_end_matches('/');
+    let parsed_url = Url::parse(base_url).ok();
+    let base_path = parsed_url
+        .as_ref()
+        .map_or("", Url::path)
+        .trim_end_matches('/');
     let endpoint = endpoint_path.trim_start_matches('/');
-    let (mut combined, escaped) = normalize_path(&format!("{clean_base}/{endpoint}"));
-    if escaped || (combined != clean_base && !combined.starts_with(&format!("{clean_base}/"))) {
-        return format!("{clean_base}/");
+    let mut combined = normalize_path(&format!("{base_path}/{endpoint}"));
+    if !base_path.is_empty()
+        && combined != base_path
+        && !combined.starts_with(&format!("{base_path}/"))
+    {
+        return format!("{base_path}/");
     }
-    if trailing_slash && !combined.ends_with('/') {
+    if endpoint_path.ends_with('/') && combined != "/" {
         combined.push('/');
     }
     combined
@@ -142,56 +156,22 @@ pub fn join_base_and_endpoint_path(base_url: &str, endpoint_path: &str) -> Strin
 
 mod tests;
 
-fn filtered_headers(headers: &HeaderMap) -> HeaderMap {
-    if headers.is_empty() {
-        return HeaderMap::new();
-    }
-    headers
-        .iter()
-        .filter(|(name, _)| !is_excluded_header(name.as_str()))
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect()
-}
-
-fn is_excluded_header(name: &str) -> bool {
-    if EXCLUDED_HEADERS.contains(&name.to_ascii_lowercase().as_str()) {
-        return true;
-    }
-    false
-}
-
-fn path_from_url(base_url: &str) -> &str {
-    let without_query = base_url.split_once('?').map_or(base_url, |(path, _)| path);
-    if let Some((_, authority)) = without_query.split_once("//") {
-        return path_after_authority(authority);
-    }
-    without_query
-        .strip_prefix('/')
-        .map_or("", |_| without_query)
-}
-
-fn path_after_authority(authority: &str) -> &str {
-    let Some(index) = authority.find('/') else {
-        return "";
+// Same result as posixpath.normpath for a path that starts with a slash.
+fn normalize_path(path: &str) -> String {
+    let root = if path.starts_with("//") && !path.starts_with("///") {
+        "//"
+    } else {
+        "/"
     };
-    let (_, path) = authority.split_at(index);
-    path
-}
-
-fn normalize_path(path: &str) -> (String, bool) {
     let mut segments: Vec<&str> = Vec::new();
-    let mut escaped = false;
     for segment in path.split('/') {
         match segment {
             "" | "." => {}
             ".." => {
-                if segments.pop().is_none() {
-                    escaped = true;
-                }
+                segments.pop();
             }
             value => segments.push(value),
         }
     }
-    let normalized = format!("/{}", segments.join("/"));
-    (normalized, escaped)
+    format!("{root}{}", segments.join("/"))
 }

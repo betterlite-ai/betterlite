@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use url::Url;
 
 pub const CUSTOM_BODY_STATE_KEY: &str = "litellm_pass_through_custom_body";
 pub const RAW_BODY_STATE_KEY: &str = "litellm_pass_through_raw_body";
@@ -37,8 +38,14 @@ mod tests;
 
 #[must_use]
 pub fn get_endpoint_type(url: &str, custom_llm_provider: Option<&str>) -> EndpointType {
+    let parsed = Url::parse(url).ok();
+    let path = parsed.as_ref().map_or("", Url::path);
+    let host_name = parsed.as_ref().and_then(Url::host_str).unwrap_or_default();
     if custom_llm_provider == Some("typesafe")
-        && url.trim_end_matches('/').ends_with("/v1/systemone")
+        && path
+            .strip_suffix('/')
+            .unwrap_or(path)
+            .ends_with("/v1/systemone")
     {
         return EndpointType::Decisions;
     }
@@ -53,22 +60,18 @@ pub fn get_endpoint_type(url: &str, custom_llm_provider: Option<&str>) -> Endpoi
     {
         return EndpointType::VertexAi;
     }
-    match endpoint_hostname(url) {
-        Some("api.anthropic.com") => EndpointType::Anthropic,
-        Some("api.openai.com" | "openai.azure.com") => EndpointType::OpenAi,
-        Some(host) if host.ends_with(".openai.com") => EndpointType::OpenAi,
-        Some("agent.tinyfish.ai") => EndpointType::Tinyfish,
+    match host_name {
+        "api.anthropic.com" => EndpointType::Anthropic,
+        "openai.azure.com" => EndpointType::OpenAi,
+        openai_host if openai_host.contains("openai.com") => EndpointType::OpenAi,
+        _ if is_tinyfish_agent_url(url) => EndpointType::Tinyfish,
         _ => EndpointType::Generic,
     }
 }
 
-fn endpoint_hostname(url: &str) -> Option<&str> {
-    let (_, remainder) = url.split_once("//")?;
-    let authority = remainder.split('/').next()?;
-    let host_without_port = authority.split(':').next()?;
-    if host_without_port.is_empty() {
-        None
-    } else {
-        Some(host_without_port)
-    }
+#[must_use]
+pub fn is_tinyfish_agent_url(url: &str) -> bool {
+    let parsed = Url::parse(url).ok();
+    let host = parsed.as_ref().and_then(Url::host_str);
+    host.is_some_and(|value| value == "agent.tinyfish.ai")
 }

@@ -19,6 +19,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tower = { workspace = true, features = ["timeout"] }
 tracing.workspace = true
+url = "2.5.8"
 
 [dev-dependencies]
 rquickjs = "0.14.0"
