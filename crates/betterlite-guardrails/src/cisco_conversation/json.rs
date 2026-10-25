@@ -36,7 +36,10 @@ impl Json {
     #[must_use]
     pub fn objects(&self) -> Vec<Fields> {
         match self {
-            Self::List(items) => items.iter().filter_map(object_from_raw).collect(),
+            Self::List(items) => items
+                .iter()
+                .filter_map(|item| object_from_raw(item.as_ref()))
+                .collect(),
             Self::Null | Self::Bool(_) | Self::Number(_) | Self::Text(_) | Self::Object(_) => {
                 Vec::new()
             }
@@ -97,7 +100,7 @@ impl Json {
     }
 }
 
-fn object_from_raw(item: &Box<RawValue>) -> Option<Fields> {
+fn object_from_raw(item: &RawValue) -> Option<Fields> {
     match Json::parse(item.get()) {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,

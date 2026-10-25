@@ -94,13 +94,24 @@ pub fn rewrite_input_text(original: &Json, sanitized: &str) -> Option<RewrittenI
         {
             rewrite_last_user(items, sanitized).map(RewrittenInput::Items)
         }
-        Json::List(items) => rewrite_first_part(items, sanitized).map(RewrittenInput::Items),
+        Json::List(items) => rewrite_matching(
+            items,
+            SearchOrder::First,
+            is_text_part,
+            |mut part| {
+                part.shift_remove("text");
+                Some((part, Edit::Text(sanitized.to_owned())))
+            },
+        )
+        .map(RewrittenInput::Items),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => None,
     }
 }
 
 fn rewrite_last_user(items: &[Box<RawValue>], sanitized: &str) -> Option<Vec<RewrittenItem>> {
-    let rewritten = rewrite_matching(
+    let last_position = items.len().checked_sub(1)?;
+    items.get(last_position)?;
+    rewrite_matching(
         items,
         SearchOrder::Last,
         |message| matches!(Json::field(message, "role"), Json::Text(role) if role == "user"),
@@ -109,24 +120,21 @@ fn rewrite_last_user(items: &[Box<RawValue>], sanitized: &str) -> Option<Vec<Rew
             message.shift_remove("content");
             Some((message, Edit::Content(content)))
         },
-    );
-    rewritten
+    )
 }
 
 fn rewrite_content(message: &Fields, sanitized: &str) -> Option<EditedContent> {
     match Json::field(message, "content") {
         Json::Text(_) => Some(EditedContent::Text(sanitized.to_owned())),
-        Json::List(parts) => rewrite_first_part(&parts, sanitized).map(EditedContent::Parts),
+        Json::List(parts) => {
+            rewrite_matching(&parts, SearchOrder::First, is_text_part, |mut part| {
+                part.shift_remove("text");
+                Some((part, Edit::Text(sanitized.to_owned())))
+            })
+            .map(EditedContent::Parts)
+        }
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => None,
     }
-}
-
-fn rewrite_first_part(items: &[Box<RawValue>], sanitized: &str) -> Option<Vec<RewrittenItem>> {
-    let rewritten = rewrite_matching(items, SearchOrder::First, is_text_part, |mut part| {
-        part.shift_remove("text");
-        Some((part, Edit::Text(sanitized.to_owned())))
-    });
-    rewritten
 }
 
 fn rewrite_matching<Matches, EditFields>(
@@ -147,20 +155,21 @@ where
         let Some(item) = items.get(position) else {
             continue;
         };
-        let Json::Object(fields) = Json::parse(item.get()) else {
+        let Json::Object(original_fields) = Json::parse(item.get()) else {
             continue;
         };
-        if !matches(&fields) {
+        if !matches(&original_fields) {
             continue;
         }
-        let Some((fields, edit)) = edit(fields) else {
+        let Some((edited_fields, replacement)) = edit(original_fields) else {
             continue;
         };
-        return replace(items, position, fields, edit);
+        return replace(items, position, edited_fields, replacement);
     }
     None
 }
 
+#[derive(Clone, Copy)]
 enum SearchOrder {
     First,
     Last,
