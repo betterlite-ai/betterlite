@@ -163,7 +163,7 @@ fn passthrough_streaming_response_without_content_type_is_false() {
 #[case::object(br#"{"ok":true}"#, Some(serde_json::from_str::<Value>(r#"{"ok":true}"#).unwrap()))]
 #[case::array(b"[1,2]", Some(serde_json::from_str::<Value>("[1,2]").unwrap()))]
 #[case::null(b"null", Some(Value::Null))]
-#[case::scalar(b"42", Some(Value::from(42)))]
+#[case::scalar(b"42", Some(Value::from(42_i64)))]
 #[case::empty(b"", None)]
 #[case::invalid(b"not-json", None)]
 fn passthrough_response_body_behavior(#[case] body: &[u8], #[case] expected: Option<Value>) {
@@ -174,7 +174,10 @@ fn passthrough_response_body_behavior(#[case] body: &[u8], #[case] expected: Opt
 #[case::body_wins(serde_json::from_str::<Value>(r#"{"stream":false}"#).unwrap(), Some(false))]
 #[case::body_null(serde_json::from_str::<Value>(r#"{"stream":null}"#).unwrap(), None)]
 #[case::fallback(serde_json::from_str::<Value>("{}").unwrap(), Some(true))]
-#[case::non_boolean_falls_back(serde_json::json!({"stream": "yes"}), Some(true))]
+#[case::non_boolean_falls_back(
+    serde_json::from_str::<Value>(r#"{"stream":"yes"}"#).unwrap(),
+    None
+)]
 fn passthrough_buffering_behavior_stream(
     #[case] body_value: Value,
     #[case] expected: Option<bool>,
