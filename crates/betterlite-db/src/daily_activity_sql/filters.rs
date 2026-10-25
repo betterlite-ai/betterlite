@@ -32,7 +32,6 @@ pub fn adjust_dates_for_timezone(
 }
 
 #[must_use]
-#[must_use]
 pub fn build_where_clause_at(
     scope: &DailyActivityScope,
     start_index: i64,
