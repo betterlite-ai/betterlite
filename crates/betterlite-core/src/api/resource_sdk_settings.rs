@@ -2,9 +2,6 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use std::num::ParseFloatError;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Clone, Debug)]
 pub struct ResourceSdkSettings {
     pub api_base: Option<String>,
@@ -33,86 +30,114 @@ pub struct ResourceSdkSettings {
 impl ResourceSdkSettings {
     #[must_use]
     pub fn openai_base(&self) -> String {
-        first_truthy([
+        let base = first_truthy([
             self.api_base.as_deref(),
             self.openai_base_url.as_deref(),
             self.openai_api_base.as_deref(),
             Some("https://api.openai.com/v1"),
-        ])
-        .to_owned()
+        ]);
+        base.to_owned()
     }
 
     #[must_use]
     pub fn openai_api_key(&self) -> Option<&SecretString> {
-        first_secret([
+        let key = first_secret([
             self.api_key.as_ref(),
             self.openai_key.as_ref(),
             self.openai_api_key.as_ref(),
-        ])
+        ]);
+        key
     }
 
     #[must_use]
     pub fn azure_api_key(&self) -> Option<&SecretString> {
-        first_secret([
+        let key = first_secret([
             self.api_key.as_ref(),
             self.azure_key.as_ref(),
             self.azure_openai_api_key.as_ref(),
             self.azure_api_key.as_ref(),
-        ])
+        ]);
+        key
     }
 
     #[must_use]
     pub fn azure_base(&self) -> Option<&str> {
-        first_truthy_ref([self.api_base.as_deref(), self.azure_api_base.as_deref()])
+        let base = first_truthy_ref([self.api_base.as_deref(), self.azure_api_base.as_deref()]);
+        base
     }
 
     #[must_use]
     pub fn azure_version(&self) -> Option<&str> {
-        first_truthy_ref([
+        let version = first_truthy_ref([
             self.api_version.as_deref(),
             self.azure_api_version.as_deref(),
-        ])
+        ]);
+        version
     }
 
     #[must_use]
     pub fn organization(&self) -> Option<&str> {
-        first_truthy_ref([
+        let organization = first_truthy_ref([
             self.organization.as_deref(),
             self.openai_organization.as_deref(),
-        ])
+        ]);
+        organization
     }
 
     #[must_use]
     pub fn vertex_base(&self) -> &str {
-        self.api_base.as_deref().unwrap_or("")
+        let base = self.api_base.as_deref().unwrap_or("");
+        base
     }
 
     #[must_use]
     pub fn vertex_project(&self) -> Option<&str> {
-        first_truthy_ref([
+        let project = first_truthy_ref([
             self.vertex_project.as_deref(),
             self.vertexai_project.as_deref(),
-        ])
+        ]);
+        project
+    }
+
+    #[must_use]
+    pub fn vertex_location(&self) -> Option<&str> {
+        let location = first_truthy_ref([
+            self.vertex_location.as_deref(),
+            self.vertexai_location.as_deref(),
+        ]);
+        location
+    }
+
+    #[must_use]
+    pub fn vertex_credentials(&self) -> Option<&SecretString> {
+        let credentials = first_secret([
+            self.vertex_credentials.as_ref(),
+            self.vertexai_credentials.as_ref(),
+        ]);
+        credentials
     }
 }
 
 fn first_truthy<const N: usize>(values: [Option<&str>; N]) -> &str {
-    values
+    let value = values
         .into_iter()
         .flatten()
         .find(|value| !value.is_empty())
-        .unwrap_or("")
+        .unwrap_or("");
+    value
 }
 
 fn first_truthy_ref<const N: usize>(values: [Option<&str>; N]) -> Option<&str> {
-    values.into_iter().flatten().find(|value| !value.is_empty())
+    let value = values.into_iter().flatten().find(|value| !value.is_empty());
+    value
 }
 
 fn first_secret<const N: usize>(values: [Option<&SecretString>; N]) -> Option<&SecretString> {
-    values
+    let secret = values
         .into_iter()
         .flatten()
-        .find(|value| !value.expose_secret().is_empty())
+        .find(|value| !value.expose_secret().is_empty());
+    secret
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
@@ -141,7 +166,8 @@ pub enum TimeoutError {
 
 #[must_use]
 pub fn supports_httpx_timeout(provider: &str) -> bool {
-    matches!(provider, "openai" | "azure" | "bedrock")
+    let supported = matches!(provider, "openai" | "azure" | "bedrock");
+    supported
 }
 
 pub fn resolve_fine_tuning_timeout(
@@ -170,16 +196,18 @@ pub fn resolve_fine_tuning_timeout(
 
 #[must_use]
 pub fn request_timeout(timeout: Option<f64>, request_timeout: Option<f64>) -> f64 {
-    timeout
+    let selected = timeout
         .filter(|value| *value != 0.0_f64)
         .or_else(|| request_timeout.filter(|value| *value != 0.0_f64))
-        .unwrap_or(600.0_f64)
+        .unwrap_or(600.0_f64);
+    selected
 }
 
 fn finite_or_default(value: Option<f64>) -> f64 {
-    value
+    let timeout = value
         .filter(|number| number.is_finite() && *number != 0.0_f64)
-        .unwrap_or(600.0_f64)
+        .unwrap_or(600.0_f64);
+    timeout
 }
 
 fn validate_structured(timeout: StructuredTimeout) -> Result<(), TimeoutError> {

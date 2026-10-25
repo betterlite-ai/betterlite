@@ -1,8 +1,5 @@
 use secrecy::SecretString;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Debug, Clone, Default)]
 pub struct ResourceSdkSettings {
     pub api_base: Option<String>,

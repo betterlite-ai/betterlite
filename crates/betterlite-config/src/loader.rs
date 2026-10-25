@@ -251,7 +251,8 @@ where
         raw.azure_ad_token.take(),
         "litellm_settings.azure_ad_token",
         lookup,
-    )?;
+    )?
+    .or(settings.azure_ad_token);
     settings.organization = optional_string(
         raw.organization.take(),
         "litellm_settings.organization",
@@ -283,9 +284,10 @@ fn optional_string<L>(
 where
     L: EnvironmentLookup,
 {
-    value
+    let resolved = value
         .map(|text| resolve_string(text, path, lookup))
-        .transpose()
+        .transpose();
+    resolved
 }
 
 fn resource_sdk_environment<L>(lookup: &L) -> ResourceSdkSettings
@@ -299,7 +301,7 @@ where
         api_key: None,
         openai_key: None,
         azure_key: None,
-        azure_ad_token: None,
+        azure_ad_token: environment("AZURE_AD_TOKEN").map(SecretString::from),
         organization: None,
         vertex_project: None,
         vertex_location: None,

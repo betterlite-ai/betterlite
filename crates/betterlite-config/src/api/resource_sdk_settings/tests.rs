@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 fn loads_resource_sdk_settings() {
     let mut environment = BTreeMap::new();
     environment.insert("OPENAI_API_KEY".to_owned(), "env-key".to_owned());
+    environment.insert("AZURE_AD_TOKEN".to_owned(), "azure-token".to_owned());
     let config = ConfigLoader { lookup: environment }
         .load(
             "litellm_settings:\n  api_base: https://global.example\n  api_key: os.environ/OPENAI_API_KEY\n  vertex_project: project\n",
@@ -19,5 +20,12 @@ fn loads_resource_sdk_settings() {
     assert_eq!(
         settings.openai_api_key.expect("env key").expose_secret(),
         "env-key"
+    );
+    assert_eq!(
+        settings
+            .azure_ad_token
+            .expect("azure token")
+            .expose_secret(),
+        "azure-token"
     );
 }

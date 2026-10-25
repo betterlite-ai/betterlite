@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{
+use super::implementation::{
     FineTuningTimeout, request_timeout, resolve_fine_tuning_timeout, supports_httpx_timeout,
 };
 
@@ -17,14 +17,36 @@ fn timeout_capability_and_conversion() {
 }
 
 #[test]
+fn resource_precedence_ignores_empty_values() {
+    let mut settings = test_settings();
+    settings.api_base = Some(String::new());
+    settings.openai_base_url = Some("openai-base".to_owned());
+    settings.openai_api_base = Some("legacy-base".to_owned());
+    settings.api_key = Some(secrecy::SecretString::from(""));
+    settings.openai_key = Some(secrecy::SecretString::from("openai-key"));
+    settings.azure_api_version = Some("azure-version".to_owned());
+    settings.vertex_location = Some(String::new());
+    settings.vertexai_location = Some("vertex-location".to_owned());
+    assert_eq!(settings.openai_base(), "openai-base");
+    assert_eq!(
+        settings
+            .openai_api_key()
+            .map(secrecy::ExposeSecret::expose_secret),
+        Some("openai-key")
+    );
+    assert_eq!(settings.azure_version(), Some("azure-version"));
+    assert_eq!(settings.vertex_location(), Some("vertex-location"));
+}
+
+#[test]
 fn settings_debug_redacts_secret_fields() {
     let mut settings = test_settings();
     settings.api_key = Some(secrecy::SecretString::from("secret"));
     assert!(!format!("{settings:?}").contains("secret"));
 }
 
-fn test_settings() -> super::ResourceSdkSettings {
-    super::ResourceSdkSettings {
+fn test_settings() -> super::implementation::ResourceSdkSettings {
+    super::implementation::ResourceSdkSettings {
         api_base: None,
         api_version: None,
         api_key: None,

@@ -156,7 +156,14 @@ pub mod request_setup;
 pub mod request_setup_options;
 pub mod rerank_call;
 pub mod rerank_provider_plan;
-pub mod resource_sdk_settings;
+pub mod resource_sdk_settings {
+    #[path = "../resource_sdk_settings.rs"]
+    mod implementation;
+    #[path = "../resource_sdk_settings/tests.rs"]
+    mod tests;
+
+    pub use implementation::*;
+}
 pub mod response_chat_content;
 pub mod response_chat_dispatch;
 pub mod response_chat_history;
