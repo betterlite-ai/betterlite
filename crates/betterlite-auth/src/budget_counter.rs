@@ -35,6 +35,20 @@ impl CounterEntityType {
             _ => None,
         }
     }
+    #[must_use]
+    pub const fn wire_value(&self) -> &'static str {
+        match self {
+            Self::Key => "key",
+            Self::Team => "team",
+            Self::TeamMember => "team_member",
+            Self::User => "user",
+            Self::EndUser => "end_user",
+            Self::Tag => "tag",
+            Self::ModelAccessGroup => "model_access_group",
+            Self::Organization => "organization",
+            Self::Project => "project",
+        }
+    }
 }
 #[derive(Debug, Eq, PartialEq)]
 pub struct BudgetCounter {
@@ -66,13 +80,9 @@ float_integer!(i8, i16, i32, i64, isize, u8, u16, u32, u64, usize);
 macro_rules! float_128 { ($($type:ty => $method:ident),*) => { $(impl FloatInput for $type { fn decimal_value(self) -> Option<Decimal> { Decimal::$method(self) } })* }; }
 float_128!(i128 => from_i128, u128 => from_u128);
 fn parse_decimal_text(text: &str) -> Option<Decimal> {
-    let trimmed = text.trim_ascii();
-    let without_digit_grouping = normalize_digit_grouping(trimmed)?;
-    if let Ok(decimal) = Decimal::from_str(trimmed).or_else(|_| Decimal::from_scientific(trimmed)) {
-        return Some(decimal);
-    }
-    Decimal::from_str(&without_digit_grouping)
-        .or_else(|_| Decimal::from_scientific(&without_digit_grouping))
+    let normalized = normalize_digit_grouping(text.trim_ascii())?;
+    Decimal::from_str(&normalized)
+        .or_else(|_| Decimal::from_scientific(&normalized))
         .ok()
 }
 macro_rules! float_string { ($($type:ty),*) => { $(impl FloatInput for $type { fn decimal_value(self) -> Option<Decimal> { parse_decimal_text(self.as_ref()) } })* }; }
@@ -104,26 +114,19 @@ int_string!(String, &str);
 macro_rules! int_bytes { ($($type:ty),*) => { $(impl IntInput for $type { fn int_value(self) -> Option<i64> { normalize_digit_grouping(str::from_utf8(self.as_ref()).ok()?.trim_ascii())?.parse().ok() } })* }; }
 int_bytes!(Vec<u8>, &[u8]);
 fn normalize_digit_grouping(text: &str) -> Option<String> {
-    let mut previous_was_digit = false;
-    let mut separator_pending = false;
-    for character in text.chars() {
-        if character == '_' {
-            if !previous_was_digit || separator_pending {
-                return None;
-            }
-            separator_pending = true;
-            continue;
-        }
-        if separator_pending && !character.is_ascii_digit() {
+    let mut parts = text.split('_');
+    let mut previous = parts.next()?;
+    let mut normalized = previous.to_owned();
+    for part in parts {
+        if !previous.ends_with(|byte: char| byte.is_ascii_digit())
+            || !part.starts_with(|byte: char| byte.is_ascii_digit())
+        {
             return None;
         }
-        separator_pending = false;
-        previous_was_digit = character.is_ascii_digit();
+        normalized.push_str(part);
+        previous = part;
     }
-    if separator_pending {
-        return None;
-    }
-    Some(text.replace('_', ""))
+    Some(normalized)
 }
 pub trait ValueLookup {
     fn value(&self, key: &str) -> Option<&String>;

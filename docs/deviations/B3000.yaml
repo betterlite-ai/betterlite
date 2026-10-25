@@ -1,5 +1,5 @@
 task: B3000
 deviations:
-  - what: "Non-finite float inputs return None."
-    why: "rust_decimal::Decimal represents finite decimal values only, so these Python float values have no safe equivalent in the budget counter."
-    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1695-L1702"
+  - what: "Non-finite floats and numbers outside rust_decimal::Decimal's range return None from the float helper, and the int helper returns None outside i64."
+    why: "Budgets are Decimal and counters i64 in betterlite, so Python's inf, nan and unbounded ints have no safe equivalent in the budget counter."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1695-L1710"

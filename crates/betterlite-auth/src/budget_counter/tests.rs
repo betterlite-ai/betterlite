@@ -18,17 +18,20 @@ fn structure_has_all_counter_fields() {
     };
 }
 #[rstest]
-#[case("Key", CounterEntityType::Key)]
-#[case("Team", CounterEntityType::Team)]
-#[case("TeamMember", CounterEntityType::TeamMember)]
-#[case("User", CounterEntityType::User)]
-#[case("EndUser", CounterEntityType::EndUser)]
-#[case("Tag", CounterEntityType::Tag)]
-#[case("Model access group", CounterEntityType::ModelAccessGroup)]
-#[case("Organization", CounterEntityType::Organization)]
-#[case("Project", CounterEntityType::Project)]
-fn entity_mapping_handles_all_names(#[case] label: &str, #[case] kind: CounterEntityType) {
-    assert_eq!(CounterEntityType::from_litellm_name(label), Some(kind));
+#[case("Key", Some("key"))]
+#[case("Team", Some("team"))]
+#[case("TeamMember", Some("team_member"))]
+#[case("User", Some("user"))]
+#[case("EndUser", Some("end_user"))]
+#[case("Tag", Some("tag"))]
+#[case("Model access group", Some("model_access_group"))]
+#[case("Organization", Some("organization"))]
+#[case("Project", Some("project"))]
+#[case("model_access_group", None)]
+#[case("ModelAccessGroup", None)]
+fn entity_mapping_handles_all_names(#[case] label: &str, #[case] wire: Option<&str>) {
+    let kind = CounterEntityType::from_litellm_name(label);
+    assert_eq!(kind.as_ref().map(CounterEntityType::wire_value), wire);
 }
 #[rstest]
 #[case(2_i32, Decimal::from(2_i32))]
@@ -76,6 +79,7 @@ where
 #[case("_5")]
 #[case("5_")]
 #[case("1__0")]
+#[case("2.9")]
 fn to_int_rejects_invalid_digit_separators(#[case] value: &str) {
     assert_eq!(value.int_value(), None);
 }
