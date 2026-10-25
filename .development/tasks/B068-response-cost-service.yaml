@@ -57,6 +57,7 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/**
     - crates/betterlite-core/src/cost/completion.rs
     - crates/betterlite-core/src/cost/completion/**
     - crates/betterlite-core/src/cost/response.rs
@@ -64,6 +65,7 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/cost_service.rs
     - crates/betterlite-server/src/cost_service/**
     - tools/oracle/src/helpers/core_ops/response_charge.rs

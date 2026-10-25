@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/vector_management_boundaries.rs
   - crates/betterlite-server/src/api/vector_management_boundaries/**
   - crates/betterlite-server/fuzz/Cargo.toml

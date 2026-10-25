@@ -36,6 +36,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/chatgpt.rs
+    - crates/betterlite-openai/src/chatgpt/**
     - crates/betterlite-openai/src/chatgpt/login.rs
     - crates/betterlite-openai/src/chatgpt/login/**
     - crates/betterlite-openai/fuzz/Cargo.toml

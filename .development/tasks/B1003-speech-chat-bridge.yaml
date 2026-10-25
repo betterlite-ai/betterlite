@@ -38,9 +38,11 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/speech_chat_bridge.rs
   - crates/betterlite-core/src/api/speech_chat_bridge/**
   - crates/betterlite-openai/src/api.rs
+  - crates/betterlite-openai/src/api/**
   - crates/betterlite-openai/src/api/speech_chat_bridge.rs
   - crates/betterlite-openai/src/api/speech_chat_bridge/**
   - crates/betterlite-openai/src/error.rs

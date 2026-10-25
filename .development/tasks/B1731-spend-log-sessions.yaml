@@ -37,6 +37,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/sessions.rs
     - crates/betterlite-server/src/spend/sessions/**
     - crates/betterlite-server/fuzz/Cargo.toml

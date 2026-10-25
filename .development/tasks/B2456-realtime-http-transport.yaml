@@ -22,6 +22,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/realtime_http_transport.rs
   - crates/betterlite-provider/src/api/realtime_http_transport/**
   - crates/betterlite-provider/fuzz/Cargo.toml

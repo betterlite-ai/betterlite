@@ -22,13 +22,17 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_native_prepare.rs
   - crates/betterlite-core/src/api/messages_native_prepare/**
   - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/messages_native_prepare.rs
   - crates/betterlite-provider/src/api/messages_native_prepare/**
   - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/**
   - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-provider/src/prepared/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/provider/messages_native_prepare.rs
   - tools/oracle/src/helpers/provider/messages_native_prepare/**

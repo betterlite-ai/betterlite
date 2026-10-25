@@ -51,6 +51,7 @@ scope:
   - crates/betterlite-config/Cargo.toml
   - crates/betterlite-config/src/lib.rs
   - crates/betterlite-config/src/types.rs
+  - crates/betterlite-config/src/types/**
   - crates/betterlite-config/src/types/guardrails.rs
   - crates/betterlite-config/src/types/guardrails/**
   - Cargo.toml
