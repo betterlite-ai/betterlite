@@ -16,6 +16,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/fine_tuning_cancel.rs
   - crates/betterlite-server/src/api/fine_tuning_cancel/**
   - crates/betterlite-server/fuzz/corpus/request_body/fine-tuning-cancel-*

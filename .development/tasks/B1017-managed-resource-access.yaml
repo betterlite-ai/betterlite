@@ -21,6 +21,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/managed_resource_access.rs
   - crates/betterlite-core/src/api/managed_resource_access/**
   - tools/oracle/Cargo.toml

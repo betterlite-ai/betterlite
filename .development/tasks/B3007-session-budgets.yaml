@@ -110,37 +110,37 @@ checks:
   commands:
     - id: session-budget-structure
       why: Session budget handler structure is missing or methods are renamed
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*structure)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*structure/)'
     - id: session-budget-admission
       why: Pre-call admission logic is missing, incorrect, or fails on budget check
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*admission)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*admission/)'
     - id: session-budget-charging
       why: Success charging logic is missing or fails to increment spend correctly
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*charging)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*charging/)'
     - id: session-budget-metadata
       why: Session ID extraction from metadata or litellm_metadata is incorrect
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*metadata)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*metadata/)'
     - id: session-budget-cache-key
       why: Cache key format does not match "{session_budget:<session_id>}:spend"
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*cache_key)' && grep -q 'session_budget:' crates/betterlite-auth/src/session_budget.rs
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*cache_key/)' && grep -q 'session_budget:' crates/betterlite-auth/src/session_budget.rs
     - id: session-budget-ttl
       why: TTL parsing from LITELLM_MAX_BUDGET_PER_SESSION_TTL or default 3600 is incorrect
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*ttl)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*ttl/)'
     - id: session-budget-redis-fallback
       why: Redis fallback on exception is missing or does not preserve in-memory cache semantics
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*redis.*fallback)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*redis.*fallback/)'
     - id: session-budget-lua-script
       why: Lua increment script is missing, incorrect, or does not set EXPIRE on first write
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*lua)' && grep -q 'INCRBYFLOAT' crates/betterlite-auth/src/session_budget.rs && grep -q 'EXPIRE' crates/betterlite-auth/src/session_budget.rs
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*lua/)' && grep -q 'INCRBYFLOAT' crates/betterlite-auth/src/session_budget.rs && grep -q 'EXPIRE' crates/betterlite-auth/src/session_budget.rs
     - id: session-budget-in-memory
       why: In-memory fallback increment is missing or does not read, add, and write back correctly
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*in_memory)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*in_memory/)'
     - id: session-budget-agent-registry
       why: Agent resolution from registry at pre-call or success time is missing or incorrect
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*agent.*registry)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*agent.*registry/)'
     - id: session-budget-error-context
       why: 429 error does not include resolved model and llm_provider
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*error)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_budget::.*error/)'
     - id: session-budget-oracle
       why: Oracle cases for admission, charging, or fallback paths are missing or fail
       run: test -d tools/oracle/cases/auth/session-budget && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/auth/session-budget)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/auth/session-budget

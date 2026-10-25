@@ -49,6 +49,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/estimates.rs
     - crates/betterlite-server/src/spend/estimates/**
     - crates/betterlite-router/src/provider_budget_view.rs

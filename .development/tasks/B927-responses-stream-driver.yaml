@@ -18,6 +18,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_stream_driver.rs
   - crates/betterlite-core/src/api/responses_stream_driver/**
   - tools/oracle/src/sdk_http.rs

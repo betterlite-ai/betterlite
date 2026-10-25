@@ -29,11 +29,15 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/api/batch_routes.rs
   - crates/betterlite-server/src/api/batch_routes/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/batch_routes.rs
   - crates/betterlite-core/src/api/batch_routes/**
   - tools/oracle/cases/api/batch-routes/**
