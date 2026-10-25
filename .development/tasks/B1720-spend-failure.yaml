@@ -44,8 +44,10 @@ scope:
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/spend-failure-*
-    - tools/oracle/src/helpers/{mod.rs,failure_metadata.rs}
-    - tools/oracle/helpers/{dispatch.py,failure_metadata.py}
+    - tools/oracle/src/helpers/server/spend_failure.rs
+    - tools/oracle/src/helpers/server/spend_failure/**
+    - tools/oracle/helpers/spend_failure.py
+    - tools/oracle/helpers/spend_failure/**
     - tools/oracle/cases/helpers/failure-metadata/**
     - tools/oracle/fuzz/corpus/helper_case/failure-metadata-*
   lint_tables: false
@@ -94,6 +96,7 @@ out_of_scope:
   - B069 owns success/offload callbacks and interaction deferral; B1719 owns settlement, and this task does not create managed batches merely because eligibility recognizes their call type.
   - B070's queue leaves and B124 retain remaining ProxyUpdateSpend/proxy utilities; B1715 owns token hashing.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_failure in the server group. Replace the stub Op in tools/oracle/src/helpers/server/spend_failure.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_failure.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - disable_error_logs does not bypass reservation release.
   - An empty alias is already populated, so it prevents the null-alias key lookup.
 budget:

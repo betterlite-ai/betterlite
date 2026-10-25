@@ -50,10 +50,10 @@ scope:
     - crates/betterlite-server/src/speech_providers.rs
     - crates/betterlite-server/src/speech_providers/**
     - crates/betterlite-server/src/lib.rs
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/speech_provider_dispatch.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/speech_provider_dispatch.rs
+    - tools/oracle/src/helpers/core_ops/speech_provider_dispatch/**
     - tools/oracle/helpers/speech_provider_dispatch.py
+    - tools/oracle/helpers/speech_provider_dispatch/**
     - tools/oracle/cases/helpers/speech-provider-dispatch/**
     - tools/oracle/fuzz/corpus/helper_case/speech_provider_dispatch*
     - tools/oracle/cases/providers/speech/**
@@ -105,6 +105,7 @@ out_of_scope:
   - Deepgram listen WebSocket authorization, route mounting and billing consumers belong to B094 and must consume B1542 rather than this composer.
   - Public audio-route extraction remains B083, and native facade preparation/execution outside these provider variants remains B1082/B1083/B1084.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as speech_provider_dispatch in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/speech_provider_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/speech_provider_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Soniox audio_url support does not make the proxy's required multipart file optional.
   - Passing an async client into a synchronous Soniox call selects a new synchronous client instead of using it.
   - Riva has no public-default api_base even when a usable NVIDIA_NIM_API_KEY is present.

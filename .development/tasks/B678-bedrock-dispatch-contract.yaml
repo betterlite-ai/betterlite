@@ -92,11 +92,10 @@ scope:
   - crates/betterlite-provider/src/bedrock_dispatch_contract.rs
   - crates/betterlite-provider/src/bedrock_dispatch_contract/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_dispatch_contract.rs
-  - tools/oracle/src/helpers/bedrock_dispatch_contract/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/bedrock_dispatch_contract.rs
+  - tools/oracle/src/helpers/provider/bedrock_dispatch_contract/**
   - tools/oracle/helpers/bedrock_dispatch_contract.py
+  - tools/oracle/helpers/bedrock_dispatch_contract/**
   - tools/oracle/cases/helpers/providers/bedrock-dispatch-contract/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_dispatch_contract*
   lint_tables: false
@@ -266,6 +265,7 @@ out_of_scope:
   CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
   or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_dispatch_contract in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/bedrock_dispatch_contract.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_dispatch_contract.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The dispatcher contract cannot depend on completed chat composition or it recreates the Bedrock batch dependency
   cycle.
 budget:

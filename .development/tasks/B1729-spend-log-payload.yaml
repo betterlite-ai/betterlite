@@ -51,8 +51,10 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/log_metadata.rs
     - crates/betterlite-server/fuzz/corpus/log_metadata/**
-    - tools/oracle/src/helpers/{mod.rs,log_payload.rs}
-    - tools/oracle/helpers/{dispatch.py,log_payload.py}
+    - tools/oracle/src/helpers/server/spend_log_payload.rs
+    - tools/oracle/src/helpers/server/spend_log_payload/**
+    - tools/oracle/helpers/spend_log_payload.py
+    - tools/oracle/helpers/spend_log_payload/**
     - tools/oracle/cases/helpers/log-payload/**
     - tools/oracle/fuzz/corpus/helper_case/log-payload-*
     - tools/oracle/cases/http/spend-log-payload/**
@@ -104,6 +106,7 @@ out_of_scope:
   - B1730 owns legacy listing and UI enrichment, B1731 session listing and B1732 flat/grouped route coordination; B1728 owns query primitives and B1704 owner checks.
   - B1721-B1727 and B069 retain non-log reports; B1600/B1713-B1716/B1726/B1727 retain spend_tracking_utils.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_log_payload in the server group. Replace the stub Op in tools/oracle/src/helpers/server/spend_log_payload.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_log_payload.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A single nonempty database field normally suppresses cold retrieval for all three fields.
   - Metadata JSON that decodes to a scalar remains a scalar; only invalid JSON becomes an empty object.
 budget:

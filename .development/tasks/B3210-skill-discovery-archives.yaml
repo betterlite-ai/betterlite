@@ -37,8 +37,10 @@ scope:
     - crates/betterlite-http/fuzz/fuzz_targets/skill_archive_zip.rs
     - crates/betterlite-http/fuzz/corpus/skill_archive_zip/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/**
-    - tools/oracle/helpers/**
+    - tools/oracle/src/helpers/http/skill_discovery_archives.rs
+    - tools/oracle/src/helpers/http/skill_discovery_archives/**
+    - tools/oracle/helpers/skill_discovery_archives.py
+    - tools/oracle/helpers/skill_discovery_archives/**
     - tools/oracle/fuzz/corpus/helper_case/**
     - tools/oracle/cases/helpers/skill-archive/**
   lint_tables: false
@@ -167,6 +169,7 @@ out_of_scope:
   - Stored skill reads and database queries belong to B3212.
 
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as skill_discovery_archives in the http group. Replace the stub Op in tools/oracle/src/helpers/http/skill_discovery_archives.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/skill_discovery_archives.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - "The digest field is the literal string \"sha256:\" (with colon) followed by the lowercase hex SHA-256; neither the prefix nor the hex are optional."
   - "Path normalization must reject paths with null bytes, backslashes, leading slashes, Windows drive letters, and . or .. segments before checking for duplicates."
   - "A single-folder upload is detected by finding a common root prefix among all flattened paths; if all paths start with \"folder/\", the prefix is \"folder/\", not \"folder\"."

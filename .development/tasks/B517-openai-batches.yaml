@@ -82,11 +82,10 @@ scope:
   - crates/betterlite-openai/src/batches.rs
   - crates/betterlite-openai/src/batches/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_batches.rs
-  - tools/oracle/src/helpers/openai_batches/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/batches.rs
+  - tools/oracle/src/helpers/openai/batches/**
   - tools/oracle/helpers/openai_batches.py
+  - tools/oracle/helpers/openai_batches/**
   - tools/oracle/cases/helpers/providers/openai-batches/**
   - tools/oracle/fuzz/corpus/helper_case/openai_batches*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -313,6 +312,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_batches in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/batches.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_batches.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Explicit None pagination is passed to the SDK, so an adapter that removes nulls before capture conceals the list
   behavior.
 - The cancel method checks its sync client class even though create and retrieve only cast theirs.

@@ -125,12 +125,11 @@ scope:
     - crates/betterlite-server/src/team_request_contracts/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/team_request_contracts.rs
-    - tools/oracle/src/helpers/team_request_contracts/**
+    - tools/oracle/src/helpers/server/team_request_contracts.rs
+    - tools/oracle/src/helpers/server/team_request_contracts/**
     - tools/oracle/helpers/team_request_contracts.py
+    - tools/oracle/helpers/team_request_contracts/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/teams.rs
-    - tools/oracle/helpers/management/teams.py
     - tools/oracle/cases/helpers/team-request-contracts/**
     - tools/oracle/fuzz/corpus/helper_case/team-request-contracts-*
     - crates/betterlite-server/fuzz/Cargo.toml
@@ -275,6 +274,7 @@ out_of_scope:
     (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
     (L5766-L5772).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as team_request_contracts in the server group. Replace the stub Op in tools/oracle/src/helpers/server/team_request_contracts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/team_request_contracts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Only NewTeamRequest converts whitespace-only team_id to None; the update request retains it.
   - Bulk permission selection exclusivity is documentation, not a validator on this request model.
   - TeamMemberBudgetPatch accepts zero limits and distinguishes an omitted field from explicit null.

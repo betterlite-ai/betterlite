@@ -98,12 +98,11 @@ scope:
     - crates/betterlite-auth/src/auth_model_lists/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_model_lists.rs
-    - tools/oracle/src/helpers/auth_model_lists/**
+    - tools/oracle/src/helpers/server/auth_model_lists.rs
+    - tools/oracle/src/helpers/server/auth_model_lists/**
     - tools/oracle/helpers/auth_model_lists.py
+    - tools/oracle/helpers/auth_model_lists/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-model-lists/**
     - tools/oracle/fuzz/corpus/helper_case/auth-model-lists-*
     - crates/betterlite-server/src/auth.rs
@@ -211,6 +210,7 @@ out_of_scope:
     read accessors and request-local hydration. Listing route owners redact output credentials.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_model_lists in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_model_lists.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_model_lists.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Listing fallback names does not grant permission to call them.
 budget:
   max_changed_lines: 800

@@ -32,8 +32,10 @@ scope:
   paths:
     - crates/betterlite-vertex/src/{lib,gemini_live_tool_turn}.rs
     - crates/betterlite-vertex/src/gemini_live_tool_turn/**
-    - tools/oracle/src/helpers/{mod,gemini_live_tool_turn}.rs
-    - tools/oracle/helpers/{dispatch,gemini_live_tool_turn}.py
+    - tools/oracle/src/helpers/vertex/gemini_live_tool_turn.rs
+    - tools/oracle/src/helpers/vertex/gemini_live_tool_turn/**
+    - tools/oracle/helpers/gemini_live_tool_turn.py
+    - tools/oracle/helpers/gemini_live_tool_turn/**
     - tools/oracle/cases/helpers/gemini-live-tool-turn/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_live_tool_turn*
   lint_tables: false
@@ -72,6 +74,7 @@ out_of_scope:
   - B1382 owns all other transform_realtime_response branches, frame decoding and final chunk-state updates.
   - B1381 owns tool-name eviction, argument-done construction and usage primitives; B1380 owns message/audio content events.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as gemini_live_tool_turn in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_live_tool_turn.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_live_tool_turn.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - conversation.item.added arrives before function_call_arguments.done so clients can register call_id first.
   - Tool response.done resets response/item IDs but leaves the conversation available for the next turn.
   - The tool-turn usage path omits the grounding-counter overlay used for ordinary response.done.

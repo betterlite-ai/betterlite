@@ -39,8 +39,10 @@ scope:
     - crates/betterlite-config/src/providers/vertex/**
     - crates/betterlite-config/src/tests/vertex_gcs_settings.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_gcs*
-    - tools/oracle/src/helpers/{mod,vertex_gcs_access}.rs
-    - tools/oracle/helpers/{dispatch,vertex_gcs_access}.py
+    - tools/oracle/src/helpers/vertex/gcs_access.rs
+    - tools/oracle/src/helpers/vertex/gcs_access/**
+    - tools/oracle/helpers/vertex_gcs_access.py
+    - tools/oracle/helpers/vertex_gcs_access/**
     - tools/oracle/cases/helpers/vertex-gcs-access/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_gcs_access*
   lint_tables: false
@@ -93,6 +95,7 @@ out_of_scope:
   - The S3-specific helper contract and allow_legacy_cloud_file_ids loader already belong to B643.
   - Proxy unified-file ownership checks are B087 and are not replaced by native bucket authorization.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_gcs_access in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gcs_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_gcs_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Legacy access permits older object names but never a foreign configured prefix.
   - The GCS encoder escapes slashes that the S3 encoder deliberately preserves.
   - Sanitizing an upload filename is separate from validating an existing object path.

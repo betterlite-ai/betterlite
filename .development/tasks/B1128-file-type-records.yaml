@@ -30,11 +30,10 @@ scope:
   - crates/betterlite-openai/src/api/file_type_records.rs
   - crates/betterlite-openai/src/api/file_type_records/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/file_type_records.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/file_type_records.rs
+  - tools/oracle/src/helpers/openai/file_type_records/**
   - tools/oracle/helpers/file_type_records.py
+  - tools/oracle/helpers/file_type_records/**
   - tools/oracle/fuzz/corpus/helper_case/file_type_records-*
   - tools/oracle/cases/helpers/file-type-records/**
   - Cargo.toml
@@ -110,6 +109,7 @@ out_of_scope:
 - get_file_extension_for_file_type, is_image_file_type, is_video_file_type, is_audio_file_type and is_text_file_type have no caller at the pin; their unused category tables need no independent implementation.
 - B1015 owns files/utils.py and base files/transformation.py; provider-specific upload execution remains in each provider's file task.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as file_type_records in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/file_type_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/file_type_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - MIME-to-extension is case-insensitive but never strips parameters, dots or whitespace.
 - MPA uses audio/m4a while M4A uses audio/x-m4a, and only MPA is accepted by the Gemini predicate.
 - Upload plans carry a stream capability; serializing the iterator as JSON would destroy lazy upload behavior.

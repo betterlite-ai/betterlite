@@ -17,8 +17,10 @@ scope:
   - crates/betterlite-prompts/src/reasoning_fields.rs
   - crates/betterlite-prompts/src/reasoning_fields/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/prompts/reasoning_fields.rs
+  - tools/oracle/src/helpers/prompts/reasoning_fields/**
+  - tools/oracle/helpers/reasoning_fields.py
+  - tools/oracle/helpers/reasoning_fields/**
   - tools/oracle/cases/helpers/reasoning-fields/**
   - tools/oracle/fuzz/corpus/helper_case/**
   - crates/betterlite-openai/**
@@ -84,6 +86,7 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B179 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as reasoning_fields in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/reasoning_fields.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/reasoning_fields.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.

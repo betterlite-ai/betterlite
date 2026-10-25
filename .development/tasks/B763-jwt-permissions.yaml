@@ -96,12 +96,11 @@ scope:
     - crates/betterlite-auth/src/jwt_permissions/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/jwt_permissions.rs
-    - tools/oracle/src/helpers/jwt_permissions/**
+    - tools/oracle/src/helpers/server/jwt_permissions.rs
+    - tools/oracle/src/helpers/server/jwt_permissions/**
     - tools/oracle/helpers/jwt_permissions.py
+    - tools/oracle/helpers/jwt_permissions/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/jwt.rs
-    - tools/oracle/helpers/management/jwt.py
     - tools/oracle/cases/helpers/jwt-permissions/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-permissions-*
     - crates/betterlite-server/src/auth.rs
@@ -279,6 +278,7 @@ out_of_scope:
     (L2374-L2388).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as jwt_permissions in the server group. Replace the stub Op in tools/oracle/src/helpers/server/jwt_permissions.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/jwt_permissions.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A literal '*' in role or scope models is not a wildcard; only route matching expands route groups.
   - The admin route gate raises Exception, so converting every permission failure to 403 changes its 401.
 budget:

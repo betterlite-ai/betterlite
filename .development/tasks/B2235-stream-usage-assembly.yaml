@@ -88,11 +88,10 @@ scope:
   - crates/betterlite-streaming/src/stream_usage_assembly.rs
   - crates/betterlite-streaming/src/stream_usage_assembly/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/stream_usage_assembly.rs
-  - tools/oracle/src/helpers/stream_usage_assembly/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/streaming/stream_usage_assembly.rs
+  - tools/oracle/src/helpers/streaming/stream_usage_assembly/**
   - tools/oracle/helpers/stream_usage_assembly.py
+  - tools/oracle/helpers/stream_usage_assembly/**
   - tools/oracle/cases/helpers/providers/stream-usage-assembly/**
   - tools/oracle/fuzz/corpus/helper_case/stream_usage_assembly*
   lint_tables: false
@@ -269,6 +268,7 @@ out_of_scope:
   L744-L745; ChunkProcessor.get_combined_audio_content L747-L775; concatenate_base64_list L1177-L1191 belong to
   B2234.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as stream_usage_assembly in the streaming group. Replace the stub Op in tools/oracle/src/helpers/streaming/stream_usage_assembly.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/stream_usage_assembly.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty finish_reason still prevents the Anthropic cursor reset; a missing finish_reason does not.
 budget:
   max_changed_lines: 775

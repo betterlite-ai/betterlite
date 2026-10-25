@@ -30,10 +30,10 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/aleph_reply.rs
     - crates/betterlite-openai/fuzz/corpus/aleph_reply/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/aleph_alpha.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/openai/aleph_alpha.rs
+    - tools/oracle/src/helpers/openai/aleph_alpha/**
     - tools/oracle/helpers/aleph_alpha.py
+    - tools/oracle/helpers/aleph_alpha/**
     - tools/oracle/cases/helpers/aleph-alpha/**
     - tools/oracle/fuzz/corpus/helper_case/aleph_alpha*
   lint_tables: false
@@ -77,6 +77,7 @@ out_of_scope:
   - B044 owns Aleph Alpha key/base precedence and installing its main.py dispatcher branch.
   - Public settings objects are exposed by B157; this task consumes their typed snapshot rather than creating mutable class globals.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as aleph_alpha in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/aleph_alpha.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/aleph_alpha.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - "The first role-bearing control message always becomes ###Instruction even when its role is assistant."
   - Non-200 alone is not the error predicate in this adapter; the JSON error member controls the explicit error branch.
   - Usage reads only choices[0], so summing every returned completion changes billed tokens.

@@ -26,8 +26,10 @@ scope:
   - crates/betterlite-core/src/api/realtime_client_relay/**
   - tools/oracle/src/websocket_driver.rs
   - tools/oracle/src/websocket_driver/realtime_client_relay.rs
-  - tools/oracle/helpers/websocket_dispatch.py
-  - tools/oracle/helpers/realtime_client_relay_websocket.py
+  - tools/oracle/src/helpers/core_ops/realtime_client_relay.rs
+  - tools/oracle/src/helpers/core_ops/realtime_client_relay/**
+  - tools/oracle/helpers/realtime_client_relay.py
+  - tools/oracle/helpers/realtime_client_relay/**
   - tools/oracle/cases/websocket/realtime-client-relay/**
   - tools/oracle/fuzz/corpus/websocket_oracle/realtime-client-relay-*
   lint_tables: false
@@ -107,6 +109,7 @@ out_of_scope:
 - Other realtime_streaming.py methods remain with B1004 contracts, B1005 beta mapping, B1006 state/logging, B1110 sender, B1124 buffering, B2455 policy, B1007 guardrails and B1008 backend relay; _has_realtime_guardrails has no caller at the pin.
 - B1125 authenticates and accepts the gateway WebSocket; this service starts with an accepted client and owns no route.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as realtime_client_relay in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/realtime_client_relay.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/realtime_client_relay.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The blocked-text flag drops a response.create; it does not rewrite that response's instructions despite the source comment.
 - Catching TypeError alongside JSONDecodeError would accidentally keep sessions alive that the pinned client loop ends.
 - _close_client wraps send and close in one try, so a failed error-event send skips close here.

@@ -39,10 +39,10 @@ scope:
     - crates/betterlite-core/src/api/fal.rs
     - crates/betterlite-core/src/api/fal/video_results.rs
     - crates/betterlite-core/src/api/fal/video_results/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/fal_video_results.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/fal_video_results.rs
+    - tools/oracle/src/helpers/core_ops/fal_video_results/**
     - tools/oracle/helpers/fal_video_results.py
+    - tools/oracle/helpers/fal_video_results/**
     - tools/oracle/cases/helpers/fal-video-results/**
     - tools/oracle/fuzz/corpus/helper_case/fal_video_results*
   lint_tables: false
@@ -80,6 +80,7 @@ out_of_scope:
   - B1532 owns the profile and record helpers at 36-173/228-230, create/parameter methods at 289-450, ID/content request methods at 525-546 and error construction at 727-733.
   - transform_video_remix_response, transform_video_list_response, transform_video_delete_response, transform_video_create_character_response, transform_video_get_character_response, transform_video_edit_response and transform_video_extension_response have no caller at the pin after their request methods unconditionally raise; omit those response stubs and their cases.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as fal_video_results in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/fal_video_results.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fal_video_results.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A completed status with a result probe returning 500 stays completed unless the status body itself contains an error.
   - The result probe strips transport headers but retains the original authorization header.
   - Content download uses video.url without forwarding the result probe's credentials.

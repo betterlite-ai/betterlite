@@ -23,11 +23,10 @@ scope:
   - crates/betterlite-core/src/api/responses_chat_output.rs
   - crates/betterlite-core/src/api/responses_chat_output/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_chat_output.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_chat_output.rs
+  - tools/oracle/src/helpers/core_ops/responses_chat_output/**
   - tools/oracle/helpers/responses_chat_output.py
+  - tools/oracle/helpers/responses_chat_output/**
   - tools/oracle/fuzz/corpus/helper_case/responses_chat_output-*
   - tools/oracle/cases/helpers/responses-chat-output/**
   lint_tables: false
@@ -99,6 +98,7 @@ out_of_scope:
 - _transform_responses_api_outputs_to_chat_completion_messages L2725-L2752 has no caller at the pin; its sole-use callee _transform_responses_output_tool_call_to_chat_completion_output_tool_call L2755-L2766 is unreachable too, so neither has a case.
 - Other transformation.py methods belong to B907 custom tools, B908 options, B909 inputs, B910 merges, B911 repair, B912 results, B913 namespaces, B915 sessions, B1115 details and B2411 content; the deduplicate/correspondence pair at L925-L995 is also unused.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_chat_output in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_chat_output.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_chat_output.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Interpreter results replace matching function calls; appending unmatched server-side results would add output LiteLLM does not return.
 - The first choice determines overall status but the first choice carrying reasoning determines the reasoning item.
 - A truthy images field suppresses text even when image extraction yields no usable image.

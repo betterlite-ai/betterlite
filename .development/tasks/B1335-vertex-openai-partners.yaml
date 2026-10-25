@@ -30,8 +30,10 @@ scope:
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/partner_options.rs
     - crates/betterlite-config/src/providers/vertex/partner_options/**
-    - tools/oracle/src/helpers/{mod,vertex_partner_openai}.rs
-    - tools/oracle/helpers/{dispatch,vertex_partner_openai}.py
+    - tools/oracle/src/helpers/vertex/openai_partners.rs
+    - tools/oracle/src/helpers/vertex/openai_partners/**
+    - tools/oracle/helpers/vertex_openai_partners.py
+    - tools/oracle/helpers/vertex_openai_partners/**
     - tools/oracle/cases/helpers/vertex-partner-openai/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_partner_openai*
   lint_tables: false
@@ -79,6 +81,7 @@ out_of_scope:
   - B032 executes the selected partner call; B036 owns inherited Mistral/Codestral implementations.
   - B504/B005 own OpenAI response JSON/SSE decoding, so this adapter adds no new byte parser.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_openai_partners in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/openai_partners.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_openai_partners.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - GPT-OSS removes tool rather than tools at the pin, leaving the plural field in the inherited allowlist.
   - A split terminal chunk uses index=0 even when the first source choice had a different index.
   - provider_specific_fields={} is needed to prevent an empty initial assistant chunk being dropped.

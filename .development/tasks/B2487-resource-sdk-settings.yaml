@@ -27,10 +27,10 @@ scope:
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/resource_sdk_settings.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/resource-sdk-*
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/resource_sdk_settings.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/resource_sdk_settings.rs
+  - tools/oracle/src/helpers/core_ops/resource_sdk_settings/**
   - tools/oracle/helpers/resource_sdk_settings.py
+  - tools/oracle/helpers/resource_sdk_settings/**
   - tools/oracle/cases/helpers/resource-sdk-settings/**
   - tools/oracle/fuzz/corpus/helper_case/resource-sdk-settings-*
   lint_tables: false
@@ -110,6 +110,7 @@ out_of_scope:
 - All other utils.py functions retain their existing provider/core owners; this entry adds only the previously unassigned supports_httpx_timeout predicate.
 - B002 resolves secret references. Provider request formats and response decoding stay in B518/B542/B1384 and assistant provider tasks.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as resource_sdk_settings in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/resource_sdk_settings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/resource_sdk_settings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - OpenAI base URL checks OPENAI_BASE_URL before OPENAI_API_BASE.
 - A zero timeout is falsey and chooses a fallback rather than a zero-length deadline.
 - Azure uses AZURE_OPENAI_API_KEY before AZURE_API_KEY; Vertex ignores the global api_base.

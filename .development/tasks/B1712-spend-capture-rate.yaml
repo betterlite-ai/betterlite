@@ -54,8 +54,10 @@ scope:
     - crates/betterlite-server/src/spend.rs
     - crates/betterlite-server/src/spend/capture_rate.rs
     - crates/betterlite-server/src/spend/capture_rate/**
-    - tools/oracle/src/helpers/{mod.rs,capture_rate.rs}
-    - tools/oracle/helpers/{dispatch.py,capture_rate.py}
+    - tools/oracle/src/helpers/provider/spend_capture_rate.rs
+    - tools/oracle/src/helpers/provider/spend_capture_rate/**
+    - tools/oracle/helpers/spend_capture_rate.py
+    - tools/oracle/helpers/spend_capture_rate/**
     - tools/oracle/cases/helpers/capture-rate/**
     - tools/oracle/fuzz/corpus/helper_case/capture-rate-*
   lint_tables: false
@@ -101,6 +103,7 @@ deviations:
 out_of_scope:
   - B069 owns GET /spend/capture_rate and startup's 01:15 UTC schedule; B073 must consume this extracted billing client rather than duplicate organization_costs.py.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_capture_rate in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/spend_capture_rate.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_capture_rate.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Filtering OpenAI project IDs never filters the captured database spend.
   - Every replica publishes its gauge even when another replica owns the alert-window lock.
 budget:

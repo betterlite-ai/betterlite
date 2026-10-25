@@ -34,10 +34,10 @@ scope:
     - crates/betterlite-core/src/skills/store/**
     - crates/betterlite-core/Cargo.toml
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/hosted_skill_store.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/hosted_skill_store.rs
+    - tools/oracle/src/helpers/core_ops/hosted_skill_store/**
     - tools/oracle/helpers/hosted_skill_store.py
+    - tools/oracle/helpers/hosted_skill_store/**
     - tools/oracle/cases/helpers/hosted-skill-store/**
     - tools/oracle/fuzz/corpus/helper_case/hosted_skill_store*
   lint_tables: false
@@ -80,6 +80,7 @@ out_of_scope:
   - B1503 turns stored rows into Skill responses; B095 owns public skills endpoints and their authentication.
   - B858 decodes persisted skill fields and B1018 supplies resource ownership, including legacy raw user ids.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as hosted_skill_store in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/hosted_skill_store.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/hosted_skill_store.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The negative sentinel must not be confused with a cache miss, or repeated missing ids hit Postgres every time.
   - A cached skill still requires user_can_access_resource_owner on each call.
   - fetch_skill_from_db suppresses ValueError without warning but logs other exceptions before returning None.

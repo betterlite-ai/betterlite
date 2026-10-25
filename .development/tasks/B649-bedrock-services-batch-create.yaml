@@ -140,11 +140,10 @@ scope:
   - crates/betterlite-bedrock/src/batch_create.rs
   - crates/betterlite-bedrock/src/batch_create/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_batch_create.rs
-  - tools/oracle/src/helpers/bedrock_services_batch_create/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_batch_create.rs
+  - tools/oracle/src/helpers/bedrock/services_batch_create/**
   - tools/oracle/helpers/bedrock_services_batch_create.py
+  - tools/oracle/helpers/bedrock_services_batch_create/**
   - tools/oracle/cases/helpers/providers/bedrock-services-batch-create/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_create*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -499,6 +498,7 @@ out_of_scope:
   CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
   or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_batch_create in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_batch_create.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_batch_create.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The job-name docstring says it includes the model and fits 63 characters, but the body does neither.
 - This creation function parses the S3 URI without invoking the stricter download authorization helper; apply authorization
   at its actual API owner.

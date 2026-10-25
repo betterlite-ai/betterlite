@@ -108,11 +108,10 @@ scope:
   - crates/betterlite-anthropic/src/headers.rs
   - crates/betterlite-anthropic/src/headers/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_headers.rs
-  - tools/oracle/src/helpers/anthropic_headers/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/headers.rs
+  - tools/oracle/src/helpers/anthropic/headers/**
   - tools/oracle/helpers/anthropic_headers.py
+  - tools/oracle/helpers/anthropic_headers/**
   - tools/oracle/cases/helpers/providers/anthropic-headers/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_headers*
   - crates/betterlite-config/Cargo.toml
@@ -436,6 +435,7 @@ out_of_scope:
   L726-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model L746-L781; AnthropicModelInfo._legacy_budget_to_effort
   L783-L793; AnthropicModelInfo.is_effort_used L795-L829 belong to B688.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_headers in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/headers.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_headers.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - anthropic-beta is joined from a Python set, so compare the token set without erasing spelling or membership differences.
 - An explicitly empty listed_ids replacement adds source_model but still falls back to the original id because the
   two checks use is not None and truthiness.

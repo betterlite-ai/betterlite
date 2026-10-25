@@ -105,11 +105,10 @@ scope:
   - crates/betterlite-bedrock/src/marengo_embeddings.rs
   - crates/betterlite-bedrock/src/marengo_embeddings/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_other_marengo_embeddings.rs
-  - tools/oracle/src/helpers/bedrock_other_marengo_embeddings/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/other_marengo_embeddings.rs
+  - tools/oracle/src/helpers/bedrock/other_marengo_embeddings/**
   - tools/oracle/helpers/bedrock_other_marengo_embeddings.py
+  - tools/oracle/helpers/bedrock_other_marengo_embeddings/**
   - tools/oracle/cases/helpers/providers/bedrock-other-marengo-embeddings/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_marengo_embeddings*
   lint_tables: false
@@ -276,6 +275,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_other_marengo_embeddings in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/other_marengo_embeddings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_other_marengo_embeddings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The Marengo async response docstring mentions embedding_job_id, but the returned object is the ordinary embedding
   literal.
 - A nonempty data array containing no vectors suppresses both direct embedding and embeddings fallbacks.

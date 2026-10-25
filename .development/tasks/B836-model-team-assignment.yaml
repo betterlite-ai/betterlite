@@ -108,12 +108,11 @@ scope:
     - crates/betterlite-server/src/model_team_assignment/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/model_team_assignment.rs
-    - tools/oracle/src/helpers/model_team_assignment/**
+    - tools/oracle/src/helpers/server/model_team_assignment.rs
+    - tools/oracle/src/helpers/server/model_team_assignment/**
     - tools/oracle/helpers/model_team_assignment.py
+    - tools/oracle/helpers/model_team_assignment/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/teams.rs
-    - tools/oracle/helpers/management/teams.py
     - tools/oracle/cases/helpers/model-team-assignment/**
     - tools/oracle/fuzz/corpus/helper_case/model-team-assignment-*
     - crates/betterlite-server/src/model_team_assignment/fixtures/**
@@ -237,6 +236,7 @@ out_of_scope:
     at the pin; this shim only supports legacy tests patching the symbol, while management calls team_model_add/team_model_delete.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as model_team_assignment in the server group. Replace the stub Op in tools/oracle/src/helpers/server/model_team_assignment.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_team_assignment.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A team model's UUID-based internal name must never replace its public grant after a dashboard echo.
   - A new team assignment writes the model before updating grants and does not undo it when grant work fails.
   - _update_existing_team_model_assignment looks only at DB siblings, unlike B1230's broader cleanup path.

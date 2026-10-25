@@ -103,11 +103,10 @@ scope:
   - crates/betterlite-openai/src/response_params.rs
   - crates/betterlite-openai/src/response_params/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_response_params.rs
-  - tools/oracle/src/helpers/openai_response_params/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/response_params.rs
+  - tools/oracle/src/helpers/openai/response_params/**
   - tools/oracle/helpers/openai_response_params.py
+  - tools/oracle/helpers/openai_response_params/**
   - tools/oracle/cases/helpers/providers/openai-response-params/**
   - tools/oracle/fuzz/corpus/helper_case/openai_response_params*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -284,6 +283,7 @@ out_of_scope:
   L877-L893; OpenAIResponsesAPIConfig.transform_cancel_response_api_response L895-L914; OpenAIResponsesAPIConfig.transform_compact_response_api_request
   L919-L951; OpenAIResponsesAPIConfig.transform_compact_response_api_response L953-L984 belong to B509.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_response_params in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/response_params.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_response_params.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A live map explicit supports_reasoning=false overrides the bundled set; only an absent declaration consults bundled
   defaults.
 - The list from get_supported_openai_params is assembled from a set, so its ordering is not a wire contract.

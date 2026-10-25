@@ -26,11 +26,10 @@ scope:
   - crates/betterlite-core/src/api/responses_chat_options.rs
   - crates/betterlite-core/src/api/responses_chat_options/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_chat_options.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_chat_options.rs
+  - tools/oracle/src/helpers/core_ops/responses_chat_options/**
   - tools/oracle/helpers/responses_chat_options.py
+  - tools/oracle/helpers/responses_chat_options/**
   - tools/oracle/fuzz/corpus/helper_case/responses_chat_options-*
   - tools/oracle/cases/helpers/responses-chat-options/**
   lint_tables: false
@@ -101,6 +100,7 @@ out_of_scope:
 - _deduplicate_tool_call_output_messages L925-L985 and _ensure_tool_call_output_has_corresponding_tool_call L988-L995 have no caller at the pin.
 - B916 executes chat HTTP; this task only prepares a parsed request and logging option update.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_chat_options in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_chat_options.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_chat_options.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A missing tools list removes parallel_tool_calls along with tools and tool_choice, even if explicitly false.
 - Unsupported derived web_search_options is dropped silently here without consulting drop_params.
 - reasoning.summary is forwarded only to a chat request known to bridge back to Responses.

@@ -81,11 +81,10 @@ scope:
   - crates/betterlite-azure/src/azure_assistant_definitions.rs
   - crates/betterlite-azure/src/azure_assistant_definitions/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_assistant_definitions.rs
-  - tools/oracle/src/helpers/azure_assistant_definitions/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/assistant_definitions.rs
+  - tools/oracle/src/helpers/azure/assistant_definitions/**
   - tools/oracle/helpers/azure_assistant_definitions.py
+  - tools/oracle/helpers/azure_assistant_definitions/**
   - tools/oracle/cases/helpers/providers/azure-assistant-definitions/**
   - tools/oracle/fuzz/corpus/helper_case/azure_assistant_definitions*
   lint_tables: false
@@ -217,6 +216,7 @@ out_of_scope:
   L320-L345; AzureAssistantsAPI.get_messages L349-L363; AzureAssistantsAPI.get_messages L365-L379; AzureAssistantsAPI.get_messages
   L383-L421 belong to B697.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_assistant_definitions in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/assistant_definitions.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_assistant_definitions.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An explicit azure_ad_token argument to get_azure_client is ignored; the initializer sees only litellm_params and
   the forwarded fields.
 - Azure assistant list adds no pagination arguments, unlike the OpenAI wrapper.

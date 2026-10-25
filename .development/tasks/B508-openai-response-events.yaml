@@ -104,11 +104,10 @@ scope:
   - crates/betterlite-openai/src/response_events.rs
   - crates/betterlite-openai/src/response_events/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_response_events.rs
-  - tools/oracle/src/helpers/openai_response_events/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/response_events.rs
+  - tools/oracle/src/helpers/openai/response_events/**
   - tools/oracle/helpers/openai_response_events.py
+  - tools/oracle/helpers/openai_response_events/**
   - tools/oracle/cases/helpers/providers/openai-response-events/**
   - tools/oracle/fuzz/corpus/helper_case/openai_response_events*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -325,6 +324,7 @@ out_of_scope:
   L877-L893; OpenAIResponsesAPIConfig.transform_cancel_response_api_response L895-L914; OpenAIResponsesAPIConfig.transform_compact_response_api_request
   L919-L951; OpenAIResponsesAPIConfig.transform_compact_response_api_response L953-L984 belong to B509.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_response_events in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/response_events.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_response_events.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The event mapping omits reasoning-summary and custom-tool-input enums despite their presence in ResponsesAPIStreamEvents;
   they intentionally reach GenericEvent.
 - Terminal parsing is strict and can ignore a malformed terminal event that transform_streaming_response would retain

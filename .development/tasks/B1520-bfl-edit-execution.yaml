@@ -29,10 +29,10 @@ scope:
     - crates/betterlite-core/src/api/bfl.rs
     - crates/betterlite-core/src/api/bfl/edit_call.rs
     - crates/betterlite-core/src/api/bfl/edit_call/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/bfl_edit_call.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/bfl_edit_call.py
+    - tools/oracle/src/helpers/core_ops/bfl_edit_execution.rs
+    - tools/oracle/src/helpers/core_ops/bfl_edit_execution/**
+    - tools/oracle/helpers/bfl_edit_execution.py
+    - tools/oracle/helpers/bfl_edit_execution/**
     - tools/oracle/cases/helpers/bfl-edit-call/**
     - tools/oracle/fuzz/corpus/helper_case/bfl_edit_call*
   lint_tables: false
@@ -64,6 +64,7 @@ deviations: []
 out_of_scope:
   - B1518 defines the input-image policy, while B046 handles this executor's registration with the image-edit family.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as bfl_edit_execution in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/bfl_edit_execution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bfl_edit_execution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The inner optional extra_headers and outer extra_headers are applied at different points around credential validation.
   - An empty list produces No image provided before the lower transform can raise its own indexing error.
   - Poll failures still say Image generation failed on the edit operation.

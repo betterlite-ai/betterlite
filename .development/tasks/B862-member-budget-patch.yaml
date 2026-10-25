@@ -106,12 +106,11 @@ scope:
     - crates/betterlite-server/src/member_budget_patch/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/member_budget_patch.rs
-    - tools/oracle/src/helpers/member_budget_patch/**
+    - tools/oracle/src/helpers/server/member_budget_patch.rs
+    - tools/oracle/src/helpers/server/member_budget_patch/**
     - tools/oracle/helpers/member_budget_patch.py
+    - tools/oracle/helpers/member_budget_patch/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/member-budget-patch/**
     - tools/oracle/fuzz/corpus/helper_case/member-budget-patch-*
     - crates/betterlite-server/src/member_budget_patch/fixtures/**
@@ -220,6 +219,7 @@ out_of_scope:
     implement the injected alert and OTel transports.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as member_budget_patch in the server group. Replace the stub Op in tools/oracle/src/helpers/server/member_budget_patch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/member_budget_patch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Clone-on-update carries an unchanged reset window; clone-on-member-creation starts a fresh one.
   - allowed_models=[] is an explicit creation limit but not a meaningful remaining limit during patching.
   - General-entity relinking updates the old budget before returning the new id.

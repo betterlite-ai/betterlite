@@ -128,11 +128,10 @@ scope:
   - crates/betterlite-bedrock/src/nova_chat.rs
   - crates/betterlite-bedrock/src/nova_chat/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_nova_chat.rs
-  - tools/oracle/src/helpers/bedrock_nova_chat/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/nova_chat.rs
+  - tools/oracle/src/helpers/bedrock/nova_chat/**
   - tools/oracle/helpers/bedrock_nova_chat.py
+  - tools/oracle/helpers/bedrock_nova_chat/**
   - tools/oracle/cases/helpers/providers/bedrock-nova-chat/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_nova_chat*
   - crates/betterlite-config/Cargo.toml
@@ -392,6 +391,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_nova_chat in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/nova_chat.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_nova_chat.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A standalone cache point searches backward across nontext blocks instead of attaching to the immediately preceding
   block.
 - The direct response model prefix is amazon-nova/, while the provider identifier is amazon_nova.

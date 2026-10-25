@@ -109,12 +109,11 @@ scope:
     - crates/betterlite-auth/src/virtual_key_routes/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/virtual_key_routes.rs
-    - tools/oracle/src/helpers/virtual_key_routes/**
+    - tools/oracle/src/helpers/server/virtual_key_routes.rs
+    - tools/oracle/src/helpers/server/virtual_key_routes/**
     - tools/oracle/helpers/virtual_key_routes.py
+    - tools/oracle/helpers/virtual_key_routes/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/virtual-key-routes/**
     - tools/oracle/fuzz/corpus/helper_case/virtual-key-routes-*
     - crates/betterlite-server/src/auth.rs
@@ -249,6 +248,7 @@ out_of_scope:
     (L784-L794), RouteChecks._get_request_method (L655-L666).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as virtual_key_routes in the server group. Replace the stub Op in tools/oracle/src/helpers/server/virtual_key_routes.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/virtual_key_routes.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Empty allowed_passthrough_routes on a key falls back to the team's list; it is not an explicit deny.
   - password_reset_required changes only the final denial, so allowed password-change routes still work.
   - JWT team wildcard filtering strips stars and slashes before matching, excluding blanket grants.

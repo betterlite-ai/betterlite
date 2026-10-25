@@ -152,11 +152,10 @@ scope:
   - crates/betterlite-foundry/src/image_edits.rs
   - crates/betterlite-foundry/src/image_edits/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_image_edits.rs
-  - tools/oracle/src/helpers/foundry_image_edits/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/foundry/image_edits.rs
+  - tools/oracle/src/helpers/foundry/image_edits/**
   - tools/oracle/helpers/foundry_image_edits.py
+  - tools/oracle/helpers/foundry_image_edits/**
   - tools/oracle/cases/helpers/providers/foundry-image-edits/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_image_edits*
   - crates/betterlite-foundry/fuzz/Cargo.toml
@@ -385,6 +384,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_image_edits in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/image_edits.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_image_edits.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Flux2 treats a tuple as one file-like input, not a list of references, despite the broader Sequence annotation.
 - MAI silently uses the first non-None image and discards mask fields rather than rejecting unsupported multipart
   input.

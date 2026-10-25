@@ -70,11 +70,10 @@ scope:
   - crates/betterlite-azure/src/files.rs
   - crates/betterlite-azure/src/files/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_files.rs
-  - tools/oracle/src/helpers/azure_files/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/azure_files.py
+  - tools/oracle/src/helpers/azure/batches.rs
+  - tools/oracle/src/helpers/azure/batches/**
+  - tools/oracle/helpers/azure_batches.py
+  - tools/oracle/helpers/azure_batches/**
   - tools/oracle/cases/helpers/providers/azure-files/**
   - tools/oracle/fuzz/corpus/helper_case/azure_files*
   lint_tables: false
@@ -203,6 +202,7 @@ out_of_scope:
   L143-L179; AzureOpenAIFilesAPI.adelete_file L181-L190; AzureOpenAIFilesAPI.delete_file L192-L232; AzureOpenAIFilesAPI.alist_files
   L234-L243; AzureOpenAIFilesAPI.list_files L245-L285 belong to B694.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_batches in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/batches.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_batches.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The missing-client diagnostic still names OPENAI_API_KEY, so correcting its wording would change the source error.
 - Separate timeout/max_retries inputs are unused here; only litellm_params reaches client construction.
 budget:

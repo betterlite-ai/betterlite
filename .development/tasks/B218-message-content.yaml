@@ -18,8 +18,10 @@ scope:
   - crates/betterlite-prompts/src/message_content.rs
   - crates/betterlite-prompts/src/message_content/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/prompts/message_content.rs
+  - tools/oracle/src/helpers/prompts/message_content/**
+  - tools/oracle/helpers/message_content.py
+  - tools/oracle/helpers/message_content/**
   - tools/oracle/cases/helpers/message-content/**
   - tools/oracle/fuzz/corpus/helper_case/**
   - crates/betterlite-openai/**
@@ -88,6 +90,7 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B179 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as message_content in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/message_content.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/message_content.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.

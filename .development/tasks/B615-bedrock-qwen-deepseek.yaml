@@ -119,11 +119,10 @@ scope:
   - crates/betterlite-bedrock/src/qwen_deepseek.rs
   - crates/betterlite-bedrock/src/qwen_deepseek/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_qwen_deepseek.rs
-  - tools/oracle/src/helpers/bedrock_qwen_deepseek/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/qwen_deepseek.rs
+  - tools/oracle/src/helpers/bedrock/qwen_deepseek/**
   - tools/oracle/helpers/bedrock_qwen_deepseek.py
+  - tools/oracle/helpers/bedrock_qwen_deepseek/**
   - tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_qwen_deepseek*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -352,6 +351,7 @@ out_of_scope:
   AmazonDeepseekR1ResponseIterator.__init__ L83-L85; AmazonDeepseekR1ResponseIterator.chunk_parser L87-L121 belong
   to B609.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_qwen_deepseek in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/qwen_deepseek.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_qwen_deepseek.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Qwen2 actually prefers generation over text, contrary to the emphasis in its docstring.
 - Qwen3 tool argument strings are interpolated into the prompt without JSON escaping.
 budget:

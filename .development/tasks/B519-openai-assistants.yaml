@@ -81,11 +81,10 @@ scope:
   - crates/betterlite-openai/src/assistants.rs
   - crates/betterlite-openai/src/assistants/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_assistants.rs
-  - tools/oracle/src/helpers/openai_assistants/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/assistants.rs
+  - tools/oracle/src/helpers/openai/assistants/**
   - tools/oracle/helpers/openai_assistants.py
+  - tools/oracle/helpers/openai_assistants/**
   - tools/oracle/cases/helpers/providers/openai-assistants/**
   - tools/oracle/fuzz/corpus/helper_case/openai_assistants*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -263,6 +262,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_assistants in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/assistants.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_assistants.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The public async-list branch fails to forward pagination even though the async helper supports it; wiring all
   arguments through would change the pin.
 - A supplied SDK client is used as-is, without the explicit missing/wrong-async checks used by files and batches.

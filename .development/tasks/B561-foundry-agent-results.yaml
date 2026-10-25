@@ -97,11 +97,10 @@ scope:
   - crates/betterlite-foundry/src/agent_results.rs
   - crates/betterlite-foundry/src/agent_results/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_agent_results.rs
-  - tools/oracle/src/helpers/foundry_agent_results/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/foundry/agent_results.rs
+  - tools/oracle/src/helpers/foundry/agent_results/**
   - tools/oracle/helpers/foundry_agent_results.py
+  - tools/oracle/helpers/foundry_agent_results/**
   - tools/oracle/cases/helpers/providers/foundry-agent-results/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_agent_results*
   - crates/betterlite-foundry/fuzz/Cargo.toml
@@ -287,6 +286,7 @@ out_of_scope:
   AzureAIAgentsHandler._execute_agent_flow_sync L352-L421; AzureAIAgentsHandler.acompletion L426-L478; AzureAIAgentsHandler._execute_agent_flow_async
   L480-L549 belong to B560.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_agent_results in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/agent_results.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_agent_results.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty first assistant text block prevents searching later assistant text.
 - The parser keeps current_event across blank lines and ignores run.failed; only [DONE] emits stop.
 budget:

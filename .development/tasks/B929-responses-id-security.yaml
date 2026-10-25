@@ -111,11 +111,8 @@ scope:
   - crates/betterlite-config/src/api/responses_id_security/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-id-security-*
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_id_security.rs
-  - tools/oracle/src/helpers/responses_id_security/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_id_security.rs
+  - tools/oracle/src/helpers/core_ops/responses_id_security/**
   - tools/oracle/helpers/responses_id_security.py
   - tools/oracle/helpers/responses_id_security/**
   - tools/oracle/fuzz/corpus/helper_case/responses_id_security-*
@@ -329,6 +326,7 @@ out_of_scope:
 - B061 owns the encryption algorithms and salt-key material; this task owns the identity payload and authorization policy.
 - B080/B938 own creation/lifecycle HTTP registration and its final status, error envelope and header comparisons.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_id_security in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_id_security.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_id_security.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - SecretBox uses a random nonce; compare decrypted fields and within-stream reuse, never ciphertext strings from independent gateways.
 - len(parts)>=2 does not make parts[2] safe; the malformed two-field input needs an error path rather than Rust indexing.
 - A no-user/no-team id carries empty owner fields and is accepted by other ordinary principals at this pin.

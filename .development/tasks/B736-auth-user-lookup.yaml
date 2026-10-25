@@ -114,12 +114,11 @@ scope:
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_user_lookup.rs
-    - tools/oracle/src/helpers/auth_user_lookup/**
+    - tools/oracle/src/helpers/auth/user_lookup.rs
+    - tools/oracle/src/helpers/auth/user_lookup/**
     - tools/oracle/helpers/auth_user_lookup.py
+    - tools/oracle/helpers/auth_user_lookup/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-user-lookup/**
     - tools/oracle/fuzz/corpus/helper_case/auth-user-lookup-*
     - crates/betterlite-config/Cargo.toml
@@ -363,6 +362,7 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_user_lookup in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/user_lookup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_user_lookup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - check_db_only forces the primary user read to the writer but does not change fuzzy fallback routing.
   - Default user_id can change the created row while default-team enrollment still receives the originally requested ID.
 budget:

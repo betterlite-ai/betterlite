@@ -97,11 +97,10 @@ scope:
   - crates/betterlite-provider/src/openai_media_dispatch.rs
   - crates/betterlite-provider/src/openai_media_dispatch/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_media_dispatch.rs
-  - tools/oracle/src/helpers/openai_media_dispatch/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/openai_media_dispatch.rs
+  - tools/oracle/src/helpers/provider/openai_media_dispatch/**
   - tools/oracle/helpers/openai_media_dispatch.py
+  - tools/oracle/helpers/openai_media_dispatch/**
   - tools/oracle/cases/helpers/providers/openai-media-dispatch/**
   - tools/oracle/fuzz/corpus/helper_case/openai_media_dispatch*
   lint_tables: false
@@ -310,6 +309,7 @@ out_of_scope:
   L148-L175; OpenAIVideoConfig._add_image_to_files L574-L586; OpenAIVideoConfig._video_file_tuple L588-L595; OpenAIVideoConfig._add_video_to_files
   L597-L603; OpenAIVideoConfig._get_video_content_type L605-L628 belong to B672.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_media_dispatch in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/openai_media_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_media_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Image variation and image editing must select different upstream routes even though they share reply records.
 budget:
   max_changed_lines: 550

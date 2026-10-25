@@ -105,11 +105,10 @@ scope:
   - crates/betterlite-bedrock/src/converse_events.rs
   - crates/betterlite-bedrock/src/converse_events/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_converse_events.rs
-  - tools/oracle/src/helpers/bedrock_converse_events/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/converse_events.rs
+  - tools/oracle/src/helpers/bedrock/converse_events/**
   - tools/oracle/helpers/bedrock_converse_events.py
+  - tools/oracle/helpers/bedrock_converse_events/**
   - tools/oracle/cases/helpers/providers/bedrock-converse-events/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_converse_events*
   lint_tables: false
@@ -318,6 +317,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call
   L274-L360 belong to B691.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_converse_events in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/converse_events.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_converse_events.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A Nova messageStart wrapper is unwrapped before response-id initialization, so its inner conversationId is not
   read by the top-level messageStart branch.
 - Repeated stop events can repeat an empty-argument chunk because stop does not clear the tool buffer.

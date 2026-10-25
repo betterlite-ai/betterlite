@@ -106,12 +106,11 @@ scope:
     - crates/betterlite-auth/src/auth_pricing/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_pricing.rs
-    - tools/oracle/src/helpers/auth_pricing/**
+    - tools/oracle/src/helpers/server/auth_pricing.rs
+    - tools/oracle/src/helpers/server/auth_pricing/**
     - tools/oracle/helpers/auth_pricing.py
+    - tools/oracle/helpers/auth_pricing/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-pricing/**
     - tools/oracle/fuzz/corpus/helper_case/auth-pricing-*
     - crates/betterlite-server/src/auth.rs
@@ -384,6 +383,7 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_pricing in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_pricing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_pricing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - PTU zero token prices are not free when both PTU fields exist, even with zero values.
   - The side-effect route set blocks the route-only exemption, but the later zero-cost exemption can still apply.
 budget:

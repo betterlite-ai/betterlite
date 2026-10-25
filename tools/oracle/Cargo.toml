@@ -32,3 +32,6 @@ rstest = "=0.27.0"
 
 [lints]
 workspace = true
+
+[package.metadata.cargo-shear]
+ignored-paths = ["src/helpers/*/*.rs"]

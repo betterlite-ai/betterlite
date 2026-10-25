@@ -32,10 +32,10 @@ scope:
     - crates/betterlite-config/src/cli_attribution.rs
     - crates/betterlite-config/src/cli_attribution/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/cli-attribution-*
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/cli_attribution.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/auth/cli_attribution.rs
+    - tools/oracle/src/helpers/auth/cli_attribution/**
     - tools/oracle/helpers/cli_attribution.py
+    - tools/oracle/helpers/cli_attribution/**
     - tools/oracle/cases/helpers/cli-attribution/**
     - tools/oracle/fuzz/corpus/helper_case/cli-attribution-*
   lint_tables: false
@@ -74,6 +74,7 @@ deviations: []
 out_of_scope:
   - CLI flow issuance is B1613, poll authentication is B1614 and browser completion is B1615; the ui_sso.py ownership map in B063 identifies its other functions.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as cli_attribution in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/cli_attribution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cli_attribution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A claim path starting metadata. refers to an actual claim namespace and must not lose that prefix.
   - Persisting attribution uses update_many, so a missing user does not become a newly inserted identity.
 budget:

@@ -68,10 +68,10 @@ scope:
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-reconnect-*
-    - tools/oracle/src/helpers/auth_reconnect.rs
-    - tools/oracle/helpers/auth_reconnect.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/src/helpers/db/auth_database_reconnect.rs
+    - tools/oracle/src/helpers/db/auth_database_reconnect/**
+    - tools/oracle/helpers/auth_database_reconnect.py
+    - tools/oracle/helpers/auth_database_reconnect/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/auth-reconnect/**
     - tools/oracle/fuzz/corpus/helper_case/auth-reconnect-*
@@ -127,6 +127,7 @@ out_of_scope:
   - B124 retains other utils.py functions, watchdog scheduling and OS watcher/reaping functions; these are not native dependencies.
   - B713/B714 own replacement and routing primitives; B710 owns URL resolution; B738 owns auth-query retry decisions.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_database_reconnect in the db group. Replace the stub Op in tools/oracle/src/helpers/db/auth_database_reconnect.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_database_reconnect.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A false forced-recreate result can mean another generation already recovered, so it must not increment the failure count.
 budget:
   max_changed_lines: 800

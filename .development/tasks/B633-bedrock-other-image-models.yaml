@@ -123,11 +123,10 @@ scope:
   - crates/betterlite-bedrock/src/image_models.rs
   - crates/betterlite-bedrock/src/image_models/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_other_image_models.rs
-  - tools/oracle/src/helpers/bedrock_other_image_models/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/other_image_models.rs
+  - tools/oracle/src/helpers/bedrock/other_image_models/**
   - tools/oracle/helpers/bedrock_other_image_models.py
+  - tools/oracle/helpers/bedrock_other_image_models/**
   - tools/oracle/cases/helpers/providers/bedrock-other-image-models/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_models*
   - crates/betterlite-config/Cargo.toml
@@ -382,6 +381,7 @@ out_of_scope:
   L190-L203; BedrockImageGeneration._prepare_request L205-L292; BedrockImageGeneration._get_request_body L294-L310;
   BedrockImageGeneration._transform_response_dict_to_openai_response L312-L345 belong to B634.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_other_image_models in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/other_image_models.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_other_image_models.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Titan pops imageGenerationConfig twice, so the apparent second override is empty in ordinary execution.
 - TypedDict construction does not enforce the listed Nova parameter annotations or reject unknown fields.
 budget:

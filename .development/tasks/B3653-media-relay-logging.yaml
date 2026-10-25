@@ -31,8 +31,10 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/media_relay_logging.rs
     - crates/betterlite-server/src/media_relay_logging/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/media_relay_logging.rs
+    - tools/oracle/src/helpers/core_ops/media_relay_logging/**
+    - tools/oracle/helpers/media_relay_logging.py
+    - tools/oracle/helpers/media_relay_logging/**
     - tools/oracle/cases/helpers/media-relay-logging/**
   lint_tables: false
 references:
@@ -83,6 +85,7 @@ out_of_scope:
   - Fal AI cost calculator exports fal_ai_passthrough_cost and fal_ai_queue_base belong to B1531; they are imported and called, not built.
   - B068 owns completion_cost and is the direct pricing entry point; this task calls it with prepared transcription responses.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as media_relay_logging in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/media_relay_logging.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/media_relay_logging.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Deepgram's _audio_cost returns None only when the base pricing lookup fails, not when an addon fails; failed addons are silently dropped from the sum.
   - Fal's is_submit check uses the path to determine if cost should be computed; GET requests to retrieve results must not be charged.
   - Deepgram registry lookups that fail log debug and continue without raising; unpriced entries preserve the spend row with zero cost instead of losing it.

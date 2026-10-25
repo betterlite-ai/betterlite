@@ -63,11 +63,8 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_mcp_stream_loop.rs
-  - tools/oracle/src/helpers/responses_mcp_stream_loop/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_mcp_stream_loop.rs
+  - tools/oracle/src/helpers/core_ops/responses_mcp_stream_loop/**
   - tools/oracle/helpers/responses_mcp_stream_loop.py
   - tools/oracle/helpers/responses_mcp_stream_loop/**
   - tools/oracle/fuzz/corpus/helper_case/responses_mcp_stream_loop-*
@@ -160,6 +157,7 @@ out_of_scope:
 - Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
   never stand in for those HTTP comparisons.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_mcp_stream_loop in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_mcp_stream_loop.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_mcp_stream_loop.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - mcp_streaming_iterator.py:929 emits the diagnostic 'MCP auto-execute hit MAX_MCP_TOOL_CALL_ROUNDS=%s; forcing
   a text-only follow-up.'; retain its level and fallback instead of turning it into a hard error.
 - Within MCPEnhancedStreamingIterator._generate_tool_execution_events\'s not self.collected_response branch, preserve

@@ -139,11 +139,10 @@ scope:
   - crates/betterlite-bedrock/src/mantle_responses.rs
   - crates/betterlite-bedrock/src/mantle_responses/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_mantle_responses.rs
-  - tools/oracle/src/helpers/bedrock_mantle_responses/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/mantle_responses.rs
+  - tools/oracle/src/helpers/bedrock/mantle_responses/**
   - tools/oracle/helpers/bedrock_mantle_responses.py
+  - tools/oracle/helpers/bedrock_mantle_responses/**
   - tools/oracle/cases/helpers/providers/bedrock-mantle-responses/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_responses*
   lint_tables: false
@@ -365,6 +364,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_mantle_responses in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/mantle_responses.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_mantle_responses.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The service-tier membership test can fail on an unhashable value before the intended 400 error is constructed.
 - An additional_tools item containing no valid tools changes input but does not trigger this adapter's hoisted-tool
   filter.

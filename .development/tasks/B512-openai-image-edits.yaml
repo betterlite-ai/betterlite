@@ -94,11 +94,10 @@ scope:
   - crates/betterlite-openai/src/image_edits.rs
   - crates/betterlite-openai/src/image_edits/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_image_edits.rs
-  - tools/oracle/src/helpers/openai_image_edits/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/image_edits.rs
+  - tools/oracle/src/helpers/openai/image_edits/**
   - tools/oracle/helpers/openai_image_edits.py
+  - tools/oracle/helpers/openai_image_edits/**
   - tools/oracle/cases/helpers/providers/openai-image-edits/**
   - tools/oracle/fuzz/corpus/helper_case/openai_image_edits*
   lint_tables: false
@@ -242,6 +241,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_image_edits in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/image_edits.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_image_edits.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - DALL-E 2 checks the list length before skipping None images, so [image, None] still fails.
 - The mask list is truncated to its first element without validating or sending later masks.
 - The request comment says non-None values only, but arbitrary optional form fields are not globally filtered for

@@ -37,10 +37,10 @@ scope:
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/cache.rs
     - crates/betterlite-config/src/providers/vertex/cache/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/gemini_cache_prefix.rs
-    - tools/oracle/src/helpers/gemini_cache_prefix/**
-    - tools/oracle/helpers/{dispatch,gemini_cache_prefix}.py
+    - tools/oracle/src/helpers/vertex/gemini_cache_prefix.rs
+    - tools/oracle/src/helpers/vertex/gemini_cache_prefix/**
+    - tools/oracle/helpers/gemini_cache_prefix.py
+    - tools/oracle/helpers/gemini_cache_prefix/**
     - tools/oracle/cases/helpers/gemini-cache-prefix/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_cache_prefix*
   lint_tables: false
@@ -85,6 +85,7 @@ out_of_scope:
   - Cache list IO is B1318 and automatic creation B1324; this part does not register cachedContents routes.
   - Gemini transformation.py media routines are B1311, history traversal B1312, and the remaining body/async/sync wrappers B1321.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as gemini_cache_prefix in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_cache_prefix.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_cache_prefix.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A second separated marked run stays in the uncached messages rather than being combined with the first.
   - System extraction must happen after TTL lookup or a system-block TTL disappears.
   - A terminal tool response is rejected for caching even though conversation conversion emits it with role user.

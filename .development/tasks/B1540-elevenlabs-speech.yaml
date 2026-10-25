@@ -39,10 +39,10 @@ scope:
     - crates/betterlite-core/src/api/elevenlabs/speech/**
     - crates/betterlite-config/src/providers.rs
     - crates/betterlite-config/src/providers/elevenlabs.rs
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/elevenlabs_speech.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/elevenlabs_speech.rs
+    - tools/oracle/src/helpers/core_ops/elevenlabs_speech/**
     - tools/oracle/helpers/elevenlabs_speech.py
+    - tools/oracle/helpers/elevenlabs_speech/**
     - tools/oracle/cases/helpers/elevenlabs-speech/**
     - tools/oracle/fuzz/corpus/helper_case/elevenlabs_speech*
   lint_tables: false
@@ -78,6 +78,7 @@ deviations: []
 out_of_scope:
   - B047 installs the speech operation in the existing dispatcher; transcription-specific behavior is B1541.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as elevenlabs_speech in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/elevenlabs_speech.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/elevenlabs_speech.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A valid explicit voice leaves an optional voice_id field available for body forwarding.
   - DEFAULT_OUTPUT_FORMAT is defined but never applied to an omitted response_format.
   - kwargs.extra_body can replace text and model_id despite their initial request values.

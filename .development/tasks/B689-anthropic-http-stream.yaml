@@ -83,11 +83,10 @@ scope:
   - crates/betterlite-anthropic/src/anthropic_http_stream.rs
   - crates/betterlite-anthropic/src/anthropic_http_stream/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_http_stream.rs
-  - tools/oracle/src/helpers/anthropic_http_stream/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/http_stream.rs
+  - tools/oracle/src/helpers/anthropic/http_stream/**
   - tools/oracle/helpers/anthropic_http_stream.py
+  - tools/oracle/helpers/anthropic_http_stream/**
   - tools/oracle/cases/helpers/providers/anthropic-http-stream/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_http_stream*
   lint_tables: false
@@ -218,6 +217,7 @@ out_of_scope:
   AnthropicChatCompletion.acompletion_function L254-L321; AnthropicChatCompletion.completion (L323-L362, L370-L538);
   AnthropicChatCompletion.embedding L540-L542 belong to B584.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_http_stream in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/http_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_http_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The synchronous helper rejects a non-200 returned response even when the HTTP client did not raise; adding that
   check to the asynchronous helper changes the tested seam.
 - The stream-opening logger uses api_key="" and does not receive the upstream authorization value.

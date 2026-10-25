@@ -86,11 +86,8 @@ scope:
   - crates/betterlite-config/src/api/batch_managed_records/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/batch-managed-records-*
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/batch_managed_records.rs
-  - tools/oracle/src/helpers/batch_managed_records/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/batch_managed_records.rs
+  - tools/oracle/src/helpers/core_ops/batch_managed_records/**
   - tools/oracle/helpers/batch_managed_records.py
   - tools/oracle/helpers/batch_managed_records/**
   - tools/oracle/fuzz/corpus/helper_case/batch_managed_records-*
@@ -246,6 +243,7 @@ out_of_scope:
   ID creation, managed-object reads/writes and retirement only run behind the unavailable managed_files hook; no
   reachable OSS caller, so do not implement or test them.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as batch_managed_records in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/batch_managed_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/batch_managed_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - ensure_batch_response_managed_file_ids resolves existing input/output/error file mappings before checking for
   a missing hook; its two MIT reads remain live.
 - get_batch_from_database and update_batch_in_database check the hook first, so neither may read or write a managed-object

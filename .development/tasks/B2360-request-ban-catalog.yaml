@@ -90,10 +90,10 @@ scope:
     - crates/betterlite-auth/src/request_ban_catalog.rs
     - crates/betterlite-auth/src/request_ban_catalog/**
     - crates/betterlite-auth/src/lib.rs
-    - tools/oracle/src/helpers/request_ban_catalog.rs
+    - tools/oracle/src/helpers/auth/request_ban_catalog.rs
+    - tools/oracle/src/helpers/auth/request_ban_catalog/**
     - tools/oracle/helpers/request_ban_catalog.py
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/helpers/request_ban_catalog/**
     - tools/oracle/cases/helpers/request-ban-catalog/**
     - tools/oracle/fuzz/corpus/helper_case/request-ban-catalog-*
   lint_tables: false
@@ -129,6 +129,7 @@ out_of_scope:
   - B884 applies the tables and owns request traversal, opt-ins and error mapping; the other auth_utils functions retain their existing B741-B746, B880-B882 and B054 owners.
   - B189 owns dynamic callback initialization; this task reads its field contract without executing callbacks.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as request_ban_catalog in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/request_ban_catalog.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/request_ban_catalog.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - CustomPricingLiteLLMParams.model_fields includes its seven inherited fields; inspecting only the subclass loses basic per-token overrides.
   - user_api_key_auth_metadata is banned even though phoenix_project_name is not.
 budget:

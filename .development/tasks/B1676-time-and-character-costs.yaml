@@ -48,10 +48,10 @@ scope:
     - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/duration_cost.rs
     - crates/betterlite-models/src/duration_cost/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/duration_cost.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/duration_cost.py
+    - tools/oracle/src/helpers/models/time_and_character_costs.rs
+    - tools/oracle/src/helpers/models/time_and_character_costs/**
+    - tools/oracle/helpers/time_and_character_costs.py
+    - tools/oracle/helpers/time_and_character_costs/**
     - tools/oracle/cases/helpers/duration-cost/**
     - tools/oracle/fuzz/corpus/helper_case/duration-cost-*
   lint_tables: false
@@ -103,6 +103,7 @@ out_of_scope:
   - For cost_calculator.py, B1673 owns custom rates, B1677 additional fees, B1683 usage/tier diagnostics, B1686 token/vector/rerank dispatch, B1689 replicate/early completion charges, B1682 identity/breakdown storage, B1649 adjustments, B1678 OCR, B1674 image defaults, B1679 batch prices, B1680 aggregation and B1681 realtime; B1688 prepares completion input and B068 composes the completion/response entry points.
   - Audio file parsing and request URL handling are endpoint/provider responsibilities; these functions receive usage durations or response times only.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as time_and_character_costs in the models group. Replace the stub Op in tools/oracle/src/helpers/models/time_and_character_costs.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/time_and_character_costs.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A known model with empty tiered_pricing declines wall-clock charging even when both token prices are zero.
   - The same output-second price charges output for audio but input for an eligible wall-clock model.
   - An explicitly supplied empty video price table prevents public-price fallback and returns zero.

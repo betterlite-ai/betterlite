@@ -110,11 +110,10 @@ scope:
   - crates/betterlite-anthropic/src/chat_call.rs
   - crates/betterlite-anthropic/src/chat_call/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_chat_call.rs
-  - tools/oracle/src/helpers/anthropic_chat_call/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/chat_call.rs
+  - tools/oracle/src/helpers/anthropic/chat_call/**
   - tools/oracle/helpers/anthropic_chat_call.py
+  - tools/oracle/helpers/anthropic_chat_call/**
   - tools/oracle/cases/helpers/providers/anthropic-chat-call/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_chat_call*
   lint_tables: false
@@ -277,6 +276,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197;
   AnthropicChatCompletion.acompletion_stream_function L204-L252 belong to B689.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_chat_call in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/chat_call.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_chat_call.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Only literal True selects async/stream execution, and transform_params is a separate mapping from optional_params
   passed to reply projection.
 - The embedding stub returns None; it is not a provider error.

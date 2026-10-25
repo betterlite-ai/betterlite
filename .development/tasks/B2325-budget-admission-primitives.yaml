@@ -55,10 +55,10 @@ scope:
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/budget-primitives-*
-    - tools/oracle/src/helpers/budget_primitives.rs
-    - tools/oracle/helpers/budget_primitives.py
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/src/helpers/auth/budget_admission_primitives.rs
+    - tools/oracle/src/helpers/auth/budget_admission_primitives/**
+    - tools/oracle/helpers/budget_admission_primitives.py
+    - tools/oracle/helpers/budget_admission_primitives/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/budget-primitives/**
     - tools/oracle/fuzz/corpus/helper_case/budget-primitives-*
@@ -115,6 +115,7 @@ out_of_scope:
   - B071 retains all reservation operations and other functions in budget_reservation.py.
   - B2313 owns snapshot types/metadata_entries, B199 durations and B751/B752 admission callers.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as budget_admission_primitives in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/budget_admission_primitives.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/budget_admission_primitives.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An opted-in zero limit qualifies for throttling and becomes at least 1 after scaling.
 budget:
   max_changed_lines: 675

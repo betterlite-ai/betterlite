@@ -102,11 +102,10 @@ scope:
   - crates/betterlite-openai/src/chat_content.rs
   - crates/betterlite-openai/src/chat_content/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_chat_content.rs
-  - tools/oracle/src/helpers/openai_chat_content/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/chat_content.rs
+  - tools/oracle/src/helpers/openai/chat_content/**
   - tools/oracle/helpers/openai_chat_content.py
+  - tools/oracle/helpers/openai_chat_content/**
   - tools/oracle/cases/helpers/providers/openai-chat-content/**
   - tools/oracle/fuzz/corpus/helper_case/openai_chat_content*
   - crates/betterlite-config/Cargo.toml
@@ -332,6 +331,7 @@ out_of_scope:
   L187-L193; OpenAIGPTConfig._map_openai_params L195-L217; OpenAIGPTConfig.map_openai_params L219-L231; OpenAIUnknownModelConfig.get_supported_openai_params
   L833-L834 belong to B668.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_chat_content in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/chat_content.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_chat_content.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - contains_pdf_url checks only https://, http:// and www. prefixes, not a .pdf suffix.
 - The async subclass path transforms messages before invoking the sync hook again, so hooks must not accidentally
   duplicate hoisted image blocks.

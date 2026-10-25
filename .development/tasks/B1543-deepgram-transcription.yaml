@@ -37,10 +37,10 @@ scope:
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/deepgram_transcript.rs
     - crates/betterlite-core/fuzz/corpus/deepgram_transcript/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/deepgram_transcription.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/deepgram_transcription.rs
+    - tools/oracle/src/helpers/core_ops/deepgram_transcription/**
     - tools/oracle/helpers/deepgram_transcription.py
+    - tools/oracle/helpers/deepgram_transcription/**
     - tools/oracle/cases/helpers/deepgram-transcription/**
     - tools/oracle/fuzz/corpus/helper_case/deepgram_transcription*
   lint_tables: false
@@ -76,6 +76,7 @@ deviations: []
 out_of_scope:
   - Live listen WebSocket query identity and duration/channel billing helpers remain in B1542; this adapter handles prerecorded HTTP audio only.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as deepgram_transcription in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/deepgram_transcription.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/deepgram_transcription.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A speaker field appearing only on the second word does not enable diarization.
   - Deepgram header validation discards caller headers even when no API key was found.
   - The reconstructed final speaker run introduces an extra blank line between the last two runs.

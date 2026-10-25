@@ -97,12 +97,11 @@ scope:
     - crates/betterlite-auth/Cargo.toml
     - Cargo.toml
     - deny.toml
-    - tools/oracle/src/helpers/trusted_network.rs
-    - tools/oracle/src/helpers/trusted_network/**
+    - tools/oracle/src/helpers/auth/trusted_network.rs
+    - tools/oracle/src/helpers/auth/trusted_network/**
     - tools/oracle/helpers/trusted_network.py
+    - tools/oracle/helpers/trusted_network/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/trusted-network/**
     - tools/oracle/fuzz/corpus/helper_case/trusted-network-*
     - crates/betterlite-server/src/auth.rs
@@ -284,6 +283,7 @@ out_of_scope:
   - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
     production fallback.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as trusted_network in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/trusted_network.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/trusted_network.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - IPv4-mapped IPv6 must normalize before CIDR and forwarded-hop checks.
 budget:
   max_changed_lines: 775

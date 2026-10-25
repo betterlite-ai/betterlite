@@ -20,11 +20,10 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_chat_prepare.rs
   - crates/betterlite-core/src/api/messages_chat_prepare/**
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/messages_context_inspection.rs
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/messages_context_inspection.py
+  - tools/oracle/src/helpers/core_ops/messages_chat_prepare.rs
+  - tools/oracle/src/helpers/core_ops/messages_chat_prepare/**
+  - tools/oracle/helpers/messages_chat_prepare.py
+  - tools/oracle/helpers/messages_chat_prepare/**
   - tools/oracle/cases/helpers/messages-context-inspection/**
   - tools/oracle/fuzz/corpus/helper_case/messages_context_inspection-*
   - tools/oracle/src/sdk_http.rs
@@ -109,6 +108,7 @@ out_of_scope:
 - B972 owns normalization/editor dispatch; B971 owns history slicing; B968 owns result/error types. B081 wraps context errors for HTTP.
 - The module-level ANTHROPIC_ADAPTER at L317 is B974's composition of B967 and contains no separate behavior here.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as messages_chat_prepare in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_chat_prepare.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_chat_prepare.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - drop_params does not disable context_management, because this parameter is supported through the polyfill.
 - A failed compact-only request can recover through client history; a failed clear request cannot.
 - Prediction must use the dispatcher's normalizer or OpenAI list specs can lose recent history before compaction.

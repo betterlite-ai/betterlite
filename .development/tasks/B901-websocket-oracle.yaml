@@ -102,7 +102,10 @@ scope:
   - tools/oracle/fixtures/websocket-oracle/**
   - tools/oracle/src/websocket_driver.rs
   - tools/oracle/src/websocket_driver/**
-  - tools/oracle/helpers/websocket_dispatch.py
+  - tools/oracle/src/helpers/oracle/websocket_oracle.rs
+  - tools/oracle/src/helpers/oracle/websocket_oracle/**
+  - tools/oracle/helpers/websocket_oracle.py
+  - tools/oracle/helpers/websocket_oracle/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/README.md#L1-L8
@@ -290,6 +293,7 @@ out_of_scope:
   service adapters remain with B1004, B1125, B528, B756, B943, B945 and B1011 as applicable; B901 has no database or
   warning-and-drop behavior of its own.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as websocket_oracle in the oracle group. Replace the stub Op in tools/oracle/src/helpers/oracle/websocket_oracle.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/websocket_oracle.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   A preaccept refusal is reported by the HTTP handshake, so storing the route's attempted 1008 as an accepted client
   close makes a valid 403 transcript fail.

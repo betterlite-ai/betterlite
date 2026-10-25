@@ -43,11 +43,10 @@ scope:
   - crates/betterlite-config/src/api/responses_provider_selection.rs
   - crates/betterlite-config/src/api/responses_provider_selection/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-compatible-*
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_provider_selection.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_provider_selection.rs
+  - tools/oracle/src/helpers/core_ops/responses_provider_selection/**
   - tools/oracle/helpers/responses_provider_selection.py
+  - tools/oracle/helpers/responses_provider_selection/**
   - tools/oracle/cases/helpers/responses-provider-selection/**
   - tools/oracle/fuzz/corpus/helper_case/responses_provider_selection-*
   - Cargo.lock
@@ -175,6 +174,7 @@ out_of_scope:
 - B955 owns MCP/file-search dispatch functions; B1116 owns delete/cancel, B933 retrieve/input-items, B934 compact and B943 websocket functions in main.py.
 - B117 owns prompt-store access; B234 owns the mapping algorithms. This task invokes their typed interfaces only.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_provider_selection in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_provider_selection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_provider_selection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty api_key or api_base still prevents a prompt from crossing the credential boundary.
 - The bridged prompt context removes an existing _litellm_carry_unmatched_cache_control_points value instead of restoring it.
 - A string use_chat_completions_api="false" is truthy, while the bridge predicate itself uses identity with true.

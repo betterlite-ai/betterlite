@@ -78,11 +78,10 @@ scope:
   - crates/betterlite-streaming/src/stream_base_assembly.rs
   - crates/betterlite-streaming/src/stream_base_assembly/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/stream_base_assembly.rs
-  - tools/oracle/src/helpers/stream_base_assembly/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/streaming/stream_base_assembly.rs
+  - tools/oracle/src/helpers/streaming/stream_base_assembly/**
   - tools/oracle/helpers/stream_base_assembly.py
+  - tools/oracle/helpers/stream_base_assembly/**
   - tools/oracle/cases/helpers/providers/stream-base-assembly/**
   - tools/oracle/fuzz/corpus/helper_case/stream_base_assembly*
   lint_tables: false
@@ -209,6 +208,7 @@ out_of_scope:
   L1012-L1018; ChunkProcessor._reset_anthropic_cursor_completion_tokens L1020-L1057; ChunkProcessor.calculate_usage
   L1059-L1174 belong to B2235.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as stream_base_assembly in the streaming group. Replace the stub Op in tools/oracle/src/helpers/streaming/stream_base_assembly.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/stream_base_assembly.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Sorting changes chunks but not first_chunk; Azure model-router selection therefore compares against the original
   model.
 budget:

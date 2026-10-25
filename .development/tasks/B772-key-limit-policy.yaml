@@ -101,12 +101,11 @@ scope:
     - crates/betterlite-server/src/key_limit_policy/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/key_limit_policy.rs
-    - tools/oracle/src/helpers/key_limit_policy/**
+    - tools/oracle/src/helpers/server/key_limit_policy.rs
+    - tools/oracle/src/helpers/server/key_limit_policy/**
     - tools/oracle/helpers/key_limit_policy.py
+    - tools/oracle/helpers/key_limit_policy/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/keys.rs
-    - tools/oracle/helpers/management/keys.py
     - tools/oracle/cases/helpers/key-limit-policy/**
     - tools/oracle/fuzz/corpus/helper_case/key-limit-policy-*
     - crates/betterlite-config/Cargo.toml
@@ -304,6 +303,7 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as key_limit_policy in the server group. Replace the stub Op in tools/oracle/src/helpers/server/key_limit_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/key_limit_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Scalar zero ceilings are enforced, but per-model zero ceilings are skipped by a truthiness check.
   - One guaranteed dimension activates both checks; only organization types fall back to metadata.
 budget:

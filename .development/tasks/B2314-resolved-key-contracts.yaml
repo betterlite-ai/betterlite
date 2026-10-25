@@ -118,10 +118,10 @@ scope:
     - crates/betterlite-auth/src/resolved_key/**
     - crates/betterlite-auth/src/user_roles.rs
     - crates/betterlite-auth/src/user_roles/**
-    - tools/oracle/src/helpers/resolved_key.rs
-    - tools/oracle/helpers/resolved_key.py
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/src/helpers/auth/resolved_key_contracts.rs
+    - tools/oracle/src/helpers/auth/resolved_key_contracts/**
+    - tools/oracle/helpers/resolved_key_contracts.py
+    - tools/oracle/helpers/resolved_key_contracts/**
     - tools/oracle/cases/helpers/resolved-key/**
     - tools/oracle/fuzz/corpus/helper_case/resolved-key-*
   lint_tables: false
@@ -196,6 +196,7 @@ out_of_scope:
   - B760 owns the rest of handle_jwt.py L251-L302 and its claim-extraction helpers; JWTHandler.is_jwt alone moves here.
   - B124 retains unrelated proxy/_types.py declarations/functions; B720 owns the inherited verification-token model and B2313 owns carried policy records.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as resolved_key_contracts in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/resolved_key_contracts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/resolved_key_contracts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Only sk- and three-segment values are hashed after one Bearer prefix; hashing every identifier changes stored-token lookups.
   - Excluding a field from serialization does not mean the source strips it from constructor input.
   - organization_id overwrites org_id in the view constructor, unlike repository fallback projection when org_id is already present.

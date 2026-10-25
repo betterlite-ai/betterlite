@@ -348,6 +348,7 @@ out_of_scope:
 - B115 retains storage logging integration behavior and calls these shared naming helpers; it no longer owns this
   helper file.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as cloud_storage in the context group. Replace the stub Op in tools/oracle/src/helpers/context/cloud_storage.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cloud_storage.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Authorization percent-decodes once, while filename sanitization never percent-decodes.
 - The source object-path validator accepts a trailing slash and literal backslash, so generic filesystem canonicalization
   changes its behavior.
@@ -364,11 +365,10 @@ scope:
   - crates/betterlite-context/src/cloud_storage.rs
   - crates/betterlite-context/src/cloud_storage/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/cloud_storage.rs
-  - tools/oracle/src/helpers/cloud_storage/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/context/cloud_storage.rs
+  - tools/oracle/src/helpers/context/cloud_storage/**
   - tools/oracle/helpers/cloud_storage.py
+  - tools/oracle/helpers/cloud_storage/**
   - tools/oracle/cases/helpers/providers/cloud-storage/**
   - tools/oracle/fuzz/corpus/helper_case/cloud_storage*
   - crates/betterlite-config/Cargo.toml

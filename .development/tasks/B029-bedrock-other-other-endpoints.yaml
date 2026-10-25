@@ -88,11 +88,10 @@ scope:
   - crates/betterlite-core/src/operation.rs
   - crates/betterlite-core/Cargo.toml
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_other_other_endpoints.rs
-  - tools/oracle/src/helpers/bedrock_other_other_endpoints/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/bedrock_other_other_endpoints.rs
+  - tools/oracle/src/helpers/provider/bedrock_other_other_endpoints/**
   - tools/oracle/helpers/bedrock_other_other_endpoints.py
+  - tools/oracle/helpers/bedrock_other_other_endpoints/**
   - tools/oracle/cases/helpers/providers/bedrock-other-other-endpoints/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_other_endpoints*
   lint_tables: false
@@ -211,6 +210,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_other_other_endpoints in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/bedrock_other_other_endpoints.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_other_other_endpoints.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Embedding inputs run sequentially, so a failure prevents later upstream calls.
 - CountTokens failures do not trigger a local tokenizer in this composition.
 budget:

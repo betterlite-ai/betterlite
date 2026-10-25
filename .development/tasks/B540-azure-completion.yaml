@@ -92,11 +92,10 @@ scope:
   - crates/betterlite-azure/src/completion.rs
   - crates/betterlite-azure/src/completion/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_completion.rs
-  - tools/oracle/src/helpers/azure_completion/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/completion.rs
+  - tools/oracle/src/helpers/azure/completion/**
   - tools/oracle/helpers/azure_completion.py
+  - tools/oracle/helpers/azure_completion/**
   - tools/oracle/cases/helpers/providers/azure-completion/**
   - tools/oracle/fuzz/corpus/helper_case/azure_completion*
   lint_tables: false
@@ -273,6 +272,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_completion in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/completion.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_completion.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The async stream selector uses truthiness while the sync selector uses is True, so the same non-boolean stream
   option follows different branches.
 - A None retry value fails only where the synchronous guard runs; the async buffered path accepts it.

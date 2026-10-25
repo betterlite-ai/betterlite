@@ -54,12 +54,11 @@ scope:
     - crates/betterlite-server/src/access_group_models/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/access_group_models.rs
-    - tools/oracle/src/helpers/access_group_models/**
+    - tools/oracle/src/helpers/server/access_group_models.rs
+    - tools/oracle/src/helpers/server/access_group_models/**
     - tools/oracle/helpers/access_group_models.py
+    - tools/oracle/helpers/access_group_models/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/access-group-models/**
     - tools/oracle/fuzz/corpus/helper_case/access-group-models-*
     - crates/betterlite-server/src/access_group_models/fixtures/**
@@ -127,6 +126,7 @@ out_of_scope:
   - B844 owns catalog lookup algorithms and B819 owns concurrent cache failure handling.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as access_group_models in the server group. Replace the stub Op in tools/oracle/src/helpers/server/access_group_models.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/access_group_models.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The database count includes the modified deployment if its primary rename/delete has not happened yet.
   - Replacing duplicate old names can produce duplicate new names despite first removing pre-existing new-name entries.
 budget:

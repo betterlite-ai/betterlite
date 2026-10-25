@@ -75,11 +75,10 @@ scope:
   - crates/betterlite-azure/src/fine_tuning.rs
   - crates/betterlite-azure/src/fine_tuning/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_fine_tuning.rs
-  - tools/oracle/src/helpers/azure_fine_tuning/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/fine_tuning.rs
+  - tools/oracle/src/helpers/azure/fine_tuning/**
   - tools/oracle/helpers/azure_fine_tuning.py
+  - tools/oracle/helpers/azure_fine_tuning/**
   - tools/oracle/cases/helpers/providers/azure-fine-tuning/**
   - tools/oracle/fuzz/corpus/helper_case/azure_fine_tuning*
   lint_tables: false
@@ -218,6 +217,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_fine_tuning in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/fine_tuning.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_fine_tuning.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Azure SDK clients inherit from OpenAI/AsyncOpenAI, so the isinstance check discards them too despite the nearby
   comment implying only non-Azure clients.
 - trainingType is inserted before client initialization, so a failed credential setup still leaves the caller request

@@ -34,10 +34,10 @@ scope:
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/thinking.rs
     - crates/betterlite-config/src/providers/vertex/thinking/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/gemini_thinking.rs
-    - tools/oracle/src/helpers/gemini_thinking/**
-    - tools/oracle/helpers/{dispatch,gemini_thinking}.py
+    - tools/oracle/src/helpers/vertex/gemini_thinking_format.rs
+    - tools/oracle/src/helpers/vertex/gemini_thinking_format/**
+    - tools/oracle/helpers/gemini_thinking_format.py
+    - tools/oracle/helpers/gemini_thinking_format/**
     - tools/oracle/cases/helpers/gemini-thinking/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_thinking*
   lint_tables: false
@@ -88,6 +88,7 @@ out_of_scope:
   - B1308 owns tool mapping, B1305 the model-name predicates and B1310 the remaining option/class-default methods before L1313.
   - Output parts/usage and candidates are B1313-B1314; streaming is B1315; request transport is B1316.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as gemini_thinking_format in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_thinking_format.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_thinking_format.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - thinking.type=enabled with budget_tokens=0 suppresses thoughts without forcing a Gemini 3 thinkingLevel.
   - Gemini 3 none selects low or minimal with includeThoughts=false rather than an invalid zero thinkingBudget.
   - Response schema cleanup removes only false additionalProperties on the older path.

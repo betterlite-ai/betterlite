@@ -118,11 +118,10 @@ scope:
   - crates/betterlite-bedrock/src/image_call.rs
   - crates/betterlite-bedrock/src/image_call/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_other_image_call.rs
-  - tools/oracle/src/helpers/bedrock_other_image_call/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/other_image_call.rs
+  - tools/oracle/src/helpers/bedrock/other_image_call/**
   - tools/oracle/helpers/bedrock_other_image_call.py
+  - tools/oracle/helpers/bedrock_other_image_call/**
   - tools/oracle/cases/helpers/providers/bedrock-other-image-call/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_call*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -299,6 +298,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/image_generation/image_handler.py: BedrockImageGeneration.get_config_class
   L65-L74 belong to B633.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_other_image_call in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/other_image_call.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_other_image_call.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Guardrail options are popped after body serialization, so a header can also remain in the payload.
 - The synchronous fallback client ignores this method's timeout argument, while the asynchronous fallback client
   receives it.

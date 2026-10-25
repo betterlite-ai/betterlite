@@ -28,11 +28,10 @@ scope:
     - crates/betterlite-vertex/src/error.rs
     - crates/betterlite-vertex/src/token_cache.rs
     - crates/betterlite-vertex/src/token_cache/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/vertex_token_cache.rs
-    - tools/oracle/src/helpers/vertex_token_cache/**
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/vertex/token_cache.rs
+    - tools/oracle/src/helpers/vertex/token_cache/**
     - tools/oracle/helpers/vertex_token_cache.py
+    - tools/oracle/helpers/vertex_token_cache/**
     - tools/oracle/cases/helpers/vertex-token-cache/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_token_cache*
   lint_tables: false
@@ -81,6 +80,7 @@ out_of_scope:
   - B1303 owns L523-L619, L817-L870 and L993-L1136, which add stale-token scheduling and the asynchronous orchestration.
   - URL construction, region choice and headers in the remaining ranges are B1304.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_token_cache in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/token_cache.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_token_cache.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - expired=false alone is insufficient for the fresh probe when the fallback valid flag is false.
   - A quota project recovered from a legacy cache value must not override an explicit project argument.
   - Retrying every refresh error would change the source's literal Reauthentication is needed predicate.

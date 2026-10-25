@@ -86,12 +86,11 @@ scope:
     - crates/betterlite-router/src/model_group_info/**
     - crates/betterlite-router/src/lib.rs
     - crates/betterlite-router/Cargo.toml
-    - tools/oracle/src/helpers/model_group_info.rs
-    - tools/oracle/src/helpers/model_group_info/**
+    - tools/oracle/src/helpers/router/model_group_info.rs
+    - tools/oracle/src/helpers/router/model_group_info/**
     - tools/oracle/helpers/model_group_info.py
+    - tools/oracle/helpers/model_group_info/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/model-group-info/**
     - tools/oracle/fuzz/corpus/helper_case/model-group-info-*
   lint_tables: false
@@ -597,6 +596,7 @@ out_of_scope:
   - 'litellm/types/router.py: B363 owns the remaining functions RoutingPlugin.run (L1191-L1191), ClassifierPlugin.classify
     (L1206-L1206).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as model_group_info in the router group. Replace the stub Op in tools/oracle/src/helpers/router/model_group_info.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_group_info.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A later deployment replaces supported_openai_params while its false capability flags cannot unset an earlier true flag.
   - Metadata-only tpm/rpm from the first deployment is not summed like metadata-only limits from later deployments.
 budget:

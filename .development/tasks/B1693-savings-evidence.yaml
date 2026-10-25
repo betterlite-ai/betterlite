@@ -52,10 +52,10 @@ scope:
     - crates/betterlite-models/fuzz/Cargo.toml
     - crates/betterlite-models/fuzz/fuzz_targets/billed_at.rs
     - crates/betterlite-models/fuzz/corpus/billed_at/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/savings_evidence.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/models/savings_evidence.rs
+    - tools/oracle/src/helpers/models/savings_evidence/**
     - tools/oracle/helpers/savings_evidence.py
+    - tools/oracle/helpers/savings_evidence/**
     - tools/oracle/cases/helpers/savings-evidence/**
     - tools/oracle/fuzz/corpus/helper_case/savings-evidence-*
   lint_tables: false
@@ -109,6 +109,7 @@ out_of_scope:
   - B1694 owns _ModelIdentity, _resolve_model, _effective_model_info, _model_info, baseline_cost_snapshot, price_baseline_comparison, _cost_of_usage, compute_autorouter_savings, _proxy_llm_router and every request/logging pricing function from L506 through the end of savings.py.
   - This task transforms parsed savings records; request token counting belongs to B1695 and persistence/publication belongs to the baseline-accounting tasks split from B068.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as savings_evidence in the models group. Replace the stub Op in tools/oracle/src/helpers/models/savings_evidence.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/savings_evidence.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A zero baseline cache rate is falsey here and moves the bucket to ordinary input rather than making it free.
   - The empty injection marker is intentional and means every deployment, not missing evidence.
   - Logged cache creation extraction prefers cache_write_tokens, but typed _cache_token_split prefers cache_creation_tokens.

@@ -85,11 +85,10 @@ scope:
   - crates/betterlite-bedrock/src/agentcore_search_reply.rs
   - crates/betterlite-bedrock/src/agentcore_search_reply/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/agentcore_search_reply.rs
-  - tools/oracle/src/helpers/agentcore_search_reply/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/agentcore_search_reply.rs
+  - tools/oracle/src/helpers/bedrock/agentcore_search_reply/**
   - tools/oracle/helpers/agentcore_search_reply.py
+  - tools/oracle/helpers/agentcore_search_reply/**
   - tools/oracle/cases/helpers/providers/agentcore-search-reply/**
   - tools/oracle/fuzz/corpus/helper_case/agentcore_search_reply*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -279,6 +278,7 @@ out_of_scope:
   AgentCoreSearchConfig.sign_request L250-L321; AgentCoreSearchConfig._is_configured_gateway L323-L328; AgentCoreSearchConfig._signing_region
   L330-L358; AgentCoreSearchConfig.get_error_class L447-L457 belong to B659.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as agentcore_search_reply in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/agentcore_search_reply.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/agentcore_search_reply.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Response format is sniffed from the body, so an SSE content-type does not guarantee the SSE parser runs.
 - One empty Mapping in a text result list suppresses a richer structuredContent fallback.
 budget:

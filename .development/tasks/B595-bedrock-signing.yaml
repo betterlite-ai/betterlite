@@ -113,11 +113,10 @@ scope:
   - Cargo.toml
   - deny.toml
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_signing.rs
-  - tools/oracle/src/helpers/bedrock_signing/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/signing.rs
+  - tools/oracle/src/helpers/bedrock/signing/**
   - tools/oracle/helpers/bedrock_signing.py
+  - tools/oracle/helpers/bedrock_signing/**
   - tools/oracle/cases/helpers/providers/bedrock-signing/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_signing*
   lint_tables: false
@@ -413,6 +412,7 @@ out_of_scope:
   CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
   or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_signing in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/signing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_signing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The two auth-override functions differ in header lookup casing; sharing one override predicate changes behavior.
 - Bearer _sign_request bypasses validation entirely, while bearer _get_boto_credentials_from_optional_params still
   validates and removes AWS parameters.

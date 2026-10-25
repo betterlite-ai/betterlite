@@ -47,10 +47,10 @@ scope:
     - crates/betterlite-models/src/price_lookup/**
     - crates/betterlite-models/src/ocr_pricing.rs
     - crates/betterlite-models/src/ocr_pricing/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/ocr_pricing.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/ocr_pricing.py
+    - tools/oracle/src/helpers/models/ocr_page_and_credit_cost.rs
+    - tools/oracle/src/helpers/models/ocr_page_and_credit_cost/**
+    - tools/oracle/helpers/ocr_page_and_credit_cost.py
+    - tools/oracle/helpers/ocr_page_and_credit_cost/**
     - tools/oracle/cases/helpers/ocr-pricing/**
     - tools/oracle/fuzz/corpus/helper_case/ocr-pricing-*
   lint_tables: false
@@ -95,6 +95,7 @@ out_of_scope:
   - The OCR slice leaves cost_calculator.py's custom prices to B1673, additional fees to B1677, duration/transcription/video to B1676, image defaults to B1674, adjustments to B1649 and batch math to B1679. B1680/B1681 own aggregation/realtime, B1682 context and breakdown storage, B1683 usage/tier diagnostics, B1686 token/vector/rerank dispatch, B1688 completion preparation, B1689 replicate and early-call charges, and B068 the outer response/completion functions.
   - OCR provider wire schemas and batch output parsing retain their API-family owners; OcrBilling never reads a document URL or opens a batch file.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as ocr_page_and_credit_cost in the models group. Replace the stub Op in tools/oracle/src/helpers/models/ocr_page_and_credit_cost.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/ocr_page_and_credit_cost.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A numeric credit rate and credits=0 suppress all otherwise chargeable pages because presence controls the credit branch.
   - Batch annotation lookup can occur even when the page rate would be sufficient for the eventual annotation fallback.
 budget:

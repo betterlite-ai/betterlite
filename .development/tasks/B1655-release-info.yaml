@@ -40,10 +40,10 @@ scope:
     - tools/oracle/src/case.rs
     - tools/oracle/src/process.rs
     - tools/oracle/src/process/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/release_bullets.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/release_bullets.py
+    - tools/oracle/src/helpers/server/release_info.rs
+    - tools/oracle/src/helpers/server/release_info/**
+    - tools/oracle/helpers/release_info.py
+    - tools/oracle/helpers/release_info/**
     - tools/oracle/fixtures/release-oracle/**
     - tools/oracle/cases/helpers/release-bullets/**
     - tools/oracle/cases/management/release-info/**
@@ -90,6 +90,7 @@ deviations:
 out_of_scope:
   - B144-B150 own dashboard rendering and upgrade-banner presentation; this service only supplies its JSON data.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as release_info in the server group. Replace the stub Op in tools/oracle/src/helpers/server/release_info.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/release_info.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A GitHub failure is cached for five minutes and returned as null, not raised as a failed management request.
   - The first-contributor exclusion runs before the generic bullet counter, so those entries never inflate other_updates.
 budget:

@@ -96,12 +96,11 @@ scope:
     - crates/betterlite-auth/src/budget_admission_handoff/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/budget_admission_handoff.rs
-    - tools/oracle/src/helpers/budget_admission_handoff/**
+    - tools/oracle/src/helpers/server/budget_admission_handoff.rs
+    - tools/oracle/src/helpers/server/budget_admission_handoff/**
     - tools/oracle/helpers/budget_admission_handoff.py
+    - tools/oracle/helpers/budget_admission_handoff/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/budget-admission-handoff/**
     - tools/oracle/fuzz/corpus/helper_case/budget-admission-handoff-*
     - crates/betterlite-server/src/auth.rs
@@ -254,6 +253,7 @@ out_of_scope:
   - 'litellm/proxy/auth/user_api_key_auth.py: B1221 owns _run_centralized_common_checks (L2755-L3110).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as budget_admission_handoff in the server group. Replace the stub Op in tools/oracle/src/helpers/server/budget_admission_handoff.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/budget_admission_handoff.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An existing end-user with no budget relation prevents a fallback budget lookup; an absent end-user does not.
   - Reservation failure leaves request.state untouched although token.budget_reservation was already cleared.
 budget:

@@ -22,8 +22,10 @@ scope:
   - crates/betterlite-prompts/src/jinja.rs
   - crates/betterlite-prompts/src/jinja/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/prompts/jinja_prompts.rs
+  - tools/oracle/src/helpers/prompts/jinja_prompts/**
+  - tools/oracle/helpers/jinja_prompts.py
+  - tools/oracle/helpers/jinja_prompts/**
   - tools/oracle/cases/helpers/jinja-prompts/**
   - tools/oracle/fuzz/corpus/helper_case/**
   - crates/betterlite-prompts/fuzz/**
@@ -97,6 +99,7 @@ out_of_scope:
   Remote template/tokenizer-config HTTP fetch functions remain blocked by B177 open decision; do not create an acquisition
   API or new config key.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as jinja_prompts in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/jinja_prompts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/jinja_prompts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.

@@ -22,10 +22,10 @@ scope:
   - crates/betterlite-config/src/api/vector_context_shaping.rs
   - crates/betterlite-config/src/api/vector_context_shaping/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-context-shaping-*
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/vector_context_shaping.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/vector_context_shaping.rs
+  - tools/oracle/src/helpers/core_ops/vector_context_shaping/**
   - tools/oracle/helpers/vector_context_shaping.py
+  - tools/oracle/helpers/vector_context_shaping/**
   - tools/oracle/cases/helpers/vector-context-shaping/**
   - tools/oracle/fuzz/corpus/helper_case/vector_context_shaping-*
   lint_tables: false
@@ -93,6 +93,7 @@ out_of_scope:
 - B1077 owns ProxyRuntime/ProxyServerRuntime, augmentation and pre-call/guardrail execution in vector_store_pre_call_hook.py; B090 owns the two post-call methods.
 - B1063 performs actual store authorization/selection; diagnostic id stringification does not grant access.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as vector_context_shaping in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_context_shaping.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_context_shaping.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The helper's docstring says last user message, but its implementation reads the last message without inspecting role.
 - Invalid proxy body parsing retains guardrail keys that the successful merge path removes.
 - Nonempty text is joined with two trailing newlines per item, with no citation labels or trimming.

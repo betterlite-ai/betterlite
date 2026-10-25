@@ -55,10 +55,10 @@ scope:
     - crates/betterlite-config/src/encryption/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/encryption-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/stored_cipher.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/db/stored_cipher.rs
+    - tools/oracle/src/helpers/db/stored_cipher/**
     - tools/oracle/helpers/stored_cipher.py
+    - tools/oracle/helpers/stored_cipher/**
     - tools/oracle/cases/helpers/stored-cipher/**
     - tools/oracle/fuzz/corpus/helper_case/stored-cipher-*
   lint_tables: false
@@ -130,6 +130,7 @@ out_of_scope:
   - callback_utils.py registration/configuration stays B189, guardrail metadata B106 and metadata sanitization B188; only the six secret transforms move into this library.
   - spend_tracking_utils.py keeps sanitizers in B1713, body/classifier policy in B1714, identity metadata in B1715, payload construction in B1716, team queries in B1726 and customer-team queries in B1727.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as stored_cipher in the db group. Replace the stub Op in tools/oracle/src/helpers/db/stored_cipher.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/stored_cipher.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - AppCrypto takes a raw 32-byte key, whereas encrypt_value_helper hashes an arbitrary string with SHA-256.
   - decrypt_value_helper's key argument identifies a field for diagnostics and is never the signing key.
   - The legacy empty-byte result is an empty string even though decrypt_if_encrypted_with must return None for it.

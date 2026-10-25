@@ -36,10 +36,10 @@ scope:
     - crates/betterlite-core/src/api/copilot_chat/**
     - crates/betterlite-config/src/providers/copilot.rs
     - crates/betterlite-config/src/providers/copilot/chat.rs
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/copilot_chat.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/copilot_chat.rs
+    - tools/oracle/src/helpers/core_ops/copilot_chat/**
     - tools/oracle/helpers/copilot_chat.py
+    - tools/oracle/helpers/copilot_chat/**
     - tools/oracle/cases/helpers/copilot-chat/**
     - tools/oracle/fuzz/corpus/helper_case/copilot_chat*
   lint_tables: false
@@ -74,6 +74,7 @@ deviations: []
 out_of_scope:
   - B045 owns provider installation and main.py's authorization preamble; B578 owns the shared Anthropic extraction algorithm.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as copilot_chat in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/copilot_chat.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/copilot_chat.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty choices array needs repair just as a missing choices field does.
   - A tool role triggers agent for chat even though Copilot Responses uses a different rule.
   - Swallowing GetAPIKeyError in validate_environment must not suppress it during provider-info acquisition.

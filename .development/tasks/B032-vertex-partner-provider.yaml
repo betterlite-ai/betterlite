@@ -46,8 +46,10 @@ scope:
     - tools/oracle/cases/chat/vertex-partner/**
     - tools/oracle/cases/api/vertex-partner-messages/**
     - tools/oracle/fixtures/vertex-partner/**
-    - tools/oracle/src/helpers/{mod,vertex_partner_factory}.rs
-    - tools/oracle/helpers/{dispatch,vertex_partner_factory}.py
+    - tools/oracle/src/helpers/core_ops/vertex_partner_provider.rs
+    - tools/oracle/src/helpers/core_ops/vertex_partner_provider/**
+    - tools/oracle/helpers/vertex_partner_provider.py
+    - tools/oracle/helpers/vertex_partner_provider/**
     - tools/oracle/cases/helpers/vertex-partner-factory/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_partner_factory*
   lint_tables: false
@@ -105,6 +107,7 @@ out_of_scope:
   - B036 and B038 retain generic Codestral/Mistral/OpenAILike implementations; B081/B004/B005 retain route registration.
   - vertex_ai.py declarations outside VertexPartnerProvider belong to the consuming tasks in B031/B033/B034; this composition adds no byte decoder.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_partner_provider in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vertex_partner_provider.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_partner_provider.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The partner URL uses the versioned model before Mistral/Codestral body model suffix removal.
   - Claude Authorization must be written into a fresh header map because deployments share extra_headers.
   - The native gateway alias is enabled by B081's existing flag, not a second Vertex route.

@@ -69,11 +69,11 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/team_record.rs
     - crates/betterlite-db/fuzz/corpus/team_record/**
-    - tools/oracle/src/helpers/team_repository.rs
+    - tools/oracle/src/helpers/db/team_repository.rs
+    - tools/oracle/src/helpers/db/team_repository/**
     - tools/oracle/helpers/team_repository.py
+    - tools/oracle/helpers/team_repository/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
     - tools/oracle/cases/helpers/team-repository/**
     - tools/oracle/fuzz/corpus/helper_case/team-repository-*
   lint_tables: false
@@ -136,6 +136,7 @@ out_of_scope:
   - B819 owns TEAM_ADVISORY_LOCK_SQL; B808/B809/B1207 and bulk-user callers acquire the lock
     before calling this repository. This read does not depend on those higher-level workflows.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as team_repository in the db group. Replace the stub Op in tools/oracle/src/helpers/db/team_repository.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/team_repository.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - FOR UPDATE is deliberately absent because the caller's advisory lock serializes roster changes without reversing access-group row-lock order.
   - JSON false and zero yield an empty locked roster, while malformed JSON still raises.
   - Repository decoding followed by the model validator can parse overlapping JSON-string fields twice.

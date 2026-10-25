@@ -121,12 +121,11 @@ scope:
     - crates/betterlite-auth/src/jwt_team_selection/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/jwt_team_selection.rs
-    - tools/oracle/src/helpers/jwt_team_selection/**
+    - tools/oracle/src/helpers/server/jwt_team_selection.rs
+    - tools/oracle/src/helpers/server/jwt_team_selection/**
     - tools/oracle/helpers/jwt_team_selection.py
+    - tools/oracle/helpers/jwt_team_selection/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/jwt.rs
-    - tools/oracle/helpers/management/jwt.py
     - tools/oracle/cases/helpers/jwt-team-selection/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-team-selection-*
     - crates/betterlite-server/src/auth.rs
@@ -324,6 +323,7 @@ out_of_scope:
     (L2374-L2388).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as jwt_team_selection in the server group. Replace the stub Op in tools/oracle/src/helpers/server/jwt_team_selection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/jwt_team_selection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Only TeamNotFoundError on the provisional ID path permits alias lookup; a generic HTTP failure becomes a membership denial.
   - Candidate selection swallows exceptions, including permission errors, before deciding which final denial wins.
 budget:

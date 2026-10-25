@@ -32,10 +32,10 @@ scope:
     - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/tiered_pricing.rs
     - crates/betterlite-models/src/tiered_pricing/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/pricing_tier.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/pricing_tier.py
+    - tools/oracle/src/helpers/models/tiered_pricing.rs
+    - tools/oracle/src/helpers/models/tiered_pricing/**
+    - tools/oracle/helpers/tiered_pricing.py
+    - tools/oracle/helpers/tiered_pricing/**
     - tools/oracle/cases/helpers/pricing-tier/**
     - tools/oracle/fuzz/corpus/helper_case/pricing-tier-*
   lint_tables: false
@@ -73,6 +73,7 @@ deviations:
 out_of_scope:
   - B068's provider/calculator parts multiply selected rates by usage; budget reservation consumers apply their own request estimates.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as tiered_pricing in the models group. Replace the stub Op in tools/oracle/src/helpers/models/tiered_pricing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/tiered_pricing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A gap between tiers selects the last valid tier, not the nearest preceding tier.
   - Filtering malformed ranges before sorting would suppress the source's empty-range error.
 budget:

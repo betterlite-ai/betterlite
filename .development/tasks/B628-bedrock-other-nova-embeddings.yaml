@@ -99,11 +99,10 @@ scope:
   - crates/betterlite-bedrock/src/nova_embeddings.rs
   - crates/betterlite-bedrock/src/nova_embeddings/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_other_nova_embeddings.rs
-  - tools/oracle/src/helpers/bedrock_other_nova_embeddings/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/other_nova_embeddings.rs
+  - tools/oracle/src/helpers/bedrock/other_nova_embeddings/**
   - tools/oracle/helpers/bedrock_other_nova_embeddings.py
+  - tools/oracle/helpers/bedrock_other_nova_embeddings/**
   - tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_nova_embeddings*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -273,6 +272,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_other_nova_embeddings in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/other_nova_embeddings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_other_nova_embeddings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An explicitly present empty embeddings list suppresses a direct embedding in the same Nova response.
 - An output_s3_uri inside inference parameters is removed but never used as the async wrapper argument.
 budget:

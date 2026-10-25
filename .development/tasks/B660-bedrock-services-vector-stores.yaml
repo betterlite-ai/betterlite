@@ -133,11 +133,10 @@ scope:
   - crates/betterlite-bedrock/src/vector_stores.rs
   - crates/betterlite-bedrock/src/vector_stores/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_vector_stores.rs
-  - tools/oracle/src/helpers/bedrock_services_vector_stores/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_vector_stores.rs
+  - tools/oracle/src/helpers/bedrock/services_vector_stores/**
   - tools/oracle/helpers/bedrock_services_vector_stores.py
+  - tools/oracle/helpers/bedrock_services_vector_stores/**
   - tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_vector_stores*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -385,6 +384,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_vector_stores in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_vector_stores.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_vector_stores.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The and/or mapper has single-child early returns that can discard the other branch; it never recursively handles
   nested compound filters.
 - The option mapper writes numberOfResults, while the request transformer reads max_num_results; do not silently

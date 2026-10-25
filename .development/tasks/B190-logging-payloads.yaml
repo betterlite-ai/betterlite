@@ -22,8 +22,10 @@ scope:
   - crates/betterlite-logging/src/payload/**
   - crates/betterlite-openai/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/logging/payload.rs
+  - tools/oracle/src/helpers/logging/payload/**
+  - tools/oracle/helpers/logging_payload.py
+  - tools/oracle/helpers/logging_payload/**
   - tools/oracle/cases/helpers/logging-payload/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -119,6 +121,7 @@ out_of_scope:
   is a Python test/SDK convenience owned by B164, not production event synthesis. Every StandardLoggingPayloadSetup
   method is B253/B254 except get_model_cost_information (B068) and _generate_cold_storage_object_key (B115).
 pitfalls:
+- 'The oracle helper for this task is pre-registered as logging_payload in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/payload.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/logging_payload.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Logged output must reflect post-processing that changed the served response, not the raw provider text.
 - A sparse choice index must not allocate an unbounded vector.
 - Do not create a permissive catch-all JSON logging record to avoid typing the standard payload.

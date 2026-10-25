@@ -95,11 +95,10 @@ scope:
   - crates/betterlite-bedrock/src/bedrock_model_capabilities.rs
   - crates/betterlite-bedrock/src/bedrock_model_capabilities/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_model_capabilities.rs
-  - tools/oracle/src/helpers/bedrock_model_capabilities/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/model_capabilities.rs
+  - tools/oracle/src/helpers/bedrock/model_capabilities/**
   - tools/oracle/helpers/bedrock_model_capabilities.py
+  - tools/oracle/helpers/bedrock_model_capabilities/**
   - tools/oracle/cases/helpers/providers/bedrock-model-capabilities/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_model_capabilities*
   - crates/betterlite-config/Cargo.toml
@@ -326,6 +325,7 @@ out_of_scope:
   CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
   or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_model_capabilities in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/model_capabilities.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_model_capabilities.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The literal effort order places xhigh above max.
 - Only an environment-sourced Mantle URL loses its OpenAI suffix; an explicit /v1 base gains /anthropic/v1/messages
   after /v1.

@@ -25,8 +25,10 @@ scope:
   - crates/betterlite-prompts/src/cohere/**
   - crates/betterlite-prompts/fuzz/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/prompts/provider_messages.rs
+  - tools/oracle/src/helpers/prompts/provider_messages/**
+  - tools/oracle/helpers/provider_messages.py
+  - tools/oracle/helpers/provider_messages/**
   - tools/oracle/cases/helpers/provider-messages/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -104,6 +106,7 @@ out_of_scope:
   no live caller passes custom_llm_provider=gemini to prompt_factory; Gemini native provider transformation uses
   its own path.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as provider_messages in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/provider_messages.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/provider_messages.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Cohere's Python helper pops the last message; compare its returned value without reproducing shared-input mutation.
 - Gemini thought signatures cannot be regenerated from tool names.

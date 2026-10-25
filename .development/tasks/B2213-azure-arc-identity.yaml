@@ -105,11 +105,10 @@ scope:
   - crates/betterlite-azure/src/azure_arc_identity.rs
   - crates/betterlite-azure/src/azure_arc_identity/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_arc_identity.rs
-  - tools/oracle/src/helpers/azure_arc_identity/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/arc_identity.rs
+  - tools/oracle/src/helpers/azure/arc_identity/**
   - tools/oracle/helpers/azure_arc_identity.py
+  - tools/oracle/helpers/azure_arc_identity/**
   - tools/oracle/cases/helpers/providers/azure-arc-identity/**
   - tools/oracle/fuzz/corpus/helper_case/azure_arc_identity*
   - crates/betterlite-azure/fuzz/Cargo.toml
@@ -293,6 +292,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/secret_managers/get_azure_ad_token_provider.py: infer_credential_type_from_environment
   L11-L34; get_azure_ad_token_provider L37-L135 belong to B677.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_arc_identity in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/arc_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_arc_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The active Arc path does not require the first reply to be 401 before reading WWW-Authenticate.
 - The challenge path contributes only its basename, and an arbitrary extension is replaced with .key.
 budget:

@@ -32,10 +32,10 @@ scope:
     - crates/betterlite-config/src/sso_pkce/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-pkce-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/sso_pkce.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/server/sso_pkce.rs
+    - tools/oracle/src/helpers/server/sso_pkce/**
     - tools/oracle/helpers/sso_pkce.py
+    - tools/oracle/helpers/sso_pkce/**
     - tools/oracle/cases/helpers/sso-pkce/**
     - tools/oracle/fuzz/corpus/helper_case/sso-pkce-*
   lint_tables: false
@@ -75,6 +75,7 @@ out_of_scope:
   - B1628 stores the authorization verifier and B1623 decides when successful token conversion permits deletion.
   - The SSO functions outside the owned method ranges remain with the owners indexed by B063.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as sso_pkce in the server group. Replace the stub Op in tools/oracle/src/helpers/server/sso_pkce.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/sso_pkce.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - PKCE_STRICT_CACHE_MISS does not turn a callback with no state parameter into a local 401.
   - A legacy plain-string verifier remains usable and emits a warning rather than being classified as corrupt.
 budget:

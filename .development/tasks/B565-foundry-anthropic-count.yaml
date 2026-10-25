@@ -101,11 +101,10 @@ scope:
   - crates/betterlite-foundry/src/anthropic_count.rs
   - crates/betterlite-foundry/src/anthropic_count/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_anthropic_count.rs
-  - tools/oracle/src/helpers/foundry_anthropic_count/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/foundry/anthropic_count.rs
+  - tools/oracle/src/helpers/foundry/anthropic_count/**
   - tools/oracle/helpers/foundry_anthropic_count.py
+  - tools/oracle/helpers/foundry_anthropic_count/**
   - tools/oracle/cases/helpers/providers/foundry-anthropic-count/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_anthropic_count*
   - crates/betterlite-foundry/fuzz/Cargo.toml
@@ -256,6 +255,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_anthropic_count in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/anthropic_count.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_anthropic_count.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The counter refuses an absent API key before calling Azure auth, even when Entra credentials are configured.
 - The endpoint builder appends count_tokens to an already complete count endpoint.
 budget:

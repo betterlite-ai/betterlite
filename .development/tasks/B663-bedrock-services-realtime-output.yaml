@@ -91,11 +91,10 @@ scope:
   - crates/betterlite-bedrock/src/realtime_output.rs
   - crates/betterlite-bedrock/src/realtime_output/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_services_realtime_output.rs
-  - tools/oracle/src/helpers/bedrock_services_realtime_output/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/services_realtime_output.rs
+  - tools/oracle/src/helpers/bedrock/services_realtime_output/**
   - tools/oracle/helpers/bedrock_services_realtime_output.py
+  - tools/oracle/helpers/bedrock_services_realtime_output/**
   - tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_output*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -294,6 +293,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_realtime_response
   L1275-L1415 belong to B665.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_services_realtime_output in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/services_realtime_output.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_realtime_output.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty response id and None both allocate a new id, but only None causes response.created to be emitted.
 - SPECULATIVE user transcripts remain visible as deltas even though they are omitted from the final transcript buffer.
 budget:

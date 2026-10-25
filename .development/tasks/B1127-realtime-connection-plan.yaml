@@ -33,8 +33,10 @@ scope:
   - crates/betterlite-config/fuzz/corpus/config_yaml/realtime-probe-*
   - tools/oracle/src/websocket_driver.rs
   - tools/oracle/src/websocket_driver/realtime_probe.rs
-  - tools/oracle/helpers/websocket_dispatch.py
-  - tools/oracle/helpers/realtime_probe_websocket.py
+  - tools/oracle/src/helpers/core_ops/realtime_connection_plan.rs
+  - tools/oracle/src/helpers/core_ops/realtime_connection_plan/**
+  - tools/oracle/helpers/realtime_connection_plan.py
+  - tools/oracle/helpers/realtime_connection_plan/**
   - tools/oracle/cases/websocket/realtime-probe/**
   - tools/oracle/fuzz/corpus/websocket_oracle/realtime-probe-*
   lint_tables: false
@@ -111,6 +113,7 @@ out_of_scope:
 - B1011 owns metadata merging, Vertex token helpers and all of _arealtime; B1010 owns _with_resolved_session_model, HTTP config resolution and the three HTTP SDK methods in realtime_api/main.py.
 - B061 owns stored credential lookup; B2225 model metadata; B528/B545/B1402 provider URLs; B1301/B1304/B1356/B1365 Vertex helpers. No proxy route is registered here.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as realtime_connection_plan in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/realtime_connection_plan.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/realtime_connection_plan.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Explicit None in model_params erases a stored credential before named-argument fallback is applied.
 - The probe returns true on handshake alone; it never waits to learn whether the provider accepts the session model.
 - Only Azure health probes infer intent=transcription from model metadata.

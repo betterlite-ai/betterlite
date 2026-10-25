@@ -36,8 +36,10 @@ scope:
   - crates/betterlite-context/**
   - crates/betterlite-config/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/context/call_context.rs
+  - tools/oracle/src/helpers/context/call_context/**
+  - tools/oracle/helpers/call_context.py
+  - tools/oracle/helpers/call_context/**
   - tools/oracle/cases/helpers/call-context/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -132,6 +134,7 @@ out_of_scope:
   this leaf context task.
 - All other main.py functions keep their existing owners; B024-B028 own their provider dispatch branches.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as call_context in the context group. Replace the stub Op in tools/oracle/src/helpers/context/call_context.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/call_context.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The current billing time is fixed for a call even if pricing crosses a time window during execution.
 - An SDK sync wrapper must not start a nested Tokio runtime inside an async call.
 - Environment helpers belong at the config boundary, not in betterlite-core.

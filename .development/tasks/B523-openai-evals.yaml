@@ -94,11 +94,10 @@ scope:
   - crates/betterlite-openai/src/evals.rs
   - crates/betterlite-openai/src/evals/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_evals.rs
-  - tools/oracle/src/helpers/openai_evals/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/evals.rs
+  - tools/oracle/src/helpers/openai/evals/**
   - tools/oracle/helpers/openai_evals.py
+  - tools/oracle/helpers/openai_evals/**
   - tools/oracle/cases/helpers/providers/openai-evals/**
   - tools/oracle/fuzz/corpus/helper_case/openai_evals*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -266,6 +265,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_evals in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/evals.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_evals.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The request helpers return different tuple shapes; treating every second element as a body would send auth headers
   in JSON.
 - An empty eval_id chooses the collection path in get_complete_url, but create/list-run always invoke the path-segment

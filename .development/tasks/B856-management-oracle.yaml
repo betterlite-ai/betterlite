@@ -41,11 +41,10 @@ description: >-
 scope:
   paths:
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/management.rs
-    - tools/oracle/src/helpers/management/**
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/management/**
+    - tools/oracle/src/helpers/oracle/management_oracle.rs
+    - tools/oracle/src/helpers/oracle/management_oracle/**
+    - tools/oracle/helpers/management_oracle.py
+    - tools/oracle/helpers/management_oracle/**
     - tools/oracle/fuzz/corpus/helper_case/management-*
     - tools/oracle/cases/helpers/management/**
   lint_tables: false
@@ -88,6 +87,7 @@ out_of_scope:
   - Product Postgres repositories and migration behavior belong to B700 and the other database tasks.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as management_oracle in the oracle group. Replace the stub Op in tools/oracle/src/helpers/oracle/management_oracle.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/management_oracle.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Comparing already-redacted effects makes two different credentials appear equal.
   - A successful Python self-check does not exercise the native management dispatcher.
 budget:

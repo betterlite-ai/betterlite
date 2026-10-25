@@ -59,10 +59,10 @@ scope:
     - crates/betterlite-logging/src/logging_state.rs
     - crates/betterlite-logging/src/cost_breakdown.rs
     - crates/betterlite-logging/src/cost_breakdown/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/billing_context.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/logging/billing_context.rs
+    - tools/oracle/src/helpers/logging/billing_context/**
     - tools/oracle/helpers/billing_context.py
+    - tools/oracle/helpers/billing_context/**
     - tools/oracle/cases/helpers/billing-context/**
     - tools/oracle/fuzz/corpus/helper_case/billing-context-*
   lint_tables: false
@@ -112,6 +112,7 @@ out_of_scope:
   - Context does not own cost_calculator.py's adjustment formulas (B1649), custom token prices (B1673), image defaults (B1674), timed/transcription/video math (B1676), extra fees (B1677), batches (B1679), usage/tier diagnostics (B1683), token/vector/rerank dispatch (B1686), completion preparation (B1688), or replicate/early-call charges (B1689); B068 executes the enclosing completion and response calculators.
   - Logging lifecycle methods other than set_cost_breakdown remain with B247-B254 and B190 under their existing litellm_logging.py coverage; this task neither dispatches callbacks nor performs spend writes.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as billing_context in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/billing_context.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/billing_context.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Per-image-only catalog entries do not satisfy the custom token/seconds/query declaration predicate used to select a router id.
   - Hidden response metadata is read as an object attribute, so a dictionary key named _hidden_params cannot change billing identity.
   - Replacing a cost breakdown drops old additional costs and token-detail lines rather than accumulating them across calls.

@@ -37,10 +37,10 @@ scope:
     - crates/betterlite-core/src/api/fal/pricing.rs
     - crates/betterlite-core/src/api/fal/pricing/**
     - crates/betterlite-config/src/providers/fal.rs
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/fal_pricing.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/fal_pricing.py
+    - tools/oracle/src/helpers/core_ops/fal_image_pricing.rs
+    - tools/oracle/src/helpers/core_ops/fal_image_pricing/**
+    - tools/oracle/helpers/fal_image_pricing.py
+    - tools/oracle/helpers/fal_image_pricing/**
     - tools/oracle/cases/helpers/fal-pricing/**
     - tools/oracle/fuzz/corpus/helper_case/fal_pricing*
   lint_tables: false
@@ -73,6 +73,7 @@ deviations: []
 out_of_scope:
   - B068 owns shared cost dispatch and deployment-pricing extraction; this task exposes Fal's calculators for that dispatch and B046.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as fal_image_pricing in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/fal_image_pricing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fal_image_pricing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Pixel pricing uses binary megapixels of 1,048,576 pixels rather than one million.
   - A keyed price tie is resolved by pixel area, not width or aspect ratio.
   - passthrough num_images=true means one, while a true catalog price retains the source numeric value one.

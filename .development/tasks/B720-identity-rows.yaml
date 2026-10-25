@@ -80,12 +80,11 @@ scope:
     - crates/betterlite-db/src/identity_rows/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - tools/oracle/src/helpers/identity_rows.rs
-    - tools/oracle/src/helpers/identity_rows/**
+    - tools/oracle/src/helpers/db/identity_rows.rs
+    - tools/oracle/src/helpers/db/identity_rows/**
     - tools/oracle/helpers/identity_rows.py
+    - tools/oracle/helpers/identity_rows/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
     - tools/oracle/cases/helpers/identity-rows/**
     - tools/oracle/fuzz/corpus/helper_case/identity-rows-*
     - crates/betterlite-db/fuzz/Cargo.toml
@@ -155,6 +154,7 @@ out_of_scope:
   - B2310 owns budget.py, object_permission.py and organization_membership.py, including the temporary-budget methods and membership email projection.
   - LiteLLM_UserTable.is_over_budget and has_model_access have no caller at the pin; do not add unused policy methods or their cases.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as identity_rows in the db group. Replace the stub Op in tools/oracle/src/helpers/db/identity_rows.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/identity_rows.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Key spend=null is invalid, while user and end-user spend=null are normalized to zero.
   - Deleted keys carry both org_id and organization_id, which must not be collapsed into one field.
   - A user's password can be read internally but Field(exclude=True) wins even over a serialization include request.

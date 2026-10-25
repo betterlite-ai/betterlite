@@ -22,11 +22,10 @@ scope:
   - crates/betterlite-core/src/api/messages_chat_tools_schema.rs
   - crates/betterlite-core/src/api/messages_chat_tools_schema/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/messages_chat_tools_schema.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/messages_chat_tools_schema.rs
+  - tools/oracle/src/helpers/core_ops/messages_chat_tools_schema/**
   - tools/oracle/helpers/messages_chat_tools_schema.py
+  - tools/oracle/helpers/messages_chat_tools_schema/**
   - tools/oracle/fuzz/corpus/helper_case/messages_chat_tools_schema-*
   - tools/oracle/cases/helpers/messages-chat-tools-schema/**
   - Cargo.lock
@@ -111,6 +110,7 @@ out_of_scope:
 - B1117 owns primitives L25-L93,L213-L225,L357-L454,L672-L700,L1290-L1343; B964 owns L352-L353,L456-L639 messages.
 - B966 owns output L1345-L1766; B967 owns L229-L345,L1214-L1288 composition. create_tool_name_mapping and translate_thinking_for_model have no caller at the pin.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as messages_chat_tools_schema in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_chat_tools_schema.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_chat_tools_schema.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - strict is coerced with Python truthiness, so the string "false" means true in a tool declaration.
 - The output schema walker overwrites required; it does not preserve a caller's optional properties.
 - Hosted tools bypass ordinary function-name generation, while request-level web search is removed before that pass-through branch.

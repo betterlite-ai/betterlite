@@ -111,11 +111,10 @@ scope:
   - Cargo.toml
   - deny.toml
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_event_frames.rs
-  - tools/oracle/src/helpers/bedrock_event_frames/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/event_frames.rs
+  - tools/oracle/src/helpers/bedrock/event_frames/**
   - tools/oracle/helpers/bedrock_event_frames.py
+  - tools/oracle/helpers/bedrock_event_frames/**
   - tools/oracle/cases/helpers/providers/bedrock-event-frames/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_event_frames*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -437,6 +436,7 @@ out_of_scope:
   or add cases.'
 - 'Function ownership inventory litellm/types/llms/bedrock.py: BedrockToolSpec.__init__ L296-L322 belong to B601.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_event_frames in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/event_frames.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_event_frames.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The shape loader caches failure too; retrying it for each frame would repeat warnings and change failure behavior.
 - A completely framed but ignored event still prevents the no-events error; tally framing, not yielded chunks.
 budget:

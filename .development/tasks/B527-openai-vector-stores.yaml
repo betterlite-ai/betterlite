@@ -99,11 +99,10 @@ scope:
   - crates/betterlite-openai/src/vector_stores.rs
   - crates/betterlite-openai/src/vector_stores/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_vector_stores.rs
-  - tools/oracle/src/helpers/openai_vector_stores/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/vector_stores.rs
+  - tools/oracle/src/helpers/openai/vector_stores/**
   - tools/oracle/helpers/openai_vector_stores.py
+  - tools/oracle/helpers/openai_vector_stores/**
   - tools/oracle/cases/helpers/providers/openai-vector-stores/**
   - tools/oracle/fuzz/corpus/helper_case/openai_vector_stores*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -445,6 +444,7 @@ out_of_scope:
   L8165-L8194; add_dummy_tool L8197-L8215 belong to B2202.'
 - 'litellm/utils.py: get_base64_str L8123-L8129 belongs to B183.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_vector_stores in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/vector_stores.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_vector_stores.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - get_auth_credentials checks is None while validate_environment uses truthiness, so an empty key has different
   outcomes at those seams.
 - 'File update does not call _clean_dict: copying create payload cleaning into update would erase explicit nulls.'

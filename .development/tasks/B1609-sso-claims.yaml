@@ -31,10 +31,10 @@ scope:
     - crates/betterlite-config/src/sso_claims/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-claims-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/sso_claims.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/auth/sso_claims.rs
+    - tools/oracle/src/helpers/auth/sso_claims/**
     - tools/oracle/helpers/sso_claims.py
+    - tools/oracle/helpers/sso_claims/**
     - tools/oracle/cases/helpers/sso-claims/**
     - tools/oracle/fuzz/corpus/helper_case/sso-claims-*
   lint_tables: false
@@ -76,6 +76,7 @@ deviations: []
 out_of_scope:
   - B1610 loads role/team mappings; B1623 performs the generic exchange; B063 assigns the remaining ui_sso.py definitions to its other parts.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as sso_claims in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/sso_claims.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/sso_claims.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A DB team_ids_jwt_field adds to SSO-specific teams and does not deduplicate the result.
   - Empty or absent userinfo values have different claim-merge behavior from nonempty values, even when an ID token carries the same key.
 budget:

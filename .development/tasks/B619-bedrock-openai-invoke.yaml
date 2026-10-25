@@ -166,11 +166,10 @@ scope:
   - crates/betterlite-bedrock/src/openai_invoke.rs
   - crates/betterlite-bedrock/src/openai_invoke/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_openai_invoke.rs
-  - tools/oracle/src/helpers/bedrock_openai_invoke/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/openai_invoke.rs
+  - tools/oracle/src/helpers/bedrock/openai_invoke/**
   - tools/oracle/helpers/bedrock_openai_invoke.py
+  - tools/oracle/helpers/bedrock_openai_invoke/**
   - tools/oracle/cases/helpers/providers/bedrock-openai-invoke/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_openai_invoke*
   lint_tables: false
@@ -404,6 +403,7 @@ out_of_scope:
   BedrockRuntimeChatCompletionsStreamingHandler.__init__ L218-L225; BedrockRuntimeChatCompletionsStreamingHandler.chunk_parser
   L227-L240; AmazonBedrockRuntimeChatCompletionsConfig.transform_response L450-L487 belong to B620.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_openai_invoke in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/openai_invoke.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_openai_invoke.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Any chat/completions substring in explicit api_base bypasses runtime endpoint construction, including one in a
   query.
 - Invoke uses stream truthiness, while the shared base Invoke helper checks literal True.

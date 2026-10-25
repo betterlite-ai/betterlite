@@ -101,11 +101,10 @@ scope:
   - crates/betterlite-openai/src/realtime.rs
   - crates/betterlite-openai/src/realtime/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_realtime.rs
-  - tools/oracle/src/helpers/openai_realtime/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/realtime.rs
+  - tools/oracle/src/helpers/openai/realtime/**
   - tools/oracle/helpers/openai_realtime.py
+  - tools/oracle/helpers/openai_realtime/**
   - tools/oracle/cases/helpers/providers/openai-realtime/**
   - tools/oracle/fuzz/corpus/helper_case/openai_realtime*
   - crates/betterlite-config/Cargo.toml
@@ -300,6 +299,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_realtime in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/realtime.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_realtime.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - timeout and client are accepted but not passed to websockets.connect; adding either as an oracle-visible connect
   option changes the pin.
 - Empty query_params preserves an existing base query while suppressing the model fallback.

@@ -82,11 +82,10 @@ scope:
   - crates/betterlite-bedrock/src/invoke_response.rs
   - crates/betterlite-bedrock/src/invoke_response/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_invoke_response.rs
-  - tools/oracle/src/helpers/bedrock_invoke_response/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/invoke_response.rs
+  - tools/oracle/src/helpers/bedrock/invoke_response/**
   - tools/oracle/helpers/bedrock_invoke_response.py
+  - tools/oracle/helpers/bedrock_invoke_response/**
   - tools/oracle/cases/helpers/providers/bedrock-invoke-response/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_response*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -233,6 +232,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
   AmazonInvokeConfig.transform_request L175-L279 belong to B611.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_invoke_response in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/invoke_response.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_invoke_response.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty tool_calls list bypasses the empty-text failure because the source tests None, not truthiness.
 - A Mistral parsing error with status 400 is wrapped by this caller as status 422.
 budget:

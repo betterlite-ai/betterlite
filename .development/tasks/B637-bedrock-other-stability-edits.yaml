@@ -104,11 +104,10 @@ scope:
   - crates/betterlite-bedrock/src/stability_edits.rs
   - crates/betterlite-bedrock/src/stability_edits/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_other_stability_edits.rs
-  - tools/oracle/src/helpers/bedrock_other_stability_edits/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/other_stability_edits.rs
+  - tools/oracle/src/helpers/bedrock/other_stability_edits/**
   - tools/oracle/helpers/bedrock_other_stability_edits.py
+  - tools/oracle/helpers/bedrock_other_stability_edits/**
   - tools/oracle/cases/helpers/providers/bedrock-other-stability-edits/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_stability_edits*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -284,6 +283,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_other_stability_edits in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/other_stability_edits.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_other_stability_edits.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The mapper's drop_params branch leaves unsupported fields in its initial copy.
 - Only the first Stability finish reason is inspected, unlike the generation adapter's joined reasons.
 budget:

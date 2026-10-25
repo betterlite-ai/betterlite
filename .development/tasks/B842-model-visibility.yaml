@@ -82,12 +82,11 @@ scope:
     - crates/betterlite-server/src/model_visibility/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/model_visibility.rs
-    - tools/oracle/src/helpers/model_visibility/**
+    - tools/oracle/src/helpers/server/model_visibility.rs
+    - tools/oracle/src/helpers/server/model_visibility/**
     - tools/oracle/helpers/model_visibility.py
+    - tools/oracle/helpers/model_visibility/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/model-visibility/**
     - tools/oracle/fuzz/corpus/helper_case/model-visibility-*
     - crates/betterlite-config/Cargo.toml
@@ -198,6 +197,7 @@ out_of_scope:
   - B307 owns the router's health aggregation and staleness rules; B130 populates health snapshots.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as model_visibility in the server group. Replace the stub Op in tools/oracle/src/helpers/server/model_visibility.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_visibility.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A wildcard's hidden row is only a candidate; a visible sibling resolved for the requested name prevents hiding it.
   - healthy_only=false cannot undo the proxy-wide setting, and an unexpected health lookup error still propagates.
 budget:

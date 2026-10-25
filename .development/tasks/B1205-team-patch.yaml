@@ -56,10 +56,10 @@ scope:
     - crates/betterlite-server/src/team_patch/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/team_patch.rs
+    - tools/oracle/src/helpers/server/team_patch.rs
+    - tools/oracle/src/helpers/server/team_patch/**
     - tools/oracle/helpers/team_patch.py
-    - tools/oracle/src/helpers/management/teams.rs
-    - tools/oracle/helpers/management/teams.py
+    - tools/oracle/helpers/team_patch/**
     - tools/oracle/cases/helpers/team-patch/**
     - tools/oracle/fuzz/corpus/helper_case/team-patch-*
   lint_tables: false
@@ -182,6 +182,7 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as team_patch in the server group. Replace the stub Op in tools/oracle/src/helpers/server/team_patch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/team_patch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty budget_limits array does not initialize or serialize windows; do not treat it as a request to manufacture a reset window.
 budget:
   max_changed_lines: 400

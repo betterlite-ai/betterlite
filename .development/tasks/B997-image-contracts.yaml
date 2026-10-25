@@ -38,11 +38,10 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/image_contracts.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/provider/image_contracts.rs
+  - tools/oracle/src/helpers/provider/image_contracts/**
   - tools/oracle/helpers/image_contracts.py
+  - tools/oracle/helpers/image_contracts/**
   - tools/oracle/fuzz/corpus/helper_case/image_contracts-*
   - tools/oracle/cases/helpers/image-contracts/**
   lint_tables: false
@@ -109,6 +108,7 @@ out_of_scope:
 - B1120 owns every function in images/utils.py and the image request TypedDicts in types/images/main.py.
 - B175 owns unsupported variation options; that provider-specific check was not behavior of these base classes.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as image_contracts in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/image_contracts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/image_contracts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Edit accepts api_base="" although it rejects None; generation and variation collapse both to "".
 - Edit get_config retains property descriptors and callable objects, unlike the shared chat base filter.
 - Generation defaults to JSON while edit defaults to multipart; a shared true default breaks generation providers.

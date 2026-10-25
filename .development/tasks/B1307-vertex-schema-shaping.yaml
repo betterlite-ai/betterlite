@@ -39,11 +39,10 @@ scope:
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/schema.rs
     - crates/betterlite-config/src/providers/vertex/schema/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/vertex_schema.rs
-    - tools/oracle/src/helpers/vertex_schema/**
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/vertex_schema.py
+    - tools/oracle/src/helpers/vertex/schema_shaping.rs
+    - tools/oracle/src/helpers/vertex/schema_shaping/**
+    - tools/oracle/helpers/vertex_schema_shaping.py
+    - tools/oracle/helpers/vertex_schema_shaping/**
     - tools/oracle/cases/helpers/vertex-schema/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_schema*
   lint_tables: false
@@ -94,6 +93,7 @@ out_of_scope:
   - Other common_utils methods remain with B1304 passthrough targets, B1305 native URLs, B1306 catalog/metadata and B1319 token counting.
   - Beyond Schema, vertex_ai.py declarations are owned by the message, tool, response and endpoint parts that consume them.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_schema_shaping in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/schema_shaping.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_schema_shaping.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - propertyOrdering belongs to structured responses and must not be added to function tools by default.
   - responseJsonSchema must not lose additionalProperties or expand $defs as a side effect of shared code.
   - The anyOf null pass runs before type-array conversion, so reordering those passes changes output.

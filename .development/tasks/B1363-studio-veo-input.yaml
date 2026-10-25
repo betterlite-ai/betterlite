@@ -28,8 +28,10 @@ scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,studio_veo_request}.rs
     - crates/betterlite-vertex/src/studio_veo_request/**
-    - tools/oracle/src/helpers/{mod,studio_veo_request}.rs
-    - tools/oracle/helpers/{dispatch,studio_veo_request}.py
+    - tools/oracle/src/helpers/vertex/studio_veo_input.rs
+    - tools/oracle/src/helpers/vertex/studio_veo_input/**
+    - tools/oracle/helpers/studio_veo_input.py
+    - tools/oracle/helpers/studio_veo_input/**
     - tools/oracle/cases/helpers/studio-veo-request/**
     - tools/oracle/fuzz/corpus/helper_case/studio_veo_request*
   lint_tables: false
@@ -68,6 +70,7 @@ out_of_scope:
   - B1364 owns _json_payload, _usage_video_resolution_from_parameters and every method from transform_video_create_response through get_error_class at L299-L618.
   - B035 assembles the Studio provider; B093 owns the eventual video route and operation dispatcher.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as studio_veo_input in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/studio_veo_input.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/studio_veo_input.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An explicit empty api_base is not replaced with the Gemini default host.
   - sampleCount can survive option mapping but is dropped by GeminiVideoGenerationParameters at this pin.
   - Studio infers resolution for recognized sizes without consulting model pricing metadata.

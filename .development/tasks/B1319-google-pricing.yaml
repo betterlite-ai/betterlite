@@ -25,8 +25,10 @@ scope:
   paths:
     - crates/betterlite-vertex/src/{lib,google_pricing}.rs
     - crates/betterlite-vertex/src/google_pricing/**
-    - tools/oracle/src/helpers/{mod,google_pricing}.rs
-    - tools/oracle/helpers/{dispatch,google_pricing}.py
+    - tools/oracle/src/helpers/vertex/google_pricing.rs
+    - tools/oracle/src/helpers/vertex/google_pricing/**
+    - tools/oracle/helpers/google_pricing.py
+    - tools/oracle/helpers/google_pricing/**
     - tools/oracle/cases/helpers/google-pricing/**
     - tools/oracle/fuzz/corpus/helper_case/google_pricing*
   lint_tables: false
@@ -70,6 +72,7 @@ out_of_scope:
   - B068 owns generic_cost_per_token, regional-uplift resolution and global cost routing; this leaf accepts their typed results/callback.
   - B1322 counts grounding requests from provider responses; this task only charges the supplied usage.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as google_pricing in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/google_pricing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/google_pricing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The high-context character comparison multiplies by four even though the adjacent comment suggests a different conversion.
   - The character output high-context branch bills completion_tokens against a character rate.
   - A configured Maps rate of zero must not fall through to the published default price.

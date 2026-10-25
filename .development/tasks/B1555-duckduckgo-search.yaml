@@ -41,10 +41,10 @@ scope:
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/duckduckgo_reply.rs
     - crates/betterlite-core/fuzz/corpus/duckduckgo_reply/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/duckduckgo_search.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/duckduckgo_search.rs
+    - tools/oracle/src/helpers/core_ops/duckduckgo_search/**
     - tools/oracle/helpers/duckduckgo_search.py
+    - tools/oracle/helpers/duckduckgo_search/**
     - tools/oracle/cases/helpers/duckduckgo-search/**
     - tools/oracle/fuzz/corpus/helper_case/duckduckgo_search*
   lint_tables: false
@@ -80,6 +80,7 @@ deviations: []
 out_of_scope:
   - Search transport and route registration are B091; B048 selects this keyless provider in the registry.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as duckduckgo_search in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/duckduckgo_search.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/duckduckgo_search.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - _max_results is an upstream query parameter even though its name looks like internal bookkeeping.
   - RelatedTopics nesting is traversed once, not recursively.
   - A 51-character multibyte title truncates by characters rather than UTF-8 byte positions.

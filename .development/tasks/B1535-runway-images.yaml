@@ -31,10 +31,10 @@ scope:
     - crates/betterlite-core/src/api/runway.rs
     - crates/betterlite-core/src/api/runway/images.rs
     - crates/betterlite-core/src/api/runway/images/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/runway_images.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/core_ops/runway_images.rs
+    - tools/oracle/src/helpers/core_ops/runway_images/**
     - tools/oracle/helpers/runway_images.py
+    - tools/oracle/helpers/runway_images/**
     - tools/oracle/cases/helpers/runway-images/**
     - tools/oracle/fuzz/corpus/helper_case/runway_images*
   lint_tables: false
@@ -74,6 +74,7 @@ out_of_scope:
   - B1534 owns image task records, URL/authentication and timeout/status/poll methods at 33-91 and 154-300.
   - B046 connects this image configuration to the existing generation executor and booted proxy.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as runway_images in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/runway_images.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/runway_images.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A custom submission host does not become the Runway image polling host.
   - ratio and size coexist after mapping, but only ratio reaches the image request body.
   - A dictionary output member lacking both url and b64_json still contributes an image entry and a charge.

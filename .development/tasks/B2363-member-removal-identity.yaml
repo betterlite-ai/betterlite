@@ -47,10 +47,10 @@ scope:
     - crates/betterlite-db/src/member_removal_identity/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - tools/oracle/src/helpers/member_removal_identity.rs
+    - tools/oracle/src/helpers/db/member_removal_identity.rs
+    - tools/oracle/src/helpers/db/member_removal_identity/**
     - tools/oracle/helpers/member_removal_identity.py
-    - tools/oracle/src/helpers/management/teams.rs
-    - tools/oracle/helpers/management/teams.py
+    - tools/oracle/helpers/member_removal_identity/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/member-removal-identity/**
     - tools/oracle/fuzz/corpus/helper_case/member-removal-identity-*
@@ -98,6 +98,7 @@ out_of_scope:
   - B1202 owns team removal transactions, problem construction and cache publication; B794 owns all remaining bulk_user_deletion.py functions.
   - Other _types.py declarations retain their existing owners; B1231 retains TeamMemberRef's stricter validator and enclosing HTTP request decoder.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as member_removal_identity in the db group. Replace the stub Op in tools/oracle/src/helpers/db/member_removal_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/member_removal_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Dropping an earlier duplicate before finding later duplicates changes which later identities are rejected.
   - Sorted IN values are not a set; only callers that supply a set have already removed duplicates.
 budget:

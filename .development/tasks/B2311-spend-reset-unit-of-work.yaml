@@ -63,10 +63,10 @@ scope:
     - crates/betterlite-db/src/spend_reset_unit_of_work/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - tools/oracle/src/helpers/spend_reset_data.rs
-    - tools/oracle/helpers/spend_reset_data.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/src/helpers/db/spend_reset_unit_of_work.rs
+    - tools/oracle/src/helpers/db/spend_reset_unit_of_work/**
+    - tools/oracle/helpers/spend_reset_unit_of_work.py
+    - tools/oracle/helpers/spend_reset_unit_of_work/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/spend-reset-data/**
     - tools/oracle/fuzz/corpus/helper_case/spend-reset-data-*
@@ -114,6 +114,7 @@ out_of_scope:
   - B071 owns reset-job eligibility, decrements/caps, retry policy and cache invalidation in
     reset_budget_job.py; this service only executes the typed writes its caller queued.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as spend_reset_unit_of_work in the db group. Replace the stub Op in tools/oracle/src/helpers/db/spend_reset_unit_of_work.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_reset_unit_of_work.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - budget_reset_at=None clears the field; it is not an omitted update.
   - A deleted budget is tolerated by update_many, but a missing single-row reset target aborts the batch.
   - Decrement must happen at execution time so spend committed since the caller's read survives.

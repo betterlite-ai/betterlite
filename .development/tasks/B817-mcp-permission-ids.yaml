@@ -72,12 +72,11 @@ scope:
     - crates/betterlite-server/src/mcp_permission_ids/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/mcp_permission_ids.rs
-    - tools/oracle/src/helpers/mcp_permission_ids/**
+    - tools/oracle/src/helpers/server/mcp_permission_ids.rs
+    - tools/oracle/src/helpers/server/mcp_permission_ids/**
     - tools/oracle/helpers/mcp_permission_ids.py
+    - tools/oracle/helpers/mcp_permission_ids/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/mcp-permission-ids/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-permission-ids-*
     - crates/betterlite-server/fuzz/Cargo.toml
@@ -173,6 +172,7 @@ out_of_scope:
     _extract_requested_search_tools (L882-L891), validate_key_search_tools_against_team (L894-L941).'
   - B136 owns registry population and allow_all_keys policy; B4669 owns MCP access-group lookup and its warning fallback.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as mcp_permission_ids in the server group. Replace the stub Op in tools/oracle/src/helpers/server/mcp_permission_ids.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/mcp_permission_ids.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Stale-field cleanup drops unresolved aliases, but team allowed-server reads deliberately retain them.
   - all-proxy-mcpservers short-circuits to registry keys even when a registry object's server_id differs.
 budget:

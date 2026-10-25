@@ -109,11 +109,10 @@ scope:
   - crates/betterlite-openai/src/videos.rs
   - crates/betterlite-openai/src/videos/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_videos.rs
-  - tools/oracle/src/helpers/openai_videos/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/videos.rs
+  - tools/oracle/src/helpers/openai/videos/**
   - tools/oracle/helpers/openai_videos.py
+  - tools/oracle/helpers/openai_videos/**
   - tools/oracle/cases/helpers/providers/openai-videos/**
   - tools/oracle/fuzz/corpus/helper_case/openai_videos*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -311,6 +310,7 @@ out_of_scope:
   L148-L175; OpenAIVideoConfig._add_image_to_files L574-L586; OpenAIVideoConfig._video_file_tuple L588-L595; OpenAIVideoConfig._add_video_to_files
   L597-L603; OpenAIVideoConfig._get_video_content_type L605-L628 belong to B672.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_videos in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/videos.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_videos.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - List cursor wrapping is inside the data-key branch, so first_id/last_id alone remain native even with a provider.
 - Deletion returns VideoObject without wrapping its id; applying the retrieve response transform would change it.
 budget:

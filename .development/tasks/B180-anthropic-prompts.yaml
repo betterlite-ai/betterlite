@@ -20,8 +20,10 @@ scope:
   - crates/betterlite-prompts/src/anthropic/**
   - crates/betterlite-prompts/fuzz/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/prompts/anthropic_prompt.rs
+  - tools/oracle/src/helpers/prompts/anthropic_prompt/**
+  - tools/oracle/helpers/anthropic_prompt.py
+  - tools/oracle/helpers/anthropic_prompt/**
   - tools/oracle/cases/helpers/anthropic-prompt/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -105,6 +107,7 @@ out_of_scope:
   Results/images B222; invokes/documents B223; history B224; user/system projection B225; response tool-call extraction
   B226; Bedrock ID sanitization B228.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_prompt in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/anthropic_prompt.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_prompt.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Tool-history repair retains the last duplicate within a contiguous result block, whereas Bedrock deduplication
   uses a different rule.

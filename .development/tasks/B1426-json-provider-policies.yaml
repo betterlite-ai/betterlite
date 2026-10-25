@@ -59,8 +59,10 @@ scope:
     - crates/betterlite-config/src/providers/{mod,json_providers}.rs
     - crates/betterlite-config/tests/{openai_like_settings,json_messages_settings}.rs
     - Cargo.lock
-    - tools/oracle/src/helpers/{mod,json_chat_policy,json_native_api_policy}.rs
-    - tools/oracle/helpers/{dispatch,json_chat_policy,json_native_api_policy}.py
+    - tools/oracle/src/helpers/core_ops/json_provider_policies.rs
+    - tools/oracle/src/helpers/core_ops/json_provider_policies/**
+    - tools/oracle/helpers/json_provider_policies.py
+    - tools/oracle/helpers/json_provider_policies/**
     - tools/oracle/cases/helpers/{json-chat-policy,json-native-api-policy}/**
     - tools/oracle/fuzz/corpus/helper_case/{json_chat_policy,json_native_api_policy}*
   lint_tables: false
@@ -106,6 +108,7 @@ out_of_scope:
   - B1424 owns registry loading and environment table data; B038 owns API-family selection and provider execution bindings.
   - B503, B508 and B960–B962 retain the inherited native request/response algorithms and byte parsers; package __init__ files here only re-export the owned policies.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as json_provider_policies in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/json_provider_policies.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/json_provider_policies.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A parameter explicitly listed in param_mappings survives even when model capabilities removed it from the supported list.
   - Responses caches by slug alone, so recreating a descriptor does not change that slug's first cached policy.
   - Native Messages accepts an existing X-Api-Key without injecting a second authorization method.

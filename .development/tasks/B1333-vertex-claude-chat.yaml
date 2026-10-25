@@ -27,8 +27,10 @@ scope:
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,vertex_claude_chat}.rs
     - crates/betterlite-vertex/src/vertex_claude_chat/**
-    - tools/oracle/src/helpers/{mod,vertex_claude_chat}.rs
-    - tools/oracle/helpers/{dispatch,vertex_claude_chat}.py
+    - tools/oracle/src/helpers/vertex/claude_chat.rs
+    - tools/oracle/src/helpers/vertex/claude_chat/**
+    - tools/oracle/helpers/vertex_claude_chat.py
+    - tools/oracle/helpers/vertex_claude_chat/**
     - tools/oracle/cases/helpers/vertex-claude-chat/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_claude_chat*
   lint_tables: false
@@ -75,6 +77,7 @@ out_of_scope:
   - The local VertexAIError class at L20-L26 has no caller at the pin; shared Vertex errors are already B1300.
   - B1339 owns experimental_pass_through/transformation.py; this task exports its output sanitizer for that caller.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_claude_chat in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/claude_chat.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_claude_chat.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Haiku's unsupported effort is dropped without removing unrelated output_config keys.
   - The structured-output fallback model must not leak into response.model.
   - Vertex requires tool-search-tool-2025-10-19 even when the inherited tool-search beta differs.

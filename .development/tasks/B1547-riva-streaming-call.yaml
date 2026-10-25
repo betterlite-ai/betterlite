@@ -41,10 +41,10 @@ scope:
     - crates/betterlite-core/src/api/riva.rs
     - crates/betterlite-core/src/api/riva/call.rs
     - crates/betterlite-core/src/api/riva/call/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/riva_call.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/riva_call.py
+    - tools/oracle/src/helpers/core_ops/riva_streaming_call.rs
+    - tools/oracle/src/helpers/core_ops/riva_streaming_call/**
+    - tools/oracle/helpers/riva_streaming_call.py
+    - tools/oracle/helpers/riva_streaming_call/**
     - tools/oracle/cases/helpers/riva-call/**
     - tools/oracle/fuzz/corpus/helper_case/riva_call*
   lint_tables: false
@@ -80,6 +80,7 @@ deviations: []
 out_of_scope:
   - Empty Riva package initializers add no behavior; recognition mapping and audio conversion belong to B1545/B1546.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as riva_streaming_call in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/riva_streaming_call.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/riva_streaming_call.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - nvcf_function_id changes TLS's default even when no API key is supplied.
   - Unknown endpointing fields are silently ignored rather than turning a recognition call into a failure.
   - A generator exposing neither timeout nor keyword variadics must not receive a timeout argument.

@@ -86,11 +86,10 @@ scope:
   - crates/betterlite-anthropic/src/usage.rs
   - crates/betterlite-anthropic/src/usage/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_usage.rs
-  - tools/oracle/src/helpers/anthropic_usage/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/usage.rs
+  - tools/oracle/src/helpers/anthropic/usage/**
   - tools/oracle/helpers/anthropic_usage.py
+  - tools/oracle/helpers/anthropic_usage/**
   - tools/oracle/cases/helpers/providers/anthropic-usage/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_usage*
   lint_tables: false
@@ -300,6 +299,7 @@ out_of_scope:
   AnthropicConfig._separate_deferred_tools L1167-L1183; AnthropicConfig._expand_tool_references L1185-L1228 have
   no caller at the pin; do not implement or add cases.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_usage in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/usage.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_usage.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Incomplete iteration thinking detail falls back to the top-level count, but partial cache-creation detail is aggregated
   and filled as 5m.
 - An explicit server_tool_use.tool_search_requests=0 suppresses content-derived counting.

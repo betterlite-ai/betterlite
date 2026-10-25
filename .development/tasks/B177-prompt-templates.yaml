@@ -29,8 +29,10 @@ scope:
   - Cargo.toml
   - deny.toml
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/prompts/prompt_factory.rs
+  - tools/oracle/src/helpers/prompts/prompt_factory/**
+  - tools/oracle/helpers/prompt_factory.py
+  - tools/oracle/helpers/prompt_factory/**
   - tools/oracle/cases/helpers/prompt-template/**
   - tools/oracle/fuzz/corpus/helper_case/**
   - crates/betterlite-prompts/Cargo.toml
@@ -120,6 +122,7 @@ out_of_scope:
 - prompt_injection_detection_default_pt belongs to B105 guardrails; legacy XML and the uncalled Gemini text/image
   prompt_factory branches are dead at this pin (B180/B182 document them).
 pitfalls:
+- 'The oracle helper for this task is pre-registered as prompt_factory in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/prompt_factory.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/prompt_factory.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Whitespace and role delimiters are provider inputs, so do not normalize rendered text in comparisons.
 - LiteLLM retries Jinja rendering after changing roles; its docstring alone does not specify the fallback.
 - Commit raw template assets as fixtures with their pin; executable Rust code is still counted in the line budget.

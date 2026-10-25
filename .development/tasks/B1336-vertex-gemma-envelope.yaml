@@ -23,8 +23,10 @@ scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,gemma_envelope}.rs
     - crates/betterlite-vertex/src/gemma_envelope/**
-    - tools/oracle/src/helpers/{mod,gemma_envelope}.rs
-    - tools/oracle/helpers/{dispatch,gemma_envelope}.py
+    - tools/oracle/src/helpers/vertex/gemma_envelope.rs
+    - tools/oracle/src/helpers/vertex/gemma_envelope/**
+    - tools/oracle/helpers/vertex_gemma_envelope.py
+    - tools/oracle/helpers/vertex_gemma_envelope/**
     - tools/oracle/cases/helpers/gemma-envelope/**
     - tools/oracle/fuzz/corpus/helper_case/gemma_envelope*
   lint_tables: false
@@ -68,6 +70,7 @@ out_of_scope:
   - B1337 owns completion/_sync_completion/_async_completion from L240 onward and all Gemma main.py methods.
   - B010 owns generic MockResponseIterator in base_model_iterator.py; B032 supplies its implementation through the injected factory.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_gemma_envelope in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemma_envelope.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_gemma_envelope.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - predictions is returned as its original object, not automatically indexed as a one-element list.
   - A malformed object=error payload does not raise the embedded status until the full error model validates.
   - should_fake_stream=true does not make a nonstreaming request return a stream.

@@ -113,11 +113,10 @@ scope:
   - crates/betterlite-anthropic/src/count_tokens.rs
   - crates/betterlite-anthropic/src/count_tokens/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_count_tokens.rs
-  - tools/oracle/src/helpers/anthropic_count_tokens/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/count_tokens.rs
+  - tools/oracle/src/helpers/anthropic/count_tokens/**
   - tools/oracle/helpers/anthropic_count_tokens.py
+  - tools/oracle/helpers/anthropic_count_tokens/**
   - tools/oracle/cases/helpers/providers/anthropic-count-tokens/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_count_tokens*
   - crates/betterlite-config/Cargo.toml
@@ -365,6 +364,7 @@ out_of_scope:
   L726-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model L746-L781; AnthropicModelInfo._legacy_budget_to_effort
   L783-L793; AnthropicModelInfo.is_effort_used L795-L829 belong to B688.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_count_tokens in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/count_tokens.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_count_tokens.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The counter refuses empty messages even though the lower handler accepts system-only or tools-only input.
 - A supplied api_base is the whole count endpoint, and deployment api_base is ignored by the counter.
 budget:

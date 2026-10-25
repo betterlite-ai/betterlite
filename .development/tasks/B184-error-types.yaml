@@ -26,8 +26,10 @@ scope:
   - crates/betterlite-openai/**
   - crates/betterlite-server/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/error/class.rs
+  - tools/oracle/src/helpers/error/class/**
+  - tools/oracle/helpers/error_class.py
+  - tools/oracle/helpers/error_class/**
   - tools/oracle/cases/helpers/error-class/**
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
@@ -118,6 +120,7 @@ out_of_scope:
 - Provider-specific body parsing is B185-B186; normalized logging codes and call-id attachment are B011.
 - Retry policy and budget enforcement remain B017 and M4.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as error_class in the error group. Replace the stub Op in tools/oracle/src/helpers/error/class.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/error_class.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A transport timeout and an upstream HTTP 504 are not guaranteed to carry the same status.
 - Vendor response headers are not automatically client-safe error headers.
 - Avoid a dependency cycle by keeping classification independent of betterlite-provider's executable enum.

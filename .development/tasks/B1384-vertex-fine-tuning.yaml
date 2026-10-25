@@ -31,8 +31,10 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_tuning_job.rs
     - crates/betterlite-vertex/fuzz/corpus/vertex_tuning_job/**
-    - tools/oracle/src/helpers/{mod,vertex_fine_tuning}.rs
-    - tools/oracle/helpers/{dispatch,vertex_fine_tuning}.py
+    - tools/oracle/src/helpers/vertex/fine_tuning.rs
+    - tools/oracle/src/helpers/vertex/fine_tuning/**
+    - tools/oracle/helpers/vertex_fine_tuning.py
+    - tools/oracle/helpers/vertex_fine_tuning/**
     - tools/oracle/cases/helpers/vertex-fine-tuning/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_fine_tuning*
   lint_tables: false
@@ -80,6 +82,7 @@ out_of_scope:
   - pass_through_vertex_ai_POST_request at L276-L344 has no caller at the pin, so its duplicated path construction and cases are not implemented.
   - B034 connects creation to the B088 fine-tuning routes; lifecycle operations absent from this provider remain unsupported.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as vertex_fine_tuning in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/fine_tuning.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_fine_tuning.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The create request uses training_dataset_uri but the response reader expects trainingDatasetUri.
   - tunedModelDisplayName is the returned fine_tuned_model, not a synthesized endpoint resource.
   - The final tuning URL does not use the URL returned by token preparation.

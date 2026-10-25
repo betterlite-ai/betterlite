@@ -27,10 +27,10 @@ scope:
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,error,gemini_media}.rs
     - crates/betterlite-vertex/src/gemini_media/**
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/gemini_media.rs
-    - tools/oracle/src/helpers/gemini_media/**
-    - tools/oracle/helpers/{dispatch,gemini_media}.py
+    - tools/oracle/src/helpers/vertex/gemini_media.rs
+    - tools/oracle/src/helpers/vertex/gemini_media/**
+    - tools/oracle/helpers/gemini_media.py
+    - tools/oracle/helpers/gemini_media/**
     - tools/oracle/cases/helpers/gemini-media/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_media*
   lint_tables: false
@@ -77,6 +77,7 @@ out_of_scope:
   - The metadata-fetch helpers _get_vertex_base, _get_gcs_metadata_http_handler, _parse_gs_uri, _is_valid_gcs_bucket_name, _gs_uri_requires_content_type_metadata, _image_url_payload_may_need_sync_gcs_metadata_fetch, _openai_messages_may_need_sync_gcs_metadata_fetch and _get_gcs_object_content_type remain unbuilt under this task's explicit no-download deviation.
   - B1312 owns the full role/history walk and B1321 the request body/system-message functions.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as gemini_media in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/gemini_media.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_media.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A Gemini Files API URI must never be downloaded to determine its content type.
   - Explicit format outranks mime_type, which outranks content_type.
   - The model=None media path deliberately omits both per-part resolution and video metadata.

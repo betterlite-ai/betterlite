@@ -89,10 +89,10 @@ scope:
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/audit-events-*
-    - tools/oracle/src/helpers/audit_events.rs
-    - tools/oracle/helpers/audit_events.py
-    - tools/oracle/src/helpers/management/keys.rs
-    - tools/oracle/helpers/management/keys.py
+    - tools/oracle/src/helpers/server/audit_event_sink.rs
+    - tools/oracle/src/helpers/server/audit_event_sink/**
+    - tools/oracle/helpers/audit_event_sink.py
+    - tools/oracle/helpers/audit_event_sink/**
     - tools/oracle/cases/helpers/audit-events/**
     - tools/oracle/fuzz/corpus/helper_case/audit-events-*
   lint_tables: false
@@ -154,6 +154,7 @@ out_of_scope:
   - B124 owns remaining proxy/_types.py declarations except the existing B720/B721/B770/B2314 contracts;
     this task only adds the audit records and table enum named above.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as audit_event_sink in the server group. Replace the stub Op in tools/oracle/src/helpers/server/audit_event_sink.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/audit_event_sink.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A false explicit store_audit_logs setting must override a true environment value.
   - Audit callbacks run before the missing-database check and can succeed when no row can be stored.
 budget:

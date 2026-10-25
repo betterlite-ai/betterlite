@@ -104,11 +104,10 @@ scope:
   - crates/betterlite-streaming/src/streamed_response_assembly.rs
   - crates/betterlite-streaming/src/streamed_response_assembly/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/streamed_response_assembly.rs
-  - tools/oracle/src/helpers/streamed_response_assembly/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/streaming/streamed_response_assembly.rs
+  - tools/oracle/src/helpers/streaming/streamed_response_assembly/**
   - tools/oracle/helpers/streamed_response_assembly.py
+  - tools/oracle/helpers/streamed_response_assembly/**
   - tools/oracle/cases/helpers/providers/streamed-response-assembly/**
   - tools/oracle/fuzz/corpus/helper_case/streamed_response_assembly*
   lint_tables: false
@@ -366,6 +365,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/main.py: _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base
   L1069-L1080 belong to B500.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as streamed_response_assembly in the streaming group. Replace the stub Op in tools/oracle/src/helpers/streaming/streamed_response_assembly.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/streamed_response_assembly.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty nontext delta field disables the fast path because the check is non-None.
 - The generated citations list can be overwritten by a later explicit citations field.
 budget:

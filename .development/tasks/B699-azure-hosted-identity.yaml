@@ -119,11 +119,10 @@ scope:
   - crates/betterlite-azure/src/azure_hosted_identity.rs
   - crates/betterlite-azure/src/azure_hosted_identity/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/azure_hosted_identity.rs
-  - tools/oracle/src/helpers/azure_hosted_identity/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/azure/hosted_identity.rs
+  - tools/oracle/src/helpers/azure/hosted_identity/**
   - tools/oracle/helpers/azure_hosted_identity.py
+  - tools/oracle/helpers/azure_hosted_identity/**
   - tools/oracle/cases/helpers/providers/azure-hosted-identity/**
   - tools/oracle/fuzz/corpus/helper_case/azure_hosted_identity*
   - crates/betterlite-azure/fuzz/Cargo.toml
@@ -318,6 +317,7 @@ oracle_cases:
 deviations: []
 out_of_scope: []
 pitfalls:
+- 'The oracle helper for this task is pre-registered as azure_hosted_identity in the azure group. Replace the stub Op in tools/oracle/src/helpers/azure/hosted_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_hosted_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The retained Azure ML _parse_expires_on helper has no caller in this SDK path; date-string success fixtures would
   test dead code.
 - The live Service Fabric request has neither thumbprint pinning nor the old TLS verification bypass.

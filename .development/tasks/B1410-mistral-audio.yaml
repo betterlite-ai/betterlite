@@ -43,8 +43,10 @@ scope:
     - crates/betterlite-config/src/providers/mistral/resources.rs
     - crates/betterlite-config/src/tests/mistral_resources.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/mistral_resources*
-    - tools/oracle/src/helpers/{mod,voxtral_speech,voxtral_transcription}.rs
-    - tools/oracle/helpers/{dispatch,voxtral_speech,voxtral_transcription}.py
+    - tools/oracle/src/helpers/openai/mistral_audio.rs
+    - tools/oracle/src/helpers/openai/mistral_audio/**
+    - tools/oracle/helpers/mistral_audio.py
+    - tools/oracle/helpers/mistral_audio/**
     - tools/oracle/cases/helpers/{voxtral-speech,voxtral-transcription}/**
     - tools/oracle/fuzz/corpus/helper_case/voxtral_*
   lint_tables: false
@@ -92,6 +94,7 @@ deviations: []
 out_of_scope:
   - B036 supplies audio preprocessing and mounts these operations behind existing audio API routes; the leaf introduces no route factory.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as mistral_audio in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/mistral_audio.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/mistral_audio.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Transcription sends Bearer None when no key exists, while speech rejects the same input with 401.
   - A successful speech transform replaces the upstream status with 200 and rebuilds the audio headers.
   - Only recognized voice aliases are case-folded; unknown voice IDs keep their original case.

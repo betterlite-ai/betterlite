@@ -79,12 +79,11 @@ scope:
     - crates/betterlite-server/src/bulk_team_removal/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/bulk_team_removal.rs
-    - tools/oracle/src/helpers/bulk_team_removal/**
+    - tools/oracle/src/helpers/server/bulk_team_removal.rs
+    - tools/oracle/src/helpers/server/bulk_team_removal/**
     - tools/oracle/helpers/bulk_team_removal.py
+    - tools/oracle/helpers/bulk_team_removal/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/teams.rs
-    - tools/oracle/helpers/management/teams.py
     - tools/oracle/cases/helpers/bulk-team-removal/**
     - tools/oracle/fuzz/corpus/helper_case/bulk-team-removal-*
   lint_tables: false
@@ -181,6 +180,7 @@ out_of_scope:
     (L388-L419), _delete_users_tx (L422-L461), _delete_users (L464-L510), bulk_delete_users (L513-L596).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as bulk_team_removal in the server group. Replace the stub Op in tools/oracle/src/helpers/server/bulk_team_removal.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bulk_team_removal.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Request duplicate detection and roster identity matching use different rules; do not reuse one predicate for both.
   - The module docstring's whole-user-batch atomicity belongs to B794, while this service commits one team's removal before cache work.
 budget:

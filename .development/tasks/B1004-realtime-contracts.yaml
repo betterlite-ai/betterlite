@@ -30,11 +30,10 @@ scope:
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/realtime_contract.rs
   - crates/betterlite-core/fuzz/corpus/realtime_contract/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/realtime_contracts.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/realtime_contracts.rs
+  - tools/oracle/src/helpers/core_ops/realtime_contracts/**
   - tools/oracle/helpers/realtime_contracts.py
+  - tools/oracle/helpers/realtime_contracts/**
   - tools/oracle/cases/helpers/realtime-contracts/**
   - tools/oracle/fuzz/corpus/helper_case/realtime-contracts-*
   lint_tables: false
@@ -126,6 +125,7 @@ out_of_scope:
 - All callables in the five small referenced modules are owned here. B1123 owns transcription_protocol.py separately.
 - In realtime_streaming.py B1006 owns __init__ and 236-425; B1110 sends/enforcement at 427-547,655-706,723-735; B1124 buffering549-653; B2455 policy708-721,737-784,798-807; B1007 runner809-941; B1008 backend943-1154; B1005 beta1156-1307,1592-1594; B1009 client1309-1589. _has_realtime_guardrails786-796 has no caller at the pin.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as realtime_contracts in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/realtime_contracts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/realtime_contracts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - websocket_close_reason truncates the message but returns an empty-message fallback without truncating it.
 - The cached authentication body does not escape a model string; using a general JSON serializer changes its bytes.
 - BaseRealtimeHTTPConfig appends /v1 twice for calls when the base already ends with /v1.

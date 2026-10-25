@@ -270,6 +270,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/passthrough/utils.py: BasePassthroughUtils.get_merged_query_parameters L32-L56;
   BasePassthroughUtils.forward_headers_from_request L58-L103 belong to B101.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_model in the context group. Replace the stub Op in tools/oracle/src/helpers/context/bedrock_model.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_model.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The ARN extraction test also matches ordinary words containing arn; it is not the ARN-region parser.
 - The model normalization docstring shows version removal, but get_bedrock_base_model retains :0.
 references:
@@ -359,11 +360,10 @@ scope:
   - crates/betterlite-context/src/bedrock_model.rs
   - crates/betterlite-context/src/bedrock_model/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_model.rs
-  - tools/oracle/src/helpers/bedrock_model/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/context/bedrock_model.rs
+  - tools/oracle/src/helpers/context/bedrock_model/**
   - tools/oracle/helpers/bedrock_model.py
+  - tools/oracle/helpers/bedrock_model/**
   - tools/oracle/cases/helpers/providers/bedrock-model/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_model*
 title: Bedrock model normalization and region catalog

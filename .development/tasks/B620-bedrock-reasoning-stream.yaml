@@ -109,11 +109,10 @@ scope:
   - crates/betterlite-bedrock/src/reasoning_stream.rs
   - crates/betterlite-bedrock/src/reasoning_stream/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_reasoning_stream.rs
-  - tools/oracle/src/helpers/bedrock_reasoning_stream/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/reasoning_stream.rs
+  - tools/oracle/src/helpers/bedrock/reasoning_stream/**
   - tools/oracle/helpers/bedrock_reasoning_stream.py
+  - tools/oracle/helpers/bedrock_reasoning_stream/**
   - tools/oracle/cases/helpers/providers/bedrock-reasoning-stream/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_reasoning_stream*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -293,6 +292,7 @@ out_of_scope:
   L433-L448; AmazonBedrockRuntimeChatCompletionsConfig.get_supported_openai_params L489-L502; AmazonBedrockRuntimeChatCompletionsConfig.get_model_response_iterator
   L504-L514 belong to B619.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_reasoning_stream in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/reasoning_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_reasoning_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Runtime tag splitting removes an empty reasoning block, while the Moonshot caller preserves it.
 - A missing reasoning_effort still activates the GPT reasoning-parameter refusal set.
 budget:

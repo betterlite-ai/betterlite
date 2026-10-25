@@ -41,10 +41,10 @@ scope:
     - crates/betterlite-config/src/providers/chatgpt/headers.rs
     - crates/betterlite-config/src/providers/chatgpt/headers/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/chatgpt_headers*
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/chatgpt_headers.rs
-    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/src/helpers/openai/chatgpt_headers.rs
+    - tools/oracle/src/helpers/openai/chatgpt_headers/**
     - tools/oracle/helpers/chatgpt_headers.py
+    - tools/oracle/helpers/chatgpt_headers/**
     - tools/oracle/cases/helpers/chatgpt-headers/**
     - tools/oracle/fuzz/corpus/helper_case/chatgpt_headers*
   lint_tables: false
@@ -82,6 +82,7 @@ deviations: []
 out_of_scope:
   - The access token's acquisition and expiration checks are B1508/B1509; these functions only format a supplied credential.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as chatgpt_headers in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/chatgpt_headers.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/chatgpt_headers.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A model_dump exception returns an empty context even when the same object also exposes a working dict method.
   - TERM_PROGRAM outranks every terminal-specific variable, including an explicitly present WEZTERM_VERSION.
   - litellm_trace_id is a session fallback before litellm_call_id, so exchanging them changes conversation affinity.

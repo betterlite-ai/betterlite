@@ -82,11 +82,10 @@ scope:
   - crates/betterlite-openai/src/video_edits.rs
   - crates/betterlite-openai/src/video_edits/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/openai_video_edits.rs
-  - tools/oracle/src/helpers/openai_video_edits/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/video_edits.rs
+  - tools/oracle/src/helpers/openai/video_edits/**
   - tools/oracle/helpers/openai_video_edits.py
+  - tools/oracle/helpers/openai_video_edits/**
   - tools/oracle/cases/helpers/providers/openai-video-edits/**
   - tools/oracle/fuzz/corpus/helper_case/openai_video_edits*
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -226,6 +225,7 @@ out_of_scope:
   L148-L175; OpenAIVideoConfig._add_image_to_files L574-L586; OpenAIVideoConfig._video_file_tuple L588-L595; OpenAIVideoConfig._add_video_to_files
   L597-L603; OpenAIVideoConfig._get_video_content_type L605-L628 belong to B672.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as openai_video_edits in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/video_edits.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_video_edits.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - video_file is checked against None, so an empty supplied file still selects multipart instead of the video ID.
 - Character response IDs are not wrapped by these methods despite retrieve accepting wrapped IDs.
 budget:

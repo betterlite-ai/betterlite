@@ -22,11 +22,10 @@ scope:
   - crates/betterlite-core/src/api/responses_usage.rs
   - crates/betterlite-core/src/api/responses_usage/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_usage.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/responses_usage.rs
+  - tools/oracle/src/helpers/core_ops/responses_usage/**
   - tools/oracle/helpers/responses_usage.py
+  - tools/oracle/helpers/responses_usage/**
   - tools/oracle/fuzz/corpus/helper_case/responses_usage-*
   - tools/oracle/cases/helpers/responses-usage/**
   lint_tables: false
@@ -92,6 +91,7 @@ out_of_scope:
 - In responses/utils.py B905 owns parameter/prompt/header methods and shape predicates, B903 owns codecs, and B904 owns traversal; decode_container_id_to_original has no caller at the pin.
 - B004 owns chat Usage construction and text_tokens_without_nested_reasoning; B1138 owns Responses usage validation.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as responses_usage in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_usage.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_usage.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A supplied total_tokens=99 is recomputed to 5 for Responses usage but remains 99 for an existing Usage object.
 - Realtime singular detail names are fallback inputs, not additional serialized chat usage fields.
 - text_tokens may include reasoning; subtracting all reasoning unconditionally undercounts providers that already separated it.

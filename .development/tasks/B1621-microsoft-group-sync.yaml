@@ -39,10 +39,10 @@ scope:
     - crates/betterlite-config/src/microsoft_group_sync/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/microsoft-groups-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/microsoft_group_values.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/microsoft_group_values.py
+    - tools/oracle/src/helpers/server/microsoft_group_sync.rs
+    - tools/oracle/src/helpers/server/microsoft_group_sync/**
+    - tools/oracle/helpers/microsoft_group_sync.py
+    - tools/oracle/helpers/microsoft_group_sync/**
     - tools/oracle/cases/helpers/microsoft-groups/**
     - tools/oracle/fuzz/corpus/helper_case/microsoft-groups-*
   lint_tables: false
@@ -90,6 +90,7 @@ out_of_scope:
   - Microsoft token callbacks and role claims belong to B1622; interactive subject enrollment belongs to B1617.
   - B063's ownership inventory covers ui_sso.py functions unrelated to Graph and SSO team creation.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as microsoft_group_sync in the server group. Replace the stub Op in tools/oracle/src/helpers/server/microsoft_group_sync.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/microsoft_group_sync.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty service-principal assignment list disables filtering; it does not deny all group membership.
   - A failure on a later membership page discards accumulated group IDs but cannot undo teams already created from assignments.
 budget:

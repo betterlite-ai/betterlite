@@ -85,11 +85,10 @@ scope:
   - crates/betterlite-anthropic/src/stream_decode.rs
   - crates/betterlite-anthropic/src/stream_decode/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/anthropic_stream_decode.rs
-  - tools/oracle/src/helpers/anthropic_stream_decode/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/anthropic/stream_decode.rs
+  - tools/oracle/src/helpers/anthropic/stream_decode/**
   - tools/oracle/helpers/anthropic_stream_decode.py
+  - tools/oracle/helpers/anthropic_stream_decode/**
   - tools/oracle/cases/helpers/providers/anthropic-stream-decode/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_stream_decode*
   - crates/betterlite-anthropic/fuzz/Cargo.toml
@@ -263,6 +262,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197;
   AnthropicChatCompletion.acompletion_stream_function L204-L252 belong to B689.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as anthropic_stream_decode in the anthropic group. Replace the stub Op in tools/oracle/src/helpers/anthropic/stream_decode.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_stream_decode.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - 'Only byte iterator chunks search for an embedded data: prefix; the passthrough converter searches both strings
   and bytes.'
 - '[DONE] has no special branch and malformed JSON can remain silently buffered at EOF.'

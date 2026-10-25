@@ -53,9 +53,10 @@ scope:
     - crates/betterlite-logging/src/otel/model.rs
     - crates/betterlite-logging/src/otel/model/**
     - crates/betterlite-logging/Cargo.toml
-    - tools/oracle/src/helpers/otel_vocabulary.rs
-    - tools/oracle/src/helpers/otel_vocabulary/**
-    - tools/oracle/helpers/otel_vocabulary.py
+    - tools/oracle/src/helpers/logging/otel_semantic_vocabulary.rs
+    - tools/oracle/src/helpers/logging/otel_semantic_vocabulary/**
+    - tools/oracle/helpers/otel_semantic_vocabulary.py
+    - tools/oracle/helpers/otel_semantic_vocabulary/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/otel-vocabulary/**
   lint_tables: false
@@ -121,6 +122,7 @@ out_of_scope:
   - 'No caller at the pin: proxy_request_span_name (L192-L194) — the proxy request span is created by the instrumentation, not by litellm code; it is named here only so the registry is complete and tests assert against the literal.'
   - LITELLM_PROXY_REQUEST_SPAN_NAME (L172) — a constant string literal for the proxy request span name; exported and used throughout the test suite for span matching and assertion, but owned by the instrumentation that creates the span; tests asserting this literal are validation only.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as otel_semantic_vocabulary in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/otel_semantic_vocabulary.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/otel_semantic_vocabulary.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Unknown provider names pass through as-is per the semconv convention, not as "unknown" or null; a new provider in LiteLLM that is not in the mapping will not label as generic.
   - Unmapped call types log at debug before falling back to "chat"; add new call types to _OPERATION_BY_CALL_TYPE so they don't silently pollute the chat series.
   - service_span_name returns "{service} {call_type or ''}" stripped; a service with no call_type is just the service name.

@@ -125,12 +125,11 @@ scope:
     - crates/betterlite-auth/Cargo.toml
     - Cargo.toml
     - deny.toml
-    - tools/oracle/src/helpers/jwt_verification.rs
-    - tools/oracle/src/helpers/jwt_verification/**
+    - tools/oracle/src/helpers/auth/jwt_verification.rs
+    - tools/oracle/src/helpers/auth/jwt_verification/**
     - tools/oracle/helpers/jwt_verification.py
+    - tools/oracle/helpers/jwt_verification/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/jwt.rs
-    - tools/oracle/helpers/management/jwt.py
     - tools/oracle/cases/helpers/jwt-verification/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-verification-*
     - crates/betterlite-config/Cargo.toml
@@ -368,6 +367,7 @@ out_of_scope:
     (L2236-L2335), JWTAuthManager._is_team_route_allowed (L2338-L2355), JWTAuthManager._validate_header_team_in_db_membership
     (L2374-L2388).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as jwt_verification in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/jwt_verification.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/jwt_verification.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - josekit requires OpenSSL, which deny.toml forbids; ES512 must use a pure-Rust P-521 verifier.
   - A valid JWT signature does not make caller-injected _litellm_* claims trusted internal normalization
     markers.

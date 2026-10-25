@@ -128,10 +128,10 @@ scope:
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
     - tools/oracle/cases/management/user-fields/**
-    - tools/oracle/src/helpers/user_fields.rs
+    - tools/oracle/src/helpers/server/user_fields.rs
+    - tools/oracle/src/helpers/server/user_fields/**
     - tools/oracle/helpers/user_fields.py
-    - tools/oracle/src/helpers/management/users.rs
-    - tools/oracle/helpers/management/users.py
+    - tools/oracle/helpers/user_fields/**
     - tools/oracle/cases/helpers/user-fields/**
     - tools/oracle/fuzz/corpus/helper_case/user-fields-*
     - crates/betterlite-config/Cargo.toml
@@ -298,6 +298,7 @@ out_of_scope:
     no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as user_fields in the server group. Replace the stub Op in tools/oracle/src/helpers/server/user_fields.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/user_fields.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A team-member HTTPException is always swallowed here, while an unrelated ordinary exception is rethrown.
   - Removing a password from a bare model is outside _strip_password_from_response's actual dict-only behavior.
 budget:

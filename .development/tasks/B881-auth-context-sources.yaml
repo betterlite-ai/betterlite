@@ -105,12 +105,11 @@ scope:
     - crates/betterlite-auth/src/auth_context_sources/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_context_sources.rs
-    - tools/oracle/src/helpers/auth_context_sources/**
+    - tools/oracle/src/helpers/auth/context_sources.rs
+    - tools/oracle/src/helpers/auth/context_sources/**
     - tools/oracle/helpers/auth_context_sources.py
+    - tools/oracle/helpers/auth_context_sources/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-context-sources/**
     - tools/oracle/fuzz/corpus/helper_case/auth-context-sources-*
     - crates/betterlite-server/src/auth.rs
@@ -362,6 +361,7 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_context_sources in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/context_sources.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_context_sources.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty client ID enables SSO discovery but cannot disable password fallback through the stricter readiness check.
   - The router-alias marker is set before passthrough and body checks; retries must not get a second rewrite opportunity.
 budget:

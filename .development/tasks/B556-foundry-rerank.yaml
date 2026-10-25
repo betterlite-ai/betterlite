@@ -78,11 +78,10 @@ scope:
   - crates/betterlite-foundry/src/rerank.rs
   - crates/betterlite-foundry/src/rerank/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/foundry_rerank.rs
-  - tools/oracle/src/helpers/foundry_rerank/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/foundry/rerank.rs
+  - tools/oracle/src/helpers/foundry/rerank/**
   - tools/oracle/helpers/foundry_rerank.py
+  - tools/oracle/helpers/foundry_rerank/**
   - tools/oracle/cases/helpers/providers/foundry-rerank/**
   - tools/oracle/fuzz/corpus/helper_case/foundry_rerank*
   lint_tables: false
@@ -207,6 +206,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as foundry_rerank in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/rerank.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_rerank.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A caller Authorization header does not bypass credential resolution, which runs before header merging.
 - The inferred base model is written to hidden model, not the public response model field.
 budget:

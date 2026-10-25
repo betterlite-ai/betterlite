@@ -24,10 +24,10 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/vector_endpoint_access.rs
   - crates/betterlite-core/src/api/vector_endpoint_access/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/vector_endpoint_access.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/core_ops/vector_endpoint_access.rs
+  - tools/oracle/src/helpers/core_ops/vector_endpoint_access/**
   - tools/oracle/helpers/vector_endpoint_access.py
+  - tools/oracle/helpers/vector_endpoint_access/**
   - tools/oracle/cases/helpers/vector-endpoint-access/**
   - tools/oracle/fuzz/corpus/helper_case/vector_endpoint_access-*
   lint_tables: false
@@ -101,6 +101,7 @@ out_of_scope:
 - B1060 owns utils.py:25-257 normalization, owner grants and lifecycle recognition; B1062 registry lookup and B749 shared-cache row loading.
 - B741 owns canonical request routing; B527/B558 own provider endpoint tables. Gateway response conversion and actual provider HTTP remain in route/SDK tasks.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as vector_endpoint_access in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_endpoint_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_endpoint_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Registry failure is a 500 access-validation failure, not an unmanaged-id fallback.
 - The placeholder matcher uses only the prefix before the first brace and does not validate the remaining path.
 - Unknown attached-file endpoints return null while unknown store endpoints raise 403.

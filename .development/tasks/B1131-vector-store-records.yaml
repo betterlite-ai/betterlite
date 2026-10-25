@@ -26,10 +26,10 @@ scope:
   - crates/betterlite-openai/fuzz/Cargo.toml
   - crates/betterlite-openai/fuzz/fuzz_targets/vector_store_records.rs
   - crates/betterlite-openai/fuzz/corpus/vector_store_records/**
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/vector_store_records.rs
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/openai/vector_store_records.rs
+  - tools/oracle/src/helpers/openai/vector_store_records/**
   - tools/oracle/helpers/vector_store_records.py
+  - tools/oracle/helpers/vector_store_records/**
   - tools/oracle/fuzz/corpus/helper_case/vector_store_records-*
   - tools/oracle/cases/helpers/vector-store-records/**
   lint_tables: false
@@ -132,6 +132,7 @@ out_of_scope:
 - Provider search transforms own interpretation and rejection of extra_body target fields; these declarations perform no HTTP or provider routing.
 - B1058 owns provider contracts and parameter filtering; B1062 owns registry loading and B1070 management behavior.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as vector_store_records in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/vector_store_records.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_store_records.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - total=False means a missing score or content is allowed, not a numeric zero or an empty list inserted by deserialization.
 - IndexListResponse defaults object to list, whereas a TypedDict object annotation does not insert that field.
 - VectorStoreToolParams preserves zero and empty maps and has no rewrite_query member.

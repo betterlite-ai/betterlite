@@ -109,12 +109,11 @@ scope:
     - crates/betterlite-config/src/jwt_settings/**
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/Cargo.toml
-    - tools/oracle/src/helpers/jwt_settings.rs
-    - tools/oracle/src/helpers/jwt_settings/**
+    - tools/oracle/src/helpers/config/jwt_settings.rs
+    - tools/oracle/src/helpers/config/jwt_settings/**
     - tools/oracle/helpers/jwt_settings.py
+    - tools/oracle/helpers/jwt_settings/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/jwt.rs
-    - tools/oracle/helpers/management/jwt.py
     - tools/oracle/cases/helpers/jwt-settings/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-settings-*
     - crates/betterlite-config/src/loader.rs
@@ -395,6 +394,7 @@ out_of_scope:
     (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
     (L5766-L5772).'
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as jwt_settings in the config group. Replace the stub Op in tools/oracle/src/helpers/config/jwt_settings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/jwt_settings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The scope_mappings error text describes the reverse implication from the condition that raises it.
   - A null virtual_key_claim_field still defeats the deprecated jwt_client_id_field alias.
   - Requiring a nonempty audience would reject issuer configurations the source accepts with '' or [].

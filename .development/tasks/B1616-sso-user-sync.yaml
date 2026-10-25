@@ -35,10 +35,10 @@ scope:
     - crates/betterlite-config/src/sso_user_sync/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-user-sync-*
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/sso_user_values.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/sso_user_values.py
+    - tools/oracle/src/helpers/server/sso_user_sync.rs
+    - tools/oracle/src/helpers/server/sso_user_sync/**
+    - tools/oracle/helpers/sso_user_sync.py
+    - tools/oracle/helpers/sso_user_sync/**
     - tools/oracle/cases/helpers/sso-user-values/**
     - tools/oracle/fuzz/corpus/helper_case/sso-user-values-*
   lint_tables: false
@@ -82,6 +82,7 @@ out_of_scope:
   - B1624 owns get_disabled_non_admin_personal_key_creation and browser session issuance; B1615 owns CLI completion orchestration.
   - Provider exchange and route ownership for the remainder of ui_sso.py is recorded in B063.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as sso_user_sync in the server group. Replace the stub Op in tools/oracle/src/helpers/server/sso_user_sync.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/sso_user_sync.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Updating an existing user's role in upsert does not mutate the returned in-memory user object, unlike the explicit JWT role-sync path.
   - The user_email argument to get_user_info_from_db is replaced by the email on the SSO identity before lookup.
 budget:

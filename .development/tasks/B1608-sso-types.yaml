@@ -30,10 +30,10 @@ scope:
     - crates/betterlite-auth/fuzz/fuzz_targets/sso_record.rs
     - crates/betterlite-auth/fuzz/corpus/sso_record/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/sso_roles.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/sso_roles.py
+    - tools/oracle/src/helpers/auth/sso_types.rs
+    - tools/oracle/src/helpers/auth/sso_types/**
+    - tools/oracle/helpers/sso_types.py
+    - tools/oracle/helpers/sso_types/**
     - tools/oracle/cases/helpers/sso-roles/**
     - tools/oracle/fuzz/corpus/helper_case/sso-roles-*
   lint_tables: false
@@ -78,6 +78,7 @@ out_of_scope:
   - SSOConfig persistence and admin configuration routes belong to B066's settings parts; these records do not register routes.
   - B063 records the owner of every other ui_sso.py definition; no provider exchange is implemented in this record module.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as sso_types in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/sso_types.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/sso_types.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The wire value for the proxy viewer role is proxy_admin_viewer even though Python's enum member says PROXY_ADMIN_VIEW_ONLY.
   - Unknown role strings remain absent instead of becoming internal_user by default.
 budget:

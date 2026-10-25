@@ -67,12 +67,11 @@ scope:
     - crates/betterlite-server/src/team_org_move/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/team_org_move.rs
-    - tools/oracle/src/helpers/team_org_move/**
+    - tools/oracle/src/helpers/server/team_org_move.rs
+    - tools/oracle/src/helpers/server/team_org_move/**
     - tools/oracle/helpers/team_org_move.py
+    - tools/oracle/helpers/team_org_move/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/teams.rs
-    - tools/oracle/helpers/management/teams.py
     - tools/oracle/cases/helpers/team-org-move/**
     - tools/oracle/fuzz/corpus/helper_case/team-org-move-*
     - crates/betterlite-server/src/team_org_move/fixtures/**
@@ -230,6 +229,7 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as team_org_move in the server group. Replace the stub Op in tools/oracle/src/helpers/server/team_org_move.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/team_org_move.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Successful auto-adds survive a later failed team write, and failed auto-adds do not reject the move.
   - The audit before_value contains a JSON string of JSON, unlike updated_values.
 budget:

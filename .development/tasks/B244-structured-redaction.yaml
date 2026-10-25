@@ -20,8 +20,10 @@ scope:
   - crates/betterlite-redact/src/structured.rs
   - crates/betterlite-redact/src/structured/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/**
-  - tools/oracle/helpers/**
+  - tools/oracle/src/helpers/redact/structured_redaction.rs
+  - tools/oracle/src/helpers/redact/structured_redaction/**
+  - tools/oracle/helpers/structured_redaction.py
+  - tools/oracle/helpers/structured_redaction/**
   - tools/oracle/cases/helpers/structured-redaction/**
   - tools/oracle/fuzz/corpus/helper_case/**
   - crates/betterlite-redact/fuzz/**
@@ -96,6 +98,7 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B187 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 pitfalls:
+- 'The oracle helper for this task is pre-registered as structured_redaction in the redact group. Replace the stub Op in tools/oracle/src/helpers/redact/structured_redaction.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/structured_redaction.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.

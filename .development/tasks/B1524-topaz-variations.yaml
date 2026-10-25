@@ -35,10 +35,10 @@ scope:
     - crates/betterlite-core/src/api/topaz/**
     - crates/betterlite-config/src/providers.rs
     - crates/betterlite-config/src/providers/topaz.rs
-    - tools/oracle/src/helpers/mod.rs
-    - tools/oracle/src/helpers/topaz_variation.rs
-    - tools/oracle/helpers/dispatch.py
-    - tools/oracle/helpers/topaz_variation.py
+    - tools/oracle/src/helpers/core_ops/topaz_variations.rs
+    - tools/oracle/src/helpers/core_ops/topaz_variations/**
+    - tools/oracle/helpers/topaz_variations.py
+    - tools/oracle/helpers/topaz_variations/**
     - tools/oracle/cases/helpers/topaz-variation/**
     - tools/oracle/fuzz/corpus/helper_case/topaz_variation*
   lint_tables: false
@@ -72,6 +72,7 @@ deviations: []
 out_of_scope:
   - B046 supplies the Topaz variant to B1000's callable variations executor; no new proxy route is authorized by this provider.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as topaz_variations in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/topaz_variations.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/topaz_variations.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - response_format=url still produces a base64 response from the binary body.
   - An empty key passes validate_environment when invoked directly, because the check is api_key is None.
   - A trailing slash on api_base is preserved before /image/v1/enhance is appended.

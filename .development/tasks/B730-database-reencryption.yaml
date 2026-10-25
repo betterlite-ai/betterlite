@@ -120,10 +120,10 @@ scope:
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/database_reencryption.rs
     - crates/betterlite-config/src/database_reencryption/**
-    - tools/oracle/src/helpers/database_reencryption.rs
+    - tools/oracle/src/helpers/db/database_reencryption.rs
+    - tools/oracle/src/helpers/db/database_reencryption/**
     - tools/oracle/helpers/database_reencryption.py
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
+    - tools/oracle/helpers/database_reencryption/**
     - tools/oracle/cases/helpers/database-reencryption/**
     - tools/oracle/fuzz/corpus/helper_case/database-reencryption-*
   lint_tables: false
@@ -205,6 +205,7 @@ out_of_scope:
   - B758 owns master_key_boot_check.py except its migration-variable name at L18; boot refusal/rendering is not implemented here.
   - B124 invokes migration after connecting the writer and supplies logging/outage handling; B719 owns create_views.py and its Python query protocols, replaced here by B700 native sessions.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as database_reencryption in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_reencryption.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_reencryption.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The metadata LIKE prefilter selects whole rows and leaves the underscore as a wildcard; it is not a per-leaf marker filter.
   - A failed later update leaves earlier ciphertexts migrated, so remaining old-key values need a restart with the previous key retained.
   - Salt-variable presence skips migration even for an empty string, while an empty new-key override in the codec falls back.

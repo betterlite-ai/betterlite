@@ -106,12 +106,11 @@ scope:
     - crates/betterlite-auth/src/auth_route_policy/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_route_policy.rs
-    - tools/oracle/src/helpers/auth_route_policy/**
+    - tools/oracle/src/helpers/server/auth_route_policy.rs
+    - tools/oracle/src/helpers/server/auth_route_policy/**
     - tools/oracle/helpers/auth_route_policy.py
+    - tools/oracle/helpers/auth_route_policy/**
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-route-policy/**
     - tools/oracle/fuzz/corpus/helper_case/auth-route-policy-*
     - crates/betterlite-server/src/auth.rs
@@ -397,6 +396,7 @@ out_of_scope:
     (L736-L762).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as auth_route_policy in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_route_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_route_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Non-admin management-route rejection normalizes to 401 auth_error, even when an intuitively similar
     endpoint uses 403.
   - Do not overwrite a caller-supplied organization_id before the source organization policy reads it.

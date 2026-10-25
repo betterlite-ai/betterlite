@@ -59,8 +59,10 @@ scope:
     - crates/betterlite-config/src/providers/{mod,openai_like}.rs
     - crates/betterlite-config/tests/openai_like_settings.rs
     - Cargo.lock
-    - tools/oracle/src/helpers/{mod,compatible_reply_policy,compatible_model_limits}.rs
-    - tools/oracle/helpers/{dispatch,compatible_reply_policy,compatible_model_limits}.py
+    - tools/oracle/src/helpers/openai/like_primitives.rs
+    - tools/oracle/src/helpers/openai/like_primitives/**
+    - tools/oracle/helpers/openai_like_primitives.py
+    - tools/oracle/helpers/openai_like_primitives/**
     - tools/oracle/cases/helpers/{compatible-reply-policy,compatible-model-limits}/**
     - tools/oracle/fuzz/corpus/helper_case/{compatible_reply_policy,compatible_model_limits}*
   lint_tables: false
@@ -112,6 +114,7 @@ out_of_scope:
   - B1428 owns OpenAILikeChatHandler and B1426 descriptor-generated configs; B845 owns refresh scheduling and deployment-generation checks around the model discovery service.
   - Existing cache infrastructure provides the injected ModelListCache implementation; this task does not add a general-purpose cache or a background scheduler.
 pitfalls:
+  - 'The oracle helper for this task is pre-registered as openai_like_primitives in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/like_primitives.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_like_primitives.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty headers map bypasses the missing-key check without adding Content-Type.
   - json_mode converts any single tool call, without requiring its function name to be json_tool_call.
   - Changing credentials must change the discovery cache key even when the endpoint URL is identical.

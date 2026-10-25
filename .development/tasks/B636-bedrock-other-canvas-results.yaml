@@ -81,11 +81,10 @@ scope:
   - crates/betterlite-bedrock/src/canvas_results.rs
   - crates/betterlite-bedrock/src/canvas_results/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers/bedrock_other_canvas_results.rs
-  - tools/oracle/src/helpers/bedrock_other_canvas_results/**
-  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/bedrock/other_canvas_results.rs
+  - tools/oracle/src/helpers/bedrock/other_canvas_results/**
   - tools/oracle/helpers/bedrock_other_canvas_results.py
+  - tools/oracle/helpers/bedrock_other_canvas_results/**
   - tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_results*
   - crates/betterlite-bedrock/fuzz/Cargo.toml
@@ -215,6 +214,7 @@ out_of_scope:
   L468-L469; BedrockAmazonNovaCanvasImageEditConfig.get_complete_url L471-L481; BedrockAmazonNovaCanvasImageEditConfig.validate_environment
   L483-L495; get_bedrock_image_edit_config_for_model L498-L519 belong to B635.'
 pitfalls:
+- 'The oracle helper for this task is pre-registered as bedrock_other_canvas_results in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/other_canvas_results.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_other_canvas_results.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A truthy images list suppresses provider error fields before falsey image entries are filtered.
 - The provider decoder wraps errors using the upstream status even when that status is 200.
 budget:
