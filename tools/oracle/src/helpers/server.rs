@@ -73,6 +73,7 @@ helper_group! {
     "mcp_permission_ids" => mcp_permission_ids,
     "mcp_rotation" => mcp_rotation,
     "mcp_search_primitives" => mcp_search_primitives,
+    "mcp_session_token" => mcp_session_token,
     "member_budget_patch" => member_budget_patch,
     "member_identity" => member_identity,
     "member_row_write" => member_row_write,
