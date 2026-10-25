@@ -1,6 +1,6 @@
 task: B4500
 deviations:
-  - what: Records reject unknown fields through serde deny_unknown_fields instead of Pydantic extra="forbid"; accepted and refused inputs are the same.
+  - what: Records reject unknown fields through serde deny_unknown_fields instead of Pydantic extra="forbid"; unknown-field rejection is equivalent.
     why: Pydantic is Python-only; Rust's serde provides the same strict validation across both server and worker.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/models.py#L7-L8
   - what: monthly_budget, spent, cost and sample_percent use rust_decimal Decimal instead of Python float. They decode from JSON numbers or numeric strings and encode as JSON numbers.
