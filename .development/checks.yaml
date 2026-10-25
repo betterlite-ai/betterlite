@@ -83,8 +83,8 @@ base:
       run: |-
         git status --porcelain --untracked-files=all | sed "s/^/uncommitted: /" | grep . && exit 1 || exit 0
     - id: specs-untouched
-      why: a task branch changes nothing in .development/, .claude/, .codex/ or .cargo/config.toml except its own task file, and only the architect edits that
-      run: git diff --exit-code --stat "$GATE_BASE" -- .development .claude .codex .cargo/config.toml ":(exclude,glob).development/tasks/$GATE_TASK-*.yaml"
+      why: a task branch changes nothing in .development/, .claude/, .codex/ or .cargo/config.toml except its own task file and backlog entry, and only the architect edits those
+      run: git diff --exit-code --stat "$GATE_BASE" -- .development .claude .codex .cargo/config.toml ":(exclude,glob).development/tasks/$GATE_TASK-*.yaml" ":(exclude).development/backlog/$GATE_TASK.yaml"
     - id: fmt
       why: rustfmt decides the layout
       run: cargo fmt --all --check
