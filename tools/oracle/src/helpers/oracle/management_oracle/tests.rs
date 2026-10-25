@@ -1,24 +1,11 @@
 #![cfg(test)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+use std::path::Path;
 
 use serde_json::{Value, json};
 
 use super::{Input, run};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DispatchMode {
-    NativeThenPython,
-    PythonThenPython,
-}
-
-const fn dispatch_mode(self_check: bool) -> DispatchMode {
-    if self_check {
-        DispatchMode::PythonThenPython
-    } else {
-        DispatchMode::NativeThenPython
-    }
-}
 
 fn decode(value: Value) -> Result<Input, String> {
     serde_json::from_value(value).map_err(|error| error.to_string())
@@ -48,10 +35,10 @@ fn namespace_native_dispatch() {
 #[test]
 fn namespace_python_dispatch() {
     let input = decode(path_encoding_call("segments")).unwrap();
-    assert_eq!(
-        python_request(&input),
-        json!({"operation": "management_oracle", "input": path_encoding_call("segments")})
-    );
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let output = crate::helpers::python::run_python(&root, &python_request(&input), &BTreeMap::new())
+        .unwrap();
+    assert_eq!(output.value, Some(json!("a/b")));
 }
 
 #[test]
@@ -93,6 +80,18 @@ fn exception_null_and_code_types() {
     .unwrap();
     assert!(crate::compare::compare_helper(&left, &missing, &[]).is_some());
     assert!(crate::compare::compare_helper(&left, &numeric, &[]).is_some());
+    serde_json::from_str::<crate::helpers::HelperOutput>(
+        r#"{"ok":false,"error":{"class":"Error","message":"failed","code":true}}"#
+    )
+    .unwrap_err();
+    serde_json::from_str::<crate::helpers::HelperOutput>(
+        r#"{"ok":false,"error":{"class":"Error","message":"failed","code":{}}}"#
+    )
+    .unwrap_err();
+    serde_json::from_str::<crate::helpers::HelperOutput>(
+        r#"{"ok":false,"error":{"class":"Error","message":"failed","code":[]}}"#
+    )
+    .unwrap_err();
 }
 
 #[test]
@@ -149,28 +148,18 @@ fn rejects_unknown_ignore() {
 #[test]
 fn secret_mismatch_still_fails() {
     let mut left = output(Value::Null);
-    left.effects.push(effect("credential", "old-secret", true));
+    left.effects.push(effect("credential", "old-secret"));
     let mut right = left.clone();
-    right
-        .effects
-        .last_mut()
-        .unwrap()
-        .fields
-        .insert("credential".to_owned(), json!("new-secret"));
+    right.effects.last_mut().unwrap().fields = credential("new-secret");
     assert!(crate::compare::compare_helper(&left, &right, &[]).is_some());
 }
 
 #[test]
 fn redacts_secret_artifacts() {
     let mut left = output(Value::Null);
-    left.effects.push(effect("credential", "old-secret", true));
+    left.effects.push(effect("credential", "old-secret"));
     let mut right = left.clone();
-    right
-        .effects
-        .last_mut()
-        .unwrap()
-        .fields
-        .insert("credential".to_owned(), json!("new-secret"));
+    right.effects.last_mut().unwrap().fields = credential("new-secret");
     let difference = crate::compare::compare_helper(&left, &right, &[]).unwrap();
     let diagnostic = serde_json::to_string(&difference).unwrap();
     assert!(!diagnostic.contains("old-secret"));
@@ -179,8 +168,8 @@ fn redacts_secret_artifacts() {
 
 #[test]
 fn self_check_is_not_native() {
-    assert_eq!(dispatch_mode(false), DispatchMode::NativeThenPython);
-    assert_eq!(dispatch_mode(true), DispatchMode::PythonThenPython);
+    assert_eq!(crate::helpers::left_side(false), crate::helpers::HelperLeft::Native);
+    assert_eq!(crate::helpers::left_side(true), crate::helpers::HelperLeft::Python);
 }
 
 fn output(value: Value) -> crate::helpers::HelperOutput {
@@ -190,28 +179,27 @@ fn output(value: Value) -> crate::helpers::HelperOutput {
         error: None,
         warnings: Vec::new(),
         effects: vec![
-            effect("marker", "first", false),
-            effect("marker", "second", false),
+            effect("marker", "first"),
+            effect("marker", "second"),
         ],
     }
 }
 
-fn effect(kind: &str, value: &str, secret: bool) -> crate::compare::HelperEffect {
-    let mut fields = BTreeMap::new();
-    let field = if kind == "credential" {
-        "credential"
-    } else {
-        "name"
-    };
-    fields.insert(field.to_owned(), Value::String(value.to_owned()));
-    let secret_fields = if secret {
-        BTreeSet::from([field.to_owned()])
-    } else {
-        BTreeSet::new()
-    };
-    crate::compare::HelperEffect {
+fn effect(kind: &str, value: &str) -> crate::helpers::HelperEffect {
+    crate::helpers::HelperEffect {
         kind: kind.to_owned(),
-        fields,
-        secret_fields,
+        fields: if kind == "credential" {
+            credential(value)
+        } else {
+            crate::helpers::ManagementEffectFields::Marker {
+                name: value.to_owned(),
+            }
+        },
+    }
+}
+
+fn credential(value: &str) -> crate::helpers::ManagementEffectFields {
+    crate::helpers::ManagementEffectFields::Credential {
+        credential: secrecy::SecretString::from(value.to_owned()),
     }
 }

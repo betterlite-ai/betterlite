@@ -1,59 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use serde_json::Value;
 
 use crate::case::{Compare, Ignore};
+use crate::helpers::HelperOutput;
 use crate::http::Response;
 use crate::mock::ProviderRequest;
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct HelperOutput {
-    pub(crate) ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) value: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) error: Option<HelperError>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) warnings: Vec<Value>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) effects: Vec<HelperEffect>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct HelperEffect {
-    pub(crate) kind: String,
-    pub(crate) fields: BTreeMap<String, Value>,
-    #[serde(default)]
-    pub(crate) secret_fields: BTreeSet<String>,
-}
-
-type OptionalValue = Option<Option<Value>>;
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct HelperError {
-    pub(crate) class: String,
-    pub(crate) status: Option<u16>,
-    #[serde(
-        rename = "type",
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub(crate) error_type: OptionalValue,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub(crate) param: OptionalValue,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub(crate) code: OptionalValue,
-    pub(crate) message: String,
-}
 
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct Difference {
@@ -66,6 +18,9 @@ pub(crate) fn compare_helper(
     right: &HelperOutput,
     ignores: &[Ignore],
 ) -> Option<Difference> {
+    if let Some(difference) = compare_effect_secrets(left, right, ignores) {
+        return Some(difference);
+    }
     let mut left_value = serde_json::to_value(left).ok()?;
     let mut right_value = serde_json::to_value(right).ok()?;
     for ignored in ignores {
@@ -98,6 +53,36 @@ pub(crate) fn compare_helper(
     first_difference(&left_value, &right_value, "").map(|pointer| Difference {
         pointer,
         message: "helper results differ".to_owned(),
+    })
+}
+
+fn compare_effect_secrets(
+    left: &HelperOutput,
+    right: &HelperOutput,
+    ignores: &[Ignore],
+) -> Option<Difference> {
+    left.effects
+        .iter()
+        .zip(&right.effects)
+        .enumerate()
+        .find_map(|(index, (left_effect, right_effect))| {
+            if effect_secret_is_ignored(ignores, index)
+                || left_effect.fields.same_secret(&right_effect.fields)
+            {
+                None
+            } else {
+                Some(Difference {
+                    message: "helper results differ".to_owned(),
+                    pointer: format!("/effects/{index}/fields/credential"),
+                })
+            }
+        })
+}
+
+fn effect_secret_is_ignored(ignores: &[Ignore], index: usize) -> bool {
+    let prefix = format!("/effects/{index}/fields/credential");
+    ignores.iter().any(|ignore| {
+        prefix == ignore.pointer || prefix.starts_with(&format!("{}/", ignore.pointer))
     })
 }
 
