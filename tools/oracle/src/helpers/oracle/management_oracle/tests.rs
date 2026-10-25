@@ -36,8 +36,9 @@ fn namespace_native_dispatch() {
 fn namespace_python_dispatch() {
     let input = decode(path_encoding_call("segments")).unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let output = crate::helpers::python::run_python(&root, &python_request(&input), &BTreeMap::new())
-        .unwrap();
+    let output =
+        crate::helpers::python::run_python(&root, &python_request(&input), &BTreeMap::new())
+            .unwrap();
     assert_eq!(output.value, Some(json!("a/b")));
 }
 
@@ -67,29 +68,29 @@ fn detects_warning_order() {
 
 #[test]
 fn exception_null_and_code_types() {
-    let left: crate::helpers::HelperOutput = serde_json::from_str(
+    let left: crate::compare::helper::HelperOutput = serde_json::from_str(
         r#"{"ok":false,"error":{"class":"Error","message":"failed","code":null}}"#,
     )
     .unwrap();
-    let missing: crate::helpers::HelperOutput =
+    let missing: crate::compare::helper::HelperOutput =
         serde_json::from_str(r#"{"ok":false,"error":{"class":"Error","message":"failed"}}"#)
             .unwrap();
-    let numeric: crate::helpers::HelperOutput = serde_json::from_str(
+    let numeric: crate::compare::helper::HelperOutput = serde_json::from_str(
         r#"{"ok":false,"error":{"class":"Error","message":"failed","code":401}}"#,
     )
     .unwrap();
     assert!(crate::compare::compare_helper(&left, &missing, &[]).is_some());
     assert!(crate::compare::compare_helper(&left, &numeric, &[]).is_some());
     serde_json::from_str::<crate::helpers::HelperOutput>(
-        r#"{"ok":false,"error":{"class":"Error","message":"failed","code":true}}"#
+        r#"{"ok":false,"error":{"class":"Error","message":"failed","code":true}}"#,
     )
     .unwrap_err();
     serde_json::from_str::<crate::helpers::HelperOutput>(
-        r#"{"ok":false,"error":{"class":"Error","message":"failed","code":{}}}"#
+        r#"{"ok":false,"error":{"class":"Error","message":"failed","code":{}}}"#,
     )
     .unwrap_err();
     serde_json::from_str::<crate::helpers::HelperOutput>(
-        r#"{"ok":false,"error":{"class":"Error","message":"failed","code":[]}}"#
+        r#"{"ok":false,"error":{"class":"Error","message":"failed","code":[]}}"#,
     )
     .unwrap_err();
 }
@@ -168,38 +169,43 @@ fn redacts_secret_artifacts() {
 
 #[test]
 fn self_check_is_not_native() {
-    assert_eq!(crate::helpers::left_side(false), crate::helpers::HelperLeft::Native);
-    assert_eq!(crate::helpers::left_side(true), crate::helpers::HelperLeft::Python);
+    assert_eq!(
+        crate::helpers::left_side(false),
+        crate::helpers::HelperLeft::Native
+    );
+    assert_eq!(
+        crate::helpers::left_side(true),
+        crate::helpers::HelperLeft::Python
+    );
 }
 
-fn output(value: Value) -> crate::helpers::HelperOutput {
-    crate::helpers::HelperOutput {
+fn output(value: Value) -> crate::compare::helper::HelperOutput {
+    crate::compare::helper::HelperOutput {
         ok: true,
         value: Some(value),
         error: None,
         warnings: Vec::new(),
-        effects: vec![
-            effect("marker", "first"),
-            effect("marker", "second"),
-        ],
+        effects: vec![effect("marker", "first"), effect("marker", "second")],
     }
 }
 
-fn effect(kind: &str, value: &str) -> crate::helpers::HelperEffect {
-    crate::helpers::HelperEffect {
+fn effect(kind: &str, value: &str) -> crate::compare::helper::HelperEffect {
+    crate::compare::helper::HelperEffect {
         kind: kind.to_owned(),
         fields: if kind == "credential" {
             credential(value)
         } else {
-            crate::helpers::ManagementEffectFields::Marker {
-                name: value.to_owned(),
+            crate::compare::helper::ManagementEffectFields {
+                name: Some(value.to_owned()),
+                credential: None,
             }
         },
     }
 }
 
-fn credential(value: &str) -> crate::helpers::ManagementEffectFields {
-    crate::helpers::ManagementEffectFields::Credential {
-        credential: secrecy::SecretString::from(value.to_owned()),
+fn credential(value: &str) -> crate::compare::helper::ManagementEffectFields {
+    crate::compare::helper::ManagementEffectFields {
+        name: None,
+        credential: Some(secrecy::SecretString::from(value.to_owned())),
     }
 }

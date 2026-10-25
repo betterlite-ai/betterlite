@@ -60,136 +60,15 @@ use std::collections::BTreeMap;
 use std::io::{self, Write as _};
 use std::path::Path;
 
-use secrecy::{ExposeSecret as _, SecretString};
-
 use crate::OracleError;
 use crate::case::HelperCase;
 use crate::compare;
 use crate::process::sync_litellm;
 use python::run_python;
 
+pub(crate) use crate::compare::helper::{HelperError, HelperOutput};
+
 type HelperResult = Result<serde_json::Value, Box<HelperError>>;
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct HelperOutput {
-    pub(crate) ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) value: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) error: Option<HelperError>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) warnings: Vec<serde_json::Value>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) effects: Vec<HelperEffect>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct HelperEffect {
-    pub(crate) kind: String,
-    pub(crate) fields: ManagementEffectFields,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum ManagementEffectFields {
-    Marker { name: String },
-    Credential { credential: SecretString },
-}
-
-#[derive(serde::Deserialize)]
-#[serde(untagged, deny_unknown_fields)]
-enum ManagementEffectFieldsWire {
-    Marker { name: String },
-    Credential { credential: String },
-}
-
-impl<'de> serde::Deserialize<'de> for ManagementEffectFields {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        match ManagementEffectFieldsWire::deserialize(deserializer)? {
-            ManagementEffectFieldsWire::Marker { name } => Ok(Self::Marker { name }),
-            ManagementEffectFieldsWire::Credential { credential } => Ok(Self::Credential {
-                credential: SecretString::from(credential),
-            }),
-        }
-    }
-}
-
-impl serde::Serialize for ManagementEffectFields {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::SerializeMap as _;
-
-        let mut fields = serializer.serialize_map(Some(1))?;
-        match self {
-            Self::Marker { name } => fields.serialize_entry("name", name)?,
-            Self::Credential { .. } => {
-                fields.serialize_entry("credential", "[REDACTED]")?;
-            }
-        }
-        fields.end()
-    }
-}
-
-impl ManagementEffectFields {
-    pub(crate) fn same_secret(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Credential { credential: left }, Self::Credential { credential: right }) => {
-                left.expose_secret() == right.expose_secret()
-            }
-            _ => true,
-        }
-    }
-}
-
-impl PartialEq for ManagementEffectFields {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Marker { name: left }, Self::Marker { name: right }) => left == right,
-            (Self::Credential { .. }, Self::Credential { .. }) => self.same_secret(other),
-            _ => false,
-        }
-    }
-}
-
-type OptionalString = Option<Option<String>>;
-type OptionalCode = Option<Option<ErrorCode>>;
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct HelperError {
-    pub(crate) class: String,
-    pub(crate) status: Option<u16>,
-    #[serde(
-        rename = "type",
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub(crate) error_type: OptionalString,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub(crate) param: OptionalString,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub(crate) code: OptionalCode,
-    pub(crate) message: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-#[serde(untagged)]
-pub(crate) enum ErrorCode {
-    Text(String),
-    Number(i64),
-}
 
 trait Helper {
     type Input: serde::de::DeserializeOwned;

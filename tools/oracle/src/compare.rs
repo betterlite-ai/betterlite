@@ -3,9 +3,12 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use crate::case::{Compare, Ignore};
-use crate::helpers::HelperOutput;
 use crate::http::Response;
 use crate::mock::ProviderRequest;
+
+pub(crate) mod helper;
+
+use helper::HelperOutput;
 
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct Difference {
@@ -18,9 +21,6 @@ pub(crate) fn compare_helper(
     right: &HelperOutput,
     ignores: &[Ignore],
 ) -> Option<Difference> {
-    if let Some(difference) = compare_effect_secrets(left, right, ignores) {
-        return Some(difference);
-    }
     let mut left_value = serde_json::to_value(left).ok()?;
     let mut right_value = serde_json::to_value(right).ok()?;
     for ignored in ignores {
@@ -47,6 +47,11 @@ pub(crate) fn compare_helper(
                 pointer: ignored.pointer.clone(),
             });
         }
+    }
+    if let Some(difference) = compare_effect_secrets(left, right, ignores) {
+        return Some(difference);
+    }
+    for ignored in ignores {
         remove_pointer(&mut left_value, &ignored.pointer);
         remove_pointer(&mut right_value, &ignored.pointer);
     }
@@ -61,6 +66,9 @@ fn compare_effect_secrets(
     right: &HelperOutput,
     ignores: &[Ignore],
 ) -> Option<Difference> {
+    if left.effects.len() != right.effects.len() {
+        return None;
+    }
     left.effects
         .iter()
         .zip(&right.effects)
