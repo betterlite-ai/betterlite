@@ -83,3 +83,12 @@ fn stream_record_identity() {
     assert_eq!(result.stream_iterator.next(), Some(vec![0, 255]));
     assert_eq!(result.stream_iterator.next(), Some(vec![10]));
 }
+
+#[test]
+fn stream_record_debug_includes_headers() {
+    let result = FileContentStreamingResult {
+        stream_iterator: Box::new(std::iter::empty()),
+        headers: BTreeMap::new(),
+    };
+    assert!(format!("{result:?}").contains("FileContentStreamingResult"));
+}
