@@ -413,8 +413,6 @@ version = "0.1.0"
 name = "betterlite-reporting"
 version = "0.1.0"
 dependencies = [
- "percent-encoding",
- "rstest",
  "serde",
 ]
 
