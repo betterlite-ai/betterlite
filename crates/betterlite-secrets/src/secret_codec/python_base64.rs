@@ -5,14 +5,6 @@ use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 use crate::error::SecretError;
 use crate::secret_codec::MAX_ENCODED_BYTES;
 
-#[derive(Clone, Copy)]
-enum Group {
-    Empty,
-    One,
-    Two,
-    Three,
-}
-
 const fn bounded_ascii(text: &str) -> Result<(), SecretError> {
     if text.len() > MAX_ENCODED_BYTES {
         return Err(SecretError::TooLarge {
@@ -41,47 +33,24 @@ const STRICT: GeneralPurpose = GeneralPurpose::new(
         .with_decode_padding_mode(DecodePaddingMode::RequireCanonical),
 );
 
-// Python's non-validating b64decode skips bytes outside the alphabet and stops at the first full pad
+// Python 3.13's non-validating decoder skips padding and nonalphabet bytes before decoding.
 pub(crate) fn decode_lenient(text: &str, url_alphabet: bool) -> Result<Vec<u8>, SecretError> {
     bounded_ascii(text)?;
     let mut sextets = String::with_capacity(text.len());
-    let mut group = Group::Empty;
-    let mut half_padded = false;
     for byte in text.bytes() {
         let normalized = match (byte, url_alphabet) {
-            (b'=', _) => match (group, half_padded) {
-                (Group::Two, false) => {
-                    half_padded = true;
-                    continue;
-                }
-                (Group::Two, true) | (Group::Three, _) => return finish(sextets, true),
-                (Group::Empty | Group::One, _) => continue,
-            },
+            (b'=', _) => continue,
             (b'-', true) => '+',
             (b'_', true) => '/',
             (b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'+' | b'/', _) => char::from(byte),
             _ => continue,
         };
-        half_padded = false;
         sextets.push(normalized);
-        group = match group {
-            Group::Empty => Group::One,
-            Group::One => Group::Two,
-            Group::Two => Group::Three,
-            Group::Three => Group::Empty,
-        };
     }
-    let complete = match group {
-        Group::Empty => true,
-        Group::One | Group::Two | Group::Three => false,
-    };
-    finish(sextets, complete)
+    finish(sextets)
 }
 
-fn finish(sextets: String, complete: bool) -> Result<Vec<u8>, SecretError> {
-    if !complete {
-        return Err(SecretError::Base64);
-    }
+fn finish(sextets: String) -> Result<Vec<u8>, SecretError> {
     LENIENT
         .decode(sextets)
         .map_err(|source| SecretError::Decode { source })

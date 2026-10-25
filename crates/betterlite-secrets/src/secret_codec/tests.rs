@@ -185,6 +185,7 @@ fn passthrough(cipher: &Cipher) -> String {
 #[case::permissive_legacy_decode(SALT, LEGACY, |cipher: &Cipher| loud(cipher, "AAEC*AwQFBgc\nICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj"), Some("hello"), &[])]
 #[case::permissive_standard_fallback(SALT, LEGACY, |cipher: &Cipher| loud(cipher, &format!("{LEGACY_HELLO}-")), Some("hello"), &[])]
 #[case::permissive_stray_pad_rejected(SALT, LEGACY, |cipher: &Cipher| loud(cipher, &format!("{LEGACY_HELLO}=x=")), None, &[Level::Debug, Level::Error])]
+#[case::permissive_interleaved_padding(SALT, LEGACY, |cipher: &Cipher| loud(cipher, "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXc==Aj"), Some("hello"), &[])]
 #[case::permissive_stray_bits(SALT, LEGACY, |cipher: &Cipher| loud(cipher, &LONG_STANDARD.replace("hno=", "hnp=")), Some("h\u{e9}llo w\u{f6}rld, a longer secret value!"), &[])]
 #[case::bearer_stray_bits(SALT, LEGACY, |cipher: &Cipher| open_bearer(cipher, &BEARER.replace("Vzw8", "Vzw9"), PREFIX), Some("payload"), &[])]
 #[case::empty_legacy_bytes(SALT, LEGACY, |cipher: &Cipher| loud(cipher, "*"), Some(""), &[])]
