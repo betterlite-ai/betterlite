@@ -50,3 +50,22 @@ fn nested_and_augmented_cards_preserve_nulls() {
     let patch: super::PatchAgentRequest = from_str(r#"{"kill_switch":null}"#).unwrap();
     assert_eq!(to_string(&patch).unwrap(), r#"{"kill_switch":null}"#);
 }
+
+#[test]
+fn webhook_defaults_and_passthrough_values_are_wire_compatible() {
+    let config: AgentKillSwitchConfig = from_str(
+        r#"{"url":"http://agent.example/stop","auth":{"type":"api_key","api_key":"secret"}}"#,
+    )
+    .unwrap();
+    assert_eq!(config.method, super::AgentKillSwitchMethod::Post);
+    assert!(config.headers.is_empty());
+    let serialized = to_string(&config).unwrap();
+    assert!(serialized.contains(r#""header_name":"x-api-key""#));
+    assert!(!serialized.contains("secret"));
+
+    let response: AgentResponse = from_str(
+        r#"{"agent_id":"a","agent_name":"worker","agent_card_params":{"custom":{"enabled":true}}}"#,
+    )
+    .unwrap();
+    assert_eq!(response.agent_card_params["custom"]["enabled"], true);
+}

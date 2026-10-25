@@ -57,3 +57,18 @@ fn subject_uses_managed_identity_literals() {
     assert_eq!(serde_json::to_string(&subject).unwrap(), input);
     from_str::<ManagedAgentContext>(r#"{"agent_id":"a","mode":"both"}"#).unwrap_err();
 }
+
+#[test]
+fn identity_defaults_cover_binding_and_status_records() {
+    let binding: AgentIdentityBinding = from_str(
+        r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"550e8400-e29b-41d4-a716-446655440000","client_id":"550e8400-e29b-41d4-a716-446655440001","issuer":"issuer","revision":"1"}"#,
+    )
+    .unwrap();
+    assert!(binding.active.0);
+    assert_eq!(binding.required_scopes, vec!["user_impersonation"]);
+
+    let status: ManagedAgentIdentityStatus = from_str("{}").unwrap();
+    assert!(!status.identity_managed);
+    assert!(status.enabled.0);
+    assert_eq!(status.execution_mode, super::ExecutionMode::Autonomous);
+}
