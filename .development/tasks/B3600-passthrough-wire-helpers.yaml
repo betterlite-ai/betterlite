@@ -42,8 +42,14 @@ description: >-
   and LITELLM_PASS_THROUGH_ENDPOINT_MARKER for FastAPI endpoint discovery by auth.
 scope:
   paths:
-  - crates/betterlite-server/src/**
-  - crates/betterlite-http/src/**
+  - crates/betterlite-http/src/lib.rs
+  - crates/betterlite-http/src/passthrough.rs
+  - crates/betterlite-http/src/passthrough/**
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/tests.rs
+  - crates/betterlite-server/src/passthrough.rs
+  - crates/betterlite-server/src/passthrough/**
+  - tools/oracle/cases/passthrough/**
   lint_tables: false
 references:
 - url: >-
@@ -209,5 +215,5 @@ pitfalls:
   do not drop it or endpoint-type detection for Google Gemini fails silently.
 review_level: standard
 budget:
-  max_changed_lines: 350
+  max_changed_lines: 700
   max_new_expects: 2

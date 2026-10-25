@@ -4,8 +4,11 @@ use crate::error::GateError;
 
 pub(crate) fn check(context: &Context<'_>) -> Result<Vec<String>, GateError> {
     let deviation_log = [format!("docs/deviations/{}.yaml", context.task.id)];
-    // only the architect edits it, which the dispatcher checks after every worker run
-    let task_file = [format!(".development/tasks/{}-*.yaml", context.task.id)];
+    // only the architect edits these, which the dispatcher checks after every worker run
+    let task_file = [
+        format!(".development/tasks/{}-*.yaml", context.task.id),
+        format!(".development/backlog/{}.yaml", context.task.id),
+    ];
     let allowed_patterns = [
         context.task.scope.paths.as_slice(),
         context
