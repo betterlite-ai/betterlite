@@ -1,5 +1,8 @@
 task: B2303
 deviations:
+  - what: The debug line for a non-string value passed to encrypt_value names its Rust type and omits the value.
+    why: secrets-stay-secret forbids logging the supplied structure, which can hold credentials.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L142-L146
   - what: Non-string encryption diagnostics omit the supplied value.
     why: secrets-stay-secret forbids logging the supplied structure, which can hold credentials.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L142-L146
