@@ -288,6 +288,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "rstest",
+ "rust_decimal",
  "serde",
  "serde_json",
  "thiserror",

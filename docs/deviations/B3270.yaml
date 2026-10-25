@@ -1,0 +1,8 @@
+task: B3270
+deviations:
+  - what: betterlite resolves server-managed secrets through an injected lookup function, not os.environ directly.
+    why: Configuration and deployment need to control secret sources; direct environment access ties the binary to one host.
+    link: ""
+  - what: Private attributes holding hidden metadata are not exposed in public serialization.
+    why: Response metadata should be available to internal handlers without leaking to the client in wire format.
+    link: ""
