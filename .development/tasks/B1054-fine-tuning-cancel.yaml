@@ -21,6 +21,10 @@ scope:
   - crates/betterlite-server/src/api/fine_tuning_cancel/**
   - crates/betterlite-server/fuzz/corpus/request_body/fine-tuning-cancel-*
   - tools/oracle/cases/api/fine-tuning-cancel/**
+  - tools/oracle/helpers/b1054.py
+  - tools/oracle/helpers/b1054/**
+  - tools/oracle/src/helpers/server/b1054.rs
+  - tools/oracle/src/helpers/server/b1054/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/fine_tuning_endpoints/endpoints.py#L495-L638
@@ -95,5 +99,5 @@ pitfalls:
 - Every caught HTTPException is converted to internal_server_error, even when its status is 400.
 review_level: security
 budget:
-  max_changed_lines: 640
+  max_changed_lines: 1000
   max_new_expects: 0

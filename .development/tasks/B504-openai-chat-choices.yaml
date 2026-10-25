@@ -334,6 +334,6 @@ pitfalls:
   the intermediate local.
 - get_complete_url does substring detection and literal concatenation, not URL query-aware joining.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

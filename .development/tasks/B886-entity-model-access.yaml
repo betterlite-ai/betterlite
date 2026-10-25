@@ -296,6 +296,6 @@ pitfalls:
   - Key-group fallback replaces the key allowlist, while team-group fallback unions with the team's existing list.
   - A reconstructed team after a lookup error deliberately skips the member-scope query; do not confuse it with a live lookup result.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

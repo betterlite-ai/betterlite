@@ -298,6 +298,6 @@ pitfalls:
   - Missing role becomes None, member or internal_user depending on which of the three helpers is called.
   - A source_key accepted by the record constructor is neither serialized nor evidence of authentication.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

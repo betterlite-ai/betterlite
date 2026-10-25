@@ -88,19 +88,13 @@ scope:
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-state/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/team_state.rs
-    - crates/betterlite-config/src/team_state/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/team-state-*
+    - crates/betterlite-config/src/sections/team_state.rs
+    - crates/betterlite-config/src/sections/team_state/**
+    - tools/oracle/helpers/b1208.py
+    - tools/oracle/helpers/b1208/**
+    - tools/oracle/src/helpers/server/b1208.rs
+    - tools/oracle/src/helpers/server/b1208/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5012-L5123
@@ -147,7 +141,7 @@ checks:
         - test(/replays_the_/)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^team_state::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::team_state::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
@@ -250,6 +244,6 @@ pitfalls:
   - Members/me accepts an email match even when the roster entry has a different non-null user_id; it uses OR.
   - An empty available_teams setting still requires a user row, while an absent setting returns before that lookup.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

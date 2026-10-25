@@ -47,6 +47,10 @@ scope:
     - crates/betterlite-core/src/api/vertex_media_bindings/**
     - tools/oracle/cases/api/vertex-media/**
     - tools/oracle/fixtures/vertex-media/**
+    - tools/oracle/helpers/b033.py
+    - tools/oracle/helpers/b033/**
+    - tools/oracle/src/helpers/provider/b033.rs
+    - tools/oracle/src/helpers/provider/b033/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/text_to_speech/transformation.py#L140-L208

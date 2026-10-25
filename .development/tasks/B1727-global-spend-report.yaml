@@ -39,6 +39,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/global_report_query.rs
     - crates/betterlite-server/fuzz/corpus/global_report_query/**
     - tools/oracle/cases/http/global-spend-report/**
+    - tools/oracle/helpers/b1727.py
+    - tools/oracle/helpers/b1727/**
+    - tools/oracle/src/helpers/server/b1727.rs
+    - tools/oracle/src/helpers/server/b1727/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1406-L1698
@@ -75,6 +79,6 @@ pitfalls:
   - customer_id alone does not restrict the customer-grouped report.
   - group_by=null can legitimately return JSON null when no higher-priority filter is present.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

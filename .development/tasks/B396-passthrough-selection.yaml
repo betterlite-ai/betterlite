@@ -36,6 +36,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/passthrough_selection.py
   - tools/oracle/cases/routing/passthrough-selection/**
+  - tools/oracle/helpers/b396.py
+  - tools/oracle/helpers/b396/**
+  - tools/oracle/src/helpers/router/b396.rs
+  - tools/oracle/src/helpers/router/b396/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L13433-L13576
@@ -313,5 +317,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

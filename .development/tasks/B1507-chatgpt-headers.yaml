@@ -91,5 +91,5 @@ pitfalls:
   - litellm_trace_id is a session fallback before litellm_call_id, so exchanging them changes conversation affinity.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0

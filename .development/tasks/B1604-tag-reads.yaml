@@ -31,6 +31,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/tag_query.rs
     - crates/betterlite-server/fuzz/corpus/tag_query/**
     - tools/oracle/cases/management/tag-reads/**
+    - tools/oracle/helpers/b1604.py
+    - tools/oracle/helpers/b1604/**
+    - tools/oracle/src/helpers/server/b1604.rs
+    - tools/oracle/src/helpers/server/b1604/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tag_management_endpoints.py#L154-L208
@@ -69,6 +73,6 @@ pitfalls:
   - An empty owned-key set is a deny-all query condition, whereas None means no key filter.
   - Multi-tag daily spend is attribution and can count one request several times.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

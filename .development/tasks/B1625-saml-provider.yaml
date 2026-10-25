@@ -54,6 +54,10 @@ scope:
     - tools/oracle/litellm/pyproject.toml
     - tools/oracle/litellm/uv.lock
     - tools/oracle/cases/sso/saml-provider/**
+    - tools/oracle/helpers/b1625.py
+    - tools/oracle/helpers/b1625/**
+    - tools/oracle/src/helpers/auth/b1625.rs
+    - tools/oracle/src/helpers/auth/b1625/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L45-L282
@@ -97,6 +101,6 @@ pitfalls:
   - SAML_IDP_METADATA_URL set to an empty string still takes the remote-parser branch when inline XML supplies the cache source.
   - SAML_AUTHN_REQUESTS_SIGNED cannot manufacture an SP signing key, so unsupported signing configuration must retain the toolkit's configuration failure.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

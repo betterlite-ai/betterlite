@@ -254,6 +254,6 @@ pitfalls:
   - jwt_issuer must be non-null with default '' to keep unscoped claim pairs unique.
   - The two request-log index migrations are intentional no-ops despite their names.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

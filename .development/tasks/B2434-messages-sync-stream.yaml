@@ -25,6 +25,10 @@ scope:
   - tools/oracle/sdk_http/messages_sync_stream.py
   - tools/oracle/cases/sdk-http/messages-sync-stream/**
   - tools/oracle/fuzz/corpus/sdk_http_case/messages-sync-stream-*
+  - tools/oracle/helpers/b2434.py
+  - tools/oracle/helpers/b2434/**
+  - tools/oracle/src/helpers/core_ops/b2434.rs
+  - tools/oracle/src/helpers/core_ops/b2434/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L548-L781
@@ -105,5 +109,5 @@ pitfalls:
 - Once merged usage is queued, subsequent provider content must not appear after the final message_delta.
 review_level: standard
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0

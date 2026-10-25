@@ -271,6 +271,6 @@ pitfalls:
   - Backfill heals null budgets for the whole team and never migrates nonnull references to an old default.
   - The bulk service's docstring overstates its transaction scope; the writer roster lookup occurs before it.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

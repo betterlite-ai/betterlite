@@ -127,21 +127,11 @@ scope:
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-key-validation/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/auth_key_validation.rs
-    - crates/betterlite-config/src/auth_key_validation/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-key-validation-*
     - crates/betterlite-server/src/auth/auth_key_validation.rs
     - crates/betterlite-server/src/auth/auth_key_validation/**
+    - crates/betterlite-config/src/sections/auth_key_validation.rs
+    - crates/betterlite-config/src/sections/auth_key_validation/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2211-L2622
@@ -214,7 +204,7 @@ checks:
         && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^auth_key_validation::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::auth_key_validation::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
@@ -286,6 +276,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as auth_key_validation in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_key_validation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_key_validation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Expiry equal to now must retain the pinned comparison rather than an intuitive inclusive expiration.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

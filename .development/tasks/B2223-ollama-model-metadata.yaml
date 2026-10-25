@@ -100,29 +100,12 @@ scope:
   - tools/oracle/cases/helpers/providers/ollama-model-metadata/**
   - tools/oracle/fuzz/corpus/helper_case/ollama_model_metadata*
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/**
-  - crates/betterlite-config/src/providers/ollama.rs
-  - crates/betterlite-config/src/providers/ollama/**
-  - crates/betterlite-config/src/providers/ollama/ollama_model_metadata.rs
-  - crates/betterlite-config/src/providers/ollama/ollama_model_metadata/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/ollama_model_metadata_config.rs
-  - crates/betterlite-config/src/tests/ollama_model_metadata_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/ollama_model_metadata*
   - crates/betterlite-models/fuzz/Cargo.toml
   - crates/betterlite-models/fuzz/fuzz_targets/ollama_model_reply.rs
   - crates/betterlite-models/fuzz/corpus/ollama_model_reply/**
+  - crates/betterlite-config/src/sections/ollama_model_metadata.rs
+  - crates/betterlite-config/src/sections/ollama_model_metadata/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/common_utils.py#L56-L69
@@ -282,6 +265,6 @@ pitfalls:
 - Invalid JSON is outside the local try and reaches the resolver fallback, unlike an HTTP failure returning default
   metadata.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

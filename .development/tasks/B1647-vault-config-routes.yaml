@@ -41,6 +41,10 @@ scope:
     - crates/betterlite-server/fuzz/corpus/config_override/vault-routes-*
     - tools/oracle/cases/management/vault-config/**
     - tools/oracle/fuzz/corpus/http_case/vault-config-*
+    - tools/oracle/helpers/b1647.py
+    - tools/oracle/helpers/b1647/**
+    - tools/oracle/src/helpers/server/b1647.rs
+    - tools/oracle/src/helpers/server/b1647/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L328-L645
@@ -81,6 +85,6 @@ pitfalls:
   - A non-null DB config prevents environment fallback even when its parsed mapping is empty.
   - Vault persistence failure follows successful runtime initialization and has no rollback branch in the pinned handler.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

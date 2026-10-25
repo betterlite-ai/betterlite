@@ -71,6 +71,6 @@ pitfalls:
   - Editing InResponseTo after signing invalidates the signature, so each proxy's captured request ID must enter the document before signing.
   - Re-signing an assertion for the second replay attempt tests a new login instead of the replay guard.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

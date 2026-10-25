@@ -198,5 +198,5 @@ pitfalls:
   - TogetherAI has single required api_key field; litellm_provider is together_ai (with underscore).
 review_level: standard
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

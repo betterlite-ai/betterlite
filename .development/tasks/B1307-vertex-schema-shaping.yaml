@@ -29,24 +29,14 @@ scope:
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/vertex_schema.rs
     - crates/betterlite-vertex/src/vertex_schema/**
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/providers/vertex.rs
-    - crates/betterlite-config/src/providers/vertex/schema.rs
-    - crates/betterlite-config/src/providers/vertex/schema/**
     - tools/oracle/src/helpers/vertex/schema.rs
     - tools/oracle/src/helpers/vertex/schema/**
     - tools/oracle/helpers/vertex_schema.py
     - tools/oracle/helpers/vertex_schema/**
     - tools/oracle/cases/helpers/vertex-schema/**
     - tools/oracle/fuzz/corpus/helper_case/vertex_schema*
+    - crates/betterlite-config/src/sections/vertex_schema_shaping.rs
+    - crates/betterlite-config/src/sections/vertex_schema_shaping/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L618-L958
@@ -100,6 +90,6 @@ pitfalls:
   - responseJsonSchema must not lose additionalProperties or expand $defs as a side effect of shared code.
   - The anyOf null pass runs before type-array conversion, so reordering those passes changes output.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 1
 review_level: standard

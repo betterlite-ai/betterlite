@@ -35,6 +35,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/router_settings.py
   - tools/oracle/cases/routing/router-settings/**
+  - tools/oracle/helpers/b348.py
+  - tools/oracle/helpers/b348/**
+  - tools/oracle/src/helpers/server/b348.rs
+  - tools/oracle/src/helpers/server/b348/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_settings_endpoints.py#L29-L213
@@ -106,5 +110,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

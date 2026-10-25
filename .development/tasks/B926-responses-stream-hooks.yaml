@@ -131,5 +131,5 @@ pitfalls:
 - Error-event fallback uses yielded_first_chunk, while transport fallback also considers whether output actually started.
 review_level: security
 budget:
-  max_changed_lines: 765
+  max_changed_lines: 1000
   max_new_expects: 1

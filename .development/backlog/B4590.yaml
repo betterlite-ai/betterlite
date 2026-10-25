@@ -1,14 +1,14 @@
 id: B4590
 milestone: M8 platform
 title: CLI keyring access and verified secret storage
-status: todo
+status: done
 depends_on: [B002]
 file: tasks/B4590-cli-keyring.yaml
 covers:
   - "litellm/litellm_core_utils/cli_keyring.py"
 parent: B135
 split_from: B135
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 145
