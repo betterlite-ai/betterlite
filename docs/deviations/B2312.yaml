@@ -1,0 +1,5 @@
+task: B2312
+deviations:
+  - what: Monetary fields reject nonfinite numbers and values outside Decimal range instead of retaining Python floats.
+    why: The workspace requires checked Decimal from the point money enters; ordinary finite values retain their field semantics.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L48-L144
