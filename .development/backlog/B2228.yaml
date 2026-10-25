@@ -1,7 +1,7 @@
 id: B2228
 milestone: M3 providers
 title: Shared owned-parameter names
-status: todo
+status: done
 depends_on: [B171]
 file: tasks/B2228-owned-parameter-names.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/utils.py"
 parent: B167
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 129

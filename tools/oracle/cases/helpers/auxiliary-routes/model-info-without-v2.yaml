@@ -1,0 +1,8 @@
+kind: helper
+name: model-info-without-v2
+call:
+  auxiliary_routes:
+    group: model_info_routes
+env: {}
+compare:
+  ignore: []
