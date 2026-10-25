@@ -1,0 +1,5 @@
+kind: helper
+name: expired-access-token
+call: {mcp_session_token: {action: open, candidate: "llm_session_not.a.jwt", key: 0123456789abcdef0123456789abcdef, now: 1767229200, refresh: false}}
+env: {}
+compare: {ignore: []}

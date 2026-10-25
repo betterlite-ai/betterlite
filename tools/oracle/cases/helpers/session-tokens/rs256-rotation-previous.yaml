@@ -1,0 +1,5 @@
+kind: helper
+name: rs256-rotation-previous
+call: {mcp_session_token: {action: open, candidate: "llm_session_unknown", key: 0123456789abcdef0123456789abcdef, now: 1767225600, refresh: false}}
+env: {}
+compare: {ignore: []}

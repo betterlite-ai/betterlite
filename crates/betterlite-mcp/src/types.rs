@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionPrincipal {
@@ -61,12 +61,5 @@ impl SessionTokenKind {
             Self::Session => "session",
             Self::Refresh => "session_refresh",
         }
-    }
-}
-
-impl SessionKeys {
-    #[must_use]
-    pub fn is_usable(&self) -> bool {
-        self.signing_key.expose_secret().len() >= 32
     }
 }

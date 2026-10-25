@@ -15,10 +15,12 @@ betterlite-db = { path = "../../crates/betterlite-db" }
 betterlite-guardrails = { path = "../../crates/betterlite-guardrails" }
 betterlite-http = { path = "../../crates/betterlite-http" }
 betterlite-logging = { path = "../../crates/betterlite-logging" }
+betterlite-mcp = { path = "../../crates/betterlite-mcp" }
 betterlite-models = { path = "../../crates/betterlite-models" }
 betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
 betterlite-secrets = { path = "../../crates/betterlite-secrets" }
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 clap = { version = "4.6.7", features = ["derive"] }
 futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"

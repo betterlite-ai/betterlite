@@ -1,0 +1,5 @@
+kind: helper
+name: asymmetric-rs256-access
+call: {mcp_session_token: {action: prefix, candidate: "llm_session_rs256"}}
+env: {}
+compare: {ignore: []}

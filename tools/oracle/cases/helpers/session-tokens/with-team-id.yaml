@@ -1,0 +1,5 @@
+kind: helper
+name: with-team-id
+call: {mcp_session_token: {action: mint, user_id: user-1, client_id: client-1, team_id: team-1, key: 0123456789abcdef0123456789abcdef, now: 1767225600, refresh: false}}
+env: {}
+compare: {ignore: []}

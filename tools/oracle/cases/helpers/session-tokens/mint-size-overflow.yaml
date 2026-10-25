@@ -1,0 +1,5 @@
+kind: helper
+name: mint-size-overflow
+call: {mcp_session_token: {action: mint, user_id: user-1, client_id: __oversized__, key: 0123456789abcdef0123456789abcdef, now: 1767225600, refresh: false}}
+env: {}
+compare: {ignore: []}
