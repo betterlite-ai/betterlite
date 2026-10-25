@@ -9,15 +9,9 @@ deviations:
   - what: The exception type is the last path segment of the Rust type name with generic arguments dropped, and build_bug_report takes a concrete error type, so a &dyn Error does not compile.
     why: Rust has no runtime class name; a trait object only names the trait, so the concrete type has to be known at the call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L105
-  - what: The Python version comes from the caller through Host.python_version and reads unknown when there is none.
-    why: Rust cannot query CPython state; whoever runs an interpreter supplies its version.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L84-L91
-  - what: bug_report_enabled and should_report_bug take the raw LITELLM_DISABLE_BUG_REPORT_LINK value and the error's status code as arguments instead of reading the environment and the exception attribute.
-    why: Rule inject-dependencies keeps environment reads in the config crate, and std::env::var is a disallowed method.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L44-L49
-  - what: The docker marker path is a Host.dockerenv argument; production callers pass DOCKERENV_PATH (/.dockerenv).
-    why: The filesystem is an outside dependency, so it comes in from the caller and tests can point it at a file that exists or not.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L78-L81
+  - what: The caller passes in what LiteLLM reads itself. bug_report_enabled and should_report_bug take the raw LITELLM_DISABLE_BUG_REPORT_LINK value and the error's status code, Host.dockerenv names the docker marker (DOCKERENV_PATH in production), and Host.python_version reads unknown when no interpreter runs.
+    why: Rule inject-dependencies keeps environment reads in the config crate (std::env::var is a disallowed method), and Rust cannot query CPython state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L44-L91
   - what: litellm_version is betterlite's crate version, while the issue link still targets BerriAI/litellm.
     why: The task asks for the version from crate metadata, and the issue destination is out of scope pending the architect.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L87
