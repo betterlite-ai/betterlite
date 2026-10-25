@@ -28,24 +28,7 @@ pub struct Approval {
 }
 
 impl Approval {
-    pub fn allow(&self) {
-        self.set_result(Decision::Allow);
-    }
-
-    pub fn deny(&self, reason: String) {
-        self.set_result(Decision::Deny { reason });
-    }
-
-    pub async fn wait(&self) -> Decision {
-        self.decision.wait().await.clone()
-    }
-
-    #[must_use]
-    pub fn answered(&self) -> bool {
-        self.decision.initialized()
-    }
-
-    fn set_result(&self, decision: Decision) {
+    pub fn resolve(&self, decision: Decision) {
         if !self.decision.initialized() {
             drop(self.decision.set(decision));
         }

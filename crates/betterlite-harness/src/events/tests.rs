@@ -22,19 +22,21 @@ fn approval() -> Approval {
 #[tokio::test]
 async fn an_answer_from_another_thread_wakes_the_waiting_turn() {
     let approval = approval();
-    assert!(!approval.answered());
-    let waiting = approval.wait();
+    assert!(!approval.decision.initialized());
+    let waiting = approval.decision.wait();
     tokio::pin!(waiting);
     assert!(poll!(waiting.as_mut()).is_pending());
     let answering = approval.clone();
     let mut tasks = JoinSet::new();
-    tasks.spawn_blocking(move || answering.allow());
+    tasks.spawn_blocking(move || answering.resolve(Decision::Allow));
     let decision = timeout(Duration::from_secs(1), waiting).await.unwrap();
     tasks.join_next().await.unwrap().unwrap();
-    assert!(approval.answered());
-    assert_eq!(decision, Decision::Allow);
-    approval.deny("too late".to_owned());
-    assert_eq!(approval.wait().await, Decision::Allow);
+    assert!(approval.decision.initialized());
+    assert_eq!(decision, &Decision::Allow);
+    approval.resolve(Decision::Deny {
+        reason: "too late".to_owned(),
+    });
+    assert_eq!(approval.decision.wait().await, &Decision::Allow);
 }
 
 #[rstest]
@@ -43,16 +45,15 @@ async fn an_answer_from_another_thread_wakes_the_waiting_turn() {
 #[tokio::test]
 async fn the_first_answer_wins(#[case] first: Decision) {
     let approval = approval();
-    assert!(!approval.answered());
-    match &first {
-        Decision::Allow => approval.allow(),
-        Decision::Deny { reason } => approval.deny(reason.clone()),
-    }
-    assert!(approval.answered());
-    approval.allow();
-    approval.deny("later denial".to_owned());
-    let decision = timeout(Duration::from_secs(1), approval.wait())
+    assert!(!approval.decision.initialized());
+    approval.resolve(first.clone());
+    assert!(approval.decision.initialized());
+    approval.resolve(Decision::Allow);
+    approval.resolve(Decision::Deny {
+        reason: "later denial".to_owned(),
+    });
+    let decision = timeout(Duration::from_secs(1), approval.decision.wait())
         .await
         .unwrap();
-    assert_eq!(decision, first);
+    assert_eq!(decision, &first);
 }

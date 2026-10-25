@@ -24,3 +24,6 @@ deviations:
   - what: Session setup and turn request environment values use SecretString.
     why: Per-session endpoint tokens must remain secret in memory and Debug output.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/transformation.py#L43-L70
+  - what: Approval has one resolve(Decision) method instead of allow, deny, wait and the answered property; callers wait on and check the shared SetOnce field directly.
+    why: The repository's no-one-line-functions rule forbids single-statement wrappers; resolve keeps LiteLLM's first-answer-wins check from _set_result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py#L95-L130
