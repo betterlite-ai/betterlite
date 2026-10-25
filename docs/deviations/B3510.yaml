@@ -1,5 +1,14 @@
 task: B3510
 deviations:
+  - what: Decision numeric fields preserve arbitrary JSON number representations.
+    why: serde_json arbitrary_precision requires serde_json::Number for reliable parsing and round-tripping.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L102-L137
+  - what: OpenAI decision answer name may be omitted and becomes null.
+    why: The Rust record uses an optional field and constructs answers internally.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L285-L333
+  - what: decisions_text preserves incoming JSON number spelling.
+    why: serde_json retains number text under arbitrary_precision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L59-L60
   - what: Token counts, probabilities, scores and score indexes are any JSON number and keep the digits they arrived with, so 1.5 tokens is accepted, "5" as a string is refused, and a probability sent as 1 comes back as 1 where Pydantic writes 1.0.
     why: The workspace turns on serde_json's arbitrary_precision, and under it u64 and f64 fields inside flattened or tagged records fail to parse, so the records hold serde_json::Number.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L102-L137
