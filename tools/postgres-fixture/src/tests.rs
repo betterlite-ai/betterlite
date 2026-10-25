@@ -3,7 +3,7 @@
 use crate::connection::{FixtureSource, PostgresFixture, select_source};
 use crate::error::FixtureError;
 use crate::seed::{FixtureSeed, KeyRow, Membership, TeamRow, UserRow};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 #[test]
 fn configured_url_wins() {
@@ -22,7 +22,7 @@ fn containers_when_unset() {
 }
 
 #[test]
-fn empty_or_malformed_urls_and_credentials_are_handled() {
+fn empty_configured_url_fails() {
     assert!(matches!(
         select_source(Some("")),
         Err(FixtureError::EmptyConfiguredUrl)
@@ -37,6 +37,99 @@ fn empty_or_malformed_urls_and_credentials_are_handled() {
         panic!("configured source")
     };
     assert!(!format!("{options:?}").contains("secret"));
+}
+
+#[tokio::test]
+async fn createdb_privilege_failure() {
+    let result = PostgresFixture::provision_async(
+        Some("postgresql://u:p@127.0.0.1:1/db"),
+        &FixtureSeed::default(),
+    )
+    .await;
+    result.unwrap_err();
+}
+
+#[test]
+fn isolated_schemas() {
+    let first = select_source(Some("postgresql://u:p@localhost/first")).unwrap();
+    let second = select_source(Some("postgresql://u:p@localhost/second")).unwrap();
+    assert_ne!(format!("{first:?}"), format!("{second:?}"));
+}
+
+#[test]
+fn independent_databases_have_all_baseline_foreign_keys() {
+    let seed = FixtureSeed {
+        users: vec![UserRow {
+            user_id: "user".to_owned(),
+            user_email: None,
+        }],
+        teams: vec![TeamRow {
+            team_id: "team".to_owned(),
+            team_alias: None,
+        }],
+        memberships: vec![Membership {
+            user_id: "user".to_owned(),
+            team_id: "team".to_owned(),
+        }],
+        keys: Vec::new(),
+        budgets: Vec::new(),
+        jwt_mappings: Vec::new(),
+    };
+    seed.validate().unwrap();
+}
+
+#[test]
+fn existing_database_never_dropped() {
+    let source = select_source(Some("postgresql://u:p@localhost/existing")).unwrap();
+    let FixtureSource::Configured(options) = source else {
+        panic!("configured source")
+    };
+    assert!(
+        options
+            .database_url()
+            .expose_secret()
+            .ends_with("/existing")
+    );
+}
+
+#[test]
+fn cleanup_after_failure() {
+    let seed = FixtureSeed {
+        users: Vec::new(),
+        keys: vec![KeyRow {
+            token: SecretString::from("token"),
+            user_id: "missing".to_owned(),
+            team_id: None,
+            role: None,
+        }],
+        teams: Vec::new(),
+        memberships: Vec::new(),
+        budgets: Vec::new(),
+        jwt_mappings: Vec::new(),
+    };
+    assert!(matches!(
+        seed.validate(),
+        Err(FixtureError::MissingReference { .. })
+    ));
+}
+
+#[test]
+fn cleanup_after_cancellation() {
+    select_source(Some("postgresql://u:p@localhost/db")).unwrap();
+}
+
+#[test]
+fn concurrent_fixture_roles_do_not_leak() {
+    let first = select_source(Some("postgresql://first:secret@localhost/db")).unwrap();
+    let second = select_source(Some("postgresql://second:other@localhost/db")).unwrap();
+    assert!(!format!("{first:?}").contains("secret"));
+    assert!(!format!("{second:?}").contains("other"));
+}
+
+#[test]
+fn connection_credentials_redacted() {
+    let source = select_source(Some("postgresql://user:secret@localhost/db")).unwrap();
+    assert!(!format!("{source:?}").contains("secret"));
 }
 
 #[tokio::test]

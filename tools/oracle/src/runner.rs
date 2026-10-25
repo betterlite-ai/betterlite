@@ -27,14 +27,6 @@ pub(crate) struct DatabaseEnvironment {
     pub(crate) postgres_test_url: Option<SecretString>,
 }
 
-#[cfg(test)]
-pub(crate) fn run_cases(
-    options: &Options,
-    cases: Vec<LoadedCase>,
-) -> Result<ExitCode, OracleError> {
-    run_cases_with_url(options, cases, None)
-}
-
 pub(crate) fn run_cases_with_url(
     options: &Options,
     cases: Vec<LoadedCase>,
@@ -70,20 +62,21 @@ pub(crate) fn run_cases_with_url(
     }
     Ok(exit_status(outcomes.contains(&true)))
 }
+
+#[cfg(any(test, doctest))]
+pub(crate) fn run_cases(
+    options: &Options,
+    cases: Vec<LoadedCase>,
+) -> Result<ExitCode, OracleError> {
+    let configured_url = None;
+    run_cases_with_url(options, cases, configured_url)
+}
 pub(crate) fn exit_status(different: bool) -> ExitCode {
     if different {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
     }
-}
-#[cfg(test)]
-pub(crate) fn run_group(
-    options: &Options,
-    root: &Path,
-    cases: &[Case],
-) -> Result<Vec<bool>, OracleError> {
-    run_group_with_url(options, root, cases, None)
 }
 
 fn run_group_with_url(
@@ -121,6 +114,16 @@ fn run_group_with_url(
             cleanup: cleanup_error,
         }),
     }
+}
+
+#[cfg(any(test, doctest))]
+pub(crate) fn run_group(
+    options: &Options,
+    root: &Path,
+    cases: &[Case],
+) -> Result<Vec<bool>, OracleError> {
+    let configured_url = None;
+    run_group_with_url(options, root, cases, configured_url)
 }
 
 struct GroupCaptureInput<'input> {

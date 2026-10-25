@@ -128,7 +128,8 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
 }
 
 pub fn decode_http_case(bytes: &[u8]) -> Result<HttpCase, OracleError> {
-    decode_case(Path::new("<bytes>"), bytes)
+    let path = Path::new("<bytes>");
+    decode_case(path, bytes)
 }
 
 fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {

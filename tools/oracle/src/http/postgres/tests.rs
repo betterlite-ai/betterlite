@@ -14,6 +14,57 @@ fn legacy_case_without_database() {
 }
 
 #[test]
+fn public_route_without_key() {
+    let case = decode_http_case(
+        b"name: public\nconfig: config\nenv: {}\nrequest: {method: GET, path: /health/liveliness, headers: {}, body: null}\nupstream: []\ncompare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}\n",
+    )
+    .unwrap();
+    assert_eq!(case.request.path, "/health/liveliness");
+    assert!(case.request.headers.is_empty());
+    assert!(case.database.is_none());
+}
+
+#[test]
+fn fixture_unknown_field() {
+    decode_http_case(include_bytes!(
+        "../../../fuzz/corpus/http_case/postgres-unknown-field.yaml"
+    ))
+    .unwrap_err();
+}
+
+#[test]
+fn duplicate_identity() {
+    decode_http_case(include_bytes!(
+        "../../../fuzz/corpus/http_case/postgres-duplicate-identity.yaml"
+    ))
+    .unwrap_err();
+}
+
+#[test]
+fn missing_principal() {
+    decode_http_case(include_bytes!(
+        "../../../fuzz/corpus/http_case/postgres-missing-principal.yaml"
+    ))
+    .unwrap_err();
+}
+
+#[test]
+fn malformed_yaml() {
+    decode_http_case(include_bytes!(
+        "../../../fuzz/corpus/http_case/postgres-malformed.yaml"
+    ))
+    .unwrap_err();
+}
+
+#[test]
+fn truncated_rows() {
+    decode_http_case(include_bytes!(
+        "../../../fuzz/corpus/http_case/postgres-truncated-rows.yaml"
+    ))
+    .unwrap_err();
+}
+
+#[test]
 fn empty_configured_url_is_kept_for_the_fixture() {
     let environment = <DatabaseEnvironment as clap::Parser>::try_parse_from([
         "oracle",
