@@ -46,6 +46,25 @@ fn a2a_text_cases(#[case] case: &str) {
             "string"
         );
     } else {
-        assert_eq!(case, "shapes");
+        let parts_not_array = parsed(r#"{"parts":{}}"#);
+        assert_eq!(
+            extract_text_from_a2a_message(Some(&parts_not_array), 0, 10),
+            Err(super::A2aTextError::PartsNotArray)
+        );
+        let part_not_object = parsed(r#"{"parts":["part"]}"#);
+        assert_eq!(
+            extract_text_from_a2a_message(Some(&part_not_object), 0, 10),
+            Err(super::A2aTextError::PartNotObject)
+        );
+        let text_not_string = parsed(r#"{"parts":[{"kind":"text","text":false}]}"#);
+        assert_eq!(
+            extract_text_from_a2a_message(Some(&text_not_string), 0, 10),
+            Err(super::A2aTextError::TextNotString)
+        );
+        let message_not_object = parsed("[]");
+        assert_eq!(
+            extract_text_from_a2a_message(Some(&message_not_object), 0, 10),
+            Err(super::A2aTextError::MessageNotObject)
+        );
     }
 }
