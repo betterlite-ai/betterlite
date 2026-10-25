@@ -51,6 +51,10 @@ scope:
     - tools/oracle/cases/management/callback-metadata/**
     - tools/oracle/cases/management/user-banner/**
     - tools/oracle/fuzz/corpus/http_case/user-banner-*
+    - tools/oracle/helpers/b066.py
+    - tools/oracle/helpers/b066/**
+    - tools/oracle/src/helpers/server/b066.rs
+    - tools/oracle/src/helpers/server/b066/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/callback_management_endpoints.py#L16-L56

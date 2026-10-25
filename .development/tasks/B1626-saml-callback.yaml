@@ -44,6 +44,10 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/saml-assertion-*
     - tools/oracle/cases/sso/saml-callback/**
     - tools/oracle/fixtures/multipart-oracle/saml-callback/**
+    - tools/oracle/helpers/b1626.py
+    - tools/oracle/helpers/b1626/**
+    - tools/oracle/src/helpers/auth/b1626.rs
+    - tools/oracle/src/helpers/auth/b1626/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L70-L95

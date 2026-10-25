@@ -5,6 +5,10 @@ scope:
   paths:
   - crates/betterlite-auth/src/reservation_admission.rs
   - crates/betterlite-auth/src/reservation_admission/**
+  - tools/oracle/helpers/b3004.py
+  - tools/oracle/helpers/b3004/**
+  - tools/oracle/src/helpers/auth/b3004.rs
+  - tools/oracle/src/helpers/auth/b3004/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L73-L97

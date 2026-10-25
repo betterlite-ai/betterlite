@@ -99,6 +99,10 @@ scope:
   - Cargo.lock
   - tools/oracle/cases/api/batch-list-route/**
   - tools/oracle/fixtures/batch-list-route/**
+  - tools/oracle/helpers/b1133.py
+  - tools/oracle/helpers/b1133/**
+  - tools/oracle/src/helpers/server/b1133.rs
+  - tools/oracle/src/helpers/server/b1133/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L832-L1014

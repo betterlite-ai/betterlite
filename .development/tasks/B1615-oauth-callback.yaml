@@ -41,6 +41,10 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/oauth-callback-*
     - tools/oracle/cases/sso/oauth-callback/**
     - tools/oracle/fixtures/multipart-oracle/oauth-callback/**
+    - tools/oracle/helpers/b1615.py
+    - tools/oracle/helpers/b1615/**
+    - tools/oracle/src/helpers/server/b1615.rs
+    - tools/oracle/src/helpers/server/b1615/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2020-L2146

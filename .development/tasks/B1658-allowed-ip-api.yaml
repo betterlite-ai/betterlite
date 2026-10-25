@@ -38,6 +38,10 @@ scope:
     - crates/betterlite-server/fuzz/corpus/allowed_ip_request/**
     - tools/oracle/cases/management/allowed-ips/**
     - tools/oracle/fuzz/corpus/http_case/allowed-ips-*
+    - tools/oracle/helpers/b1658.py
+    - tools/oracle/helpers/b1658/**
+    - tools/oracle/src/helpers/server/b1658.rs
+    - tools/oracle/src/helpers/server/b1658/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L170-L171
