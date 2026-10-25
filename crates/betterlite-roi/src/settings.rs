@@ -106,7 +106,6 @@ fn check_interval_bounds(value: f64) -> Result<(), SettingsError> {
     }
     Ok(())
 }
-
 pub fn validate_update_interval(value: f64) -> Result<f64, SettingsError> {
     check_interval_bounds(value)?;
     if 0.0_f64 < value && value < 5.0_f64 {
@@ -114,7 +113,6 @@ pub fn validate_update_interval(value: f64) -> Result<f64, SettingsError> {
     }
     Ok(value)
 }
-
 pub fn validate_repositories(values: &[String]) -> Result<Vec<String>, SettingsError> {
     let mut normalized: Vec<String> = Vec::new();
     for value in values {
