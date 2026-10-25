@@ -125,23 +125,11 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/batch_create_route.rs
-  - crates/betterlite-config/src/api/batch_create_route/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/batch-create-route-*
   - tools/oracle/cases/api/batch-create-route/**
   - tools/oracle/fixtures/batch-create-route/**
+  - crates/betterlite-config/src/sections/batch_create_route.rs
+  - crates/betterlite-config/src/sections/batch_create_route/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L216-L524
@@ -258,7 +246,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_create_route::tests::auth_invalid($|::)/)'
   - id: config-tests
     why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::batch_create_route::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::batch_create_route::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: no newly added key-bearing config seed reaches the production loader
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/batch-create-route-*)"

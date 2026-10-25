@@ -108,26 +108,9 @@ scope:
   - tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_titan_embeddings*
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/**
-  - crates/betterlite-config/src/providers/bedrock.rs
-  - crates/betterlite-config/src/providers/bedrock/**
-  - crates/betterlite-config/src/providers/bedrock/titan_embeddings.rs
-  - crates/betterlite-config/src/providers/bedrock/titan_embeddings/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/titan_embeddings_config.rs
-  - crates/betterlite-config/src/tests/titan_embeddings_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/titan_embeddings*
+  - crates/betterlite-config/src/sections/bedrock_other_titan_embeddings.rs
+  - crates/betterlite-config/src/sections/bedrock_other_titan_embeddings/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_titan_g1_transformation.py#L27-L82

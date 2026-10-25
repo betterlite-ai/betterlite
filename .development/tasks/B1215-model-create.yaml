@@ -88,19 +88,9 @@ scope:
     - tools/oracle/cases/management/model-create/**
     - crates/betterlite-server/src/model_create/fixtures/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/model_create.rs
-    - crates/betterlite-config/src/model_create/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/model-create-*
+    - crates/betterlite-config/src/sections/model_create.rs
+    - crates/betterlite-config/src/sections/model_create/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2357-L2557
@@ -145,7 +135,7 @@ checks:
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_create::tests::postgres_failure_effects$/)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^model_create::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::model_create::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.

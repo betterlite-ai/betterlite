@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 use std::process::{self, Stdio};
 use std::time::Duration;
 use tokio::fs;
-use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader, Lines};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::process::{Child, Command};
+use tokio::process::{Child, ChildStderr, Command};
 use tokio::time::{sleep, timeout};
 const STANDARD_CONFIG: &str = "general_settings:\n  master_key: test-master\n";
 #[derive(serde::Deserialize)]
@@ -19,7 +19,7 @@ struct LogEvent {
 async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
     let port = free_port().await;
     let config_path = fixture(port, STANDARD_CONFIG).await;
-    let server = spawn_server(&config_path, port);
+    let mut server = spawn_server(&config_path, port);
     wait_until_ready(port, 1000).await;
     let mut request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     let mut health_request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
@@ -37,7 +37,7 @@ async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
         .await
         .unwrap();
     sleep(Duration::from_millis(10)).await;
-    send_sigterm(server.child.as_ref().unwrap().id().unwrap()).await;
+    let (mut logs, mut lines) = server.terminate().await;
     assert_shutdown_response(&mut health_request).await;
     assert_shutdown_response(&mut readiness_request).await;
     request
@@ -48,8 +48,11 @@ async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
     request.read_to_end(&mut response).await.unwrap();
     assert!(response.starts_with(b"HTTP/1.1 404"));
     assert!(response.ends_with(b"{\"detail\":\"Not Found\"}"));
-    let stderr = server.wait().await;
-    assert_json_logs(&stderr);
+    while let Some(line) = lines.next_line().await.unwrap() {
+        logs.push(line);
+    }
+    assert!(server.wait().await.is_empty());
+    assert_json_logs(logs.join("\n").as_bytes());
 }
 async fn assert_shutdown_response(request: &mut TcpStream) {
     request
@@ -278,6 +281,25 @@ impl Drop for ServerGuard {
     }
 }
 impl ServerGuard {
+    // requests in flight must finish after the server has seen SIGTERM, or they race its shutdown flag
+    async fn terminate(&mut self) -> (Vec<String>, Lines<BufReader<ChildStderr>>) {
+        let child = self.child.as_mut().unwrap();
+        send_sigterm(child.id().unwrap()).await;
+        let mut lines = BufReader::new(child.stderr.take().unwrap()).lines();
+        let mut logs = Vec::new();
+        while !logs
+            .last()
+            .is_some_and(|line: &String| line.contains("betterlite server shutting down"))
+        {
+            let line = timeout(Duration::from_secs(10), lines.next_line())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            logs.push(line);
+        }
+        (logs, lines)
+    }
     async fn wait(mut self) -> Vec<u8> {
         let output = self.child.take().unwrap().wait_with_output().await.unwrap();
         assert!(output.status.success());

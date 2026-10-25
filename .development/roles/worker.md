@@ -15,12 +15,13 @@ A task is done when `cargo gate run <ID>` passes and your final answer is a vali
 
 - Before writing anything that looks like a solved problem, do what rule reuse-before-building says: search, compare the options against every requirement in the task, pick one, and write the comparison into your report.
 - Write the test first and watch it fail for the right reason, then make it pass.
-- Stay inside scope.paths and the task's budgets. Needing more is a blocker, not a judgment call. Never edit anything under .development/, your own task file included: the dispatcher sends back any run that does.
+- Stay inside scope.paths and the task's budgets. Needing more is a blocker, not a judgment call. Never edit anything under .development/, your own task file included: the dispatcher sends back any run that does. The architect may change your task file on your branch (a raised budget, a fixed check, a wider scope); keep those commits and never put the file back.
 - Every Cargo.toml is always in scope, so add the dependencies you need where they belong. Keep each dependency table in name order; the hooks check it.
 - Commit in small steps, staging files by explicit path, with plain messages such as `feat(config): resolve os.environ references`.
 - While iterating, run `cargo gate run <ID> --only <check>`. Run the full gate before you stop. Mutants and coverage run only once every other check passes, so a red gate shows SKIP for them. The first line of the gate output names the folder holding each check's full log.
 - Oracle helpers are registered up front, so a helper task never edits the registry. It replaces the stub `Op` in its own module (tools/oracle/src/helpers/<group>/<module>.rs, the path in its scope) with an `impl Helper` that sets `type Input` and writes `fn run`, and it writes `run` in tools/oracle/helpers/<operation>.py. helpers/mod.rs, the group files, dispatch.py and other tasks' modules stay as they are. A test picks its own cases by operation name.
 - Your Rust modules already exist as empty files, declared in their parents by the skeleton. Fill them; never edit a crate's lib.rs. Code in other crates reaches yours by its module path, such as betterlite_auth::auth_cache::Session, so add no re-exports. A module that can fail defines its own thiserror enum in its own files.
+- A config section starts as crate::sections::stub_section!(). Replace it with a Raw struct holding every key your section reads (serde names as in LiteLLM's YAML, paths from the file's root), a Settings type and the Section impl that converts Raw into Settings, then read config.sections.<name> where the settings are used. A key your section reads stops being unsupported: delete its file under crates/betterlite-config/tests/fixtures/unsupported/<snapshot>/ for each fixture that has it, and add a file for any nested key that stays unknown. Those files are always in scope.
 
 ## LiteLLM
 
@@ -47,5 +48,5 @@ Your final answer is one JSON object that matches .development/schema/report.sch
 - summary says what changed, in two to four plain sentences.
 - blocker is empty when done.
 - prior_art has one entry per problem you solved by picking an existing solution or deliberately writing your own. Each entry compares at least two options with https links and marks exactly one chosen. Every crate you added to a Cargo.toml must be a chosen option here, or the gate fails.
-- deviations lists every place betterlite now differs from LiteLLM, with why and a link when there is one. Write the same entries to docs/deviations/<ID>.yaml (`task: <ID>` and a `deviations` list of what, why and link); the scope check always allows that one file, and the dispatcher compares it with the report.
+- deviations lists every place betterlite now differs from LiteLLM, with why and a link when there is one. Write the same entries to docs/deviations/<ID>.yaml (`task: <ID>` and a `deviations` list of what, why and link); the scope check always allows that one file, and the dispatcher checks that the file and the report list the same number of deviations with the same links.
 - notes holds facts the architect needs and nothing else.

@@ -82,20 +82,6 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/messages_advisor.rs
-  - crates/betterlite-config/src/api/messages_advisor/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/messages-advisor-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/messages_advisor.rs
@@ -104,6 +90,8 @@ scope:
   - tools/oracle/helpers/messages_advisor/**
   - tools/oracle/fuzz/corpus/helper_case/messages_advisor-*
   - tools/oracle/cases/helpers/messages-advisor/**
+  - crates/betterlite-config/src/sections/messages_advisor.rs
+  - crates/betterlite-config/src/sections/messages_advisor/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/interceptors/advisor.py#L205-L205
@@ -164,7 +152,7 @@ checks:
   commands:
   - id: behavior-tests
     why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::messages_advisor::/)
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::messages_advisor::/)
       - test(/::replays_corpus$/)'
   - id: case-advisor-tool-loop
     why: the advisor-tool-loop behavior or its assertions are absent
@@ -183,7 +171,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_advisor::tests::advisor_context_injection($|::)/)'
   - id: config-tests
     why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::messages_advisor::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::messages_advisor::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: no newly added key-bearing config seed reaches the production loader
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/messages-advisor-*)"

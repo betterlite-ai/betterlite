@@ -77,18 +77,6 @@ scope:
     - crates/betterlite-db/src/database_failures.rs
     - crates/betterlite-db/src/database_failures/**
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-config/src/database_failures.rs
-    - crates/betterlite-config/src/database_failures/**
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/database-failures-*
     - tools/oracle/src/helpers/db/database_failures.rs
@@ -98,6 +86,8 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/database-failures/**
     - tools/oracle/fuzz/corpus/helper_case/database-failures-*
+    - crates/betterlite-config/src/sections/database_failures.rs
+    - crates/betterlite-config/src/sections/database_failures/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/services.py#L14-L27
@@ -146,7 +136,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_failures::tests::postgres_blocked_lookup_deadline$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_failures::tests::postgres_metric_failure_keeps_committed_write$/)'
     - id: config-tests
       why: The loader must clamp valid numeric inputs and fail startup for malformed ones.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_failures::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::database_failures::tests::/) - test(/replays_the_/)'
     - id: config-corpus
       why: New numeric env boundaries must replay through B002's production decoder.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-failures-*")" && grep -rlq PROXY_DB_LOOKUP_MAX_CONCURRENCY crates/betterlite-config/fuzz/corpus/config_yaml/database-failures-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
