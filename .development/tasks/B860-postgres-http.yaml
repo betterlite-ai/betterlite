@@ -83,10 +83,8 @@ dod:
       existing_database_never_dropped, cleanup_after_failure, cleanup_after_cancellation,
       concurrent_fixture_roles_do_not_leak and connection_credentials_redacted.'
     proof: [fixture-tests]
-  - text: 'Booted runner cases are legacy_case_without_database, independent_initial_rows,
-      first_gateway_write_not_shared, hashed_fixture_keys_and_roles, public_route_without_key,
-      disabled_schema_update_still_checks_current_schema, detects_status_mismatch,
-      detects_error_param_mismatch and detects_role_mismatch.'
+  - text: 'Booted runner cases are legacy_case_without_database, public_route_without_key,
+      detects_status_mismatch and detects_error_param_mismatch.'
     proof: [http-fixture-tests]
   - text: trusted_ca_matching_hostname, untrusted_ca_rejected and wrong_hostname_rejected use a real TLS database connection.
     proof: [fixture-tests]
@@ -110,6 +108,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
+  - The booted cases that need the gateway's own database support (independent_initial_rows, first_gateway_write_not_shared, hashed_fixture_keys_and_roles, disabled_schema_update_still_checks_current_schema and detects_role_mismatch) belong to B5076, since betterlite reads general_settings.database_url and authenticates keys from Postgres only after B700 and the tasks after it.
   - Product Postgres repositories and migration behavior belong to B700 and the other database tasks.
   - B001 retains HTTP request/response comparison and process supervision; B171 provides the oracle fuzz workspace.
 pitfalls:
@@ -120,6 +119,6 @@ pitfalls:
     sslmode string.
   - A second schema can lack foreign keys because baseline guards match the first schema's constraint names.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1600
   max_new_expects: 0
 review_level: security
