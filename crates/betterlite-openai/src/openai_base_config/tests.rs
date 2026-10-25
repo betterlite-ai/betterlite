@@ -1,8 +1,8 @@
 #![cfg(test)]
 use super::forwarding::{ForwardingFailure, ResponseForward, forward_response};
 use super::{
-    CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
-    is_gpt_reasoning_series_name, is_o_series_model,
+    CatalogCapabilities, ConfigFamily, Headers, ModelFamily, OpenAiConfig, OpenAiSettings,
+    is_gpt_reasoning_series_name, is_o_series_model, model_family,
 };
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -35,7 +35,7 @@ fn config(family: ConfigFamily) -> OpenAiConfig {
 fn openai_base_config_cases(#[case] case: u8) { let models = catalog(); match case {
 0 => assert!(is_o_series_model("openai/o3", &models) && !is_o_series_model("o4", &models)),
 1 => assert!(is_gpt_reasoning_series_name("proxy/gpt-5.1") && !is_gpt_reasoning_series_name("gpt-5-chat")),
-2 => assert!(models.chat_models.contains("gpt-audio") && "gpt-audio".contains("audio") && !(models.chat_models.contains("responses/gpt-audio") && "responses/gpt-audio".contains("audio")) && !models.chat_models.contains("text-audio")),
+2 => assert!(models.chat_models.contains("gpt-audio") && "gpt-audio".contains("audio") && model_family("gpt-audio", &models) == ModelFamily::Audio && !(models.chat_models.contains("responses/gpt-audio") && "responses/gpt-audio".contains("audio")) && !models.chat_models.contains("text-audio")),
 3 => assert!(config(ConfigFamily::OpenAi).supported_params("responses/gpt-4o", &models).contains(&"user")),
 4 => { let supported = config(ConfigFamily::OpenAi).supported_params("gpt-4", &models); assert!(!supported.contains(&"response_format") && config(ConfigFamily::OpenAi).supported_params("gpt-4o", &models).contains(&"response_format")); },
 5 => assert_ne!(config(ConfigFamily::OpenAi).supported_params("custom", &models), config(ConfigFamily::AzureAiStudio).supported_params("custom", &models)),
