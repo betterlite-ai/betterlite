@@ -1,5 +1,6 @@
 use betterlite_context::a2a_text::{
-    A2aObject, A2aValue, extract_text_from_a2a_message, extract_text_from_a2a_response,
+    A2aResponse, A2aTextError, RecordValue, extract_text_from_a2a_message,
+    extract_text_from_a2a_response,
 };
 use serde_json::json;
 
@@ -7,16 +8,16 @@ use crate::helpers::HelperError;
 
 mod tests;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     Message {
-        message: Option<A2aValue>,
+        message: Option<RecordValue>,
         depth: Option<usize>,
         max_depth: Option<usize>,
     },
     Response {
-        response: A2aObject,
+        response: A2aResponse,
         max_depth: Option<usize>,
     },
 }
@@ -42,17 +43,22 @@ impl crate::helpers::Helper for Op {
                 max_depth,
             } => extract_text_from_a2a_response(response, max_depth.unwrap_or(10)),
         };
-        result
-            .map(|text| json!({"result": text, "logs": []}))
-            .map_err(|error| {
-                Box::new(HelperError {
-                    class: "TypeError".to_owned(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                })
+        result.map(|text| json!(text)).map_err(|error| {
+            let class = match error {
+                A2aTextError::MessageNotObject | A2aTextError::PartNotObject => "AttributeError",
+                A2aTextError::PartsNotIterable
+                | A2aTextError::TextNotString
+                | A2aTextError::ArtifactsNotSized => "TypeError",
+                A2aTextError::ArtifactsNotIndexed => "KeyError",
+            };
+            Box::new(HelperError {
+                class: class.to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
             })
+        })
     }
 }

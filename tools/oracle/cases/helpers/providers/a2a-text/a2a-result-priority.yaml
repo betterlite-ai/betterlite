@@ -1,5 +1,5 @@
 kind: helper
 name: a2a-result-priority
-call: {a2a_text: {function: response, response: {result: {status: {message: {parts: [{kind: text, text: status}]}}, artifacts: [{parts: [{kind: text, text: artifact}]}]}}, max_depth: 10}}
+call: {a2a_text: {function: response, response: {result: {parts: [], message: {parts: [{kind: text, text: later}]}, artifacts: [{parts: [{kind: text, text: artifact}]}]}}, max_depth: null}}
 env: {}
 compare: {ignore: []}

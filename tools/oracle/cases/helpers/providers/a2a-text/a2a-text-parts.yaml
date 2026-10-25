@@ -1,5 +1,5 @@
 kind: helper
 name: a2a-text-parts
-call: {a2a_text: {function: message, message: {parts: [{kind: text, text: ""}, {kind: text, text: one}, {kind: nested, parts: [{kind: text, text: two}]}]}, depth: null, max_depth: null}}
+call: {a2a_text: {function: message, message: {parts: [{kind: text, text: ""}, {kind: text, text: one, parts: [{kind: text, text: hidden}]}, {kind: text}, {kind: data, parts: [{kind: text, text: two}]}, {kind: data, parts: []}, {kind: file}]}, depth: null, max_depth: null}}
 env: {}
 compare: {ignore: []}
