@@ -364,6 +364,7 @@ fn gateway_spec_picks_command_arguments_and_log(
 ) {
     let options = Options {
         self_check,
+        postgres_test_url: None,
         paths: Vec::new(),
     };
     let case_env = BTreeMap::from([("CASE".to_owned(), "1".to_owned())]);
@@ -394,6 +395,7 @@ fn gateway_spec_picks_command_arguments_and_log(
 fn gateway_spec_rejects_a_non_utf8_config_path() {
     let options = Options {
         self_check: false,
+        postgres_test_url: None,
         paths: Vec::new(),
     };
     let config_path = OsString::from_vec(vec![b'/', 0xff]);
@@ -411,6 +413,7 @@ fn gateway_spec_rejects_a_non_utf8_config_path() {
 fn gateway_spec_keeps_required_environment_without_case_overrides() {
     let options = Options {
         self_check: false,
+        postgres_test_url: None,
         paths: Vec::new(),
     };
     let input = GatewayInput {
@@ -482,6 +485,7 @@ fn runner_helpers_create_safe_artifact_paths_and_ports() {
 fn run_cases_propagates_a_gateway_start_failure() {
     let options = Options {
         self_check: false,
+        postgres_test_url: None,
         paths: Vec::new(),
     };
     let mut case = test_case();

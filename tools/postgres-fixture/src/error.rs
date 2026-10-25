@@ -16,6 +16,11 @@ pub enum FixtureError {
         #[source]
         source: tokio_postgres::Error,
     },
+    #[error("configured PostgreSQL URL is invalid: {source}")]
+    InvalidUrl {
+        #[source]
+        source: url::ParseError,
+    },
     #[error("configured PostgreSQL server is unreachable: {0}")]
     Connect(#[source] tokio_postgres::Error),
     #[error("testcontainers could not start PostgreSQL: {0}")]
@@ -41,8 +46,14 @@ pub enum FixtureError {
     },
     #[error("fixture runtime failed: {0}")]
     Runtime(#[source] io::Error),
-    #[error("fixture seed is invalid: {0}")]
-    Seed(String),
+    #[error("duplicate {kind} identity at row {index}")]
+    DuplicateIdentity { kind: &'static str, index: usize },
+    #[error("{relation} references missing {kind} {identity}")]
+    MissingReference {
+        relation: &'static str,
+        kind: &'static str,
+        identity: String,
+    },
     #[error("fixture connection driver task failed: {0}")]
     DriverJoin(#[source] JoinError),
     #[error("fixture setup failed and cleanup failed: {setup}; {cleanup}")]

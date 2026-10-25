@@ -13,11 +13,13 @@ rustls-native-certs.workspace = true
 secrecy.workspace = true
 serde = { workspace = true, features = ["derive"] }
 sha2.workspace = true
+subtle.workspace = true
 testcontainers.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-postgres.workspace = true
 tokio-postgres-rustls-improved.workspace = true
+url = "2.5.8"
 uuid.workspace = true
 
 [lints]

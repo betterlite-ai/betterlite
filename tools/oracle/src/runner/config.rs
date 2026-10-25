@@ -1,20 +1,26 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::str;
 
 use crate::OracleError;
+use serde::{Deserialize, Serialize};
 
-pub(super) fn process_environment_url() -> Result<Option<String>, OracleError> {
-    let output = Command::new("printenv")
-        .arg("POSTGRES_TEST_URL")
-        .output()
-        .map_err(OracleError::Environment)?;
-    if !output.status.success() {
-        return Ok(None);
-    }
-    let value = str::from_utf8(&output.stdout).map_err(OracleError::EnvironmentText)?;
-    Ok(Some(value.trim_end_matches('\n').to_owned()))
+#[derive(Debug, Deserialize, Serialize)]
+struct ConfigDocument {
+    #[serde(default)]
+    general_settings: GeneralSettings,
+    #[serde(flatten)]
+    other: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct GeneralSettings {
+    #[serde(default)]
+    database_url: Option<String>,
+    #[serde(default)]
+    disable_prisma_schema_update: bool,
+    #[serde(flatten)]
+    other: BTreeMap<String, serde_json::Value>,
 }
 
 pub(super) fn with_database(
@@ -26,22 +32,19 @@ pub(super) fn with_database(
         path: base_path.to_owned(),
         source,
     })?;
-    let escaped = database_url.replace('\\', "\\\\").replace('"', "\\\"");
-    let settings = format!("  database_url: \"{escaped}\"\n  disable_prisma_schema_update: true");
-    let config = source
-        .lines()
-        .position(|line| line.trim() == "general_settings:")
-        .and_then(|index| index.checked_add(1))
-        .map_or_else(
-            || format!("{source}\ngeneral_settings:\n{settings}\n"),
-            |index| {
-                let mut lines = source.lines().map(str::to_owned).collect::<Vec<_>>();
-                lines.insert(index, settings.clone());
-                lines.join("\n")
-            },
-        );
+    let mut config_document: ConfigDocument = serde_saphyr::from_str(&source)
+        .map_err(|parse_error| OracleError::GeneratedConfig(Box::new(parse_error)))?;
+    if config_document.general_settings.database_url.is_some() {
+        return Err(OracleError::DatabaseUrlConflict);
+    }
+    config_document.general_settings.database_url = Some(database_url.to_owned());
+    config_document
+        .general_settings
+        .disable_prisma_schema_update = true;
+    let rendered_config =
+        serde_saphyr::to_string(&config_document).map_err(OracleError::GeneratedConfigSerialize)?;
     let path = base_path.with_file_name(filename);
-    fs::write(&path, config).map_err(|write_error| OracleError::Filesystem {
+    fs::write(&path, rendered_config).map_err(|write_error| OracleError::Filesystem {
         path: path.clone(),
         source: write_error,
     })?;

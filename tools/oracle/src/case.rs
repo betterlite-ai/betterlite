@@ -123,34 +123,23 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
         validate_helper(path, &case)?;
         return Ok(LoadedCase::Helper(case));
     }
-    let case = decode_http_case_at(text.as_bytes(), path)?;
+    let case = match decode_http_case(text.as_bytes()) {
+        Err(OracleError::HttpCaseParse { source }) => Err(OracleError::CaseParse {
+            path: path.to_owned(),
+            source,
+        }),
+        result => result,
+    }?;
     validate(path, &case)?;
     Ok(LoadedCase::Http(case))
 }
 
 pub fn decode_http_case(bytes: &[u8]) -> Result<HttpCase, OracleError> {
-    let path = Path::new("<bytes>");
-    if bytes.is_empty() {
-        return decode_http_case_at(bytes, path);
-    }
-    decode_http_case_at(bytes, path)
-}
-
-fn decode_http_case_at(bytes: &[u8], path: &Path) -> Result<HttpCase, OracleError> {
     let text = str::from_utf8(bytes).map_err(|source| OracleError::CaseUtf8 { source })?;
-    let case: Case = serde_saphyr::from_str(text).map_err(|source| {
-        if path == Path::new("<bytes>") {
-            OracleError::HttpCaseParse {
-                source: Box::new(source),
-            }
-        } else {
-            OracleError::CaseParse {
-                path: path.to_owned(),
-                source: Box::new(source),
-            }
-        }
+    let case: Case = serde_saphyr::from_str(text).map_err(|source| OracleError::HttpCaseParse {
+        source: Box::new(source),
     })?;
-    validate(path, &case)?;
+    validate(Path::new("<bytes>"), &case)?;
     Ok(case)
 }
 

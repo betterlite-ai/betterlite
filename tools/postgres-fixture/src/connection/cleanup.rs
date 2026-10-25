@@ -53,10 +53,10 @@ pub(super) async fn drain_drivers(
     first.map_or(Ok(()), Err)
 }
 
-pub(super) async fn timed<T>(
-    operation: &'static str,
-    future: impl Future<Output = T>,
-) -> Result<T, FixtureError> {
+pub(super) async fn timed<F, T>(operation: &'static str, future: F) -> Result<T, FixtureError>
+where
+    F: Future<Output = T>,
+{
     let result = time::timeout(OPERATION_TIMEOUT, future).await;
     result.map_err(|source| FixtureError::Timeout {
         operation,

@@ -197,6 +197,12 @@ pub enum OracleError {
     Environment(#[source] io::Error),
     #[error("POSTGRES_TEST_URL is not valid UTF-8: {0}")]
     EnvironmentText(#[source] Utf8Error),
+    #[error("cannot parse generated gateway config: {0}")]
+    GeneratedConfig(#[source] Box<serde_saphyr::Error>),
+    #[error("cannot serialize generated gateway config: {0}")]
+    GeneratedConfigSerialize(#[source] serde_saphyr::SerializeError),
+    #[error("gateway config already sets general_settings.database_url")]
+    DatabaseUrlConflict,
 }
 
 pub fn run() -> Result<ExitCode, OracleError> {

@@ -1,5 +1,6 @@
 use reqwest::blocking::Client;
 use secrecy::ExposeSecret as _;
+use secrecy::SecretString;
 use std::collections::BTreeMap;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
@@ -27,13 +28,13 @@ pub(crate) fn run_cases(
     if cases.is_empty() {
         return Err(OracleError::MissingCapture(0));
     }
+    let configured_url = options.postgres_test_url.as_ref();
     let mut groups = BTreeMap::<String, Vec<Case>>::new();
     let mut helper_outcome = helpers::HelperRun::Match;
     for loaded_case in cases {
         match loaded_case {
             LoadedCase::Http(http_case) => {
-                let mut group_env = http_case.env.clone();
-                group_env.remove("POSTGRES_TEST_URL");
+                let group_env = http_case.env.clone();
                 let group_key = format!("{}\n{:?}", http_case.config, group_env);
                 groups.entry(group_key).or_default().push(http_case);
             }
@@ -48,7 +49,7 @@ pub(crate) fn run_cases(
     let root = artifact_root()?;
     let mut outcomes = Vec::new();
     for (_, group) in groups {
-        outcomes.extend(run_group(options, &root, &group)?);
+        outcomes.extend(run_group_with_url(options, &root, &group, configured_url)?);
     }
     if matches!(helper_outcome, helpers::HelperRun::Difference) {
         return Ok(exit_status(true));
@@ -62,20 +63,23 @@ pub(crate) fn exit_status(different: bool) -> ExitCode {
         ExitCode::SUCCESS
     }
 }
+#[cfg(test)]
 pub(crate) fn run_group(
     options: &Options,
     root: &Path,
     cases: &[Case],
 ) -> Result<Vec<bool>, OracleError> {
-    let configured_url = config::process_environment_url()?;
-    run_group_with_url(options, root, cases, configured_url.as_deref())
+    if cases.is_empty() {
+        return Err(OracleError::MissingCapture(0));
+    }
+    run_group_with_url(options, root, cases, None)
 }
 
 fn run_group_with_url(
     options: &Options,
     root: &Path,
     cases: &[Case],
-    configured_url: Option<&str>,
+    configured_url: Option<&SecretString>,
 ) -> Result<Vec<bool>, OracleError> {
     if cases.is_empty() {
         return Err(OracleError::MissingCapture(0));
@@ -150,30 +154,21 @@ fn prepare_gateway_configs(
     fixtures: &fixtures::FixtureGuard,
     upstream: &str,
 ) -> Result<(PathBuf, PathBuf, PathBuf), OracleError> {
-    match (&fixtures.first, &fixtures.second) {
-        (Some(first), Some(second)) => {
-            let first_url = first.options.database_url();
-            let second_url = second.options.database_url();
-            let (group_dir, base_config) = artifacts::prepare(root, first_case, upstream)?;
-            let first_config = config::with_database(
-                &base_config,
-                first_url.expose_secret(),
-                "config-first.yaml",
-            )?;
-            let second_config = config::with_database(
-                &base_config,
-                second_url.expose_secret(),
-                "config-second.yaml",
-            )?;
-            Ok((group_dir, first_config, second_config))
-        }
-        (None, None) => {
-            let (group_dir, config) = artifacts::prepare(root, first_case, upstream)?;
-            Ok((group_dir, config.clone(), config))
-        }
-        _ => Err(OracleError::DatabaseFixturesDiffer {
-            cases: vec![first_case.name.clone()],
-        }),
+    if let Some((first, second)) = &fixtures.databases {
+        let first_url = first.options.database_url();
+        let second_url = second.options.database_url();
+        let (group_dir, base_config) = artifacts::prepare(root, first_case, upstream)?;
+        let first_config =
+            config::with_database(&base_config, first_url.expose_secret(), "config-first.yaml")?;
+        let second_config = config::with_database(
+            &base_config,
+            second_url.expose_secret(),
+            "config-second.yaml",
+        )?;
+        Ok((group_dir, first_config, second_config))
+    } else {
+        let (group_dir, config) = artifacts::prepare(root, first_case, upstream)?;
+        Ok((group_dir, config.clone(), config))
     }
 }
 

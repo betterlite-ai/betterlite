@@ -3,6 +3,7 @@ use rustls::{
     pki_types::{CertificateDer, pem::PemObject as _},
 };
 use tokio_postgres_rustls_improved::MakeRustlsConnect;
+use url::Url;
 
 use super::ConnectionOptions;
 use crate::error::FixtureError;
@@ -27,36 +28,36 @@ pub(super) fn tls_mode(raw: &str) -> TlsMode {
 }
 
 pub(super) fn query_value(raw: &str, key: &str) -> Option<String> {
-    let query = raw.split_once('?')?.1;
-    query.split('&').find_map(|part| {
-        let (name, value) = part.split_once('=')?;
-        (name == key).then(|| value.to_owned())
-    })
+    let parsed = Url::parse(raw).ok()?;
+    parsed
+        .query_pairs()
+        .find_map(|(name, value)| (name == key).then(|| value.into_owned()))
 }
 
 pub(super) fn normalized_config_source(raw: &str, tls_mode: TlsMode) -> String {
-    let Some((base, query)) = raw.split_once('?') else {
+    let Ok(mut parsed) = Url::parse(raw) else {
         return raw.to_owned();
     };
-    let parameters = query
-        .split('&')
-        .filter_map(|parameter| {
-            let (name, configured_value) = parameter.split_once('=')?;
+    let had_query = parsed.query().is_some();
+    let parameters = parsed
+        .query_pairs()
+        .filter_map(|(name, configured_value)| {
             if name == "sslrootcert" {
                 return None;
             }
             let normalized_value = if name == "sslmode" && tls_mode != TlsMode::Disable {
-                "require"
+                "require".to_owned()
             } else {
-                configured_value
+                configured_value.into_owned()
             };
-            Some(format!("{name}={normalized_value}"))
+            Some((name.into_owned(), normalized_value))
         })
         .collect::<Vec<_>>();
-    if parameters.is_empty() {
-        base.to_owned()
+    parsed.query_pairs_mut().clear().extend_pairs(parameters);
+    if had_query {
+        parsed.to_string()
     } else {
-        format!("{base}?{}", parameters.join("&"))
+        raw.to_owned()
     }
 }
 

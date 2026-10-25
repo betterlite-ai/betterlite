@@ -1,17 +1,17 @@
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_postgres_fixture::error::FixtureError;
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::OracleError;
 use crate::case::Case;
 
 pub(super) struct FixtureGuard {
-    pub(super) first: Option<PostgresFixture>,
-    pub(super) second: Option<PostgresFixture>,
+    pub(super) databases: Option<(PostgresFixture, PostgresFixture)>,
 }
 
 pub(super) fn provision(
     cases: &[Case],
-    configured_url: Option<&str>,
+    configured_url: Option<&SecretString>,
 ) -> Result<FixtureGuard, OracleError> {
     let first_case = cases.first().ok_or(OracleError::MissingCapture(0))?;
     let fixture_definition = first_case.database.clone();
@@ -23,14 +23,12 @@ pub(super) fn provision(
         }
     }
     let Some(database) = fixture_definition else {
-        return Ok(FixtureGuard {
-            first: None,
-            second: None,
-        });
+        return Ok(FixtureGuard { databases: None });
     };
-    let first = PostgresFixture::provision_from_url(configured_url, &database)
+    let exposed_url = configured_url.map(ExposeSecret::expose_secret);
+    let first = PostgresFixture::provision_from_url(exposed_url, &database)
         .map_err(OracleError::DatabaseFixture)?;
-    let second = match PostgresFixture::provision_from_url(configured_url, &database) {
+    let second = match PostgresFixture::provision_from_url(exposed_url, &database) {
         Ok(second_database) => second_database,
         Err(error) => {
             let cleanup_result = first.close();
@@ -44,15 +42,17 @@ pub(super) fn provision(
         }
     };
     Ok(FixtureGuard {
-        first: Some(first),
-        second: Some(second),
+        databases: Some((first, second)),
     })
 }
 
 impl FixtureGuard {
-    pub(super) fn close(mut self) -> Result<(), FixtureError> {
-        let first_result = self.first.take().map_or(Ok(()), PostgresFixture::close);
-        let second_result = self.second.take().map_or(Ok(()), PostgresFixture::close);
+    pub(super) fn close(self) -> Result<(), FixtureError> {
+        let Some((first, second)) = self.databases else {
+            return Ok(());
+        };
+        let first_result = first.close();
+        let second_result = second.close();
         match (first_result, second_result) {
             (Ok(()), Ok(())) => Ok(()),
             (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),

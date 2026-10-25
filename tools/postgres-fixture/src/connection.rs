@@ -7,6 +7,7 @@ use testcontainers::{ContainerAsync, GenericImage};
 use tokio::runtime::Builder;
 use tokio::task::JoinSet;
 use tokio_postgres::Config;
+use url::Url;
 use uuid::Uuid;
 
 use crate::error::FixtureError;
@@ -39,6 +40,7 @@ impl DatabaseNameGenerator for RandomDatabaseName {
 pub struct ConnectionOptions {
     config: Config,
     url: SecretString,
+    parsed_url: Url,
     root_certificate: Option<String>,
     tls_mode: TlsMode,
 }
@@ -53,20 +55,6 @@ impl fmt::Debug for ConnectionOptions {
 
 impl ConnectionOptions {
     #[must_use]
-    pub fn redacted_url(&self) -> String {
-        let redacted = format!("{:?}", self.config);
-        redacted
-    }
-
-    #[must_use]
-    pub fn database_url(&self) -> SecretString {
-        if self.url.expose_secret().is_empty() {
-            return SecretString::from(String::new());
-        }
-        self.url.clone()
-    }
-
-    #[must_use]
     pub const fn uses_tls(&self) -> bool {
         match self.tls_mode {
             TlsMode::Disable | TlsMode::Prefer => false,
@@ -74,14 +62,22 @@ impl ConnectionOptions {
         }
     }
 
+    #[must_use]
+    pub fn database_url(&self) -> SecretString {
+        let secret_url = self.url.expose_secret();
+        SecretString::from(secret_url.to_owned())
+    }
+
     fn from_url(raw: &str) -> Result<Self, FixtureError> {
         let tls_mode = tls_mode(raw);
         let config_source = tls::normalized_config_source(raw, tls_mode);
         let config = Config::from_str(&config_source)
             .map_err(|source| FixtureError::InvalidConfiguredUrl { source })?;
+        let parsed_url = Url::parse(raw).map_err(|source| FixtureError::InvalidUrl { source })?;
         Ok(Self {
             config,
             url: SecretString::from(raw.to_owned()),
+            parsed_url,
             root_certificate: query_value(raw, "sslrootcert"),
             tls_mode,
         })
@@ -90,18 +86,13 @@ impl ConnectionOptions {
     fn with_database(&self, database: &str) -> Self {
         let mut config = self.config.clone();
         config.dbname(database);
-        let raw = self.url.expose_secret();
-        let url = raw.split_once("://").map_or_else(
-            || raw.to_owned(),
-            |(scheme, remainder)| {
-                let (authority, suffix) = remainder.split_once('/').unwrap_or((remainder, ""));
-                let query = suffix.split_once('?').map_or("", |(_, query)| query);
-                format!("{scheme}://{authority}/{database}{query}")
-            },
-        );
+        let mut parsed = self.parsed_url.clone();
+        parsed.set_path(&format!("/{database}"));
+        let url = parsed.to_string();
         Self {
             config,
             url: SecretString::from(url),
+            parsed_url: parsed,
             root_certificate: self.root_certificate.clone(),
             tls_mode: self.tls_mode,
         }
@@ -182,15 +173,11 @@ impl PostgresFixture {
         let create_database_name = database.clone();
         run_fixture_operation(&admin_url, &admin, &database, move |client| {
             Box::pin(async move {
-                match timed(
+                timed(
                     "create database",
                     create_database(client, &create_database_name),
                 )
                 .await?
-                {
-                    Ok(()) => Ok(()),
-                    Err(error) => Err(error),
-                }
             })
         })
         .await?;
@@ -198,10 +185,7 @@ impl PostgresFixture {
         let seed_copy = seed.clone();
         run_fixture_operation(&options, &admin, &database, move |client| {
             Box::pin(async move {
-                match timed("seed database", seed_sql::seed_database(client, &seed_copy)).await? {
-                    Ok(()) => Ok(()),
-                    Err(error) => Err(error),
-                }
+                timed("seed database", seed_sql::seed_database(client, &seed_copy)).await?
             })
         })
         .await?;
@@ -225,8 +209,11 @@ impl PostgresFixture {
         let driver_error = drain_drivers(&mut self.drivers).await;
         let admin = self.options.with_database("postgres");
         let cleanup = cleanup_database(&admin, &self.database).await;
-        drop(self.container);
-        combine_errors(driver_error, cleanup)
+        let container_cleanup = match self.container {
+            Some(container) => container.rm().await.map_err(FixtureError::Container),
+            None => Ok(()),
+        };
+        combine_errors(combine_errors(driver_error, cleanup), container_cleanup)
     }
 }
 pub(crate) fn quote_identifier(value: &str) -> String {

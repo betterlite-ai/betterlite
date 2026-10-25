@@ -5,6 +5,7 @@ use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
+use subtle::ConstantTimeEq as _;
 
 use crate::error::FixtureError;
 
@@ -53,8 +54,12 @@ pub struct KeyRow {
 
 impl PartialEq for KeyRow {
     fn eq(&self, other: &Self) -> bool {
-        self.token.expose_secret() == other.token.expose_secret()
-            && self.user_id == other.user_id
+        bool::from(
+            self.token
+                .expose_secret()
+                .as_bytes()
+                .ct_eq(other.token.expose_secret().as_bytes()),
+        ) && self.user_id == other.user_id
             && self.team_id == other.team_id
             && self.role == other.role
     }
@@ -177,9 +182,11 @@ fn validate_references(
         if let Some(team_id) = &key.team_id
             && !teams.contains(team_id.as_str())
         {
-            return Err(FixtureError::Seed(format!(
-                "key references missing team {team_id}"
-            )));
+            return Err(FixtureError::MissingReference {
+                relation: "key",
+                kind: "team",
+                identity: team_id.clone(),
+            });
         }
     }
     for membership in &seed.memberships {
@@ -198,23 +205,26 @@ fn validate_references(
 fn ensure_reference(
     principals: &BTreeSet<&str>,
     identity: &str,
-    relation: &str,
+    relation: &'static str,
 ) -> Result<(), FixtureError> {
     if !principals.contains(identity) {
-        return Err(FixtureError::Seed(format!(
-            "{relation} references missing principal {identity}"
-        )));
+        return Err(FixtureError::MissingReference {
+            relation,
+            kind: "principal",
+            identity: identity.to_owned(),
+        });
     }
     Ok(())
 }
 
-fn unique<'item>(values: impl Iterator<Item = &'item str>, kind: &str) -> Result<(), FixtureError> {
+fn unique<'item, I>(values: I, kind: &'static str) -> Result<(), FixtureError>
+where
+    I: Iterator<Item = &'item str>,
+{
     let mut seen = BTreeSet::new();
-    for value in values {
+    for (index, value) in values.enumerate() {
         if !seen.insert(value) {
-            return Err(FixtureError::Seed(format!(
-                "duplicate {kind} identity {value}"
-            )));
+            return Err(FixtureError::DuplicateIdentity { kind, index });
         }
     }
     Ok(())
@@ -222,12 +232,12 @@ fn unique<'item>(values: impl Iterator<Item = &'item str>, kind: &str) -> Result
 
 fn unique_memberships(memberships: &[Membership]) -> Result<(), FixtureError> {
     let mut seen = BTreeSet::new();
-    for membership in memberships {
+    for (index, membership) in memberships.iter().enumerate() {
         if !seen.insert((membership.user_id.as_str(), membership.team_id.as_str())) {
-            return Err(FixtureError::Seed(format!(
-                "duplicate membership identity {}/{}",
-                membership.user_id, membership.team_id
-            )));
+            return Err(FixtureError::DuplicateIdentity {
+                kind: "membership",
+                index,
+            });
         }
     }
     Ok(())
