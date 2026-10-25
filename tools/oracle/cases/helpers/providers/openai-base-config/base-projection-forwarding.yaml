@@ -1,5 +1,5 @@
 kind: helper
 name: base-projection-forwarding
-call: {openai_base_config: {base_projection_forwarding: {raw_text: '{"ok":true}', raw_headers: {x-id: abc}, hidden_headers: {x-hidden: secret}, decoded: {ok: true}, stream_value: {chunk: true}}}}
+call: {openai_base_config: {base_projection_forwarding: {raw_text: '{"ok":true}', raw_headers: {x-id: abc}}}}
 env: {}
 compare: {ignore: []}

@@ -4,13 +4,12 @@ use serde_json::Value;
 pub struct ResponseForward<'input> {
     pub raw_text: &'input str,
     pub raw_headers: &'input Headers,
-    pub decoded: Result<Value, serde_json::Error>,
     pub hidden_headers: &'input Headers,
 }
 pub fn forward_response<Sink, Projection>(
     sink: Sink,
     projection: Projection,
-    input: ResponseForward<'_>,
+    input: &ResponseForward<'_>,
 ) -> Result<Value, BaseConfigError>
 where
     Sink: FnOnce(&str, &Headers) -> Result<(), ForwardingFailure>,
@@ -18,7 +17,7 @@ where
 {
     sink(input.raw_text, input.raw_headers).map_err(BaseConfigError::Sink)?;
     projection(
-        input.decoded.map_err(BaseConfigError::Decode)?,
+        serde_json::from_str(input.raw_text).map_err(BaseConfigError::Decode)?,
         input.raw_headers,
         input.hidden_headers,
     )

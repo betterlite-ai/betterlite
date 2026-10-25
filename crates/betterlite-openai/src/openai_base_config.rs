@@ -89,14 +89,6 @@ impl fmt::Debug for OpenAiConfig {
 }
 impl OpenAiConfig {
     #[must_use]
-    pub fn get_config(&self) -> Object {
-        let serialized = serde_json::to_value(&self.settings);
-        serialized.map_or_else(
-            |_| Object::default(),
-            |value| value.as_object().cloned().unwrap_or_default(),
-        )
-    }
-    #[must_use]
     pub fn validate_environment(&self) -> Headers {
         let authorization = self.api_key.as_ref().map_or_else(
             || "Bearer None".to_owned(),
@@ -154,7 +146,7 @@ pub fn model_family(model: &str, catalog: &CatalogCapabilities) -> ModelFamily {
         ModelFamily::OSeries
     } else if is_gpt_reasoning_series_name(model) {
         ModelFamily::GptReasoning
-    } else if is_gpt_audio_model(model, catalog) {
+    } else if catalog.chat_models.contains(model) && model.contains("audio") {
         ModelFamily::Audio
     } else if catalog.is_catalog_model(model) {
         ModelFamily::Gpt
@@ -172,19 +164,6 @@ pub fn is_o_series_model(model: &str, catalog: &CatalogCapabilities) -> bool {
 pub fn is_gpt_reasoning_series_name(model: &str) -> bool {
     let final_component = model.rsplit('/').next().unwrap_or(model);
     (model.contains("gpt-5") || model.contains("gpt-6")) && !final_component.contains("gpt-5-chat")
-}
-#[must_use]
-pub fn is_gpt_audio_model(model: &str, catalog: &CatalogCapabilities) -> bool {
-    if catalog.chat_models.contains(model) {
-        model.contains("audio")
-    } else {
-        false
-    }
-}
-#[must_use]
-pub fn is_azure_gpt5_model(model: &str) -> bool {
-    let reasoning = is_gpt_reasoning_series_name(model);
-    reasoning || model.contains("gpt5_series")
 }
 #[must_use]
 pub fn metadata_filter_limit(
