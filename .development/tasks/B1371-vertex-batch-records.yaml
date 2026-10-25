@@ -32,6 +32,7 @@ scope:
     - crates/betterlite-vertex/Cargo.toml
     - Cargo.lock
     - crates/betterlite-vertex/src/{lib,error,vertex_batch_records}.rs
+    - crates/betterlite-vertex/src/vertex_batch_records.rs
     - crates/betterlite-vertex/src/vertex_batch_records/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_records.rs

@@ -85,7 +85,6 @@ scope:
   paths:
     - crates/betterlite-db/src/request_log_indexes.rs
     - crates/betterlite-db/src/request_log_indexes/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
   lint_tables: false
 references:

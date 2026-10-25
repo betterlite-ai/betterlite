@@ -30,6 +30,7 @@ scope:
   paths:
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,error,vertex_rag_store}.rs
+    - crates/betterlite-vertex/src/vertex_rag_store.rs
     - crates/betterlite-vertex/src/vertex_rag_store/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_rag_payload.rs

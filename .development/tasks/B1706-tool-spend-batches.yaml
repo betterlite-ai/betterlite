@@ -35,14 +35,11 @@ description: >-
   270 tests and 220 config/fuzz/oracle lines, within 800.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/tool_spend.rs
     - crates/betterlite-models/src/tool_spend/**
-    - crates/betterlite-prompts/src/lib.rs
     - crates/betterlite-prompts/src/tool_spend.rs
     - crates/betterlite-prompts/src/tool_spend/**
     - crates/betterlite-models/fuzz/{Cargo.toml,fuzz_targets/tool_spend_time.rs,corpus/tool_spend_time/**}
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/{spend_batches,tool_spend}.rs
     - crates/betterlite-db/src/{spend_batches,tool_spend}/**
     - crates/betterlite-config/src/spend.rs

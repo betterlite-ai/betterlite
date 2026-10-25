@@ -89,8 +89,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
-  - crates/betterlite-anthropic/src/lib.rs
-  - crates/betterlite-anthropic/src/error.rs
   - crates/betterlite-anthropic/src/stream_events.rs
   - crates/betterlite-anthropic/src/stream_events/**
   - tools/oracle/Cargo.toml

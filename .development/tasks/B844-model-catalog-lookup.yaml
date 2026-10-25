@@ -98,7 +98,6 @@ scope:
   paths:
     - crates/betterlite-router/src/model_catalog_lookup.rs
     - crates/betterlite-router/src/model_catalog_lookup/**
-    - crates/betterlite-router/src/lib.rs
     - crates/betterlite-router/Cargo.toml
     - tools/oracle/src/helpers/router/model_catalog_lookup.rs
     - tools/oracle/src/helpers/router/model_catalog_lookup/**

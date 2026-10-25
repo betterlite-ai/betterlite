@@ -40,11 +40,9 @@ description: >-
   imports/docstrings; budget 360 implementation, 250 tests and 190 codecs/oracle wiring.
 scope:
   paths:
-    - crates/betterlite-provider/src/lib.rs
     - crates/betterlite-provider/src/billing.rs
     - crates/betterlite-provider/src/billing/**
     - crates/betterlite-provider/fuzz/{Cargo.toml,fuzz_targets/openai_costs_page.rs,corpus/openai_costs_page/**}
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/capture_rate.rs
     - crates/betterlite-models/src/capture_rate/**
     - crates/betterlite-config/src/lib.rs

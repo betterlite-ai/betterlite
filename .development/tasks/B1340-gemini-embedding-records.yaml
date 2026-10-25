@@ -26,6 +26,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,gemini_embedding_records}.rs
+    - crates/betterlite-vertex/src/gemini_embedding_records.rs
     - crates/betterlite-vertex/src/gemini_embedding_records/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/embedding_data_url.rs

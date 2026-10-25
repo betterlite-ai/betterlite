@@ -11,8 +11,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-error/Cargo.toml
-  - crates/betterlite-error/src/lib.rs
-  - crates/betterlite-error/src/error.rs
   - crates/betterlite-error/src/azure_openrouter.rs
   - crates/betterlite-error/src/azure_openrouter/**
   - tools/oracle/Cargo.toml

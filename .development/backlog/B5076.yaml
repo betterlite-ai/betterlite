@@ -1,0 +1,13 @@
+id: B5076
+milestone: M4 keys, spend and management
+title: Postgres-backed booted gateway cases
+status: todo
+depends_on: [B860, B700, B2307, B722, B2318]
+file: null
+covers: []
+parent: null
+split_from: B860
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

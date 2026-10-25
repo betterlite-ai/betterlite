@@ -26,7 +26,6 @@ scope:
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-server/src/api/managed_file_routes.rs
   - crates/betterlite-server/src/api/managed_file_routes/**
-  - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/managed_file_routes.rs
   - crates/betterlite-core/src/api/managed_file_routes/**

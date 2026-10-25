@@ -85,7 +85,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/jwt_team_authorization.rs
     - crates/betterlite-auth/src/jwt_team_authorization/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/state.rs

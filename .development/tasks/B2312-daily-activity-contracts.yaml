@@ -62,7 +62,6 @@ scope:
   paths:
     - crates/betterlite-db/src/daily_activity_contracts.rs
     - crates/betterlite-db/src/daily_activity_contracts/**
-    - crates/betterlite-db/src/lib.rs
     - tools/oracle/src/helpers/db/daily_activity_contracts.rs
     - tools/oracle/src/helpers/db/daily_activity_contracts/**
     - tools/oracle/helpers/daily_activity_contracts.py

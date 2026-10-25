@@ -26,6 +26,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_speech}.rs
+    - crates/betterlite-vertex/src/vertex_speech.rs
     - crates/betterlite-vertex/src/vertex_speech/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_speech_audio.rs

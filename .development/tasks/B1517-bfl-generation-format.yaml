@@ -38,6 +38,7 @@ scope:
     - crates/betterlite-core/src/api.rs
     - crates/betterlite-core/src/api/bfl.rs
     - crates/betterlite-core/src/api/bfl/{common,generation}.rs
+    - crates/betterlite-core/src/api/bfl/generation.rs
     - crates/betterlite-core/src/api/bfl/generation/**
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/bfl_boundary.rs

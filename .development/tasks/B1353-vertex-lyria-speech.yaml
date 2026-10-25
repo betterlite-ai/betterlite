@@ -24,6 +24,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_lyria}.rs
+    - crates/betterlite-vertex/src/vertex_lyria.rs
     - crates/betterlite-vertex/src/vertex_lyria/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/lyria_audio.rs

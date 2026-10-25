@@ -27,6 +27,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,google_token_counter}.rs
+    - crates/betterlite-vertex/src/google_token_counter.rs
     - crates/betterlite-vertex/src/google_token_counter/**
     - tools/oracle/src/helpers/vertex/google_counter_selection.rs
     - tools/oracle/src/helpers/vertex/google_counter_selection/**

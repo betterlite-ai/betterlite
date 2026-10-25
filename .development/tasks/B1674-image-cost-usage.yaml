@@ -44,7 +44,6 @@ description: >-
   180 adapters/cases and 70 parser/corpus wiring, capped at 800.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/image_cost.rs
     - crates/betterlite-models/src/image_cost/**
     - crates/betterlite-models/fuzz/Cargo.toml

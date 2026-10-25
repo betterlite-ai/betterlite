@@ -45,6 +45,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-models/src/{lib,error,json_provider_registry}.rs
+    - crates/betterlite-models/src/json_provider_registry.rs
     - crates/betterlite-models/src/json_provider_registry/**
     - crates/betterlite-models/src/json_providers.json
     - crates/betterlite-models/fuzz/Cargo.toml

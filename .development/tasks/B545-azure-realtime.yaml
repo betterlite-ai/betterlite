@@ -100,8 +100,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
-  - crates/betterlite-azure/src/lib.rs
-  - crates/betterlite-azure/src/error.rs
   - crates/betterlite-azure/src/realtime.rs
   - crates/betterlite-azure/src/realtime/**
   - tools/oracle/Cargo.toml

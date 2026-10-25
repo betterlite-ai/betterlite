@@ -83,8 +83,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
-  - crates/betterlite-anthropic/src/lib.rs
-  - crates/betterlite-anthropic/src/error.rs
   - crates/betterlite-anthropic/src/capabilities.rs
   - crates/betterlite-anthropic/src/capabilities/**
   - tools/oracle/Cargo.toml

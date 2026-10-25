@@ -111,7 +111,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_key_validation.rs
     - crates/betterlite-auth/src/auth_key_validation/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/auth_key_validation.rs
     - tools/oracle/src/helpers/server/auth_key_validation/**

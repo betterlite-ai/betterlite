@@ -61,8 +61,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-auth/Cargo.toml
-    - crates/betterlite-auth/src/lib.rs
-    - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/src/auth_read.rs
     - crates/betterlite-auth/src/auth_read/**
     - tools/oracle/src/helpers/auth/read.rs

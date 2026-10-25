@@ -27,6 +27,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,studio_veo_request}.rs
+    - crates/betterlite-vertex/src/studio_veo_request.rs
     - crates/betterlite-vertex/src/studio_veo_request/**
     - tools/oracle/src/helpers/vertex/studio_veo_request.rs
     - tools/oracle/src/helpers/vertex/studio_veo_request/**

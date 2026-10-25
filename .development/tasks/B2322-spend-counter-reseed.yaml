@@ -54,7 +54,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/spend_reseed.rs
     - crates/betterlite-auth/src/spend_reseed/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-config/src/spend_reseed.rs
     - crates/betterlite-config/src/spend_reseed/**

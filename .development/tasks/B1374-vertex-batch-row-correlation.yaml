@@ -28,6 +28,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,vertex_batch_rows}.rs
+    - crates/betterlite-vertex/src/vertex_batch_rows.rs
     - crates/betterlite-vertex/src/vertex_batch_rows/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_rows.rs

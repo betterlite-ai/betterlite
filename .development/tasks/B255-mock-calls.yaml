@@ -17,8 +17,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/mock.rs
   - crates/betterlite-core/src/mock/**
   - tools/oracle/Cargo.toml

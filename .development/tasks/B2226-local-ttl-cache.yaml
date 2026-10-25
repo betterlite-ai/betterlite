@@ -102,8 +102,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-context/Cargo.toml
-  - crates/betterlite-context/src/lib.rs
-  - crates/betterlite-context/src/error.rs
   - crates/betterlite-context/src/local_ttl_cache.rs
   - crates/betterlite-context/src/local_ttl_cache/**
   - tools/oracle/Cargo.toml

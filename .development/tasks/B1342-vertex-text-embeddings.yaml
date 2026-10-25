@@ -23,6 +23,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_text_embeddings}.rs
+    - crates/betterlite-vertex/src/vertex_text_embeddings.rs
     - crates/betterlite-vertex/src/vertex_text_embeddings/**
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/embeddings.rs

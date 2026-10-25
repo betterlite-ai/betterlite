@@ -70,13 +70,10 @@ description: >-
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
-  - crates/betterlite-foundry/src/lib.rs
-  - crates/betterlite-foundry/src/error.rs
   - crates/betterlite-foundry/src/rejected_fields.rs
   - crates/betterlite-foundry/src/rejected_fields/**
   - crates/betterlite-provider/src/transform_retry.rs
   - crates/betterlite-provider/src/provider.rs
-  - crates/betterlite-provider/src/error.rs
   - crates/betterlite-provider/Cargo.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/foundry/rejected_fields.rs

@@ -18,7 +18,6 @@ description: >-
   implementation, 160 tests, 100 fixtures, 110 adapters and 30 wiring lines, totaling 630.
 scope:
   paths:
-  - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_stream_logging.rs
   - crates/betterlite-core/src/api/file_stream_logging/**

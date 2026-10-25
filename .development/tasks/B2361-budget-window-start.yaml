@@ -29,7 +29,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/budget_window_start.rs
     - crates/betterlite-auth/src/budget_window_start/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/budget_window_start.rs

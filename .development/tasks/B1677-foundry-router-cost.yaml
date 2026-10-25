@@ -39,7 +39,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-foundry/Cargo.toml
-    - crates/betterlite-foundry/src/lib.rs
     - crates/betterlite-foundry/src/pricing.rs
     - crates/betterlite-foundry/src/pricing/**
     - tools/oracle/src/helpers/foundry/router_cost.rs

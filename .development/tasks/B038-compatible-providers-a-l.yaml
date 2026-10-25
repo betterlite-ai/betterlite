@@ -72,9 +72,11 @@ scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-provider/src/{lib,provider,operation,prepared,bedrock_dispatch_contract,compatible_providers}.rs
+    - crates/betterlite-provider/src/compatible_providers.rs
     - crates/betterlite-provider/src/compatible_providers/**
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/{lib,dispatch,operation,compatible_providers}.rs
+    - crates/betterlite-core/src/compatible_providers.rs
     - crates/betterlite-core/src/compatible_providers/**
     - crates/betterlite-core/src/api/{responses_routes,anthropic_messages_routes,image_generation_call,rerank_call}.rs
     - crates/betterlite-server/src/{state,routes}.rs

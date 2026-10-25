@@ -39,6 +39,7 @@ scope:
     - crates/betterlite-openai/src/{lib,error,cohere_rerank}.rs
     - crates/betterlite-openai/src/cohere_rerank/**
     - crates/betterlite-core/src/{lib,cohere_rerank_guardrail}.rs
+    - crates/betterlite-core/src/cohere_rerank_guardrail.rs
     - crates/betterlite-core/src/cohere_rerank_guardrail/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,cohere_rerank}.rs

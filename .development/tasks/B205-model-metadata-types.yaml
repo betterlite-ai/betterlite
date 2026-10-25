@@ -20,8 +20,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-models/Cargo.toml
-  - crates/betterlite-models/src/lib.rs
-  - crates/betterlite-models/src/error.rs
   - crates/betterlite-models/src/metadata.rs
   - crates/betterlite-models/src/metadata/**
   - crates/betterlite-models/src/capabilities.rs

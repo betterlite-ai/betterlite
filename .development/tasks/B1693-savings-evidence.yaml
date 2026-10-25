@@ -46,7 +46,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-models/Cargo.toml
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/savings_evidence.rs
     - crates/betterlite-models/src/savings_evidence/**
     - crates/betterlite-models/fuzz/Cargo.toml

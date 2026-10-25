@@ -78,8 +78,8 @@ scope:
   paths:
     - crates/betterlite-db/src/schema_policy_resources.rs
     - crates/betterlite-db/src/schema_policy_resources/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/schema_policy_resources/fixtures.rs
     - crates/betterlite-db/src/schema_policy_resources/fixtures/**
     - crates/betterlite-db/migrations/20260219181415_baseline_diff/migration.sql
     - crates/betterlite-db/migrations/20260220124742_add_spec_path_to_mcp_servers/migration.sql

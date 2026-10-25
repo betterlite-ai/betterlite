@@ -27,8 +27,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-models/Cargo.toml
-  - crates/betterlite-models/src/lib.rs
-  - crates/betterlite-models/src/error.rs
   - crates/betterlite-models/src/call_helpers.rs
   - crates/betterlite-models/src/call_helpers/**
   - crates/betterlite-openai/**

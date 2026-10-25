@@ -97,8 +97,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
-  - crates/betterlite-bedrock/src/lib.rs
-  - crates/betterlite-bedrock/src/error.rs
   - crates/betterlite-bedrock/src/invoke_agent.rs
   - crates/betterlite-bedrock/src/invoke_agent/**
   - tools/oracle/Cargo.toml

@@ -55,7 +55,6 @@ scope:
   paths:
     - crates/betterlite-db/src/request_log_index_catalog.rs
     - crates/betterlite-db/src/request_log_index_catalog/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - tools/oracle/src/helpers/db/request_log_index_catalog.rs
     - tools/oracle/src/helpers/db/request_log_index_catalog/**

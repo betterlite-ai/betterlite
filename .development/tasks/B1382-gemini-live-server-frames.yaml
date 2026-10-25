@@ -36,6 +36,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,gemini_live_frames}.rs
+    - crates/betterlite-vertex/src/gemini_live_frames.rs
     - crates/betterlite-vertex/src/gemini_live_frames/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_frames.rs

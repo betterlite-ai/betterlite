@@ -30,7 +30,6 @@ description: >-
   implementation, 240 tests and 140 decoder/config/wiring lines within 775.
 scope:
   paths:
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/saml_assertion.rs
     - crates/betterlite-auth/src/saml_assertion/**
     - crates/betterlite-auth/fuzz/Cargo.toml

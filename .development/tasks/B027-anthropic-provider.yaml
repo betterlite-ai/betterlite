@@ -106,13 +106,9 @@ description: >-
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
   - crates/betterlite-provider/src/anthropic_dispatch.rs
   - crates/betterlite-provider/src/anthropic_dispatch/**
-  - crates/betterlite-anthropic/src/lib.rs
   - crates/betterlite-anthropic/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
   - crates/betterlite-provider/src/provider.rs
   - crates/betterlite-provider/src/operation.rs
   - crates/betterlite-provider/src/prepared.rs

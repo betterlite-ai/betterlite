@@ -36,6 +36,7 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   - crates/betterlite-prompts/Cargo.toml
   - crates/betterlite-prompts/src/{lib,error,factory}.rs
+  - crates/betterlite-prompts/src/factory.rs
   - crates/betterlite-prompts/src/factory/**
   lint_tables: false
 references:

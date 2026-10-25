@@ -41,13 +41,11 @@ description: >-
   250 native cases and 180 pure adapters/fixtures, capped at 775 across both crates.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/anthropic_pricing.rs
     - crates/betterlite-models/src/anthropic_pricing/**
     - crates/betterlite-models/src/cost_usage.rs
     - crates/betterlite-models/src/cost_usage/**
     - crates/betterlite-bedrock/Cargo.toml
-    - crates/betterlite-bedrock/src/lib.rs
     - crates/betterlite-bedrock/src/image_pricing.rs
     - crates/betterlite-bedrock/src/image_pricing/**
     - tools/oracle/src/helpers/models/anthropic_pricing.rs

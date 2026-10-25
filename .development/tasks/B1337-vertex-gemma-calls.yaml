@@ -22,6 +22,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,gemma_call}.rs
+    - crates/betterlite-vertex/src/gemma_call.rs
     - crates/betterlite-vertex/src/gemma_call/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/gemma_reply.rs

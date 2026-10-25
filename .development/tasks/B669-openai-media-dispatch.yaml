@@ -82,11 +82,8 @@ description: >-
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
   - crates/betterlite-provider/src/provider.rs
   - crates/betterlite-provider/src/operation.rs
   - crates/betterlite-provider/src/prepared.rs

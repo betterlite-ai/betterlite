@@ -24,6 +24,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,google_pricing}.rs
+    - crates/betterlite-vertex/src/google_pricing.rs
     - crates/betterlite-vertex/src/google_pricing/**
     - tools/oracle/src/helpers/vertex/google_pricing.rs
     - tools/oracle/src/helpers/vertex/google_pricing/**

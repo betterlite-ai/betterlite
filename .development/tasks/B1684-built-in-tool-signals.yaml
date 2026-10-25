@@ -45,7 +45,6 @@ description: >-
   has no caller at the pin and is excluded instead of becoming another annotation API.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/tool_signals.rs
     - crates/betterlite-models/src/tool_signals/**
     - crates/betterlite-models/src/cost_usage.rs

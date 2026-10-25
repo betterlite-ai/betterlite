@@ -31,6 +31,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_files}.rs
+    - crates/betterlite-vertex/src/vertex_files.rs
     - crates/betterlite-vertex/src/vertex_files/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_file_metadata.rs

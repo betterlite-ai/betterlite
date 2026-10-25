@@ -46,10 +46,12 @@ scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-provider/src/{lib,provider,operation,prepared,studio_dispatch}.rs
+    - crates/betterlite-provider/src/studio_dispatch.rs
     - crates/betterlite-provider/src/studio_dispatch/**
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/{dispatch,operation}.rs
     - crates/betterlite-core/src/api/{mod,studio_bindings}.rs
+    - crates/betterlite-core/src/api/studio_bindings.rs
     - crates/betterlite-core/src/api/studio_bindings/**
     - tools/oracle/cases/api/studio/**
     - tools/oracle/fixtures/studio/**

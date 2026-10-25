@@ -13,8 +13,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-prompts/Cargo.toml
-  - crates/betterlite-prompts/src/lib.rs
-  - crates/betterlite-prompts/src/error.rs
   - crates/betterlite-prompts/src/anthropic_history.rs
   - crates/betterlite-prompts/src/anthropic_history/**
   - tools/oracle/Cargo.toml

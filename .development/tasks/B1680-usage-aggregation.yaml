@@ -34,7 +34,6 @@ description: >-
   material, with a 550-line cap.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/cost_usage.rs
     - crates/betterlite-models/src/cost_usage/**
     - crates/betterlite-models/src/usage_sum.rs

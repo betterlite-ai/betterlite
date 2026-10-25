@@ -57,8 +57,8 @@ scope:
   paths:
     - crates/betterlite-db/src/schema_agent_identity.rs
     - crates/betterlite-db/src/schema_agent_identity/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/schema_agent_identity/fixtures.rs
     - crates/betterlite-db/src/schema_agent_identity/fixtures/**
     - crates/betterlite-db/migrations/20260921190000_agent_identity/migration.sql
     - crates/betterlite-db/migrations/20260923000000_add_agent_kill_switch/migration.sql

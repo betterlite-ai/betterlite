@@ -26,6 +26,7 @@ scope:
   paths:
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,vertex_claude_chat}.rs
+    - crates/betterlite-vertex/src/vertex_claude_chat.rs
     - crates/betterlite-vertex/src/vertex_claude_chat/**
     - tools/oracle/src/helpers/vertex/claude_chat.rs
     - tools/oracle/src/helpers/vertex/claude_chat/**

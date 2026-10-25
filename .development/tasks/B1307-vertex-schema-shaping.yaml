@@ -27,8 +27,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/Cargo.toml
-    - crates/betterlite-vertex/src/lib.rs
-    - crates/betterlite-vertex/src/error.rs
     - crates/betterlite-vertex/src/vertex_schema.rs
     - crates/betterlite-vertex/src/vertex_schema/**
     - crates/betterlite-config/src/loader.rs

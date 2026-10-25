@@ -75,7 +75,6 @@ scope:
   paths:
     - crates/betterlite-db/src/daily_activity_export.rs
     - crates/betterlite-db/src/daily_activity_export/**
-    - crates/betterlite-db/src/lib.rs
     - tools/oracle/src/helpers/db/daily_activity_export.rs
     - tools/oracle/src/helpers/db/daily_activity_export/**
     - tools/oracle/helpers/daily_activity_export.py

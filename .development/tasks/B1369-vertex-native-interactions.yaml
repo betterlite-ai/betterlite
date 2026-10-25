@@ -23,6 +23,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_interactions}.rs
+    - crates/betterlite-vertex/src/vertex_interactions.rs
     - crates/betterlite-vertex/src/vertex_interactions/**
     - tools/oracle/src/helpers/vertex/interactions.rs
     - tools/oracle/src/helpers/vertex/interactions/**

@@ -31,7 +31,6 @@ description: >-
   lines leave room in 650 changed lines for the concurrency implementation and tests.
 scope:
   paths:
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/spend_batch.rs
     - crates/betterlite-auth/src/spend_batch/**
     - crates/betterlite-auth/Cargo.toml

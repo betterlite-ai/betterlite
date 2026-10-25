@@ -22,6 +22,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,gemini_http}.rs
+    - crates/betterlite-vertex/src/gemini_http.rs
     - crates/betterlite-vertex/src/gemini_http/**
     - tools/oracle/src/helpers/vertex/gemini_http_headers.rs
     - tools/oracle/src/helpers/vertex/gemini_http_headers/**

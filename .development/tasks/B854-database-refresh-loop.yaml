@@ -88,7 +88,6 @@ scope:
   paths:
     - crates/betterlite-db/src/database_refresh_loop.rs
     - crates/betterlite-db/src/database_refresh_loop/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/refresh_password.rs
@@ -99,6 +98,7 @@ scope:
     - tools/oracle/helpers/database_refresh_loop/**
     - tools/oracle/cases/helpers/database-refresh-loop/**
     - tools/oracle/fuzz/corpus/helper_case/database-refresh-loop-*
+    - crates/betterlite-db/src/database_refresh_loop/fixtures.rs
     - crates/betterlite-db/src/database_refresh_loop/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs

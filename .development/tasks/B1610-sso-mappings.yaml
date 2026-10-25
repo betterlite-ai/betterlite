@@ -24,7 +24,6 @@ description: >-
   90 adapter and 110 config/fuzz lines inside a 650-line budget.
 scope:
   paths:
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/sso_mappings.rs
     - crates/betterlite-auth/src/sso_mappings/**
     - crates/betterlite-auth/fuzz/Cargo.toml

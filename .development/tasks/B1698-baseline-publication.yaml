@@ -50,7 +50,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/baseline.rs
     - crates/betterlite-db/src/baseline/records.rs
     - crates/betterlite-db/src/baseline/records/**

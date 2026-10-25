@@ -47,7 +47,6 @@ scope:
     - deny.toml
     - crates/betterlite-secrets/**
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/stored_cipher.rs
     - crates/betterlite-db/src/stored_cipher/**
     - crates/betterlite-config/src/lib.rs

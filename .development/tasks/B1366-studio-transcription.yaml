@@ -26,6 +26,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,studio_transcription}.rs
+    - crates/betterlite-vertex/src/studio_transcription.rs
     - crates/betterlite-vertex/src/studio_transcription/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/studio_transcription.rs

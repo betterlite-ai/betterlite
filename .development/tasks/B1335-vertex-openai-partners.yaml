@@ -26,6 +26,7 @@ scope:
   paths:
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,partner_openai}.rs
+    - crates/betterlite-vertex/src/partner_openai.rs
     - crates/betterlite-vertex/src/partner_openai/**
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/partner_options.rs

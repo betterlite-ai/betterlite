@@ -20,6 +20,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,gemini_metadata}.rs
+    - crates/betterlite-vertex/src/gemini_metadata.rs
     - crates/betterlite-vertex/src/gemini_metadata/**
     - tools/oracle/src/helpers/vertex/gemini_metadata.rs
     - tools/oracle/src/helpers/vertex/gemini_metadata/**

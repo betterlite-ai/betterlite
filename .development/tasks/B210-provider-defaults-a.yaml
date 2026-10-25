@@ -28,8 +28,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-models/Cargo.toml
-  - crates/betterlite-models/src/lib.rs
-  - crates/betterlite-models/src/error.rs
   - crates/betterlite-models/src/provider_defaults_a.rs
   - crates/betterlite-models/src/provider_defaults_a/**
   - tools/oracle/Cargo.toml
