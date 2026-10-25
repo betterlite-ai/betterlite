@@ -1,13 +1,13 @@
 id: B860
 milestone: M4 keys, spend and management
 title: Postgres-backed HTTP oracle cases
-status: in-progress
+status: done
 depends_on: [B000, B001, B171]
 file: tasks/B860-postgres-http.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 126

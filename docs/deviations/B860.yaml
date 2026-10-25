@@ -1,0 +1,5 @@
+task: B860
+deviations:
+  - what: public_route_without_key boots through the runner without attaching a database fixture
+    why: The pinned LiteLLM virtualenv lacks prisma, so any database_url exits before the public route can be observed; database-backed gateway cases belong to B5076.
+    link: ''
