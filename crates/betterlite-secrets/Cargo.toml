@@ -11,7 +11,6 @@ base64 = "0.23.1"
 crypto_secretbox = { version = "0.1.1", default-features = false, features = ["salsa20", "std"] }
 getrandom = "0.4.3"
 secrecy = { workspace = true, features = ["serde"] }
-serde.workspace = true
 serde_json = "1.0.154"
 sha2 = { version = "0.11.1", default-features = false }
 thiserror.workspace = true
