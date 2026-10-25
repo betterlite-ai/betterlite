@@ -19,7 +19,7 @@ where
     let duration = Duration::try_minutes(offset).ok_or(DailyActivitySqlError::Timezone)?;
     let caller_today = now
         .checked_sub_signed(duration)
-        .filter(|date| (1_i32..=9999).contains(&date.year()))
+        .filter(|date| (1_i32..=9999_i32).contains(&date.year()))
         .ok_or(DailyActivitySqlError::Timezone)?
         .date_naive()
         .to_string();
