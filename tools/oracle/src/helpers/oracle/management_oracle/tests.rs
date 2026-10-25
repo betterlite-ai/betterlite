@@ -244,10 +244,16 @@ fn helper_case_decoder_rejects_management_unknown_fields() {
 
 #[test]
 fn rejects_unknown_ignore() {
-    let left = output(json!({"ok": true}));
-    let right = left.clone();
-    let ignore = vec!["/result/not_present".to_owned()];
-    assert!(compare_contracts(&left, &right, &ignore).is_err());
+    let call = serde_json::from_value(json!({
+        "management_oracle": path_encoding_call("segment")
+    }))
+    .unwrap();
+    let actual = crate::helpers::invoke(&call);
+    let ignores = vec![crate::case::Ignore {
+        pointer: "/value/not_present".to_owned(),
+        why: "an unknown pointer must fail even when the results match".to_owned(),
+    }];
+    assert!(crate::compare::compare_helper(&actual, &actual, &ignores).is_some());
 }
 
 #[test]
