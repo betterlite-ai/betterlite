@@ -30,5 +30,5 @@ pub fn public_routes() -> BTreeSet<&'static str> {
     for route in public::PUBLIC_ROUTES {
         routes.insert(*route);
     }
-    routes.into_iter().collect()
+    routes
 }

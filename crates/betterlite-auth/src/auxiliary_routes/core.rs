@@ -1,144 +1,24 @@
-pub(crate) const OPENAI_ROUTE_NAMES: &[&str] = &[
-    "chat_completion",
-    "completion",
-    "embeddings",
-    "image_generation",
-    "video_generation",
-    "audio_transcriptions",
-    "moderations",
-    "model_list",
-];
+#[rustfmt::skip]
+pub(crate) const OPENAI_ROUTE_NAMES: &[&str] = &["chat_completion", "completion", "embeddings", "image_generation", "video_generation", "audio_transcriptions", "moderations", "model_list"];
 
-pub(crate) const MAPPED_PASS_THROUGH_ROUTES: &[&str] = &[
-    "/bedrock",
-    "/comprehendmedical",
-    "/azure_speech",
-    "/transcribe",
-    "/vertex-ai",
-    "/vertex_ai",
-    "/cohere",
-    "/cursor",
-    "/gemini",
-    "/anthropic",
-    "/langfuse",
-    "/azure",
-    "/azure_ai",
-    "/openai",
-    "/openai_passthrough",
-    "/assemblyai",
-    "/eu.assemblyai",
-    "/tinyfish",
-    "/vllm",
-    "/mistral",
-    "/typesafe",
-    "/openrouter",
-    "/milvus",
-    "/gigachat",
-    "/watsonx",
-    "/nvidia_nim",
-    "/deepgram",
-    "/fal_ai",
-];
+#[rustfmt::skip]
+pub(crate) const MAPPED_PASS_THROUGH_ROUTES: &[&str] = &["/bedrock", "/comprehendmedical", "/azure_speech", "/transcribe", "/vertex-ai", "/vertex_ai", "/cohere", "/cursor", "/gemini", "/anthropic", "/langfuse", "/azure", "/azure_ai", "/openai", "/openai_passthrough", "/assemblyai", "/eu.assemblyai", "/tinyfish", "/vllm", "/mistral", "/typesafe", "/openrouter", "/milvus", "/gigachat", "/watsonx", "/nvidia_nim", "/deepgram", "/fal_ai"];
 
-pub(crate) const PASSTHROUGH_ROUTES_WILDCARD: &[&str] = &[
-    "/bedrock/*",
-    "/comprehendmedical/*",
-    "/azure_speech/*",
-    "/transcribe/*",
-    "/vertex-ai/*",
-    "/vertex_ai/*",
-    "/cohere/*",
-    "/cursor/*",
-    "/gemini/*",
-    "/anthropic/*",
-    "/langfuse/*",
-    "/azure/*",
-    "/azure_ai/*",
-    "/openai/*",
-    "/openai_passthrough/*",
-    "/assemblyai/*",
-    "/eu.assemblyai/*",
-    "/tinyfish/*",
-    "/vllm/*",
-    "/mistral/*",
-    "/typesafe/*",
-    "/openrouter/*",
-    "/milvus/*",
-    "/gigachat/*",
-    "/watsonx/*",
-    "/nvidia_nim/*",
-    "/deepgram/*",
-    "/fal_ai/*",
-];
+#[rustfmt::skip]
+pub(crate) const PASSTHROUGH_ROUTES_WILDCARD: &[&str] = &["/bedrock/*", "/comprehendmedical/*", "/azure_speech/*", "/transcribe/*", "/vertex-ai/*", "/vertex_ai/*", "/cohere/*", "/cursor/*", "/gemini/*", "/anthropic/*", "/langfuse/*", "/azure/*", "/azure_ai/*", "/openai/*", "/openai_passthrough/*", "/assemblyai/*", "/eu.assemblyai/*", "/tinyfish/*", "/vllm/*", "/mistral/*", "/typesafe/*", "/openrouter/*", "/milvus/*", "/gigachat/*", "/watsonx/*", "/nvidia_nim/*", "/deepgram/*", "/fal_ai/*"];
 
-pub(crate) const LITELLM_NATIVE_ROUTES: &[&str] = &[
-    "/rag/ingest",
-    "/v1/rag/ingest",
-    "/rag/query",
-    "/v1/rag/query",
-    "/lens",
-    "/lens/{lens_id}",
-    "/lens/{lens_id}/runs",
-    "/lens/{lens_id}/runs/{job_id}",
-    "/lens/{lens_id}/executions/{execution_id}",
-    "/lens/{lens_id}/cancel",
-    "/lens/{lens_id}/findings/{finding_id}",
-    "/lens/preview/sample",
-    "/lens/workers/register",
-    "/lens/workers/{worker_id}",
-    "/v1/traces",
-    "/v1/traces/query",
-    "/v1/traces/query/help",
-    "/v1/traces/{trace_id}",
-    "/v1/traces/{trace_id}/spans/{span_id}",
-];
+#[rustfmt::skip]
+pub(crate) const LITELLM_NATIVE_ROUTES: &[&str] = &["/rag/ingest", "/v1/rag/ingest", "/rag/query", "/v1/rag/query", "/lens", "/lens/{lens_id}", "/lens/{lens_id}/runs", "/lens/{lens_id}/runs/{job_id}", "/lens/{lens_id}/executions/{execution_id}", "/lens/{lens_id}/cancel", "/lens/{lens_id}/findings/{finding_id}", "/lens/preview/sample", "/lens/workers/register", "/lens/workers/{worker_id}", "/v1/traces", "/v1/traces/query", "/v1/traces/query/help", "/v1/traces/{trace_id}", "/v1/traces/{trace_id}/spans/{span_id}"];
 
-pub(crate) const GOOGLE_ROUTES: &[&str] = &[
-    "/v1beta/models/{model_name:path}:countTokens",
-    "/v1beta/models/{model_name:path}:generateContent",
-    "/v1beta/models/{model_name:path}:streamGenerateContent",
-    "/models/{model_name:path}:countTokens",
-    "/models/{model_name:path}:generateContent",
-    "/models/{model_name:path}:streamGenerateContent",
-    "/interactions",
-    "/v1beta/interactions",
-    "/interactions/{interaction_id}",
-    "/v1beta/interactions/{interaction_id}",
-    "/interactions/{interaction_id}/cancel",
-    "/v1beta/interactions/{interaction_id}/cancel",
-    "/v1beta/agents",
-    "/v1beta/agents/{name}",
-    "/v1beta/agents/{name}/versions",
-];
+#[rustfmt::skip]
+pub(crate) const GOOGLE_ROUTES: &[&str] = &["/v1beta/models/{model_name:path}:countTokens", "/v1beta/models/{model_name:path}:generateContent", "/v1beta/models/{model_name:path}:streamGenerateContent", "/models/{model_name:path}:countTokens", "/models/{model_name:path}:generateContent", "/models/{model_name:path}:streamGenerateContent", "/interactions", "/v1beta/interactions", "/interactions/{interaction_id}", "/v1beta/interactions/{interaction_id}", "/interactions/{interaction_id}/cancel", "/v1beta/interactions/{interaction_id}/cancel", "/v1beta/agents", "/v1beta/agents/{name}", "/v1beta/agents/{name}/versions"];
 
+#[rustfmt::skip]
 pub(crate) const APPLY_GUARDRAIL_ROUTES: &[&str] = &["/guardrails/apply_guardrail"];
 
+#[rustfmt::skip]
 pub(crate) const MODEL_INFO_ROUTES: &[&str] =
     &["/model/info", "/v1/model/info", "/model_group/info"];
 
-pub(crate) const INFO_ROUTES: &[&str] = &[
-    "/key/info",
-    "/key/health",
-    "/team/info",
-    "/team/list",
-    "/v2/team/list",
-    "/organization/list",
-    "/team/available",
-    "/team/metadata_schema",
-    "/user/info",
-    "/v2/user/info",
-    "/model/info",
-    "/v1/model/info",
-    "/v2/model/info",
-    "/v2/key/info",
-    "/model_group/info",
-    "/health",
-    "/health/services",
-    "/key/list",
-    "/user/filter/ui",
-    "/models",
-    "/v1/models",
-    "/sso/get/ui_settings",
-    "/get/user_banner",
-    "/get/latest_release_info",
-];
+#[rustfmt::skip]
+pub(crate) const INFO_ROUTES: &[&str] = &["/key/info", "/key/health", "/team/info", "/team/list", "/v2/team/list", "/organization/list", "/team/available", "/team/metadata_schema", "/user/info", "/v2/user/info", "/model/info", "/v1/model/info", "/v2/model/info", "/v2/key/info", "/model_group/info", "/health", "/health/services", "/key/list", "/user/filter/ui", "/models", "/v1/models", "/sso/get/ui_settings", "/get/user_banner", "/get/latest_release_info"];
