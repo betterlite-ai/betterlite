@@ -39,7 +39,6 @@ pub(crate) fn decode_lenient(text: &str, url_alphabet: bool) -> Result<Vec<u8>, 
     let mut sextets = String::with_capacity(text.len());
     for byte in text.bytes() {
         let normalized = match (byte, url_alphabet) {
-            (b'=', _) => continue,
             (b'-', true) => '+',
             (b'_', true) => '/',
             (b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'+' | b'/', _) => char::from(byte),
@@ -47,10 +46,6 @@ pub(crate) fn decode_lenient(text: &str, url_alphabet: bool) -> Result<Vec<u8>, 
         };
         sextets.push(normalized);
     }
-    finish(sextets)
-}
-
-fn finish(sextets: String) -> Result<Vec<u8>, SecretError> {
     LENIENT
         .decode(sextets)
         .map_err(|source| SecretError::Decode { source })
