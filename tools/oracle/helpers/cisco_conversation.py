@@ -1,5 +1,3 @@
-# ruff: noqa: SLF001
-# pyright: reportPrivateUsage=false
 import json
 from types import SimpleNamespace
 from typing import TypeAlias, cast
@@ -9,6 +7,8 @@ from litellm.proxy.guardrails.guardrail_hooks.cisco_ai_defense.cisco_ai_defense 
 )
 from litellm.types.utils import ModelResponse, TextCompletionResponse
 
+# ruff: noqa: SLF001
+# pyright: reportPrivateUsage=false
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 

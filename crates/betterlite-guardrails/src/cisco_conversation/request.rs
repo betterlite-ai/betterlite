@@ -99,10 +99,16 @@ pub fn tool_argument_parts(message: &Fields) -> Vec<String> {
 }
 
 fn push_arguments(function: &Json, parts: &mut Vec<String>) {
-    if let Json::Object(fields) = function {
-        let arguments = Json::field(fields, "arguments");
+    let Json::Object(fields) = function else {
+        return;
+    };
+    let Some(raw) = fields.get("arguments") else {
+        return;
+    };
+    let arguments = Json::parse(raw.get());
+    if !matches!(arguments, Json::Null) {
         let text = arguments.python_str();
-        if !matches!(arguments, Json::Null) && !text.is_empty() {
+        if !text.is_empty() {
             parts.push(text);
         }
     }

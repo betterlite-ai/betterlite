@@ -6,22 +6,7 @@ use crate::cisco_conversation::{Fields, InspectMessage, Role, normalize_content}
 pub fn chat_messages(response: &Fields) -> Vec<InspectMessage> {
     let mut messages = Vec::new();
     for choice in Json::field(response, "choices").objects() {
-        let Json::Object(message) = Json::field(&choice, "message") else {
-            continue;
-        };
-        let mut parts = Vec::new();
-        let content = normalize_content(&Json::field(&message, "content"));
-        if !content.is_empty() {
-            parts.push(content);
-        }
-        parts.extend(tool_argument_parts(&message));
-        parts.extend(reasoning_parts(&message));
-        if !parts.is_empty() {
-            messages.push(InspectMessage {
-                role: Role::Assistant,
-                content: parts.join(" "),
-            });
-        }
+        messages.extend(assistant_message(&chat_choice(&choice)));
     }
     messages
 }
@@ -39,16 +24,36 @@ pub fn completion_messages(response: &Fields) -> Vec<InspectMessage> {
 pub fn output_messages(response: &Fields) -> Vec<InspectMessage> {
     let mut parts = Vec::new();
     for item in Json::field(response, "output").objects() {
-        for part in Json::field(&item, "content").objects() {
-            for key in ["text", "reasoning", "thinking"] {
-                push_text(Json::field(&part, key), &mut parts);
-            }
-        }
-        for key in ["arguments", "text"] {
-            push_text(Json::field(&item, key), &mut parts);
-        }
+        parts.extend(output_item(&item));
     }
     assistant_message(&parts)
+}
+
+fn chat_choice(choice: &Fields) -> Vec<String> {
+    let Json::Object(message) = Json::field(choice, "message") else {
+        return Vec::new();
+    };
+    let mut parts = Vec::new();
+    let content = normalize_content(&Json::field(&message, "content"));
+    if !content.is_empty() {
+        parts.push(content);
+    }
+    parts.extend(tool_argument_parts(&message));
+    parts.extend(reasoning_parts(&message));
+    parts
+}
+
+fn output_item(item: &Fields) -> Vec<String> {
+    let mut parts = Vec::new();
+    for part in Json::field(item, "content").objects() {
+        for key in ["text", "reasoning", "thinking"] {
+            push_text(Json::field(&part, key), &mut parts);
+        }
+    }
+    for key in ["arguments", "text"] {
+        push_text(Json::field(item, key), &mut parts);
+    }
+    parts
 }
 
 #[must_use]

@@ -36,17 +36,7 @@ impl Json {
     #[must_use]
     pub fn objects(&self) -> Vec<Fields> {
         match self {
-            Self::List(items) => items
-                .iter()
-                .filter_map(|item| match Self::parse(item.get()) {
-                    Self::Object(fields) => Some(fields),
-                    Self::Null
-                    | Self::Bool(_)
-                    | Self::Number(_)
-                    | Self::Text(_)
-                    | Self::List(_) => None,
-                })
-                .collect(),
+            Self::List(items) => items.iter().filter_map(object_from_raw).collect(),
             Self::Null | Self::Bool(_) | Self::Number(_) | Self::Text(_) | Self::Object(_) => {
                 Vec::new()
             }
@@ -58,10 +48,7 @@ impl Json {
         match self {
             Self::Null => false,
             Self::Bool(flag) => *flag,
-            Self::Number(text) => text
-                .split(['e', 'E'])
-                .next()
-                .is_some_and(|mantissa| mantissa.chars().any(|digit| matches!(digit, '1'..='9'))),
+            Self::Number(text) => number_is_nonzero(text),
             Self::Text(text) => !text.is_empty(),
             Self::List(items) => !items.is_empty(),
             Self::Object(fields) => !fields.is_empty(),
@@ -110,6 +97,13 @@ impl Json {
     }
 }
 
+fn object_from_raw(item: &Box<RawValue>) -> Option<Fields> {
+    match Json::parse(item.get()) {
+        Json::Object(fields) => Some(fields),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+    }
+}
+
 fn python_quote(text: &str) -> String {
     let mark = if text.contains('\'') && !text.contains('"') {
         '"'
@@ -133,4 +127,9 @@ fn python_quote(text: &str) -> String {
     }
     repr.push(mark);
     repr
+}
+
+fn number_is_nonzero(text: &str) -> bool {
+    let mantissa = text.split(['e', 'E']).next().unwrap_or_default();
+    mantissa.chars().any(|digit| matches!(digit, '1'..='9'))
 }
