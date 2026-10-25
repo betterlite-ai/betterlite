@@ -48,8 +48,10 @@ scope:
     - crates/betterlite-auth/src/master_database_auth/**
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/auth/master_database_auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - tools/oracle/cases/auth/master-database-auth/**
   lint_tables: false
 references:

@@ -21,6 +21,7 @@ scope:
     - crates/betterlite-ocr/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/api/mod.rs
+    - crates/betterlite-server/src/api/mod/**
     - crates/betterlite-server/src/api/ocr_request.rs
     - crates/betterlite-server/src/api/ocr_request/**
     - tools/oracle/cases/helpers/ocr/**

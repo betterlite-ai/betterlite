@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-roi/src/summary.rs
+    - crates/betterlite-roi/src/summary/**
   lint_tables: false
 
 references:

@@ -40,6 +40,7 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/coordination_settings.rs
     - crates/betterlite-server/fuzz/corpus/coordination_settings/**
     - crates/betterlite-config/src/tests/coordination_redis_settings.rs
+    - crates/betterlite-config/src/tests/coordination_redis_settings/**
     - crates/betterlite-config/src/tests.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/coordination-redis-*
     - tools/oracle/src/helpers/server/coordination_settings.rs

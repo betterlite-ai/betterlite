@@ -26,6 +26,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/media_relay_logging.rs
     - crates/betterlite-core/src/api/media_relay_logging/**
     - crates/betterlite-server/src/lib.rs

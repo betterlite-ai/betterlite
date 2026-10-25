@@ -33,14 +33,18 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/stability.rs
+    - crates/betterlite-core/src/api/stability/**
     - crates/betterlite-core/src/api/stability/generation.rs
     - crates/betterlite-core/src/api/stability/generation/**
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/stability_image.rs
     - crates/betterlite-core/fuzz/corpus/stability_image/**
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/stability.rs
+    - crates/betterlite-config/src/providers/stability/**
     - tools/oracle/src/helpers/core_ops/stability_generation.rs
     - tools/oracle/src/helpers/core_ops/stability_generation/**
     - tools/oracle/helpers/stability_generation.py

@@ -30,12 +30,17 @@ scope:
   - crates/betterlite-router/src/deployment_clients/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/deployment_clients.rs
   - crates/betterlite-server/src/routing/deployment_clients/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/deployment_clients.rs
   - tools/oracle/src/router_probes/deployment_clients/**
   - tools/oracle/src/router_probes/mod.rs
@@ -45,11 +50,16 @@ scope:
   - tools/oracle/cases/routing/deployment-clients/**
   - crates/betterlite-config/src/lib.rs
   - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/loader/**
   - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/raw/**
   - crates/betterlite-config/tests/**
   - crates/betterlite-config/src/resolve.rs
+  - crates/betterlite-config/src/resolve/**
   - crates/betterlite-config/src/types.rs
+  - crates/betterlite-config/src/types/**
   - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/router/**
   - crates/betterlite-config/src/deployment_clients.rs
   - crates/betterlite-config/src/deployment_clients/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
@@ -57,6 +67,7 @@ scope:
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/chat.rs
   - crates/betterlite-openai/src/request.rs
+  - crates/betterlite-openai/src/request/**
   - crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs
   - crates/betterlite-openai/fuzz/corpus/chat_request/deployment-clients-*
   - crates/betterlite-config/fuzz/Cargo.toml

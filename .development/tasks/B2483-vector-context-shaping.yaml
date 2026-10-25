@@ -16,9 +16,11 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_context_shaping.rs
   - crates/betterlite-core/src/api/vector_context_shaping/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/vector_context_shaping.rs
   - crates/betterlite-config/src/api/vector_context_shaping/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-context-shaping-*

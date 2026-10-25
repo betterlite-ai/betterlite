@@ -38,6 +38,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/log_query.rs
     - crates/betterlite-server/src/spend/log_query/**
     - crates/betterlite-server/fuzz/Cargo.toml

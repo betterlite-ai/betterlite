@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_stream_events.rs
   - crates/betterlite-core/src/api/responses_stream_events/**
   - crates/betterlite-core/fuzz/corpus/responses_stream_value/responses-event-*

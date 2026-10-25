@@ -22,12 +22,17 @@ scope:
   - crates/betterlite-router/src/wildcard_catalog/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/wildcard_catalog.rs
   - crates/betterlite-server/src/routing/wildcard_catalog/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/wildcard_catalog.rs
   - tools/oracle/src/router_probes/wildcard_catalog/**
   - tools/oracle/src/router_probes/mod.rs

@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/vector_search_routes.rs
   - crates/betterlite-server/src/api/vector_search_routes/**
   - crates/betterlite-server/fuzz/corpus/request_body/vector-search-*

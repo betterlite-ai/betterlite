@@ -18,12 +18,17 @@ scope:
   - crates/betterlite-router/src/automatic_router_pipeline/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/automatic_router_pipeline.rs
   - crates/betterlite-server/src/routing/automatic_router_pipeline/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/automatic_router_pipeline.rs
   - tools/oracle/src/router_probes/automatic_router_pipeline/**
   - tools/oracle/src/router_probes/mod.rs
