@@ -1,0 +1,23 @@
+[package]
+name = "betterlite-secrets-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-secrets = { path = ".." }
+libfuzzer-sys = "0.4.9"
+secrecy = "0.10.3"
+serde_json = "1.0.154"
+
+[[bin]]
+name = "secret_value"
+path = "fuzz_targets/secret_value.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

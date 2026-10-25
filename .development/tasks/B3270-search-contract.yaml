@@ -22,6 +22,7 @@ description: >-
 
 scope:
   paths:
+    - crates/betterlite-openai/src/search.rs
     - crates/betterlite-openai/src/search/**
   lint_tables: false
 
@@ -78,13 +79,13 @@ checks:
   commands:
     - id: search-types-test
       why: search types tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^search_types::/ || /^search_records::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^search::search_types::/) | test(/^search::search_records::/)'
     - id: search-credential-test
       why: search credential and trust check tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^search_credential::/ || /^search_trust::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^search::search_credential::/) | test(/^search::search_trust::/)'
     - id: search-hooks-test
       why: search base hooks and error mapping tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^search_hooks::/ || /^search_defaults::/ || /^search_errors::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^search::search_hooks::/) | test(/^search::search_defaults::/) | test(/^search::search_errors::/)'
 
 oracle_cases: []
 

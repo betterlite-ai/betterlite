@@ -1,0 +1,7 @@
+kind: helper
+name: whitespace-boundary-avoids-word-severance
+call:
+  bedrock_chunking:
+    step: {"split": {"content": [{"text": {"text": "one two\tthree"}}]}}
+env: {}
+compare: {ignore: []}

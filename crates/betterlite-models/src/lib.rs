@@ -13,6 +13,7 @@ pub mod compatible_api_selection;
 pub mod controls;
 pub mod cost_breakdown;
 pub mod cost_usage;
+pub mod decisions;
 pub mod duration_cost;
 pub mod endpoints;
 pub mod entry;
