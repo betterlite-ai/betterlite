@@ -16,12 +16,11 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 def fake_span(value: Json) -> SimpleNamespace | None:
     if not isinstance(value, dict):
         return None
-    tags: list[Json] = []
-    span = SimpleNamespace(trace_id=value.get("trace_id"), span_id=value.get("span_id"), tags=tags)
+    span = SimpleNamespace(trace_id=value.get("trace_id"), span_id=value.get("span_id"), tags=[])
     # LiteLLM probes these with hasattr, so a disabled method must not exist at all
     for method in ("set_tag_str", "set_tag"):
         if value.get(method) is True:
-            setattr(span, method, lambda key, tag: tags.append([key, tag]))
+            setattr(span, method, lambda key, tag: span.tags.append([key, tag]))
     return span
 
 
@@ -36,11 +35,8 @@ def environment(env: dict[str, Json], request_tags: list[Json], metadata: dict[s
     payload = cast("StandardLoggingPayload", {"request_tags": request_tags, "metadata": metadata})
     return {
         "source": datadog_handler.get_datadog_source(),
-        "service": datadog_handler.get_datadog_service(),
-        "hostname": datadog_handler.get_datadog_hostname(),
         "base_url": datadog_handler.get_datadog_base_url_from_env(),
-        "use_tracer": dd_tracing._should_use_dd_tracer(),  # noqa: SLF001 - the flag reader is the spec
-        "use_profiler": dd_tracing._should_use_dd_profiler(),  # noqa: SLF001 - the flag reader is the spec
+        "flags": [dd_tracing._should_use_dd_tracer(), dd_tracing._should_use_dd_profiler()],  # noqa: SLF001 - the spec
         "tags": datadog_handler.get_datadog_tags(payload),
     }
 

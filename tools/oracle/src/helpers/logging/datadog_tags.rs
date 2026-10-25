@@ -8,22 +8,28 @@ use serde_json::json;
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
-    Normalize {
-        values: Vec<String>,
-    },
-    Environment {
-        env: BTreeMap<String, String>,
-        request_tags: Vec<String>,
-        metadata: TeamMetadata,
-    },
-    Spans {
-        current: Option<SpanInput>,
-        root: Option<SpanInput>,
-        call_id: Option<String>,
-        key_alias: Option<String>,
-        key_hash: Option<String>,
-        requested_model: Option<String>,
-    },
+    Normalize { values: Vec<String> },
+    Environment(EnvironmentInput),
+    Spans(SpansInput),
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct EnvironmentInput {
+    env: BTreeMap<String, String>,
+    request_tags: Vec<String>,
+    metadata: TeamMetadata,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SpansInput {
+    current: Option<SpanInput>,
+    root: Option<SpanInput>,
+    call_id: Option<String>,
+    key_alias: Option<String>,
+    key_hash: Option<String>,
+    requested_model: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -74,23 +80,24 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let output = match input {
-            Input::Normalize { values } => json!(values.iter().map(|value| tagging::normalize_value(value)).collect::<Vec<_>>()),
-            Input::Environment { env, request_tags, metadata } => {
-                let environment = Environment::from_lookup(env);
+            Input::Normalize { values } => values
+                .iter()
+                .map(|value| tagging::normalize_value(value))
+                .collect(),
+            Input::Environment(case) => {
+                let environment = Environment::from_lookup(&case.env);
                 json!({
                     "source": environment.source,
-                    "service": environment.service,
-                    "hostname": environment.hostname,
                     "base_url": environment.base_url,
-                    "use_tracer": environment.use_tracer,
-                    "use_profiler": environment.use_profiler,
-                    "tags": tagging::tags(&environment, request_tags, metadata),
+                    "flags": [environment.use_tracer, environment.use_profiler],
+                    "tags": tagging::tags(&environment, &case.request_tags, &case.metadata),
                 })
             }
-            Input::Spans { current, root, call_id, key_alias, key_hash, requested_model } => {
-                let tracer = InputTracer(current.as_ref(), root.as_ref());
-                apm::tag_call_id(&tracer, call_id.as_deref());
-                apm::tag_request(&tracer, key_alias.as_deref(), key_hash.as_deref(), requested_model.as_deref());
+            Input::Spans(case) => {
+                let tracer = InputTracer(case.current.as_ref(), case.root.as_ref());
+                apm::tag_call_id(&tracer, case.call_id.as_deref());
+                let (alias, hash) = (case.key_alias.as_deref(), case.key_hash.as_deref());
+                apm::tag_request(&tracer, alias, hash, case.requested_model.as_deref());
                 let recorded = |span: Option<&SpanInput>| Some(json!(*span?.tags.lock().ok()?));
                 json!({
                     "payload": TraceContext::active(&tracer),

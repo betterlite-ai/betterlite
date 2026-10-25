@@ -28,10 +28,8 @@ pub trait Tracer {
     }
 
     fn tag_active_span(&self, key: &str, value: &str) -> bool {
-        !key.is_empty()
-            && self
-                .active_span()
-                .is_some_and(|span| span.set_tag(key, value))
+        let span = self.active_span();
+        !key.is_empty() && span.is_some_and(|active| active.set_tag(key, value))
     }
 }
 
