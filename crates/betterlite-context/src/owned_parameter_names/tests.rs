@@ -30,6 +30,36 @@ fn case_2_owned_name_registry() {
     );
     assert!(names.iter().any(|name| name == "no-log"));
     assert!(names.iter().any(|name| name == "input_cost_per_token"));
+    assert_eq!(
+        wire_names("pricing").unwrap().first().map(String::as_str),
+        Some("input_cost_per_token")
+    );
+    assert_eq!(
+        owned_wire_names("internal_state")
+            .unwrap()
+            .first()
+            .map(String::as_str),
+        Some("litellm_call_id")
+    );
+    assert_eq!(
+        wire_names("internal").unwrap().first().map(String::as_str),
+        Some("litellm_call_id")
+    );
+    assert_eq!(
+        wire_names("callback").unwrap().first().map(String::as_str),
+        Some("langfuse_public_key")
+    );
+    assert_eq!(
+        wire_names("provider_connection")
+            .unwrap()
+            .first()
+            .map(String::as_str),
+        Some("api_key")
+    );
+    assert_eq!(
+        wire_names("options").unwrap().first().map(String::as_str),
+        Some("custom_llm_provider")
+    );
 }
 
 #[test]
