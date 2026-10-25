@@ -81,6 +81,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-activity/**
+    - tools/oracle/helpers/b815.py
+    - tools/oracle/helpers/b815/**
+    - tools/oracle/src/helpers/server/b815.rs
+    - tools/oracle/src/helpers/server/b815/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6512-L6826

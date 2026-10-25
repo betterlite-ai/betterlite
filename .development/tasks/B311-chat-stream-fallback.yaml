@@ -49,6 +49,10 @@ scope:
   - crates/betterlite-openai/fuzz/fuzz_targets/sse_events.rs
   - crates/betterlite-openai/fuzz/corpus/sse_events/chat-stream-fallback-*
   - crates/betterlite-openai/fuzz/Cargo.toml
+  - tools/oracle/helpers/b311.py
+  - tools/oracle/helpers/b311/**
+  - tools/oracle/src/helpers/router/b311.rs
+  - tools/oracle/src/helpers/router/b311/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2833-L3127

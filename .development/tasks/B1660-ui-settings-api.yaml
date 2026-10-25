@@ -40,6 +40,10 @@ scope:
     - crates/betterlite-server/fuzz/corpus/ui_settings_patch/**
     - tools/oracle/cases/management/ui-settings/**
     - tools/oracle/fuzz/corpus/http_case/ui-settings-*
+    - tools/oracle/helpers/b1660.py
+    - tools/oracle/helpers/b1660/**
+    - tools/oracle/src/helpers/server/b1660.rs
+    - tools/oracle/src/helpers/server/b1660/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1745-L1961

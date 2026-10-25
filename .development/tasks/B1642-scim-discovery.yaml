@@ -32,6 +32,10 @@ scope:
     - crates/betterlite-server/src/scim_discovery/**
     - tools/oracle/cases/management/scim-discovery/**
     - tools/oracle/fuzz/corpus/http_case/scim-discovery-*
+    - tools/oracle/helpers/b1642.py
+    - tools/oracle/helpers/b1642/**
+    - tools/oracle/src/helpers/server/b1642.rs
+    - tools/oracle/src/helpers/server/b1642/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1171-L1404

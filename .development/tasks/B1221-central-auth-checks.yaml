@@ -113,6 +113,10 @@ scope:
     - crates/betterlite-server/src/auth/central_auth_checks/**
     - crates/betterlite-config/src/sections/central_auth_checks.rs
     - crates/betterlite-config/src/sections/central_auth_checks/**
+    - tools/oracle/helpers/b1221.py
+    - tools/oracle/helpers/b1221/**
+    - tools/oracle/src/helpers/auth/b1221.rs
+    - tools/oracle/src/helpers/auth/b1221/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2755-L3110

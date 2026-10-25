@@ -52,6 +52,10 @@ scope:
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/redis_failure_policy.rs
   - crates/betterlite-config/src/sections/redis_failure_policy/**
+  - tools/oracle/helpers/b393.py
+  - tools/oracle/helpers/b393/**
+  - tools/oracle/src/helpers/router/b393.rs
+  - tools/oracle/src/helpers/router/b393/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L188-L281

@@ -48,6 +48,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/native_stream_fallback.py
   - tools/oracle/cases/routing/native-stream-fallback/**
+  - tools/oracle/helpers/b312.py
+  - tools/oracle/helpers/b312/**
+  - tools/oracle/src/helpers/router/b312.rs
+  - tools/oracle/src/helpers/router/b312/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L528-L609

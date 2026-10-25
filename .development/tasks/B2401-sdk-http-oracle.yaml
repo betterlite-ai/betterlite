@@ -61,6 +61,10 @@ scope:
   - tools/oracle/fuzz/fuzz_targets/sdk_http_case.rs
   - tools/oracle/fuzz/corpus/sdk_http_case/**
   - Cargo.lock
+  - tools/oracle/helpers/b2401.py
+  - tools/oracle/helpers/b2401/**
+  - tools/oracle/src/helpers/oracle/b2401.rs
+  - tools/oracle/src/helpers/oracle/b2401/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L779-L1062

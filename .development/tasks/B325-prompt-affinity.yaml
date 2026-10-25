@@ -54,6 +54,10 @@ scope:
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/prompt_affinity.rs
   - crates/betterlite-config/src/sections/prompt_affinity/**
+  - tools/oracle/helpers/b325.py
+  - tools/oracle/helpers/b325/**
+  - tools/oracle/src/helpers/router/b325.rs
+  - tools/oracle/src/helpers/router/b325/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/prompt_caching_cache.py#L51-L337

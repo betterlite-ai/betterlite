@@ -46,6 +46,10 @@ scope:
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/deployment_catalog.rs
   - crates/betterlite-config/src/sections/deployment_catalog/**
+  - tools/oracle/helpers/b302.py
+  - tools/oracle/helpers/b302/**
+  - tools/oracle/src/helpers/router/b302.rs
+  - tools/oracle/src/helpers/router/b302/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12627-L12921

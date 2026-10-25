@@ -50,6 +50,10 @@ scope:
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/quality_router.rs
   - crates/betterlite-config/src/sections/quality_router/**
+  - tools/oracle/helpers/b338.py
+  - tools/oracle/helpers/b338/**
+  - tools/oracle/src/helpers/router/b338.rs
+  - tools/oracle/src/helpers/router/b338/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/quality_router/config.py#L10-L74

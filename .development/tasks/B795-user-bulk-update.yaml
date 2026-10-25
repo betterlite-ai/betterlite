@@ -133,6 +133,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/user-bulk-update/**
+    - tools/oracle/helpers/b795.py
+    - tools/oracle/helpers/b795/**
+    - tools/oracle/src/helpers/server/b795.rs
+    - tools/oracle/src/helpers/server/b795/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1756-L2064

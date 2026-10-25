@@ -124,6 +124,10 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/model-patch-*
     - crates/betterlite-config/src/sections/model_patch.rs
     - crates/betterlite-config/src/sections/model_patch/**
+    - tools/oracle/helpers/b835.py
+    - tools/oracle/helpers/b835/**
+    - tools/oracle/src/helpers/server/b835.rs
+    - tools/oracle/src/helpers/server/b835/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1088-L1320

@@ -53,6 +53,10 @@ scope:
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/latency_observations.rs
   - crates/betterlite-config/src/sections/latency_observations/**
+  - tools/oracle/helpers/b389.py
+  - tools/oracle/helpers/b389/**
+  - tools/oracle/src/helpers/router/b389.rs
+  - tools/oracle/src/helpers/router/b389/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_latency.py#L34-L368

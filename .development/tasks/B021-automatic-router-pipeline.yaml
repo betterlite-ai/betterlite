@@ -36,6 +36,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/automatic_router_pipeline.py
   - tools/oracle/cases/routing/automatic-router-pipeline/**
+  - tools/oracle/helpers/b021.py
+  - tools/oracle/helpers/b021/**
+  - tools/oracle/src/helpers/router/b021.rs
+  - tools/oracle/src/helpers/router/b021/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L13796-L13980

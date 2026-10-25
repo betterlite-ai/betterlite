@@ -54,6 +54,10 @@ scope:
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/routing_budgets.rs
   - crates/betterlite-config/src/sections/routing_budgets/**
+  - tools/oracle/helpers/b020.py
+  - tools/oracle/helpers/b020/**
+  - tools/oracle/src/helpers/router/b020.rs
+  - tools/oracle/src/helpers/router/b020/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L130-L288

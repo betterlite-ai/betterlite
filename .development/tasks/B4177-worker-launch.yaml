@@ -11,6 +11,10 @@ scope:
   paths:
     - crates/betterlite-server/**
     - tools/oracle/cases/worker/**
+    - tools/oracle/helpers/b4177.py
+    - tools/oracle/helpers/b4177/**
+    - tools/oracle/src/helpers/oracle/b4177.rs
+    - tools/oracle/src/helpers/oracle/b4177/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L435-L466
