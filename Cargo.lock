@@ -351,6 +351,7 @@ dependencies = [
  "betterlite-secrets",
  "clap",
  "futures-util",
+ "hex",
  "reqwest",
  "rstest",
  "secrecy",

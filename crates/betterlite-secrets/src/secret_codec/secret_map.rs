@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
 
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
-use serde::de::IgnoredAny;
 
 use crate::error::SecretError;
 use crate::secret_codec::diagnostics::SecretDiagnostics;
@@ -12,14 +10,6 @@ use crate::secret_codec::{
 };
 
 pub type SecretMap = BTreeMap<String, SecretString>;
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum StoredMap {
-    Map(SecretMap),
-    Text(SecretString),
-    Other(IgnoredAny),
-}
 
 pub fn encrypt_secret_map<N, D>(
     cipher: &StoredCipher<N, D>,
@@ -45,7 +35,7 @@ where
 
 pub fn decode_secret_map<N, D>(
     cipher: &StoredCipher<N, D>,
-    stored: Option<&StoredMap>,
+    stored: Option<&str>,
     field: &str,
 ) -> Result<Option<SecretMap>, SecretError>
 where
@@ -55,13 +45,34 @@ where
     let rejected = || SecretError::MapDecode {
         field: field.to_owned(),
     };
-    let text = match stored {
-        None => return Ok(None),
-        Some(StoredMap::Map(map)) => return Ok(Some(map.clone())),
-        Some(StoredMap::Text(text)) if text.expose_secret().len() <= MAX_ENCODED_BYTES => {
-            text.expose_secret()
-        }
-        Some(StoredMap::Text(_) | StoredMap::Other(_)) => return Err(rejected()),
+    let Some(raw) = stored else {
+        return Ok(None);
+    };
+    if raw.len() > MAX_ENCODED_BYTES {
+        return Err(rejected());
+    }
+    // Typed attempts reject nested values immediately without buffering a generic JSON tree
+    if let Ok(map) = serde_json::from_str::<SecretMap>(raw) {
+        return Ok(Some(map));
+    }
+    let text: Option<SecretString> = serde_json::from_str(raw).map_err(|_json| rejected())?;
+    text.map_or_else(
+        || Ok(None),
+        |value| decode_text_map(cipher, value.expose_secret(), field).map(Some),
+    )
+}
+
+fn decode_text_map<N, D>(
+    cipher: &StoredCipher<N, D>,
+    text: &str,
+    field: &str,
+) -> Result<SecretMap, SecretError>
+where
+    N: NonceSource,
+    D: SecretDiagnostics,
+{
+    let rejected = || SecretError::MapDecode {
+        field: field.to_owned(),
     };
     // Python's str.lstrip also strips the separators U+001C to U+001F
     let trimmed = text.trim_start_matches(|symbol: char| {
@@ -69,9 +80,7 @@ where
     });
     // typed parsing fails at the first nested value, so it never recurses past depth one
     let ciphertext: SecretString = if trimmed.starts_with('{') {
-        return serde_json::from_str(text)
-            .map(Some)
-            .map_err(|_json| rejected());
+        return serde_json::from_str(text).map_err(|_json| rejected());
     } else if trimmed.starts_with('"') {
         serde_json::from_str(text).map_err(|_json| rejected())?
     } else {
@@ -85,7 +94,5 @@ where
     let Some(StoredValue::Text(plaintext)) = decrypted else {
         return Err(rejected());
     };
-    serde_json::from_str(plaintext.expose_secret())
-        .map(Some)
-        .map_err(|_json| rejected())
+    serde_json::from_str(plaintext.expose_secret()).map_err(|_json| rejected())
 }

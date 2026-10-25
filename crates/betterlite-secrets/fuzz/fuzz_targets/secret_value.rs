@@ -2,7 +2,7 @@
 
 use betterlite_secrets::secret_codec::bearer::decrypt_bearer_token;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
-use betterlite_secrets::secret_codec::secret_map::{StoredMap, decode_secret_map};
+use betterlite_secrets::secret_codec::secret_map::decode_secret_map;
 use betterlite_secrets::secret_codec::{
     Algorithm, CipherSettings, DecryptPolicy, FailureLog, FailureValue, OsNonces, StoredCipher,
     StoredValue, decrypt_if_encrypted_with,
@@ -27,7 +27,6 @@ fuzz_target!(|bytes: &[u8]| {
         log: FailureLog::Error,
         value: FailureValue::Original,
     };
-    let stored: Option<StoredMap> = serde_json::from_str(value).ok();
     let _ = cipher.decrypt_value(
         StoredValue::<()>::Text(SecretString::from(value)),
         "fuzz",
@@ -35,5 +34,8 @@ fuzz_target!(|bytes: &[u8]| {
     );
     let _ = decrypt_if_encrypted_with(value, &key);
     let _ = decrypt_bearer_token(&cipher, value, "litellm_login_");
-    let _ = decode_secret_map(&cipher, stored.as_ref(), "fuzz");
+    let _ = decode_secret_map(&cipher, Some(value), "fuzz");
+    if let Ok(text) = serde_json::to_string(value) {
+        let _ = decode_secret_map(&cipher, Some(&text), "fuzz");
+    }
 });

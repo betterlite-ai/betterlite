@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use rstest::rstest;
 use serde_json::{Value, json};
 
 use super::{SecretCodecInput, run_codec};
@@ -67,4 +68,22 @@ fn a_plaintext_map_decodes_to_its_entries() {
         &json!([{"op": "decode_map", "value": {"token": "abc"}, "field": "headers"}]),
     );
     assert_eq!(results, json!([{"value": {"token": "abc"}, "logs": []}]));
+}
+
+#[rstest]
+#[case::leading_plus("+f")]
+#[case::odd_length("f")]
+#[case::invalid_digit("gg")]
+#[case::unicode("\u{e9}")]
+fn invalid_nonce_hex_is_rejected(#[case] nonce_hex: &str) {
+    let input: SecretCodecInput = serde_json::from_value(json!({
+        "salt_key": "salt-one",
+        "master_key": null,
+        "general_settings": {},
+        "nonce_hex": nonce_hex,
+        "steps": [],
+    }))
+    .unwrap();
+    let error = run_codec(&input).unwrap_err();
+    assert_eq!(error.class, "ValueError");
 }

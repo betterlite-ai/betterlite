@@ -6,7 +6,7 @@ use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::bearer::{decrypt_bearer_token, encrypt_bearer_token};
 use betterlite_secrets::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent};
 use betterlite_secrets::secret_codec::secret_map::{
-    SecretMap, StoredMap, decode_secret_map, encrypt_secret_map,
+    SecretMap, decode_secret_map, encrypt_secret_map,
 };
 use betterlite_secrets::secret_codec::{
     CipherSettings, DecryptPolicy, FailureLog, FailureValue, NonceSource, StoredCipher,
@@ -126,15 +126,9 @@ fn run_codec(input: &SecretCodecInput) -> HelperResult {
         .map(|salt| ("LITELLM_SALT_KEY".to_owned(), salt.clone()))
         .collect();
     let source = json!({"general_settings": general}).to_string();
-    let nonce = (0..input.nonce_hex.len())
-        .step_by(2)
-        .map(|start| {
-            let pair = input.nonce_hex.get(start..start.saturating_add(2))?;
-            u8::from_str_radix(pair, 16).ok()
-        })
-        .collect::<Option<Vec<u8>>>();
+    let nonce = hex::decode(&input.nonce_hex);
     let loaded = ConfigLoader { lookup }.load(&source);
-    let (Ok(config), Some(bytes)) = (loaded, nonce) else {
+    let (Ok(config), Ok(bytes)) = (loaded, nonce) else {
         return Err(Box::new(HelperError {
             class: "ValueError".to_owned(),
             status: None,
@@ -242,12 +236,8 @@ fn decode_map(
     value: &Value,
     field: &str,
 ) -> Result<Value, SecretError> {
-    let Ok(map) = serde_json::from_value::<Option<StoredMap>>(value.clone()) else {
-        return Err(SecretError::MapDecode {
-            field: field.to_owned(),
-        });
-    };
-    let decoded = decode_secret_map(cipher, map.as_ref(), field)?;
+    let raw = value.to_string();
+    let decoded = decode_secret_map(cipher, Some(&raw), field)?;
     Ok(decoded.map_or(Value::Null, |entries| {
         let plain = entries
             .into_iter()

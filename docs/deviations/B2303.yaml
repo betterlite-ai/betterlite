@@ -9,10 +9,10 @@ deviations:
   - what: Oversized encoded inputs and deeply nested map JSON are rejected before unbounded allocation.
     why: bounded-inputs requires finite limits before decoding untrusted ciphertext or structured data.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L273-L289
-  - what: Encoded scalar, bearer and map inputs over 1048576 bytes fail through each decoder's existing outcome (the scalar failure policy, None for bearers, SecretMapDecodeError for maps) before they are decoded.
+  - what: Encoded scalar, bearer and raw stored-map JSON inputs over 1048576 bytes fail through each decoder's existing outcome (the scalar failure policy, None for bearers, SecretMapDecodeError for maps) before they are decoded.
     why: bounded-inputs requires a finite limit; every compatible ciphertext stays well under it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L273-L289
-  - what: Stored-map JSON is parsed straight into a string map or a string, so any nesting fails at depth two as SecretMapDecodeError and nothing deeper is recursed into.
+  - what: Stored-map JSON is size-checked before parsing straight into a string map or a string, so any nesting fails at depth two as SecretMapDecodeError and nothing deeper is recursed into.
     why: bounded-inputs; LiteLLM rejects the same inputs, since a nested value is never a string, so only the recursion bound differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L277-L287
   - what: Decryption failure diagnostics carry betterlite's own error text instead of the Python exception string, and a failure to encrypt without any key is betterlite's MissingKey error instead of Python's AttributeError on None.

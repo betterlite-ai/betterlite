@@ -19,7 +19,7 @@ use crate::secret_codec::bearer::{decrypt_bearer_token, encrypt_bearer_token};
 use crate::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent, TracingDiagnostics};
 use crate::secret_codec::python_base64::decode_strict;
 use crate::secret_codec::sealing::{open, seal, seal_legacy};
-use crate::secret_codec::secret_map::{StoredMap, decode_secret_map, encrypt_secret_map};
+use crate::secret_codec::secret_map::{decode_secret_map, encrypt_secret_map};
 use crate::secret_codec::{
     Algorithm, CipherSettings, DecryptPolicy, FailureLog, FailureValue, MAX_ENCODED_BYTES,
     NonceSource, OsNonces, StoredCipher, StoredValue, decrypt_if_encrypted_with,
@@ -129,7 +129,7 @@ fn open_bearer(cipher: &Cipher, token: &str, prefix: &str) -> Option<String> {
     exposed(decrypt_bearer_token(cipher, token, prefix))
 }
 
-fn decode(cipher: &Cipher, stored: Option<&StoredMap>) -> String {
+fn decode(cipher: &Cipher, stored: Option<&str>) -> String {
     match decode_secret_map(cipher, stored, "headers") {
         Ok(map) => {
             let plain = map.map(|entries| {
@@ -144,7 +144,7 @@ fn decode(cipher: &Cipher, stored: Option<&StoredMap>) -> String {
 }
 
 fn decode_text(cipher: &Cipher, value: &str) -> String {
-    decode(cipher, Some(&StoredMap::Text(SecretString::from(value))))
+    decode(cipher, Some(&serde_json::to_string(value).unwrap()))
 }
 
 fn utf8_bearer(cipher: &Cipher) -> Option<String> {
@@ -231,7 +231,7 @@ fn wire_interop(
 #[case::empty_map_unencrypted(LEGACY, |cipher: &Cipher| encrypt_secret_map(cipher, &BTreeMap::new(), None).unwrap(), "{}", 0)]
 #[case::whole_map_encrypted_once(AES, |cipher: &Cipher| encrypt_secret_map(cipher, &BTreeMap::from([("a".to_owned(), SecretString::from("1"))]), None).unwrap(), MAP_AES, 0)]
 #[case::python_ordered_map(LEGACY, |cipher: &Cipher| decode_text(cipher, MAP_PYTHON_ORDER), r#"{"a":"1","b":"2"}"#, 0)]
-#[case::plaintext_map(LEGACY, |cipher: &Cipher| decode(cipher, serde_json::from_str(r#"{"a":"1"}"#).ok().as_ref()), r#"{"a":"1"}"#, 0)]
+#[case::plaintext_map(LEGACY, |cipher: &Cipher| decode(cipher, Some(r#"{"a":"1"}"#)), r#"{"a":"1"}"#, 0)]
 #[case::json_plaintext_map(LEGACY, |cipher: &Cipher| decode_text(cipher, r#"{"a":"1"}"#), r#"{"a":"1"}"#, 0)]
 #[case::json_quoted_ciphertext(LEGACY, |cipher: &Cipher| decode_text(cipher, MAP_AES), r#"{"a":"1"}"#, 0)]
 #[case::two_symbol_stray_bits(LEGACY, |cipher: &Cipher| decode_text(cipher, &MAP_AES.replace("wg==", "wh==")), r#"{"a":"1"}"#, 0)]
@@ -241,11 +241,14 @@ fn wire_interop(
 #[case::unicode_whitespace_rejected(LEGACY, |cipher: &Cipher| decode_text(cipher, " \u{2003}{\"a\":\"1\"}"), REJECTED, 0)]
 #[case::python_separator_whitespace(LEGACY, |cipher: &Cipher| decode_text(cipher, "\u{1c}{\"a\":\"1\"}"), REJECTED, 0)]
 #[case::null_map(LEGACY, |cipher: &Cipher| decode(cipher, None), "null", 0)]
-#[case::wrong_value_type(LEGACY, |cipher: &Cipher| decode(cipher, serde_json::from_str(r#"{"a":1}"#).ok().as_ref()), REJECTED, 0)]
+#[case::stored_null(LEGACY, |cipher: &Cipher| decode(cipher, Some("null")), "null", 0)]
+#[case::stored_empty_map(LEGACY, |cipher: &Cipher| decode(cipher, Some("{}")), "{}", 0)]
+#[case::stored_invalid_json(LEGACY, |cipher: &Cipher| decode(cipher, Some("{bad")), REJECTED, 0)]
+#[case::wrong_value_type(LEGACY, |cipher: &Cipher| decode(cipher, Some(r#"{"a":1}"#)), REJECTED, 0)]
 #[case::quoted_garbage(LEGACY, |cipher: &Cipher| decode_text(cipher, r#""a" "#), REJECTED, 1)]
 #[case::malformed_json(LEGACY, |cipher: &Cipher| decode_text(cipher, "{bad"), REJECTED, 0)]
 #[case::bad_ciphertext_error_redaction(LEGACY, |cipher: &Cipher| decode_text(cipher, "sk-live-secret"), REJECTED, 1)]
-#[case::decoded_map_debug_redacted(LEGACY, |cipher: &Cipher| format!("{:?}", decode_secret_map(cipher, Some(&StoredMap::Text(SecretString::from(MAP_AES))), "headers")), r#"Ok(Some({"a": SecretBox<str>([REDACTED])}))"#, 0)]
+#[case::decoded_map_debug_redacted(LEGACY, |cipher: &Cipher| format!("{:?}", decode_secret_map(cipher, Some(MAP_AES), "headers")), r#"Ok(Some({"a": SecretBox<str>([REDACTED])}))"#, 0)]
 #[case::decrypted_non_map(LEGACY, |cipher: &Cipher| decode_text(cipher, LEGACY_HELLO), REJECTED, 0)]
 fn secret_maps(
     #[case] algorithm: Algorithm,
@@ -273,8 +276,8 @@ fn native_secret_diagnostics_redact_values() {
         .unwrap();
     assert!(matches!(passed, StoredValue::Other(map) if map == structured));
     assert_eq!(loud(&cipher, "sk-live-secret"), None);
-    let stored = StoredMap::Text(SecretString::from("sk-live-secret"));
-    let error = decode_secret_map(&cipher, Some(&stored), "headers").unwrap_err();
+    let stored = SecretString::from(r#""sk-live-secret""#);
+    let error = decode_secret_map(&cipher, Some(stored.expose_secret()), "headers").unwrap_err();
     let messages: Vec<String> = logs(&cipher)
         .into_iter()
         .map(|(_, message)| message)
@@ -341,8 +344,10 @@ fn padded(value: &str, filler: &str, length: usize) -> String {
 #[case::scalar_over_limit(|cipher: &Cipher| loud(cipher, &padded(LEGACY_HELLO, "*", MAX_ENCODED_BYTES.checked_add(1).unwrap())), None, 2)]
 #[case::explicit_key_over_limit(|_: &Cipher| probe_with(&padded(LEGACY_HELLO, "*", MAX_ENCODED_BYTES.checked_add(1).unwrap()), "salt-one"), None, 0)]
 #[case::bearer_over_limit(|cipher: &Cipher| open_bearer(cipher, &padded("", "A", MAX_ENCODED_BYTES.checked_add(4).unwrap()), ""), None, 0)]
-#[case::map_at_limit(|cipher: &Cipher| Some(decode_text(cipher, &padded("{}", " ", MAX_ENCODED_BYTES))), Some("{}"), 0)]
+#[case::map_at_limit(|cipher: &Cipher| Some(decode_text(cipher, &padded("{}", " ", MAX_ENCODED_BYTES.checked_sub(2).unwrap()))), Some("{}"), 0)]
 #[case::map_over_limit(|cipher: &Cipher| Some(decode_text(cipher, &padded("{}", " ", MAX_ENCODED_BYTES.checked_add(1).unwrap()))), Some(REJECTED), 0)]
+#[case::stored_map_at_limit(|cipher: &Cipher| Some(decode(cipher, Some(&padded("{}", " ", MAX_ENCODED_BYTES)))), Some("{}"), 0)]
+#[case::stored_map_over_limit(|cipher: &Cipher| Some(decode(cipher, Some(&format!("{{\"a\":\"{}\"}}", "x".repeat(MAX_ENCODED_BYTES))))), Some(REJECTED), 0)]
 #[case::map_depth(|cipher: &Cipher| Some(decode_text(cipher, &format!("{{\"a\":{}", "[".repeat(65)))), Some(REJECTED), 0)]
 fn secret_input_limits(
     #[case] probe: fn(&Cipher) -> Option<String>,
@@ -366,14 +371,56 @@ fn replays_the_secret_value_corpus() {
         .iter()
         .filter_map(|seed| str::from_utf8(seed).ok())
         .filter(|value| {
-            let stored: Option<StoredMap> = serde_json::from_str(value).ok();
-            let map = decode_secret_map(&cipher, stored.as_ref(), "corpus");
+            let map = decode_secret_map(&cipher, Some(value), "corpus");
+            let text = serde_json::to_string(value).unwrap();
+            let text_map = decode_secret_map(&cipher, Some(&text), "corpus");
             let bearer = decrypt_bearer_token(&cipher, value, PREFIX);
             let scalar = loud(&cipher, value);
             map.is_ok_and(|decoded| decoded.is_some())
+                | text_map.is_ok_and(|decoded| decoded.is_some())
                 | bearer.is_some()
                 | scalar.is_some()
                 | probe_with(value, "salt-one").is_some()
         });
     assert_eq!((seeds.len(), opened.count()), (10, 5));
+}
+
+#[rstest]
+#[case::byte_limit("byte-limit.txt")]
+#[case::depth_limit("depth-limit.json")]
+fn corpus_map_limits_are_rejected(#[case] seed: &str) {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fuzz/corpus/secret_value")
+        .join(seed);
+    let value = fs::read_to_string(path).unwrap();
+    let text = serde_json::to_string(&value).unwrap();
+    let cipher = build(SALT, AES);
+    assert!(matches!(
+        decode_secret_map(&cipher, Some(&value), "headers"),
+        Err(SecretError::MapDecode { .. })
+    ));
+    assert!(matches!(
+        decode_secret_map(&cipher, Some(&text), "headers"),
+        Err(SecretError::MapDecode { .. })
+    ));
+    assert!(logs(&cipher).is_empty());
+}
+
+#[rstest]
+#[case::depth_limit(65)]
+#[case::beyond_serde_limit(129)]
+#[case::deeply_nested(4096)]
+fn nested_maps_use_decode_error(#[case] depth: usize) {
+    let raw = format!("{{\"a\":{}0{}}}", "[".repeat(depth), "]".repeat(depth));
+    let text = serde_json::to_string(&raw).unwrap();
+    let cipher = build(SALT, AES);
+    assert!(matches!(
+        decode_secret_map(&cipher, Some(&raw), "headers"),
+        Err(SecretError::MapDecode { .. })
+    ));
+    assert!(matches!(
+        decode_secret_map(&cipher, Some(&text), "headers"),
+        Err(SecretError::MapDecode { .. })
+    ));
+    assert!(logs(&cipher).is_empty());
 }
