@@ -1,0 +1,8 @@
+kind: helper
+name: semconv-opt-in-comma-separated-and-unknown-ignored
+call:
+  otel_vocabulary:
+    function: Semconv
+    values: ["unknown, gen_ai_latest_experimental,", gen_ai_latest_experimental, " , ,", "http,database", GEN_AI_LATEST_EXPERIMENTAL, "gen_ai_latest_experimental\u001f", "", null]
+env: {}
+compare: {ignore: []}

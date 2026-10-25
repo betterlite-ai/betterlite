@@ -47,6 +47,7 @@ scope:
     - crates/betterlite-server/src/{collector,callback_replay}.rs
     - crates/betterlite-server/src/{collector,callback_replay}/**
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/fuzz/{Cargo.toml,fuzz_targets/spend_ingress.rs,corpus/spend_ingress/**}
     - tools/oracle/cases/http/callback-replay/**
   lint_tables: false

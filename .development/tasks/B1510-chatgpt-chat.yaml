@@ -27,6 +27,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/chatgpt.rs
+    - crates/betterlite-openai/src/chatgpt/**
     - crates/betterlite-openai/src/chatgpt/chat.rs
     - crates/betterlite-openai/src/chatgpt/chat/**
     - tools/oracle/src/helpers/openai/chatgpt_chat.rs

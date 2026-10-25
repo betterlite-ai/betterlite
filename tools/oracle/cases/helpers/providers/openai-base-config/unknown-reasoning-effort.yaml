@@ -1,0 +1,5 @@
+kind: helper
+name: unknown-reasoning-effort
+call: {openai_base_config: {unknown_reasoning_effort: {model: custom-model, family: openai, chat_models: [], text_models: []}}}
+env: {}
+compare: {ignore: []}

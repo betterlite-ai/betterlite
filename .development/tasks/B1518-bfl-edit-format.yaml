@@ -32,9 +32,11 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/bfl.rs
+    - crates/betterlite-core/src/api/bfl/**
     - crates/betterlite-core/src/api/bfl/edit.rs
     - crates/betterlite-core/src/api/bfl/edit/**
     - crates/betterlite-config/src/providers/bfl.rs
+    - crates/betterlite-config/src/providers/bfl/**
     - tools/oracle/src/helpers/core_ops/bfl_edit.rs
     - tools/oracle/src/helpers/core_ops/bfl_edit/**
     - tools/oracle/helpers/bfl_edit.py

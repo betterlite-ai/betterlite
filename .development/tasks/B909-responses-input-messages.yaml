@@ -20,6 +20,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_input_messages.rs
   - crates/betterlite-core/src/api/responses_input_messages/**
   - crates/betterlite-core/fuzz/Cargo.toml

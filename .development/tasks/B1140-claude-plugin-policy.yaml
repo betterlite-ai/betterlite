@@ -73,6 +73,7 @@ scope:
   - crates/betterlite-core/src/api/claude_plugin_policy.rs
   - crates/betterlite-core/src/api/claude_plugin_policy/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml

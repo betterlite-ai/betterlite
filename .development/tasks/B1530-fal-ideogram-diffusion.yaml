@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/**
     - crates/betterlite-core/src/api/fal/{ideogram,stable_diffusion}.rs
     - crates/betterlite-core/src/api/fal/ideogram.rs
     - crates/betterlite-core/src/api/fal/ideogram/**

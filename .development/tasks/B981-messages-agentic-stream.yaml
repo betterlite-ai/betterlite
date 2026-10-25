@@ -73,6 +73,7 @@ scope:
   - crates/betterlite-core/src/api/messages_agentic_stream.rs
   - crates/betterlite-core/src/api/messages_agentic_stream/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-core/fuzz/Cargo.toml

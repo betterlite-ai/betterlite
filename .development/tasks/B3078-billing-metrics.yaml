@@ -24,7 +24,9 @@ scope:
     - Cargo.toml
     - crates/betterlite-billing/**
     - crates/betterlite-config/src/types.rs
+    - crates/betterlite-config/src/types/**
     - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/loader/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L70-L113

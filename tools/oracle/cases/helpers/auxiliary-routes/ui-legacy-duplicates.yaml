@@ -1,0 +1,8 @@
+kind: helper
+name: ui-legacy-duplicates
+call:
+  auxiliary_routes:
+    group: ui_routes
+env: {}
+compare:
+  ignore: []

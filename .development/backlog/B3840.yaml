@@ -1,7 +1,7 @@
 id: B3840
 milestone: M7 observability
 title: OTel semantic vocabulary and span roles
-status: in-progress
+status: done
 depends_on: []
 file: tasks/B3840-otel-semantic-vocabulary.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/integrations/opentelemetry_utils/gen_ai_semconv.py"
 parent: B110
 split_from: B110
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 128

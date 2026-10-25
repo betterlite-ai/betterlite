@@ -21,11 +21,15 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/api/file_read_route.rs
   - crates/betterlite-server/src/api/file_read_route/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/file_read_route.rs
   - crates/betterlite-core/src/api/file_read_route/**
   - tools/oracle/cases/api/file-read-route/**
