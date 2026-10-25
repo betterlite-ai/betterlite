@@ -123,6 +123,6 @@ pitfalls:
     sslmode string.
   - A second schema can lack foreign keys because baseline guards match the first schema's constraint names.
 budget:
-  max_changed_lines: 2200
+  max_changed_lines: 2300
   max_new_expects: 0
 review_level: security
