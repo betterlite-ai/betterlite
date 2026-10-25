@@ -76,54 +76,22 @@ pub trait OptionsKind: Clone + Default {
     fn pick(options: &HarnessOptions) -> Option<&Self>;
 }
 
-impl OptionsKind for ClaudeCodeOptions {
-    const NAME: &'static str = "ClaudeCodeOptions";
+macro_rules! options_kind {
+    ($options:ident, $variant:ident, [$($other:ident),+]) => {
+        impl OptionsKind for $options {
+            const NAME: &'static str = stringify!($options);
 
-    fn pick(options: &HarnessOptions) -> Option<&Self> {
-        match options {
-            HarnessOptions::ClaudeCode(picked) => Some(picked),
-            HarnessOptions::Codex(_)
-            | HarnessOptions::OpenCode(_)
-            | HarnessOptions::DeepAgents(_) => None,
+            fn pick(options: &HarnessOptions) -> Option<&Self> {
+                match options {
+                    HarnessOptions::$variant(picked) => Some(picked),
+                    $(HarnessOptions::$other(_))|+ => None,
+                }
+            }
         }
-    }
+    };
 }
 
-impl OptionsKind for CodexOptions {
-    const NAME: &'static str = "CodexOptions";
-
-    fn pick(options: &HarnessOptions) -> Option<&Self> {
-        match options {
-            HarnessOptions::Codex(picked) => Some(picked),
-            HarnessOptions::ClaudeCode(_)
-            | HarnessOptions::OpenCode(_)
-            | HarnessOptions::DeepAgents(_) => None,
-        }
-    }
-}
-
-impl OptionsKind for OpenCodeOptions {
-    const NAME: &'static str = "OpenCodeOptions";
-
-    fn pick(options: &HarnessOptions) -> Option<&Self> {
-        match options {
-            HarnessOptions::OpenCode(picked) => Some(picked),
-            HarnessOptions::ClaudeCode(_)
-            | HarnessOptions::Codex(_)
-            | HarnessOptions::DeepAgents(_) => None,
-        }
-    }
-}
-
-impl OptionsKind for DeepAgentsOptions {
-    const NAME: &'static str = "DeepAgentsOptions";
-
-    fn pick(options: &HarnessOptions) -> Option<&Self> {
-        match options {
-            HarnessOptions::DeepAgents(picked) => Some(picked),
-            HarnessOptions::ClaudeCode(_)
-            | HarnessOptions::Codex(_)
-            | HarnessOptions::OpenCode(_) => None,
-        }
-    }
-}
+options_kind!(ClaudeCodeOptions, ClaudeCode, [Codex, OpenCode, DeepAgents]);
+options_kind!(CodexOptions, Codex, [ClaudeCode, OpenCode, DeepAgents]);
+options_kind!(OpenCodeOptions, OpenCode, [ClaudeCode, Codex, DeepAgents]);
+options_kind!(DeepAgentsOptions, DeepAgents, [ClaudeCode, Codex, OpenCode]);

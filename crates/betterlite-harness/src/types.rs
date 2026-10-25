@@ -2,7 +2,8 @@ mod tests;
 
 use std::collections::BTreeSet;
 
-use serde::{Deserialize, Serialize};
+use serde::de::value::StrDeserializer;
+use serde::{Deserialize, Serialize, de};
 
 use crate::errors::HarnessError;
 
@@ -25,23 +26,6 @@ pub enum Harness {
 }
 
 impl Harness {
-    pub const MEMBERS: [Self; 4] = [
-        Self::ClaudeCode,
-        Self::Codex,
-        Self::OpenCode,
-        Self::DeepAgents,
-    ];
-
-    #[must_use]
-    pub const fn value(self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "claude_code",
-            Self::Codex => "codex",
-            Self::OpenCode => "opencode",
-            Self::DeepAgents => "deepagents",
-        }
-    }
-
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
@@ -57,10 +41,9 @@ impl Harness {
 #[must_use]
 pub fn require_harness(given: &str) -> HarnessError {
     let normalized = given.trim().to_lowercase().replace('-', "_");
-    let hint = Harness::MEMBERS
-        .into_iter()
-        .find(|member| member.value() == normalized);
-    hint.map_or_else(
+    // LiteLLM also compares against member.name.lower(), which equals the value for every member
+    let deserializer = StrDeserializer::<de::value::Error>::new(&normalized);
+    Harness::deserialize(deserializer).ok().map_or_else(
         || HarnessError::NotAHarness {
             given: given.to_owned(),
         },

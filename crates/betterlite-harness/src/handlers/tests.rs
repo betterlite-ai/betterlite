@@ -11,9 +11,11 @@ use crate::errors::HarnessError;
 use crate::events::Event;
 use crate::handlers::HarnessHandler;
 use crate::options::{ClaudeCodeOptions, CodexOptions, HarnessOptions, OpenCodeOptions};
-use crate::sandbox::Sandbox;
 use crate::transformation::{HarnessConfig, HarnessSessionSetup};
 use crate::types::{Capabilities, Capability, Harness, JsonObject, PermissionMode, Usage};
+
+type Started = Result<(), HarnessError>;
+type Turned = Result<Event, HarnessError>;
 
 struct OpenCodeConfig;
 
@@ -40,13 +42,7 @@ impl HarnessHandler for OpenCodeHandler {
         &self.config
     }
 
-    fn start<S>(
-        &mut self,
-        _context: &mut SessionContext<S>,
-    ) -> impl Future<Output = Result<(), HarnessError>>
-    where
-        S: Sandbox,
-    {
+    fn start<S>(&mut self, _context: &mut SessionContext<S>) -> impl Future<Output = Started> {
         future::ready(Ok(()))
     }
 
@@ -54,20 +50,11 @@ impl HarnessHandler for OpenCodeHandler {
         &mut self,
         _context: &mut SessionContext<S>,
         _prompt: &str,
-    ) -> impl Stream<Item = Result<Event, HarnessError>>
-    where
-        S: Sandbox,
-    {
+    ) -> impl Stream<Item = Turned> {
         stream::empty()
     }
 
-    fn stop<S>(
-        &mut self,
-        _context: &mut SessionContext<S>,
-    ) -> impl Future<Output = Result<(), HarnessError>>
-    where
-        S: Sandbox,
-    {
+    fn stop<S>(&mut self, _context: &mut SessionContext<S>) -> impl Future<Output = Started> {
         future::ready(Ok(()))
     }
 
@@ -78,11 +65,8 @@ impl HarnessHandler for OpenCodeHandler {
     fn resume<S>(
         &mut self,
         _context: &mut SessionContext<S>,
-        _session: &str,
-    ) -> impl Future<Output = Result<(), HarnessError>>
-    where
-        S: Sandbox,
-    {
+        _id: &str,
+    ) -> impl Future<Output = Started> {
         future::ready(Ok(()))
     }
 }
