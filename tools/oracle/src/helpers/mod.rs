@@ -34,21 +34,27 @@ mod cost;
 mod db;
 mod error;
 mod foundry;
+mod guardrails;
 mod http;
+mod lens;
 mod logging;
 mod models;
 mod openai;
+mod openapi;
 mod oracle;
 mod paths;
 mod prompts;
 mod provider;
 mod redact;
+mod redis;
 mod router;
+mod sdk;
 mod secrets;
 mod server;
 mod streaming;
 mod tokenizer;
 mod vertex;
+mod websearch;
 
 use std::collections::BTreeMap;
 use std::io::{self, Write as _};
@@ -104,7 +110,7 @@ struct Group {
     check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
 }
 
-const GROUPS: [Group; 26] = [
+const GROUPS: [Group; 32] = [
     anthropic::GROUP,
     auth::GROUP,
     azure::GROUP,
@@ -116,21 +122,27 @@ const GROUPS: [Group; 26] = [
     db::GROUP,
     error::GROUP,
     foundry::GROUP,
+    guardrails::GROUP,
     http::GROUP,
+    lens::GROUP,
     logging::GROUP,
     models::GROUP,
     openai::GROUP,
+    openapi::GROUP,
     oracle::GROUP,
     paths::GROUP,
     prompts::GROUP,
     provider::GROUP,
     redact::GROUP,
+    redis::GROUP,
     router::GROUP,
+    sdk::GROUP,
     secrets::GROUP,
     server::GROUP,
     streaming::GROUP,
     tokenizer::GROUP,
     vertex::GROUP,
+    websearch::GROUP,
 ];
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

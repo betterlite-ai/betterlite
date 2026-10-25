@@ -1,0 +1,111 @@
+id: B4594
+title: Setup wizard terminal input and provider selection
+description: >-
+  Build terminal styling, readline-safe prompts and provider selection, with raw-key navigation and the number-input fallback. Keep the pinned provider cards and YAML-scalar escaping together as wizard support callable by the final entry.
+
+  Implement terminal color support helpers (color(), bold(), orange(), green(), blue(), grey(), dim()), a styled input function that wraps ANSI sequences for readline compatibility, and YAML string escaping for safe scalar embedding. Add the SetupWizard class with provider selection using raw terminal mode for arrow-key navigation (up/down wrap, space to toggle, enter to confirm or auto-select cursor) and a fallback to numeric input when raw mode is unavailable.
+
+  Preserve the six-provider catalog from LiteLLM (OpenAI, Anthropic with 11 models, Gemini, Azure with deployment capture, AWS Bedrock with extra keys, and Ollama with local base URL). Arrow keys wrap to the first/last provider, enter without a selection auto-selects the cursor item, and the numeric fallback sorts and deduplicates valid indices. Empty-but-present NO_COLOR environment variable disables styling; non-TTY also disables it. Raw mode must restore terminal attributes on cancellation. Preserve the LITELLM ASCII banner and layout constants. These helpers are called by B135's higher-level wizard flow, so keep them stateless and testable.
+
+  Terminal initialization runs once at import time, checking platform and NO_COLOR; _supports_color() reads the result and checks stdout at call time. The _styled_input wrapper strips ANSI from the readline prompt in non-TTY, leaving the display clean. The _render_selector handles both first and subsequent renders by moving the cursor up and reprinting. The _select_interactive loop reads byte-by-byte via /dev/tty in raw mode and restores terminal state in a finally block.
+scope:
+  paths:
+    - crates/betterlite/src/**
+    - crates/betterlite-config/src/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L140-L195
+    why: "Color helpers, styled_input, yaml_escape and terminal capability checks."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L43-L116
+    why: "The six-provider catalog with env keys, hints, models and Azure/Bedrock extras."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L120-L138
+    why: "ANSI color codes, cursor control sequences and layout constants."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L201-L208
+    why: "LITELLM ASCII banner constants."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L258-L269
+    why: "Welcome message: banner, version, and divider."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L273-L281
+    why: "Provider selector dispatch: raw mode if available, fallback otherwise."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L283-L360
+    why: "Raw mode read, rendering and interactive loop with arrow-key wrapping."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L362-L387
+    why: "Number-based fallback with deduplication and range validation."
+  - url: https://docs.rs/regex/latest/regex/
+    why: ANSI escape sequence stripping in styled_input.
+dod:
+  - text: "The six providers (OpenAI, Anthropic with 11 models, Gemini, Azure, Bedrock, Ollama) are defined with their env keys, hints, test models, model lists, and provider-specific fields (needs_api_base, api_version, extra_keys, extra_hints, api_base)."
+    proof: [provider-catalog]
+  - text: "Color support checks stdout.isatty() and NO_COLOR; empty NO_COLOR disables styling."
+    proof: [color-support-tests]
+  - text: "Styled input wraps ANSI in readline markers (\\001...\\002) in TTY and strips ANSI in non-TTY."
+    proof: [styled-input-tests]
+  - text: "YAML escape converts backslash, quote, newline, carriage return and tab."
+    proof: [yaml-escape-tests]
+  - text: "Arrow-key navigation wraps, space toggles selection, enter with no selection chooses cursor, and Ctrl-C/Ctrl-D cancel."
+    proof: [interactive-select-tests]
+  - text: "Raw terminal mode restores terminal attributes and cursor visibility on cancellation."
+    proof: [raw-mode-tests]
+  - text: "Numeric fallback deduplicates and sorts valid provider indices, rejects out-of-range numbers and empty input."
+    proof: [fallback-select-tests]
+  - text: "Welcome message prints LiteLLM ASCII banner, version line and divider."
+    proof: [welcome-tests]
+checks:
+  optional: []
+  commands:
+    - id: provider-catalog
+      why: "provider catalog is missing, incomplete or has wrong env_key/models"
+      run: |-
+        grep -q '"openai"' crates/betterlite/src/*.rs && grep -q 'gpt-4o' crates/betterlite/src/*.rs && grep -q 'ANTHROPIC_API_KEY' crates/betterlite/src/*.rs && grep -q 'claude-haiku' crates/betterlite/src/*.rs && grep -q 'AZURE_AI_API_KEY' crates/betterlite/src/*.rs && grep -q 'AWS_ACCESS_KEY_ID' crates/betterlite/src/*.rs && grep -q 'ollama' crates/betterlite/src/*.rs && grep -q 'localhost:11434' crates/betterlite/src/*.rs
+    - id: color-support-tests
+      why: "color support checks fail or do not exist"
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^terminal_styling::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*color.*)'
+    - id: styled-input-tests
+      why: "styled_input readline wrapping tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^styled_input::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*styled_input.*)'
+    - id: yaml-escape-tests
+      why: "YAML escape tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^yaml_escape::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*yaml.*escape.*)'
+    - id: interactive-select-tests
+      why: "interactive provider selector tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::interactive.*/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*interactive.*select.*)'
+    - id: raw-mode-tests
+      why: "raw terminal mode restoration tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::.*raw/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*raw.*mode.*)'
+    - id: fallback-select-tests
+      why: "numeric fallback selector tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::fallback/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*fallback.*select.*)'
+    - id: welcome-tests
+      why: "welcome message tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^welcome/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*print_welcome.*)'
+oracle_cases: []
+deviations:
+  - what: "The six-provider catalog and ANSI styling are built as Rust code, not referenced from LiteLLM at runtime."
+    why: "betterlite is Rust and does not import LiteLLM modules; the catalog and colors are part of the wizard support layer."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L43-L138"
+  - what: "NO_COLOR support is read through the injected EnvironmentLookup from B002, not directly from os.environ."
+    why: "All environment reads go through the config boundary for testability and injection."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L140-L141"
+out_of_scope:
+  - "`SetupWizard.run` (L226-231) — entry point for the wizard flow; owned by B135."
+  - "`SetupWizard._wizard` (L235-254) — orchestrates the complete wizard steps; owned by B135."
+  - "`SetupWizard._collect_keys` (L390-426) — collects and validates keys using _prompt_key and _validate_and_report; owned by B135."
+  - "`SetupWizard._prompt_key` (L428-438) — prompts for a single API key with skip option; owned by B135."
+  - "`SetupWizard._validate_and_report` (L440-468) — validates credentials via check_valid_key and offers re-entry; owned by B135."
+  - "`SetupWizard._proxy_settings` (L472-490) — collects port and master key from user; owned by B135."
+  - "`SetupWizard._build_config` (L494-550) — generates litellm_config.yaml from providers and env vars; owned by B135."
+  - "`SetupWizard._print_success` (L554-571) — prints config saved message and startup instructions; owned by B135."
+  - "`SetupWizard._offer_start` (L573-620) — prompts to start the proxy and invokes it via os.execlp; owned by B135."
+  - "`run_setup_wizard` (L628-631) — public entrypoint called by litellm --setup; owned by B135."
+  - "Key validation (check_valid_key) calls litellm.completion with a test message; owned by an unassigned task."
+  - "CLI command parsing for --setup; that belongs to the CLI owner."
+pitfalls:
+  - "ANSI sequences must be wrapped with readline markers (\\001 and \\002) in TTY contexts, or stripped entirely in non-TTY, so readline correctly tracks the cursor column and does not treat escape codes as characters."
+  - "Raw mode via termios.tcgetattr/tcsetattr must be restored in a finally block even on KeyboardInterrupt, or the terminal is left in an unusable state."
+  - "Arrow key escape sequences start with \\x1b[ and must be read as three bytes: escape, bracket, and the direction byte (A, B, etc.). The _read_key function handles multibyte sequences and UTF-8 decode errors gracefully."
+  - "Empty NO_COLOR (present but with no value) disables styling, not absent NO_COLOR. Check os.environ.get('NO_COLOR') is not None, not os.environ.get('NO_COLOR')."
+  - "The _render_selector must count actual newlines in printed content to move the cursor up correctly; using string length is incorrect."
+  - "Numeric input parsing must deduplicate and sort valid indices, so 1,2,1,3 becomes [PROVIDERS[0], PROVIDERS[1], PROVIDERS[2]] not a repeat."
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 1

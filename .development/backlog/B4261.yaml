@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Cached semantic text ranking
 status: todo
 depends_on: []
-file: null
+file: tasks/B4261-semantic-text-ranking.yaml
 covers:
   - "litellm/proxy/common_utils/semantic_text_index.py"
 parent: B124

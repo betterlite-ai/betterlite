@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Gateway request classification and metrics middleware
 status: todo
 depends_on: [B003]
-file: null
+file: tasks/B3889-gateway-request-metrics.yaml
 covers:
   - "litellm/proxy/middleware/billable_request_metrics_middleware.py"
 parent: B111

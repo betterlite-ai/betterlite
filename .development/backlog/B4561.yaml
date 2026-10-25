@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Routed session status line and stop-hook output
 status: todo
 depends_on: []
-file: null
+file: tasks/B4561-cli-session-status.yaml
 covers:
   - "litellm/proxy/client/cli/commands/statusline_script.py"
 parent: B134

@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Refresh Redis cloud credentials and authenticate connections
 status: todo
 depends_on: [B002]
-file: null
+file: tasks/B4320-redis-cloud-credentials.yaml
 covers:
   - "litellm/{_redis,_redis_credential_provider}.py"
 parent: B126

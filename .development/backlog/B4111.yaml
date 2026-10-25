@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Web search tool dialects and interception records
 status: todo
 depends_on: []
-file: null
+file: tasks/B4111-websearch-tool-records.yaml
 covers:
   - "litellm/integrations/websearch_interception/tools.py"
   - "litellm/types/integrations/websearch_interception.py"

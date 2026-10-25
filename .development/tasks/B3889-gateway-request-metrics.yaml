@@ -1,0 +1,150 @@
+id: B3889
+title: Gateway request classification and metrics middleware
+description: >-
+  Port the gateway request classifier and metrics middleware from litellm/proxy/middleware/billable_request_metrics_middleware.py
+  into crates/betterlite-server so the proxy can track successful gateway requests (SGR) by category, route and status code,
+  and feed 2xx inference requests to an optional billing exporter. The middleware classifies every HTTP request into one of
+  three billable categories (LLM, MCP, A2A) or marks it unclassified, then delivers the classification and response status
+  to an injected sink after the response completes.
+
+  The LLM route classifier matches inference endpoints by exact route (/v1/messages, /interactions), suffix (/chat/completions,
+  /completions, /embeddings and 14 others), or provider passthrough prefix (/bedrock/, /vertex-ai/ and others excluding /langfuse).
+  The MCP classifier recognizes /mcp/, /mcp-rest/tools/call and the dynamic transport pattern, excluding /v1/mcp management.
+  The A2A classifier matches paths ending in /message/send under /v1/a2a/ or /a2a/ prefixes. A request that matches none of
+  these routes is not billable and passes through unclassified. The response status code and x-litellm-model-id header are
+  captured after the response body starts so the metric reflects what the caller saw.
+
+  Sinks are injected and resolved lazily: a GatewayRequestSink records every classified request with its category, normalized
+  route and status code for the SGR dashboard. An optional BillingRecorder is called only for 2xx responses to feed the billing
+  exporter; the enterprise recorder is not built. Both resolve on the first classified request, after the server's startup
+  event has loaded the config and database, deferring expensive initialization. Sink or recorder failures log a warning and
+  never block the request's response. No sink or recorder is a transparent pass-through. The middleware is installed as part
+  of B003's server setup and runs before response lifecycle completion.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/middleware/billable_request_metrics.rs
+    - crates/betterlite-server/src/middleware/billable_request_metrics/tests.rs
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/billable_request_metrics_middleware.py#L1-L35
+    why: Module docstring describing the two sinks and their contracts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/billable_request_metrics_middleware.py#L30-L108
+    why: "BillableCategory enum; GatewayRequestSink and BillingRecorder protocols; route constants; _NON_BILLABLE_PASSTHROUGH_PREFIXES."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/billable_request_metrics_middleware.py#L112-L157
+    why: "Classifier functions: _classify_llm_route, _classify_mcp_route, and _classify_a2a_route."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/billable_request_metrics_middleware.py#L159-L180
+    why: "classify_billable_request entry point including the method-based POST gate for LLM classification only."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/billable_request_metrics_middleware.py#L183-L187
+    why: "_extract_model_id reads x-litellm-model-id header from response headers."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/billable_request_metrics_middleware.py#L190-L244
+    why: "BillableRequestMetricsMiddleware.__init__, _resolve_recorder and _resolve_sink lazy resolution with thread locks and factory fields."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/billable_request_metrics_middleware.py#L246-L285
+    why: "__call__ ASGI handler, send_wrapper closure that captures status and model_id, and post-response recording to both sinks."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L492-L521
+    why: LiteLLMRoutes.mapped_pass_through_routes enumeration for provider passthrough prefixes.
+
+dod:
+  - text: LLM routes are classified exactly for /v1/messages and /interactions, by suffix for /chat/completions and 14 others, and by passthrough prefix for provider routes, all excluding /langfuse.
+    proof: [llm-classification-tests]
+  - text: MCP routes are classified as /mcp for /mcp, /mcp/, /mcp-rest/tools/call and the dynamic transport pattern, and excluded for /v1/mcp management.
+    proof: [mcp-classification-tests]
+  - text: A2A routes are classified as /a2a for paths ending in /message/send under /v1/a2a/ or /a2a/ prefixes.
+    proof: [a2a-classification-tests]
+  - text: MCP and A2A classification runs before the method gate and ignores HTTP method; GET /mcp/foo classifies as MCP and GET /a2a/{id}/message/send classifies as A2A.
+    proof: [method-gate-tests]
+  - text: LLM classification is gated on method=="POST"; GET /chat/completions and GET /bedrock/... return None from classify_billable_request.
+    proof: [method-gate-tests]
+  - text: Requests that do not match any classification return None from classify_billable_request.
+    proof: [classification-integration-tests]
+  - text: The x-litellm-model-id header is extracted from response headers and passed to the recorder, or None if absent.
+    proof: [header-extraction-tests]
+  - text: The recorder factory is called exactly once on the first classified request and cached; concurrent first requests do not double-build the recorder.
+    proof: [lazy-resolution-tests]
+  - text: The sink factory is called exactly once on the first classified request and cached; concurrent first requests do not double-build the sink.
+    proof: [lazy-resolution-tests]
+  - text: When both recorder and sink are None, the middleware passes through the request without classification overhead.
+    proof: [pass-through-tests]
+  - text: Sink failures log a warning and do not block the response or raise an exception.
+    proof: [failure-handling-tests]
+  - text: Recorder failures log a warning and do not block the response or raise an exception.
+    proof: [failure-handling-tests]
+  - text: The recorder is called only when status code is 2xx; sink is called for all classified status codes.
+    proof: [status-code-filtering-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: llm-classification-tests
+      why: LLM route classification does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::classify_llm/)'
+    - id: mcp-classification-tests
+      why: MCP route classification does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::classify_mcp/)'
+    - id: a2a-classification-tests
+      why: A2A route classification does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::classify_a2a/)'
+    - id: method-gate-tests
+      why: Method gate for LLM classification (POST-only) or method-agnostic MCP/A2A classification does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::.*method_gate/)'
+    - id: classification-integration-tests
+      why: Integrated classification does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::classify_billable/)'
+    - id: header-extraction-tests
+      why: Model ID header extraction does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::extract_model/)'
+    - id: lazy-resolution-tests
+      why: Lazy factory resolution does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::lazy_resolution/)'
+    - id: pass-through-tests
+      why: Pass-through behavior without sinks does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::pass_through/)'
+    - id: failure-handling-tests
+      why: Sink or recorder failure handling does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::failure_handling/)'
+    - id: status-code-filtering-tests
+      why: Status code filtering for recorder invocation does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::status_code/)'
+    - id: middleware-compile
+      why: The middleware module does not compile
+      run: cargo build --locked -p betterlite-server
+
+oracle_cases: []
+
+deviations:
+  - what: Betterlite uses a Sync trait bound for factories instead of Python's callable. Both defer initialization to the first request.
+    why: Rust requires explicit thread-safety bounds; a factory function that returns an optional sink/recorder preserves the lazy-resolution pattern with explicit types.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/billable_request_metrics_middleware.py#L201-L222
+  - what: Betterlite logs sink and recorder failures with structured JSON tracing, not Python's verbose_proxy_logger.
+    why: All betterlite errors use the tracing crate for consistent JSON output to stderr.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/billable_request_metrics_middleware.py#L277-L285
+  - what: Enterprise billing recorder is not built; only the open-source gateway request sink is wired.
+    why: Betterlite has no paid tier and does not include LiteLLM's enterprise package.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/billable_request_metrics_middleware.py#L281-L285
+
+out_of_scope:
+  - BillingRecorder implementation for enterprise metering; only the protocol contract is defined.
+  - GatewayRequestSink implementation; this task defines the protocol and the middleware that calls it.
+  - HTTP server setup and ASGI installation; that is in B003.
+  - Configuration loading for sink and recorder factories; the server initializes them.
+  - Persistence of gateway request records; the sink owns storage.
+
+pitfalls:
+  - The LLM route suffixes must be checked in order (longest first) to avoid matching /completions before /chat/completions.
+  - Provider passthrough prefixes come from LiteLLMRoutes.mapped_pass_through_routes and include /bedrock/, /vertex-ai/, /vllm/, /cohere/ etc. but exclude /langfuse explicitly.
+  - MCP dynamic transport is a regex pattern /(?:toolset/)?[^/]+/mcp that matches /agent-name/mcp and /toolset/agent-name/mcp.
+  - The /v1/mcp/ management prefix is excluded from MCP classification; only deep /v1/mcp/ paths with a resource are classified.
+  - A2A message/send is path-based only; the JSON-RPC method in the body is not inspected, so bare POST /a2a/{agent_id} without /message/send is not billable.
+  - Status code 2xx is the range 200–299 inclusive; 300 and 400 are not billable for the recorder.
+  - The x-litellm-model-id header name is lowercase in the middleware search; header names are compared case-insensitively.
+  - Recorder and sink factory resolution use a lock to prevent concurrent first requests from building duplicate instances.
+  - The method==POST gate applies to LLM classification only (lines 174-175 in the source); MCP (/v1/mcp, /mcp) and A2A (/v1/a2a, /a2a + /message/send) classification run before that gate at lines 163-169 and accept any method. A GET request to /mcp/foo classifies as MCP while a GET to /chat/completions returns None.
+  - When no classification matches, classify_billable_request returns None and the request passes through without metering.
+  - Stripping trailing slashes from the path (path.rstrip("/") or "/") normalizes /route/ to /route before classification.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

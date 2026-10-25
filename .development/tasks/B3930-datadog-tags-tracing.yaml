@@ -1,0 +1,96 @@
+id: B3930
+title: Datadog tags and active trace context
+description: >-
+  Build the shared Datadog tag normalization and active-span facade for betterlite-logging.
+  Resolve environment-backed defaults DD_SOURCE, DD_SERVICE, HOSTNAME, DD_ENV, POD_NAME, DD_VERSION
+  and DD_BASE_URL through injected configuration (B002's loader). Read tracer availability flags
+  USE_DDTRACE and USE_DDPROFILER, and implement a no-op NullTracer that returns when ddtrace is
+  not installed or disabled. Normalize tag values by keeping characters in the set "_-:./" unchanged,
+  lowercasing input, collapsing runs of underscores, and stripping leading and trailing underscores.
+  Set proxy key/model/call-ID span tags (key_alias, key_hash, requested_model, call_id) best-effort
+  without failing the request. The active-span facade checks current_span first, then current_root_span
+  fallback, and both read and tag operations tolerate missing span or tracer methods.
+  Never panic when the tracer or span is unavailable; log and return instead. Resolve trace IDs and
+  span IDs to strings before attaching them to payloads.
+scope:
+  paths:
+    - crates/betterlite-logging/**
+    - Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_handler.py#L1-L83
+    why: Eight tag and source helper functions for Datadog payloads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dd_tracing.py#L1-L124
+    why: NullSpan and NullTracer stubs, tracer initialization, active span accessors and tag setters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/dd_span_tagger.py#L1-L58
+    why: Proxy span tagger with call_id, key_alias, key_hash and requested_model tags.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L103-L105
+    why: _span_attribute helper reads optional span attributes safely.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L763-L807
+    why: _add_trace_context_to_payload and _get_active_trace_context attach APM trace correlation.
+dod:
+  - text: Tag normalization keeps characters in "_-:./" unchanged, lowercases input, collapses consecutive underscores to one, and strips leading and trailing underscores; for example normalize_datadog_tag_value(" Foo.Bar ") returns "foo.bar".
+    proof: [tag-normalization]
+  - text: Environment variable resolution uses injected configuration with defaults DD_SOURCE=litellm, DD_SERVICE=litellm-server, DD_ENV=unknown, POD_NAME=unknown, DD_VERSION=unknown, and HOSTNAME=""; DD_BASE_URL has no default and resolves to None when unset.
+    proof: [config-defaults]
+  - text: Active span context checks current_span first, then current_root_span fallback, never panicking on missing methods or attributes.
+    proof: [span-context]
+  - text: Proxy span tags (litellm.call_id, litellm.key_alias, litellm.key_hash, litellm.requested_model) are set best-effort; missing spans or tracer methods do not fail the request.
+    proof: [span-tagging]
+  - text: Trace and span IDs are converted to strings before attaching to payloads.
+    proof: [span-context]
+  - text: Every helper operation in datadog tags and tracing has a committed shared-parser corpus seed and replays successfully.
+    proof: [corpus-replay]
+  - text: Mutants in tagged values, tracer selection and span context reading are caught by tests.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: tag-normalization
+      why: tag normalization tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_tag_normalization_behavior($|::)/)'
+    - id: config-defaults
+      why: config resolution tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_environment_defaults_behavior($|::)/)'
+    - id: span-context
+      why: span context tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_span_context_behavior($|::)/)'
+    - id: span-tagging
+      why: proxy span tagging tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_proxy_span_tagging_behavior($|::)/)'
+    - id: corpus-replay
+      why: the fuzz corpus is missing, empty or replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
+        && grep -rlq 'datadog_tags' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+        && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+        --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/datadog/tag-normalization.yaml
+  - tools/oracle/cases/helpers/datadog/span-context-extraction.yaml
+  - tools/oracle/cases/helpers/datadog/span-tag-setting.yaml
+  - tools/oracle/cases/helpers/datadog/proxy-span-tagging.yaml
+deviations:
+  - what: When the ddtrace module is not available or disabled, all tracer methods return no-op implementations.
+    why: LiteLLM gracefully disables Datadog APM when the agent is absent; betterlite retains the same fallback behavior for compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dd_tracing.py#L66-L78
+  - what: Best-effort span tagging silently fails if the span lacks set_tag or set_tag_str methods, or if any operation raises an exception.
+    why: A broken APM tracer should not break request logging; failures are logged at debug level only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dd_tracing.py#L100-L123
+  - what: DD_BASE_URL environment variable has no literal default; when unset, it resolves to None.
+    why: Unlike other Datadog env vars that default to string values, DD_BASE_URL is an optional override with no fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_handler.py#L24-L29
+out_of_scope:
+  - APM instrumentation of the proxy request path beyond span tag setting; proxy initialization and transport live in later tasks.
+  - The injected logger registration and callback dispatch that invokes these helpers.
+  - HTTP client tracing and service instrumentation; only APM log payload attachment is here.
+pitfalls:
+  - Tag normalization keeps "_-:./" in the passthrough set and does not convert them to underscores or ASCII equivalents.
+  - Non-ASCII alphanumeric characters pass through unchanged because Python's str.isalnum() is Unicode-aware; the regex only collapses consecutive underscores.
+  - span_id may be None while trace_id is present; both must be checked independently before attaching to payloads.
+  - The ddtrace module may be installed but not yet initialized; getattr on tracer methods prevents AttributeError and ImportError.
+  - Collapsing consecutive underscores happens after substitution, so a character like underscore itself does not double up.
+review_level: security
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

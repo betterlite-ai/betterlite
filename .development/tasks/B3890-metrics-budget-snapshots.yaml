@@ -1,0 +1,82 @@
+id: B3890
+title: Carried budget snapshot records for metrics
+description: >-
+  Port litellm/types/proxy/carried_budget_state.py to Rust in crates/betterlite-core to expose
+  immutable budget snapshots that auth resolves and places on the request context. These records
+  carry key, team, user and organization budget state forward so metrics logging can emit budget
+  gauges without needing to read from the database on every request.
+
+  Each snapshot records the budget reset time and, where applicable, max_budget and user_alias.
+  Snapshots are immutable, validate tolerantly on deserialization (missing fields and unknown
+  fields are permitted, invalid values return None), and serialize with aliases matching
+  the request metadata field names that auth writes: user_api_key_budget_reset_at,
+  user_api_key_team_budget_reset_at, user_api_key_team_table_max_budget, etc.
+
+  Follow the money-is-decimal rule: spend and max_budget fields must be rust_decimal::Decimal,
+  not floats, even though LiteLLM transmits them as JSON floats. Impl metadata_entries() to return
+  the serialized record as a map for injection into request context. Impl from_metadata(map) to
+  validate and extract a snapshot from deserialized request context, returning None if the record
+  is absent or validation fails.
+
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/lib.rs
+    - crates/betterlite-core/src/proxy.rs
+    - crates/betterlite-core/src/proxy/carried_budget_state.rs
+    - crates/betterlite-core/src/proxy/**
+    - Cargo.toml
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/carried_budget_state.py#L1-L64
+    why: Own all four snapshot records, the base class, and its from_metadata validation contract.
+  - url: https://docs.rs/rust_decimal/1.35/rust_decimal/struct.Decimal.html
+    why: Decimal type for spend and max_budget fields, with serde JSON deserialization support.
+
+dod:
+  - text: KeyBudgetSnapshot holds budget_reset_at as Option<DateTime<Utc>>, serializes/deserializes with alias user_api_key_budget_reset_at.
+    proof: [behavior-tests]
+  - text: TeamBudgetSnapshot holds budget_reset_at as Option<DateTime<Utc>> and max_budget as Option<Decimal>, with aliases user_api_key_team_budget_reset_at and user_api_key_team_table_max_budget.
+    proof: [behavior-tests]
+  - text: UserBudgetSnapshot holds budget_reset_at as Option<DateTime<Utc>>, max_budget as Option<Decimal>, and user_alias as Option<String>, with their respective aliases.
+    proof: [behavior-tests]
+  - text: OrgBudgetSnapshot holds spend as non-optional Decimal and max_budget as Option<Decimal>, with aliases user_api_key_org_spend and user_api_key_org_max_budget.
+    proof: [behavior-tests]
+  - text: Every snapshot type is frozen and rejects extra fields during deserialization.
+    proof: [behavior-tests]
+  - text: metadata_entries() returns an immutable mapping of the snapshot's serialized representation with serialization aliases applied.
+    proof: [behavior-tests]
+  - text: from_metadata(map) reconstructs a snapshot from metadata, returning None if any field validation fails, and ignoring unknown keys.
+    proof: [behavior-tests]
+  - text: Spend and max_budget Decimal values deserialize correctly from JSON float inputs without precision loss.
+    proof: [behavior-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Snapshot construction, aliasing, freezing, Decimal handling, and from_metadata validation tests fail or are missing.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^carried_budget_state::tests::/)' - test(/replays_the_/)
+
+oracle_cases: []
+
+deviations:
+  - what: OrgBudgetSnapshot.spend and all max_budget fields are rust_decimal::Decimal, not floats, and deserialize from LiteLLM's JSON float values.
+    why: The money-is-decimal rule requires all spend and budget amounts to be Decimal from the moment they are read; serde deserializes JSON floats directly to Decimal with exact representation.
+    link: https://docs.rs/rust_decimal/1.35/rust_decimal/struct.Decimal.html
+
+out_of_scope:
+  - Budget-lookup, budget-enforcement or reservation logic. These records only snapshot values auth already resolved.
+  - Request metadata marshaling or unmarshaling. That happens in the auth/logging boundary; this task only owns the records themselves.
+
+pitfalls:
+  - "OrgBudgetSnapshot.spend is non-optional Decimal and must never be None; invalid spend values must fail validation."
+  - "TeamBudgetSnapshot.max_budget and UserBudgetSnapshot.max_budget must be Decimal, not floats, following the money-is-decimal rule."
+  - "Aliased field names are critical: validation_alias reads carrier metadata keys, and serialization_alias writes them back; a typo causes metrics to read None when present."
+  - "from_metadata returns None on any ValidationError rather than propagating it, so invalid metadata does not break logging."
+
+budget:
+  max_changed_lines: 150
+  max_new_expects: 0
+review_level: security

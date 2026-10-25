@@ -1,0 +1,108 @@
+id: B4350
+title: Store response cache objects in S3
+description: >-
+  Build crates/betterlite-cache::s3 module with the S3 response-cache backend,
+  loading configuration through betterlite-config and storing cache entries in AWS S3.
+  The module exports S3Cache struct with synchronous and asynchronous operations.
+  Configuration comes from litellm_settings.cache_params keys: s3_bucket_name (required),
+  s3_region_name, s3_api_version, s3_use_ssl (default true), s3_verify, s3_endpoint_url,
+  s3_aws_access_key_id, s3_aws_secret_access_key, s3_aws_session_token, s3_config and s3_path.
+  The bucket name is resolved through ConfigLoader and EnvironmentLookup;
+  all other parameters are optional constructor arguments passed from the config crate.
+  Cache keys are mapped to S3 object names by trimming trailing slashes from the prefix,
+  appending a slash, then replacing colons in the cache key with slashes.
+  When a TTL is present, set Expires to now plus the TTL seconds and Cache-Control to
+  "immutable, max-age={ttl}, s-maxage={ttl}". When absent, use 31536000 seconds and
+  omit Expires. Always set JSON content type, language "en" and inline disposition.
+  Reads check Expires by comparing now against the timestamp's timezone, decode UTF-8,
+  attempt JSON then ast.literal_eval fallback, and convert non-dictionary results through
+  Python's dict(...) semantics. NoSuchKey and other ClientError codes return a miss (None).
+  Writes swallow serialization and storage errors. Async operations dispatch to run_in_executor
+  and preserve outcomes without blocking. Disconnect remains a reachable no-op.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-cache/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/s3_cache.py#L11-182
+    why: The S3Cache class, all owned functions and imports from line 11 through disconnect.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py
+    why: The BaseCache interface and TTL semantics; S3Cache does not call get_ttl.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6309-6312
+    why: "litellm_settings.cache_params is the source of S3 cache configuration, not general_settings."
+  - url: https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-metadata.html
+    why: "S3 object metadata fields: Expires, CacheControl, ContentType, ContentLanguage, ContentDisposition."
+  - url: https://docs.rs/aws-sdk-s3/latest/aws_sdk_s3/
+    why: "The aws-sdk-s3 Rust SDK for AWS S3 operations."
+dod:
+  - text: >-
+      Cache key mapping trims trailing slashes from s3_path prefix and appends slash.
+      An empty s3_path="" maps to no prefix ""; s3_path="/" maps to prefix "/";
+      s3_path="prefix" maps to "prefix/". Colons in the cache key become slashes.
+    proof: [s3-tests]
+  - text: >-
+      When TTL is present, set_cache stores Expires as now plus TTL seconds and Cache-Control as
+      "immutable, max-age={ttl}, s-maxage={ttl}"; when absent, use 31536000 and omit Expires.
+    proof: [s3-tests]
+  - text: >-
+      get_cache returns None when Expires is present and now is greater than the expiration time,
+      comparing using the timestamp's timezone.
+    proof: [s3-tests]
+  - text: >-
+      get_cache decodes UTF-8, tries json.loads, falls back to ast.literal_eval, and converts
+      non-dict results with dict(...) semantics. Malformed objects return None.
+    proof: [s3-tests]
+  - text: >-
+      NoSuchKey ClientError and other ClientError codes return None from get_cache. All exceptions
+      in set_cache are caught and logged.
+    proof: [s3-tests]
+  - text: >-
+      async_set_cache and async_get_cache dispatch to run_in_executor without blocking and
+      preserve exception outcomes.
+    proof: [s3-tests]
+  - text: >-
+      async_set_cache_pipeline gathers independent async writes and awaits all of them.
+    proof: [s3-tests]
+  - text: >-
+      S3 configuration is loaded through betterlite-config from litellm_settings.cache_params;
+      s3_bucket_name is required and other S3 parameters are optional.
+    proof: [config-s3]
+  - text: >-
+      An S3 object-body decoder has a cargo-fuzz target at crates/betterlite-cache/fuzz/fuzz_targets/s3_cache_body.rs
+      and replays_the_s3_cache_body_corpus parses every file in its corpus without a panic.
+    proof: [s3-fuzz-corpus]
+checks:
+  optional: []
+  commands:
+    - id: s3-tests
+      why: the cache or S3 tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^s3_cache::/)'
+    - id: config-s3
+      why: S3 settings are not loaded through betterlite-config or s3_bucket_name is not required
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^s3.*config/)'
+    - id: s3-fuzz-corpus
+      why: the S3 cache body fuzz target or its corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-cache/fuzz/fuzz_targets/s3_cache_body.rs && test -n "$(ls -A crates/betterlite-cache/fuzz/corpus/s3_cache_body)" && cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(replays_the_s3_cache_body_corpus)'
+oracle_cases: []
+deviations:
+  - what: "betterlite loads S3 cache settings from litellm_settings.cache_params in config.yaml."
+    why: "LiteLLM accepts cache configuration from both direct environment variables and constructor parameters; betterlite centralizes all S3 cache settings through configuration to enforce consistent discovery and credential handling."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/s3_cache.py#L24-57
+out_of_scope:
+  - "The response-cache facade and integration. This task only builds the storage backend."
+  - "The flush_cache method; it has no caller at the pinned commit."
+  - "Other cache backends (Redis, in-memory, Azure, GCS)."
+  - "Cache strategy, TTL inheritance from general_settings or response headers."
+pitfalls:
+  - "s3_path=\"\" creates no prefix; s3_path=\"/\" creates a literal \"/\" prefix (different S3 key shape); s3_path=\"prefix\" creates prefix with a trailing slash. The code computes key_prefix = s3_path.rstrip(\"/\") + \"/\" if s3_path else \"\"."
+  - "The Expires field is a datetime with timezone; comparisons must use the timestamp's own tzinfo when checking expiry."
+  - "boto3.client is a synchronous SDK operation. Async operations wrap it in run_in_executor to avoid blocking."
+  - "Malformed JSON falls back to ast.literal_eval, but only Python's dict(...) conversion is used; other container types are not forced to dict, they are converted."
+  - "All exceptions in writes are caught; only NoSuchKey is explicitly handled in reads to return None, other errors also return None."
+  - "The passthrough-parameters field for S3 config (s3_config) comes as a dict from the config file and is passed directly to boto3.client."
+  - "AWS credentials (s3_aws_access_key_id, s3_aws_secret_access_key, s3_aws_session_token) are passed through the constructor and must never appear in Debug output or logs."
+review_level: security
+budget:
+  max_changed_lines: 600
+  max_new_expects: 1

@@ -1,0 +1,102 @@
+id: B3979
+title: Supabase request lifecycle records
+description: >-
+  Build Supabase request logging with initiated inserts and terminal
+  success/failure upserts. The Supabase logger handles the complete
+  request lifecycle: an initiated insert when the call begins, and an
+  upsert on success or failure that updates the row keyed by litellm_call_id.
+
+  Implement three methods. __init__ resolves SUPABASE_URL and SUPABASE_KEY
+  from configuration (B002), creates the native Supabase client, and validates
+  credentials. input_log_event inserts a new row with status "initiated" at
+  pre-call time, capturing model, messages, end_user and litellm_call_id.
+  log_event runs at terminal callback time, calculates completion cost through
+  B068's completion_cost service, calculates response_time from elapsed seconds,
+  and upserts a row keyed by litellm_call_id with final status and outcome.
+
+  Handle success and failure branches. Success: construct a data object from
+  response choices, preserving model from response_obj, response content from
+  choices[0].message.content, messages and end_user. Failure: construct a
+  data object preserving error string from response_obj, checking for the
+  special unknown-model error message ("Unable to map your input to a model.")
+  and zeroing cost only in that case. In both cases, perform upsert with
+  on_conflict="litellm_call_id" to update any prior initiated row.
+
+  The class default table name is "request_logs"; preserve the
+  modify_integration table-name override mechanism so callers can override it.
+  Catch and log exceptions without failing the callback. The supabase Python
+  SDK is imported on first use, installing via pip if needed; native runtime
+  package installation requires an explicit betterlite deployment decision.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/supabase/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L17-L31
+    why: Supabase.__init__ reads credentials from environment, imports and instantiates the Supabase client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L33-L46
+    why: input_log_event inserts an initiated row with model, messages, end_user and call ID.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L48-L103
+    why: log_event calculates cost and response time, then upserts on success or failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L13-L15
+    why: Class default table name is "request_logs".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_logging.py#L6869-L6871
+    why: Caller may override table name via modify_integration parameter (outside B114's scope).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1428
+    why: Pre-call input_log_event dispatch site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2897
+    why: Terminal log_event dispatch site (one call site).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3774
+    why: Terminal log_event dispatch site (second call site).
+
+dod:
+  - text: Supabase.__init__ reads SUPABASE_URL and SUPABASE_KEY from config (B002), raises ValueError with message "LiteLLM Error, trying to use Supabase but url or key not passed. Create a table and set `litellm.supabase_url=<your-url>` and `litellm.supabase_key=<your-key>`" if either is missing, creates supabase.create_client with those credentials.
+    proof: [supabase-tests]
+  - text: input_log_event inserts a row with status "initiated", containing model, messages, end_user and litellm_call_id, without raising on insertion failure.
+    proof: [supabase-tests]
+  - text: log_event calculates cost using B068's completion_cost, calculates response_time as (end_time - start_time).total_seconds(), and branches on response_obj content.
+    proof: [supabase-tests]
+  - text: Success case extracts model from response_obj, response content from choices[0].message.content, preserves messages and end_user, sets status "success", upserts with on_conflict="litellm_call_id".
+    proof: [supabase-tests]
+  - text: Failure case checks for "Unable to map your input to a model." error message and zeros cost only in that case, preserves model from response_obj, preserves error string, sets status "failure", upserts with on_conflict="litellm_call_id".
+    proof: [supabase-tests]
+  - text: Both success and failure cases catch and log exceptions via print_verbose without propagating them.
+    proof: [supabase-tests]
+  - text: The class maintains a default table name "request_logs" as instance attribute, allowing override by callers.
+    proof: [supabase-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: supabase-tests
+      why: Supabase logging tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^supabase_logging::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Supabase SDK initialization via pip install on ImportError requires native runtime package management or explicit Cargo dependency configuration before dispatch.
+    why: The source installs supabase dynamically; betterlite must decide on static dependency, optional feature flag, or deferred SDK contract like B3967/B3970.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L21-L25
+  - what: supabase.create_client, table.insert, table.upsert and table.execute are external SDK calls requiring a concrete Python bridge or HTTP transport contract before dispatch.
+    why: These SDK methods are live behavior; betterlite must provide either a Python adapter or a mock transport.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L31,#L43,#L78-L80,#L96-L100
+
+out_of_scope:
+  - Supabase Python SDK bridge or transport contract for create_client, insert, upsert and execute.
+  - Table schema validation or Supabase database setup.
+  - modify_integration table-name override resolution at the logging caller (handled by caller outside B114).
+
+pitfalls:
+  - Cost calculation must use B068's completion_cost, called before the unknown-model error check; do not reorder without an explicit deviation.
+  - The unknown-model error string is literal ("Unable to map your input to a model.") and only zeros cost in the failure branch, not elsewhere.
+  - upsert with on_conflict="litellm_call_id" updates the initiated row; if it does not exist, creates a new row with that conflict key.
+  - Both insert and upsert return (data, count) tuples; exceptions are caught and logged, not raised.
+  - print_verbose is passed as a logger callback; all diagnostic output uses it, including traceback.format_exc().
+
+review_level: security
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

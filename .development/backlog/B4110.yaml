@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Agentic loop ceilings and follow-up keyword precedence
 status: todo
 depends_on: []
-file: null
+file: tasks/B4110-agentic-loop-inputs.yaml
 covers:
   - "litellm/litellm_core_utils/{agentic_followup_kwargs,agentic_loop_settings}.py"
 parent: B119

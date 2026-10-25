@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: MCP gateway session token signing and verification
 status: todo
 depends_on: []
-file: null
+file: tasks/B4652-mcp-session-tokens.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/outbound_credentials/session_token.py"
 parent: B137

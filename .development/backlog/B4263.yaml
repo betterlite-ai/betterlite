@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Admin UI setup and disabled responses
 status: todo
 depends_on: []
-file: null
+file: tasks/B4263-admin-ui-setup-responses.yaml
 covers:
   - "litellm/proxy/common_utils/admin_ui_utils.py"
 parent: B124

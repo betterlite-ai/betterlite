@@ -1,0 +1,172 @@
+id: B3150
+title: ROI settings validation and shared records
+description: >-
+  Build the common ROI records and boundary validation in a new `betterlite-roi` crate,
+  using Decimal for spend and plain float (f64 without StrictFloat constraint) for hours
+  and update_interval_minutes. Preserve absent/null distinctions, repository normalization,
+  HTTPS URL validation, login/email normalization, and defaults including seven backfill days
+  and a 1,440-minute update interval.
+
+  Settings validation holds five validators on ROISettings: validate_update_interval rejects
+  zero-length intervals below 5 minutes and above 43,200 (allow_inf_nan=False only); normalize_github_api_url enforces
+  HTTPS with no credentials, query or fragment and strips trailing slashes; validate_repositories
+  deduplicates and rejects invalid owner/repo format, relative paths and non-URL suffixes;
+  validate_estimator_prompt bounds length 1–20,000 characters and strips whitespace;
+  normalize_identity_map validates each login via _normalize_login, normalizes email addresses
+  via normalize_email, and rejects empty results or login-email pairs. When an invalid login
+  is provided, _normalize_login raises ValueError("Enter a valid GitHub username.") directly,
+  a distinct error from the generic pair-rejection message. _normalize_login casefolda GitHub
+  username and rejects any that do not match [A-Za-z0-9_[\]-]+.
+
+  normalize_email matches valid email patterns, rejects noreply.github.com addresses,
+  and returns empty string for invalid inputs; used in identity validation and by downstream
+  summarization. All models preserve ReadOnly and NotRequired distinctions: spend records,
+  pull records, estimates, and evidence records nest within pull and report containers.
+  Every Pydantic model uses ConfigDict for frozen or strict checking where declared in
+  the source. The DEFAULT_PROMPT constant supplies the estimator prompt fallback.
+
+  Store github_token and estimator_key as SecretStr inputs; project only has_github_token
+  and has_estimator_key booleans in the response. No response model ever exposes the raw
+  secret values.
+
+  Expose settings/update/response models, spend/estimate/pull/report/evidence records,
+  and the validation functions in `betterlite-roi` types. No implementation outside
+  these boundaries or the email helpers belongs here. Consumers (B3151+) import and
+  call these validators and construct these typed records.
+
+scope:
+  paths:
+    - crates/betterlite-roi/src/lib.rs
+    - crates/betterlite-roi/src/settings.rs
+    - crates/betterlite-roi/src/records.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L8-L11
+    why: DEFAULT_PROMPT constant and its default value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L14-L20
+    why: _normalize_login validates and casefolds GitHub usernames.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L23-L34
+    why: ROISettings model and field defaults, including update_interval_minutes, github_api_url, backfill_days.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L36-L41
+    why: validate_update_interval rejects 0 < value < 5 and values above 43200.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L43-L61
+    why: normalize_github_api_url enforces HTTPS, strips slashes, rejects credentials and query/fragment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L63-L80
+    why: validate_repositories deduplicates, normalizes paths, validates owner/repo format.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L82-L88
+    why: validate_estimator_prompt bounds character length 1–20000 and strips.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L90-L104
+    why: normalize_identity_map validates login/email pairs, calls normalize_email, rejects empty results.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L107-L252
+    why: "Declaration allocation covering ROISettingsUpdate through ROIPullEvidence,
+      including repository, sync-status, spend, estimate, pull-record, report, pull-file
+      and pull-commit types."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/analytics.py#L1-L24
+    why: Email regex patterns and normalize_email function.
+dod:
+  - text: Settings validation enforces all five field validators on ROISettings in order; each validator preserves its original error message and ValueError reason.
+    proof: [settings-validators]
+  - text: _normalize_login casefolded logins, rejects invalid characters and returns the normalized value or ValueError.
+    proof: [login-normalization]
+  - text: normalize_email rejects noreply.github.com and invalid patterns, returning empty string or the normalized email.
+    proof: [email-normalization]
+  - text: validate_repositories deduplicates, preserves order for remaining items, normalizes paths and validates owner/repo format.
+    proof: [repositories-validation]
+  - text: update_interval_minutes rejects 0 < value < 5 and values >= 43201, accepting 0 and [5, 43200].
+    proof: [interval-validation]
+  - text: "backfill_days validation rejects 0 and values above 3650, and accepts 1 and 3650."
+    proof: [backfill-days-validation]
+  - text: github_api_url enforces HTTPS, no credentials/query/fragment, required non-empty value and strips trailing slash.
+    proof: [github-url-validation]
+  - text: estimator_prompt bounds character count 1–20000, strips leading/trailing whitespace.
+    proof: [prompt-validation]
+  - text: identity_map validates each login/email pair, calls normalize_email, skips empty-email pairs, preserves order.
+    proof: [identity-map-validation]
+  - text: identity_map surfaces distinct error "Enter a valid GitHub username." when a login is invalid, not the generic pair-rejection message.
+    proof: [identity-map-error-message]
+  - text: All read-only TypedDict records and response models preserve NotRequired fields exactly as declared.
+    proof: [record-types]
+  - text: "ROISettingsResponse carries has_github_token and has_estimator_key booleans and never
+      exposes the underlying SecretStr value."
+    proof: [settings-response-redaction]
+  - text: DEFAULT_PROMPT constant matches the LiteLLM source value exactly.
+    proof: [default-prompt]
+checks:
+  optional: []
+  commands:
+    - id: settings-validators
+      why: field validators missing, incomplete, incorrect error message, or skipped validation
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/::settings_validators(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: login-normalization
+      why: _normalize_login missing, returns wrong case, accepts invalid chars, or error message wrong
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/::login_normalization(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: email-normalization
+      why: normalize_email missing, accepts noreply.github.com, invalid pattern handling wrong or returns wrong value
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/::email_normalization(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: repositories-validation
+      why: deduplication wrong, format validation fails, relative-path check missing, or order not preserved
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/::repositories_validation(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: interval-validation
+      why: boundary logic wrong (0 < value < 5 not rejected, max not enforced), non-finite detection missing
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/::interval_validation(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: backfill-days-validation
+      why: boundary logic wrong, rejects valid values 1 and 3650, or accepts invalid 0 and 3651
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/::backfill_days_validation(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: github-url-validation
+      why: HTTPS not enforced, trailing slash not stripped, credentials/query/fragment not rejected, empty URL accepted
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/::github_url_validation(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: prompt-validation
+      why: character-count bounds (1–20000) not enforced, whitespace not stripped, empty value accepted
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/::prompt_validation(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: identity-map-validation
+      why: login validation not called, normalize_email not called, empty-email pairs not skipped, order not preserved
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/::identity_map_validation(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: identity-map-error-message
+      why: identity_map does not surface _normalize_login's distinct "Enter a valid GitHub username." error for invalid login
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/::identity_map_error_message(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: record-types
+      why: TypedDict records or response models missing, NotRequired/ReadOnly not preserved, or field names wrong
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/::record_types(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: settings-response-redaction
+      why: "ROISettingsResponse exposes github_token or estimator_key SecretStr, or lacks has_github_token/has_estimator_key booleans"
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/::settings_response_redaction(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: default-prompt
+      why: DEFAULT_PROMPT missing, constant or value does not match LiteLLM source
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/::default_prompt(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B173 owns the HTTP client pool; this task owns only settings records and validation, not network calls."
+  - "B3151 owns litellm/types/roi_calculator.py starting at line 261 (person/pull/metrics/trend/summary records)
+    and litellm/proxy/roi_calculator/analytics.py:27-215 (identity matching and report summarization);
+    ROIIdentityMatch (lines 255-259) has no caller at the pin and falls in the gap but belongs semantically with B3151."
+  - "B3154 owns litellm/types/roi_calculator.py:442-514 (estimator and completion request/response models)
+    and litellm/types/roi_calculator.py:517-537 (ROIEstimatorResult with hours/reasoning validators)."
+  - "Config file parsing and settings loading; this task owns only type definitions and validation."
+pitfalls:
+  - "normalize_email returns empty string for None/empty input or invalid patterns; callers must check the result before using it."
+  - "validate_repositories deduplicates by comparing normalized paths; .git suffix removal and trailing-slash removal happen before dedup check."
+  - "identity_map validator skips pairs where normalize_email returns empty; a pair with an invalid email does not add an error, it is silently dropped."
+  - "identity_map surfaces _normalize_login's ValueError directly ('Enter a valid GitHub username.') for invalid login, not the generic pair-rejection message, so a user sees the specific error about what part of the pair is wrong."
+  - "update_interval_minutes with value 0 is valid (manual updates); the 5-minute minimum applies only when value > 0."
+  - "github_api_url empty string after strip() raises ValueError; the field default is 'https://api.github.com', never None or empty."
+  - "normalize_github_api_url accepts both 'https://api.github.com' and 'https://github.enterprise.com/api' as long as they are HTTPS with no credentials."
+  - "_normalize_login casefolda the input and checks the casefolded result; 'MyLogin' becomes 'mylogin' and is validated against [a-z0-9_[\\]-]+."
+  - "DEFAULT_PROMPT is a module-level Final constant with exact phrasing; the estimator uses it as fallback, not as a placeholder to be replaced."
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

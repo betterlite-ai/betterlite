@@ -2,8 +2,8 @@ id: B3763
 milestone: M6 guardrails
 title: Compresr query projection and compression transport
 status: todo
-depends_on: []
-file: null
+depends_on: [B3663]
+file: tasks/B3763-compresr-transport.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py"
 parent: B107

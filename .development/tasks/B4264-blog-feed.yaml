@@ -1,0 +1,149 @@
+id: B4264
+title: Blog feed cache and bundled fallback
+description: >-
+  Build the blog feed cache with RSS parsing and bundled JSON fallback as oracle helpers. Register
+  blog_feed as a new helper operation with Rust and Python adapters. Implement six methods matching
+  litellm/litellm_core_utils/get_blog_posts.py: load_local_blog_posts reads and returns posts from
+  bundled blog_posts.json; fetch_rss_feed sends HTTP GET with five-second timeout and returns raw XML
+  text; parse_rss_to_posts parses RSS, extracts title, description, date (YYYY-MM-DD or raw on failure),
+  and url from up to max_posts items (default 1), skipping items with missing title or url;
+  validate_blog_posts returns true for non-empty lists, false otherwise with a warning;
+  get_blog_posts implements caching with BLOG_POSTS_TTL_SECONDS (3600) TTL, LITELLM_LOCAL_BLOG_POSTS
+  env override, and fallback to bundled posts on fetch/parse failure; get_blog_posts (public wrapper)
+  delegates to the class method.
+
+  Add quick-xml crate to Cargo.toml and deny.toml to parse RSS XML. Preserve the five-second fetch
+  timeout, lenient date parsing (raw text kept on failure), local-only override, one-item default limit,
+  and uncached failure fallback matching LiteLLM behavior exactly. Inject HTTP client and clock;
+  environment variable check and resource loading are infrastructure.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-server/Cargo.toml
+  - deny.toml
+  - tools/oracle/src/helpers/server/blog_feed.rs
+  - tools/oracle/src/helpers/server/blog_feed/**
+  - tools/oracle/helpers/blog_feed.py
+  - tools/oracle/helpers/blog_feed/**
+  - tools/oracle/cases/helpers/blog_feed/**
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L51-L55
+  why: Owns load_local_blog_posts, which reads the bundled JSON blog_posts.json file
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L57-L66
+  why: Owns fetch_rss_feed, which fetches XML from a URL with a 5-second timeout
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L68-L111
+  why: Owns parse_rss_to_posts, which parses RSS XML and extracts blog post fields from items
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L113-L121
+  why: Owns validate_blog_posts, which checks that parsed posts form a non-empty list
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L123-L155
+  why: Owns get_blog_posts, the main cache and fallback logic with TTL and environment override
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L158-L160
+  why: Owns the public entry point, a thin wrapper that delegates to the class method
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/blog_posts.json#L1-L10
+  why: Owns the bundled blog_posts.json schema and initial content
+dod:
+- text: >-
+    load_local_blog_posts returns a list of blog post dicts with title, description, date, and url
+    fields from the bundled blog_posts.json file.
+  proof: [blog-feed-helpers, oracle]
+- text: >-
+    fetch_rss_feed accepts a URL and optional timeout (default 5 seconds), makes an HTTP GET request
+    with that timeout, returns the response text on 2xx status, and raises on network errors or non-2xx.
+  proof: [blog-feed-helpers, oracle]
+- text: >-
+    parse_rss_to_posts accepts XML text and optional max_posts (default 1), parses the XML, extracts
+    title, description, date (YYYY-MM-DD on successful RFC 2822 parse, raw text otherwise), and url
+    from each <item> up to max_posts, skips items with missing title or url, returns a list of dicts.
+  proof: [blog-feed-helpers, oracle]
+- text: >-
+    validate_blog_posts returns true if posts is a non-empty list, returns false if empty or not a list,
+    and logs a warning when validation fails.
+  proof: [blog-feed-helpers, oracle]
+- text: >-
+    get_blog_posts checks LITELLM_LOCAL_BLOG_POSTS env var (case-insensitive "true"); if set, returns
+    load_local_blog_posts() immediately. Otherwise checks cache: returns cached posts if within
+    BLOG_POSTS_TTL_SECONDS (3600). On cache miss, fetches from URL, parses, validates; on any exception
+    logs warning and returns load_local_blog_posts(). On success, caches posts and returns them.
+  proof: [blog-feed-helpers, oracle]
+- text: >-
+    get_blog_posts public wrapper calls the classmethod and returns the blog posts list.
+  proof: [blog-feed-helpers, oracle]
+- text: >-
+    quick-xml crate is added to Cargo.toml and deny.toml to enable RSS XML parsing.
+  proof: [dependency-check]
+- text: Blog feed helper operation is registered in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py
+  proof: [new-cases, helper-corpus, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+  - id: blog-feed-helpers
+    why: blog feed helper functions must match LiteLLM behavior on all test cases
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^blog_feed::/) - test(/::replays_corpus$/)'
+  - id: helper-python
+    why: the blog feed helper adapters cannot run independently
+    run: test -f tools/oracle/helpers/blog_feed.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: no added blog feed operation reaches the helper decoder
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/blog_feed-*)" && grep -qE '^[[:space:]]+blog_feed:' tools/oracle/fuzz/corpus/helper_case/blog_feed-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: blog feed helpers add no oracle inputs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/blog_feed)"
+  - id: dependency-check
+    why: quick-xml crate must be present in Cargo.toml and allowed in deny.toml
+    run: grep -q 'quick-xml' Cargo.toml && grep -q 'quick-xml' deny.toml
+oracle_cases:
+- tools/oracle/cases/helpers/blog_feed/local-posts-load.yaml
+- tools/oracle/cases/helpers/blog_feed/fetch-5sec-timeout.yaml
+- tools/oracle/cases/helpers/blog_feed/fetch-failure-fallback.yaml
+- tools/oracle/cases/helpers/blog_feed/parse-rss-items.yaml
+- tools/oracle/cases/helpers/blog_feed/missing-title-url-skipped.yaml
+- tools/oracle/cases/helpers/blog_feed/multiple-items-limited.yaml
+- tools/oracle/cases/helpers/blog_feed/invalid-date-raw.yaml
+- tools/oracle/cases/helpers/blog_feed/validate-empty-list.yaml
+- tools/oracle/cases/helpers/blog_feed/validate-nonempty-list.yaml
+- tools/oracle/cases/helpers/blog_feed/cache-hit-ttl.yaml
+- tools/oracle/cases/helpers/blog_feed/cache-miss-fetch.yaml
+- tools/oracle/cases/helpers/blog_feed/local-only-override.yaml
+- tools/oracle/cases/helpers/blog_feed/parse-failure-fallback.yaml
+- tools/oracle/cases/helpers/blog_feed/validation-failure-fallback.yaml
+deviations:
+- what: >-
+    quick-xml is the chosen XML parsing crate for RSS parsing instead of xml.etree.ElementTree (Python).
+    betterlite uses quick-xml for its performance and compatibility with Rust's type system.
+  why: >-
+    LiteLLM uses Python's standard library ElementTree. Rust has no direct equivalent; quick-xml is the
+    most commonly used and performant crate for XML parsing and is compatible with the MIT license.
+out_of_scope:
+- >-
+    verbose_logger in LiteLLM is a module-level logger. betterlite accepts a logger injected through the
+    function interface or uses a provided logging abstraction, following the dependency injection pattern
+    for testability.
+- >-
+    httpx client initialization and timeout handling. betterlite uses reqwest or similar HTTP client with
+    explicit timeout configuration passed as a parameter.
+- >-
+    BLOG_POSTS_TTL_SECONDS and cache field management. betterlite uses explicit constants and field-level
+    access patterns matching the same 3600-second (one hour) TTL.
+pitfalls:
+- 'The oracle helper for this task is pre-registered as blog_feed in the server group. Replace the stub Op in tools/oracle/src/helpers/server/blog_feed.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/blog_feed.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- >-
+    parse_rss_to_posts skips items that have either a missing title OR missing url; an item with a valid
+    title and url but missing description or date is still included with empty strings for those fields.
+- >-
+    The date field extraction uses RFC 2822 parsing with parsedate_to_datetime; if parsing fails with any
+    exception, the raw pubDate text is used as-is without further formatting, preserving the literal string.
+- >-
+    fetch_rss_feed raises on any non-2xx HTTP status, not just 404 or 500; the caller must catch all
+    exceptions and fall back to local posts.
+- >-
+    The LITELLM_LOCAL_BLOG_POSTS env var check uses case-insensitive comparison with "true"; any other value
+    (including "True", "FALSE", empty string, or missing) proceeds with normal fetch/cache logic.
+- >-
+    In-process cache is shared across all calls within the same process; concurrent updates do not use locks,
+    so the cache may be overwritten without synchronization (matching LiteLLM's behavior).
+review_level: standard
+budget:
+  max_changed_lines: 350
+  max_new_expects: 0

@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Provider form catalog from Humanloop through Mistral
 status: todo
 depends_on: []
-file: null
+file: tasks/B3185-provider-fields-humanloop-mistral.yaml
 covers:
   - "litellm/proxy/public_endpoints/provider_create_fields.json"
 parent: B077

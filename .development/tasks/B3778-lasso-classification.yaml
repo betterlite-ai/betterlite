@@ -1,0 +1,153 @@
+id: B3778
+title: Lasso classification transport and session correlation
+description: >-
+  Build Lasso's constructor, session ID caching, payload/header preparation, network call,
+  and action-based rejection. Preserve the one-hour `lasso_conversation_id:` cache entry (TTL 3600),
+  raw malformed tool-argument inspection (parse JSON but keep failed arguments as {"arguments": raw_string}),
+  and only block findings whose action is "BLOCK"; warn and continue on AUTO_MASKING and other actions.
+
+  Configuration carries api_key (required, reads LASSO_API_KEY), api_base (optional, default
+  https://server.lasso.security/gateway/v3, reads LASSO_API_BASE), user_id (optional, reads
+  LASSO_USER_ID), conversation_id (optional, reads LASSO_CONVERSATION_ID) and mask (boolean, default
+  false). HTTP headers include lasso-api-key (Authorization), lasso-user-id (if set), and
+  lasso-conversation-id (generated from litellm_call_id or ULID). Session caching uses
+  DualCache.get_cache/set_cache with key `lasso_conversation_id:{litellm_call_id}` and TTL 3600
+  seconds.
+
+  Tool-argument extraction parses JSON strings into dicts; malformed arguments stay as
+  {"arguments": raw_string} so Lasso still inspects smuggled PII or blocked content in non-JSON
+  payloads. Payload includes messages (expanded for inspection), messageType (PROMPT/COMPLETION),
+  userId (if user_id set), sessionId (conversation_id), tools (flattened to ToolDefinition array),
+  and source: {"type": "litellm"}.
+
+  API endpoints are /classify (default) or /classifix (when mask=True and no multimodal content).
+  Response violations_detected=true with findings.{deputy}[].action=="BLOCK" raise 400 error;
+  other actions log warning and continue. Missing action field allows even when is_safe=false.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/lasso.rs
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/types.rs
+    - crates/betterlite-config/src/loader.rs
+    - tools/oracle/cases/guardrails/lasso/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L89-L121
+    why: The LassoGuardrail.__init__ constructor with env var and config handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L123-L159
+    why: Helper functions _get_field and _extract_tool_call_fields for parsing tool arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L161-L170
+    why: The _generate_ulid method for conversation ID generation with fallback to UUID.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L313-L364
+    why: The _get_or_generate_conversation_id method with cache storage and one-hour TTL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L723-L745
+    why: The _prepare_headers method with lasso-api-key, lasso-user-id and lasso-conversation-id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L747-L802
+    why: The _prepare_payload method with message list, userId, sessionId and tool definitions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L804-L820
+    why: The _call_lasso_api method for POST requests with timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L822-L869
+    why: The _process_lasso_response method checking violations_detected and action=="BLOCK".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L871-L907
+    why: The _check_for_blocking_actions method iterating findings for BLOCK actions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L909-L916
+    why: The _parse_violated_deputies method extracting deputy names from response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L589-L622
+    why: The _handle_api_error method for httpx errors (timeout, 401, 429) and generic exceptions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L624-L640
+    why: The _log_masking_applied method logging violations and masked fields count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L974-L980
+    why: The get_config_model static method returning LassoGuardrailConfigModel.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/lasso.py
+    why: The LassoGuardrailConfigModel with api_key, api_base, user_id, conversation_id fields and ui_friendly_name.
+
+dod:
+  - text: Constructor initializes api_key from parameter or LASSO_API_KEY env var, raising
+      LassoGuardrailMissingSecrets if missing; api_base defaults to https://server.lasso.security/gateway/v3,
+      reading LASSO_API_BASE; user_id and conversation_id from env vars if not provided.
+    proof: [lasso-tests]
+  - text: Conversation ID caching uses litellm_call_id as the cache key with format
+      `lasso_conversation_id:{litellm_call_id}`, stores generated ULID with 3600 second TTL, and
+      returns cached value on cache hit or generates new ULID on miss/error.
+    proof: [lasso-tests]
+  - text: >-
+      Tool-argument extraction parses JSON strings; malformed arguments store
+      {arguments: raw_string} to preserve inspection of non-JSON payloads.
+    proof: [lasso-tests]
+  - text: Headers include lasso-api-key, lasso-user-id (if user_id set), and lasso-conversation-id
+      (from cache or generated).
+    proof: [lasso-tests]
+  - text: >-
+      Payload includes messages, messageType (PROMPT/COMPLETION), sessionId, userId (if set),
+      tools (flattened ToolDefinition array), and source {type: litellm}.
+    proof: [lasso-tests]
+  - text: API call to /classify (default) or /classifix (when mask=True, set via api_url param) with
+      10 second timeout default, raising on HTTP errors.
+    proof: [oracle]
+  - text: Response with violations_detected=true and findings.{deputy}[].action=="BLOCK" raises 400
+      error; other actions log warning and continue; missing action field allows.
+    proof: [oracle]
+  - text: LassoGuardrailConfigModel deserializes api_key (required), api_base (default
+      https://server.lasso.security/gateway/v3), user_id and conversation_id (optional), returning
+      ui_friendly_name() == "Lasso Guardrail".
+    proof: [lasso-tests, config-load]
+  - text: _handle_api_error distinguishes httpx.TimeoutException, httpx.HTTPStatusError 401 (invalid
+      key), 429 (rate limit) and generic errors with appropriate exception messages.
+    proof: [lasso-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: lasso-tests
+      why: Lasso constructor, session caching, header/payload, API call and response processing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-server --no-tests=fail -E 'test(/lasso_guardrail|lasso.*config/)'
+    - id: config-load
+      why: Lasso configuration does not load from files or environment
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/lasso.*config/)'
+
+oracle_cases:
+  - tools/oracle/cases/guardrails/lasso/constructor-missing-api-key.yaml
+  - tools/oracle/cases/guardrails/lasso/constructor-api-base-env.yaml
+  - tools/oracle/cases/guardrails/lasso/session-id-generation.yaml
+  - tools/oracle/cases/guardrails/lasso/session-id-cache-hit.yaml
+  - tools/oracle/cases/guardrails/lasso/headers-with-user-id.yaml
+  - tools/oracle/cases/guardrails/lasso/headers-generated-conversation-id.yaml
+  - tools/oracle/cases/guardrails/lasso/payload-messages-and-tools.yaml
+  - tools/oracle/cases/guardrails/lasso/api-call-classify-endpoint.yaml
+  - tools/oracle/cases/guardrails/lasso/api-call-classifix-endpoint.yaml
+  - tools/oracle/cases/guardrails/lasso/block-action-raises-400.yaml
+  - tools/oracle/cases/guardrails/lasso/non-block-action-continues.yaml
+  - tools/oracle/cases/guardrails/lasso/api-timeout.yaml
+  - tools/oracle/cases/guardrails/lasso/api-401-invalid-key.yaml
+  - tools/oracle/cases/guardrails/lasso/api-429-rate-limit.yaml
+
+deviations:
+  - what: Error messages on blocking violations use betterlite's own wording, not LiteLLM's.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status code and action unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L857-L864
+
+out_of_scope:
+  - Lifecycle hook entry points (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook);
+    B3779 owns the hook logic.
+  - Message expansion and masking application (_run_lasso_guardrail, _handle_masking, _handle_classification,
+    _expand_messages_for_classification, _map_masked_messages_back, _apply_masking_to_model_response);
+    B3779 owns these.
+  - Other guardrail providers (AIM, Akto, Cisco, etc.); each gets its own task.
+
+pitfalls:
+  - "Session cache key format is `lasso_conversation_id:{litellm_call_id}` with 3600 second TTL; fallback is a new ULID if cache miss or error."
+  - "Tool argument parsing must preserve raw arguments as {arguments: raw_string} when JSON decode fails; do not silently drop malformed arguments."
+  - "Only action==\"BLOCK\" triggers a 400 error; AUTO_MASKING, WARN and other actions log and continue."
+  - "Missing action field in findings allows even when is_safe=false."
+  - "API endpoint selection: /classify for default, /classifix when mask=True and no multimodal content (set via api_url parameter to _call_lasso_api)."
+  - "Conversation ID must be included in both headers (lasso-conversation-id) and payload (sessionId) for Lasso's \"Used By\" tracking on Application API Keys."
+  - "ULID generation requires the optional `ulid` library; fallback to uuid.uuid4() if not available."
+  - "_handle_api_error must wrap httpx-specific exceptions and preserve the HTTPException class for FastAPI response rendering."
+
+review_level: standard
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
