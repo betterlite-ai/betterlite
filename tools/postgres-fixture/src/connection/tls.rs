@@ -1,6 +1,6 @@
 use rustls::{
     ClientConfig, RootCertStore,
-    pki_types::{CertificateDer, pem::PemObject},
+    pki_types::{CertificateDer, pem::PemObject as _},
 };
 use tokio_postgres_rustls_improved::MakeRustlsConnect;
 

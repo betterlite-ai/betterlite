@@ -1,6 +1,7 @@
 use std::io;
 use std::time::Duration;
 
+use rustls::pki_types::pem::Error as PemError;
 use tokio::task::JoinError;
 use tokio::time::error::Elapsed;
 
@@ -26,7 +27,7 @@ pub enum FixtureError {
     #[error("fixture TLS certificate file failed: {0}")]
     TlsIo(#[source] io::Error),
     #[error("fixture TLS certificate PEM failed: {0}")]
-    TlsPem(#[source] rustls::pki_types::pem::Error),
+    TlsPem(#[source] PemError),
     #[error("fixture TLS certificate was rejected: {0}")]
     TlsCertificate(#[source] rustls::Error),
     #[error("fixture TLS has no trusted root certificates")]
