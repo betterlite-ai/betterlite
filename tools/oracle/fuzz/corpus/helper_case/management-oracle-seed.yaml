@@ -1,0 +1,13 @@
+kind: helper
+name: management-oracle-seed
+call:
+  management_oracle:
+    domain: models
+    operation:
+      path_encoding:
+        function: segment
+        value: "model/id"
+        field_name: model_id
+env: {}
+compare:
+  ignore: []
