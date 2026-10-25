@@ -1,39 +1,38 @@
 use thiserror::Error;
 
-#[derive(Debug, Error)]
-#[error("harness error: {0}")]
-pub struct HarnessError(pub String);
-
-macro_rules! harness_error {
-    ($name:ident, $message:literal) => {
-        #[derive(Debug, Error)]
-        #[error($message)]
-        pub struct $name(pub String);
-    };
-}
-
-harness_error!(CapabilityUnsupported, "capability unsupported: {0}");
-harness_error!(OptionsMismatch, "harness options mismatch: {0}");
-harness_error!(HarnessInstallFailed, "harness installation failed: {0}");
-harness_error!(SandboxError, "sandbox error: {0}");
-harness_error!(SessionClosed, "session closed: {0}");
-harness_error!(StateIncompatible, "state incompatible: {0}");
+use crate::types::Result;
 
 #[derive(Debug, Error)]
-#[error("output is invalid: {message}")]
-pub struct OutputInvalid {
-    pub message: String,
-    pub raw: String,
-    pub result: Option<crate::types::Result>,
-}
-
-impl OutputInvalid {
-    pub fn new(message: String, raw: String, result: Option<crate::types::Result>) -> Self {
-        let error = Self {
-            message,
-            raw,
-            result,
-        };
-        error
-    }
+pub enum HarnessError {
+    #[error("capability unsupported: {message}")]
+    CapabilityUnsupported { message: String },
+    #[error("{actual} cannot be used with Harness.{harness:?}; use {expected}")]
+    OptionsMismatch {
+        actual: String,
+        expected: String,
+        harness: String,
+    },
+    #[error("harness installation failed: {message}")]
+    HarnessInstallFailed { message: String },
+    #[error("sandbox error: {message}")]
+    SandboxError { message: String },
+    #[error("session closed: {message}")]
+    SessionClosed { message: String },
+    #[error("unreadable harness state: {source}")]
+    StateIncompatible {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("state version {found} is not supported (expected 1)")]
+    StateVersion { found: u32 },
+    #[error("output is invalid: {message}")]
+    OutputInvalid {
+        message: String,
+        raw: String,
+        result: Option<Result>,
+    },
+    #[error("harness turn failed: {message}")]
+    TurnFailed { message: String },
+    #[error("harness must be a Harness member, got {input}{hint}")]
+    InvalidHarness { input: String, hint: String },
 }

@@ -1,0 +1,5 @@
+task: B4830
+deviations:
+  - what: SessionContext.endpoint uses a local opaque ModelEndpoint declaration until B4841 owns the concrete endpoint type.
+    why: B4830 must expose the forward-reference field without implementing B4841's endpoint behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/context.py
