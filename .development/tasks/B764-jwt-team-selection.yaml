@@ -119,7 +119,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/jwt_team_selection.rs
     - crates/betterlite-auth/src/jwt_team_selection/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/jwt_team_selection.rs
     - tools/oracle/src/helpers/server/jwt_team_selection/**

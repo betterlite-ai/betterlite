@@ -19,7 +19,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
   - crates/betterlite-provider/src/api.rs
   - crates/betterlite-provider/src/api/file_provider_selection.rs
   - crates/betterlite-provider/src/api/file_provider_selection/**

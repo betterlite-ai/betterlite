@@ -51,7 +51,6 @@ scope:
     - crates/betterlite-server/src/spend.rs
     - crates/betterlite-server/src/spend/estimates.rs
     - crates/betterlite-server/src/spend/estimates/**
-    - crates/betterlite-router/src/lib.rs
     - crates/betterlite-router/src/provider_budget_view.rs
     - crates/betterlite-router/src/provider_budget_view/**
     - crates/betterlite-config/src/lib.rs

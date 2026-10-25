@@ -36,6 +36,7 @@ scope:
     - Cargo.lock
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,error,vertex_rag_ingest}.rs
+    - crates/betterlite-vertex/src/vertex_rag_ingest.rs
     - crates/betterlite-vertex/src/vertex_rag_ingest/**
     - crates/betterlite-config/src/{config,settings,env,providers,tests}.rs
     - crates/betterlite-config/src/providers/vertex.rs

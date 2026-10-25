@@ -85,8 +85,6 @@ scope:
     - Cargo.lock
     - deny.toml
     - crates/betterlite-auth/Cargo.toml
-    - crates/betterlite-auth/src/lib.rs
-    - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/src/agent_policy.rs
     - crates/betterlite-auth/src/agent_policy/**
     - crates/betterlite-auth/src/budget_snapshots.rs

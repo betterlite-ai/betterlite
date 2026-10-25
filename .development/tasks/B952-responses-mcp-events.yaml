@@ -70,8 +70,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/api/responses_mcp_events.rs
   - crates/betterlite-core/src/api/responses_mcp_events/**
   - crates/betterlite-core/src/api.rs

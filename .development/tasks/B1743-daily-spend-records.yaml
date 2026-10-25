@@ -37,7 +37,6 @@ description: >-
   adapters, savings fixtures and metadata parser tests.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/daily_records.rs
     - crates/betterlite-db/src/daily_records/**
     - crates/betterlite-db/fuzz/Cargo.toml

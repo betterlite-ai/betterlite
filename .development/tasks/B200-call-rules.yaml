@@ -14,8 +14,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/rules.rs
   - crates/betterlite-core/src/rules/**
   - crates/betterlite-core/src/schema.rs

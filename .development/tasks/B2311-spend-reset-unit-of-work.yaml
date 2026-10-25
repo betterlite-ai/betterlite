@@ -61,7 +61,6 @@ scope:
   paths:
     - crates/betterlite-db/src/spend_reset_unit_of_work.rs
     - crates/betterlite-db/src/spend_reset_unit_of_work/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - tools/oracle/src/helpers/db/spend_reset_data.rs
     - tools/oracle/src/helpers/db/spend_reset_data/**

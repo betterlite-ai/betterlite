@@ -55,7 +55,6 @@ scope:
     - crates/betterlite-core/src/cost.rs
     - crates/betterlite-core/src/cost/special.rs
     - crates/betterlite-core/src/cost/special/**
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/protocol_cost.rs
     - crates/betterlite-models/src/protocol_cost/**
     - crates/betterlite-provider/src/pricing.rs

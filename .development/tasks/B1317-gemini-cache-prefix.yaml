@@ -24,7 +24,9 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,cache_prefix,system_instruction}.rs
+    - crates/betterlite-vertex/src/cache_prefix.rs
     - crates/betterlite-vertex/src/cache_prefix/**
+    - crates/betterlite-vertex/src/system_instruction.rs
     - crates/betterlite-vertex/src/system_instruction/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/cache_ttl.rs

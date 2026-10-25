@@ -27,6 +27,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,gemini_request}.rs
+    - crates/betterlite-vertex/src/gemini_request.rs
     - crates/betterlite-vertex/src/gemini_request/**
     - crates/betterlite-config/src/{env,settings}.rs
     - crates/betterlite-config/src/providers/vertex.rs

@@ -22,7 +22,6 @@ description: >-
   configuration/parser lines, capped at 625 changed lines.
 scope:
   paths:
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/cli_attribution.rs
     - crates/betterlite-auth/src/cli_attribution/**
     - crates/betterlite-auth/fuzz/Cargo.toml

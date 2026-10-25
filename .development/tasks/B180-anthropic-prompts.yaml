@@ -14,8 +14,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-prompts/Cargo.toml
-  - crates/betterlite-prompts/src/lib.rs
-  - crates/betterlite-prompts/src/error.rs
   - crates/betterlite-prompts/src/anthropic.rs
   - crates/betterlite-prompts/src/anthropic/**
   - crates/betterlite-prompts/fuzz/**

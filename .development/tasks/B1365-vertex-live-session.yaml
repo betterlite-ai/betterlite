@@ -28,6 +28,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_live}.rs
+    - crates/betterlite-vertex/src/vertex_live.rs
     - crates/betterlite-vertex/src/vertex_live/**
     - crates/betterlite-core/src/api.rs
     - crates/betterlite-core/src/api/vertex_realtime_factory.rs

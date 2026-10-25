@@ -38,7 +38,6 @@ scope:
     - crates/betterlite-server/src/spend.rs
     - crates/betterlite-server/src/spend/settlement.rs
     - crates/betterlite-server/src/spend/settlement/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/src/reservation_state.rs
     - crates/betterlite-auth/src/reservation_state/**
     - tools/oracle/src/helpers/auth/reservation_state.rs

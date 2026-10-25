@@ -126,8 +126,8 @@ scope:
   paths:
     - crates/betterlite-db/src/migration_ledger.rs
     - crates/betterlite-db/src/migration_ledger/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/migration_ledger/fixtures.rs
     - crates/betterlite-db/src/migration_ledger/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs

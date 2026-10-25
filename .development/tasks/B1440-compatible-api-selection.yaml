@@ -48,8 +48,10 @@ description: >-
 scope:
   paths:
     - crates/betterlite-models/src/{lib,compatible_api_selection}.rs
+    - crates/betterlite-models/src/compatible_api_selection.rs
     - crates/betterlite-models/src/compatible_api_selection/**
     - crates/betterlite-provider/src/{lib,compatible_embedding_call}.rs
+    - crates/betterlite-provider/src/compatible_embedding_call.rs
     - crates/betterlite-provider/src/compatible_embedding_call/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,compatible_embeddings}.rs

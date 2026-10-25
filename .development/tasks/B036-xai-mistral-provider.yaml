@@ -61,6 +61,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-provider/src/{lib,error,provider,operation,prepared,xai_mistral}.rs
+    - crates/betterlite-provider/src/xai_mistral.rs
     - crates/betterlite-provider/src/xai_mistral/**
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-core/src/{lib,dispatch,operation,error,xai_mistral,mistral_ocr_guardrail}.rs

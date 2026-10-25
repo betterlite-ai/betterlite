@@ -117,8 +117,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_prefetch.rs
     - crates/betterlite-auth/src/auth_prefetch/**
-    - crates/betterlite-auth/src/lib.rs
-    - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth/prefetch.rs
     - tools/oracle/src/helpers/auth/prefetch/**
@@ -127,6 +125,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/auth-prefetch/**
     - tools/oracle/fuzz/corpus/helper_case/auth-prefetch-*
+    - crates/betterlite-auth/src/auth_prefetch/fixtures.rs
     - crates/betterlite-auth/src/auth_prefetch/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs

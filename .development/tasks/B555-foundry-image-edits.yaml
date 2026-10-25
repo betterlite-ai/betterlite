@@ -146,8 +146,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
-  - crates/betterlite-foundry/src/lib.rs
-  - crates/betterlite-foundry/src/error.rs
   - crates/betterlite-foundry/src/image_edits.rs
   - crates/betterlite-foundry/src/image_edits/**
   - tools/oracle/Cargo.toml

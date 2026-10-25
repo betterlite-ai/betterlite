@@ -12,7 +12,6 @@ scope:
   - crates/betterlite-config/src/lib.rs
   - crates/betterlite-config/src/agentic_loop_ceiling.rs
   - crates/betterlite-context/Cargo.toml
-  - crates/betterlite-context/src/lib.rs
   - crates/betterlite-context/src/agentic_followup_kwargs.rs
   lint_tables: false
 references:

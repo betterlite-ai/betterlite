@@ -47,7 +47,6 @@ scope:
   paths:
     - crates/betterlite-models/src/available_models.rs
     - crates/betterlite-models/src/available_models/**
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/Cargo.toml
     - crates/betterlite-config/src/available_models.rs
     - crates/betterlite-config/src/available_models/**

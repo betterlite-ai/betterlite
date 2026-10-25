@@ -28,6 +28,7 @@ scope:
   paths:
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,error,gemini_history}.rs
+    - crates/betterlite-vertex/src/gemini_history.rs
     - crates/betterlite-vertex/src/gemini_history/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/thinking_part.rs

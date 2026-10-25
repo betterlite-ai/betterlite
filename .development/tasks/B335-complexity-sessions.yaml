@@ -27,8 +27,6 @@ scope:
   paths:
   - crates/betterlite-router/src/complexity_sessions.rs
   - crates/betterlite-router/src/complexity_sessions/**
-  - crates/betterlite-router/src/lib.rs
-  - crates/betterlite-router/src/error.rs
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/state.rs

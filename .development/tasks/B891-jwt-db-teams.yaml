@@ -94,7 +94,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/jwt_db_teams.rs
     - crates/betterlite-auth/src/jwt_db_teams/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/server/jwt_db_teams.rs
     - tools/oracle/src/helpers/server/jwt_db_teams/**

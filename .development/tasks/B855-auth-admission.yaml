@@ -105,7 +105,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_admission.rs
     - crates/betterlite-auth/src/auth_admission/**
-    - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/state.rs

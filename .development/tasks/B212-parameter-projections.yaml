@@ -20,8 +20,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-models/Cargo.toml
-  - crates/betterlite-models/src/lib.rs
-  - crates/betterlite-models/src/error.rs
   - crates/betterlite-models/src/projections.rs
   - crates/betterlite-models/src/projections/**
   - tools/oracle/Cargo.toml

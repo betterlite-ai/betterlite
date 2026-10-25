@@ -348,8 +348,6 @@ scope:
   lint_tables: false
   paths:
   - crates/betterlite-azure/Cargo.toml
-  - crates/betterlite-azure/src/lib.rs
-  - crates/betterlite-azure/src/error.rs
   - crates/betterlite-azure/src/azure_urls.rs
   - crates/betterlite-azure/src/azure_urls/**
   - tools/oracle/Cargo.toml

@@ -43,6 +43,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/{lib,native_messages_hosts}.rs
+    - crates/betterlite-core/src/native_messages_hosts.rs
     - crates/betterlite-core/src/native_messages_hosts/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,native_messages_hosts}.rs

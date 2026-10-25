@@ -39,7 +39,6 @@ description: >-
   capped at 750 including the CostUsage projection additions.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/cost_usage.rs
     - crates/betterlite-models/src/cost_usage/**
     - crates/betterlite-models/src/modality_cost.rs

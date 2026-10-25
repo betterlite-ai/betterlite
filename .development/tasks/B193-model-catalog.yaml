@@ -26,8 +26,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-models/Cargo.toml
-  - crates/betterlite-models/src/lib.rs
-  - crates/betterlite-models/src/error.rs
   - crates/betterlite-models/src/catalog.rs
   - crates/betterlite-models/src/catalog/**
   - crates/betterlite-models/fixtures/**

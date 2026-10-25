@@ -144,8 +144,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-context/Cargo.toml
-  - crates/betterlite-context/src/lib.rs
-  - crates/betterlite-context/src/error.rs
   - crates/betterlite-context/src/owned_parameter_names.rs
   - crates/betterlite-context/src/owned_parameter_names/**
   - tools/oracle/Cargo.toml

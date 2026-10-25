@@ -51,6 +51,7 @@ scope:
     - crates/betterlite-openai/src/{lib,cometapi_wire}.rs
     - crates/betterlite-openai/src/cometapi_wire/**
     - crates/betterlite-provider/src/{lib,cometapi_iterator}.rs
+    - crates/betterlite-provider/src/cometapi_iterator.rs
     - crates/betterlite-provider/src/cometapi_iterator/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/comet_embedding_reply.rs

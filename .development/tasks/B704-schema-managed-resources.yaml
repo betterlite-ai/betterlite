@@ -67,8 +67,8 @@ scope:
   paths:
     - crates/betterlite-db/src/schema_managed_resources.rs
     - crates/betterlite-db/src/schema_managed_resources/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/schema_managed_resources/fixtures.rs
     - crates/betterlite-db/src/schema_managed_resources/fixtures/**
     - crates/betterlite-db/migrations/20250707230009_add_mcp_namespaced_tool_name/migration.sql
     - crates/betterlite-db/migrations/20250711220620_add_stdio_mcp/migration.sql

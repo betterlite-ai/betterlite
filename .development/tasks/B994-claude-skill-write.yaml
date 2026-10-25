@@ -100,8 +100,6 @@ scope:
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
   - crates/betterlite-core/src/api/claude_skill_write.rs
   - crates/betterlite-core/src/api/claude_skill_write/**
   - crates/betterlite-core/src/api.rs

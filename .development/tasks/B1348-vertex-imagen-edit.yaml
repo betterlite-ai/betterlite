@@ -25,6 +25,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_imagen_edit}.rs
+    - crates/betterlite-vertex/src/vertex_imagen_edit.rs
     - crates/betterlite-vertex/src/vertex_imagen_edit/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/imagen_edit_input.rs

@@ -29,6 +29,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,error,vertex_file_content}.rs
+    - crates/betterlite-vertex/src/vertex_file_content.rs
     - crates/betterlite-vertex/src/vertex_file_content/**
     - crates/betterlite-config/src/{config,settings,env,providers,tests}.rs
     - crates/betterlite-config/src/providers/vertex.rs

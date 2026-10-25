@@ -75,7 +75,6 @@ scope:
   paths:
     - crates/betterlite-router/src/deployment_model_info.rs
     - crates/betterlite-router/src/deployment_model_info/**
-    - crates/betterlite-router/src/lib.rs
     - crates/betterlite-router/Cargo.toml
     - tools/oracle/src/helpers/router/deployment_model_info.rs
     - tools/oracle/src/helpers/router/deployment_model_info/**

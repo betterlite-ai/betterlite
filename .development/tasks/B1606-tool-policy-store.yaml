@@ -21,7 +21,6 @@ description: >-
   190 tests, 100 oracle glue and 50 registration lines.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/tool_policy_store.rs
     - crates/betterlite-db/src/tool_policy_store/**
     - tools/oracle/Cargo.toml

@@ -49,7 +49,6 @@ description: >-
   260 tests and 180 adapters/corpus within 800 changed lines.
 scope:
   paths:
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/baseline_history.rs
     - crates/betterlite-models/src/baseline_history/**
     - tools/oracle/src/helpers/models/baseline_history.rs

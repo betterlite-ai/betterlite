@@ -15,8 +15,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-prompts/Cargo.toml
-  - crates/betterlite-prompts/src/lib.rs
-  - crates/betterlite-prompts/src/error.rs
   - crates/betterlite-prompts/src/response_tool_calls.rs
   - crates/betterlite-prompts/src/response_tool_calls/**
   - tools/oracle/Cargo.toml

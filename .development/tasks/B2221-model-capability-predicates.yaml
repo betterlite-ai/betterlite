@@ -81,8 +81,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-models/Cargo.toml
-  - crates/betterlite-models/src/lib.rs
-  - crates/betterlite-models/src/error.rs
   - crates/betterlite-models/src/model_capability_predicates.rs
   - crates/betterlite-models/src/model_capability_predicates/**
   - tools/oracle/Cargo.toml

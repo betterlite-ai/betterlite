@@ -21,6 +21,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,gemini_candidates}.rs
+    - crates/betterlite-vertex/src/gemini_candidates.rs
     - crates/betterlite-vertex/src/gemini_candidates/**
     - tools/oracle/src/helpers/vertex/gemini_candidates.rs
     - tools/oracle/src/helpers/vertex/gemini_candidates/**

@@ -26,8 +26,6 @@ scope:
   paths:
   - crates/betterlite-router/src/complexity_placement_gates.rs
   - crates/betterlite-router/src/complexity_placement_gates/**
-  - crates/betterlite-router/src/lib.rs
-  - crates/betterlite-router/src/error.rs
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/state.rs

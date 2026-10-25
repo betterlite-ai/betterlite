@@ -122,8 +122,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
-  - crates/betterlite-bedrock/src/lib.rs
-  - crates/betterlite-bedrock/src/error.rs
   - crates/betterlite-bedrock/src/nova_chat.rs
   - crates/betterlite-bedrock/src/nova_chat/**
   - tools/oracle/Cargo.toml

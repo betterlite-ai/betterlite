@@ -35,7 +35,6 @@ description: >-
   plus 83 primary-read lines; allocate 800 changed lines including SQL and failure tests.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/window_spend.rs
     - crates/betterlite-db/src/window_spend/**
     - crates/betterlite-db/src/spend_rows.rs

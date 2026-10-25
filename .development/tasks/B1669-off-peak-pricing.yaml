@@ -37,7 +37,6 @@ scope:
     - Cargo.toml
     - Cargo.lock
     - crates/betterlite-models/Cargo.toml
-    - crates/betterlite-models/src/lib.rs
     - crates/betterlite-models/src/off_peak.rs
     - crates/betterlite-models/src/off_peak/**
     - tools/oracle/src/helpers/models/off_peak.rs

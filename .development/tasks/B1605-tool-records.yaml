@@ -19,7 +19,6 @@ description: >-
   300 records/query code, 170 tests, 90 oracle adapters and 90 fuzz/exports, total 650.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/tool_records.rs
     - crates/betterlite-db/src/tool_records/**
     - crates/betterlite-db/fuzz/Cargo.toml

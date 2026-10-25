@@ -18,15 +18,12 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-models/Cargo.toml
-  - crates/betterlite-models/src/lib.rs
-  - crates/betterlite-models/src/error.rs
   - crates/betterlite-models/src/endpoints.rs
   - crates/betterlite-models/src/endpoints/**
   - crates/betterlite-models/src/lookup.rs
   - crates/betterlite-models/src/lookup/**
   - crates/betterlite-models/fixtures/**
   - crates/betterlite-models/fuzz/**
-  - crates/betterlite-tokenizer/src/lib.rs
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/models/model_capabilities.rs
   - tools/oracle/src/helpers/models/model_capabilities/**

@@ -32,6 +32,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/src/{lib,gemini_live_accounting}.rs
+    - crates/betterlite-vertex/src/gemini_live_accounting.rs
     - crates/betterlite-vertex/src/gemini_live_accounting/**
     - tools/oracle/src/helpers/vertex/gemini_live_accounting.rs
     - tools/oracle/src/helpers/vertex/gemini_live_accounting/**

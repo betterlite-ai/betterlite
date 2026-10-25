@@ -82,8 +82,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
-  - crates/betterlite-bedrock/src/lib.rs
-  - crates/betterlite-bedrock/src/error.rs
   - crates/betterlite-bedrock/src/assume_role.rs
   - crates/betterlite-bedrock/src/assume_role/**
   - Cargo.toml

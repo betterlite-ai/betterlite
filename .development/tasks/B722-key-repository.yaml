@@ -64,7 +64,6 @@ scope:
     - crates/betterlite-db/src/key_repository.rs
     - crates/betterlite-db/src/key_repository/**
     - crates/betterlite-db/src/key_hash.rs
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/token_record.rs

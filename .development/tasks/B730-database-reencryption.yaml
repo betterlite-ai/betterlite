@@ -110,7 +110,6 @@ scope:
   paths:
     - crates/betterlite-db/src/database_reencryption.rs
     - crates/betterlite-db/src/database_reencryption/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/loader.rs

@@ -40,7 +40,6 @@ description: >-
   integration with PostgreSQL and Redis; wire behavior remains tested by B069's callbacks.
 scope:
   paths:
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/spend_writer.rs
     - crates/betterlite-db/src/spend_writer/**
     - crates/betterlite-server/src/spend.rs

@@ -78,8 +78,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-auth/Cargo.toml
-    - crates/betterlite-auth/src/lib.rs
-    - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/src/spend_counter_batch.rs
     - crates/betterlite-auth/src/spend_counter_batch/**
     - tools/oracle/src/helpers/auth/spend_counter_batch.rs

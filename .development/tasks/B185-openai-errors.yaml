@@ -12,8 +12,6 @@ description: >-
   own Rust and Python adapter file and corpus seed.
 scope:
   paths:
-  - crates/betterlite-error/src/lib.rs
-  - crates/betterlite-error/src/error.rs
   - crates/betterlite-error/src/openai.rs
   - crates/betterlite-error/src/openai/**
   - crates/betterlite-error/src/parse.rs

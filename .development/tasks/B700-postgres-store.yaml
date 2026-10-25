@@ -64,7 +64,6 @@ scope:
     - Cargo.toml
     - deny.toml
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/src/postgres_store.rs
     - crates/betterlite-db/src/postgres_store/**
     - tools/oracle/Cargo.toml

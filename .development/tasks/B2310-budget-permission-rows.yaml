@@ -64,7 +64,6 @@ scope:
   paths:
     - crates/betterlite-db/src/budget_permission_rows.rs
     - crates/betterlite-db/src/budget_permission_rows/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/budget_permission_rows.rs

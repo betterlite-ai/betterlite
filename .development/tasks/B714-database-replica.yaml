@@ -75,7 +75,6 @@ scope:
   paths:
     - crates/betterlite-db/src/database_replica.rs
     - crates/betterlite-db/src/database_replica/**
-    - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
   lint_tables: false
 references:

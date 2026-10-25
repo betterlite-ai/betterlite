@@ -20,8 +20,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
   - crates/betterlite-provider/src/api.rs
   - crates/betterlite-provider/src/api/responses_provider_contract.rs
   - crates/betterlite-provider/src/api/responses_provider_contract/**
