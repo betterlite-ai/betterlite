@@ -47,6 +47,8 @@ settings:
     - Cargo.lock
     - "**/Cargo.toml"
   budget_excludes:
+    - .development/backlog/**
+    - .development/tasks/**
     - Cargo.lock
     - "**/fixtures/**"
     - "**/snapshots/**"
