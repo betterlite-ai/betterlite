@@ -20,4 +20,9 @@ pub(crate) struct Command {
         description = "Path from the repository root. When it does not exist the check is skipped."
     )]
     pub(crate) when_exists: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        description = "Run only after every other check passed. A gate that is already red skips it, so slow checks such as mutants never run on unfinished work."
+    )]
+    pub(crate) after_green: bool,
 }
