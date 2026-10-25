@@ -38,6 +38,10 @@ scope:
   - crates/betterlite-server/fuzz/fuzz_targets/rerank_route.rs
   - crates/betterlite-server/fuzz/corpus/rerank_route/**
   - tools/oracle/cases/rerank-routes/**
+  - tools/oracle/helpers/b085.py
+  - tools/oracle/helpers/b085/**
+  - tools/oracle/src/helpers/server/b085.rs
+  - tools/oracle/src/helpers/server/b085/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rerank_endpoints/endpoints.py#L27-L136

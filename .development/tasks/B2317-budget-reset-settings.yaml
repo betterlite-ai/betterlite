@@ -81,18 +81,6 @@ scope:
     - crates/betterlite-core/fuzz/fuzz_targets/budget_reset_clock.rs
     - crates/betterlite-core/fuzz/corpus/budget_reset_clock/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/budget_reset.rs
-    - crates/betterlite-config/src/budget_reset/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/budget-reset-*
     - tools/oracle/src/helpers/core_ops/budget_reset.rs
     - tools/oracle/src/helpers/core_ops/budget_reset/**
@@ -100,6 +88,8 @@ scope:
     - tools/oracle/helpers/budget_reset/**
     - tools/oracle/cases/helpers/budget-reset/**
     - tools/oracle/fuzz/corpus/helper_case/budget-reset-*
+    - crates/betterlite-config/src/sections/budget_reset.rs
+    - crates/betterlite-config/src/sections/budget_reset/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/timezone_utils.py#L9-L61
@@ -143,7 +133,7 @@ checks:
   commands:
     - id: behavior-tests
       why: Core parsing/calculation and production config normalization must both have new behavior tests.
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^budget_reset::/) - test(replays_the_reset_clock_corpus)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^budget_reset::/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^(sections::)?budget_reset::/) - test(replays_the_reset_clock_corpus)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^(sections::)?budget_reset::/)'
     - id: helper-python
       why: Oracle time and duration predicates must invoke source functions under controlled clocks/settings.
       run: test -f tools/oracle/helpers/budget_reset.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json

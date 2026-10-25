@@ -43,6 +43,10 @@ scope:
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/route_probe.rs
   - crates/betterlite-server/fuzz/corpus/route_probe/auto-router-preview-*
+  - tools/oracle/helpers/b349.py
+  - tools/oracle/helpers/b349/**
+  - tools/oracle/src/helpers/server/b349.rs
+  - tools/oracle/src/helpers/server/b349/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L438-L615

@@ -38,6 +38,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/complexity_evaluation.py
   - tools/oracle/cases/routing/complexity-evaluation/**
+  - tools/oracle/helpers/b351.py
+  - tools/oracle/helpers/b351/**
+  - tools/oracle/src/helpers/router/b351.rs
+  - tools/oracle/src/helpers/router/b351/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/evals/eval_complexity_router.py#L26-L329

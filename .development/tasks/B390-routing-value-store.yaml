@@ -50,6 +50,10 @@ scope:
   - crates/betterlite-router/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/fuzz_targets/route_value.rs
   - crates/betterlite-router/fuzz/corpus/route_value/routing-value-store-*
+  - tools/oracle/helpers/b390.py
+  - tools/oracle/helpers/b390/**
+  - tools/oracle/src/helpers/router/b390.rs
+  - tools/oracle/src/helpers/router/b390/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L1-L236

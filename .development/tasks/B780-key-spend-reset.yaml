@@ -124,6 +124,10 @@ scope:
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-spend-reset/**
     - crates/betterlite-server/src/key_spend_reset/fixtures/**
+    - tools/oracle/helpers/b780.py
+    - tools/oracle/helpers/b780/**
+    - tools/oracle/src/helpers/server/b780.rs
+    - tools/oracle/src/helpers/server/b780/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5989-L6278

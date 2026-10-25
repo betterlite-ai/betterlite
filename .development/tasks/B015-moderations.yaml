@@ -28,6 +28,10 @@ scope:
   - crates/betterlite-config/**
   - tools/oracle/cases/moderations/**
   - crates/betterlite-core/**
+  - tools/oracle/helpers/b015.py
+  - tools/oracle/helpers/b015/**
+  - tools/oracle/src/helpers/oracle/b015.rs
+  - tools/oracle/src/helpers/oracle/b015/**
   lint_tables: false
 references:
 - url: >-

@@ -89,6 +89,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/ui_sessions.rs
     - crates/betterlite-server/fuzz/corpus/ui_sessions/**
     - tools/oracle/cases/management/ui-sessions/**
+    - tools/oracle/helpers/b789.py
+    - tools/oracle/helpers/b789/**
+    - tools/oracle/src/helpers/server/b789.rs
+    - tools/oracle/src/helpers/server/b789/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/password_endpoints.py#L48-L170

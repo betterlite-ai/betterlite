@@ -36,6 +36,10 @@ scope:
   - tools/oracle/cases/sdk-http/responses-compact/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-compact-*
   - Cargo.lock
+  - tools/oracle/helpers/b934.py
+  - tools/oracle/helpers/b934/**
+  - tools/oracle/src/helpers/core_ops/b934.rs
+  - tools/oracle/src/helpers/core_ops/b934/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L2080-L2279

@@ -111,6 +111,10 @@ scope:
   - tools/postgres-fixture/src/lib.rs
   - tools/postgres-fixture/src/fixtures.rs
   - tools/postgres-fixture/src/fixtures/http_scenarios.rs
+  - tools/oracle/helpers/b1139.py
+  - tools/oracle/helpers/b1139/**
+  - tools/oracle/src/helpers/oracle/b1139.rs
+  - tools/oracle/src/helpers/oracle/b1139/**
   lint_tables: false
 references: []
 dod:

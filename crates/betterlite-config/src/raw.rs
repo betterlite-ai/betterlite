@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 use crate::providers::bedrock::request_policy::RawMetadataField;
 use crate::types::{RouterFallback, RoutingStrategy};
@@ -50,6 +51,14 @@ pub(super) struct RawInfo {
 #[derive(Debug, Deserialize, Default)]
 pub(super) struct RawGeneral {
     pub(super) master_key: Option<String>,
+    pub(super) encryption_algorithm: Option<RawAlgorithm>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub(super) enum RawAlgorithm {
+    Text(String),
+    Other(IgnoredAny),
 }
 
 #[derive(Debug, Deserialize, Default)]

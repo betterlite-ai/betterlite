@@ -29,6 +29,10 @@ scope:
   - crates/betterlite-server/fuzz/corpus/assistant_body/object-*
   - tools/oracle/cases/api/assistant-object-routes/**
   - tools/oracle/fixtures/assistant-object-routes/**
+  - tools/oracle/helpers/b1085.py
+  - tools/oracle/helpers/b1085/**
+  - tools/oracle/src/helpers/server/b1085.rs
+  - tools/oracle/src/helpers/server/b1085/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L13056-L13322
