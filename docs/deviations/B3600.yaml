@@ -6,3 +6,17 @@ deviations:
   - what: "Rust exports use shorter identifiers than LiteLLM's exact long public names."
     why: "The repository's enforced naming hook requires shorter Rust identifiers, so the exact LiteLLM names cannot be exported."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/pass_through_endpoints.py#L7-L66"
+  - what: >-
+      get_response_body parses untrusted upstream bytes with serde_json::from_slice but has
+      no cargo-fuzz target, committed seed corpus, or normal corpus replay test. This is
+      an outstanding fuzz-parsers rule gap, not a LiteLLM behavior difference.
+    why: >-
+      B3600 excludes crates/betterlite-http/fuzz from scope. Follow-up owner: B009
+      (shared HTTP integration), whose crates/betterlite-http/** scope covers the fix.
+      Add fuzz/fuzz_targets/passthrough_response_body.rs calling get_response_body on
+      arbitrary bytes, register it in fuzz/Cargo.toml, commit seeds under
+      fuzz/corpus/passthrough_response_body/, and add
+      replays_the_passthrough_response_body_corpus in src/passthrough/tests.rs.
+      Follow the existing decode_generalization_rules target and replay test in
+      betterlite-models; a thin serde_json wrapper still requires fuzz coverage.
+    link: ""
