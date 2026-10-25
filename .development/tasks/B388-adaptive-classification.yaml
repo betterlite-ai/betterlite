@@ -59,6 +59,10 @@ scope:
   - crates/betterlite-openai/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/adaptive_classification.rs
   - crates/betterlite-config/src/sections/adaptive_classification/**
+  - tools/oracle/helpers/b388.py
+  - tools/oracle/helpers/b388/**
+  - tools/oracle/src/helpers/router/b388.rs
+  - tools/oracle/src/helpers/router/b388/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/classifier.py#L18-L139

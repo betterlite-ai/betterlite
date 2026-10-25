@@ -53,6 +53,10 @@ scope:
   - crates/betterlite-router/fuzz/corpus/jev_verdict/jev-classifier-*
   - crates/betterlite-config/src/sections/jev_classifier.rs
   - crates/betterlite-config/src/sections/jev_classifier/**
+  - tools/oracle/helpers/b333.py
+  - tools/oracle/helpers/b333/**
+  - tools/oracle/src/helpers/router/b333.rs
+  - tools/oracle/src/helpers/router/b333/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/jev_classifier.py#L109-L304

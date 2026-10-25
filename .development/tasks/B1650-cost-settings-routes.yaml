@@ -44,6 +44,10 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/cost-management-*
     - tools/oracle/cases/management/cost-settings/**
     - tools/oracle/fuzz/corpus/http_case/cost-settings-*
+    - tools/oracle/helpers/b1650.py
+    - tools/oracle/helpers/b1650/**
+    - tools/oracle/src/helpers/server/b1650.rs
+    - tools/oracle/src/helpers/server/b1650/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L192-L560

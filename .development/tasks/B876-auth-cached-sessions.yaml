@@ -90,6 +90,10 @@ scope:
     - crates/betterlite-server/src/auth/auth_cached_sessions/**
     - crates/betterlite-config/src/sections/auth_cached_sessions.rs
     - crates/betterlite-config/src/sections/auth_cached_sessions/**
+    - tools/oracle/helpers/b876.py
+    - tools/oracle/helpers/b876/**
+    - tools/oracle/src/helpers/auth/b876.rs
+    - tools/oracle/src/helpers/auth/b876/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1897-L2076

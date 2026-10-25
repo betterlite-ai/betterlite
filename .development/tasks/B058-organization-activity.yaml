@@ -43,6 +43,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/organization-activity/**
+    - tools/oracle/helpers/b058.py
+    - tools/oracle/helpers/b058/**
+    - tools/oracle/src/helpers/server/b058.rs
+    - tools/oracle/src/helpers/server/b058/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L560-L663

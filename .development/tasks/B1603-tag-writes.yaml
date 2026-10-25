@@ -33,6 +33,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/tag_request.rs
     - crates/betterlite-server/fuzz/corpus/tag_request/**
     - tools/oracle/cases/management/tag-writes/**
+    - tools/oracle/helpers/b1603.py
+    - tools/oracle/helpers/b1603/**
+    - tools/oracle/src/helpers/server/b1603.rs
+    - tools/oracle/src/helpers/server/b1603/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tag_management_endpoints.py#L62-L151

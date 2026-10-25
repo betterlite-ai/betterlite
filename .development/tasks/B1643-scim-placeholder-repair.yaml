@@ -32,6 +32,10 @@ scope:
     - crates/betterlite-server/src/scim_placeholder_repair/**
     - tools/oracle/cases/management/scim-placeholder-repair/**
     - tools/oracle/fuzz/corpus/http_case/scim-placeholder-*
+    - tools/oracle/helpers/b1643.py
+    - tools/oracle/helpers/b1643/**
+    - tools/oracle/src/helpers/server/b1643.rs
+    - tools/oracle/src/helpers/server/b1643/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1882-L1962

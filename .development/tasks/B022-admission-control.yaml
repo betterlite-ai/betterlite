@@ -58,6 +58,10 @@ scope:
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/admission_control.rs
   - crates/betterlite-config/src/sections/admission_control/**
+  - tools/oracle/helpers/b022.py
+  - tools/oracle/helpers/b022/**
+  - tools/oracle/src/helpers/server/b022.rs
+  - tools/oracle/src/helpers/server/b022/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L18-L234

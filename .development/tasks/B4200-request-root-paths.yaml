@@ -18,6 +18,10 @@ scope:
     - crates/betterlite-config/**
     - crates/betterlite-server/**
     - tools/oracle/cases/root-path/**
+    - tools/oracle/helpers/b4200.py
+    - tools/oracle/helpers/b4200/**
+    - tools/oracle/src/helpers/oracle/b4200.rs
+    - tools/oracle/src/helpers/oracle/b4200/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/per_request_root_path_middleware.py

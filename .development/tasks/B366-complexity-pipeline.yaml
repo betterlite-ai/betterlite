@@ -38,6 +38,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/complexity_pipeline.py
   - tools/oracle/cases/routing/complexity-pipeline/**
+  - tools/oracle/helpers/b366.py
+  - tools/oracle/helpers/b366/**
+  - tools/oracle/src/helpers/router/b366.rs
+  - tools/oracle/src/helpers/router/b366/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L4474-L4811

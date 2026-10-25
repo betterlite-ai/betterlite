@@ -32,6 +32,10 @@ scope:
   - crates/betterlite-server/**
   - crates/betterlite-openai/**
   - tools/oracle/cases/provider-framework/**
+  - tools/oracle/helpers/b010.py
+  - tools/oracle/helpers/b010/**
+  - tools/oracle/src/helpers/oracle/b010.rs
+  - tools/oracle/src/helpers/oracle/b010/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L68-L467

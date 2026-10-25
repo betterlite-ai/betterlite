@@ -34,6 +34,10 @@ scope:
   - tools/oracle/fuzz/corpus/sdk_http_case/image-variations-*
   - crates/betterlite-config/src/sections/image_variations.rs
   - crates/betterlite-config/src/sections/image_variations/**
+  - tools/oracle/helpers/b1000.py
+  - tools/oracle/helpers/b1000/**
+  - tools/oracle/src/helpers/core_ops/b1000.rs
+  - tools/oracle/src/helpers/core_ops/b1000/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L564-L708

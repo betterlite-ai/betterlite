@@ -54,6 +54,10 @@ scope:
   - crates/betterlite-router/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/fuzz_targets/affinity.rs
   - crates/betterlite-router/fuzz/corpus/affinity/affinity-claims-*
+  - tools/oracle/helpers/b372.py
+  - tools/oracle/helpers/b372/**
+  - tools/oracle/src/helpers/router/b372.rs
+  - tools/oracle/src/helpers/router/b372/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/deployment_affinity_check.py#L93-L346

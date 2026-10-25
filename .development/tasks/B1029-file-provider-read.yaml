@@ -26,6 +26,10 @@ scope:
   - tools/oracle/sdk_http/file_provider_read.py
   - tools/oracle/cases/sdk-http/file-provider-read/**
   - tools/oracle/fuzz/corpus/sdk_http_case/file-provider-read-*
+  - tools/oracle/helpers/b1029.py
+  - tools/oracle/helpers/b1029/**
+  - tools/oracle/src/helpers/core_ops/b1029.rs
+  - tools/oracle/src/helpers/core_ops/b1029/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L298-L463

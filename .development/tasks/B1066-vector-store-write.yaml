@@ -37,6 +37,10 @@ scope:
   - tools/oracle/sdk_http/vector_store_write.py
   - tools/oracle/cases/sdk-http/vector-store-write/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-write-*
+  - tools/oracle/helpers/b1066.py
+  - tools/oracle/helpers/b1066/**
+  - tools/oracle/src/helpers/core_ops/b1066.rs
+  - tools/oracle/src/helpers/core_ops/b1066/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L778-L1062

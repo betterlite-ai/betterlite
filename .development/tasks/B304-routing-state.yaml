@@ -56,6 +56,10 @@ scope:
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/routing_state.rs
   - crates/betterlite-config/src/sections/routing_state/**
+  - tools/oracle/helpers/b304.py
+  - tools/oracle/helpers/b304/**
+  - tools/oracle/src/helpers/router/b304.rs
+  - tools/oracle/src/helpers/router/b304/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L16-L245

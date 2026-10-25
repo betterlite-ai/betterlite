@@ -130,6 +130,10 @@ scope:
   - tools/oracle/fixtures/batch-create-route/**
   - crates/betterlite-config/src/sections/batch_create_route.rs
   - crates/betterlite-config/src/sections/batch_create_route/**
+  - tools/oracle/helpers/b1050.py
+  - tools/oracle/helpers/b1050/**
+  - tools/oracle/src/helpers/server/b1050.rs
+  - tools/oracle/src/helpers/server/b1050/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L216-L524

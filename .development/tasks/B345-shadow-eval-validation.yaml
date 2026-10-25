@@ -49,6 +49,10 @@ scope:
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/shadow_req.rs
   - crates/betterlite-server/fuzz/corpus/shadow_req/shadow-eval-validation-*
+  - tools/oracle/helpers/b345.py
+  - tools/oracle/helpers/b345/**
+  - tools/oracle/src/helpers/server/b345.rs
+  - tools/oracle/src/helpers/server/b345/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L329-L513
