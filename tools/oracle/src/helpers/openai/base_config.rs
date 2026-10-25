@@ -89,15 +89,15 @@ fn config(input: &ConfigInput) -> OpenAiConfig {
         settings: OpenAiSettings::default(),
     }
 }
-fn invalid_error(error: impl std::fmt::Display) -> Box<HelperError> {
-    Box::new(HelperError {
+fn invalid_error(error: impl std::fmt::Display) -> HelperError {
+    HelperError {
         class: String::from("InvalidInput"),
         status: None,
         error_type: None,
         param: None,
         code: None,
         message: error.to_string(),
-    })
+    }
 }
 fn error_value(input: &ErrorInput) -> Result<Value, Box<HelperError>> {
     let record = OpenAiErrorRecord::from_parts(OpenAiErrorParts {
@@ -108,7 +108,16 @@ fn error_value(input: &ErrorInput) -> Result<Value, Box<HelperError>> {
         response: None,
         body: input.body.clone(),
     });
-    serde_json::to_value(record).map_err(invalid_error)
+    serde_json::to_value(record).map_err(|error| Box::new(invalid_error(error)))
+}
+fn metadata_value(input: &MetadataInput) -> Result<Value, Box<HelperError>> {
+    serde_json::to_value(metadata_filter_limit(input.metadata.as_ref()))
+        .map_err(|error| Box::new(invalid_error(error)))
+}
+fn overlap_value(input: &OverlapInput) -> Result<Value, Box<HelperError>> {
+    overlapping_api_base_path(&input.api_base, &input.ending_path)
+        .map(Value::String)
+        .map_err(|error| Box::new(invalid_error(error)))
 }
 fn forwarding(input: &ProjectionInput) -> Value {
     let events = Rc::new(RefCell::new(Vec::new()));
@@ -201,15 +210,8 @@ fn invoke(input: &BaseCall) -> Result<Value, Box<HelperError>> {
             &value.optional
         ))),
         BaseCall::OpenaiErrorDefaults(value) => error_value(value),
-        BaseCall::MetadataFilterLimit(value) => {
-            serde_json::to_value(metadata_filter_limit(value.metadata.as_ref()))
-                .map_err(invalid_error)
-        }
-        BaseCall::OverlappingApiBasePath(value) => {
-            overlapping_api_base_path(&value.api_base, &value.ending_path)
-                .map(Value::String)
-                .map_err(invalid_error)
-        }
+        BaseCall::MetadataFilterLimit(value) => metadata_value(value),
+        BaseCall::OverlappingApiBasePath(value) => overlap_value(value),
     }
 }
 pub(crate) struct Op;
