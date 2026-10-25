@@ -1,8 +1,6 @@
 #![cfg(test)]
 
-use std::fs;
-use std::path::Path;
-use std::str;
+use std::{fs, path::Path, str};
 
 use rstest::rstest;
 
@@ -98,6 +96,13 @@ fn prefix_body_keeps_options_sections_and_key_order() {
             "7959b7a5a17447d8ed3aceb92b20853be882b179a784ad89405290cb01c77e65",
         ]
     );
+}
+
+#[test]
+fn full_body_uses_python_numbers() {
+    let body = r#"{"temperature":1E2,"metadata":{"wide":18446744073709551616,"n":1.5e-7},"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"one","name":"lookup","input":{"big":1E2,"zero":-0,"signed":-0.0},"cache_control":{"type":"ephemeral"}}]}]}"#;
+    let expected = r#"{"temperature":100.0,"metadata":{"wide":18446744073709551616,"n":1.5e-07},"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"one","name":"lookup","input":{"big":100.0,"zero":0,"signed":-0.0},"cache_control":{"type":"ephemeral"}}]}]}"#;
+    assert_eq!(plan(body).full_body.get(), expected);
 }
 
 #[rstest]

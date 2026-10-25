@@ -80,7 +80,7 @@ pub(super) fn decode(body: &str) -> Result<Decoded, DecodeError> {
     let positions = positions(&top)?;
     let option = |name: &str| top.get(name).copied().map(compact).transpose();
     Ok(Decoded {
-        full_body: serde_json::from_str(body)?,
+        full_body: compact(serde_json::from_str(body)?)?,
         cache_control: request
             .cache_control
             .map(|CacheControl::Ephemeral { ttl }| ttl),
