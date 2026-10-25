@@ -1,8 +1,17 @@
 task: B4500
 deviations:
-  - what: Record decoding uses serde deny_unknown_fields rather than Pydantic extra-forbid.
-    why: Rust serde provides equivalent strict rejection for shared server and worker records.
+  - what: Records reject unknown fields through serde deny_unknown_fields instead of Pydantic extra="forbid"; the accepted and refused inputs are the same.
+    why: Pydantic is Python only, and serde gives the server and the worker the same strict decoder.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/models.py#L7-L8
-  - what: Monetary fields use rust_decimal Decimal rather than Python float.
-    why: Fixed-point arithmetic avoids accumulated financial precision loss.
+  - what: monthly_budget, spent, cost and sample_percent are rust_decimal Decimal instead of Python float. They decode from JSON numbers or numeric strings and encode as JSON numbers.
+    why: Budgets and spend are summed and compared, and floats drift; money is Decimal across betterlite.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/models.py#L45
+  - what: Integer and boolean fields take only JSON integers and booleans, and integers must fit 64 bits. Pydantic's lax mode also takes "24", 24.0 or "true" there and has no integer size limit.
+    why: Typed wire formats refuse coerced values instead of guessing what the sender meant.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/models.py#L28-L45
+  - what: A JSON object that repeats a key is refused. Pydantic keeps the last value.
+    why: Nothing overwrites an earlier value without saying so.
+    link: ""
+  - what: Datetimes must be RFC 3339 strings with an offset and are held in UTC. Pydantic also takes naive datetimes and Unix timestamps and keeps a non-UTC offset as given.
+    why: LiteLLM itself only builds these records from datetime.now(timezone.utc), so UTC is the only time the records carry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L160

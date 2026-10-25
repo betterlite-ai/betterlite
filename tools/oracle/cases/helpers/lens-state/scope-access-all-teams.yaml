@@ -1,0 +1,10 @@
+kind: helper
+name: scope-access-all-teams
+call:
+  lens_state:
+    can_access:
+      viewer: {all_teams: true}
+      target: {team_id: team-b, api_key_hash: key-2}
+env: {}
+compare:
+  ignore: []
