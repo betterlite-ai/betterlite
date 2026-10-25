@@ -52,13 +52,11 @@ fn lookup_edges(input: &Input) -> Result<Value, String> {
 }
 
 fn gemini_acceptance(input: &Input) -> Result<Value, String> {
-    let accepted = input
-        .file_types
-        .iter()
-        .map(|name| parse_file_type(name).map(gemini_accepts))
-        .collect::<Result<Vec<_>, _>>()
-        .map(|accepted| json!(accepted));
-    accepted
+    let mut accepted = Vec::new();
+    for name in &input.file_types {
+        accepted.push(gemini_accepts(parse_file_type(name)?));
+    }
+    Ok(json!(accepted))
 }
 
 fn run_conversion(input: &Input) -> Result<Value, String> {
