@@ -77,7 +77,7 @@ pub struct LensSettings {
     #[garde(length(max = 8), dive)]
     pub filters: Vec<MetadataFilter>,
     #[serde(default)]
-    #[garde(dive, custom(check_rules(&self.context)))]
+    #[garde(dive, custom(|list: &Vec<Check>, (): &()| check_rules(list, &self.context)))]
     pub checks: Vec<Check>,
     #[garde(length(chars, min = 1, max = 200))]
     pub model: String,
