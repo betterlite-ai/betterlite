@@ -1,0 +1,14 @@
+task: B3150
+deviations:
+  - what: ROISettings::validate and ROISettingsUpdate::validate return the first failing field in declaration order, where Pydantic collects every field error into one ValidationError.
+    why: The messages and field order match LiteLLM; returning a list would need a second error type that no consumer asks for yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L23-L104
+  - what: Pydantic lax-mode coercion is not ported, so backfill_days refuses "7" and 7.0, and float fields refuse numeric strings; JSON integers still parse into the float fields.
+    why: serde parses JSON types strictly, and the ROI UI sends numbers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L116-L117
+  - what: ROISettingsUpdate holds github_token and estimator_key as SecretString where LiteLLM types them as plain str.
+    why: Rule secrets-never-leave-their-type; the wire shape is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L107-L112
+  - what: Logins and emails are case folded with Unicode 16 tables (the caseless crate), and bracketed hosts parse with std's Ipv6Addr, where CPython 3.11 to 3.13 uses Unicode 14 to 15.1 and the ipaddress module.
+    why: Results differ only for characters added after Unicode 14 and for rare IPv6 spellings.
+    link: https://docs.python.org/3/library/stdtypes.html#str.casefold

@@ -6,10 +6,13 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+indexmap = { version = "2.14.2", features = ["serde"] }
+secrecy.workspace = true
 serde.workspace = true
 serde_json = "1.0.154"
 rust_decimal.workspace = true
 thiserror.workspace = true
+url = "2.5.8"
 
 [dev-dependencies]
 betterlite-config = { path = "../betterlite-config" }
