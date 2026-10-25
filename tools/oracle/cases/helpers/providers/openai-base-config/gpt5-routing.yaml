@@ -1,0 +1,1 @@
+{kind: helper, name: gpt5-routing, call: {openai_base_config: {gpt5_routing: {model: proxy/gpt-5.1, chat_models: []}}}, env: {}, compare: {ignore: []}}
