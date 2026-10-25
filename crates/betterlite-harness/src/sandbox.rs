@@ -1,55 +1,65 @@
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::pin::Pin;
+use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::errors::HarnessError;
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompletedRun {
     pub stdout: String,
     pub stderr: String,
     pub exit_code: i32,
 }
-pub trait Process: Send {
-    fn stdin(&mut self) -> Option<&mut (dyn AsyncWrite + Unpin + Send)>;
-    fn stdout(&mut self) -> &mut (dyn AsyncRead + Unpin + Send);
-    fn stderr(&mut self) -> &mut (dyn AsyncRead + Unpin + Send);
-    fn wait(&mut self) -> Pin<Box<dyn Future<Output = Result<i32, HarnessError>> + Send + '_>>;
-    fn kill(&mut self) -> Pin<Box<dyn Future<Output = Result<(), HarnessError>> + Send + '_>>;
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SandboxCommand {
+    pub argv: Vec<String>,
+    pub env: BTreeMap<String, String>,
+    // absent means the sandbox workdir
+    pub cwd: Option<String>,
 }
-pub trait Sandbox: Send {
+
+pub trait Process: Send {
+    type Stdin: AsyncWrite + Send + Unpin;
+    type Stdout: AsyncRead + Send + Unpin;
+    type Stderr: AsyncRead + Send + Unpin;
+
+    fn stdin(&mut self) -> Option<&mut Self::Stdin>;
+    fn stdout(&mut self) -> &mut Self::Stdout;
+    fn stderr(&mut self) -> &mut Self::Stderr;
+    fn wait(&mut self) -> impl Future<Output = Result<i32, HarnessError>> + Send;
+    fn kill(&mut self) -> impl Future<Output = Result<(), HarnessError>> + Send;
+}
+
+pub trait Sandbox: Send + Sync {
+    type Process: Process;
+
     fn workdir(&self) -> &str;
     fn exec(
         &self,
-        command: Vec<String>,
-        env: BTreeMap<String, String>,
-        cwd: Option<String>,
-    ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Process>, HarnessError>> + Send + '_>>;
+        command: &SandboxCommand,
+    ) -> impl Future<Output = Result<Self::Process, HarnessError>> + Send;
     fn run(
         &self,
-        command: Vec<String>,
-        env: BTreeMap<String, String>,
-        cwd: Option<String>,
-        timeout_seconds: Option<f64>,
-    ) -> Pin<Box<dyn Future<Output = Result<CompletedRun, HarnessError>> + Send + '_>>;
-    fn read(
-        &self,
-        path: String,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, HarnessError>> + Send + '_>>;
+        command: &SandboxCommand,
+        timeout: Duration,
+    ) -> impl Future<Output = Result<CompletedRun, HarnessError>> + Send;
+    fn read(&self, path: &str) -> impl Future<Output = Result<Vec<u8>, HarnessError>> + Send;
     fn write(
         &self,
-        path: String,
-        data: Vec<u8>,
-    ) -> Pin<Box<dyn Future<Output = Result<(), HarnessError>> + Send + '_>>;
+        path: &str,
+        data: &[u8],
+    ) -> impl Future<Output = Result<(), HarnessError>> + Send;
     fn host_url(&self, port: u16) -> String;
     fn which(
         &self,
-        binary: String,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<String>, HarnessError>> + Send + '_>>;
+        binary: &str,
+    ) -> impl Future<Output = Result<Option<String>, HarnessError>> + Send;
     fn snapshot(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<BTreeMap<String, String>, HarnessError>> + Send + '_>>;
-    fn tempdir(&self) -> Pin<Box<dyn Future<Output = Result<String, HarnessError>> + Send + '_>>;
-    fn close(&mut self) -> Pin<Box<dyn Future<Output = Result<(), HarnessError>> + Send + '_>>;
+    ) -> impl Future<Output = Result<BTreeMap<String, String>, HarnessError>> + Send;
+    fn tempdir(&self) -> impl Future<Output = Result<String, HarnessError>> + Send;
+    fn close(&self) -> impl Future<Output = Result<(), HarnessError>> + Send;
 }

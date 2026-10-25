@@ -1,16 +1,18 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
+mod tests;
 
-use rust_decimal::Decimal;
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
-use tokio::sync::watch;
 
 use crate::errors::HarnessError;
 
-pub const STATE_VERSION: u32 = 1;
-pub type JsonMap = BTreeMap<String, serde_json::Value>;
+#[expect(
+    clippy::disallowed_types,
+    reason = "tool input, runtime config, subagents and history are JSON objects whose shape each agent runtime defines"
+)]
+pub type JsonObject = serde_json::Map<String, serde_json::Value>;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Harness {
     #[serde(rename = "claude_code")]
     ClaudeCode,
@@ -21,7 +23,26 @@ pub enum Harness {
     #[serde(rename = "deepagents")]
     DeepAgents,
 }
+
 impl Harness {
+    pub const MEMBERS: [Self; 4] = [
+        Self::ClaudeCode,
+        Self::Codex,
+        Self::OpenCode,
+        Self::DeepAgents,
+    ];
+
+    #[must_use]
+    pub const fn value(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "claude_code",
+            Self::Codex => "codex",
+            Self::OpenCode => "opencode",
+            Self::DeepAgents => "deepagents",
+        }
+    }
+
+    #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
             Self::ClaudeCode => "CLAUDE_CODE",
@@ -31,60 +52,27 @@ impl Harness {
         }
     }
 }
-pub fn require_harness(harness: Harness) -> Harness {
-    match harness {
-        Harness::ClaudeCode => Harness::ClaudeCode,
-        Harness::Codex => Harness::Codex,
-        Harness::OpenCode => Harness::OpenCode,
-        Harness::DeepAgents => Harness::DeepAgents,
-    }
+
+// Rust callers can only pass a Harness member, so what is left is rejecting a string with a hint
+#[must_use]
+pub fn require_harness(given: &str) -> HarnessError {
+    let normalized = given.trim().to_lowercase().replace('-', "_");
+    let hint = Harness::MEMBERS
+        .into_iter()
+        .find(|member| member.value() == normalized);
+    hint.map_or_else(
+        || HarnessError::NotAHarness {
+            given: given.to_owned(),
+        },
+        |harness| HarnessError::HarnessHint {
+            given: given.to_owned(),
+            hint: harness,
+        },
+    )
 }
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Usage {
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub calls: u64,
-}
-impl Usage {
-    pub const fn total_tokens(&self) -> u64 {
-        if let Some(total) = self.input_tokens.checked_add(self.output_tokens) {
-            total
-        } else {
-            u64::MAX
-        }
-    }
-}
-#[rustfmt::skip]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Text {
-    pub delta: String }
-#[rustfmt::skip]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Reasoning {
-    pub delta: String }
-#[rustfmt::skip]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ToolCall {
-    pub id: String, pub name: String, pub native_name: String, pub input: JsonMap, pub builtin: bool }
-#[rustfmt::skip]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ToolResult {
-    pub id: String, pub output: String, pub is_error: bool }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum FileChangeKind {
-    Created,
-    Modified,
-    Deleted,
-}
-#[rustfmt::skip]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct FileChange {
-    pub path: String, pub kind: FileChangeKind, pub diff: Option<String> }
-#[rustfmt::skip]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Compaction {
-    pub tokens_before: Option<u64>, pub tokens_after: Option<u64> }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StopReason {
     Done,
     MaxTurns,
@@ -92,138 +80,54 @@ pub enum StopReason {
     Cancelled,
     RuntimeError,
 }
-#[rustfmt::skip]
-#[derive(Clone, Debug, PartialEq)]
-pub struct Result {
-    pub text: String, pub output: Option<serde_json::Value>, pub files: Vec<FileChange>, pub events: Vec<Event>, pub usage: Usage, pub cost: Decimal, pub stop_reason: StopReason, pub session_id: String }
-#[derive(Clone, Debug, PartialEq)]
-pub struct Done {
-    pub result: Result,
-}
-impl Done {
-    pub fn usage(&self) -> &Usage {
-        match &self.result {
-            Result { usage, .. } if self.result.text.is_empty() => usage,
-            Result { usage, .. } => usage,
-        }
-    }
-    pub const fn cost(&self) -> Decimal {
-        match &self.result {
-            Result { cost, .. } if self.result.text.is_empty() => *cost,
-            Result { cost, .. } => *cost,
-        }
-    }
-    pub fn stop_reason(&self) -> StopReason {
-        match &self.result {
-            Result { stop_reason, .. } if self.result.text.is_empty() => *stop_reason,
-            Result { stop_reason, .. } => *stop_reason,
-        }
-    }
-}
-#[derive(Clone, Debug, PartialEq)]
-pub enum Event {
-    Text(Text),
-    Reasoning(Reasoning),
-    ToolCall(ToolCall),
-    ToolResult(ToolResult),
-    FileChange(FileChange),
-    Compaction(Compaction),
-    Approval(Approval),
-    Done(Done),
-}
-#[rustfmt::skip]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Capabilities {
-    pub structured_output: bool, pub tool_approval: bool, pub tool_filtering: bool, pub history: bool, pub custom_tools: bool, pub skills: bool, pub resume: bool, pub permission_modes: Vec<PermissionMode> }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PermissionMode {
     ReadOnly,
     Ask,
     Edit,
+    #[default]
     Full,
 }
-#[rustfmt::skip]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct State {
-    pub harness: Harness, pub native_session_id: Option<String>, pub workdir: String, pub model: Option<String>, pub version: u32 }
-impl State {
-    pub fn dumps(&self) -> std::result::Result<Vec<u8>, serde_json::Error> {
-        match serde_json::to_vec(self) {
-            Ok(bytes) => Ok(bytes),
-            Err(error) => Err(error),
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FileChangeKind {
+    Created,
+    Modified,
+    Deleted,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Usage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub calls: u64,
+}
+
+impl Usage {
+    pub const fn total_tokens(&self) -> Result<u64, HarnessError> {
+        match self.input_tokens.checked_add(self.output_tokens) {
+            Some(total) => Ok(total),
+            None => Err(HarnessError::TokenOverflow { usage: *self }),
         }
-    }
-    pub fn loads(data: &[u8]) -> std::result::Result<Self, HarnessError> {
-        let state: Self = serde_json::from_slice(data)
-            .map_err(|source| HarnessError::StateIncompatible { source })?;
-        if state.version != STATE_VERSION {
-            return Err(HarnessError::StateVersion {
-                found: state.version,
-            });
-        }
-        Ok(state)
     }
 }
-#[derive(Clone, Debug)]
-pub struct Approval {
-    pub tool: String,
-    pub input: JsonMap,
-    decision: Arc<watch::Sender<Option<(bool, String)>>>,
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Capability {
+    StructuredOutput,
+    ToolApproval,
+    ToolFiltering,
+    History,
+    CustomTools,
+    Skills,
+    Resume,
 }
-impl Approval {
-    pub fn new(tool: String, input: JsonMap) -> Self {
-        let (sender, _) = watch::channel(None);
-        Self {
-            tool,
-            input,
-            decision: Arc::new(sender),
-        }
-    }
-    pub fn allow(&self) {
-        if !self.answered() {
-            self.resolve(true, String::new());
-        }
-    }
-    pub fn deny(&self, reason: String) {
-        if !self.answered() {
-            self.resolve(false, reason);
-        }
-    }
-    pub fn answered(&self) -> bool {
-        match self.decision.borrow().as_ref() {
-            Some(_) if self.tool.is_empty() => true,
-            Some(_) => true,
-            None => false,
-        }
-    }
-    pub async fn wait(&self) -> (bool, String) {
-        let mut receiver = self.decision.subscribe();
-        loop {
-            let value = receiver.borrow_and_update().clone();
-            if let Some(decision) = value {
-                return decision;
-            }
-            if receiver.changed().await.is_err() {
-                return (false, "approval channel closed".to_owned());
-            }
-        }
-    }
-    fn resolve(&self, allowed: bool, reason: String) {
-        self.decision.send_if_modified(|current| {
-            if current.is_some() {
-                false
-            } else {
-                *current = Some((allowed, reason));
-                true
-            }
-        });
-        self.answered();
-    }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Capabilities {
+    pub supported: BTreeSet<Capability>,
+    pub permission_modes: BTreeSet<PermissionMode>,
 }
-impl PartialEq for Approval {
-    fn eq(&self, other: &Self) -> bool {
-        self.tool == other.tool && self.input == other.input
-    }
-}
-impl Eq for Approval {}

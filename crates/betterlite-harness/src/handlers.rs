@@ -1,44 +1,62 @@
+mod tests;
+
 use std::future::Future;
-use std::pin::Pin;
 
 use futures_core::Stream;
 
 use crate::context::SessionContext;
 use crate::errors::HarnessError;
-use crate::types::{Event, Harness};
+use crate::events::Event;
+use crate::sandbox::Sandbox;
+use crate::transformation::HarnessConfig;
+use crate::types::{Capability, JsonObject};
 
-pub trait BaseHarnessHandler: Send {
-    fn harness(&self) -> Harness;
-    fn start(
+pub trait HarnessHandler: Send {
+    type Config: HarnessConfig;
+
+    fn config(&self) -> &Self::Config;
+    // called again after an interrupt
+    fn start<S>(
         &mut self,
-        context: &mut SessionContext,
-    ) -> Pin<Box<dyn Future<Output = Result<(), HarnessError>> + Send + '_>>;
-    fn turn(
+        context: &mut SessionContext<S>,
+    ) -> impl Future<Output = Result<(), HarnessError>> + Send
+    where
+        S: Sandbox;
+    // never yields Event::Done, and sets context.outcome.final_text and output_json
+    fn turn<S>(
         &mut self,
-        context: &mut SessionContext,
-        prompt: String,
-    ) -> Pin<Box<dyn Stream<Item = Event> + Send + '_>>;
-    fn stop(
+        context: &mut SessionContext<S>,
+        prompt: &str,
+    ) -> impl Stream<Item = Result<Event, HarnessError>> + Send
+    where
+        S: Sandbox;
+    // safe to call twice
+    fn stop<S>(
         &mut self,
-        context: &mut SessionContext,
-    ) -> Pin<Box<dyn Future<Output = Result<(), HarnessError>> + Send + '_>>;
+        context: &mut SessionContext<S>,
+    ) -> impl Future<Output = Result<(), HarnessError>> + Send
+    where
+        S: Sandbox;
     fn native_session_id(&self) -> Option<String>;
-    fn resume(
+    fn resume<S>(
         &mut self,
-        context: &mut SessionContext,
-        native_session_id: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), HarnessError>> + Send + '_>>;
-    fn history(&self, _context: &SessionContext) -> Result<Vec<serde_json::Value>, HarnessError> {
-        Err(HarnessError::CapabilityUnsupported {
-            message: format!(
-                "Harness.{} does not expose history",
-                match self.harness() {
-                    Harness::ClaudeCode => "CLAUDE_CODE",
-                    Harness::Codex => "CODEX",
-                    Harness::OpenCode => "OPENCODE",
-                    Harness::DeepAgents => "DEEPAGENTS",
-                }
-            ),
-        })
+        context: &mut SessionContext<S>,
+        native_session_id: &str,
+    ) -> impl Future<Output = Result<(), HarnessError>> + Send
+    where
+        S: Sandbox;
+
+    fn history<S>(
+        &self,
+        _context: &SessionContext<S>,
+    ) -> impl Future<Output = Result<Vec<JsonObject>, HarnessError>> + Send
+    where
+        S: Sync,
+    {
+        let unsupported = HarnessError::CapabilityUnsupported {
+            harness: <Self::Config as HarnessConfig>::HARNESS,
+            capability: Capability::History,
+        };
+        async move { Err(unsupported) }
     }
 }
