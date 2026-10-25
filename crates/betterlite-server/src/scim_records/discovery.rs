@@ -3,11 +3,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScimResource {
     pub schemas: Vec<String>,
-    #[serde(default)]
     pub id: Option<String>,
-    #[serde(default)]
     pub external_id: Option<String>,
-    #[serde(default)]
     pub meta: Option<ScimValue>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,14 +19,12 @@ pub struct ScimResourceType {
     pub schemas: Vec<String>,
     pub id: String,
     pub name: String,
-    #[serde(default)]
     pub description: Option<String>,
     pub endpoint: String,
     #[serde(rename = "schema", alias = "schema_")]
     pub schema_: String,
     #[serde(default, rename = "schemaExtensions")]
     pub schema_extensions: Option<Vec<ScimSchemaExtension>>,
-    #[serde(default)]
     pub meta: Option<ScimValue>,
 }
 fn resource_type_schema() -> Vec<String> {
@@ -43,9 +38,7 @@ pub struct ScimSchemaAttribute {
     pub kind: String,
     #[serde(default, rename = "multiValued")]
     pub multi_valued: bool,
-    #[serde(default)]
     pub description: Option<String>,
-    #[serde(default)]
     pub required: bool,
     #[serde(default = "default_read_write")]
     pub mutability: String,
@@ -77,11 +70,8 @@ pub struct ScimSchema {
     pub schemas: Vec<String>,
     pub id: String,
     pub name: String,
-    #[serde(default)]
     pub description: Option<String>,
-    #[serde(default)]
     pub attributes: Vec<ScimSchemaAttribute>,
-    #[serde(default)]
     pub meta: Option<ScimValue>,
 }
 fn schema_schema() -> Vec<String> {

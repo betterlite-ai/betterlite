@@ -28,25 +28,19 @@ pub enum ScimValue {
 #[serde(from = "UserInput")]
 pub struct User {
     pub schemas: Vec<String>,
-    #[serde(default)]
     pub id: Option<String>,
     #[serde(default, rename = "externalId")]
     pub external_id: Option<String>,
-    #[serde(default)]
     pub meta: Option<ScimValue>,
     #[serde(default, rename = "userName")]
     pub user_name: Option<String>,
-    #[serde(default)]
     pub name: Option<UserName>,
     #[serde(default, rename = "displayName")]
     pub display_name: Option<String>,
-    #[serde(default)]
     pub active: bool,
     #[serde(skip)]
     pub active_present: bool,
-    #[serde(default)]
     pub emails: Option<Vec<UserEmail>>,
-    #[serde(default)]
     pub groups: Option<Vec<UserGroup>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entitlements: Option<Vec<ScimMultiValuedAttribute>>,
@@ -62,27 +56,19 @@ pub struct User {
 #[derive(Deserialize)]
 struct UserInput {
     schemas: Vec<String>,
-    #[serde(default)]
     id: Option<String>,
     #[serde(default, rename = "externalId")]
     external_id: Option<String>,
-    #[serde(default)]
     meta: Option<ScimValue>,
     #[serde(default, rename = "userName")]
     user_name: Option<String>,
-    #[serde(default)]
     name: Option<UserName>,
     #[serde(default, rename = "displayName")]
     display_name: Option<String>,
-    #[serde(default)]
     active: Option<bool>,
-    #[serde(default)]
     emails: Option<Vec<UserEmail>>,
-    #[serde(default)]
     groups: Option<Vec<UserGroup>>,
-    #[serde(default)]
     entitlements: Option<Vec<ScimMultiValuedAttribute>>,
-    #[serde(default)]
     roles: Option<Vec<ScimMultiValuedAttribute>>,
     #[serde(
         default,
@@ -119,17 +105,11 @@ impl From<UserInput> for User {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserName {
-    #[serde(default)]
     pub family_name: Option<String>,
-    #[serde(default)]
     pub given_name: Option<String>,
-    #[serde(default)]
     pub formatted: Option<String>,
-    #[serde(default)]
     pub middle_name: Option<String>,
-    #[serde(default)]
     pub honorific_prefix: Option<String>,
-    #[serde(default)]
     pub honorific_suffix: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,13 +118,11 @@ pub struct UserEmail {
     pub value: String,
     #[serde(default, rename = "type")]
     pub kind: Option<String>,
-    #[serde(default)]
     pub primary: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserGroup {
     pub value: String,
-    #[serde(default)]
     pub display: Option<String>,
     #[serde(default = "default_direct", rename = "type")]
     pub kind: String,
@@ -158,13 +136,10 @@ fn default_direct() -> String {
 #[serde(untagged, from = "ScimMultiValuedAttributeInput")]
 pub enum ScimMultiValuedAttribute {
     Object {
-        #[serde(default)]
         value: Option<String>,
-        #[serde(default)]
         display: Option<String>,
         #[serde(default, rename = "type")]
         kind: Option<String>,
-        #[serde(default)]
         primary: Option<bool>,
         #[serde(flatten)]
         extra: BTreeMap<String, ScimValue>,
@@ -175,13 +150,10 @@ pub enum ScimMultiValuedAttribute {
 #[serde(untagged)]
 enum ScimMultiValuedAttributeInput {
     Object {
-        #[serde(default)]
         value: Option<String>,
-        #[serde(default)]
         display: Option<String>,
         #[serde(default, rename = "type")]
         kind: Option<String>,
-        #[serde(default)]
         primary: Option<bool>,
         #[serde(flatten)]
         extra: BTreeMap<String, ScimValue>,
@@ -218,7 +190,6 @@ impl From<ScimMultiValuedAttributeInput> for ScimMultiValuedAttribute {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserManager {
-    #[serde(default)]
     pub value: Option<String>,
     #[serde(default, rename = "displayName")]
     pub display_name: Option<String>,
@@ -232,13 +203,9 @@ pub struct ScimEnterpriseUser {
     pub employee_number: Option<String>,
     #[serde(default, rename = "costCenter")]
     pub cost_center: Option<String>,
-    #[serde(default)]
     pub organization: Option<String>,
-    #[serde(default)]
     pub division: Option<String>,
-    #[serde(default)]
     pub department: Option<String>,
-    #[serde(default)]
     pub manager: Option<UserManager>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -246,7 +213,6 @@ pub struct ScimEnterpriseUser {
 #[serde(rename_all = "camelCase")]
 pub struct ScimMember {
     pub value: String,
-    #[serde(default)]
     pub display: Option<String>,
     #[serde(default, rename = "type")]
     pub kind: Option<String>,
@@ -254,7 +220,6 @@ pub struct ScimMember {
 #[derive(Deserialize)]
 struct ScimMemberInput {
     value: String,
-    #[serde(default)]
     display: Option<String>,
     #[serde(default, rename = "type")]
     kind: Option<ScimValue>,
@@ -277,15 +242,12 @@ impl From<ScimMemberInput> for ScimMember {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Group {
     pub schemas: Vec<String>,
-    #[serde(default)]
     pub id: Option<String>,
     #[serde(default, rename = "externalId")]
     pub external_id: Option<String>,
-    #[serde(default)]
     pub meta: Option<ScimValue>,
     #[serde(rename = "displayName")]
     pub display_name: String,
-    #[serde(default)]
     pub members: Option<Vec<ScimMember>>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -303,6 +265,5 @@ fn patch_schema() -> Vec<String> {
 pub struct PatchOperation {
     pub op: String,
     pub path: Option<String>,
-    #[serde(default)]
     pub value: Option<ScimValue>,
 }
