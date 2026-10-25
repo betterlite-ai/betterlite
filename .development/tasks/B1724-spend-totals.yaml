@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/totals.rs
     - crates/betterlite-server/src/spend/totals/**
     - crates/betterlite-config/src/spend_storage.rs

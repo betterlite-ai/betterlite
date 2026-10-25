@@ -63,6 +63,7 @@ scope:
   - crates/betterlite-core/src/api/responses_mcp_selection.rs
   - crates/betterlite-core/src/api/responses_mcp_selection/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml

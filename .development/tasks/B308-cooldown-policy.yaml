@@ -22,12 +22,17 @@ scope:
   - crates/betterlite-router/src/cooldown_policy/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/cooldown_policy.rs
   - crates/betterlite-server/src/routing/cooldown_policy/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/cooldown_policy.rs
   - tools/oracle/src/router_probes/cooldown_policy/**
   - tools/oracle/src/router_probes/mod.rs

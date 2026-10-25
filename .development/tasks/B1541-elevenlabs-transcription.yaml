@@ -32,6 +32,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/elevenlabs.rs
+    - crates/betterlite-core/src/api/elevenlabs/**
     - crates/betterlite-core/src/api/elevenlabs/transcription.rs
     - crates/betterlite-core/src/api/elevenlabs/transcription/**
     - crates/betterlite-core/fuzz/Cargo.toml

@@ -61,6 +61,7 @@ scope:
   - crates/betterlite-core/src/api/batch_precall.rs
   - crates/betterlite-core/src/api/batch_precall/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml

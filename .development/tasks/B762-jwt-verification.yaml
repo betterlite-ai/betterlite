@@ -134,10 +134,14 @@ scope:
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/loader/**
     - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/raw/**
     - crates/betterlite-config/tests/**
     - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/resolve/**
     - crates/betterlite-config/src/types.rs
+    - crates/betterlite-config/src/types/**
     - crates/betterlite-config/src/jwt_verification.rs
     - crates/betterlite-config/src/jwt_verification/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-verification-*
@@ -146,8 +150,11 @@ scope:
     - crates/betterlite-auth/fuzz/corpus/jwt_verification/**
     - tools/oracle/cases/auth/jwt-verification/**
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - crates/betterlite-server/src/auth/jwt_verification.rs
     - crates/betterlite-server/src/auth/jwt_verification/**
   lint_tables: false

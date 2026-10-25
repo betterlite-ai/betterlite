@@ -34,10 +34,13 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/search_providers.rs
+    - crates/betterlite-core/src/api/search_providers/**
     - crates/betterlite-core/src/api/search_providers/duckduckgo.rs
     - crates/betterlite-core/src/api/search_providers/duckduckgo/**
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/duckduckgo.rs
+    - crates/betterlite-config/src/providers/duckduckgo/**
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/duckduckgo_reply.rs
     - crates/betterlite-core/fuzz/corpus/duckduckgo_reply/**

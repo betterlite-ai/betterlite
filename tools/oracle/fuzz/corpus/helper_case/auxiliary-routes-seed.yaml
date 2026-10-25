@@ -1,0 +1,8 @@
+kind: helper
+name: auxiliary-routes-seed
+call:
+  auxiliary_routes:
+    group: public_routes
+env: {}
+compare:
+  ignore: []
