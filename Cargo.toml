@@ -15,9 +15,9 @@ hex = "0.4.3"
 hyper-util = "0.1.21"
 percent-encoding = "2.3.2"
 regex = "1.13.1"
+rust_decimal = "1.43.0"
 rustls = { version = "0.23.46", default-features = false, features = ["ring"] }
 rustls-native-certs = "0.8.5"
-rust_decimal = "1.43.0"
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"

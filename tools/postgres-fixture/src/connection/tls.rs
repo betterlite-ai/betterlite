@@ -27,7 +27,8 @@ pub(super) fn tls_mode(raw: &str) -> TlsMode {
 }
 
 pub(super) fn query_value(raw: &str, key: &str) -> Option<String> {
-    raw.split_once('?')?.1.split('&').find_map(|part| {
+    let query = raw.split_once('?')?.1;
+    query.split('&').find_map(|part| {
         let (name, value) = part.split_once('=')?;
         (name == key).then(|| value.to_owned())
     })

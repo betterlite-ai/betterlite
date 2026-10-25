@@ -62,7 +62,11 @@ fn duplicate_identity_fails_before_connection() {
                 user_email: None,
             },
         ],
-        ..FixtureSeed::default()
+        keys: Vec::new(),
+        teams: Vec::new(),
+        memberships: Vec::new(),
+        budgets: Vec::new(),
+        jwt_mappings: Vec::new(),
     };
     assert!(seed.validate().is_err());
 }
@@ -88,7 +92,10 @@ fn duplicate_key_identity_fails_before_connection() {
                 role: None,
             },
         ],
-        ..FixtureSeed::default()
+        teams: Vec::new(),
+        memberships: Vec::new(),
+        budgets: Vec::new(),
+        jwt_mappings: Vec::new(),
     };
     assert!(seed.validate().is_err());
 }
@@ -114,7 +121,9 @@ fn duplicate_membership_identity_fails_before_connection() {
                 team_id: "team".to_owned(),
             },
         ],
-        ..FixtureSeed::default()
+        keys: Vec::new(),
+        budgets: Vec::new(),
+        jwt_mappings: Vec::new(),
     };
     assert!(seed.validate().is_err());
 }
