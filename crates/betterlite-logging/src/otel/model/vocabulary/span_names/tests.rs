@@ -4,7 +4,11 @@ use crate::otel::model::{
     GuardrailSpanData, LlmCallSpanData, McpListToolsSpanData, McpToolCallSpanData,
     ProxyRequestSpanData, ServiceSpanData,
 };
-use crate::otel::vocabulary::*;
+use crate::otel::vocabulary::constants::{GenAIOperation, MCPMethod};
+use crate::otel::vocabulary::span_names::{
+    guardrail_span_name, llm_call_span_name, mcp_list_tools_span_name, mcp_tool_call_span_name,
+    proxy_request_span_name, service_span_name,
+};
 
 #[test]
 fn span_names_follow_role_conventions_and_strip_empty_values() {

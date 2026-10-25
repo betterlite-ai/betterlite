@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::otel::vocabulary::*;
+use crate::otel::vocabulary::semconv::{OTELSemconvCategory, parse_semconv_opt_in};
 
 #[test]
 fn semconv_opt_in_parses_known_tokens() {

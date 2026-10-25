@@ -1,6 +1,9 @@
 #![cfg(test)]
 
-use crate::otel::vocabulary::*;
+use crate::otel::vocabulary::constants::{GenAIOperation, GenAIOutputType};
+use crate::otel::vocabulary::resolvers::{
+    resolve_operation, resolve_output_type, resolve_provider,
+};
 
 #[test]
 fn provider_operation_and_output_mapping() {

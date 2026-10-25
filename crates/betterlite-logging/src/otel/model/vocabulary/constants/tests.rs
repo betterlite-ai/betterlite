@@ -1,6 +1,9 @@
 #![cfg(test)]
 
-use crate::otel::vocabulary::*;
+use crate::otel::vocabulary::attribute_keys::{DB, GenAI, HTTP, MCP};
+use crate::otel::vocabulary::constants::{
+    GenAIOperation, GenAIProvider, LITELLM_PROXY_REQUEST_SPAN_NAME, MCPMethod, NetworkTransport,
+};
 
 #[test]
 fn enum_values_and_attribute_keys_match_semconv() {

@@ -1,4 +1,4 @@
-use super::vocabulary::{GenAIOperation, MCPMethod};
+use super::vocabulary::constants::{GenAIOperation, MCPMethod};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct LlmCallSpanData {

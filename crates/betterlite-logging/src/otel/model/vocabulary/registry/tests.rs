@@ -1,6 +1,9 @@
 #![cfg(test)]
 
-use crate::otel::vocabulary::*;
+use crate::otel::vocabulary::registry::{
+    SPAN_REGISTRY, SpanRole, child_roles, root_roles, validate_registry,
+};
+use crate::otel::vocabulary::resolvers::span_role_for_service;
 
 #[test]
 fn registry_and_service_roles_are_valid() {
