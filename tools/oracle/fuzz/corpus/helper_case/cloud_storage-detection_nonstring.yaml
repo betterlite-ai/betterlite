@@ -1,0 +1,5 @@
+kind: helper
+name: cloud_storage-detection_nonstring
+call: {cloud_storage: {function: cloud_uri_detection, value: 1}}
+env: {}
+compare: {ignore: []}
