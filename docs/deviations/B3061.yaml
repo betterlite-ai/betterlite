@@ -1,0 +1,11 @@
+task: B3061
+deviations:
+  - what: "Empty-frame FOCUS export has 37 base columns while nonempty export has 44 columns including seven computed fields."
+    why: "This preserves LiteLLM's early empty-frame return and nonempty projection behavior."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/transformer.py#L48-L128"
+  - what: "Tags is a JSON string with null metadata omitted and {} when no metadata is available."
+    why: "This preserves LiteLLM's downstream Vantage token-allocation format."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/transformer.py#L36-L38"
+  - what: "CSV serialization converts Decimal columns to floating-point output."
+    why: "This matches LiteLLM CSV compatibility behavior while Parquet keeps Decimal values."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/serializers/csv.py#L20-L25"
