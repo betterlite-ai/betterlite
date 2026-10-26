@@ -176,7 +176,7 @@ pub fn get_total_tokens_from_usage(
 pub const fn aggregate_only_total_tokens(source: Option<ResponseUsage<'_>>) -> u64 {
     let Some(usage_source) = source else { return 0 };
     match usage_source {
-        ResponseUsage::Usage(usage) => {
+        ResponseUsage::Usage(usage) | ResponseUsage::Mapping(usage) => {
             if usage.prompt_tokens > 0
                 || usage.completion_tokens > 0
                 || usage.input_tokens > 0
@@ -188,13 +188,6 @@ pub const fn aggregate_only_total_tokens(source: Option<ResponseUsage<'_>>) -> u
             }
         }
         ResponseUsage::ResponseApi(usage) => {
-            if usage.input_tokens > 0 || usage.output_tokens > 0 {
-                0
-            } else {
-                usage.total_tokens
-            }
-        }
-        ResponseUsage::Mapping(usage) => {
             if usage.input_tokens > 0 || usage.output_tokens > 0 {
                 0
             } else {
