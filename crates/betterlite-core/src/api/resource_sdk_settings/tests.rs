@@ -1,28 +1,172 @@
 #![cfg(test)]
 
 use super::{
-    FineTuningTimeout, StructuredTimeout, TimeoutError, request_timeout,
-    resolve_fine_tuning_timeout, supports_httpx_timeout,
+    FineTuningTimeout, ResourceSdkRequestOptions, StructuredTimeout, TimeoutError, TimeoutValue,
+    request_timeout, resolve_fine_tuning_timeout, supports_httpx_timeout,
 };
+use secrecy::{ExposeSecret as _, SecretString};
+
+#[test]
+fn openai_resource_precedence() {
+    let mut settings = test_settings();
+    settings.api_base = Some("global-base".to_owned());
+    settings.openai_base_url = Some("env-base".to_owned());
+    settings.api_key = Some(SecretString::from("global-key"));
+    settings.openai_api_key = Some(SecretString::from("env-key"));
+    settings.organization = Some("global-org".to_owned());
+    settings.openai_organization = Some("env-org".to_owned());
+    let mut request = ResourceSdkRequestOptions {
+        api_base: Some("request-base".to_owned()),
+        api_key: Some(SecretString::from("request-key")),
+        organization: Some("request-org".to_owned()),
+        ..ResourceSdkRequestOptions::default()
+    };
+    assert_eq!(settings.openai_base(&request), "request-base");
+    assert_eq!(
+        exposed(settings.openai_api_key(&request)),
+        Some("request-key")
+    );
+    assert_eq!(settings.openai_organization(&request), Some("request-org"));
+    request.api_base = None;
+    request.api_key = None;
+    request.organization = None;
+    assert_eq!(settings.openai_base(&request), "global-base");
+    assert_eq!(
+        exposed(settings.openai_api_key(&request)),
+        Some("global-key")
+    );
+    assert_eq!(settings.openai_organization(&request), Some("global-org"));
+    settings.api_base = None;
+    settings.api_key = None;
+    settings.organization = None;
+    assert_eq!(settings.openai_base(&request), "env-base");
+    assert_eq!(exposed(settings.openai_api_key(&request)), Some("env-key"));
+    assert_eq!(settings.openai_organization(&request), Some("env-org"));
+    request.api_version = Some("request-version".to_owned());
+    assert_eq!(
+        settings.openai_api_version(&request),
+        Some("request-version")
+    );
+}
+
+#[test]
+fn azure_resource_precedence() {
+    let mut settings = test_settings();
+    settings.api_base = Some("global-base".to_owned());
+    settings.azure_api_base = Some("env-base".to_owned());
+    settings.api_version = Some("global-version".to_owned());
+    settings.azure_api_version = Some("env-version".to_owned());
+    settings.api_key = Some(SecretString::from("global-key"));
+    settings.azure_openai_api_key = Some(SecretString::from("env-key"));
+    let mut request = ResourceSdkRequestOptions {
+        api_base: Some("request-base".to_owned()),
+        api_version: Some("request-version".to_owned()),
+        api_key: Some(SecretString::from("request-key")),
+        organization: Some("request-org".to_owned()),
+        ..ResourceSdkRequestOptions::default()
+    };
+    assert_eq!(settings.azure_base(&request), Some("request-base"));
+    assert_eq!(settings.azure_version(&request), Some("request-version"));
+    assert_eq!(
+        exposed(settings.azure_api_key(&request)),
+        Some("request-key")
+    );
+    assert_eq!(settings.azure_organization(&request), Some("request-org"));
+    request.api_base = None;
+    request.api_version = None;
+    request.api_key = None;
+    request.organization = None;
+    assert_eq!(settings.azure_base(&request), Some("global-base"));
+    assert_eq!(settings.azure_version(&request), Some("global-version"));
+    assert_eq!(
+        exposed(settings.azure_api_key(&request)),
+        Some("global-key")
+    );
+    assert_eq!(settings.azure_organization(&request), None);
+    settings.api_base = None;
+    settings.api_version = None;
+    settings.api_key = None;
+    assert_eq!(settings.azure_base(&request), Some("env-base"));
+    assert_eq!(settings.azure_version(&request), Some("env-version"));
+    assert_eq!(exposed(settings.azure_api_key(&request)), Some("env-key"));
+}
+
+#[test]
+fn vertex_resource_settings() {
+    let mut settings = test_settings();
+    settings.api_base = Some("global-base-must-be-ignored".to_owned());
+    settings.vertex_project = Some("global-project".to_owned());
+    settings.vertexai_project = Some("env-project".to_owned());
+    settings.vertex_location = Some("global-location".to_owned());
+    settings.vertexai_location = Some("env-location".to_owned());
+    settings.vertexai_credentials = Some(SecretString::from("env-credentials"));
+    let mut request = ResourceSdkRequestOptions {
+        api_base: Some("request-base".to_owned()),
+        vertex_project: Some("request-project".to_owned()),
+        vertex_location: Some("request-location".to_owned()),
+        vertex_credentials: Some(SecretString::from("request-credentials")),
+        ..ResourceSdkRequestOptions::default()
+    };
+    assert_eq!(settings.vertex_base(&request), "request-base");
+    assert_eq!(settings.vertex_project(&request), Some("request-project"));
+    assert_eq!(settings.vertex_location(&request), Some("request-location"));
+    assert_eq!(
+        exposed(settings.vertex_credentials(&request)),
+        Some("request-credentials")
+    );
+    request.api_base = None;
+    request.vertex_project = None;
+    request.vertex_location = None;
+    request.vertex_credentials = None;
+    assert_eq!(settings.vertex_base(&request), "");
+    assert_eq!(settings.vertex_project(&request), Some("global-project"));
+    assert_eq!(settings.vertex_location(&request), Some("global-location"));
+    assert_eq!(
+        exposed(settings.vertex_credentials(&request)),
+        Some("env-credentials")
+    );
+    settings.vertex_project = None;
+    settings.vertex_location = None;
+    assert_eq!(settings.vertex_project(&request), Some("env-project"));
+    assert_eq!(settings.vertex_location(&request), Some("env-location"));
+}
 
 #[test]
 fn timeout_capability_and_conversion() {
     assert!(supports_httpx_timeout("openai"));
+    assert!(supports_httpx_timeout("azure"));
+    assert!(supports_httpx_timeout("bedrock"));
     assert!(!supports_httpx_timeout("vertex_ai"));
-    assert!((request_timeout(Some(0.0_f64), Some(9.0_f64)) - 9.0_f64).abs() < f64::EPSILON);
-    assert!((request_timeout(Some(0.0_f64), Some(0.0_f64)) - 600.0_f64).abs() < f64::EPSILON);
+    assert_eq!(request_timeout(Some(0.0_f64), Some(9.0_f64)), Ok(9.0_f64));
+    assert_eq!(request_timeout(Some(0.0_f64), Some(0.0_f64)), Ok(600.0_f64));
+    for (raw, expected) in [("7.5", 7.5_f64), (" 7 ", 7.0_f64), ("1_000", 1000.0_f64)] {
+        assert_eq!(
+            resolve_fine_tuning_timeout(
+                Some(&TimeoutValue::String(raw.to_owned())),
+                "openai",
+                None
+            ),
+            Ok(FineTuningTimeout::Seconds(expected))
+        );
+    }
+    for raw in ["bad", "_1", "1__0"] {
+        assert!(matches!(
+            resolve_fine_tuning_timeout(
+                Some(&TimeoutValue::String(raw.to_owned())),
+                "openai",
+                None
+            ),
+            Err(TimeoutError::InvalidNumber { .. })
+        ));
+    }
     assert_eq!(
-        resolve_fine_tuning_timeout(Some("1_000"), "openai", None),
-        Ok(FineTuningTimeout::Seconds(1000.0))
-    );
-    assert_eq!(
-        resolve_fine_tuning_timeout(Some(""), "openai", None),
+        resolve_fine_tuning_timeout(Some(&TimeoutValue::Number(0.0)), "openai", None),
         Ok(FineTuningTimeout::Seconds(600.0))
     );
 }
 
 #[test]
-fn structured_timeout_conversion() {
+fn structured_timeout_conversion_rejects_non_finite_values() {
     let structured = StructuredTimeout {
         connect: Some(1.0_f64),
         read: Some(2.0_f64),
@@ -55,109 +199,16 @@ fn structured_timeout_conversion() {
         ),
         Err(TimeoutError::NonFinite)
     );
-}
-
-#[test]
-fn resource_precedence_ignores_empty_values() {
-    let mut settings = test_settings();
-    settings.api_base = Some(String::new());
-    settings.openai_base_url = Some("openai-base".to_owned());
-    settings.openai_api_base = Some("legacy-base".to_owned());
-    settings.api_key = Some(secrecy::SecretString::from(""));
-    settings.openai_key = Some(secrecy::SecretString::from("openai-key"));
-    settings.azure_api_version = Some("azure-version".to_owned());
-    settings.organization = Some(String::new());
-    settings.openai_organization = Some("openai-organization".to_owned());
-    settings.vertex_project = Some(String::new());
-    settings.vertexai_project = Some("vertex-project".to_owned());
-    settings.vertex_location = Some(String::new());
-    settings.vertexai_location = Some("vertex-location".to_owned());
-    settings.vertex_credentials = Some(secrecy::SecretString::from(""));
-    settings.vertexai_credentials = Some(secrecy::SecretString::from("vertex-credentials"));
-    assert_eq!(settings.openai_base(), "openai-base");
     assert_eq!(
-        settings
-            .openai_api_key()
-            .map(secrecy::ExposeSecret::expose_secret),
-        Some("openai-key")
+        request_timeout(Some(f64::NAN), None),
+        Err(TimeoutError::NonFinite)
     );
-    assert_eq!(settings.azure_base(), None);
-    assert_eq!(settings.azure_version(), Some("azure-version"));
-    assert_eq!(settings.organization(), Some("openai-organization"));
-    assert_eq!(settings.vertex_base(), "");
-    assert_eq!(settings.vertex_project(), Some("vertex-project"));
-    assert_eq!(settings.vertex_location(), Some("vertex-location"));
-    assert_eq!(
-        settings
-            .vertex_credentials()
-            .map(secrecy::ExposeSecret::expose_secret),
-        Some("vertex-credentials")
-    );
-}
-
-#[test]
-fn secret_precedence_ignores_empty_values() {
-    let mut settings = test_settings();
-    settings.api_key = Some(secrecy::SecretString::from(""));
-    settings.openai_key = Some(secrecy::SecretString::from(""));
-    settings.openai_api_key = Some(secrecy::SecretString::from("environment-key"));
-    settings.azure_key = Some(secrecy::SecretString::from(""));
-    settings.azure_openai_api_key = Some(secrecy::SecretString::from(""));
-    settings.azure_api_key = Some(secrecy::SecretString::from("environment-azure-key"));
-
-    assert_eq!(
-        settings
-            .openai_api_key()
-            .map(secrecy::ExposeSecret::expose_secret),
-        Some("environment-key")
-    );
-    assert_eq!(
-        settings
-            .azure_api_key()
-            .map(secrecy::ExposeSecret::expose_secret),
-        Some("environment-azure-key")
-    );
-}
-
-#[test]
-fn resource_precedence_returns_each_direct_value() {
-    let mut settings = test_settings();
-    settings.api_base = Some("configured-base".to_owned());
-    settings.api_key = Some(secrecy::SecretString::from("api-key"));
-    settings.openai_api_key = Some(secrecy::SecretString::from("environment-key"));
-    settings.organization = Some("organization".to_owned());
-    settings.vertex_project = Some("vertex-project".to_owned());
-
-    assert_eq!(settings.azure_base(), Some("configured-base"));
-    assert_eq!(
-        settings
-            .azure_api_key()
-            .map(secrecy::ExposeSecret::expose_secret),
-        Some("api-key")
-    );
-    settings.api_key = None;
-    assert_eq!(
-        settings
-            .openai_api_key()
-            .map(secrecy::ExposeSecret::expose_secret),
-        Some("environment-key")
-    );
-    assert_eq!(settings.organization(), Some("organization"));
-    assert_eq!(settings.vertex_base(), "configured-base");
-    assert_eq!(settings.vertex_project(), Some("vertex-project"));
-}
-
-#[test]
-fn secret_precedence_returns_none_when_all_values_are_absent() {
-    let settings = test_settings();
-
-    assert!(settings.vertex_credentials().is_none());
 }
 
 #[test]
 fn settings_debug_redacts_secret_fields() {
     let mut settings = test_settings();
-    settings.api_key = Some(secrecy::SecretString::from("secret"));
+    settings.api_key = Some(SecretString::from("secret"));
     assert!(!format!("{settings:?}").contains("secret"));
 }
 
@@ -172,7 +223,6 @@ fn test_settings() -> super::ResourceSdkSettings {
         organization: None,
         vertex_project: None,
         vertex_location: None,
-        vertex_credentials: None,
         openai_base_url: None,
         openai_api_base: None,
         openai_api_key: None,
@@ -185,4 +235,8 @@ fn test_settings() -> super::ResourceSdkSettings {
         vertexai_location: None,
         vertexai_credentials: None,
     }
+}
+
+fn exposed(value: Option<&SecretString>) -> Option<&str> {
+    value.map(SecretString::expose_secret)
 }

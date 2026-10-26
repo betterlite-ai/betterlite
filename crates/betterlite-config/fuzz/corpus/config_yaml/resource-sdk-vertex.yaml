@@ -1,4 +1,3 @@
 litellm_settings:
   vertex_project: project-example
   vertex_location: us-central1
-  vertex_credentials: os.environ/VERTEXAI_CREDENTIALS

@@ -123,7 +123,7 @@ fn loads_all_resource_sdk_settings_from_yaml() {
     let environment = BTreeMap::from([("CONFIGURED_SECRET".to_owned(), "secret".to_owned())]);
     let config = ConfigLoader { lookup: environment }
         .load(
-            "litellm_settings:\n  api_base: base\n  api_version: version\n  api_key: os.environ/CONFIGURED_SECRET\n  openai_key: openai\n  azure_key: azure\n  azure_ad_token: token\n  organization: org\n  vertex_project: project\n  vertex_location: location\n  vertex_credentials: credentials\n",
+            "litellm_settings:\n  api_base: base\n  api_version: version\n  api_key: os.environ/CONFIGURED_SECRET\n  openai_key: openai\n  azure_key: azure\n  organization: org\n  vertex_project: project\n  vertex_location: location\n",
         )
         .expect("settings load");
     let settings = config.sections.resource_sdk_settings;
@@ -140,19 +140,5 @@ fn loads_all_resource_sdk_settings_from_yaml() {
     assert_eq!(
         settings.azure_key.expect("Azure key").expose_secret(),
         "azure"
-    );
-    assert_eq!(
-        settings
-            .azure_ad_token
-            .expect("Azure token")
-            .expose_secret(),
-        "token"
-    );
-    assert_eq!(
-        settings
-            .vertex_credentials
-            .expect("Vertex credentials")
-            .expose_secret(),
-        "credentials"
     );
 }

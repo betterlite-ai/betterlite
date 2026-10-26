@@ -19,11 +19,9 @@ pub struct RawSettings {
     pub api_key: Option<String>,
     pub openai_key: Option<String>,
     pub azure_key: Option<String>,
-    pub azure_ad_token: Option<String>,
     pub organization: Option<String>,
     pub vertex_project: Option<String>,
     pub vertex_location: Option<String>,
-    pub vertex_credentials: Option<String>,
 }
 
 struct ConfiguredSettings {
@@ -32,11 +30,9 @@ struct ConfiguredSettings {
     api_key: Option<SecretString>,
     openai_key: Option<SecretString>,
     azure_key: Option<SecretString>,
-    azure_ad_token: Option<SecretString>,
     organization: Option<String>,
     vertex_project: Option<String>,
     vertex_location: Option<String>,
-    vertex_credentials: Option<SecretString>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -50,7 +46,6 @@ pub struct Settings {
     pub organization: Option<String>,
     pub vertex_project: Option<String>,
     pub vertex_location: Option<String>,
-    pub vertex_credentials: Option<SecretString>,
     pub openai_base_url: Option<String>,
     pub openai_api_base: Option<String>,
     pub openai_api_key: Option<SecretString>,
@@ -89,11 +84,6 @@ impl RawSettings {
             api_key: resolve_secret(self.api_key, "litellm_settings.api_key", lookup)?,
             openai_key: resolve_secret(self.openai_key, "litellm_settings.openai_key", lookup)?,
             azure_key: resolve_secret(self.azure_key, "litellm_settings.azure_key", lookup)?,
-            azure_ad_token: resolve_secret(
-                self.azure_ad_token,
-                "litellm_settings.azure_ad_token",
-                lookup,
-            )?,
             organization: optional_string(
                 self.organization,
                 "litellm_settings.organization",
@@ -109,11 +99,6 @@ impl RawSettings {
                 "litellm_settings.vertex_location",
                 lookup,
             )?,
-            vertex_credentials: resolve_secret(
-                self.vertex_credentials,
-                "litellm_settings.vertex_credentials",
-                lookup,
-            )?,
         };
         Ok(configured)
     }
@@ -127,11 +112,10 @@ impl From<ConfiguredSettings> for Settings {
             api_key: configured.api_key,
             openai_key: configured.openai_key,
             azure_key: configured.azure_key,
-            azure_ad_token: configured.azure_ad_token,
+            azure_ad_token: None,
             organization: configured.organization,
             vertex_project: configured.vertex_project,
             vertex_location: configured.vertex_location,
-            vertex_credentials: configured.vertex_credentials,
             openai_base_url: None,
             openai_api_base: None,
             openai_api_key: None,
@@ -152,9 +136,7 @@ impl Settings {
     where
         L: EnvironmentLookup,
     {
-        if self.azure_ad_token.is_none() {
-            self.azure_ad_token = lookup.lookup("AZURE_AD_TOKEN").map(SecretString::from);
-        }
+        self.azure_ad_token = lookup.lookup("AZURE_AD_TOKEN").map(SecretString::from);
         self.openai_base_url = lookup.lookup("OPENAI_BASE_URL");
         self.openai_api_base = lookup.lookup("OPENAI_API_BASE");
         self.openai_api_key = lookup.lookup("OPENAI_API_KEY").map(SecretString::from);
