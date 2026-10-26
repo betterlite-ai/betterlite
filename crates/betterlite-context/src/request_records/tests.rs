@@ -81,6 +81,8 @@ fn request_records_cases(#[case] name: &str) {
                 RequestRecordProjection::safe_copy(&mut array_with_span, false),
                 Err(super::RequestRecordError::MetadataMutation { .. })
             ));
+            let mut array_without_span = record(r#"{"metadata":["ordinary"]}"#);
+            assert!(RequestRecordProjection::safe_copy(&mut array_without_span, false).is_ok());
         }
         "independent_snapshot" => {
             let input =
