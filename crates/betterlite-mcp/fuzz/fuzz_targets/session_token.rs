@@ -7,10 +7,10 @@ use betterlite_mcp::types::{
 use chrono::DateTime;
 use libfuzzer_sys::fuzz_target;
 use secrecy::SecretString;
-
-fuzz_target!(|candidate: &str| {
+fuzz_target!(|bytes: &[u8]| {
     let private = SecretString::from(include_str!("../../src/fixtures/session-private.pem"));
-    let (Ok(symmetric), Ok(asymmetric), Some(now)) = (
+    let (Ok(candidate), Ok(symmetric), Ok(asymmetric), Some(now)) = (
+        std::str::from_utf8(bytes),
         SessionKeys::new(SecretString::from("0123456789abcdef0123456789abcdef")),
         AsymmetricSessionKeys::new(&private, "current".to_owned(), Vec::new()),
         DateTime::from_timestamp(1_767_225_600, 0),
