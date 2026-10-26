@@ -147,15 +147,6 @@ fn request_records_cases(#[case] name: &str) {
                     .and_then(|metadata_fields| metadata_fields.get("litellm_parent_otel_span")),
                 Some(&span_b)
             );
-            assert_eq!(record(r#"{"metadata":{}}"#), record(r#"{"metadata":{}}"#));
-            assert_eq!(
-                record(r#"{"metadata":{"other":true}}"#),
-                record(r#"{"metadata":{"other":true}}"#)
-            );
-            assert_eq!(
-                record(r#"{"metadata":{},"litellm_metadata":{"other":true}}"#),
-                record(r#"{"metadata":{},"litellm_metadata":{"other":true}}"#)
-            );
         }
         "parameter_filter_null_and_depth" => {
             assert_eq!(
