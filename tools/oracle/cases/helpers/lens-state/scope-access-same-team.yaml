@@ -1,0 +1,10 @@
+kind: helper
+name: scope-access-same-team
+call:
+  lens_state:
+    can_access:
+      viewer: {team_id: team-a, api_key_hash: key-1, all_teams: false}
+      target: {team_id: team-a, api_key_hash: key-2, all_teams: false}
+env: {}
+compare:
+  ignore: []

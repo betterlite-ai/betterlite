@@ -1,0 +1,37 @@
+kind: helper
+name: finding-reopen-on-new-evidence
+call:
+  lens_state:
+    merge_finding:
+      lens:
+        id: lens-1
+        scope: {team_id: team-a}
+        settings: {name: Support replies, context: Replies cite the help center., model: gpt-4o-mini}
+        created_at: "2026-01-10T08:00:00Z"
+        next_run_at: "2026-01-15T10:00:00Z"
+        findings:
+          - title: Slow replies
+            description: Replies take longer than a minute.
+            check_id: tone
+            evidence: [{execution_id: exec-1, span_id: span-1, quote: waiting}]
+            id: finding-from-the-worker
+            status: resolved
+            reason: fixed in the January release
+            first_seen: "2026-01-11T08:00:00Z"
+            last_seen: "2026-01-12T08:00:00Z"
+            occurrences: [exec-1]
+            revision: 2
+        budget_month: "2026-01"
+      draft:
+        title: Replies are slow again
+        description: Replies take longer than a minute again.
+        check_id: tone
+        existing_finding_id: finding-from-the-worker
+        evidence:
+          - {execution_id: exec-1, span_id: span-1, quote: waiting}
+          - {execution_id: exec-4, span_id: span-2, quote: still waiting}
+      revision: 5
+      now: "2026-01-15T10:00:00Z"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,1 @@
+{"name":"lens","model":"gpt-4o","context":"Cite sources.","filters":[{"key":"env","value":"prod"}],"sample_size":50,"sample_percent":12.5,"monthly_budget":99.99}
