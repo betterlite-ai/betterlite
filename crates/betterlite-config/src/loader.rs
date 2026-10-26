@@ -4,7 +4,6 @@ use std::num::{ParseFloatError, ParseIntError};
 use secrecy::SecretString;
 use thiserror::Error;
 
-use crate::api::resource_sdk_settings::ResourceSdkSettings;
 use crate::providers::bedrock::request_policy::metadata_fields;
 use crate::raw::{
     RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
@@ -203,18 +202,16 @@ where
     })
 }
 
-fn convert_litellm<L>(mut raw: RawLiteLlm, lookup: &L) -> Result<LiteLlmSettings, ConfigError>
+fn convert_litellm<L>(raw: RawLiteLlm, lookup: &L) -> Result<LiteLlmSettings, ConfigError>
 where
     L: EnvironmentLookup,
 {
     let retries_path = "litellm_settings.num_retries";
     let timeout_path = "litellm_settings.request_timeout";
-    let resource_sdk_settings = resource_sdk_settings(&mut raw, lookup)?;
     let num_retries = number(raw.num_retries, retries_path, lookup, parse_integer)?;
     let request_timeout = number(raw.request_timeout, timeout_path, lookup, parse_float)?;
     let (modify_params, default_max_tokens) = environment_defaults(raw.modify_params, lookup)?;
     Ok(LiteLlmSettings {
-        resource_sdk_settings,
         num_retries,
         request_timeout,
         drop_params: raw.drop_params,
@@ -226,98 +223,6 @@ where
         modify_params,
         default_max_tokens,
     })
-}
-
-fn resource_sdk_settings<L>(
-    raw: &mut RawLiteLlm,
-    lookup: &L,
-) -> Result<ResourceSdkSettings, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let mut settings = resource_sdk_environment(lookup);
-    settings.api_base = optional_string(raw.api_base.take(), "litellm_settings.api_base", lookup)?;
-    settings.api_version = optional_string(
-        raw.api_version.take(),
-        "litellm_settings.api_version",
-        lookup,
-    )?;
-    settings.api_key = resolve_secret(raw.api_key.take(), "litellm_settings.api_key", lookup)?;
-    settings.openai_key =
-        resolve_secret(raw.openai_key.take(), "litellm_settings.openai_key", lookup)?;
-    settings.azure_key =
-        resolve_secret(raw.azure_key.take(), "litellm_settings.azure_key", lookup)?;
-    settings.azure_ad_token = resolve_secret(
-        raw.azure_ad_token.take(),
-        "litellm_settings.azure_ad_token",
-        lookup,
-    )?
-    .or(settings.azure_ad_token);
-    settings.organization = optional_string(
-        raw.organization.take(),
-        "litellm_settings.organization",
-        lookup,
-    )?;
-    settings.vertex_project = optional_string(
-        raw.vertex_project.take(),
-        "litellm_settings.vertex_project",
-        lookup,
-    )?;
-    settings.vertex_location = optional_string(
-        raw.vertex_location.take(),
-        "litellm_settings.vertex_location",
-        lookup,
-    )?;
-    settings.vertex_credentials = resolve_secret(
-        raw.vertex_credentials.take(),
-        "litellm_settings.vertex_credentials",
-        lookup,
-    )?;
-    Ok(settings)
-}
-
-fn optional_string<L>(
-    value: Option<String>,
-    path: &str,
-    lookup: &L,
-) -> Result<Option<String>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let resolved = value
-        .map(|text| resolve_string(text, path, lookup))
-        .transpose();
-    resolved
-}
-
-fn resource_sdk_environment<L>(lookup: &L) -> ResourceSdkSettings
-where
-    L: EnvironmentLookup,
-{
-    let environment = |name: &str| lookup.lookup(name);
-    ResourceSdkSettings {
-        api_base: None,
-        api_version: None,
-        api_key: None,
-        openai_key: None,
-        azure_key: None,
-        azure_ad_token: environment("AZURE_AD_TOKEN").map(SecretString::from),
-        organization: None,
-        vertex_project: None,
-        vertex_location: None,
-        vertex_credentials: None,
-        openai_base_url: environment("OPENAI_BASE_URL"),
-        openai_api_base: environment("OPENAI_API_BASE"),
-        openai_api_key: environment("OPENAI_API_KEY").map(SecretString::from),
-        openai_organization: environment("OPENAI_ORGANIZATION"),
-        azure_api_base: environment("AZURE_API_BASE"),
-        azure_api_version: environment("AZURE_API_VERSION"),
-        azure_openai_api_key: environment("AZURE_OPENAI_API_KEY").map(SecretString::from),
-        azure_api_key: environment("AZURE_API_KEY").map(SecretString::from),
-        vertexai_project: environment("VERTEXAI_PROJECT"),
-        vertexai_location: environment("VERTEXAI_LOCATION"),
-        vertexai_credentials: environment("VERTEXAI_CREDENTIALS").map(SecretString::from),
-    }
 }
 
 fn environment_defaults<L>(configured: Option<bool>, lookup: &L) -> Result<(bool, i64), ConfigError>

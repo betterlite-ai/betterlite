@@ -65,16 +65,6 @@ pub(super) struct RawRouter {
 
 #[derive(Debug, Deserialize, Default)]
 pub(super) struct RawLiteLlm {
-    pub(super) api_base: Option<String>,
-    pub(super) api_version: Option<String>,
-    pub(super) api_key: Option<String>,
-    pub(super) openai_key: Option<String>,
-    pub(super) azure_key: Option<String>,
-    pub(super) azure_ad_token: Option<String>,
-    pub(super) organization: Option<String>,
-    pub(super) vertex_project: Option<String>,
-    pub(super) vertex_location: Option<String>,
-    pub(super) vertex_credentials: Option<String>,
     pub(super) num_retries: Option<RawNumber>,
     pub(super) request_timeout: Option<RawNumber>,
     pub(super) drop_params: Option<bool>,
