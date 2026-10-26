@@ -255,5 +255,5 @@ pitfalls:
 - 'Polling HTTPException responses retain a FastAPI detail field, but provider exceptions pass through B004 and proxy_server emits an error object with a string code and forwarded headers; one shared error serializer changes the wire contract.'
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0

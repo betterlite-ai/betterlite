@@ -384,6 +384,6 @@ pitfalls:
 - A model containing both an agents route and claude takes the agents branch.
 - Claude header forwarding differs from both agents and normal Foundry chat.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

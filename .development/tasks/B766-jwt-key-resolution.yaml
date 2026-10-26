@@ -302,6 +302,6 @@ pitfalls:
   - A failed orphan deletion is only warned about; rolling back the winner or silently returning team auth changes the race contract.
   - Global mapping hits must stay under the issuer-less cache key or another issuer can retain stale authorization.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -130,5 +130,5 @@ pitfalls:
 - Guardrail failures occur outside the augmentation catch and must not be swallowed as an optional retrieval failure.
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0

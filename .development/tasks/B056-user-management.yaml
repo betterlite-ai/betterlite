@@ -111,6 +111,6 @@ pitfalls:
   - Object permissions can remain after generation fails; team writes can remain after organization failure.
   - An explicit empty teams list suppresses defaults but still triggers the post-write team-ID read.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

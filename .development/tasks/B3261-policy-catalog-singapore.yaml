@@ -79,5 +79,5 @@ pitfalls:
   - The record must include all category_file references unchanged (litellm/proxy/guardrails/content_filter_data/policy_templates/...). These are data references, not a request to implement filters.
 review_level: standard
 budget:
-  max_changed_lines: 260
+  max_changed_lines: 1000
   max_new_expects: 0

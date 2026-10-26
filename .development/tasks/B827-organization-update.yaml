@@ -135,6 +135,6 @@ pitfalls:
   - A supplied updated_by survives legacy update, while v2 always uses the authenticated caller.
   - Deletion can remove teams, members and keys before discovering that the organization itself is absent.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

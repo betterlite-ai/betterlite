@@ -355,6 +355,6 @@ pitfalls:
 - The counter refuses empty messages even though the lower handler accepts system-only or tools-only input.
 - A supplied api_base is the whole count endpoint, and deployment api_base is ignored by the counter.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

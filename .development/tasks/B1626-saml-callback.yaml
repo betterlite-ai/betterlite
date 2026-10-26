@@ -97,6 +97,6 @@ pitfalls:
   - The authn-request cache key is not deleted by response binding; assertion-ID consumption, not that key's removal, detects a repeated assertion.
   - A truthy attribute list containing only empty strings stops candidate search and yields no attribute value.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

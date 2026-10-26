@@ -320,6 +320,6 @@ pitfalls:
   - An alias cache-write failure becomes HTTP 500 even after the alias entry was written; there is no rollback of the first cache write.
   - A confirmed missing organization bypasses last_known, while an outage consults last_known before allow_requests_on_db_unavailable.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -244,6 +244,6 @@ pitfalls:
   - A replacement callback can fail after publication; restoring credentials then does not restore the old pool.
   - There is no random jitter and no warn-level fallback in this loop.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

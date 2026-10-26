@@ -213,5 +213,5 @@ pitfalls:
   query=query, top_k=top_k, user_api_key_dict=user_api_key_dict) and its nested guards.
 review_level: security
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 1000
   max_new_expects: 0

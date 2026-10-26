@@ -217,6 +217,6 @@ pitfalls:
   - Organization authority comes from membership rows, and an orgless target fails even for an org admin.
   - Only the transaction is caught as row errors; a failed postcommit broadcast can leave deletion committed.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

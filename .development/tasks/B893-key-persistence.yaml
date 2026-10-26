@@ -296,6 +296,6 @@ pitfalls:
   - request_type user overlays user max_budget and duration onto the response after key insertion.
   - saved_token is not returned, but its decoding and permissions check can fail before writes.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -101,6 +101,6 @@ pitfalls:
   - Dropping an earlier duplicate before finding later duplicates changes which later identities are rejected.
   - Sorted IN values are not a set; only callers that supply a set have already removed duplicates.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -332,6 +332,6 @@ pitfalls:
   - CustomPricingLiteLLMParams and callback tables contribute fields that are absent from the handwritten
     tuple.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

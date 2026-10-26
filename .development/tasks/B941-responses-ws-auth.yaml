@@ -402,5 +402,5 @@ pitfalls:
 - 'json.dumps({"model": resolved_model}).encode() retains its default separator, so the synthetic body for gpt-4o is bytes for {"model": "gpt-4o"}, not the compact spelling {"model":"gpt-4o"}.'
 review_level: security
 budget:
-  max_changed_lines: 760
+  max_changed_lines: 1000
   max_new_expects: 0

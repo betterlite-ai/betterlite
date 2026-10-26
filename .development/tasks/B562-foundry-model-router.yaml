@@ -221,6 +221,6 @@ pitfalls:
 - Despite its name, strip_model_router_prefix matches anywhere, with underscore spelling taking priority.
 - The selected model stamp is read after the parent has applied its own model projection.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

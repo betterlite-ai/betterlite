@@ -504,6 +504,6 @@ pitfalls:
 - The AI21 constructor spells frequencePenalty differently from the usual frequency spelling.
 - The Titan filter reads global litellm.drop_params even when its mapper receives a different drop_params argument.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

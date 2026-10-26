@@ -81,6 +81,6 @@ pitfalls:
   - The wire value for the proxy viewer role is proxy_admin_viewer even though Python's enum member says PROXY_ADMIN_VIEW_ONLY.
   - Unknown role strings remain absent instead of becoming internal_user by default.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

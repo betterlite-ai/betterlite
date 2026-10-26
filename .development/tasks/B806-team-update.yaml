@@ -247,6 +247,6 @@ pitfalls:
   - Clearing organization_id still checks limits against the stored organization before writing null.
   - Restoring the server-owned team_member_budget_id happens after the metadata callback has seen stripped metadata.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

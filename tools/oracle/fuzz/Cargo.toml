@@ -32,4 +32,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "http_case"
+path = "fuzz_targets/http_case.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

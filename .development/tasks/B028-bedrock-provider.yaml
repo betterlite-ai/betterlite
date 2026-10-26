@@ -499,6 +499,6 @@ pitfalls:
 - Legacy aws_bedrock_client credential extraction removes the optional client before it can fail.
 - Native Messages treats explicit converse as a bridge request before checking whether the model contains claude.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

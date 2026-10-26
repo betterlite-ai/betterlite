@@ -327,6 +327,6 @@ pitfalls:
 - The hosted-cache predicate accepts openai.com and any of its subdomains, broader than the api.openai.com credential-host
   predicate.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

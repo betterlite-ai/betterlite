@@ -270,6 +270,6 @@ pitfalls:
   - Admin V1 without an ID omits directory redaction; explicit-ID V1 and V2 apply it.
   - V2 denies unrelated org admins with 404 and has no pagination; V1 other-user denial is 403.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

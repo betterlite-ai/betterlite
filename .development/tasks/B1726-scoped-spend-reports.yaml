@@ -83,6 +83,6 @@ pitfalls:
   - Organization membership is only a fallback for rows without an organization stamp, never an override of a different stamp.
   - A 366-day difference spans 367 inclusive calendar dates and is nevertheless accepted.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

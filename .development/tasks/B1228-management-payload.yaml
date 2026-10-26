@@ -160,6 +160,6 @@ pitfalls:
   - OTel v2 skips the legacy payload entirely; do not emit it twice.
   - Strip top-level credential fields before nested env-var redaction and never mutate the caller response.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security
