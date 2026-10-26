@@ -70,13 +70,12 @@ pub fn normalize_messages(
 }
 
 pub fn extract_last_user_message(messages: &[Value]) -> String {
-    let last_user = messages
+    messages
         .iter()
         .rev()
         .find(|message| message.get("role") == Some(&Value::String("user".to_owned())))
         .and_then(|message| message.get("content"))
-        .map_or_else(String::new, content_to_text);
-    last_user
+        .map_or_else(String::new, content_to_text)
 }
 
 mod tests;
