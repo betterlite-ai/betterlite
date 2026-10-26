@@ -2,109 +2,70 @@
 
 use super::{TransformError, UsageRow, transform};
 use crate::focus_records::schema::{ColumnType, FOCUS_NORMALIZED_SCHEMA};
-use crate::focus_records::table::{ColumnValues, FocusTable};
+use crate::focus_records::serializers::FocusFormat;
+use crate::focus_records::table::ColumnValues;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
 fn usage() -> UsageRow {
     UsageRow {
         date: "2024-03-05".to_owned(),
-        api_key: "hashed-key".to_owned(),
-        spend: 1.5,
-        api_requests: 3,
+        api_key: "key".to_owned(),
+        spend: 0.25,
+        api_requests: 2,
         user_id: Some("user-1".to_owned()),
-        model: Some("gpt-4o".to_owned()),
-        model_group: Some("gpt-4o-group".to_owned()),
+        model: Some("m".to_owned()),
+        model_group: Some("group".to_owned()),
         custom_llm_provider: Some("openai".to_owned()),
-        team_id: Some("team-1".to_owned()),
+        team_id: Some("t".to_owned()),
         team_alias: Some("Search".to_owned()),
         organization_id: None,
         organization_alias: None,
         user_email: Some("ana@example.com".to_owned()),
-        api_key_alias: Some("prod-key".to_owned()),
+        api_key_alias: Some("prod".to_owned()),
     }
 }
 
-fn column<'table>(table: &'table FocusTable, name: &str) -> &'table ColumnValues {
-    &table
-        .columns
-        .iter()
-        .find(|column| column.name == name)
-        .unwrap()
-        .values
+fn column(row: UsageRow, name: &str) -> ColumnValues {
+    let table = transform(&[row]).unwrap();
+    let found = table.columns.into_iter().find(|column| column.name == name);
+    found.unwrap().values
 }
-
-fn text(table: &FocusTable, name: &str) -> Vec<Option<String>> {
-    let ColumnValues::Text(values) = column(table, name) else {
-        panic!("{name} is not text");
-    };
-    values.clone()
-}
-
-fn decimal(table: &FocusTable, name: &str) -> Vec<Option<Decimal>> {
-    let ColumnValues::Decimal(values) = column(table, name) else {
-        panic!("{name} is not decimal");
-    };
-    values.clone()
-}
-
-const NONEMPTY_COLUMNS: [(&str, ColumnType); 44] = [
-    ("BilledCost", ColumnType::Decimal),
-    ("BillingAccountId", ColumnType::Text),
-    ("BillingAccountName", ColumnType::Text),
-    ("BillingAccountType", ColumnType::Text),
-    ("BillingCurrency", ColumnType::Text),
-    ("BillingPeriodEnd", ColumnType::Text),
-    ("BillingPeriodStart", ColumnType::Text),
-    ("ChargeCategory", ColumnType::Text),
-    ("ChargeClass", ColumnType::Text),
-    ("ChargeDescription", ColumnType::Text),
-    ("ChargeFrequency", ColumnType::Text),
-    ("ChargePeriodEnd", ColumnType::Text),
-    ("ChargePeriodStart", ColumnType::Text),
-    ("ConsumedQuantity", ColumnType::Decimal),
-    ("ConsumedUnit", ColumnType::Text),
-    ("ContractedCost", ColumnType::Decimal),
-    ("ContractedUnitPrice", ColumnType::Text),
-    ("EffectiveCost", ColumnType::Decimal),
-    ("InvoiceIssuerName", ColumnType::Text),
-    ("InvoiceId", ColumnType::Text),
-    ("ListCost", ColumnType::Decimal),
-    ("ListUnitPrice", ColumnType::Decimal),
-    ("AvailabilityZone", ColumnType::Text),
-    ("PricingCurrency", ColumnType::Text),
-    ("PricingCategory", ColumnType::Text),
-    ("PricingQuantity", ColumnType::Decimal),
-    ("PricingCurrencyContractedUnitPrice", ColumnType::Decimal),
-    ("PricingCurrencyEffectiveCost", ColumnType::Decimal),
-    ("PricingCurrencyListUnitPrice", ColumnType::Decimal),
-    ("PricingUnit", ColumnType::Text),
-    ("ProviderName", ColumnType::Text),
-    ("PublisherName", ColumnType::Text),
-    ("RegionId", ColumnType::Text),
-    ("RegionName", ColumnType::Text),
-    ("ResourceId", ColumnType::Text),
-    ("ResourceName", ColumnType::Text),
-    ("ResourceType", ColumnType::Text),
-    ("ServiceCategory", ColumnType::Text),
-    ("ServiceSubcategory", ColumnType::Text),
-    ("ServiceName", ColumnType::Text),
-    ("SubAccountId", ColumnType::Text),
-    ("SubAccountName", ColumnType::Text),
-    ("SubAccountType", ColumnType::Text),
-    ("Tags", ColumnType::Text),
-];
 
 #[test]
 fn nonempty_schema_has_44_columns_with_the_seven_computed_ones() {
     let table = transform(&[usage(), usage()]).unwrap();
-    let columns: Vec<(&str, ColumnType)> = table
-        .columns
-        .iter()
-        .map(|column| (column.name, column.values.kind()))
-        .collect();
-    assert_eq!(columns, NONEMPTY_COLUMNS.to_vec());
-    assert_eq!(table.rows, 2);
+    let render = |kind: ColumnType| -> String {
+        let names = table
+            .columns
+            .iter()
+            .filter(|column| column.values.kind() == kind);
+        names
+            .map(|column| column.name)
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let decimals = concat!(
+        "BilledCost,ConsumedQuantity,ContractedCost,EffectiveCost,ListCost,ListUnitPrice,PricingQuantity,",
+        "PricingCurrencyContractedUnitPrice,PricingCurrencyEffectiveCost,PricingCurrencyListUnitPrice"
+    );
+    let texts = concat!(
+        "BillingAccountId,BillingAccountName,BillingAccountType,BillingCurrency,BillingPeriodEnd,",
+        "BillingPeriodStart,ChargeCategory,ChargeClass,ChargeDescription,ChargeFrequency,ChargePeriodEnd,",
+        "ChargePeriodStart,ConsumedUnit,ContractedUnitPrice,InvoiceIssuerName,InvoiceId,AvailabilityZone,",
+        "PricingCurrency,PricingCategory,PricingUnit,ProviderName,PublisherName,RegionId,RegionName,",
+        "ResourceId,ResourceName,ResourceType,ServiceCategory,ServiceSubcategory,ServiceName,SubAccountId,",
+        "SubAccountName,SubAccountType,Tags"
+    );
+    assert_eq!(
+        (render(ColumnType::Decimal), render(ColumnType::Text)),
+        (decimals.to_owned(), texts.to_owned())
+    );
+    assert_eq!((table.columns.len(), table.rows), (44, 2));
+    assert_eq!(
+        table.columns.get(3).map(|column| column.name),
+        Some("BillingAccountType")
+    );
 }
 
 #[test]
@@ -115,19 +76,24 @@ fn empty_rows_adopt_the_37_column_schema() {
         .iter()
         .map(|column| (column.name, column.values.kind()))
         .collect();
-    assert_eq!(columns, FOCUS_NORMALIZED_SCHEMA.to_vec());
-    assert_eq!(table.rows, 0);
+    assert_eq!((columns, table.rows), (FOCUS_NORMALIZED_SCHEMA.to_vec(), 0));
 }
 
 #[test]
-fn tags_follow_litellm_key_order_and_skip_nulls() {
-    let table = transform(&[usage()]).unwrap();
+fn every_column_projects_its_usage_field() {
+    let bytes = FocusFormat::Csv
+        .encode(&transform(&[usage()]).unwrap())
+        .unwrap();
+    let text = String::from_utf8(bytes).unwrap();
     let expected = concat!(
-        r#"{"team_id": "team-1", "team_alias": "Search", "user_id": "user-1", "#,
-        r#""user_email": "ana@example.com", "api_key_alias": "prod-key", "model": "gpt-4o", "#,
-        r#""model_group": "gpt-4o-group", "custom_llm_provider": "openai"}"#
+        "0.25,key,prod,API Key,USD,2024-03-06T00:00:00Z,2024-03-05T00:00:00Z,Usage,,m,Usage-Based,",
+        "2024-03-06T00:00:00Z,2024-03-05T00:00:00Z,2.0,Requests,0.25,,0.25,openai,,0.25,,,USD,,2.0,,0.25,,",
+        "Requests,openai,openai,,,m,m,m,AI and Machine Learning,Generative AI,group,t,Search,,",
+        "\"{\"\"team_id\"\": \"\"t\"\", \"\"team_alias\"\": \"\"Search\"\", \"\"user_id\"\": \"\"user-1\"\", ",
+        "\"\"user_email\"\": \"\"ana@example.com\"\", \"\"api_key_alias\"\": \"\"prod\"\", \"\"model\"\": \"\"m\"\", ",
+        "\"\"model_group\"\": \"\"group\"\", \"\"custom_llm_provider\"\": \"\"openai\"\"}\"",
     );
-    assert_eq!(text(&table, "Tags"), vec![Some(expected.to_owned())]);
+    assert_eq!(text.lines().nth(1), Some(expected));
 }
 
 #[rstest]
@@ -153,18 +119,10 @@ fn tags_match_python_json_dumps(#[case] alias: Option<&str>, #[case] expected: &
         api_key_alias: None,
         ..usage()
     };
-    let table = transform(&[row]).unwrap();
-    assert_eq!(text(&table, "Tags"), vec![Some(expected.to_owned())]);
-}
-
-#[rstest]
-#[case::charge_start("ChargePeriodStart", "2024-03-05T00:00:00Z")]
-#[case::charge_end("ChargePeriodEnd", "2024-03-06T00:00:00Z")]
-#[case::billing_start("BillingPeriodStart", "2024-03-05T00:00:00Z")]
-#[case::billing_end("BillingPeriodEnd", "2024-03-06T00:00:00Z")]
-fn periods_are_utc_strings_one_day_long(#[case] name: &str, #[case] expected: &str) {
-    let table = transform(&[usage()]).unwrap();
-    assert_eq!(text(&table, name), vec![Some(expected.to_owned())]);
+    assert_eq!(
+        column(row, "Tags"),
+        ColumnValues::Text(vec![Some(expected.to_owned())])
+    );
 }
 
 #[test]
@@ -173,55 +131,14 @@ fn unparsable_date_leaves_periods_null() {
         date: "05/03/2024".to_owned(),
         ..usage()
     };
-    let table = transform(&[row]).unwrap();
-    assert_eq!(text(&table, "ChargePeriodStart"), vec![None]);
-    assert_eq!(text(&table, "BillingPeriodEnd"), vec![None]);
-}
-
-#[rstest]
-#[case::billed("BilledCost", Some(Decimal::new(1_500_000, 6)))]
-#[case::contracted("ContractedCost", Some(Decimal::new(1_500_000, 6)))]
-#[case::effective("EffectiveCost", Some(Decimal::new(1_500_000, 6)))]
-#[case::list("ListCost", Some(Decimal::new(1_500_000, 6)))]
-#[case::pricing_effective("PricingCurrencyEffectiveCost", Some(Decimal::new(1_500_000, 6)))]
-#[case::consumed("ConsumedQuantity", Some(Decimal::new(3, 0)))]
-#[case::pricing_quantity("PricingQuantity", Some(Decimal::new(3, 0)))]
-#[case::list_unit_price("ListUnitPrice", None)]
-#[case::pricing_list_unit_price("PricingCurrencyListUnitPrice", None)]
-fn money_and_quantities_are_decimals(#[case] name: &str, #[case] expected: Option<Decimal>) {
-    let table = transform(&[usage()]).unwrap();
-    assert_eq!(decimal(&table, name), vec![expected]);
-}
-
-#[rstest]
-#[case::account_id("BillingAccountId", Some("hashed-key"))]
-#[case::account_name("BillingAccountName", Some("prod-key"))]
-#[case::account_type("BillingAccountType", Some("API Key"))]
-#[case::currency("BillingCurrency", Some("USD"))]
-#[case::category("ChargeCategory", Some("Usage"))]
-#[case::class("ChargeClass", None)]
-#[case::description("ChargeDescription", Some("gpt-4o"))]
-#[case::frequency("ChargeFrequency", Some("Usage-Based"))]
-#[case::consumed_unit("ConsumedUnit", Some("Requests"))]
-#[case::contracted_unit_price("ContractedUnitPrice", None)]
-#[case::issuer("InvoiceIssuerName", Some("openai"))]
-#[case::invoice("InvoiceId", None)]
-#[case::zone("AvailabilityZone", None)]
-#[case::pricing_currency("PricingCurrency", Some("USD"))]
-#[case::pricing_unit("PricingUnit", Some("Requests"))]
-#[case::provider("ProviderName", Some("openai"))]
-#[case::publisher("PublisherName", Some("openai"))]
-#[case::region("RegionName", None)]
-#[case::resource_type("ResourceType", Some("gpt-4o"))]
-#[case::service_category("ServiceCategory", Some("AI and Machine Learning"))]
-#[case::service_subcategory("ServiceSubcategory", Some("Generative AI"))]
-#[case::service("ServiceName", Some("gpt-4o-group"))]
-#[case::sub_account("SubAccountId", Some("team-1"))]
-#[case::sub_account_name("SubAccountName", Some("Search"))]
-#[case::sub_account_type("SubAccountType", None)]
-fn text_columns_project_usage_fields(#[case] name: &str, #[case] expected: Option<&str>) {
-    let table = transform(&[usage()]).unwrap();
-    assert_eq!(text(&table, name), vec![expected.map(str::to_owned)]);
+    assert_eq!(
+        column(row.clone(), "ChargePeriodStart"),
+        ColumnValues::Text(vec![None])
+    );
+    assert_eq!(
+        column(row, "BillingPeriodEnd"),
+        ColumnValues::Text(vec![None])
+    );
 }
 
 #[rstest]
@@ -229,14 +146,18 @@ fn text_columns_project_usage_fields(#[case] name: &str, #[case] expected: Optio
 #[case::ties_round_down_to_even(0.000_012_5_f64, Decimal::new(12, 6))]
 #[case::below_half(0.000_000_4_f64, Decimal::ZERO)]
 #[case::largest_fit(999_999_999_999.5_f64, Decimal::new(999_999_999_999_500_000, 6))]
+#[case::largest_negative(-999_999_999_999.5_f64, Decimal::new(-999_999_999_999_500_000, 6))]
 fn spend_rounds_to_six_places(#[case] spend: f64, #[case] expected: Decimal) {
     let row = UsageRow { spend, ..usage() };
-    let table = transform(&[row]).unwrap();
-    assert_eq!(decimal(&table, "BilledCost"), vec![Some(expected)]);
+    assert_eq!(
+        column(row, "BilledCost"),
+        ColumnValues::Decimal(vec![Some(expected)])
+    );
 }
 
 #[rstest]
 #[case::spend_overflow(1e12_f64, 0_i64)]
+#[case::negative_spend_overflow(-1e12_f64, 0_i64)]
 #[case::requests_overflow(0.0_f64, 1_000_000_000_000_i64)]
 fn values_past_decimal_18_6_fail(#[case] spend: f64, #[case] api_requests: i64) {
     let row = UsageRow {
