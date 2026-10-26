@@ -1,0 +1,382 @@
+[
+  {
+    "provider": "CUSTOM",
+    "provider_display_name": "Custom",
+    "litellm_provider": "custom",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "CUSTOM_OPENAI",
+    "provider_display_name": "Custom Openai",
+    "litellm_provider": "custom_openai",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "Dashscope",
+    "provider_display_name": "Dashscope",
+    "litellm_provider": "dashscope",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "Dashscope API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        "tooltip": "The base URL for your Dashscope server. Defaults to https://dashscope-intl.aliyuncs.com/compatible-mode/v1 if not specified.",
+        "required": true,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "QwenCloud",
+    "provider_display_name": "QwenCloud",
+    "litellm_provider": "qwencloud",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "QwenCloud API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        "tooltip": "The base URL for QwenCloud. Defaults to https://dashscope-intl.aliyuncs.com/compatible-mode/v1 if not specified.",
+        "required": true,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "Qwen_AI_Platform",
+    "provider_display_name": "Qianwen AI Platform",
+    "litellm_provider": "qwen_ai_platform",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "Qianwen AI Platform API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "tooltip": "The base URL for Qianwen AI Platform. Defaults to https://dashscope.aliyuncs.com/compatible-mode/v1 if not specified.",
+        "required": true,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "Databricks",
+    "provider_display_name": "Databricks",
+    "litellm_provider": "databricks",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "DATAROBOT",
+    "provider_display_name": "Datarobot",
+    "litellm_provider": "datarobot",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "Deepgram",
+    "provider_display_name": "Deepgram",
+    "litellm_provider": "deepgram",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "DeepInfra",
+    "provider_display_name": "DeepInfra",
+    "litellm_provider": "deepinfra",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "deepinfra/<any-model-on-deepinfra>"
+  },
+  {
+    "provider": "Deepseek",
+    "provider_display_name": "Deepseek",
+    "litellm_provider": "deepseek",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "DOCKER_MODEL_RUNNER",
+    "provider_display_name": "Docker Model Runner",
+    "litellm_provider": "docker_model_runner",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "DOTPROMPT",
+    "provider_display_name": "Dotprompt",
+    "litellm_provider": "dotprompt",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "EDENAI",
+    "provider_display_name": "Eden AI",
+    "litellm_provider": "edenai",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.edenai.run/v3",
+        "tooltip": "Set to https://api.eu.edenai.run/v3 for the EU endpoint",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "edenai/openai/gpt-mini-latest"
+  },
+  {
+    "provider": "ElevenLabs",
+    "provider_display_name": "ElevenLabs",
+    "litellm_provider": "elevenlabs",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "EMPOWER",
+    "provider_display_name": "Empower",
+    "litellm_provider": "empower",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  }
+]

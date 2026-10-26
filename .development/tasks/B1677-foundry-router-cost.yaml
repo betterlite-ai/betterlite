@@ -91,6 +91,6 @@ pitfalls:
   - Model-router substring detection is broader than the exact fee-entry check used to prevent double charging.
   - The additional-cost hook reports only a positive fee, even though a direct fee calculation can return a negative amount for negative prompt counts.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

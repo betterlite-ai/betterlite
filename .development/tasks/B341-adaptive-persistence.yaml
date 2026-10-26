@@ -58,6 +58,10 @@ scope:
   - tools/oracle/cases/routing/adaptive-persistence/**
   - crates/betterlite-router/src/learning_math.rs
   - crates/betterlite-router/src/learning_math/**
+  - tools/oracle/helpers/b341.py
+  - tools/oracle/helpers/b341/**
+  - tools/oracle/src/helpers/router/b341.rs
+  - tools/oracle/src/helpers/router/b341/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/update_queue.py#L41-L212
@@ -144,5 +148,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 1

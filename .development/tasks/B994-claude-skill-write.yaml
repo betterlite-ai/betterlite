@@ -118,6 +118,10 @@ scope:
   - tools/oracle/fixtures/claude-skill-write/**
   - crates/betterlite-config/src/sections/claude_skill_write.rs
   - crates/betterlite-config/src/sections/claude_skill_write/**
+  - tools/oracle/helpers/b994.py
+  - tools/oracle/helpers/b994/**
+  - tools/oracle/src/helpers/server/b994.rs
+  - tools/oracle/src/helpers/server/b994/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L513-L513
@@ -244,5 +248,5 @@ pitfalls:
   error default.
 review_level: security
 budget:
-  max_changed_lines: 490
+  max_changed_lines: 1000
   max_new_expects: 0

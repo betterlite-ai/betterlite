@@ -115,6 +115,10 @@ scope:
     - tools/oracle/cases/auth/auth-admission/**
     - crates/betterlite-server/src/auth/auth_admission.rs
     - crates/betterlite-server/src/auth/auth_admission/**
+    - tools/oracle/helpers/b855.py
+    - tools/oracle/helpers/b855/**
+    - tools/oracle/src/helpers/auth/b855.rs
+    - tools/oracle/src/helpers/auth/b855/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3224-L3245
@@ -217,6 +221,6 @@ pitfalls:
   - The recovered identity return skips fallback, and common checks receive transformed data while error hooks receive original data.
   - Any non-null agent_id triggers admission, including an empty string.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

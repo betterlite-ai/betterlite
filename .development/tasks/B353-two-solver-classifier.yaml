@@ -62,6 +62,10 @@ scope:
   - crates/betterlite-router/fuzz/corpus/solver_json/two-solver-classifier-*
   - crates/betterlite-config/src/sections/two_solver_classifier.rs
   - crates/betterlite-config/src/sections/two_solver_classifier/**
+  - tools/oracle/helpers/b353.py
+  - tools/oracle/helpers/b353/**
+  - tools/oracle/src/helpers/router/b353.rs
+  - tools/oracle/src/helpers/router/b353/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/llm_v2.py#L21-L231
@@ -168,5 +172,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 1

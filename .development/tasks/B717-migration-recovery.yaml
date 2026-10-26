@@ -191,6 +191,6 @@ pitfalls:
   - Best-effort rollback failure is silent and still consumes an attempt, so a retry must reread history.
   - Replica identity runs through the outer setup caller after success, not inside every retry pass.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

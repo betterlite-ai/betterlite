@@ -105,5 +105,5 @@ pitfalls:
   - license_data is Optional[EnterpriseLicenseData], a TypedDict with optional keys; the factory extracts user_id (if present) and passes it as license_id in the config. A None or empty dict results in no license_id attribute on the exported metrics.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

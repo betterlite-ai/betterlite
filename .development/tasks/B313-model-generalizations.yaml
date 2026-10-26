@@ -44,6 +44,10 @@ scope:
   - crates/betterlite-router/src/generalization_integration/**
   - crates/betterlite-config/src/sections/model_generalizations.rs
   - crates/betterlite-config/src/sections/model_generalizations/**
+  - tools/oracle/helpers/b313.py
+  - tools/oracle/helpers/b313/**
+  - tools/oracle/src/helpers/server/b313.rs
+  - tools/oracle/src/helpers/server/b313/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L74-L277
@@ -140,5 +144,5 @@ pitfalls:
   repository 300-line limit.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

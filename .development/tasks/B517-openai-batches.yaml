@@ -316,6 +316,6 @@ pitfalls:
   behavior.
 - The cancel method checks its sync client class even though create and retrieve only cast theirs.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

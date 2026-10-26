@@ -283,6 +283,6 @@ pitfalls:
 - The active Arc path does not require the first reply to be 401 before reading WWW-Authenticate.
 - The challenge path contributes only its basename, and an arbitrary extension is replaced with .key.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

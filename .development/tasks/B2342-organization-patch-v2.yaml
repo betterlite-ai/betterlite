@@ -70,6 +70,10 @@ scope:
     - crates/betterlite-server/src/app/**
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/cases/management/organization-patch-v2/**
+    - tools/oracle/helpers/b2342.py
+    - tools/oracle/helpers/b2342/**
+    - tools/oracle/src/helpers/server/b2342.rs
+    - tools/oracle/src/helpers/server/b2342/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L838-L997
@@ -102,6 +106,6 @@ pitfalls:
   - Null object_permission unlinks the old row, whereas an empty object is rejected before authorization.
   - An empty PATCH still writes updated_by and can fail when the organization row disappears.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

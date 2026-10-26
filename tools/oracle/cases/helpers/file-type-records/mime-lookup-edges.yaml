@@ -1,0 +1,5 @@
+kind: helper
+name: mime-lookup-edges
+call: {file_type_records: {function: mime_lookup_edges, extensions: [JPG, 3GPP, mpa], mimes: [IMAGE/JPEG, audio/m4a, text/html], file_types: []}}
+env: {}
+compare: {ignore: []}

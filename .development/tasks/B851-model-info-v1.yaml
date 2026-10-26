@@ -94,6 +94,10 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/model-info-v1-*
     - crates/betterlite-config/src/sections/model_info_v1.rs
     - crates/betterlite-config/src/sections/model_info_v1/**
+    - tools/oracle/helpers/b851.py
+    - tools/oracle/helpers/b851/**
+    - tools/oracle/src/helpers/server/b851.rs
+    - tools/oracle/src/helpers/server/b851/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15956-L16275
@@ -532,6 +536,6 @@ pitfalls:
   - A single-id request bypasses the list's health and discoverability filters but still invokes listing callbacks.
   - infer_model_from_keys is passed only when nonempty key/team grants already suppress inference.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

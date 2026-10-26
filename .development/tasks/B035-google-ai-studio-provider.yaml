@@ -55,6 +55,10 @@ scope:
     - crates/betterlite-core/src/api/studio_bindings/**
     - tools/oracle/cases/api/studio/**
     - tools/oracle/fixtures/studio/**
+    - tools/oracle/helpers/b035.py
+    - tools/oracle/helpers/b035/**
+    - tools/oracle/src/helpers/provider/b035.rs
+    - tools/oracle/src/helpers/provider/b035/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6813-L6835

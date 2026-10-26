@@ -214,6 +214,6 @@ pitfalls:
 - headers are passed to logging/transform preparation, not injected into create_variation as extra_headers by this
   handler.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

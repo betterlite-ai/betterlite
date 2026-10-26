@@ -50,6 +50,10 @@ scope:
   - crates/betterlite-router/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/fuzz_targets/class_reply.rs
   - crates/betterlite-router/fuzz/corpus/class_reply/classifier-verdict-*
+  - tools/oracle/helpers/b375.py
+  - tools/oracle/helpers/b375/**
+  - tools/oracle/src/helpers/router/b375.rs
+  - tools/oracle/src/helpers/router/b375/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L218-L464
@@ -223,5 +227,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

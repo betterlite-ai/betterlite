@@ -186,6 +186,6 @@ pitfalls:
   - Generated/updated audits use caller.api_key, but rotated/deleted audits use caller.token.
   - A null project_id detach must survive exclude_none and the audit masking pass.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

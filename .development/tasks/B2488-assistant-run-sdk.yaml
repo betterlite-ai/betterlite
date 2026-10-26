@@ -26,6 +26,10 @@ scope:
   - tools/oracle/sdk_http/assistant_run.py
   - tools/oracle/cases/sdk-http/assistant-run/**
   - tools/oracle/fuzz/corpus/sdk_http_case/assistant-run-*
+  - tools/oracle/helpers/b2488.py
+  - tools/oracle/helpers/b2488/**
+  - tools/oracle/src/helpers/core_ops/b2488.rs
+  - tools/oracle/src/helpers/core_ops/b2488/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1165-L1365
@@ -99,5 +103,5 @@ pitfalls:
 - stream=1 polls rather than streams because the branch checks identity with true.
 review_level: security
 budget:
-  max_changed_lines: 760
+  max_changed_lines: 1000
   max_new_expects: 0

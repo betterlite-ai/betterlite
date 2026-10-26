@@ -48,6 +48,10 @@ scope:
   - tools/oracle/fuzz/corpus/sdk_http_case/image-generation-call-*
   - crates/betterlite-config/src/sections/image_generation_call.rs
   - crates/betterlite-config/src/sections/image_generation_call/**
+  - tools/oracle/helpers/b998.py
+  - tools/oracle/helpers/b998/**
+  - tools/oracle/src/helpers/core_ops/b998.rs
+  - tools/oracle/src/helpers/core_ops/b998/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L183-L561
@@ -132,5 +136,5 @@ pitfalls:
 - The overloads add no behavior; counting them as implementation hid the function split in the previous estimate.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 1

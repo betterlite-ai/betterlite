@@ -151,6 +151,6 @@ pitfalls:
   - The model repository's encryption_key constructor argument is not used by read decryption.
   - set_param accepts a bare string that get_param later rejects as invalid JSON.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

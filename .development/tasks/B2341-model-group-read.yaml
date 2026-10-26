@@ -44,6 +44,10 @@ scope:
     - crates/betterlite-server/src/app/**
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/cases/management/model-group-read/**
+    - tools/oracle/helpers/b2341.py
+    - tools/oracle/helpers/b2341/**
+    - tools/oracle/src/helpers/server/b2341.rs
+    - tools/oracle/src/helpers/server/b2341/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L715-L821
@@ -81,6 +85,6 @@ pitfalls:
   - A budget row alone never creates a visible model access group.
   - List wraps an inner HTTPException as 500, whereas info rethrows it.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

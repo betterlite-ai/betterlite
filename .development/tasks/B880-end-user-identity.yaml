@@ -372,6 +372,6 @@ pitfalls:
   - A cached invalid ID can become usable immediately when a default budget is attached; the cache stores existence, not the final decision.
   - The resolver swallows even BudgetExceededError from its existence probe; downstream end-user budget admission is a separate caller responsibility.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

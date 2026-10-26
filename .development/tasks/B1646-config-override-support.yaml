@@ -102,6 +102,6 @@ pitfalls:
   - A valid non-object JSON config_value is not the same case as malformed JSON falling back to an empty mapping.
   - CyberArk rollback may reactivate Vault only after dropping an active CyberArk manager, not after every failed restore attempt.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

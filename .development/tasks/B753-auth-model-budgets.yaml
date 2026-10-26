@@ -294,6 +294,6 @@ pitfalls:
   - The limiter protocols return booleans, but this caller enforces exceptions, not false returns.
   - Updating the token deliberately omits end_user_max_budget despite the preceding parameter builder setting it.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

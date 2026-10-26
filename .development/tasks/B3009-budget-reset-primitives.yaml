@@ -81,5 +81,5 @@ pitfalls:
   - "Phase failure reporting takes a ServiceTypes enum from litellm/types/services.py; this constant is provided by B012 and hardcoded in the failure hook invocation."
 review_level: security
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0

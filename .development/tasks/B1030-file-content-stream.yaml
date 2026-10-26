@@ -28,6 +28,10 @@ scope:
   - tools/oracle/sdk_http/file_content_stream.py
   - tools/oracle/cases/sdk-http/file-content-stream/**
   - tools/oracle/fuzz/corpus/sdk_http_case/file-content-stream-*
+  - tools/oracle/helpers/b1030.py
+  - tools/oracle/helpers/b1030/**
+  - tools/oracle/src/helpers/core_ops/b1030.rs
+  - tools/oracle/src/helpers/core_ops/b1030/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L83-L104
@@ -116,5 +120,5 @@ pitfalls:
 - Vertex's live config prevents every environment read in the later legacy Vertex branch.
 review_level: security
 budget:
-  max_changed_lines: 690
+  max_changed_lines: 1000
   max_new_expects: 0

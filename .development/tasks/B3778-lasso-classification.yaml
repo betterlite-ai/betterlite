@@ -32,6 +32,10 @@ scope:
     - tools/oracle/cases/guardrails/lasso/**
     - crates/betterlite-config/src/sections/lasso_classification.rs
     - crates/betterlite-config/src/sections/lasso_classification/**
+    - tools/oracle/helpers/b3778.py
+    - tools/oracle/helpers/b3778/**
+    - tools/oracle/src/helpers/guardrails/b3778.rs
+    - tools/oracle/src/helpers/guardrails/b3778/**
   lint_tables: false
 
 references:
@@ -149,5 +153,5 @@ pitfalls:
 
 review_level: standard
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0

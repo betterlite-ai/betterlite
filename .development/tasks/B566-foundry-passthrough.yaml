@@ -271,6 +271,6 @@ pitfalls:
 - Only the exact models path segment truncates the Foundry root; Models is retained.
 - Partial path overlap is removed only for an openai-prefixed native endpoint.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

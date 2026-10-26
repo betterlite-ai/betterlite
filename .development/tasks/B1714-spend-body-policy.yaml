@@ -122,6 +122,6 @@ pitfalls:
   - A false store_prompts_in_spend_logs setting does not defeat STORE_PROMPTS_IN_SPEND_LOGS=true.
   - With omission enabled, a trace ID must not be promoted into a fabricated session.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

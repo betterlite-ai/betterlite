@@ -132,6 +132,10 @@ scope:
     - crates/betterlite-server/fuzz/corpus/login_routes/**
     - crates/betterlite-config/src/sections/login_routes.rs
     - crates/betterlite-config/src/sections/login_routes/**
+    - tools/oracle/helpers/b899.py
+    - tools/oracle/helpers/b899/**
+    - tools/oracle/src/helpers/server/b899.rs
+    - tools/oracle/src/helpers/server/b899/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16913-L17003
@@ -418,6 +422,6 @@ pitfalls:
   - The code exchange reads and then deletes; do not promise atomic single-use redemption under concurrency.
   - Retry-After's default 30 changes the HTML text only, because the handler forwards the original headers.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

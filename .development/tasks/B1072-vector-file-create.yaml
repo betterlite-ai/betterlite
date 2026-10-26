@@ -34,6 +34,10 @@ scope:
   - tools/oracle/sdk_http/vector_file_create_list.py
   - tools/oracle/cases/sdk-http/vector-file-create-list/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-create-list-*
+  - tools/oracle/helpers/b1072.py
+  - tools/oracle/helpers/b1072/**
+  - tools/oracle/src/helpers/core_ops/b1072.rs
+  - tools/oracle/src/helpers/core_ops/b1072/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L54-L303
@@ -111,5 +115,5 @@ pitfalls:
 - OpenAI cleans numeric attributes after this wrapper logs the uncleaned request fields.
 review_level: security
 budget:
-  max_changed_lines: 680
+  max_changed_lines: 1000
   max_new_expects: 0

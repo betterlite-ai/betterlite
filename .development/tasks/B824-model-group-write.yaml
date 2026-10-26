@@ -74,6 +74,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-group-write/**
+    - tools/oracle/helpers/b824.py
+    - tools/oracle/helpers/b824/**
+    - tools/oracle/src/helpers/server/b824.rs
+    - tools/oracle/src/helpers/server/b824/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L569-L712
@@ -118,6 +122,6 @@ pitfalls:
   - Updating a group can remove every old grant before a later invalid model ID fails.
   - Deletion counts changed deployment rows and leaves the linked shared budget record intact.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

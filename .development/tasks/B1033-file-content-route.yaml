@@ -38,6 +38,10 @@ scope:
   - crates/betterlite-core/src/api/file_content_route/**
   - tools/oracle/cases/api/file-content-route/**
   - tools/oracle/fixtures/http-scenarios/file-content-route/**
+  - tools/oracle/helpers/b1033.py
+  - tools/oracle/helpers/b1033/**
+  - tools/oracle/src/helpers/server/b1033.rs
+  - tools/oracle/src/helpers/server/b1033/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L928-L1233
@@ -136,5 +140,5 @@ pitfalls:
 - A proxy admin can delete a raw cloud id but cannot use this route to download it.
 review_level: security
 budget:
-  max_changed_lines: 730
+  max_changed_lines: 1000
   max_new_expects: 0

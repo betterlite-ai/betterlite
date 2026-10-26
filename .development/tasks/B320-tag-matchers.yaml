@@ -62,6 +62,10 @@ scope:
   - crates/betterlite-router/fuzz/corpus/tag_match/tag-matchers-*
   - crates/betterlite-config/src/sections/tag_matchers.rs
   - crates/betterlite-config/src/sections/tag_matchers/**
+  - tools/oracle/helpers/b320.py
+  - tools/oracle/helpers/b320/**
+  - tools/oracle/src/helpers/router/b320.rs
+  - tools/oracle/src/helpers/router/b320/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L87-L277
@@ -207,5 +211,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

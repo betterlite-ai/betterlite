@@ -270,6 +270,6 @@ pitfalls:
 - Python json.dumps stringification distinguishes a boolean choice from a similarly spelled text choice; reuse systemone_choice_key
   instead of Rust debug formatting.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

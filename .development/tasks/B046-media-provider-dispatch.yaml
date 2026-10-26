@@ -52,6 +52,10 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - tools/oracle/cases/providers/media/**
     - tools/oracle/fixtures/media/**
+    - tools/oracle/helpers/b046.py
+    - tools/oracle/helpers/b046/**
+    - tools/oracle/src/helpers/core_ops/b046.rs
+    - tools/oracle/src/helpers/core_ops/b046/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/__init__.py#L1-L84
@@ -106,5 +110,5 @@ pitfalls:
   - Runway cancellation is callable natively but must not create a new DELETE videos route.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -127,6 +127,6 @@ pitfalls:
   - A reentrant acquire succeeds without extending the original TTL and is the only acquire path that emits the gauge event.
   - A Lua failure intentionally reaches GET plus DEL, so the fallback cannot be described as atomic.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -51,5 +51,5 @@ pitfalls:
   - A statistical test with a fixed seed is deterministic. Pick the seed once and keep it; never retry with a new seed until it passes.
 review_level: standard
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0

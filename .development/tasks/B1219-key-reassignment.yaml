@@ -195,6 +195,6 @@ pitfalls:
   - The RPM ceiling is not checked when the key's TPM is None; flattening the conditions changes existing behavior.
   - The endpoint-permission fallback checks the key owner's team role, which need not be the initiating caller's role.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

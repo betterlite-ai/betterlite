@@ -126,6 +126,6 @@ pitfalls:
   - A failed named callback resolution is not cached, so later dispatch can retry initialization.
   - The metadata permission for litellm_changed_by accepts only Boolean true in either key or team metadata.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

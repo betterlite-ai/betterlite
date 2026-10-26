@@ -6,6 +6,10 @@ scope:
   - crates/betterlite-auth/src/model_budget_limiter.rs
   - crates/betterlite-auth/src/model_budget_limiter/**
   - tools/oracle/cases/model-budget/**
+  - tools/oracle/helpers/b3006.py
+  - tools/oracle/helpers/b3006/**
+  - tools/oracle/src/helpers/auth/b3006.rs
+  - tools/oracle/src/helpers/auth/b3006/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L291-L305
@@ -100,5 +104,5 @@ pitfalls:
 - "Fallback models are tried in order; each candidate's internal BudgetExceededError is caught and treated as a skip, and the function returns the first passing model or None, never raising."
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

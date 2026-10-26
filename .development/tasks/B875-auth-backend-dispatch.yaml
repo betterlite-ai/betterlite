@@ -103,6 +103,10 @@ scope:
     - crates/betterlite-server/src/auth/auth_backend_dispatch/**
     - crates/betterlite-config/src/sections/auth_backend_dispatch.rs
     - crates/betterlite-config/src/sections/auth_backend_dispatch/**
+    - tools/oracle/helpers/b875.py
+    - tools/oracle/helpers/b875/**
+    - tools/oracle/src/helpers/auth/b875.rs
+    - tools/oracle/src/helpers/auth/b875/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1603-L1856
@@ -219,6 +223,6 @@ pitfalls:
   - A resolved mapping falls through to virtual-key checks, whereas standard JWT returns here; merging those paths loses key restrictions or double-checks budgets.
   - Auto-registration must carry user_model_max_budget from the loaded user, since the new key row has no user budget.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security
