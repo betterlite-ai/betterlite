@@ -25,5 +25,9 @@ fn worker_registry_deserialization_rejects_non_http_urls() {
         r#"{"worker_id":"worker-1","name":"worker","url":"ftp://worker"}"#,
     )
     .expect_err("invalid URL should fail during deserialization");
-    assert!(error.to_string().contains("Worker URL must start with http:// or https://"));
+    assert!(
+        error
+            .to_string()
+            .contains("Worker URL must start with http:// or https://")
+    );
 }
