@@ -57,6 +57,7 @@ impl crate::helpers::Helper for Op {
                         })
                     },
                 )?
+                .into_owned()
             }
             Input::IndependentSnapshot { record } => {
                 RequestRecordProjection::independent_snapshot(record)

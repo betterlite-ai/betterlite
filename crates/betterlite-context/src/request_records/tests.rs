@@ -13,7 +13,7 @@ fn text(value: &RequestRecord) -> String {
 }
 
 fn handle(kind: super::HandleKind, identity: u64) -> RequestRecord {
-    RequestRecord::Handle(super::record::InternalHandle::new(kind, identity))
+    RequestRecord::Handle(super::record::InternalHandle { kind, identity })
 }
 
 #[rstest]
@@ -28,12 +28,16 @@ fn request_records_cases(#[case] name: &str) {
     match name {
         "safe_copy_mode_and_fallback" => {
             let mut value = record(r#"{"value":{"nested":true}}"#);
+            let original: *const RequestRecord = &raw const value;
+            let borrowed = RequestRecordProjection::safe_copy(&mut value, true).unwrap();
+            let borrowed_pointer: *const RequestRecord = borrowed.as_ref();
+            assert_eq!(borrowed_pointer, original);
             assert_eq!(
-                RequestRecordProjection::safe_copy(&mut value, true).unwrap(),
-                value
-            );
-            assert_eq!(
-                text(&RequestRecordProjection::safe_copy(&mut value, false).unwrap()),
+                text(
+                    RequestRecordProjection::safe_copy(&mut value, false)
+                        .unwrap()
+                        .as_ref()
+                ),
                 r#"{"value":{"nested":true}}"#
             );
         }
@@ -67,6 +71,16 @@ fn request_records_cases(#[case] name: &str) {
             let input =
                 record(r#"{"metadata":{"litellm_parent_otel_span":"span"},"value":{"x":1}}"#);
             assert_eq!(RequestRecordProjection::independent_snapshot(&input), input);
+            assert_eq!(
+                RequestRecordProjection::independent_snapshot(&record(r#"{"metadata":{}}"#)),
+                record(r#"{"metadata":{}}"#)
+            );
+            assert_eq!(
+                RequestRecordProjection::independent_snapshot(&record(
+                    r#"{"metadata":{"other":true}}"#
+                )),
+                record(r#"{"metadata":{"other":true}}"#)
+            );
         }
         "parameter_filter_null_and_depth" => {
             assert_eq!(

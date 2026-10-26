@@ -32,7 +32,7 @@ def run(input_value: dict[str, Json]) -> Json:
         litellm.safe_memory_mode = input_value["safe_memory_mode"] is True
         return cast(Json, safe_deep_copy(record))
     if function == "independent_snapshot":
-        return cast(Json, independent_snapshot(object_of(record)))
+        return cast(Json, independent_snapshot(cast(dict[str, Json], record)))
     if function == "filter_parameters":
         depth = integer(input_value.get("max_depth", 20))
         return cast(Json, filter_exceptions_from_params(record, depth))
@@ -41,7 +41,7 @@ def run(input_value: dict[str, Json]) -> Json:
         names: set[str] = set()
         if isinstance(additional, list):
             names = {name for name in additional if isinstance(name, str)}
-        return cast(Json, filter_internal_params(object_of(record), names))
+        return cast(Json, filter_internal_params(cast(dict[str, Json], record), names))
     if function == "gateway_injection":
         changed = object_of(copy.deepcopy(record))
         raw_steps = input_value.get("steps")

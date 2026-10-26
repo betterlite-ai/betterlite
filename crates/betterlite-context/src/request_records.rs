@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod record;
@@ -20,9 +21,27 @@ impl RequestRecordProjection {
             return Ok(None);
         };
         let Some(bucket) = value.object_mut() else {
-            return Err(RequestRecordError::NonObjectMetadata {
-                bucket: name.to_owned(),
-            });
+            match value {
+                RequestRecord::String(text) if text.contains("litellm_parent_otel_span") => {
+                    return Err(RequestRecordError::NonObjectMetadata {
+                        bucket: name.to_owned(),
+                    });
+                }
+                RequestRecord::Null
+                | RequestRecord::Bool(_)
+                | RequestRecord::Signed(_)
+                | RequestRecord::Unsigned(_)
+                | RequestRecord::Decimal(_)
+                | RequestRecord::Handle(_) => {
+                    return Err(RequestRecordError::NonObjectMetadata {
+                        bucket: name.to_owned(),
+                    });
+                }
+                RequestRecord::Array(_) => return Ok(None),
+                RequestRecord::String(_) | RequestRecord::Object(_) => {
+                    return Ok(None);
+                }
+            }
         };
         let Some(span) = bucket.remove("litellm_parent_otel_span") else {
             return Ok(None);
@@ -57,9 +76,9 @@ impl RequestRecordProjection {
     pub fn safe_copy(
         record: &mut RequestRecord,
         safe_memory_mode: bool,
-    ) -> Result<RequestRecord, RequestRecordError> {
+    ) -> Result<Cow<'_, RequestRecord>, RequestRecordError> {
         if safe_memory_mode {
-            return Ok(record.clone());
+            return Ok(Cow::Borrowed(record));
         }
         let saved_metadata = record
             .object_mut()
@@ -75,7 +94,7 @@ impl RequestRecordProjection {
         if let Some(span) = saved_internal.or(saved_metadata) {
             Self::restore_all(record, &span);
         }
-        Ok(copied)
+        Ok(Cow::Owned(copied))
     }
 
     #[must_use]
@@ -101,11 +120,11 @@ impl RequestRecordProjection {
         bucket: &BTreeMap<String, RequestRecord>,
     ) -> BTreeMap<String, RequestRecord> {
         let mut clean = bucket.clone();
-        let span = clean.insert(
-            "litellm_parent_otel_span".to_owned(),
-            RequestRecord::String("placeholder".to_owned()),
-        );
-        if let Some(original) = span {
+        if let Some(original) = clean.get("litellm_parent_otel_span").cloned() {
+            clean.insert(
+                "litellm_parent_otel_span".to_owned(),
+                RequestRecord::String("placeholder".to_owned()),
+            );
             clean.insert("litellm_parent_otel_span".to_owned(), original);
         }
         clean
@@ -120,17 +139,19 @@ impl RequestRecordProjection {
     }
 
     fn filter_value(record: RequestRecord, depth: i32) -> RequestRecord {
-        if let RequestRecord::Handle(handle) = &record
-            && matches!(
+        if let RequestRecord::Handle(handle) = &record {
+            if matches!(handle.kind, HandleKind::Exception | HandleKind::Callable) {
+                return RequestRecord::Null;
+            }
+            if depth <= 0_i32 {
+                return record;
+            }
+            if matches!(
                 handle.kind,
-                HandleKind::Exception
-                    | HandleKind::Callable
-                    | HandleKind::Logging
-                    | HandleKind::LiteLLMLoggingObj
-                    | HandleKind::Router
-            )
-        {
-            return RequestRecord::Null;
+                HandleKind::Logging | HandleKind::LiteLLMLoggingObj | HandleKind::Router
+            ) {
+                return RequestRecord::Null;
+            }
         }
         if depth <= 0_i32 {
             return record;
@@ -142,7 +163,7 @@ impl RequestRecordProjection {
             | RequestRecord::Bool(_)
             | RequestRecord::Signed(_)
             | RequestRecord::Unsigned(_)
-            | RequestRecord::Float(_)
+            | RequestRecord::Decimal(_)
             | RequestRecord::String(_)
             | RequestRecord::Handle(_) => record,
         }
