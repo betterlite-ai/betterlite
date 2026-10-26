@@ -73,7 +73,7 @@ fn resolved_counts(
         return Ok((total, rerank_input, rerank_output, resolved));
     }
     let total = get_total_tokens_from_usage(usage, rate_limit_type);
-    let (input_tokens, output_tokens, resolved) = reconcile_io_usage(response);
+    let (input_tokens, output_tokens, resolved) = reconcile_io_usage(response_usage(response));
     Ok((total, input_tokens, output_tokens, resolved))
 }
 

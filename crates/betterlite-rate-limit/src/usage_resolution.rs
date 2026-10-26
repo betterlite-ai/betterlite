@@ -107,7 +107,7 @@ pub fn response_usage(response: &ResponseObject) -> Option<ResponseUsage<'_>> {
 }
 
 fn cached_tokens(usage: &Usage) -> u64 {
-    let cached = usage
+    usage
         .cached_tokens
         .or_else(|| {
             usage
@@ -122,16 +122,14 @@ fn cached_tokens(usage: &Usage) -> u64 {
                 .map(|details| details.cached_tokens)
         })
         .or(usage.cache_read_input_tokens)
-        .unwrap_or(0);
-    if cached == 0 { 0 } else { cached }
+        .unwrap_or(0)
 }
 
 fn cached_response_api_tokens(usage: &ResponseAPIUsage) -> u64 {
-    let cached = usage
+    usage
         .input_tokens_details
         .as_ref()
-        .map_or(0, |details| details.cached_tokens);
-    if cached == 0 { 0 } else { cached }
+        .map_or(0, |details| details.cached_tokens)
 }
 
 #[must_use]
@@ -214,11 +212,11 @@ pub const fn resolve_rerank_token_usage(
 }
 
 #[must_use]
-pub fn reconcile_io_usage(response: &ResponseObject) -> (u64, u64, bool) {
-    let Some(source) = response_usage(response) else {
+pub fn reconcile_io_usage(source: Option<ResponseUsage<'_>>) -> (u64, u64, bool) {
+    let Some(usage_source) = source else {
         return (0, 0, false);
     };
-    let (input, output, cached) = match source {
+    let (input, output, cached) = match usage_source {
         ResponseUsage::Usage(usage) => (
             usage.prompt_tokens.max(usage.input_tokens),
             usage.completion_tokens.max(usage.output_tokens),
@@ -252,10 +250,9 @@ pub fn recovered_partial_usage_tokens(
     if usage.completion_tokens == 0 && usage.output_tokens == 0 {
         return (0, 0, 0);
     }
-    let response = ResponseObject::Usage(usage.clone());
-    let (input, output, _) = reconcile_io_usage(&response);
+    let (input, output, _) = reconcile_io_usage(Some(ResponseUsage::Usage(usage)));
     (
-        get_total_tokens_from_usage(response_usage(&response), rate_limit_type),
+        get_total_tokens_from_usage(Some(ResponseUsage::Usage(usage)), rate_limit_type),
         input,
         output,
     )

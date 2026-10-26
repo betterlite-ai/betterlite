@@ -2,7 +2,7 @@
 
 use super::{
     ResponseAPIUsage, ResponseObject, TokenDetails, assert_filtered_counts, reconcile_io_usage,
-    usage,
+    response_usage, usage,
 };
 
 #[test]
@@ -15,7 +15,10 @@ fn response_api_billable_counts() {
     };
     let response = ResponseObject::ResponseApi(value.clone());
     assert_filtered_counts(&response);
-    assert_eq!(reconcile_io_usage(&response), (70, 20, true));
+    assert_eq!(
+        reconcile_io_usage(response_usage(&response)),
+        (70, 20, true)
+    );
     assert_eq!(response, ResponseObject::ResponseApi(value));
 }
 
@@ -30,7 +33,10 @@ fn mapping_response_token_names() {
     value.input_tokens_details = Some(TokenDetails { cached_tokens: 30 });
     let response = ResponseObject::Mapping(value.clone());
     assert_filtered_counts(&response);
-    assert_eq!(reconcile_io_usage(&response), (70, 20, true));
+    assert_eq!(
+        reconcile_io_usage(response_usage(&response)),
+        (70, 20, true)
+    );
     assert_eq!(response, ResponseObject::Mapping(value));
 }
 

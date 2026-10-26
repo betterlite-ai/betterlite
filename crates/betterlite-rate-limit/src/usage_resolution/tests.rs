@@ -116,7 +116,7 @@ fn io_reconcile_behaviors() {
         cache_read_input_tokens: None,
     };
     assert_eq!(
-        reconcile_io_usage(&ResponseObject::Usage(value)),
+        reconcile_io_usage(response_usage(&ResponseObject::Usage(value))),
         (75, 12, true)
     );
 }
@@ -124,7 +124,7 @@ fn io_reconcile_behaviors() {
 #[test]
 fn io_reconcile_boundaries() {
     assert_eq!(
-        reconcile_io_usage(&ResponseObject::WithUsage(None)),
+        reconcile_io_usage(response_usage(&ResponseObject::WithUsage(None))),
         (0, 0, false)
     );
 }
