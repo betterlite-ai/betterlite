@@ -34,25 +34,21 @@ pub fn normalize_protocol_version(raw_version: &AgentJson) -> Option<&'static st
     let raw_text = raw_version.as_str()?;
     // LiteLLM matches with Python's `$`, which also accepts one trailing newline
     let version = raw_text.strip_suffix('\n').unwrap_or(raw_text);
-    let is_number = |component: &str| {
-        !component.is_empty() && component.bytes().all(|byte| byte.is_ascii_digit())
-    };
     let mut components = version.splitn(3, '.');
     let major = components.next()?;
     let minor = components.next()?;
-    if !is_number(major) || !is_number(minor) {
-        return None;
-    }
     if let Some(patch_and_suffix) = components.next() {
         let (patch, suffix) = patch_and_suffix
             .find(['-', '+'])
             .map_or((patch_and_suffix, ""), |index| {
                 patch_and_suffix.split_at(index)
             });
-        if !is_number(patch) || !valid_suffix(suffix) {
+        let numeric = !patch.is_empty() && patch.bytes().all(|byte| byte.is_ascii_digit());
+        if !numeric || !valid_suffix(suffix) {
             return None;
         }
     }
+    // only these exact pairs pass, so a non-numeric major or minor is rejected here too
     match (major, minor) {
         ("0", "3") => Some("0.3"),
         ("1", "0") => Some(DEFAULT_VERSION),
