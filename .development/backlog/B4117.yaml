@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Gate search reruns by API surface and preserve thinking
 status: todo
 depends_on: [B4111, B4112]
-file: null
+file: tasks/B4117-websearch-loop-gates.yaml
 covers:
   - "litellm/integrations/websearch_interception/handler.py"
 parent: B119

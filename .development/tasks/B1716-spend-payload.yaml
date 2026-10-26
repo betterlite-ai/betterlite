@@ -54,7 +54,6 @@ scope:
     - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/payload.rs
     - crates/betterlite-server/src/spend/payload/**
-    - crates/betterlite-logging/src/lib.rs
     - crates/betterlite-logging/src/spend_metadata.rs
     - crates/betterlite-logging/src/end_user.rs
     - crates/betterlite-logging/src/end_user/**

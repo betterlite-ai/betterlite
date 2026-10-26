@@ -1,0 +1,342 @@
+id: B3753
+title: Aporia moderation and Guardrails AI validation
+description: >-
+  Build Aporia's and Guardrails AI's guardrail implementations. Aporia validates
+  requests and responses via its HTTP API with role-filtered message transformation,
+  stores action "block" as HTTPException 400, and integrates through pre-call and
+  post-call lifecycle hooks. Preserve the runtime environment variable spelling
+  APORIO_API_KEY and APORIO_API_BASE despite their different spelling in config
+  descriptions. Guardrails AI validates messages via two API formats ("inputs" and
+  "llmOutput"), rewrites the last user message with the validated output, and
+  integrates as a pre-call hook that also runs as a logging hook. Keep the legacy
+  "inputs" payload branch because process_input calls it when configured.
+
+  Aporia role transformation filters messages to supported OpenAI roles (system,
+  user, assistant), replacing unsupported roles (tool, etc.) with a placeholder
+  role called "other". The prepare_aporia_request method sets validation_target
+  to "prompt", "response", or "both" based on what content is present. Aporia uses
+  async_handler (initialized in __init__) to POST to {api_base}/validate with
+  X-APORIA-API-KEY header and application/json content type; non-200 responses or
+  action "block" raise HTTPException 400. Both hooks call should_run_guardrail with
+  their event type (during_call, post_call) and should_proceed_based_on_metadata
+  for the during_call path.
+
+  Guardrails AI accepts a required guard_name, optional api_base (env
+  GUARDRAILS_AI_API_BASE, default http://0.0.0.0:8000), and optional
+  guardrails_ai_api_input_format ("inputs" or "llmOutput", default "llmOutput").
+  process_input validates message presence, calls get_last_user_message, skips if
+  None or not a completion/acompletion call type, then calls one of two API methods
+  based on format and replaces the last message with set_last_user_message.
+  make_guardrails_ai_api_request POSTs {llmOutput} and on validationPassed=false
+  raises HTTPException 400. make_guardrails_ai_api_request_pre_call_request (the
+  "inputs" branch) POSTs an inputs list with one text element, parses the outputs
+  array, and returns outputs[0].data[0]; this branch includes a comment that it
+  does not work with the current API version.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/aporia_guardrail.rs
+    - crates/betterlite-guardrails/src/aporia_guardrail/**
+    - crates/betterlite-guardrails/src/guardrails_ai_guardrail.rs
+    - crates/betterlite-guardrails/src/guardrails_ai_guardrail/**
+    - tools/oracle/helpers/b3753.py
+    - tools/oracle/helpers/b3753/**
+    - tools/oracle/src/helpers/guardrails/b3753.rs
+    - tools/oracle/src/helpers/guardrails/b3753/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L39-L46
+    why: >-
+      AporiaGuardrail.get_supported_event_hooks returns list with during_call and post_call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L47-L52
+    why: >-
+      AporiaGuardrail.__init__ takes api_key and api_base, chains
+      get_async_httpx_client with GuardrailCallback, falls back to environment
+      APORIO_API_KEY and APORIO_API_BASE, calls super().__init__.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L55-L70
+    why: >-
+      AporiaGuardrail.transform_messages filters to supported roles (system, user,
+      assistant), replaces unsupported roles with "other" role.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L72-L88
+    why: >-
+      AporiaGuardrail.prepare_aporia_request builds request dict with messages
+      and/or response, sets validation_target to "prompt", "response", or "both".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L90-L141
+    why: >-
+      AporiaGuardrail.make_aporia_api_request prepares request, calls
+      get_guardrail_dynamic_request_body_params, POSTs to {api_base}/validate with
+      X-APORIA-API-KEY header and application/json, checks response.status_code,
+      checks action field for "block", raises HTTPException 400 with full response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L142-L168
+    why: >-
+      AporiaGuardrail.async_post_call_success_hook checks should_run_guardrail
+      with post_call event type, calls convert_litellm_response_object_to_str,
+      calls make_aporia_api_request if response_str is not None, calls
+      add_guardrail_to_applied_guardrails_header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L170-L219
+    why: >-
+      AporiaGuardrail.async_moderation_hook checks should_run_guardrail with
+      during_call event type, checks should_proceed_based_on_metadata, calls
+      transform_messages, calls make_aporia_api_request, calls
+      add_guardrail_to_applied_guardrails_header, logs warning if no messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L221-L227
+    why: >-
+      AporiaGuardrail.get_config_model returns AporiaGuardrailConfigModel class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/aporia_ai.py#L1-L19
+    why: >-
+      Config models: AporiaGuardrailConfigModel with api_key (env APORIA_API_KEY)
+      and api_base (env APORIA_API_BASE), ui_friendly_name returns "Aporia AI".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py#L50-L67
+    why: >-
+      GuardrailsAI.__init__ takes guard_name (required, raises if None), api_base
+      (env GUARDRAILS_AI_API_BASE, default http://0.0.0.0:8000),
+      guardrails_ai_api_input_format ("inputs" or "llmOutput", default "llmOutput"),
+      stores kwargs as optional_params, calls super().__init__.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py#L69-L95
+    why: >-
+      GuardrailsAI.make_guardrails_ai_api_request builds llmOutput request,
+      calls get_guardrail_dynamic_request_body_params, POSTs to
+      {api_base}/guards/{guard_name}/validate with application/json,
+      parses GuardrailsAIResponse, checks validationPassed=false, raises HTTPException 400.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py#L97-L135
+    why: >-
+      GuardrailsAI.make_guardrails_ai_api_request_pre_call_request builds inputs
+      list payload, POSTs, checks status_code 400, parses GuardrailsAIResponsePreCall,
+      returns outputs[0].data[0]; includes comment that this branch does not work.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py#L137-L162
+    why: >-
+      GuardrailsAI.process_input skips if call_type not in ["completion",
+      "acompletion"] or "messages" not in data, calls get_last_user_message,
+      returns if None, calls appropriate API method, calls set_last_user_message
+      with updated_text (validatedOutput or rawLlmOutput or original text).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py#L164-L184
+    why: >-
+      GuardrailsAI.async_pre_call_hook calls process_input and returns result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py#L186-L190
+    why: >-
+      GuardrailsAI.async_logging_hook calls process_input and returns kwargs, result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py#L192-L221
+    why: >-
+      GuardrailsAI.async_post_call_success_hook checks should_run_guardrail with
+      post_call event type, checks response is ModelResponse, calls
+      get_content_from_model_response, calls make_guardrails_ai_api_request,
+      calls add_guardrail_to_applied_guardrails_header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py#L223-L237
+    why: >-
+      GuardrailsAI.get_config_model returns GuardrailsAIGuardrailConfigModel class,
+      get_supported_event_hooks returns [post_call, pre_call, logging_only].
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/guardrails_ai.py#L1-L27
+    why: >-
+      Config models: GuardrailsAIGuardrailConfigModel with api_base (env
+      GUARDRAILS_AI_API_BASE, default http://0.0.0.0:8000), guard_name (required),
+      guardrails_ai_api_input_format ("inputs" or "llmOutput", default "llmOutput"),
+      ui_friendly_name returns "Guardrails AI".
+dod:
+  - text: >-
+      AporiaGuardrail.get_supported_event_hooks returns list with
+      during_call and post_call.
+    proof: [aporia-guardrails-tests]
+  - text: >-
+      AporiaGuardrail.__init__ accepts api_key and api_base, initializes
+      async_handler via get_async_httpx_client with GuardrailCallback,
+      falls back to APORIO_API_KEY and APORIO_API_BASE environment variables,
+      chains parent __init__.
+    proof: [aporia-guardrails-tests]
+  - text: >-
+      AporiaGuardrail.transform_messages filters messages to supported OpenAI
+      roles (system, user, assistant), replacing unsupported roles with "other" role
+      while preserving all other fields.
+    proof: [aporia-guardrails-tests]
+  - text: >-
+      AporiaGuardrail.prepare_aporia_request builds a dict with messages and/or
+      response, sets validation_target to "prompt" (messages only), "response" (response only),
+      or "both" (both present), and returns the prepared data.
+    proof: [aporia-guardrails-tests]
+  - text: >-
+      AporiaGuardrail.make_aporia_api_request prepares request via prepare_aporia_request,
+      merges result with get_guardrail_dynamic_request_body_params, POSTs JSON to
+      {api_base}/validate with X-APORIA-API-KEY header, checks response.status_code == 200,
+      parses response.json(), raises HTTPException 400 with error and aporia_ai_response
+      if action is "block".
+    proof: [aporia-guardrails-tests, aporia-oracle]
+  - text: >-
+      AporiaGuardrail.async_post_call_success_hook checks should_run_guardrail
+      with post_call event type, returns if false, calls convert_litellm_response_object_to_str,
+      calls make_aporia_api_request if response_str is not None with messages from data,
+      calls add_guardrail_to_applied_guardrails_header with guardrail_name.
+    proof: [aporia-guardrails-tests]
+  - text: >-
+      AporiaGuardrail.async_moderation_hook checks should_run_guardrail with
+      during_call event type, checks should_proceed_based_on_metadata, calls
+      transform_messages with data messages, calls make_aporia_api_request with
+      transformed messages, calls add_guardrail_to_applied_guardrails_header,
+      logs warning if no messages present.
+    proof: [aporia-guardrails-tests]
+  - text: >-
+      AporiaGuardrail.get_config_model returns AporiaGuardrailConfigModel class.
+    proof: [aporia-guardrails-tests]
+  - text: >-
+      AporiaGuardrailConfigModel holds api_key (default None, env APORIA_API_KEY)
+      and api_base (default None, env APORIO_API_BASE), and ui_friendly_name()
+      returns "Aporia AI".
+    proof: [aporia-guardrails-tests]
+  - text: >-
+      GuardrailsAI.__init__ requires guard_name, raises Exception if None, accepts
+      api_base (env GUARDRAILS_AI_API_BASE, default http://0.0.0.0:8000) and
+      guardrails_ai_api_input_format (default "llmOutput"), stores kwargs as optional_params,
+      calls super().__init__ with supported_event_hooks from get_supported_event_hooks.
+    proof: [guardrails-ai-tests]
+  - text: >-
+      GuardrailsAI.make_guardrails_ai_api_request builds dict with llmOutput,
+      merges result with get_guardrail_dynamic_request_body_params, POSTs JSON to
+      {api_base}/guards/{guard_name}/validate, parses GuardrailsAIResponse, raises
+      HTTPException 400 with error and guardrails_ai_response if validationPassed is False.
+    proof: [guardrails-ai-tests, guardrails-ai-oracle]
+  - text: >-
+      GuardrailsAI.make_guardrails_ai_api_request_pre_call_request builds inputs
+      list with text as BYTES, POSTs to {api_base}/guards/{guard_name}/validate,
+      checks status_code 400, parses GuardrailsAIResponsePreCall, returns outputs[0].data[0]
+      and includes comment about API incompatibility.
+    proof: [guardrails-ai-tests]
+  - text: >-
+      GuardrailsAI.process_input returns data unchanged if call_type not in
+      ["completion", "acompletion"] or "messages" not in data, calls get_last_user_message,
+      returns if None, calls make_guardrails_ai_api_request_pre_call_request if format is "inputs",
+      calls make_guardrails_ai_api_request if format is "llmOutput" and extracts validatedOutput
+      or rawLlmOutput or original text, calls set_last_user_message with updated text.
+    proof: [guardrails-ai-tests]
+  - text: >-
+      GuardrailsAI.async_pre_call_hook returns result of process_input.
+    proof: [guardrails-ai-tests]
+  - text: >-
+      GuardrailsAI.async_logging_hook calls process_input and returns kwargs, result.
+    proof: [guardrails-ai-tests]
+  - text: >-
+      GuardrailsAI.async_post_call_success_hook checks should_run_guardrail
+      with post_call event type, checks response is ModelResponse, calls
+      get_content_from_model_response, calls make_guardrails_ai_api_request,
+      calls add_guardrail_to_applied_guardrails_header.
+    proof: [guardrails-ai-tests]
+  - text: >-
+      GuardrailsAI.get_config_model returns GuardrailsAIGuardrailConfigModel class.
+    proof: [guardrails-ai-tests]
+  - text: >-
+      GuardrailsAI.get_supported_event_hooks returns list with post_call, pre_call,
+      and logging_only.
+    proof: [guardrails-ai-tests]
+  - text: >-
+      GuardrailsAIGuardrailConfigModel holds api_base (default None, env GUARDRAILS_AI_API_BASE
+      checked in __init__), guard_name (default None, required), guardrails_ai_api_input_format
+      (default "llmOutput"), and ui_friendly_name() returns "Guardrails AI".
+    proof: [guardrails-ai-tests]
+checks:
+  optional: []
+  commands:
+    - id: aporia-guardrails-tests
+      why: Aporia guardrail tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^aporia_guardrail::/)'
+    - id: aporia-oracle
+      why: Aporia cases do not match LiteLLM on client response or provider requests
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/guardrails/
+    - id: guardrails-ai-tests
+      why: Guardrails AI tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrails_ai_guardrail::/)'
+    - id: guardrails-ai-oracle
+      why: Guardrails AI cases do not match LiteLLM on client response or provider requests
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/guardrails/
+oracle_cases:
+  - tools/oracle/cases/guardrails/aporia-moderation-request.yaml
+  - tools/oracle/cases/guardrails/aporia-moderation-blocked.yaml
+  - tools/oracle/cases/guardrails/aporia-post-call.yaml
+  - tools/oracle/cases/guardrails/guardrails-ai-init.yaml
+  - tools/oracle/cases/guardrails/guardrails-ai-llmoutput.yaml
+  - tools/oracle/cases/guardrails/guardrails-ai-inputs.yaml
+  - tools/oracle/cases/guardrails/guardrails-ai-blocked.yaml
+deviations:
+  - what: >-
+      When APORIO_API_KEY or APORIO_API_BASE is missing from environment and not
+      provided to __init__, LiteLLM raises an uncaught KeyError from __init__
+      (not caught by init_guardrails.py's ValueError/TypeError handler). Betterlite's
+      behavior differs in how that error is surfaced and handled during initialization.
+    why: >-
+      Framework initialization is unresolved (F); betterlite's error handling
+      strategy during guardrail construction differs from LiteLLM's uncaught propagation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L47-L52
+  - what: >-
+      When should_proceed_based_on_metadata is not available, betterlite skips the
+      during_call validation entirely, whereas LiteLLM still evaluates the guardrail.
+    why: >-
+      Metadata routing framework is unresolved (M); the decision to run is delegated
+      to the framework until this helper is owned and called.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L189-L206
+  - what: >-
+      When GUARDRAILS_AI_API_BASE is missing from environment, betterlite uses the
+      default http://0.0.0.0:8000, same as LiteLLM, but betterlite requires guard_name
+      at construction time and raises if not provided.
+    why: >-
+      Framework initialization requires guard_name; LiteLLM allows deferred lookup
+      but betterlite enforces upfront validation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py#L51-L67
+  - what: >-
+      GuardrailsAI.make_guardrails_ai_api_request_pre_call_request includes a comment
+      that this branch does not work with current GuardrailsAI API version and is
+      retained for backward compatibility only.
+    why: >-
+      Legacy API support is retained per LiteLLM at the pinned commit; the "inputs"
+      format may not work but is preserved as configured.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py#L100-L102
+out_of_scope:
+  - >-
+      Guardrail decorator registration, CustomGuardrail.__init__, should_run_guardrail,
+      get_guardrail_dynamic_request_body_params, and log_guardrail_information; owned by B104 (F).
+  - >-
+      get_async_httpx_client, AsyncHTTPHandler.post, and module_level_aclient.post
+      HTTP transport primitives; owned by shared infrastructure (H).
+  - >-
+      convert_litellm_response_object_to_str response serialization; owned by an
+      unresolved logging owner (L).
+  - >-
+      should_proceed_based_on_metadata metadata routing decision; owned by an
+      unresolved metadata owner (M).
+  - >-
+      add_guardrail_to_applied_guardrails_header callback header registration;
+      owned by an unresolved callback owner (A).
+  - >-
+      get_content_from_model_response and get_last_user_message/set_last_user_message
+      response and message extraction; owned by B218 and B219 respectively.
+  - >-
+      Request/response routing and framework dispatch; those come from the guardrail
+      lifecycle in B104.
+pitfalls:
+  - >-
+      Only Aporia's async_moderation_hook (during_call) transforms roles via
+      transform_messages; async_post_call_success_hook (post_call) passes the raw,
+      untransformed messages from data.get("messages", []) directly to the API.
+  - >-
+      APORIO_API_KEY and APORIO_API_BASE are the runtime environment variable names
+      in LiteLLM; the config field names are spelled differently (api_key, api_base),
+      so do not copy the env var names into config defaults.
+  - >-
+      Aporia action "block" must raise HTTPException 400, not any other status code.
+      Non-200 HTTP status also raises 400 with full response detail.
+  - >-
+      GuardrailsAI.process_input returns modified data dict, and the result is used
+      directly as the request data for downstream processing; do not modify messages
+      in place without returning the updated data.
+  - >-
+      The "inputs" API format payload requires an inputs list with exact structure
+      (name, shape, data, datatype); the comment states this format does not work
+      with current API but must be retained as written.
+  - >-
+      GuardrailsAI sets validationPassed=false (note the lowercase 'f'), not False or
+      false; the TypedDict field name matches the API response exactly.
+  - >-
+      When get_last_user_message returns None, process_input returns data unchanged,
+      not an error or empty dict; the caller handles missing text gracefully.
+  - >-
+      Both make_guardrails_ai_api_request and make_guardrails_ai_api_request_pre_call_request
+      use litellm.module_level_aclient (global async client), not self.async_handler;
+      this is preserved from LiteLLM even though Aporia uses self.async_handler.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

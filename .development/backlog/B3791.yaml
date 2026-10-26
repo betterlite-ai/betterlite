@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Prompt Security file sanitization
 status: todo
 depends_on: [B173]
-file: null
+file: tasks/B3791-prompt-security-files.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py"
 parent: B108

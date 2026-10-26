@@ -76,8 +76,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/video_edits.rs
   - crates/betterlite-openai/src/video_edits/**
   - tools/oracle/Cargo.toml

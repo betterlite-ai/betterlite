@@ -1,0 +1,75 @@
+id: B3016
+title: Share model-budget window increments and Redis flushing
+description: >-
+  Create crates/betterlite-router::budget_increment for shared window-start caching and
+  batched Redis flushing of model-budget spend. When a request completes, queue its cost
+  increment to Redis and update the in-memory cache immediately. Detect expired budget
+  windows by comparing current time to the cached start time, reset both caches when a
+  window expires, and preserve the detached-batch requeue protocol for retries after a
+  failed Redis flush.
+
+  This module lives beneath both the model-budget enforcement limiter (B3006) and the
+  provider-budget assembly router callback, exposing a single spend-increment function that
+  takes the already-computed response cost, spend cache key, window start-time cache key,
+  budget duration and configured budget as inputs. It does not depend on cost estimation,
+  deployment filtering or settlement policy.
+
+  Preserve the existing TTL calculation: budget duration in seconds becomes the Redis TTL
+  and the deadline for window expiry. Within an expired window, both the spend cache and
+  the start-time cache reset to the new values. Within an active window, the remaining
+  time (duration_in_seconds minus elapsed) becomes the TTL for the increment operation.
+  Detached increments stay in a locked tuple across crashes; a retry attempts to merge
+  them with new increments by key, summing their values.
+scope:
+  paths:
+    - crates/betterlite-router/src/budget_increment.rs
+    - crates/betterlite-router/src/budget_increment/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L355-L395
+    why: _get_or_set_budget_start_time, _handle_new_budget_window and their cache key construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L392-L412
+    why: _increment_spend_in_current_window queues pipeline operations and updates in-memory cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L414-L453
+    why: Queue lock, detached operation state, requeue semantics and merging by key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L455-L489
+    why: _flush_queued_increment_operations, _await_flush_task and _write_queued_increment_operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L548-L595
+    why: _increment_spend_for_key orchestrates the window-start read, expiry check and increment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L615-L633
+    why: _push_in_memory_increments_to_redis and _flush_queued_increments_with_lock.
+dod:
+  - text: A budget window start time is read from cache or set to the current time with the duration TTL.
+    proof: [budget-increment-tests]
+  - text: When current time exceeds window start time plus duration, spend and start-time caches reset, and both set to new values with the full duration TTL.
+    proof: [budget-increment-tests]
+  - text: Within an active window, the increment operation holds the remaining time as its TTL (duration minus elapsed).
+    proof: [budget-increment-tests]
+  - text: Increments are queued to in-memory operations, in-memory cache is updated immediately, and the queue operation holds the exact cost as increment_value.
+    proof: [budget-increment-tests]
+  - text: A detached batch that cannot be flushed to Redis is requeued, merged by key with any new increments, and summed by key before a retry.
+    proof: [budget-increment-tests]
+  - text: A successful Redis flush clears the detached operations state and returns true; a failed flush returns false without clearing state.
+    proof: [budget-increment-tests]
+checks:
+  optional: []
+  commands:
+    - id: budget-increment-tests
+      why: the budget_increment module tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^budget_increment::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Cost estimation and its fallback values; callers supply response_cost.
+  - Deployment filtering and the full RouterBudgetLimiting class; this task owns only the increment and flush.
+  - The periodic sync callback; B326 retains its event adapter and scheduler.
+  - Budget validation and enforcement policy; this task queues increments.
+pitfalls:
+  - The detached_increment_operations tuple is immutable to preserve it across concurrent attempts. When operations arrive during a failed flush attempt, the requeue must merge them before clearing the detached state.
+  - Remaining time for a within-window increment is ttl_seconds (the full duration) minus elapsed time (current_time - budget_start). An off-by-one or truncation error here shortens the window.
+  - The Redis increment_pipeline contract is a batch operation type from B360. Do not hand-write an async loop of single increments.
+  - asyncio.create_task schedules the flush as a detached task. To drain it on shutdown (B003), the flush must be added to a JoinSet or TaskTracker that the server owns.
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 1

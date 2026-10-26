@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Skills wire records and Anthropic request transformations
 status: todo
 depends_on: [B171, B567, B2202]
-file: null
+file: tasks/B3390-skills-provider-contract.yaml
 covers:
   - "litellm/llms/base_llm/skills/**"
   - "litellm/llms/anthropic/skills/**"

@@ -9,6 +9,7 @@ pub mod dispatch;
 pub mod duration;
 pub mod embedding_rerank_providers;
 pub mod error;
+pub mod guardrails;
 pub mod helpers;
 pub mod json_messages_policy;
 pub mod mock;

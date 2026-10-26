@@ -1,3 +1,3 @@
 helper_group! {
-    "websearch_tool_records" => tool_records,
+    "b4117" => b4117, "websearch_tool_records" => tool_records,
 }

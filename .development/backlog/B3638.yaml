@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Vertex passthrough metadata and Interactions usage
 status: todo
 depends_on: [B068, B1668]
-file: null
+file: tasks/B3638-vertex-relay-metadata.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py"
   - "litellm/types/passthrough_endpoints/vertex_ai.py"

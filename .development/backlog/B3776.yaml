@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: HiddenLayer v1 and v2 evaluation
 status: todo
 depends_on: [B3775]
-file: null
+file: tasks/B3776-hiddenlayer-evaluation.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/**"
   - "litellm/types/proxy/guardrails/guardrail_hooks/hiddenlayer.py"

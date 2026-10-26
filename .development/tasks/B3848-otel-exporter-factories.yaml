@@ -1,0 +1,154 @@
+id: B3848
+title: OTel exporter factories, codec, and datastore attributes
+description: >-
+  Build the exporter factory registry, the codec for OTLP/JSON encoding, the span processors
+  for individual exporters, and the database endpoint module. Implement register_exporter_factory
+  and _exporter_from_spec to build exporters keyed by a spec's kind field, with built-in support
+  for OTLP/HTTP, OTLP/gRPC, console, in-memory, and a custom OTLP/JSON exporter that sends JSON
+  encoding instead of protobuf. Add LiteLLMBaggageSpanProcessor to stamp baggage entries onto
+  every span at start, with _is_allowed to check allowlisted keys and prefixes, and _processor_for
+  to pick Simple or Batch processors. Implement the database endpoint module with parse_database_endpoint
+  and postgres_endpoint to extract the non-sensitive PostgreSQL identity (host, port, database, schema)
+  from DATABASE_URL and DATABASE_URL_READ_REPLICA environment variables, reading both path and libpq
+  query parameters and handling Unix sockets, Cloud SQL connectors and RDS IAM rotation. Return None
+  for replicas, missing URLs or unparseable schemes. Implement db_span_attributes to stamp server.address,
+  server.port, db.namespace and db.system on database spans. Add build_span_exporter, build_resource,
+  build_meter_provider, resolve_meter_provider, build_metric_reader, build_log_exporter, build_logger_provider,
+  resolve_logger_provider, get_meter, and get_event_logger builder functions reusing the same exporter
+  selection, with 5-second metric export intervals matching LiteLLM. Build the GenAIEventRecorder in
+  events.py to emit gen_ai.client.operation.exception log events for failed model calls. Implement per-exporter
+  W3C Baggage header decoding and OTLP endpoint signal path rewriting. Every provided function comes from
+  LiteLLM at the pinned commit and reimplements its behavior exactly. Every deviation from LiteLLM is
+  written down below and linked from deviations. This task covers exporter construction and codec logic;
+  tenant-scoped span routing and per-destination redaction belong to B3849.
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/plumbing.rs
+    - crates/betterlite-logging/src/otel/plumbing/**
+    - crates/betterlite-logging/src/otel/model/db_endpoint.rs
+    - crates/betterlite-logging/src/otel/model/db_endpoint/**
+    - tools/oracle/cases/otel/exporter-**.yaml
+    - tools/oracle/cases/otel/database-endpoint-**.yaml
+    - tools/oracle/fuzz/corpus/helper_case/exporter_factory-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L77-L93
+    why: register_exporter_factory API and _EXPORTER_FACTORIES registry
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L95-L122
+    why: LiteLLMBaggageSpanProcessor implementation and _is_allowed check
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L145-L160
+    why: parse_headers for W3C Baggage header decoding
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L124-L143
+    why: _otlp_traces_endpoint signal path rewriting logic
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L168-L183
+    why: exporter_transport to identify HTTP, gRPC, or headerless exporters
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L185-L221
+    why: _exporter_from_spec factory function for all exporter kinds
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L223-L233
+    why: _processor_for selecting Simple or Batch processors
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L859-L874
+    why: build_span_exporter convenience builder from top-level config
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L876-L946
+    why: build_metric_reader and _otlp_metrics_endpoint for metrics signal
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L948-L1003
+    why: build_log_exporter, _otlp_logs_endpoint and build_logger_provider for logs signal
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L1026-L1055
+    why: resolve_logger_provider and get_event_logger with DI and global resolution
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L1057-L1100
+    why: build_meter_provider, resolve_meter_provider and get_meter
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L1102-L1108
+    why: build_resource with service.name and deployment.environment
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/otlp_json.py
+    why: OTLPJsonSpanExporter custom codec for JSON encoding instead of protobuf
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/events.py
+    why: GenAIEventRecorder and record_operation_exception for log-based exception events
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/db_endpoint.py
+    why: Database endpoint parsing and attributes stamping
+  - url: https://docs.opentelemetry.io/docs/specs/otel/protocol/exporter/
+    why: OTLP specification for endpoint and headers
+  - url: https://www.w3.org/TR/baggage/
+    why: W3C Baggage header format
+dod:
+  - text: >-
+      register_exporter_factory and _exporter_from_spec build exporters for console, in_memory, otlp_http
+      (all variants), otlp_grpc, http/json, and any registered custom factory, raising on unrecognized kinds.
+    proof: [exporter-factory-tests]
+  - text: >-
+      OTLP/HTTP and OTLP/gRPC exporters use configured headers parsed from W3C Baggage encoding, stripping and
+      decoding percent-encoded values per the OTLP spec.
+    proof: [exporter-factory-tests]
+  - text: >-
+      _otlp_traces_endpoint, _otlp_metrics_endpoint and _otlp_logs_endpoint rewrite base endpoints to signal-specific
+      paths, leaving already-correct paths and Splunk's alternate path unchanged.
+    proof: [exporter-factory-tests]
+  - text: >-
+      _processor_for picks Simple processors for console and in-memory exporters, Batch for others, or honors an
+      explicit override.
+    proof: [exporter-factory-tests]
+  - text: >-
+      LiteLLMBaggageSpanProcessor stamps every allowlisted baggage entry onto each span at start, allowing keys by
+      name or litellm.* prefix.
+    proof: [exporter-factory-tests]
+  - text: >-
+      OTLPJsonSpanExporter encodes spans in OTLP/JSON format (enums as integers, ids as hex) and sends the
+      Content-Type header application/json.
+    proof: [exporter-factory-tests]
+  - text: >-
+      GenAIEventRecorder records gen_ai.client.operation.exception log events with exception type, message and
+      optional stack trace correlated to a span.
+    proof: [exporter-factory-tests]
+  - text: >-
+      parse_database_endpoint parses a PostgreSQL DSN, extracting host, port, database and schema from path and
+      libpq query parameters, handling Unix sockets and credential-carrying URLs. It returns None for non-PostgreSQL,
+      malformed or ambiguous (unencoded-authority) URLs.
+    proof: [database-endpoint-tests]
+  - text: >-
+      postgres_endpoint reads DATABASE_URL and DATABASE_URL_READ_REPLICA from the environment on every call,
+      returning the PostgreSQL endpoint or None for replicas.
+    proof: [database-endpoint-tests]
+  - text: >-
+      db_span_attributes returns db.system, db.system.name (legacy), db.operation, server.address, server.port and
+      db.namespace attributes for datastore service calls, with empty attributes for non-database services.
+    proof: [database-endpoint-tests]
+  - text: >-
+      Every mutant in the exporter factory, processor selection, baggage filtering, codec, and endpoint parsing is
+      caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: exporter-factory-tests
+      why: exporter factory, processor, codec, or baggage tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging -p betterlite-server --no-tests=fail -E 'test(/exporter_|baggage_|processor_|otlp_|codec_|event_)' 2>&1 | head -100
+    - id: database-endpoint-tests
+      why: database endpoint parsing or attribute tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/database_|endpoint_|postgres_)' 2>&1 | head -100
+oracle_cases: []
+deviations:
+  - what: betterlite uses OpenTelemetry SDK global state through get_tracer_provider, get_meter_provider and get_logger_provider, same as LiteLLM.
+    why: The OTel SDKs publish globals for operator integration, and per-request context isolation comes from the request scope of destinations, not global rebuild.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L1089
+  - what: betterlite does not honor an operator's configured global MeterProvider or LoggerProvider if it is a real SDK provider; it reuses them.
+    why: The spec is to follow what the operator has set up, so betterlite does not rebuild what is already there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L1071-L1095
+  - what: Percent-encoded headers (e.g. "Authorization=Basic%20token") decode using the SDK's parse_env_headers with liberal=True so non-encoded values keep working.
+    why: Vendor docs (Grafana Cloud) encode spaces as %20 and backends expect real spaces; LiteLLM uses the SDK's decoder to match what the exporters do.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L145-L160
+out_of_scope:
+  - Behavior of exporters themselves (OTLP/HTTP retry loops, gRPC backpressure, TLS certificate validation).
+  - Tenant-scoped span routing, per-destination span redaction, and multi-destination fan-out; B3849 handles tenant fanout.
+  - _DrainPool and span filtering logic for destination redaction (B3849).
+  - Custom exporter registration by operators, only pre-registered factories.
+  - Metrics and logs signals beyond builder API; what GenAI metrics and events ride these signals is elsewhere.
+  - Per-destination dynamic exporter rebuilding or the decision to drop destinations (B3849).
+pitfalls:
+  - exporter_transport must identify headerless exporters (console, unregistered kinds) to prevent silent credential loss when a typo routes spans to stdout.
+  - LiteLLM's MappingProxyType usage throughout prevents view mutation; maintain that pattern to avoid redacted spans leaking across destinations.
+  - DatabaseEndpoint parsing rejects URLs with unencoded authority chars in the wrong place to avoid credential leakage; ambiguous URLs with @ in query parameters are rejected.
+  - postgres_endpoint reads the environment on every span to follow RDS IAM rotation, database URL overlays and reads from different hosts; do not cache.
+  - The OTel SDK's log record attribute lookup changed between versions; SDK_LOG_RECORD guards the difference on the pinned commit.
+  - baggage_allowed_keys parsing must not silently drop entries that contain colons or commas; use simple split/strip logic to preserve header values.
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 2

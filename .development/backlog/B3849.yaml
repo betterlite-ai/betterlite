@@ -3,7 +3,7 @@ milestone: M7 observability
 title: OTel tenant fanout and scoped span delivery
 status: todo
 depends_on: [B198, B3840, B3842, B3847, B3848]
-file: null
+file: tasks/B3849-otel-tenant-fanout.yaml
 covers:
   - "litellm/integrations/otel/plumbing/providers.py"
 parent: B110

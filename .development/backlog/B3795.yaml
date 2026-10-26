@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Straiker webhook records and context projection
 status: todo
 depends_on: [B174, B207, B226]
-file: null
+file: tasks/B3795-straiker-records.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/straiker.py"

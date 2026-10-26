@@ -1,0 +1,175 @@
+id: B3394
+title: Skill hook settings and execution result handling
+description: >-
+  Build the hook state and reusable execution/result helpers in betterlite-core::api::skills, with injected prompt and sandbox services.
+
+  Implement SkillsInjectionHook methods for tool-call extraction, code execution, and file attachment.
+  The __init__ method reads DEFAULT_MAX_ITERATIONS (10) and DEFAULT_SANDBOX_TIMEOUT (120) seconds from constructor kwargs with those defaults, storing them as fields.
+
+  _extract_tool_calls handles both Anthropic and OpenAI formats. For Anthropic: scan response.content
+  or response.get("content") for tool_use blocks, extracting from both dict blocks (isinstance check,
+  dict.get) and object/attribute blocks (getattr with type comparison and field access). For OpenAI:
+  scan response.choices[0].message.tool_calls, parse tool_call.function.arguments via json.loads
+  (malformed JSON propagates as parse error, never caught). Anthropic path is preferred; OpenAI runs
+  only if Anthropic found no tool_uses.
+
+  _execute_code calls the injected SkillsSandboxExecutor with code and skill_files, then builds a
+  result string from output, error and files. Collect generated files with name, mime_type,
+  content_base64 and size (bytes of base64-decoded content). Append file sizes computed from decoded
+  bytes; catch all exceptions into result text without re-raising.
+
+  _execute_skill_tool generates code to execute a skill by scanning Python modules: prefer the first
+  with builder/creator/generator in its path, otherwise the first non-__init__.py module. When no
+  modules are found, use fallback code that prints the literal "No executable skill module found".
+  Ignore tool name and input; the code template imports the selected module and searches its classes
+  for .create/.build/.generate methods. Call _execute_code to run the generated code and return its result.
+
+  _attach_files_to_response returns response unchanged if generated_files is empty. For dict responses,
+  set response["_litellm_generated_files"]. For object responses, attempt to set response._litellm_generated_files
+  and silently swallow AttributeError without logging. If response.model_extra exists, also set
+  model_extra["_litellm_generated_files"].
+
+  Preserve the exact module selection logic, JSON parsing behavior for OpenAI format, file-size
+  calculation from bytes, exception handling that does not re-raise, and the fallback literal code.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/skills.rs
+    - crates/betterlite-core/src/api/skills/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L106-L116
+    why: SkillsInjectionHook.__init__ reads max_iterations and sandbox_timeout from kwargs with defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L440-L484
+    why: _extract_tool_calls prefers Anthropic content blocks, falls back to OpenAI choice message tool_calls with JSON parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L606-L640
+    why: _execute_code calls executor, collects files with size calculation, appends error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L642-L713
+    why: _execute_skill_tool selects modules by builder/creator/generator presence, otherwise first non-init, generates import code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L878-L914
+    why: _attach_files_to_response handles dict and object responses, no re-raising.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/constants.py#L9-L23
+    why: LITELLM_SKILL_ID_PREFIX, DEFAULT_MAX_ITERATIONS and DEFAULT_SANDBOX_TIMEOUT constants.
+dod:
+  - text: __init__ stores max_iterations and sandbox_timeout from kwargs, defaulting to 10 and 120 seconds.
+    proof: [hook-init]
+  - text: _extract_tool_calls extracts tool_uses from both Anthropic dict content blocks (isinstance check,
+      dict.get) and object content blocks (getattr with type comparison and field access).
+    proof: [tool-call-extraction-anthropic]
+  - text: _extract_tool_calls extracts tool_calls from OpenAI format (choices[0].message.tool_calls)
+      and parses tool_call.function.arguments via json.loads, allowing malformed JSON to propagate
+      as parse error.
+    proof: [tool-call-extraction-openai, json-parsing]
+  - text: _extract_tool_calls prefers Anthropic content path; OpenAI path runs only if no Anthropic
+      tool_uses are found.
+    proof: [tool-call-extraction-preference]
+  - text: _execute_code calls executor.execute with code and skill_files, collects generated files
+      with size from base64-decoded bytes, appends error text, catches exceptions into result string.
+    proof: [code-execution]
+  - text: _execute_skill_tool selects the first Python module with builder/creator/generator in its
+      path, otherwise the first non-__init__.py module, generates import and class discovery code,
+      calls _execute_code.
+    proof: [skill-tool-execution]
+  - text: _execute_skill_tool uses fallback code that prints "No executable skill module found" when
+      no Python modules are found.
+    proof: [skill-tool-fallback]
+  - text: _attach_files_to_response returns response unchanged when generated_files is empty.
+    proof: [file-attachment]
+  - text: _attach_files_to_response sets response["_litellm_generated_files"] for dict responses.
+    proof: [file-attachment]
+  - text: _attach_files_to_response sets response._litellm_generated_files for object responses and
+      silently swallows AttributeError without logging.
+    proof: [file-attachment]
+  - text: _attach_files_to_response writes model_extra["_litellm_generated_files"] when response.model_extra
+      is present.
+    proof: [file-attachment]
+  - text: Every mutant in the hook module is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: hook-init
+      why: hook __init__ does not read max_iterations/sandbox_timeout or they have the wrong defaults
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::hook_init/)'
+    - id: tool-call-extraction-anthropic
+      why: _extract_tool_calls does not extract Anthropic dict and object content blocks
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::tool_call_extraction_anthropic/)'
+    - id: tool-call-extraction-openai
+      why: _extract_tool_calls does not extract OpenAI choices[0].message.tool_calls
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::tool_call_extraction_openai/)'
+    - id: tool-call-extraction-preference
+      why: _extract_tool_calls does not prefer Anthropic path or runs OpenAI when Anthropic succeeds
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::tool_call_extraction_preference/)'
+    - id: json-parsing
+      why: malformed OpenAI tool_call JSON does not propagate or is silently dropped
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::json_parsing/)'
+    - id: code-execution
+      why: _execute_code does not call executor or mishandles files/errors
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::code_execution/)'
+    - id: skill-tool-execution
+      why: _execute_skill_tool does not select modules correctly or generate proper code
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::skill_tool_execution/)'
+    - id: skill-tool-fallback
+      why: _execute_skill_tool does not use fallback code when no modules are found
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::skill_tool_fallback/)'
+    - id: file-attachment
+      why: _attach_files_to_response does not handle empty files, dict/object attachment, or model_extra write
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::file_attachment/)'
+oracle_cases: []
+deviations:
+  - what: Tool call extraction from OpenAI arguments uses json.loads without catching
+      parse errors, allowing malformed JSON to propagate to the caller.
+    why: Caller visibility of parse errors is important for correct behavior;
+      downstream handlers decide whether to fail the request or continue with
+      partial data. LiteLLM does the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L480
+  - what: Skill module selection fallback code is a literal Python string that
+      prints "No executable skill module found" rather than being a configurable
+      message.
+    why: This preserves the exact LiteLLM behavior and output for debugging and
+      testing; the fallback is not expected to be common in production.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L707-L711
+  - what: File attachment to object responses silently ignores AttributeError
+      when setting the _litellm_generated_files attribute without logging or
+      error reporting.
+    why: Some response objects may not allow attribute assignment; continuing
+      silently preserves the response shape. LiteLLM does the same without logging.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L901-L904
+  - what: File attachment writes model_extra["_litellm_generated_files"] after
+      setting the attribute, creating two possible write locations for the same
+      data on object responses with model_extra present.
+    why: This mirrors LiteLLM's serialization strategy, ensuring both attribute
+      and model_extra paths are available for downstream serializers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L906-L910
+out_of_scope:
+  - "SkillPromptInjectionHandler construction and prompt extraction/injection: owned elsewhere."
+  - "SkillsSandboxExecutor.execute call and sandbox runtime setup: owned elsewhere."
+  - "The HTTP response loop in async_post_call_success_deployment_hook: owned by B3395."
+  - "The pre-call hook async_pre_call_hook: owned by B095."
+pitfalls:
+  - Tool call extraction from Anthropic content blocks must handle both dict blocks
+    (isinstance check, dict.get access) and object blocks (getattr with type name
+    comparison and field access). Extracting only the dict path misses object
+    responses from typed SDKs.
+  - OpenAI tool argument JSON errors must propagate, not be caught and converted
+    to error strings or empty dicts. Silencing them breaks downstream error
+    handling that depends on seeing the parse failure.
+  - Skill module selection looks for builder/creator/generator in the module name
+    (case-insensitive string contains check). A module without these keywords gets
+    passed over even if it is executable. The first non-__init__.py module is the
+    fallback, not a preferred match.
+  - When no skill modules are found at all, the fallback code must use the exact
+    literal string "No executable skill module found" in a print statement. Code
+    that generates a different message or uses logging instead will diverge from
+    LiteLLM behavior.
+  - File attachment to object responses catches AttributeError without logging,
+    continuing silently. Code that logs the error or raises it will diverge from
+    LiteLLM behavior.
+  - File attachment checks response.model_extra existence before writing to it.
+    Creating model_extra if it does not exist (e.g., setting response.model_extra = {})
+    may trigger different serialization or validation downstream.
+  - Base64-decoded file content size is the byte length of the decoded bytes,
+    not the base64 string length.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 2

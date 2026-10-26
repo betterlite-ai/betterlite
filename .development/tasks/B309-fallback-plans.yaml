@@ -50,7 +50,6 @@ scope:
   - tools/oracle/litellm/probes/fallback_plans.py
   - tools/oracle/cases/routing/fallback-plans/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/fallback-plans-*
-  - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/chat.rs
   - crates/betterlite-openai/src/request.rs
   - crates/betterlite-openai/src/request/**
