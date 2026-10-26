@@ -1,9 +1,22 @@
 name: chat-upstream-400
 config: |
   model_list:
-    - model_name: oracle-model
-      litellm_params: {model: openai/oracle-model, api_base: "{{upstream}}", api_key: oracle-key}
+    - model_name: bad-request-model
+      litellm_params: {model: openai/gpt-400-upstream, api_base: "{{upstream}}", api_key: oracle-key}
+  router_settings: {num_retries: 0}
 env: {}
-request: {method: POST, path: /v1/chat/completions, headers: {content-type: application/json, authorization: Bearer oracle-master}, body: {model: oracle-model, messages: [{role: user, content: hi}]}}
-upstream: [{status: 400, headers: {content-type: application/json}, body: {error: {message: bad request, type: invalid_request_error, code: invalid_request_error}}}]
-compare: {headers: [content-type], headers_present: [x-litellm-call-id], upstream_headers: [authorization, content-type], ignore: [{pointer: /error/message, why: generated}]}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-400}
+  body: {model: bad-request-model, messages: [{role: user, content: hi}], temperature: 0.5}
+upstream:
+  - status: 400
+    headers: {content-type: application/json}
+    body: {error: {message: "temperature is not supported", type: invalid_request_error, param: temperature, code: unsupported_value}}
+compare:
+  headers: [content-type, llm_provider-content-type, x-litellm-call-id, x-litellm-timeout]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}

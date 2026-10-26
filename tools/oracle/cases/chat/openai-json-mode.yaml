@@ -1,9 +1,29 @@
 name: chat-openai-json-mode
 config: |
   model_list:
-    - model_name: oracle-model
-      litellm_params: {model: openai/oracle-model, api_base: "{{upstream}}", api_key: oracle-key}
+    - model_name: json-model
+      litellm_params: {model: openai/gpt-json-upstream, api_base: "{{upstream}}", api_key: oracle-key}
 env: {}
-request: {method: POST, path: /chat/completions, headers: {content-type: application/json, authorization: Bearer oracle-master}, body: {model: oracle-model, messages: [{role: user, content: hi}], response_format: {type: json_object}}}
-upstream: [{status: 200, headers: {content-type: application/json}, body: {id: chatcmpl-oracle, object: chat.completion, created: 1700000000, model: oracle-model, choices: [{index: 0, message: {role: assistant, content: "{}"}, finish_reason: stop}]}}]
-compare: {headers: [content-type], headers_present: [x-litellm-call-id], upstream_headers: [authorization, content-type], ignore: [{pointer: /id, why: generated}, {pointer: /created, why: generated}]}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-json}
+  body:
+    model: json-model
+    messages: [{role: user, content: Reply with an empty JSON object.}]
+    response_format: {type: json_object}
+    max_completion_tokens: 50
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl-json
+      object: chat.completion
+      created: 1700000002
+      model: gpt-json-upstream
+      choices: [{index: 0, message: {role: assistant, content: "{}"}, finish_reason: stop}]
+compare:
+  headers: [content-type, llm_provider-content-type, x-litellm-call-id, x-litellm-model-group, x-litellm-model-id, x-litellm-model-name, x-litellm-model-api-base, x-litellm-attempted-retries, x-litellm-attempted-fallbacks]
+  headers_present: [x-litellm-response-duration-ms, x-litellm-overhead-duration-ms, x-litellm-callback-duration-ms, x-litellm-version]
+  upstream_headers: [authorization, content-type]
+  ignore: []

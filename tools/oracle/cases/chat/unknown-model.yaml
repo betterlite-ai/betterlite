@@ -1,9 +1,19 @@
 name: chat-unknown-model
 config: |
   model_list:
-    - model_name: oracle-model
-      litellm_params: {model: openai/oracle-model, api_base: "{{upstream}}", api_key: oracle-key}
+    - model_name: known-model
+      litellm_params: {model: openai/gpt-known-upstream, api_base: "{{upstream}}", api_key: oracle-key}
 env: {}
-request: {method: POST, path: /v1/chat/completions, headers: {content-type: application/json, authorization: Bearer oracle-master}, body: {model: missing-model, messages: [{role: user, content: hi}]}}
-upstream: [{status: 200, headers: {content-type: application/json}, body: {id: unused}}]
-compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-unknown}
+  body: {model: missing-model, messages: [{role: user, content: hi}]}
+upstream: []
+compare:
+  headers: [content-type, x-litellm-call-id]
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}
+    - {pointer: /error/provider_specific_fields/error, why: LiteLLM repeats its own message there}

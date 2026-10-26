@@ -1,11 +1,17 @@
+use std::mem;
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_config::proxy::{ProxyPolicy, ProxyRoute};
-use reqwest::{Client, ClientBuilder, Proxy, Request, Response};
-use secrecy::ExposeSecret as _;
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap};
+use reqwest::{Client, ClientBuilder, Proxy, Request, Response, Url};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::error::HttpError;
-use crate::outbound::install_crypto_provider;
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+const POOL_MAX_IDLE_PER_HOST: usize = 32;
 
 #[derive(Debug)]
 pub struct ProxiedClient {
@@ -14,8 +20,16 @@ pub struct ProxiedClient {
 }
 
 impl ProxiedClient {
+    pub fn outbound(policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {
+        let builder = ClientBuilder::new()
+            .tls_backend_rustls()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .pool_idle_timeout(POOL_IDLE_TIMEOUT)
+            .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST);
+        Self::build(builder, policy)
+    }
+
     pub fn build(builder: ClientBuilder, policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {
-        install_crypto_provider();
         for warning in &policy.warnings {
             tracing::warn!(?warning, "proxy setting ignored");
         }
@@ -68,6 +82,67 @@ impl ProxiedClient {
         };
         Err(rejection)
     }
+
+    pub async fn post_json(&self, post: JsonPost<'_>) -> Result<UpstreamResponse, HttpError> {
+        let mut builder = self
+            .client
+            .post(post.url)
+            .timeout(post.timeout)
+            .bearer_auth(post.bearer.expose_secret())
+            .header(ACCEPT, "application/json")
+            .header(CONTENT_TYPE, "application/json");
+        for (name, value) in post.headers {
+            builder = builder.header(name, value);
+        }
+        let request = builder.body(post.body).build().map_err(HttpError::Request)?;
+        let mut response = self.execute(request).await.map_err(timed_out)?;
+        let status = response.status().as_u16();
+        let headers = mem::take(response.headers_mut());
+        let mut body = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|source| timed_out(HttpError::Request(source)))?
+        {
+            if body.len().saturating_add(chunk.len()) > post.body_limit {
+                return Err(HttpError::TooLarge {
+                    limit: post.body_limit,
+                });
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(UpstreamResponse {
+            status,
+            headers,
+            body,
+        })
+    }
+}
+
+fn timed_out(error: HttpError) -> HttpError {
+    if let HttpError::Request(source) = &error
+        && source.is_timeout()
+    {
+        HttpError::Timeout
+    } else {
+        error
+    }
+}
+
+pub struct JsonPost<'key> {
+    pub url: Url,
+    pub bearer: &'key SecretString,
+    pub headers: Vec<(&'static str, String)>,
+    pub body: Vec<u8>,
+    pub timeout: Duration,
+    pub body_limit: usize,
+}
+
+#[derive(Debug)]
+pub struct UpstreamResponse {
+    pub status: u16,
+    pub headers: HeaderMap,
+    pub body: Vec<u8>,
 }
 
 mod tests;

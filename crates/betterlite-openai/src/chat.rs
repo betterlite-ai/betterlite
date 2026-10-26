@@ -1,268 +1,217 @@
-use std::sync::Arc;
-use std::time::Duration;
+pub mod deployment;
+pub mod execution;
+pub mod provider_error;
+pub mod response;
 
-use betterlite_config::types::ModelDeployment;
-use betterlite_http::error::HttpError;
-use betterlite_http::outbound::OutboundClient;
-use secrecy::SecretString;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Number, Value};
 use thiserror::Error;
-use url::Url;
-use uuid::Uuid;
 
-use crate::openai_base_config::{
-    CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
-};
+// LiteLLM reads these request keys itself and never forwards them, and betterlite does not act on them yet
+const LITELLM_REQUEST_KEYS: [&str; 13] = [
+    "api_base",
+    "api_key",
+    "api_version",
+    "base_url",
+    "caching",
+    "context_window_fallback_dict",
+    "extra_headers",
+    "fallbacks",
+    "max_retries",
+    "mock_response",
+    "num_retries",
+    "stream_timeout",
+    "timeout",
+];
 
-pub type Object = Map<String, Value>;
-
-pub trait RandomSource: Send + Sync {
-    fn next(&self, upper_bound: usize) -> usize;
+#[derive(Debug, Error)]
+pub enum RequestError {
+    #[error("the request body is not a valid chat completion request: {source}")]
+    Body {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("betterlite does not support the {name} request parameter yet")]
+    Unsupported { name: String },
 }
 
-#[derive(Debug, Default)]
-pub struct SystemRandom;
-
-impl RandomSource for SystemRandom {
-    fn next(&self, upper_bound: usize) -> usize {
-        let sample = Uuid::new_v4().as_u128();
-        let bound = u128::try_from(upper_bound).unwrap_or(1);
-        let bounded = sample.checked_rem(bound).unwrap_or(0);
-        usize::try_from(bounded).unwrap_or(0)
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ChatRequest {
-    pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     pub messages: Vec<ChatMessage>,
     #[serde(default)]
     pub stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub temperature: Option<f64>,
+    pub temperature: Option<Number>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<Number>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<Number>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: Option<Number>,
+    #[serde(rename = "n", skip_serializing_if = "Option::is_none")]
+    pub choice_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_completion_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Value>,
+    pub seed: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<Value>,
+    pub stop: Option<Stop>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub response_format: Option<Value>,
+    pub logprobs: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_logprobs: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<Tool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<ToolChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parallel_tool_calls: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<ResponseFormat>,
+    // parameters betterlite does not model: LiteLLM forwards unknown ones and filters the OpenAI ones it knows
     #[serde(flatten)]
-    pub extra: Object,
+    pub passthrough: IndexMap<String, Value>,
+}
+
+impl ChatRequest {
+    pub fn parse(bytes: &[u8]) -> Result<Self, RequestError> {
+        let request: Self =
+            serde_json::from_slice(bytes).map_err(|source| RequestError::Body { source })?;
+        if let Some(name) = request
+            .passthrough
+            .keys()
+            .find(|name| LITELLM_REQUEST_KEYS.contains(&name.as_str()))
+        {
+            return Err(RequestError::Unsupported { name: name.clone() });
+        }
+        Ok(request)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    System,
+    Developer,
+    User,
+    Assistant,
+    Tool,
+    Function,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ChatMessage {
-    pub role: String,
-    #[serde(default)]
-    pub content: Option<Value>,
+    pub role: Role,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<MessageContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Value>,
+    pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    // message fields betterlite does not model, such as cache_control or audio, which LiteLLM forwards
+    #[serde(flatten)]
+    pub passthrough: IndexMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct ChatResponse {
-    pub id: String,
-    pub object: String,
-    pub created: u64,
-    pub model: String,
-    pub choices: Vec<ChatChoice>,
+#[serde(untagged)]
+pub enum MessageContent {
+    Text(String),
+    Parts(Vec<ContentPart>),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ContentPart {
+    #[serde(rename = "type")]
+    pub kind: String,
+    // the fields of text, image, audio and file parts, which LiteLLM forwards as sent
+    #[serde(flatten)]
+    pub fields: IndexMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum Stop {
+    One(String),
+    Many(Vec<String>),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Tool {
+    #[serde(rename = "type")]
+    pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<ChatUsage>,
+    pub function: Option<FunctionDefinition>,
+    // fields of the other tool types, such as custom or web search tools
+    #[serde(flatten)]
+    pub passthrough: IndexMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct ChatChoice {
-    pub index: u32,
-    pub message: ChatMessage,
-    pub finish_reason: Option<String>,
+pub struct FunctionDefinition {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    // a caller's JSON schema is free-form by definition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strict: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct ChatUsage {
-    pub prompt_tokens: u64,
-    pub completion_tokens: u64,
-    pub total_tokens: u64,
+#[serde(untagged)]
+pub enum ToolChoice {
+    Mode(String),
+    Named(NamedToolChoice),
 }
 
-#[derive(Debug, Error)]
-pub enum ChatError {
-    #[error("the requested model is not configured")]
-    UnknownModel,
-    #[error("the configured model is not an OpenAI model")]
-    UnsupportedProvider,
-    #[error("the upstream URL is invalid: {source}")]
-    Url {
-        #[source]
-        source: url::ParseError,
-    },
-    #[error("the upstream request timed out")]
-    Timeout,
-    #[error("the upstream returned status {status}")]
-    Provider { status: u16, body: String },
-    #[error("the upstream response is invalid: {source}")]
-    Decode {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("the HTTP client failed: {source}")]
-    Http {
-        #[source]
-        source: HttpError,
-    },
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct NamedToolChoice {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub function: FunctionName,
 }
 
-pub struct ChatExecutor {
-    client: OutboundClient,
-    environment_key: Option<SecretString>,
-    catalog: CatalogCapabilities,
-    random: Arc<dyn RandomSource>,
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FunctionName {
+    pub name: String,
 }
 
-impl ChatExecutor {
-    #[must_use]
-    pub fn new(
-        client: OutboundClient,
-        environment_key: Option<SecretString>,
-        catalog: CatalogCapabilities,
-    ) -> Self {
-        let random = Arc::new(SystemRandom);
-        Self {
-            client,
-            environment_key,
-            catalog,
-            random,
-        }
-    }
-
-    #[must_use]
-    pub fn with_random(mut self, random: Arc<dyn RandomSource>) -> Self {
-        self.random = random;
-        self
-    }
-
-    pub async fn complete(
-        &self,
-        request: &ChatRequest,
-        deployments: &[ModelDeployment],
-        request_timeout: Option<f64>,
-    ) -> Result<ChatResponse, ChatError> {
-        if request.stream {
-            return Err(ChatError::Provider {
-                status: 400,
-                body: "streaming is not supported".to_owned(),
-            });
-        }
-        let candidates: Vec<&ModelDeployment> = deployments
-            .iter()
-            .filter(|item| item.model_name == request.model)
-            .collect();
-        let deployment = candidates
-            .get(self.random.next(candidates.len()))
-            .copied()
-            .ok_or(ChatError::UnknownModel)?;
-        let params = &deployment.litellm_params;
-        let provider_model = params
-            .model
-            .as_deref()
-            .ok_or(ChatError::UnsupportedProvider)?;
-        let model = provider_model
-            .strip_prefix("openai/")
-            .ok_or(ChatError::UnsupportedProvider)?;
-        let api_key = params.api_key.as_ref().or(self.environment_key.as_ref());
-        let base = params
-            .api_base
-            .as_deref()
-            .unwrap_or("https://api.openai.com/v1");
-        let url = endpoint(base)?;
-        let seconds = params.timeout.or(request_timeout).unwrap_or(6_000.0_f64);
-        let timeout =
-            Duration::try_from_secs_f64(seconds.max(0.001)).unwrap_or(Duration::from_mins(100));
-        let body = self.body(request, model);
-        self.send(url, api_key, timeout, body).await
-    }
-
-    async fn send(
-        &self,
-        url: Url,
-        api_key: Option<&SecretString>,
-        timeout: Duration,
-        body: Object,
-    ) -> Result<ChatResponse, ChatError> {
-        let response = self
-            .client
-            .send(self.client.post_json(url, api_key, timeout, &body))
-            .await
-            .map_err(|source| {
-                if is_timeout(&source) {
-                    ChatError::Timeout
-                } else {
-                    ChatError::Http { source }
-                }
-            })?;
-        let status = response.status().as_u16();
-        let bytes = response.bytes().await.map_err(|source| ChatError::Http {
-            source: HttpError::Request(source),
-        })?;
-        if status >= 400 {
-            let provider_body = String::from_utf8(bytes.to_vec())
-                .unwrap_or_else(|_| "upstream returned a non-UTF-8 error".to_owned());
-            return Err(ChatError::Provider {
-                status,
-                body: provider_body,
-            });
-        }
-        serde_json::from_slice(&bytes).map_err(|source| ChatError::Decode { source })
-    }
-
-    fn body(&self, request: &ChatRequest, model: &str) -> Object {
-        let mut requested =
-            serde_json::to_value(request).unwrap_or_else(|_| Value::Object(Object::new()));
-        if let Value::Object(ref mut object) = requested {
-            object.insert("model".to_owned(), Value::String(model.to_owned()));
-            object.remove("extra");
-        }
-        let mut body = Object::new();
-        let config = OpenAiConfig {
-            family: ConfigFamily::OpenAi,
-            api_key: None,
-            headers: Headers::new(),
-            settings: OpenAiSettings::default(),
-        };
-        config.map_params(
-            model,
-            &requested.as_object().cloned().unwrap_or_default(),
-            &mut body,
-            &self.catalog,
-        );
-        body.insert("model".to_owned(), Value::String(model.to_owned()));
-        body.insert(
-            "messages".to_owned(),
-            serde_json::to_value(&request.messages).unwrap_or(Value::Array(Vec::new())),
-        );
-        body.insert("stream".to_owned(), Value::Bool(false));
-        body
-    }
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ToolCall {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub function: FunctionCall,
 }
 
-fn endpoint(base: &str) -> Result<Url, ChatError> {
-    let mut url = Url::parse(base).map_err(|source| ChatError::Url { source })?;
-    let path = format!("{}/chat/completions", url.path().trim_end_matches('/'));
-    url.set_path(&path);
-    Ok(url)
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FunctionCall {
+    pub name: String,
+    pub arguments: String,
 }
 
-fn is_timeout(error: &HttpError) -> bool {
-    let timed_out = matches!(error, HttpError::Request(source) if source.is_timeout());
-    timed_out
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ResponseFormat {
+    #[serde(rename = "type")]
+    pub kind: String,
+    // a caller's JSON schema is free-form by definition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub json_schema: Option<Value>,
 }
 
 mod tests;

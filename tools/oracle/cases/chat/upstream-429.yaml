@@ -1,9 +1,23 @@
 name: chat-upstream-429
 config: |
   model_list:
-    - model_name: oracle-model
-      litellm_params: {model: openai/oracle-model, api_base: "{{upstream}}", api_key: oracle-key}
+    - model_name: rate-limited-model
+      litellm_params: {model: openai/gpt-429-upstream, api_base: "{{upstream}}", api_key: oracle-key}
+  router_settings: {num_retries: 0}
+  litellm_settings: {request_timeout: 45.5}
 env: {}
-request: {method: POST, path: /v1/chat/completions, headers: {content-type: application/json, authorization: Bearer oracle-master}, body: {model: oracle-model, messages: [{role: user, content: hi}]}}
-upstream: [{status: 429, headers: {content-type: application/json}, body: {error: {message: rate limited, type: rate_limit_error, code: rate_limit_exceeded}}}]
-compare: {headers: [content-type], headers_present: [x-litellm-call-id], upstream_headers: [authorization, content-type], ignore: [{pointer: /error/message, why: generated}]}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-429}
+  body: {model: rate-limited-model, messages: [{role: user, content: hi}]}
+upstream:
+  - status: 429
+    headers: {content-type: application/json, x-ratelimit-remaining-requests: "0"}
+    body: {error: {message: "Rate limit reached", type: requests, param: null, code: rate_limit_exceeded}}
+compare:
+  headers: [content-type, llm_provider-content-type, llm_provider-x-ratelimit-remaining-requests, x-ratelimit-remaining-requests, x-litellm-call-id, x-litellm-timeout]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}

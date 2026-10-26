@@ -1,7 +1,12 @@
 use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_config::types::Config;
+use betterlite_server::server::chat_setup::chat_executor;
 use betterlite_server::server::run;
 use clap::Parser;
+use rand::SeedableRng as _;
+use rand::rngs::{StdRng, SysRng};
 use std::collections::BTreeMap;
+use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -25,20 +30,21 @@ fn main() -> ExitCode {
         .with_writer(io::stderr)
         .init();
     let cli = Cli::parse();
-    let source = match fs::read_to_string(&cli.config) {
-        Ok(source) => source,
+    let environment = process_environment();
+    let Some(config) = load_config(&cli.config, environment.clone()) else {
+        return ExitCode::FAILURE;
+    };
+    let random = match StdRng::try_from_rng(&mut SysRng) {
+        Ok(random) => random,
         Err(error) => {
-            tracing::error!(path = %cli.config.display(), error = ?error, "failed to read configuration");
+            tracing::error!(error = %error, "failed to seed the deployment picker from the OS");
             return ExitCode::FAILURE;
         }
     };
-    let loader = ConfigLoader {
-        lookup: BTreeMap::new(),
-    };
-    let config = match loader.load(&source) {
-        Ok(config) => config,
+    let chat = match chat_executor(&config, &environment, random) {
+        Ok(executor) => executor,
         Err(error) => {
-            log_config_error(&error, &cli.config);
+            tracing::error!(error = %error, "failed to set up chat completions");
             return ExitCode::FAILURE;
         }
     };
@@ -49,11 +55,49 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match runtime.block_on(run(config, &cli.host, cli.port)) {
+    match runtime.block_on(run(config, chat, &cli.host, cli.port)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(error = ?error, "server stopped with an error");
             ExitCode::FAILURE
+        }
+    }
+}
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the binary is where the process environment enters, and it hands every variable to the config crate"
+)]
+fn process_environment() -> BTreeMap<String, String> {
+    let mut environment = BTreeMap::new();
+    for (raw_name, raw_value) in env::vars_os() {
+        match (raw_name.into_string(), raw_value.into_string()) {
+            (Ok(name), Ok(value)) => {
+                environment.insert(name, value);
+            }
+            (Ok(name), Err(_)) => {
+                tracing::warn!(variable = name, "environment variable is not UTF-8 and is ignored");
+            }
+            (Err(_), _) => tracing::warn!("an environment variable name is not UTF-8 and is ignored"),
+        }
+    }
+    environment
+}
+fn load_config(location: &Path, environment: BTreeMap<String, String>) -> Option<Config> {
+    let source = match fs::read_to_string(location) {
+        Ok(source) => source,
+        Err(error) => {
+            tracing::error!(path = %location.display(), error = ?error, "failed to read configuration");
+            return None;
+        }
+    };
+    let loader = ConfigLoader {
+        lookup: environment,
+    };
+    match loader.load(&source) {
+        Ok(config) => Some(config),
+        Err(error) => {
+            log_config_error(&error, location);
+            None
         }
     }
 }
