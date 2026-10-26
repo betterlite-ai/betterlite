@@ -1,0 +1,5 @@
+task: B3044
+deviations:
+  - what: cache-read tokens are excluded from input and total billable counts but remain available in the original usage values
+    why: providers such as AWS Bedrock report cached tokens but do not bill them toward TPM windows
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4226-L4243
