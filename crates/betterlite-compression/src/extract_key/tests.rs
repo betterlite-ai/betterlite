@@ -1,0 +1,46 @@
+#![cfg(test)]
+
+use super::*;
+use serde_json::json;
+
+#[test]
+fn samples_unicode_characters() {
+    let message = json!({"content": format!("{}\nFile: src/unicode.rs", "\u{754c}".repeat(1000))});
+    let mut used = Vec::new();
+    assert_eq!(extract_key(&message, 0, &mut used), "unicode.rs");
+    let beyond_limit =
+        json!({"content": format!("{}\nFile: src/hidden.rs", "\u{754c}".repeat(2000))});
+    assert_eq!(extract_key(&beyond_limit, 1, &mut used), "message_1");
+}
+
+#[test]
+fn extracts_filename_and_suffixes_duplicates() {
+    let message = json!({"content":"# src/main.rs\ncode"});
+    let mut used = Vec::new();
+    assert_eq!(extract_key(&message, 4, &mut used), "main.rs");
+    assert_eq!(extract_key(&message, 4, &mut used), "main.rs_2");
+    assert_eq!(extract_key(&message, 4, &mut used), "main.rs_3");
+}
+
+#[test]
+fn content_blocks_contribute_text_to_key_search() {
+    let message = json!({"content":[{"type":"text","text":"File: src/config.yaml"}]});
+    let mut used = Vec::new();
+    assert_eq!(extract_key(&message, 0, &mut used), "config.yaml");
+}
+
+#[test]
+fn finds_path_patterns_after_the_first_line() {
+    let message = json!({"content":"context\nFile: src/config.yaml"});
+    let mut used = Vec::new();
+    assert_eq!(extract_key(&message, 0, &mut used), "config.yaml");
+}
+
+#[test]
+fn falls_back_to_message_index() {
+    let mut used = Vec::new();
+    assert_eq!(
+        extract_key(&json!({"content":"hello"}), 7, &mut used),
+        "message_7"
+    );
+}

@@ -1,0 +1,8 @@
+kind: helper
+name: upload-filename-double-dot-extension
+call:
+  upload_filename:
+    filename: report..pdf
+env: {}
+compare:
+  ignore: []
