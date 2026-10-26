@@ -4,8 +4,9 @@ use std::str::{self, Utf8Error};
 use std::time::Duration;
 
 use crate::OracleError;
-use crate::case::Request;
-use reqwest::blocking::{Client, ClientBuilder};
+use crate::case::{BodyKind, Request, RequestBody};
+use crate::multipart_oracle;
+use reqwest::blocking::{Client, ClientBuilder, RequestBuilder};
 use reqwest::redirect::Policy;
 use serde_json::Value;
 
@@ -47,7 +48,7 @@ pub(crate) fn send(
         outgoing = outgoing.header(name, value);
     }
     if !request.body.is_null() {
-        outgoing = outgoing.body(serde_json::to_vec(&request.body).map_err(OracleError::HttpBody)?);
+        outgoing = add_body(outgoing, &request.body, request.body_kind)?;
     }
     let incoming = outgoing.send().map_err(OracleError::HttpRequest)?;
     let status = incoming.status().as_u16();
@@ -77,6 +78,20 @@ pub(crate) fn send(
     })
 }
 
+fn add_body(
+    outgoing: RequestBuilder,
+    body: &Value,
+    kind: BodyKind,
+) -> Result<RequestBuilder, OracleError> {
+    match multipart_oracle::request::request_body(body, kind)? {
+        RequestBody::Json(bytes) => Ok(outgoing.body(bytes)),
+        RequestBody::Raw {
+            content_type,
+            bytes,
+        } => Ok(outgoing.header("content-type", content_type).body(bytes)),
+    }
+}
+
 pub(crate) fn ready(client: &Client, base: &str) -> Result<bool, OracleError> {
     let response = client
         .get(format!("{base}/health/liveliness"))
@@ -89,6 +104,14 @@ pub(crate) fn parse_body(
     headers: &BTreeMap<String, String>,
     bytes: &[u8],
 ) -> Result<Value, OracleError> {
+    if headers
+        .get("content-type")
+        .is_some_and(|value| value.starts_with("application/octet-stream"))
+    {
+        return Ok(Value::Array(
+            bytes.iter().map(|byte| Value::from(*byte)).collect(),
+        ));
+    }
     let text = str::from_utf8(bytes).map_err(OracleError::HttpText)?;
     if headers
         .get("content-type")

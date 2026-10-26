@@ -18,6 +18,7 @@ mod gateway;
 mod helpers;
 pub mod http;
 pub mod mock;
+pub mod multipart_oracle;
 mod paths;
 pub mod process;
 pub mod routing_mock_scripts;
@@ -74,6 +75,10 @@ pub enum OracleError {
     HttpText(#[source] Utf8Error),
     #[error("response body event is not valid JSON: {0}")]
     HttpBody(#[source] serde_json::Error),
+    #[error("{0}")]
+    Multipart(&'static str),
+    #[error("{0}")]
+    MultipartOwned(String),
     #[error("mock provider failed: {0}")]
     MockIo(#[source] io::Error),
     #[error("mock provider thread panicked")]

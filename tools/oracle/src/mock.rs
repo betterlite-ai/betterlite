@@ -20,6 +20,7 @@ use tokio::sync::oneshot;
 use crate::OracleError;
 use crate::case::UpstreamAnswer;
 use crate::http::MAX_BODY;
+use crate::multipart_oracle;
 use crate::routing_mock_scripts::{
     CallGuard, CallOutcome, MockScript, Outcome, ProviderCall, Recording, Ticket, redact,
 };
@@ -127,7 +128,7 @@ async fn handle(
         .await
         .map_err(|_source| StatusCode::REQUEST_TIMEOUT)?
         .map_err(|_source| StatusCode::PAYLOAD_TOO_LARGE)?;
-    let text = str::from_utf8(&bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
+    let body_text = str::from_utf8(&bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
     let mut headers = parts
         .headers
         .iter()
@@ -144,7 +145,8 @@ async fn handle(
         method: parts.method.to_string(),
         path: parts.uri.to_string(),
         headers,
-        body: serde_json::from_str(text).unwrap_or_else(|_source| Value::String(text.to_owned())),
+        body: serde_json::from_str(body_text)
+            .unwrap_or_else(|_source| Value::String(body_text.to_owned())),
     };
     let admitted = state
         .lock()
@@ -197,7 +199,15 @@ fn fail(state: &Mutex<Recording>, error: Error) -> StatusCode {
 }
 
 fn reply(answer: UpstreamAnswer) -> Result<Response<Body>, Error> {
-    let body = if let Some(json) = answer.body {
+    let body = if answer
+        .headers
+        .get("content-type")
+        .is_some_and(|value| value.starts_with("application/octet-stream"))
+    {
+        multipart_oracle::request::answer_body(&answer)
+            .map_err(Error::other)?
+            .ok_or_else(|| Error::other("missing bytes answer"))?
+    } else if let Some(json) = answer.body {
         serde_json::to_vec(&json).map_err(Error::other)?
     } else {
         let mut bytes = Vec::new();

@@ -9,6 +9,8 @@ use betterlite_postgres_fixture::seed::DatabaseFixture;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::multipart_oracle;
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Case {
@@ -65,6 +67,26 @@ pub(crate) struct Request {
     pub(crate) path: String,
     pub(crate) headers: BTreeMap<String, String>,
     pub(crate) body: Value,
+    #[serde(default)]
+    pub(crate) body_kind: BodyKind,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum BodyKind {
+    #[default]
+    Json,
+    Multipart,
+    Bytes,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum RequestBody {
+    Json(Vec<u8>),
+    Raw {
+        content_type: String,
+        bytes: Vec<u8>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -132,6 +154,11 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
 }
 
 pub fn decode_http_case(bytes: &[u8]) -> Result<HttpCase, OracleError> {
+    let path = Path::new("<bytes>");
+    decode_case(path, bytes)
+}
+
+pub fn decode_http_body(bytes: &[u8]) -> Result<HttpCase, OracleError> {
     let path = Path::new("<bytes>");
     decode_case(path, bytes)
 }
@@ -208,7 +235,18 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
                 "each upstream answer must contain exactly one of body or events",
             ));
         }
+        if answer
+            .headers
+            .get("content-type")
+            .is_some_and(|value| value.starts_with("application/octet-stream"))
+        {
+            drop(multipart_oracle::request::answer_body(answer)?);
+        }
     }
+    drop(multipart_oracle::request::request_body(
+        &case.request.body,
+        case.request.body_kind,
+    )?);
     validate_ignores(path, &case.compare.ignore)
 }
 

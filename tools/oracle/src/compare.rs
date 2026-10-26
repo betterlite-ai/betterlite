@@ -1,10 +1,11 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
 use crate::case::{Compare, Ignore};
 use crate::http::Response;
 use crate::mock::ProviderRequest;
+use crate::multipart_oracle;
 
 pub(crate) mod helper;
 
@@ -114,8 +115,13 @@ pub(crate) fn compare(
         remove_pointer(&mut left_body, &ignored.pointer);
         remove_pointer(&mut right_body, &ignored.pointer);
     }
-    if let Some(pointer) = first_difference(&left_body, &right_body, "") {
-        return Err(difference(&pointer, "response bodies differ"));
+    if let Some(body_pointer) = first_difference(&left_body, &right_body, "") {
+        let response_pointer = if left_body.is_array() && right_body.is_array() {
+            "/response/bytes"
+        } else {
+            &body_pointer
+        };
+        return Err(difference(response_pointer, "response bodies differ"));
     }
     for header in &compare.headers {
         let name = header.to_ascii_lowercase();
@@ -151,29 +157,86 @@ fn compare_provider_requests(
         return Err(difference("/upstream", "provider request counts differ"));
     }
     for (index, (left_request, right_request)) in left.iter().zip(right).enumerate() {
-        if left_request.method != right_request.method || left_request.path != right_request.path {
+        compare_provider_request(index, left_request, right_request, compare, &difference)?;
+    }
+    Ok(())
+}
+
+fn compare_provider_request(
+    index: usize,
+    left: &ProviderRequest,
+    right: &ProviderRequest,
+    compare: &Compare,
+    difference: &dyn Fn(&str, &str) -> Difference,
+) -> Result<(), Difference> {
+    if left.method != right.method || left.path != right.path {
+        return Err(difference(
+            &format!("/upstream/{index}"),
+            "provider request targets differ",
+        ));
+    }
+    if left.body != right.body {
+        let pointer = multipart_difference(&left.headers, &left.body, &right.headers, &right.body)
+            .map_or_else(
+                || format!("/upstream/{index}/body"),
+                |part| format!("/upstream/{index}{part}"),
+            );
+        return Err(difference(&pointer, "provider request bodies differ"));
+    }
+    for header in &compare.upstream_headers {
+        let name = header.to_ascii_lowercase();
+        if left.headers.get(&name) != right.headers.get(&name) {
             return Err(difference(
-                &format!("/upstream/{index}"),
-                "provider request targets differ",
+                &format!("/upstream/{index}/headers/{name}"),
+                "provider header values differ",
             ));
-        }
-        if left_request.body != right_request.body {
-            return Err(difference(
-                &format!("/upstream/{index}/body"),
-                "provider request bodies differ",
-            ));
-        }
-        for header in &compare.upstream_headers {
-            let name = header.to_ascii_lowercase();
-            if left_request.headers.get(&name) != right_request.headers.get(&name) {
-                return Err(difference(
-                    &format!("/upstream/{index}/headers/{name}"),
-                    "provider header values differ",
-                ));
-            }
         }
     }
     Ok(())
+}
+
+fn multipart_difference(
+    left_headers: &BTreeMap<String, String>,
+    left: &Value,
+    right_headers: &BTreeMap<String, String>,
+    right: &Value,
+) -> Option<String> {
+    let left_content_type = left_headers.get("content-type")?;
+    let right_content_type = right_headers.get("content-type")?;
+    if !left_content_type.starts_with("multipart/form-data")
+        || !right_content_type.starts_with("multipart/form-data")
+    {
+        return None;
+    }
+    let left_bytes = left.as_str()?.as_bytes();
+    let right_bytes = right.as_str()?.as_bytes();
+    let left_parts =
+        multipart_oracle::capture::decode_multipart_capture(left_content_type, left_bytes).ok()?;
+    let right_parts =
+        multipart_oracle::capture::decode_multipart_capture(right_content_type, right_bytes)
+            .ok()?;
+    let count = left_parts.len().max(right_parts.len());
+    for index in 0..count {
+        let Some(left_part) = left_parts.get(index) else {
+            return Some(format!("/parts/{index}"));
+        };
+        let Some(right_part) = right_parts.get(index) else {
+            return Some(format!("/parts/{index}"));
+        };
+        if left_part.name != right_part.name {
+            return Some(format!("/parts/{index}/name"));
+        }
+        if left_part.filename != right_part.filename {
+            return Some(format!("/parts/{index}/filename"));
+        }
+        if left_part.content_type != right_part.content_type {
+            return Some(format!("/parts/{index}/content_type"));
+        }
+        if left_part.body != right_part.body {
+            return Some(format!("/parts/{index}/body"));
+        }
+    }
+    None
 }
 
 fn remove_pointer(value: &mut Value, pointer: &str) {
