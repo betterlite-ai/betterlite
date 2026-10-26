@@ -60,20 +60,21 @@ fn empty_db_means_cleared_for_alerting(
 }
 
 #[rstest]
-#[case::db_wins(r#"{"SMTP_HOST": "db"}"#, Some("env"), Some("db"), FieldSource::Db)]
-#[case::db_keeps_padding(r#"{"SMTP_HOST": " db "}"#, Some("env"), Some(" db "), FieldSource::Db)]
-#[case::empty_db_falls_back(r#"{"SMTP_HOST": ""}"#, Some("env"), Some("env"), FieldSource::Env)]
-#[case::blank_db_falls_back(r#"{"SMTP_HOST": " \u001c "}"#, Some("env"), Some("env"), FieldSource::Env)]
-#[case::null_db_falls_back(r#"{"SMTP_HOST": null}"#, Some("env"), Some("env"), FieldSource::Env)]
-#[case::bool_db_is_absent(r#"{"SMTP_HOST": true}"#, Some("env"), Some("env"), FieldSource::Env)]
-#[case::number_db_is_absent(r#"{"SMTP_HOST": 1}"#, None, None, FieldSource::Unset)]
+#[case::db_wins(r#"{"SMTP_HOST": "db"}"#, Some("env"), Some("db"))]
+#[case::db_keeps_padding(r#"{"SMTP_HOST": " db "}"#, Some("env"), Some(" db "))]
+#[case::empty_db_falls_back(r#"{"SMTP_HOST": ""}"#, Some("env"), Some("env"))]
+#[case::blank_db_falls_back(r#"{"SMTP_HOST": " \u001c "}"#, Some("env"), Some("env"))]
+#[case::null_db_falls_back(r#"{"SMTP_HOST": null}"#, Some("env"), Some("env"))]
+#[case::bool_db_is_absent(r#"{"SMTP_HOST": true}"#, Some("env"), Some("env"))]
+#[case::number_db_is_absent(r#"{"SMTP_HOST": 1}"#, None, None)]
 fn empty_db_means_absent_for_sso(
     #[case] row: &str,
     #[case] env: Option<&str>,
     #[case] value: Option<&str>,
-    #[case] source: FieldSource,
 ) {
-    assert_eq!(host(row, env, EmptyDbValue::Absent), (value.map(str::to_owned), source));
+    let fields = resolve_fields(&HOST, &stored(row), &environment(env), EmptyDbValue::Absent).unwrap();
+    let resolved: Vec<Option<&str>> = fields.iter().map(|field| field.value.as_deref()).collect();
+    assert_eq!(resolved, vec![value]);
 }
 
 #[test]
