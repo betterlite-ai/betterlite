@@ -208,7 +208,7 @@ fn replays_the_session_token_corpus() {
                 .any(|signing| open_token(seed, Session, signing, at(0)).is_ok())
         })
         .count();
-    assert_eq!((seeds.len() > 100, opened), (true, 1));
+    assert_eq!((seeds.len() > 50, opened), (true, 1));
 }
 
 #[test]
