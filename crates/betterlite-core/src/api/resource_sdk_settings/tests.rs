@@ -1,8 +1,9 @@
 #![cfg(test)]
 
-use super::{
-    FineTuningTimeout, ResourceSdkRequestOptions, StructuredTimeout, TimeoutError, TimeoutValue,
-    request_timeout, resolve_fine_tuning_timeout, supports_httpx_timeout,
+use super::ResourceSdkRequestOptions;
+use super::timeout::{
+    FineTuningTimeout, StructuredTimeout, TimeoutError, TimeoutValue, request_timeout,
+    resolve_fine_tuning_timeout, supports_httpx_timeout,
 };
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -15,12 +16,10 @@ fn openai_resource_precedence() {
     settings.openai_api_key = Some(SecretString::from("env-key"));
     settings.organization = Some("global-org".to_owned());
     settings.openai_organization = Some("env-org".to_owned());
-    let mut request = ResourceSdkRequestOptions {
-        api_base: Some("request-base".to_owned()),
-        api_key: Some(SecretString::from("request-key")),
-        organization: Some("request-org".to_owned()),
-        ..ResourceSdkRequestOptions::default()
-    };
+    let mut request = request_options();
+    request.api_base = Some("request-base".to_owned());
+    request.api_key = Some(SecretString::from("request-key"));
+    request.organization = Some("request-org".to_owned());
     assert_eq!(settings.openai_base(&request), "request-base");
     assert_eq!(
         exposed(settings.openai_api_key(&request)),
@@ -58,13 +57,11 @@ fn azure_resource_precedence() {
     settings.azure_api_version = Some("env-version".to_owned());
     settings.api_key = Some(SecretString::from("global-key"));
     settings.azure_openai_api_key = Some(SecretString::from("env-key"));
-    let mut request = ResourceSdkRequestOptions {
-        api_base: Some("request-base".to_owned()),
-        api_version: Some("request-version".to_owned()),
-        api_key: Some(SecretString::from("request-key")),
-        organization: Some("request-org".to_owned()),
-        ..ResourceSdkRequestOptions::default()
-    };
+    let mut request = request_options();
+    request.api_base = Some("request-base".to_owned());
+    request.api_version = Some("request-version".to_owned());
+    request.api_key = Some(SecretString::from("request-key"));
+    request.organization = Some("request-org".to_owned());
     assert_eq!(settings.azure_base(&request), Some("request-base"));
     assert_eq!(settings.azure_version(&request), Some("request-version"));
     assert_eq!(
@@ -100,13 +97,11 @@ fn vertex_resource_settings() {
     settings.vertex_location = Some("global-location".to_owned());
     settings.vertexai_location = Some("env-location".to_owned());
     settings.vertexai_credentials = Some(SecretString::from("env-credentials"));
-    let mut request = ResourceSdkRequestOptions {
-        api_base: Some("request-base".to_owned()),
-        vertex_project: Some("request-project".to_owned()),
-        vertex_location: Some("request-location".to_owned()),
-        vertex_credentials: Some(SecretString::from("request-credentials")),
-        ..ResourceSdkRequestOptions::default()
-    };
+    let mut request = request_options();
+    request.api_base = Some("request-base".to_owned());
+    request.vertex_project = Some("request-project".to_owned());
+    request.vertex_location = Some("request-location".to_owned());
+    request.vertex_credentials = Some(SecretString::from("request-credentials"));
     assert_eq!(settings.vertex_base(&request), "request-base");
     assert_eq!(settings.vertex_project(&request), Some("request-project"));
     assert_eq!(settings.vertex_location(&request), Some("request-location"));
@@ -139,30 +134,56 @@ fn timeout_capability_and_conversion() {
     assert!(!supports_httpx_timeout("vertex_ai"));
     assert_eq!(request_timeout(Some(0.0_f64), Some(9.0_f64)), Ok(9.0_f64));
     assert_eq!(request_timeout(Some(0.0_f64), Some(0.0_f64)), Ok(600.0_f64));
-    for (raw, expected) in [("7.5", 7.5_f64), (" 7 ", 7.0_f64), ("1_000", 1000.0_f64)] {
-        assert_eq!(
-            resolve_fine_tuning_timeout(
-                Some(&TimeoutValue::String(raw.to_owned())),
-                "openai",
-                None
-            ),
-            Ok(FineTuningTimeout::Seconds(expected))
-        );
-    }
-    for raw in ["bad", "_1", "1__0"] {
-        assert!(matches!(
-            resolve_fine_tuning_timeout(
-                Some(&TimeoutValue::String(raw.to_owned())),
-                "openai",
-                None
-            ),
-            Err(TimeoutError::InvalidNumber { .. })
-        ));
-    }
+    assert_raw_timeout_values();
     assert_eq!(
         resolve_fine_tuning_timeout(Some(&TimeoutValue::Number(0.0)), "openai", None),
         Ok(FineTuningTimeout::Seconds(600.0))
     );
+}
+
+fn assert_raw_timeout_values() {
+    assert_eq!(
+        resolve_fine_tuning_timeout(
+            Some(&TimeoutValue::String("7.5".to_owned())),
+            "openai",
+            None
+        ),
+        Ok(FineTuningTimeout::Seconds(7.5_f64))
+    );
+    assert_eq!(
+        resolve_fine_tuning_timeout(
+            Some(&TimeoutValue::String(" 7 ".to_owned())),
+            "openai",
+            None
+        ),
+        Ok(FineTuningTimeout::Seconds(7.0_f64))
+    );
+    assert_eq!(
+        resolve_fine_tuning_timeout(
+            Some(&TimeoutValue::String("1_000".to_owned())),
+            "openai",
+            None
+        ),
+        Ok(FineTuningTimeout::Seconds(1000.0_f64))
+    );
+    assert_invalid_timeout_values();
+}
+
+fn assert_invalid_timeout_values() {
+    assert_invalid_timeout("bad");
+    assert_invalid_timeout("_1");
+    assert_invalid_timeout("1__0");
+}
+
+fn assert_invalid_timeout(value: &str) {
+    assert!(matches!(
+        resolve_fine_tuning_timeout(
+            Some(&TimeoutValue::String(value.to_owned())),
+            "openai",
+            None
+        ),
+        Err(TimeoutError::InvalidNumber { .. })
+    ));
 }
 
 #[test]
@@ -239,4 +260,16 @@ fn test_settings() -> super::ResourceSdkSettings {
 
 fn exposed(value: Option<&SecretString>) -> Option<&str> {
     value.map(SecretString::expose_secret)
+}
+
+fn request_options() -> ResourceSdkRequestOptions {
+    ResourceSdkRequestOptions {
+        api_base: None,
+        api_version: None,
+        api_key: None,
+        organization: None,
+        vertex_project: None,
+        vertex_location: None,
+        vertex_credentials: None,
+    }
 }
