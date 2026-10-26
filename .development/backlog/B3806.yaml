@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Presidio response and logging transformations
 status: todo
 depends_on: [B3805]
-file: null
+file: tasks/B3806-presidio-response.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/presidio.py"
 parent: B108

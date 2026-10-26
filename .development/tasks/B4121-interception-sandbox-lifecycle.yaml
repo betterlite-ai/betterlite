@@ -1,0 +1,156 @@
+id: B4121
+title: Sandbox reuse eviction execution and cleanup
+description: >-
+  Build sandbox lifecycle operations and cache management with injected clock and provider contracts,
+  preserving a sliding 900-second expiry window, ten session entries per identity, LRU deletion ordering
+  and best-effort cleanup. Keep execution-error text extraction, invalid-argument graceful handling and insertion
+  of code-interpreter outputs before the first Responses message.
+
+  The sandbox cache is per-deployment, keyed by sandbox_key (a colon-separated identity:session_id or a UUID).
+  Each cache entry is a four-tuple of container handle, sandbox provider parameters, last-access timestamp and identity.
+  Session-scoped containers use identity for LRU eviction; request-scoped containers evict on post-hook.
+  _prune_expired_cache runs before every plan build, removing entries older than 900 seconds.
+  _evict_lru_session_if_over_cap removes the least recently accessed session when an identity reaches ten entries.
+
+  Code execution errors are extracted from result.error.value or result.error.name fields without panicking.
+  Tool-call arguments that fail to parse JSON return "[invalid tool arguments: could not parse code]".
+  The post-hook merges code_interpreter_calls (from plan metadata) before the first message-type output item,
+  preserving execution order and response shape.
+scope:
+  paths:
+  - crates/betterlite-openai/src/sandbox_lifecycle.rs
+  - crates/betterlite-openai/src/sandbox_lifecycle/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L190-L207
+  why: _resolve_sandbox_tool resolves sandbox configuration from a tool name.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L614-L618
+  why: async_agentic_loop_cleanup_hook deletes request-scoped containers and skips session-scoped ones after plan execution.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L652-L675
+  why: async_post_agentic_loop_response_hook merges outputs and deletes request-scoped containers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L695-L732
+  why: "Container get/create/evict operations with LRU cache management."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L734-L788
+  why: "Container lifecycle: create, run code, delete with error handling and fallback to result error fields."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L892-L901
+  why: "Cache pruning on every plan build, removing entries by timestamp."
+dod:
+- text: _resolve_sandbox_tool accepts sandbox_tool_name or None, returns SandboxToolParams on success or None on import failure/resolution failure.
+  proof:
+  - sandbox-tool-resolution
+- text: _resolve_sandbox_tool extracts sandbox_provider, api_key and api_base from resolved dict, coercing to string/None types.
+  proof:
+  - sandbox-tool-extraction
+- text: _run_tool_call parses arguments as JSON and extracts code field, returning execution error message from result.error if present.
+  proof:
+  - run-tool-call
+- text: "_run_tool_call catches JSONDecodeError/TypeError on argument parsing and returns \"[invalid tool arguments: could not parse code]\"."
+  proof:
+  - run-tool-call-invalid-args
+- text: _get_or_create_container returns cached container when cache_key matches and updates last-access timestamp.
+  proof:
+  - get-cached-container
+- text: _get_or_create_container creates new container when cache misses, registers in cache with timestamp and identity.
+  proof:
+  - create-new-container
+- text: _evict_lru_session_if_over_cap finds entries matching identity and removes least-recently-accessed when count reaches ten.
+  proof:
+  - evict-lru-session
+- text: _create_container calls sandbox_config.acreate_sandbox or litellm.acreate_sandbox with resolved params, raising ValueError when both missing.
+  proof:
+  - create-container
+- text: _run_code calls sandbox_config.arun_code or litellm.arun_code with container and code, raising ValueError when both missing.
+  proof:
+  - run-code
+- text: _delete_container calls sandbox_config.adelete_sandbox or litellm.adelete_sandbox, catching and logging exceptions without raising.
+  proof:
+  - delete-container-cleanup
+- text: _delete_container_for_cache_key removes cache entry and calls _delete_container with cached container and params.
+  proof:
+  - delete-container-for-cache-key
+- text: _prune_expired_cache removes all cache entries older than 900 seconds and calls _delete_container for each.
+  proof:
+  - prune-expired-cache
+- text: async_agentic_loop_cleanup_hook skips deletion when plan.metadata.is_session_scoped is true, deletes otherwise.
+  proof:
+  - cleanup-hook-session-scoped
+- text: async_post_agentic_loop_response_hook deletes request-scoped containers, merges code_interpreter_calls before first message-type output.
+  proof:
+  - post-hook-merge-outputs
+- text: "Error message text from execution error, error.name or error.value fields is preserved with \"[execution error] \" prefix."
+  proof:
+  - error-message-extraction
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: sandbox-tool-resolution
+    why: _resolve_sandbox_tool is missing or does not handle None input or import failure.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::resolution::tool_resolution/)'
+  - id: sandbox-tool-extraction
+    why: _resolve_sandbox_tool does not coerce provider/api_key/api_base to correct types.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::resolution::tool_extraction/)'
+  - id: run-tool-call
+    why: _run_tool_call is missing or does not extract code and run it, returning stdout or error message.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::tool_execution::run_tool_call/)'
+  - id: run-tool-call-invalid-args
+    why: _run_tool_call does not handle malformed JSON gracefully.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::tool_execution::invalid_arguments/)'
+  - id: get-cached-container
+    why: _get_or_create_container does not reuse cached containers or does not update timestamps.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::cache_operations::get_cached/)'
+  - id: create-new-container
+    why: _get_or_create_container does not create and cache new containers.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::cache_operations::create_new/)'
+  - id: evict-lru-session
+    why: _evict_lru_session_if_over_cap does not evict LRU entry when identity reaches ten entries.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::cache_operations::evict_lru/)'
+  - id: create-container
+    why: _create_container is missing or does not call sandbox_config or litellm.acreate_sandbox correctly.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::lifecycle::create/)'
+  - id: run-code
+    why: _run_code is missing or does not call sandbox_config or litellm.arun_code correctly.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::lifecycle::run/)'
+  - id: delete-container-cleanup
+    why: _delete_container does not call sandbox_config or litellm.adelete_sandbox, or does not handle exceptions.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::lifecycle::delete/)'
+  - id: delete-container-for-cache-key
+    why: _delete_container_for_cache_key does not remove cache entry or call _delete_container.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::lifecycle::delete_by_key/)'
+  - id: prune-expired-cache
+    why: _prune_expired_cache does not remove entries older than 900 seconds.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::cache_operations::prune/)'
+  - id: cleanup-hook-session-scoped
+    why: async_agentic_loop_cleanup_hook does not respect session scoping or does not delete correctly.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::hooks::cleanup/)'
+  - id: post-hook-merge-outputs
+    why: async_post_agentic_loop_response_hook does not merge code_interpreter_calls or delete correctly.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::hooks::post_response/)'
+  - id: error-message-extraction
+    why: Error messages from result.error are not extracted correctly or lack "[execution error] " prefix.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sandbox_lifecycle::tool_execution::error_message/)'
+oracle_cases: []
+deviations:
+- what: Cache TTL is 900 seconds (15 minutes), with per-identity LRU cap of 10 entries.
+  why: LiteLLM uses these constants; they are not configurable per request.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L54-L55
+- what: Session-scoped containers skip deletion in cleanup hook; request-scoped containers delete on post-hook.
+  why: Session-scoped containers must survive across multiple tool calls in one agentic loop.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L614-L618
+- what: "Error messages concatenate \"[execution error] \" prefix with error.value or error.name without panicking on missing fields."
+  why: "Sandbox results may have different error shapes; graceful extraction preserves user code failure info."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L695-L706
+out_of_scope:
+- Actual sandbox provider implementations (acreate_sandbox, arun_code, adelete_sandbox). These are injected contracts passed in through sandbox_config or resolved from litellm's sandbox registry.
+- Sandbox configuration/credential storage. sandbox_tool_name resolution happens once in _resolve_sandbox_tool; credentials are not stored or validated here.
+- Agentic loop executor. The cleanup and post hooks are called by the generic agentic loop; this part does not invoke the executor.
+pitfalls:
+- Cache entries are a four-tuple (container, params, timestamp, identity). Identity is None for request-scoped containers, which simplifies LRU filtering.
+- _delete_container catches and logs exceptions but never raises; a failed delete should not abort the response or plan execution.
+- _run_tool_call catches JSONDecodeError and TypeError but not AttributeError, so a valid non-object JSON value (e.g., a string "print()") panics and triggers deletion in the caller's exception handler.
+- The LRU eviction looks at entries with matching identity, so request-scoped entries (identity=None) never trigger eviction and only evict on per-key deletion.
+- Expiry check uses current timestamp minus entry timestamp, so a clock mock in tests must provide consistent time.
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 1

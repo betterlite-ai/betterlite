@@ -1,0 +1,93 @@
+id: B3808
+title: Semantic guard route loading and templates
+description: >-
+  Build the semantic guard route loader that reads built-in YAML templates (prompt injection and SQL injection detection)
+  and custom route definitions from files or inline config, then composes them into semantic-router Route objects.
+  Load templates from litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_templates/ in sorted order.
+  Routes are built by concatenating from three sources in order: templates first, then custom_routes_file, then inline custom_routes.
+  If the same route name appears in multiple sources, all instances are included in the final list (no deduplication).
+  Feed the loaded routes into betterlite-router's semantic_router.rs with a LiteLLMRouterEncoder instance
+  from B327, never building a second embedding service.
+  Template listing returns alphabetically sorted names.
+  The semantic-router library version is locked by B327's oracle deps; reuse its LiteLLMRouterEncoder.__init__
+  and the SemanticRouter composition without reimplementing embeddings or scoring.
+  Error cases: route file missing (not found), invalid YAML format (parse error), missing required route fields.
+  Configuration keys: route_templates (list of built-in names), custom_routes_file (path),
+  custom_routes (inline list). The global_threshold defaults to DEFAULT_SEMANTIC_GUARD_SIMILARITY_THRESHOLD
+  from litellm.constants.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/semantic_guard.rs
+    - crates/betterlite-guardrails/src/semantic_guard/**
+    - tools/oracle/cases/guardrails/semantic-guard/**
+    - Cargo.toml
+    - deny.toml
+    - tools/oracle/helpers/b3808.py
+    - tools/oracle/helpers/b3808/**
+    - tools/oracle/src/helpers/guardrails/b3808.rs
+    - tools/oracle/src/helpers/guardrails/b3808/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_loader.py#L30-L144
+    why: The load_builtin_template, list_builtin_templates, load_custom_routes_file, build_routes and build_semantic_router functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_templates/prompt_injection.yaml#L1-L82
+    why: The prompt injection template with 82 utterances for jailbreak, system prompt extraction and role hijacking detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_templates/sql_injection.yaml#L1-L61
+    why: The SQL injection template with 61 utterances for classic, time-based and error-based SQL injection payloads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py
+    why: DEFAULT_SEMANTIC_GUARD_SIMILARITY_THRESHOLD constant.
+dod:
+  - text: Built-in templates prompt_injection and sql_injection are embedded and load correctly by name.
+    proof: [template-loading]
+  - text: Routes are built with the correct route_name, description, utterances and score_threshold from templates and config.
+    proof: [route-building]
+  - text: Routes from all three sources (templates, custom_routes_file, custom_routes) are concatenated in order, with no deduplication.
+    proof: [route-concatenation]
+  - text: Template listing returns sorted names and includes only YAML files from the templates directory.
+    proof: [template-listing]
+  - text: SemanticRouter is created with the built routes and B327's LiteLLMRouterEncoder instance.
+    proof: [semantic-router-composition]
+  - text: File not found, invalid YAML and missing required route fields produce typed errors.
+    proof: [error-cases]
+checks:
+  optional: []
+  commands:
+    - id: template-loading
+      why: the built-in templates fail to load or return wrong data
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_route_loading::tests::template_loading(::|$)/)'
+    - id: route-building
+      why: routes lack correct fields or score_threshold
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_route_loading::tests::route_building(::|$)/)'
+    - id: route-concatenation
+      why: routes from multiple sources are not concatenated correctly or deduplication is incorrectly applied
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_route_loading::tests::route_concatenation(::|$)/)'
+    - id: template-listing
+      why: template listing is missing, unsorted or includes non-YAML files
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_route_loading::tests::template_listing(::|$)/)'
+    - id: semantic-router-composition
+      why: SemanticRouter is not created or lacks the LiteLLMRouterEncoder
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_route_loading::tests::semantic_router_composition(::|$)/)'
+    - id: error-cases
+      why: file-not-found, invalid YAML or missing fields are not typed errors
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_route_loading::tests::error_cases(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/semantic-guard/prompt-injection-template.yaml
+  - tools/oracle/cases/guardrails/semantic-guard/sql-injection-template.yaml
+  - tools/oracle/cases/guardrails/semantic-guard/routes-concatenation-order.yaml
+  - tools/oracle/cases/guardrails/semantic-guard/duplicate-routes-coexist.yaml
+deviations:
+  - what: Routes from all three sources (templates, custom_routes_file, custom_routes) are concatenated into a single list with no deduplication. If the same route name appears in multiple sources, all instances coexist in the final route list.
+    why: This matches LiteLLM's route_loader.py build_routes behavior exactly, which appends routes from all three sources without any name-based override or dedup logic.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_loader.py#L76-L117"
+out_of_scope:
+  - The encoder itself and semantic comparison; B327 owns LiteLLMRouterEncoder.__init__.
+  - The semantic-router library initialization beyond creating the SemanticRouter instance.
+  - Configuration schema and validation for the SemanticGuardrail class; B108 owns semantic_guard.py and __init__.py, which define the configuration parameters and their validation.
+pitfalls:
+  - The semantic-router library version is pinned by B327's oracle deps; do not select it independently here.
+  - Template files are embedded in the binary as static data; do not try to load them from the filesystem at runtime.
+  - Route names with colons or special characters must be handled as-is; the semantic-router library accepts them.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

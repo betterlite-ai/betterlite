@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Prompt cache dialect selection and breakpoint accounting
 status: todo
 depends_on: [B174, B193]
-file: null
+file: tasks/B4123-prompt-cache-accounting.yaml
 covers:
   - "litellm/integrations/anthropic_cache_control_hook.py"
   - "litellm/types/integrations/anthropic_cache_control_hook.py"

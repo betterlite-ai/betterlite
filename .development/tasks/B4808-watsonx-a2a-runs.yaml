@@ -1,0 +1,168 @@
+id: B4808
+title: Watsonx Orchestrate runs, polling and stream fallback
+description: >-
+  Build WXO run submission, terminal-state polling and buffered streaming adaptation
+  using B4807 credentials and projections. Preserve the fallback boundary: only a
+  transport failure before the streaming POST returns may submit a separate non-streaming run.
+
+  Implement run submission via POST to the base URL `/v1/orchestrate/runs` (non-streaming)
+  and `/v1/orchestrate/runs/stream` (streaming), extracting run_id from responses and building
+  properly typed request bodies. Poll up to 90 times at 2-second intervals until a terminal
+  state (completed, succeeded, failed, error, cancelled) is reached. Accept success states
+  (completed, succeeded); terminate and fail for non-success terminal states (failed, error,
+  cancelled). Implement a typed run decoder that safely parses run event JSON from both
+  polling responses and SSE stream payloads without panicking on malformed input. Handle
+  SSE streaming response content detection: non-SSE responses (application/json) are polled
+  after read; text/event-stream responses are fully accumulated and parsed line-by-line,
+  skipping malformed JSON and [DONE] markers. Implement a bounded SSE accumulator for
+  fragmented line input that tracks line boundaries across chunk boundaries.
+
+  Implement streaming fallback as a transport-only boundary: catch httpx.TransportError
+  before the streaming POST response is returned, call handle_non_streaming, extract result text,
+  and emit fake streaming events from the projection. Do not re-poll or fetch a run after
+  HTTP status error, body-read failure, or JSON decode failure in the streaming path.
+
+  Request timeouts: 90 seconds non-streaming, 120 seconds streaming. Implement the config
+  contract (BaseA2AProviderConfig) by wrapping handler functions with request parameter
+  extraction and error handling. Name test modules after the domain (watsonx_run_polling,
+  watsonx_run_fallback, watsonx_stream_accumulator), not the task ID. Fuzz the run event
+  decoder with a corpus seed containing valid/malformed/truncated JSON run payloads and
+  fragmented SSE lines. Provide helper adapters that expose handler methods to oracle cases
+  so submission, polling, streaming and fallback behavior can be validated against LiteLLM.
+  Write oracle cases for the non-streaming flow (submission + poll), streaming success path
+  (SSE), stream fallback on transport failure, fallback not triggered on post-response errors,
+  content-type detection, and terminal-state classification.
+scope:
+  paths:
+  - crates/betterlite-a2a/src/watsonx_run.rs
+  - crates/betterlite-a2a/src/watsonx_run/**
+  - crates/betterlite-a2a/fuzz/fuzz_targets/watsonx_run_event.rs
+  - crates/betterlite-a2a/fuzz/corpus/watsonx_run_event/**
+  - tools/oracle/cases/watsonx-orchestrate/**
+  - tools/oracle/helpers/b4808.py
+  - tools/oracle/helpers/b4808/**
+  - tools/oracle/src/helpers/a2a/b4808.rs
+  - tools/oracle/src/helpers/a2a/b4808/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L170-L203
+  why: "Run body extraction, run event decoding, polling loop with terminal state detection."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L205-L228
+  why: "Success state validation and run data retrieval after polling."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L230-L247
+  why: "SSE line accumulation, JSON parsing, [DONE] marker skipping and line extraction."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L275-L320
+  why: "Non-streaming flow: client creation, token retrieval, run submission, polling and response building."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L322-L401
+  why: "Streaming flow with content-type detection, SSE accumulation, fallback on TransportError before response."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/config.py#L17-L56
+  why: "Config wrapper implementing BaseA2AProviderConfig for non-streaming and streaming handlers."
+dod:
+- text: >-
+    Run submission sends POST to /v1/orchestrate/runs (non-streaming) and /v1/orchestrate/runs/stream (streaming)
+    with extracted litellm_params, base URL construction, auth headers and body from B4807 projections.
+  proof: [watsonx-run-submission]
+- text: >-
+    Polling loop sleeps 2 seconds, polls /v1/orchestrate/runs/{run_id}, detects terminal states (completed,
+    succeeded, failed, error, cancelled) and returns run data on success or raises after 90 attempts.
+  proof: [watsonx-run-polling]
+- text: >-
+    Run event decoder parses JSON from both response bodies and SSE line payloads without panicking on
+    malformed input; fuzz corpus contains valid/invalid/truncated JSON and multiline SSE payloads.
+  proof: [watsonx-run-event-fuzz]
+- text: >-
+    SSE accumulator collects complete data, payloads line-by-line, skipping lines not starting with "data:",
+    ignoring malformed JSON and [DONE], and preserving payload boundaries across fragmented input.
+  proof: [watsonx-stream-accumulator]
+- text: >-
+    Content-type detection distinguishes text/event-stream from other responses; non-SSE responses are read
+    and polled, SSE responses are accumulated line-by-line.
+  proof: [watsonx-content-detection]
+- text: >-
+    Streaming fallback catches TransportError before response is returned, calls non-streaming handler, extracts
+    result text, and emits fake streaming from B4807 projection without re-polling.
+  proof: [watsonx-stream-fallback]
+- text: >-
+    Streaming POST that returns non-2xx status, experiences body-read failure, or fails JSON decoding after
+    raise_for_status propagates the error without submitting a non-streaming fallback run.
+  proof: [watsonx-stream-fallback]
+- text: >-
+    Non-streaming timeout is 90 seconds, streaming timeout is 120 seconds, both applied to client creation
+    in handler implementations.
+  proof: [watsonx-run-polling]
+- text: >-
+    BaseA2AProviderConfig implementation extracts litellm_params, calls typed handler and returns or yields
+    properly formatted A2A responses from B4807 projections.
+  proof: [watsonx-config-contract]
+- text: >-
+    Every oracle case for run submission, polling success/failure, streaming with SSE, fallback on TransportError,
+    and content-type detection matches LiteLLM behavior.
+  proof: [watsonx-oracle-cases]
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: watsonx-run-event-fuzz
+    why: run event fuzz target or corpus is missing, or replaying the corpus fails
+    run: >-
+      test -f crates/betterlite-a2a/fuzz/fuzz_targets/watsonx_run_event.rs && test -n "$(ls -A crates/betterlite-a2a/fuzz/corpus/watsonx_run_event)"
+      && cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(replays_the_watsonx_run_event_corpus)'
+  - id: watsonx-run-submission
+    why: run submission tests fail or do not exist
+    run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^watsonx_run::.*submission/)'
+  - id: watsonx-run-polling
+    why: polling loop or timeout tests fail or do not exist
+    run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^watsonx_run::.*polling/) | test(/^watsonx_run::.*timeout/)'
+  - id: watsonx-stream-accumulator
+    why: SSE line accumulation or fragmented input handling fails or tests do not exist
+    run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^watsonx_run::.*accumulator/)'
+  - id: watsonx-content-detection
+    why: content-type detection for SSE vs JSON response fails or tests do not exist
+    run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^watsonx_run::.*content/)'
+  - id: watsonx-stream-fallback
+    why: streaming fallback on TransportError fails or tests do not exist
+    run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^watsonx_run::.*fallback/)'
+  - id: watsonx-config-contract
+    why: config wrapper or BaseA2AProviderConfig implementation tests fail or do not exist
+    run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^watsonx_run::.*(handler|config)/)'
+  - id: watsonx-oracle-cases
+    why: oracle cases fail or do not exist
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/watsonx-orchestrate)" && cargo nextest run --locked --no-tests=fail --package betterlite-oracle -E 'test(watsonx_run|watsonx_stream)'
+oracle_cases:
+- tools/oracle/cases/watsonx-orchestrate/run-submit-non-streaming.yaml
+- tools/oracle/cases/watsonx-orchestrate/run-poll-success.yaml
+- tools/oracle/cases/watsonx-orchestrate/run-poll-timeout.yaml
+- tools/oracle/cases/watsonx-orchestrate/run-poll-terminal-failed.yaml
+- tools/oracle/cases/watsonx-orchestrate/run-submit-streaming.yaml
+- tools/oracle/cases/watsonx-orchestrate/stream-sse-content.yaml
+- tools/oracle/cases/watsonx-orchestrate/stream-json-content-poll.yaml
+- tools/oracle/cases/watsonx-orchestrate/stream-fallback-transport-error.yaml
+- tools/oracle/cases/watsonx-orchestrate/stream-fallback-not-triggered-on-status-error.yaml
+deviations:
+- what: >-
+    Streaming fallback only catches transport failures (httpx.TransportError equivalent) before the POST returns.
+    HTTP error status codes and body-read failures do not trigger fallback; those errors propagate.
+  why: >-
+    Preserve the boundary that fallback is pre-submission only; post-submission failures cannot safely assume
+    no work occurred on the remote agent.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L351-L378
+out_of_scope:
+- "Run result text extraction and fake streaming event building belong to B4807; this task uses them as a projection."
+- "HTTP client creation and pooling belong to B173; this task calls injected client with configured timeouts."
+- "Token retrieval and caching belong to B4807; this task calls the bearer token function and builds auth headers."
+- "Config extraction and validation belong to B4807; this task receives validated WXORequestParams."
+- "Error classification and recovery belong to B4813; streaming failures are not retried with localhost fallback here."
+pitfalls:
+- "The fallback boundary is transport-only: catch the error before the response object is returned by client.post(),
+  not after headers or body chunks have arrived."
+- "Polling sleeps before each GET, not after, so 90 attempts spends up to 180 seconds even if all succeed."
+- "Run event decoder must handle both polling GET responses (direct JSON) and SSE stream data: payloads (JSON strings
+  from line content after \"data:\")."
+- "Content-type detection checks the response header after the POST succeeds; non-SSE responses still need polling."
+- "SSE line accumulator must handle \"data:\" prefixes, payload JSON, and [DONE] marker on any line."
+- "Terminal states include both success (completed, succeeded) and failure (failed, error, cancelled); poll until
+  any terminal state is reached, then check success separately."
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

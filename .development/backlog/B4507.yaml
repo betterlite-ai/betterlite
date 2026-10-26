@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Extract supported observations from recorded executions
 status: todo
 depends_on: [B4500, B4506]
-file: null
+file: tasks/B4507-lens-extraction.yaml
 covers:
   - "litellm/proxy/lens/analysis.py"
 parent: B132

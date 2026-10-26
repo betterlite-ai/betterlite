@@ -1,0 +1,98 @@
+id: B4832
+title: Run local sandbox commands with filtered credentials and owned processes
+description: >-
+  Implement the LocalSandbox backend in crates/betterlite-harness, which runs harness
+  CLI commands and operations as confined subprocesses on the same machine.
+  The sandbox filters provider credentials from the child environment, kills runaway
+  processes with a grace period, confines file I/O to a root directory and its temp
+  subdirs, manages temporary directories for isolated state, and reads/writes files
+  through asyncio's thread pool to stay unblocking.
+
+  LocalSandbox holds a workdir (absolute real path to an existing directory), collects
+  live subprocesses so they die when the sandbox closes, and tracks temp directories
+  created on demand to clean them up. On init, verify the path exists and is a directory,
+  raise SandboxError if not. Environment filtering removes every environment variable
+  whose name matches provider prefixes (ANTHROPIC_, OPENAI_, LITELLM_, AZURE_, AWS_,
+  GEMINI_, CODEX_, CURSOR_, VERTEX, CLAUDE_CODE_, CLAUDE_PID, CLAUDECODE), contains
+  API_KEY or TOKEN or SECRET (case-insensitive), or exactly matches GOOGLE_API_KEY or
+  GOOGLE_APPLICATION_CREDENTIALS. The filtered base then overlays any extra vars, so
+  extra always wins. Path resolution checks symlinks recursively and fails if a path
+  escapes the sandbox root or any temp dir. Subprocess startup sets start_new_session=True
+  to isolate process groups. Process shutdown sends SIGTERM and waits PROCESS_KILL_GRACE_SECONDS
+  (5.0 seconds, from litellm.constants.HARNESS_PROCESS_KILL_GRACE_SECONDS but renamed to fit
+  the 30-character code-name limit), then SIGKILL if the process is still alive.
+  Kill attempts on already-dead processes succeed silently. The tmpdir prefix is
+  literal "litellm-harness-". Subprocess stderr/stdout are read to EOF and decoded UTF-8
+  with replacement chars on invalid sequences. Commands with no timeout raise SandboxError
+  only on exec failure (binary not found) or real Sandbox state violations (closed, path
+  escapes), never on nonzero exit. Timeout failures raise SandboxError with a message
+  naming the timeout. host_url() returns http://127.0.0.1:<port>. which() searches
+  the child's PATH from child_env(). snapshot() delegates to snapshot_local(workdir)
+  from B4831. Everything is async/await; there is no sync wrapper here. The context
+  manager __aenter__ returns self, __aexit__ calls close() unconditionally.
+  exec() with an empty command list raises SandboxError('exec() needs a non-empty command').
+  A cwd that resolves to a file, not a directory, raises SandboxError with the path in the message (e.g., 'cwd is not a directory: path').
+
+scope:
+  paths:
+    - crates/betterlite-harness/src/sandbox/local.rs
+    - crates/betterlite-harness/src/sandbox/local/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/local.py#L41-L277
+    why: The entire LocalSandbox implementation, filtering, process handling, path confinement and file operations
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2224
+    why: HARNESS_PROCESS_KILL_GRACE_SECONDS = 5.0 (seconds) constant for process shutdown grace period from SIGTERM to SIGKILL
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/errors.py
+    why: SandboxError exception for all failures
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/base.py#L1-L26
+    why: Process, CompletedRun and Sandbox contracts that LocalSandbox implements
+dod:
+  - text: LocalSandbox confinement prevents paths from escaping the sandbox root or temp dirs, and every escape raises SandboxError with the path.
+    proof: [local-sandbox-tests]
+  - text: Subprocess environment filters every provider credential by prefix and substring, with no environment variable leaking that matches the filter list.
+    proof: [local-sandbox-tests]
+  - text: exec() with an empty command list raises SandboxError('exec() needs a non-empty command').
+    proof: [local-sandbox-tests]
+  - text: "A cwd that resolves to a file, not a directory, raises SandboxError with the path in the message (e.g., 'cwd is not a directory: path/to/file')."
+    proof: [local-sandbox-tests]
+  - text: A subprocess command times out, SandboxError is raised with the timeout value and command name in the message.
+    proof: [local-sandbox-tests]
+  - text: Process shutdown sends SIGTERM, waits the grace period, and sends SIGKILL if the process is still alive; a second close() on a closed sandbox is idempotent.
+    proof: [local-sandbox-tests]
+  - text: File read and write through the sandbox use asyncio.to_thread, never blocking I/O inside async code, and decode UTF-8 with replacement on invalid bytes.
+    proof: [local-sandbox-tests]
+  - text: Temporary directories created by tempdir() exist on the filesystem with the prefix "litellm-harness-" and are removed on sandbox close, even if processes are still running.
+    proof: [local-sandbox-tests]
+  - text: which() searches the child's isolated PATH and returns None if the binary is not found.
+    proof: [local-sandbox-tests]
+  - text: Every behavior in the owned LiteLLM code is present in the implementation or listed as out of scope.
+    proof: [local-sandbox-tests]
+checks:
+  optional: []
+  commands:
+    - id: local-sandbox-tests
+      why: the local sandbox tests fail, do not exist, or behavior does not match the owned LiteLLM code
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^sandbox::local::/)'
+oracle_cases: []
+deviations:
+  - what: Subprocess startup and process group termination use asyncio subprocesses with start_new_session=True for session isolation.
+    why: Rust asyncio subprocesses provide the same group isolation as LiteLLM's os.setsid; errors are Rust types, not Python exceptions; all observable behavior is preserved.
+out_of_scope:
+  - The subprocess pid property. No caller at the pin reads SubprocessHandle.pid; _signal_process accesses the underlying asyncio process's pid field directly.
+  - LocalSandbox.__repr__. No caller at the pin invokes repr; debug output for sandboxes is not tested.
+  - The subprocess returncode before wait() is called. returncode is live during wait() and after, but no caller reads it before the process is awaited.
+  - Buffering or framing of subprocess stdin. The exec/run methods close stdin immediately on collection, matching LiteLLM.
+pitfalls:
+  - Environment filtering is order-dependent; extra can re-introduce a secret name if explicitly set, which is correct for opt-in overrides via the extra parameter.
+  - os.path.realpath follows symlinks, so a symlink loop in the workdir will hang; the sandbox contract assumes the root is safe.
+  - SIGTERM signal failures are caught silently, then SIGKILL is attempted; a process ignoring SIGTERM will be killed after the grace period.
+  - killpg requires the session leader to exist; after it exits its children are orphaned to init but remain in the session, so the signal fails with ProcessLookupError, which is handled.
+  - The tempdir prefix "litellm-harness-" must exactly match LiteLLM's prefix for cross-implementation consistency in testing.
+  - mkdtemp can fail on Linux with exhausted temp space or resource limits; raise SandboxError if tempdir() fails.
+  - read_all closes stdin before draining stdout/stderr to unblock the subprocess; subprocesses reading stdin block until it closes.
+  - asyncio.create_subprocess_exec does not use the shell so no injection is possible, but the binary must be absolute or findable in PATH; relative commands work only if PATH includes the directory.
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

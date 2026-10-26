@@ -20,8 +20,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-logging/Cargo.toml
-  - crates/betterlite-logging/src/lib.rs
-  - crates/betterlite-logging/src/error.rs
   - crates/betterlite-logging/src/registry.rs
   - crates/betterlite-logging/src/registry/**
   - crates/betterlite-logging/fuzz/**

@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Sandbox result records and E2B execution
 status: todo
 depends_on: [B002, B173]
-file: null
+file: tasks/B3516-e2b-sandbox.yaml
 covers:
   - "litellm/llms/base_llm/sandbox/**"
   - "litellm/llms/e2b/**"

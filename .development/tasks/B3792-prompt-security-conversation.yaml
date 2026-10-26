@@ -1,0 +1,253 @@
+id: B3792
+title: Prompt Security conversation protection
+description: >-
+  Implement request/response protection and structured-message rewrites for
+  the Prompt Security guardrail in betterlite. Build the main apply_guardrail
+  entry point handling both input and output sides, request/response protection
+  via /api/protect endpoint with message filtering by role, key-alias resolution
+  from request metadata, structured-message rewriting when protect verdicts
+  return modified content, and per-choice response text scanning with streaming
+  holdback. Preserve excluded-role filtering with tool-results check support
+  and the request key-alias precedence order (litellm_metadata first, then
+  metadata). Environment variables read by this task's __init__:
+  PROMPT_SECURITY_API_KEY (required, no default),
+  PROMPT_SECURITY_API_BASE (required, no default),
+  PROMPT_SECURITY_USER (optional, env default None),
+  PROMPT_SECURITY_SYSTEM_PROMPT (optional, env default None),
+  PROMPT_SECURITY_CHECK_TOOL_RESULTS (default "false", case-insensitive true/1/yes).
+  Protected roles are {"system", "user", "assistant"}; non-protected roles are
+  filtered unless check_tool_results is true, when they are transformed to "other" role.
+  Response-side scanning returns one verdict per text in texts list and applies
+  modifications independently, with stream_holdback_chars carrying total
+  modified byte counts to preserve streaming safety. apply_guardrail wraps both
+  input and output paths with _apply_guardrail_on_request and
+  _apply_guardrail_on_response. Build helper functions for guard base
+  integration: _modified_or_original extracts modified_text when action is
+  modify, _inputs_with_structured_messages patches inputs with rewritten
+  messages, _inputs_with_modifications adds texts and rewritten messages to
+  inputs, _is_sent_to_protect checks role/tool-results flag,
+  _structured_messages_with_modifications maps protect verdicts back onto
+  structured messages, _extract_texts_from_messages extracts scannable text
+  from modified message dicts, _resolve_key_alias_from_request_data reads
+  metadata priority, filter_messages_by_role filters by role with tool-results
+  transform, _build_headers constructs API headers with APP-ID and X-LiteLLM-Key-Alias.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/prompt_security_conversation.rs
+    - crates/betterlite-guardrails/src/prompt_security_conversation/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L41-L66
+    why: "Helper functions _modified_or_original, _inputs_with_structured_messages, _inputs_with_modifications for input patching."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L69-L86
+    why: "Protection verdict and result TypedDict definitions used in request/response paths."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L112-L172
+    why: "PromptSecurityGuardrail class definition, get_supported_event_hooks, __init__, supports_scan_only_tool_results, config initialization including check_tool_results, streaming_transform_mode, timeout, and base class setup."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L173-L242
+    why: "Main apply_guardrail dispatcher routing to request and response handlers based on input_type."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L243-L324
+    why: "Request-side _apply_guardrail_on_request: message filtering by role, file processing via B3791 process_message_files, protect API call, modified-message rewriting."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L326-L348
+    why: "_is_sent_to_protect checks role against protected set and tool-results flag; _structured_messages_with_modifications maps protect verdicts onto structured messages using message_with_slot_texts."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L350-L388
+    why: "Response-side _apply_guardrail_on_response: concurrent per-text protect calls, block on any verdict.action==block, return modified texts with stream_holdback_chars."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L390-L421
+    why: "_protect_response_text calls /api/protect with response payload, returns verdict dict with action/modified_text."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L423-L424
+    why: "_extract_texts_from_messages uses message_slot_texts to extract scannable text from modified message dicts."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L446-L463
+    why: "_resolve_key_alias_from_request_data checks litellm_metadata.user_api_key_alias first, then metadata.user_api_key_alias."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L739-L789
+    why: "filter_messages_by_role filters by protected roles or transforms tool/function to 'other' when check_tool_results is true; entire function including debug logging and return statement."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L791-L795
+    why: "_build_headers and _redact_headers construct Protect API headers with APP-ID and X-LiteLLM-Key-Alias."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L829-L835
+    why: "get_config_model returns PromptSecurityGuardrailConfigModel type for framework discovery."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/__init__.py#L11-L30
+    why: "initialize_guardrail instantiates PromptSecurityGuardrail with config values, registers callback via add_litellm_callback."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/prompt_security.py#L36-L38
+    why: "PromptSecurityGuardrailConfigModel.ui_friendly_name() returns 'Prompt Security' for admin UI display."
+dod:
+  - text: "get_supported_event_hooks returns list with [GuardrailEventHooks.pre_call, GuardrailEventHooks.during_call, GuardrailEventHooks.post_call]."
+    proof: [event-hooks-cases]
+  - text: "__init__ reads api_base, api_key, user, system_prompt from parameters or PROMPT_SECURITY_* environment variables, raises PromptSecurityGuardrailMissingSecrets when api_key or api_base is None."
+    proof: [init-secrets-cases]
+  - text: "__init__ reads check_tool_results boolean from parameter or PROMPT_SECURITY_CHECK_TOOL_RESULTS env (case-insensitive true/1/yes), defaults to false."
+    proof: [init-tool-results-cases]
+  - text: "__init__ reads streaming_transform_mode literal or defaults to 'block_only'; sets max_poll_attempts=30, poll_interval=2, file_sanitization_timeout, file_sanitization_fail_open (defaults true), block_on_file_modify (defaults true)."
+    proof: [init-config-cases]
+  - text: "supports_scan_only_tool_results returns self.check_tool_results."
+    proof: [supports-scan-cases]
+  - text: "apply_guardrail dispatches to _apply_guardrail_on_request when input_type='request', to _apply_guardrail_on_response when input_type='response'."
+    proof: [apply-dispatch-cases]
+  - text: "_apply_guardrail_on_request extracts texts, images, structured_messages from inputs, calls _resolve_key_alias_from_request_data, calls process_message_files via B3791 on messages, calls _process_standalone_images via B3791 on image URLs."
+    proof: [request-file-cases]
+  - text: "_apply_guardrail_on_request filters messages via filter_messages_by_role, returns inputs unchanged if filtered_messages is empty."
+    proof: [request-empty-cases]
+  - text: "_apply_guardrail_on_request builds protect headers via _build_headers, calls async_handler.post to {api_base}/api/protect with messages, user (alias or self.user), system_prompt."
+    proof: [request-protect-cases]
+  - text: "_apply_guardrail_on_request parses response.json() result, extracts result.prompt verdict dict, returns inputs unchanged when action is absent or None."
+    proof: [request-no-verdict-cases]
+  - text: "_apply_guardrail_on_request raises HTTPException(400) with 'Blocked by Prompt Security, Violations: ...' when action='block' with violations list."
+    proof: [request-block-cases]
+  - text: "_apply_guardrail_on_request returns _inputs_with_modifications(inputs, extracted_texts, structured_rewritten) when action='modify', using _extract_texts_from_messages and _structured_messages_with_modifications."
+    proof: [request-modify-cases]
+  - text: "_is_sent_to_protect returns true when message role is in _PROTECT_ROLES or check_tool_results is true, false otherwise."
+    proof: [is-sent-protect-cases]
+  - text: "_structured_messages_with_modifications returns None if structured_messages is empty or modified_messages count differs from sent indices count; maps protect verdicts back via message_with_slot_texts."
+    proof: [structured-rewrite-cases]
+  - text: "_apply_guardrail_on_response calls _protect_response_text concurrently for each text in texts via asyncio.gather."
+    proof: [response-concurrent-cases]
+  - text: "_apply_guardrail_on_response raises HTTPException(400) with 'Blocked by Prompt Security, Violations: ...' when any verdict.action=='block', collecting all violations from all verdicts."
+    proof: [response-block-cases]
+  - text: "_apply_guardrail_on_response returns patched inputs with returned_texts (using _modified_or_original per verdict) and stream_holdback_chars=[len(text) for text in returned_texts]."
+    proof: [response-modify-cases]
+  - text: "_protect_response_text calls async_handler.post to {api_base}/api/protect with response payload (single response text), builds headers via _build_headers."
+    proof: [response-text-cases]
+  - text: "_protect_response_text returns verdict dict from response.result.response, returns empty dict when verdict is None."
+    proof: [response-verdict-cases]
+  - text: "_extract_texts_from_messages iterates messages and calls message_slot_texts on each, collecting all returned texts in a list."
+    proof: [extract-texts-cases]
+  - text: "_resolve_key_alias_from_request_data checks request_data['litellm_metadata']['user_api_key_alias'] first, then request_data['metadata']['user_api_key_alias'], returns None if neither is present."
+    proof: [key-alias-cases]
+  - text: "filter_messages_by_role iterates messages, preserves role in _PROTECT_ROLES, filters non-protected roles when check_tool_results is false, transforms non-protected to 'other' role when check_tool_results is true, returns filtered/transformed list."
+    proof: [filter-role-cases]
+  - text: "filter_messages_by_role logs debug messages via verbose_proxy_logger for each transformation and filtered count."
+    proof: [filter-logging-cases]
+  - text: "_build_headers returns dict with APP-ID={api_key} and Content-Type=application/json; includes X-LiteLLM-Key-Alias={user_api_key_alias} when alias is present."
+    proof: [build-headers-cases]
+  - text: "get_config_model returns PromptSecurityGuardrailConfigModel type."
+    proof: [config-model-cases]
+  - text: "initialize_guardrail instantiates PromptSecurityGuardrail with api_base/api_key from litellm_params, reads streaming_transform_mode/file_sanitization_fail_open/block_on_file_modify via getattr, calls add_litellm_callback."
+    proof: [initialize-cases]
+  - text: "PromptSecurityGuardrailConfigModel.ui_friendly_name returns 'Prompt Security'."
+    proof: [ui-friendly-cases]
+checks:
+  optional: []
+  commands:
+    - id: event-hooks-cases
+      why: "get_supported_event_hooks test is missing or fails to return pre_call, during_call, post_call hooks"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::event_hooks/)'
+    - id: init-secrets-cases
+      why: "__init__ missing secrets configuration or PromptSecurityGuardrailMissingSecrets not raised when required env vars are absent"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::init_secrets/)'
+    - id: init-tool-results-cases
+      why: "__init__ check_tool_results boolean parsing from env and parameter tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::init_tool_results/)'
+    - id: init-config-cases
+      why: "__init__ streaming_transform_mode, polling config, and timeout configuration tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::init_config/)'
+    - id: supports-scan-cases
+      why: "supports_scan_only_tool_results return value test is missing or fails"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::supports_scan/)'
+    - id: apply-dispatch-cases
+      why: "apply_guardrail dispatch to request/response handlers tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::apply_dispatch/)'
+    - id: request-file-cases
+      why: "_apply_guardrail_on_request file processing integration with B3791 tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::request_file/)'
+    - id: request-empty-cases
+      why: "_apply_guardrail_on_request early return on empty filtered_messages tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::request_empty/)'
+    - id: request-protect-cases
+      why: "_apply_guardrail_on_request protect API call with headers, user, system_prompt tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::request_protect/)'
+    - id: request-no-verdict-cases
+      why: "_apply_guardrail_on_request handling of missing/None verdict tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::request_no_verdict/)'
+    - id: request-block-cases
+      why: "_apply_guardrail_on_request HTTPException(400) on block verdict tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::request_block/)'
+    - id: request-modify-cases
+      why: "_apply_guardrail_on_request modify action with structured message rewriting tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::request_modify/)'
+    - id: is-sent-protect-cases
+      why: "_is_sent_to_protect role and check_tool_results flag logic tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::is_sent_protect/)'
+    - id: structured-rewrite-cases
+      why: "_structured_messages_with_modifications mapping logic using message_with_slot_texts tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::structured_rewrite/)'
+    - id: response-concurrent-cases
+      why: "_apply_guardrail_on_response concurrent per-text protect calls via asyncio.gather tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::response_concurrent/)'
+    - id: response-block-cases
+      why: "_apply_guardrail_on_response HTTPException(400) on any verdict.action=='block' tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::response_block/)'
+    - id: response-modify-cases
+      why: "_apply_guardrail_on_response modify with stream_holdback_chars and _modified_or_original tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::response_modify/)'
+    - id: response-text-cases
+      why: "_protect_response_text response payload format and header building tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::response_text/)'
+    - id: response-verdict-cases
+      why: "_protect_response_text response parsing and None handling tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::response_verdict/)'
+    - id: extract-texts-cases
+      why: "_extract_texts_from_messages message_slot_texts integration tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::extract_texts/)'
+    - id: key-alias-cases
+      why: "_resolve_key_alias_from_request_data litellm_metadata/metadata precedence tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::key_alias/)'
+    - id: filter-role-cases
+      why: "filter_messages_by_role role filtering and tool-results transformation tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::filter_role/)'
+    - id: filter-logging-cases
+      why: "filter_messages_by_role debug logging via verbose_proxy_logger tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::filter_logging/)'
+    - id: build-headers-cases
+      why: "_build_headers APP-ID and X-LiteLLM-Key-Alias construction tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::build_headers/)'
+    - id: config-model-cases
+      why: "get_config_model return type test is missing or fails"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::config_model/)'
+    - id: initialize-cases
+      why: "initialize_guardrail instantiation and callback registration tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::initialize/)'
+    - id: ui-friendly-cases
+      why: "PromptSecurityGuardrailConfigModel.ui_friendly_name test is missing or fails"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::ui_friendly/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "When check_tool_results is false (default), tool/function messages are filtered out entirely before calling the protect API. When true, they are transformed to 'other' role and included, allowing indirect prompt injection detection via tool result content."
+    why: "LiteLLM accepts tool results as a configuration choice; preserving that semantics requires the role-filtering/transformation to happen in request preparation, not apply_guardrail dispatch."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L739-L788"
+  - what: "Response-side protection scans each text independently and raises HTTPException(400) if any verdict action is 'block', collecting violations from all verdicts. Modified texts are returned with stream_holdback_chars carrying byte counts to support streaming safety."
+    why: "Response texts come from different model choices and must be evaluated separately; a single streaming response can have multiple chunks from different choices that reach the client at different times. stream_holdback_chars informs the streaming layer when buffering is required."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L350-L388"
+  - what: "Structured message rewriting uses message_slot_texts and message_with_slot_texts from the guardrail framework (U1 framework dependency), which may return None if the message type does not support transformation. When None is returned, structured_messages_with_modifications returns None to signal no rewrite is available."
+    why: "Not all message types (e.g., tool calls, raw binary content) have a meaningful way to rewrite their slot texts. Framework guardrail translation utilities determine which messages support transformation."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L329-L348"
+  - what: "request key-alias resolution checks litellm_metadata.user_api_key_alias before metadata.user_api_key_alias; litellm_metadata is set by the guardrail framework with higher precedence."
+    why: "Litellm_metadata is framework-managed and may override user-supplied metadata for security reasons. The preference order matches LiteLLM's behavior in the guardrail framework."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L446-L463"
+
+out_of_scope:
+  - "CustomGuardrail base class and @log_guardrail_information decorator: owned by B3664/B3665/B3666"
+  - "message_slot_texts and message_with_slot_texts guardrail translation functions: owned by B888"
+  - "HTTP client get_async_httpx_client and httpxSpecialProvider: owned by B173"
+  - "Config model loading and parameter resolution: owned by B002"
+  - "Callback registration via add_litellm_callback: owned by B189"
+  - "File sanitization and standalone image processing: owned by B3791"
+
+pitfalls:
+  - "check_tool_results environment variable is case-insensitive (true/1/yes are all accepted); leading/trailing whitespace in .lower() must be stripped."
+  - "_PROTECT_ROLES = {'system', 'user', 'assistant'}; any other role is non-protected and subject to filtering/transformation."
+  - "When filter_messages_by_role transforms tool/function to 'other', the original role is lost and cannot be recovered downstream; this is intentional for indirect prompt injection detection."
+  - "_modified_or_original checks verdict.get('action') == 'modify' (exact string equality); None, 'allow', 'block', or missing action all result in returning the original text."
+  - "_inputs_with_modifications appends texts list to inputs; if texts is empty, it returns _inputs_with_structured_messages result without texts key."
+  - "_structured_messages_with_modifications returns None (not an empty tuple) when indices don't match or rewrite fails; None signals no structured rewrite is available for this verdict."
+  - "message_with_slot_texts is a guardrail framework function that may return None for message types that don't support text rewriting; the returned tuple must be checked before indexing."
+  - "_extract_texts_from_messages calls message_slot_texts (plural) which returns a list of texts per message; the outer loop flattens all texts from all messages into one list."
+  - "_resolve_key_alias_from_request_data returns None, not an empty string, when no alias is found; None indicates no override applies."
+  - "filter_messages_by_role returns an empty list when all messages are filtered; the caller (_apply_guardrail_on_request) must check for empty result and return inputs unchanged."
+  - "_build_headers always includes Content-Type=application/json; only adds X-LiteLLM-Key-Alias when user_api_key_alias is not None/empty."
+  - "_protect_response_text calls async_handler.post with response (string) payload, not responses (list); one verdict is returned per call and they are gathered concurrently."
+  - "stream_holdback_chars values are byte counts of modified_text, not original text; they inform the streaming layer how much buffer is needed."
+  - "apply_guardrail is async; _apply_guardrail_on_request and _apply_guardrail_on_response are both async and must be awaited."
+
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 2

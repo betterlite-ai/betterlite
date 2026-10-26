@@ -2,6 +2,6 @@ helper_group! {
     "b004" => b004, "b005" => b005, "b006" => b006, "b010" => b010, "b014" => b014,
     "b015" => b015, "b1139" => b1139, "b173" => b173, "b202" => b202, "b2401" => b2401,
     "b300" => b300, "b3008" => b3008, "b301" => b301, "b361" => b361, "b4177" => b4177,
-    "b4200" => b4200, "b900" => b900, "management_oracle" => management_oracle,
-    "websocket_oracle" => websocket_oracle,
+    "b4200" => b4200, "b4568" => b4568, "b4803" => b4803, "b4806" => b4806, "b900" => b900,
+    "management_oracle" => management_oracle, "websocket_oracle" => websocket_oracle,
 }
