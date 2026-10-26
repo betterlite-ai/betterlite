@@ -24,12 +24,12 @@ struct Entry {
 struct Parameters {
     guardrail: String,
     api_key: Option<SecretString>,
-    pub api_base: Option<String>,
+    api_base: Option<String>,
     #[serde(rename = "lasso_user_id")]
-    pub user_id: Option<String>,
+    user_id: Option<String>,
     #[serde(rename = "lasso_conversation_id")]
-    pub conversation_id: Option<String>,
-    pub mask: bool,
+    conversation_id: Option<String>,
+    mask: bool,
 }
 
 #[derive(Debug, Clone, Default)]
