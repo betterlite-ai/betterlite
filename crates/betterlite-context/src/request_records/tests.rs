@@ -28,19 +28,31 @@ fn handle(kind: super::HandleKind, identity: u64) -> RequestRecord {
 fn request_records_cases(#[case] name: &str) {
     match name {
         "safe_copy_mode_and_fallback" => {
-            let mut value = record(r#"{"value":{"nested":true}}"#);
+            let opaque = handle(super::HandleKind::Opaque, 42);
+            let mut value = RequestRecord::Object(BTreeMap::from([
+                ("value".to_owned(), record(r#"{"nested":true}"#)),
+                ("opaque".to_owned(), opaque.clone()),
+                (
+                    "metadata".to_owned(),
+                    RequestRecord::Object(BTreeMap::from([("opaque".to_owned(), opaque.clone())])),
+                ),
+            ]));
             let original: *const RequestRecord = &raw const value;
             let borrowed = RequestRecordProjection::safe_copy(&mut value, true).unwrap();
             let borrowed_pointer: *const RequestRecord = borrowed.as_ref();
             assert_eq!(borrowed_pointer, original);
             assert!(matches!(borrowed, Cow::Borrowed(_)));
+            let copied = RequestRecordProjection::safe_copy(&mut value, false)
+                .unwrap()
+                .into_owned();
+            let RequestRecord::Object(fields) = copied else {
+                panic!("safe copy should preserve the object record");
+            };
+            assert_eq!(fields.get("opaque"), Some(&opaque));
+            let metadata = fields.get("metadata").and_then(RequestRecord::object);
             assert_eq!(
-                text(
-                    RequestRecordProjection::safe_copy(&mut value, false)
-                        .unwrap()
-                        .as_ref()
-                ),
-                r#"{"value":{"nested":true}}"#
+                metadata.and_then(|metadata_fields| metadata_fields.get("opaque")),
+                Some(&opaque)
             );
         }
         "safe_copy_span_order" => {
@@ -99,9 +111,42 @@ fn request_records_cases(#[case] name: &str) {
             RequestRecordProjection::safe_copy(&mut empty_metadata, false).unwrap();
         }
         "independent_snapshot" => {
-            let input =
-                record(r#"{"metadata":{"litellm_parent_otel_span":"span"},"value":{"x":1}}"#);
+            let span_a = handle(super::HandleKind::Opaque, 101);
+            let span_b = handle(super::HandleKind::Opaque, 202);
+            let input = RequestRecord::Object(BTreeMap::from([
+                (
+                    "metadata".to_owned(),
+                    RequestRecord::Object(BTreeMap::from([(
+                        "litellm_parent_otel_span".to_owned(),
+                        span_a.clone(),
+                    )])),
+                ),
+                (
+                    "litellm_metadata".to_owned(),
+                    RequestRecord::Object(BTreeMap::from([(
+                        "litellm_parent_otel_span".to_owned(),
+                        span_b.clone(),
+                    )])),
+                ),
+                ("value".to_owned(), record(r#"{"x":1}"#)),
+            ]));
             assert_eq!(RequestRecordProjection::independent_snapshot(&input), input);
+            let snapshot = RequestRecordProjection::independent_snapshot(&input);
+            let fields = snapshot.object().unwrap();
+            assert_eq!(
+                fields
+                    .get("metadata")
+                    .and_then(RequestRecord::object)
+                    .and_then(|metadata_fields| metadata_fields.get("litellm_parent_otel_span")),
+                Some(&span_a)
+            );
+            assert_eq!(
+                fields
+                    .get("litellm_metadata")
+                    .and_then(RequestRecord::object)
+                    .and_then(|metadata_fields| metadata_fields.get("litellm_parent_otel_span")),
+                Some(&span_b)
+            );
             assert_eq!(
                 RequestRecordProjection::independent_snapshot(&record(r#"{"metadata":{}}"#)),
                 record(r#"{"metadata":{}}"#)

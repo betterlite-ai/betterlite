@@ -1,1 +1,1 @@
-{kind: helper, name: safe-copy-mode-and-fallback, call: {request_records: {function: safe_copy, record: {value: {nested: true}}, safe_memory_mode: false}}, env: {}, compare: {ignore: []}}
+{kind: helper, name: safe-copy-mode-and-fallback, call: {request_records: {function: safe_copy, record: {value: {nested: true}, uncopyable: __uncopyable__}, safe_memory_mode: false}}, env: {}, compare: {ignore: []}}
