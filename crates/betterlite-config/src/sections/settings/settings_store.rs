@@ -115,11 +115,10 @@ impl SettingsStore {
             None
         } else if let Some(value) = self.runtime_values.get(key) {
             Some(value)
+        } else if let Resolution::Config(value) | Resolution::Db(value) = self.resolution(key) {
+            Some(value)
         } else {
-            match self.resolution(key) {
-                Resolution::Config(value) | Resolution::Db(value) => Some(value),
-                Resolution::Unset => None,
-            }
+            None
         }
     }
 

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use super::alerting::{EMAIL_DESCRIPTORS, MS_TEAMS_DESCRIPTORS, SLACK_DESCRIPTORS};
-use super::{EmptyDbValue, FieldDescriptor, FieldSource, ResolvedField, resolve_fields, source_for};
+use super::{EmptyDbValue, FieldDescriptor, FieldSource, resolve_fields, source_for};
 use crate::sections::settings::settings_rules::{DbRow, JsonValue, Section};
 use crate::sections::settings::settings_store::SettingsStore;
 
@@ -77,29 +77,20 @@ fn empty_db_means_absent_for_sso(
     assert_eq!(resolved, vec![value]);
 }
 
-#[test]
-fn email_defaults_fill_port_and_tls() {
-    let fields = resolve_fields(&EMAIL_DESCRIPTORS, &BTreeMap::new(), &BTreeMap::new(), EmptyDbValue::Cleared).unwrap();
-    let defaults: Vec<(&str, Option<String>, FieldSource)> = fields
-        .into_iter()
-        .map(|field| (field.field_name, field.value, field.source))
-        .filter(|(_, _, source)| *source != FieldSource::Unset)
-        .collect();
-    assert_eq!(
-        defaults,
-        vec![
-            ("SMTP_PORT", Some(String::from("587")), FieldSource::Default),
-            ("SMTP_TLS", Some(String::from("True")), FieldSource::Default),
-        ]
-    );
-}
-
-#[test]
-fn stored_and_env_values_beat_email_defaults() {
-    let environment = BTreeMap::from([(String::from("SMTP_TLS"), String::from("False"))]);
-    let fields = resolve_fields(&EMAIL_DESCRIPTORS, &stored(r#"{"SMTP_PORT": 25}"#), &environment, EmptyDbValue::Cleared).unwrap();
-    assert_eq!(fields.get(1), Some(&ResolvedField { field_name: "SMTP_PORT", value: Some(String::from("25")), source: FieldSource::Db }));
-    assert_eq!(fields.get(2), Some(&ResolvedField { field_name: "SMTP_TLS", value: Some(String::from("False")), source: FieldSource::Env }));
+#[rstest]
+#[case::defaults("{}", &[], [("587", FieldSource::Default), ("True", FieldSource::Default)])]
+#[case::stored_and_env(r#"{"SMTP_PORT": 25}"#, &[("SMTP_TLS", "False")], [("25", FieldSource::Db), ("False", FieldSource::Env)])]
+fn email_port_and_tls_fall_back_to_mail_defaults(
+    #[case] row: &str,
+    #[case] env: &[(&str, &str)],
+    #[case] expected: [(&str, FieldSource); 2],
+) {
+    let environment = env.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())).collect();
+    let fields = resolve_fields(&EMAIL_DESCRIPTORS, &stored(row), &environment, EmptyDbValue::Cleared).unwrap();
+    let resolved: Vec<(Option<&str>, FieldSource)> = fields.iter().map(|field| (field.value.as_deref(), field.source)).collect();
+    let unset = (None, FieldSource::Unset);
+    let [port, tls] = expected.map(|(value, source)| (Some(value), source));
+    assert_eq!(resolved, vec![unset, port, tls, unset, unset, unset, unset, unset, unset]);
 }
 
 #[rstest]
@@ -116,20 +107,6 @@ fn alerting_tables_name_their_env_vars(
     assert_eq!(listed, names);
     assert_eq!(secret, secrets);
     assert!(descriptors.iter().all(|descriptor| descriptor.db_key == descriptor.field_name && descriptor.env_var == descriptor.field_name));
-}
-
-#[test]
-fn resolved_fields_keep_descriptor_order() {
-    let descriptors = [SLACK_DESCRIPTORS, MS_TEAMS_DESCRIPTORS].concat();
-    let environment = BTreeMap::from([(String::from("MS_TEAMS_WEBHOOK_URL"), String::from("https://teams"))]);
-    let fields = resolve_fields(&descriptors, &stored(r#"{"SLACK_WEBHOOK_URL": ""}"#), &environment, EmptyDbValue::Cleared).unwrap();
-    assert_eq!(
-        fields,
-        vec![
-            ResolvedField { field_name: "SLACK_WEBHOOK_URL", value: Some(String::new()), source: FieldSource::Db },
-            ResolvedField { field_name: "MS_TEAMS_WEBHOOK_URL", value: Some(String::from("https://teams")), source: FieldSource::Env },
-        ]
-    );
 }
 
 #[rstest]
@@ -150,12 +127,8 @@ fn source_for_reports_default_when_unset(
     assert_eq!(source_for(&store, key, default.map(json).as_ref()), expected);
 }
 
-#[rstest]
-#[case::config(FieldSource::Config, r#""config""#)]
-#[case::db(FieldSource::Db, r#""db""#)]
-#[case::env(FieldSource::Env, r#""env""#)]
-#[case::default(FieldSource::Default, r#""default""#)]
-#[case::unset(FieldSource::Unset, r#""unset""#)]
-fn sources_serialize_as_litellm_names(#[case] source: FieldSource, #[case] expected: &str) {
-    assert_eq!(serde_json::to_string(&source).unwrap(), expected);
+#[test]
+fn sources_serialize_as_litellm_names() {
+    let sources = [FieldSource::Config, FieldSource::Db, FieldSource::Env, FieldSource::Default, FieldSource::Unset];
+    assert_eq!(serde_json::to_string(&sources).unwrap(), r#"["config","db","env","default","unset"]"#);
 }

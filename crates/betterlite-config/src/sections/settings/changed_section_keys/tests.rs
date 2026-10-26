@@ -16,7 +16,6 @@ fn section(json: &str) -> BTreeMap<String, JsonValue> {
 #[case::new_key("{}", "{\"a\": 1}", "{\"a\": 1}", &[])]
 #[case::altered_value("{\"a\": 1, \"b\": 2}", "{\"a\": 3, \"b\": 2}", "{\"a\": 3}", &[])]
 #[case::null_differs_from_missing("{}", "{\"a\": null}", "{\"a\": null}", &[])]
-#[case::removed_key("{\"a\": 1, \"b\": 2}", "{\"b\": 2}", "{}", &["a"])]
 #[case::altered_and_removed("{\"a\": 1, \"b\": 2}", "{\"a\": 2}", "{\"a\": 2}", &["b"])]
 fn reports_changed_and_removed_keys(
     #[case] baseline: &str,

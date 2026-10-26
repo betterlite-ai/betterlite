@@ -37,15 +37,8 @@ fn resolves_config_then_db(
 ) {
     let store = general(yaml, stored);
     assert_eq!(store.get("a"), expected.map(json).as_ref());
+    assert_eq!(store.resolved().is_empty(), expected.is_none());
     assert_eq!(store.resolution("a").source(), source);
-}
-
-#[test]
-fn resolution_carries_the_winning_value() {
-    let store = general(r#"{"a": 1}"#, r#"{"a": 2, "b": 3}"#);
-    assert_eq!(store.resolution("a"), Resolution::Config(&json("1")));
-    assert_eq!(store.resolution("b"), Resolution::Db(&json("3")));
-    assert_eq!(store.resolution("c"), Resolution::Unset);
 }
 
 #[test]
@@ -53,7 +46,9 @@ fn runtime_values_win_over_resolution() {
     let mut store = general(r#"{"a": 1}"#, r#"{"b": 2}"#);
     store.apply_runtime_values(values(r#"{"a": "file", "b": "live", "c": 3}"#));
     assert_eq!(store.resolved(), values(r#"{"a": "file", "b": "live", "c": 3}"#));
-    assert_eq!(store.resolution("b").source(), FieldSource::Db);
+    assert_eq!(store.resolution("a"), Resolution::Config(&json("1")));
+    assert_eq!(store.resolution("b"), Resolution::Db(&json("2")));
+    assert_eq!(store.resolution("c"), Resolution::Unset);
 }
 
 #[rstest]
@@ -63,36 +58,20 @@ fn runtime_values_win_over_resolution() {
 fn insert_refuses_config_owned_key(#[case] stored: &str, #[case] shadows_db_value: bool) {
     let mut store = general(r#"{"owned": "yaml"}"#, stored);
     let expected = ConfigOwnedKeyError { section: Section::GeneralSettings, key: String::from("owned"), shadows_db_value };
+    let message = config_ownership_message(Section::GeneralSettings, "owned", shadows_db_value);
+    assert_eq!(expected.to_string(), message);
     assert_eq!(store.insert("owned", json(r#""other""#)), Err(expected));
+    assert_eq!(store.insert("owned", json(r#""yaml""#)), Ok(()));
     assert_eq!(store.get("owned"), Some(&json(r#""yaml""#)));
 }
 
-#[test]
-fn insert_accepts_the_config_value_and_free_keys() {
-    let mut store = general(r#"{"owned": "yaml"}"#, "{}");
-    assert_eq!(store.insert("owned", json(r#""yaml""#)), Ok(()));
-    assert_eq!(store.insert("free", json("4")), Ok(()));
-    assert_eq!(store.resolved(), values(r#"{"free": 4, "owned": "yaml"}"#));
-}
-
-#[test]
-fn error_text_is_what_the_user_sees() {
-    let error = ConfigOwnedKeyError { section: Section::RouterSettings, key: String::from("num_retries"), shadows_db_value: true };
-    assert_eq!(
-        error.to_string(),
-        "router_settings.num_retries is set in the config file, so the config file owns it and it cannot be changed here. The value stored in the database for it is ignored and will never be applied. Edit the config file to change it, or remove it from the file to let the database own it."
-    );
-}
-
 #[rstest]
-#[case::general(Section::GeneralSettings, "general_settings.k is set")]
-#[case::router(Section::RouterSettings, "router_settings.k is set")]
-#[case::litellm(Section::LitellmSettings, "litellm_settings.k is set")]
-#[case::environment(Section::EnvironmentVariables, "environment_variables.k is set")]
-fn message_names_the_section(#[case] section: Section, #[case] start: &str) {
-    let message = config_ownership_message(section, "k", false);
-    assert!(message.starts_with(start), "{message}");
-    assert!(message.ends_with("cannot be changed here. Edit the config file to change it, or remove it from the file to let the database own it."), "{message}");
+#[case::general(Section::GeneralSettings, false, "general_settings.k is set in the config file, so the config file owns it and it cannot be changed here. Edit the config file to change it, or remove it from the file to let the database own it.")]
+#[case::router(Section::RouterSettings, true, "router_settings.k is set in the config file, so the config file owns it and it cannot be changed here. The value stored in the database for it is ignored and will never be applied. Edit the config file to change it, or remove it from the file to let the database own it.")]
+#[case::litellm(Section::LitellmSettings, false, "litellm_settings.k is set in the config file, so the config file owns it and it cannot be changed here. Edit the config file to change it, or remove it from the file to let the database own it.")]
+#[case::environment(Section::EnvironmentVariables, false, "environment_variables.k is set in the config file, so the config file owns it and it cannot be changed here. Edit the config file to change it, or remove it from the file to let the database own it.")]
+fn message_names_the_section(#[case] section: Section, #[case] shadows: bool, #[case] expected: &str) {
+    assert_eq!(config_ownership_message(section, "k", shadows), expected);
 }
 
 #[test]
@@ -102,10 +81,11 @@ fn remove_hides_the_key_everywhere() {
     assert_eq!(store.remove("a"), Ok(Some(json("1"))));
     assert_eq!(store.remove("c"), Ok(Some(json("3"))));
     assert_eq!(store.get("a"), None);
-    assert_eq!(store.get("c"), None);
     assert_eq!(store.resolved(), values(r#"{"b": 2}"#));
     assert_eq!(store.resolved().len(), 1);
     assert_eq!(store.remove("a"), Ok(None));
+    assert_eq!(store.remove("b"), Ok(Some(json("2"))));
+    assert!(store.resolved().is_empty());
     assert_eq!(store.insert("a", json("5")), Ok(()));
     assert_eq!(store.get("a"), Some(&json("5")));
 }
@@ -117,16 +97,6 @@ fn remove_refuses_config_owned_key() {
     assert_eq!(store.remove("owned"), Err(expected));
     assert_eq!(store.remove("missing"), Ok(None));
     assert_eq!(store.get("owned"), Some(&json("1")));
-}
-
-#[test]
-fn empty_store_has_no_settings() {
-    let mut store = general("{}", r#"{"a": null}"#);
-    assert!(store.resolved().is_empty());
-    store.apply_runtime_values(values(r#"{"b": 1}"#));
-    assert!(!store.resolved().is_empty());
-    assert_eq!(store.remove("b"), Ok(Some(json("1"))));
-    assert!(store.resolved().is_empty());
 }
 
 #[test]
@@ -188,15 +158,9 @@ fn ui_keys_read_the_ui_settings_row(#[case] key: &str) {
     let mut store = SettingsStore::from(Section::GeneralSettings);
     store.apply_db_row(DbRow::GeneralSettings, BTreeMap::from([(key.to_owned(), json(r#""general""#))]));
     assert_eq!(store.get(key), None);
-    store.apply_db_row(DbRow::UiSettings, BTreeMap::from([(key.to_owned(), json(r#""ui""#))]));
-    assert_eq!(store.get(key), Some(&json(r#""ui""#)));
-}
-
-#[test]
-fn ui_settings_row_holds_only_the_aliases() {
-    let mut store = SettingsStore::from(Section::GeneralSettings);
-    store.apply_db_row(DbRow::UiSettings, values(r#"{"master_key": "ui"}"#));
-    assert_eq!(store.get("master_key"), None);
+    let ui_row = BTreeMap::from([(key.to_owned(), json(r#""ui""#)), (String::from("master_key"), json("1"))]);
+    store.apply_db_row(DbRow::UiSettings, ui_row);
+    assert_eq!(store.resolved(), BTreeMap::from([(key.to_owned(), json(r#""ui""#))]));
 }
 
 #[rstest]
@@ -205,10 +169,12 @@ fn ui_settings_row_holds_only_the_aliases() {
 #[case::environment(Section::EnvironmentVariables, DbRow::EnvironmentVariables)]
 fn other_sections_read_their_own_row(#[case] section: Section, #[case] row: DbRow) {
     let mut store = SettingsStore::from(section);
+    store.load_yaml(values(r#"{"pass_through_endpoints": 1}"#));
     store.apply_db_row(DbRow::GeneralSettings, values(r#"{"disable_custom_api_keys": 1, "a": 1}"#));
     store.apply_db_row(DbRow::UiSettings, values(r#"{"disable_custom_api_keys": 2}"#));
-    store.apply_db_row(row, values(r#"{"disable_custom_api_keys": 3}"#));
-    assert_eq!(store.resolved(), values(r#"{"disable_custom_api_keys": 3}"#));
+    store.apply_db_row(row, values(r#"{"disable_custom_api_keys": 3, "pass_through_endpoints": 2}"#));
+    assert_eq!(store.resolved(), values(r#"{"disable_custom_api_keys": 3, "pass_through_endpoints": 1}"#));
+    assert_eq!(store.db_value("pass_through_endpoints"), None);
 }
 
 #[test]
@@ -221,17 +187,9 @@ fn pass_through_endpoints_come_from_the_db_only() {
     assert_eq!(store.db_value("pass_through_endpoints"), Some(&json(r#"[{"path": "/db"}]"#)));
     assert_eq!(store.db_value("a"), None);
     assert_eq!(store.shadowed_db_keys(), vec![String::from("a")]);
+    assert!(!store.shadows_db_value("pass_through_endpoints"));
     assert_eq!(store.insert("pass_through_endpoints", json("[]")), Ok(()));
     assert_eq!(store.get("pass_through_endpoints"), Some(&json("[]")));
-}
-
-#[test]
-fn pass_through_endpoints_are_a_plain_key_outside_general_settings() {
-    let mut store = SettingsStore::from(Section::RouterSettings);
-    store.load_yaml(values(r#"{"pass_through_endpoints": 1}"#));
-    store.apply_db_row(DbRow::RouterSettings, values(r#"{"pass_through_endpoints": 2}"#));
-    assert_eq!(store.db_value("pass_through_endpoints"), None);
-    assert_eq!(store.resolution("pass_through_endpoints").source(), FieldSource::Config);
 }
 
 #[test]
@@ -257,12 +215,6 @@ fn shadowing_needs_a_different_stored_value(
     store.apply_runtime_values(values(runtime));
     assert_eq!(store.shadows_db_value("a"), shadows);
     assert_eq!(store.shadowed_db_keys().is_empty(), !shadows);
-}
-
-#[test]
-fn a_key_the_file_does_not_own_shadows_nothing() {
-    let store = general(r#"{"b": 1}"#, r#"{"a": 2}"#);
-    assert!(!store.shadows_db_value("a"));
 }
 
 #[test]

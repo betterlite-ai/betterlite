@@ -15,8 +15,7 @@ pub enum JsonValue {
 }
 
 // LiteLLM keeps no store for ui_settings; it is only the stored row behind the general_settings UI keys
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Section {
     GeneralSettings,
     RouterSettings,
@@ -24,8 +23,7 @@ pub enum Section {
     EnvironmentVariables,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DbRow {
     GeneralSettings,
     RouterSettings,
