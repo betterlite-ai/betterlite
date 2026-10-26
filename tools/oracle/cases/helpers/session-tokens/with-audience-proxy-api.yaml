@@ -5,7 +5,7 @@ call:
     mint:
       kind: session_refresh
       now: 1767225600
-      entropy: 000102030405060708090a0b0c0d0e0f
+      entropy: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
       keys: {signing_key: 0123456789abcdef0123456789abcdef}
       principal: {user_id: user-1, client_id: client-1, audience: proxy_api}
     open:

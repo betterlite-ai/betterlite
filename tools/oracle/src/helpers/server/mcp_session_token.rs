@@ -26,7 +26,6 @@ struct MintStep {
     principal: SessionPrincipal,
     #[serde(with = "chrono::serde::ts_seconds")]
     now: DateTime<Utc>,
-    #[serde(deserialize_with = "hex::deserialize")]
     entropy: [u8; 16],
 }
 #[derive(Deserialize)]
@@ -64,23 +63,17 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let minted = input.mint.as_ref().map(mint).transpose()?;
-        let opened = input
-            .open
-            .as_ref()
-            .map(|step| -> HelperResult {
-                let candidate = step
-                    .candidate
-                    .as_deref()
-                    .or_else(|| minted.as_ref()?.get("token")?.as_str())
-                    .unwrap_or_default();
-                let keys = signing_keys(&step.keys)?;
-                let encoded = match open_token(candidate, step.kind, &keys, step.now) {
-                    Ok(opened) => serde_json::to_value(opened),
-                    Err(error) => serde_json::to_value(error),
-                };
-                encoded.map_err(|error| failure("Output", &error.to_string()))
-            })
-            .transpose()?;
+        let Some(step) = &input.open else {
+            return Ok(serde_json::json!({"mint": minted, "open": null}));
+        };
+        let minted_token = minted.as_ref().and_then(|output| output.get("token")?.as_str());
+        let candidate = step.candidate.as_deref().or(minted_token).unwrap_or_default();
+        let keys = signing_keys(&step.keys)?;
+        let opened = match open_token(candidate, step.kind, &keys, step.now) {
+            Ok(opened) => serde_json::to_value(opened),
+            Err(error) => serde_json::to_value(error),
+        }
+        .map_err(|error| failure("Output", &error.to_string()))?;
         Ok(serde_json::json!({"mint": minted, "open": opened}))
     }
 }
@@ -88,16 +81,12 @@ impl crate::helpers::Helper for Op {
 fn mint(step: &MintStep) -> HelperResult {
     let keys = signing_keys(&step.keys)?;
     let public_key_pem = match &keys {
-        SigningKeys::Symmetric(_) => None,
-        SigningKeys::Asymmetric(asymmetric) => Some(
-            asymmetric
-                .public_key_pem()
-                .map_err(|error| failure("SessionKeyError", &error.to_string()))?,
-        ),
-    };
-    match mint_token(&step.principal, step.kind, &keys, step.now, || {
-        Ok(step.entropy)
-    }) {
+        SigningKeys::Symmetric(_) => Ok(None),
+        SigningKeys::Asymmetric(asymmetric) => asymmetric.public_key_pem().map(Some),
+    }
+    .map_err(|error| failure("SessionKeyError", &error.to_string()))?;
+    let entropy = step.entropy;
+    match mint_token(&step.principal, step.kind, &keys, step.now, || Ok(entropy)) {
         Ok(minted) => Ok(serde_json::json!({
             "token": minted.token.expose_secret(),
             "expires_at": minted.expires_at.timestamp(),
@@ -118,8 +107,7 @@ fn mint(step: &MintStep) -> HelperResult {
 fn signing_keys(keys: &Keys) -> Result<SigningKeys, Box<HelperError>> {
     let built = match keys {
         Keys::Symmetric { signing_key } => {
-            let secret = SecretString::from(signing_key.as_str());
-            SessionKeys::new(secret).map(SigningKeys::Symmetric)
+            SessionKeys::new(SecretString::from(signing_key.as_str())).map(SigningKeys::Symmetric)
         }
         Keys::Asymmetric {
             private_key_pem,
