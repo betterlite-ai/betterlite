@@ -16,78 +16,89 @@ pub trait SandboxBackendProtocol {
     fn block_on<F>(&self, operation: F) -> Result<F::Output, BackendError>
     where
         F: Future;
-    fn als(&self, path: &str) -> impl Future<Output = LsResult> + Send;
-    fn aread(
+    fn ls(&self, path: &str) -> impl Future<Output = LsResult> + Send;
+    fn read(
         &self,
         path: &str,
         offset: usize,
         limit: usize,
     ) -> impl Future<Output = ReadResult> + Send;
-    fn awrite(&self, path: &str, content: &str) -> impl Future<Output = WriteResult> + Send;
-    fn aedit(&self, path: &str, change: Replacement<'_>)
-    -> impl Future<Output = EditResult> + Send;
-    fn adelete(&self, path: &str) -> impl Future<Output = DeleteResult> + Send;
-    fn aglob(&self, pattern: &str, path: &str) -> impl Future<Output = GlobResult> + Send;
-    fn agrep(&self, query: GrepQuery<'_>) -> impl Future<Output = GrepResult> + Send;
-    fn aupload_files(
+    fn write(&self, path: &str, content: &str) -> impl Future<Output = WriteResult> + Send;
+    fn edit(&self, path: &str, change: Replacement<'_>) -> impl Future<Output = EditResult> + Send;
+    fn delete(&self, path: &str) -> impl Future<Output = DeleteResult> + Send;
+    fn glob(&self, pattern: &str, path: &str) -> impl Future<Output = GlobResult> + Send;
+    fn grep(&self, query: GrepQuery<'_>) -> impl Future<Output = GrepResult> + Send;
+    fn upload_files(
         &self,
         files: &[(String, Vec<u8>)],
     ) -> impl Future<Output = Vec<FileUploadResponse>> + Send;
-    fn adownload_files(
+    fn download_files(
         &self,
         paths: &[String],
     ) -> impl Future<Output = Vec<FileDownloadResponse>> + Send;
-    fn aexecute(
+    fn execute(
         &self,
         command: &str,
         timeout_seconds: Option<u64>,
     ) -> impl Future<Output = ExecuteResponse> + Send;
 
-    fn ls(&self, path: &str) -> Result<LsResult, BackendError> {
-        self.block_on(self.als(path))
+    fn blocking_ls(&self, path: &str) -> Result<LsResult, BackendError> {
+        self.block_on(self.ls(path))
     }
 
-    fn read(&self, path: &str, offset: usize, limit: usize) -> Result<ReadResult, BackendError> {
-        self.block_on(self.aread(path, offset, limit))
+    fn blocking_read(
+        &self,
+        path: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<ReadResult, BackendError> {
+        self.block_on(self.read(path, offset, limit))
     }
 
-    fn write(&self, path: &str, content: &str) -> Result<WriteResult, BackendError> {
-        self.block_on(self.awrite(path, content))
+    fn blocking_write(&self, path: &str, content: &str) -> Result<WriteResult, BackendError> {
+        self.block_on(self.write(path, content))
     }
 
-    fn edit(&self, path: &str, change: Replacement<'_>) -> Result<EditResult, BackendError> {
-        self.block_on(self.aedit(path, change))
+    fn blocking_edit(
+        &self,
+        path: &str,
+        change: Replacement<'_>,
+    ) -> Result<EditResult, BackendError> {
+        self.block_on(self.edit(path, change))
     }
 
-    fn delete(&self, path: &str) -> Result<DeleteResult, BackendError> {
-        self.block_on(self.adelete(path))
+    fn blocking_delete(&self, path: &str) -> Result<DeleteResult, BackendError> {
+        self.block_on(self.delete(path))
     }
 
-    fn glob(&self, pattern: &str, path: &str) -> Result<GlobResult, BackendError> {
-        self.block_on(self.aglob(pattern, path))
+    fn blocking_glob(&self, pattern: &str, path: &str) -> Result<GlobResult, BackendError> {
+        self.block_on(self.glob(pattern, path))
     }
 
-    fn grep(&self, query: GrepQuery<'_>) -> Result<GrepResult, BackendError> {
-        self.block_on(self.agrep(query))
+    fn blocking_grep(&self, query: GrepQuery<'_>) -> Result<GrepResult, BackendError> {
+        self.block_on(self.grep(query))
     }
 
-    fn upload_files(
+    fn blocking_upload_files(
         &self,
         files: &[(String, Vec<u8>)],
     ) -> Result<Vec<FileUploadResponse>, BackendError> {
-        self.block_on(self.aupload_files(files))
+        self.block_on(self.upload_files(files))
     }
 
-    fn download_files(&self, paths: &[String]) -> Result<Vec<FileDownloadResponse>, BackendError> {
-        self.block_on(self.adownload_files(paths))
+    fn blocking_download_files(
+        &self,
+        paths: &[String],
+    ) -> Result<Vec<FileDownloadResponse>, BackendError> {
+        self.block_on(self.download_files(paths))
     }
 
-    fn execute(
+    fn blocking_execute(
         &self,
         command: &str,
         timeout_seconds: Option<u64>,
     ) -> Result<ExecuteResponse, BackendError> {
-        self.block_on(self.aexecute(command, timeout_seconds))
+        self.block_on(self.execute(command, timeout_seconds))
     }
 }
 
@@ -110,11 +121,11 @@ where
         Ok(self.runtime.block_on(operation))
     }
 
-    fn als(&self, path: &str) -> impl Future<Output = LsResult> + Send {
+    fn ls(&self, path: &str) -> impl Future<Output = LsResult> + Send {
         files::list(self, path)
     }
 
-    fn aread(
+    fn read(
         &self,
         path: &str,
         offset: usize,
@@ -123,7 +134,7 @@ where
         files::read(self, path, offset, limit)
     }
 
-    fn awrite(&self, path: &str, content: &str) -> impl Future<Output = WriteResult> + Send {
+    fn write(&self, path: &str, content: &str) -> impl Future<Output = WriteResult> + Send {
         files::when_writable(self, async move {
             match self.write_bytes(path, content.as_bytes()).await {
                 Ok(()) => Reply::Done(path.to_owned()),
@@ -132,27 +143,23 @@ where
         })
     }
 
-    fn aedit(
-        &self,
-        path: &str,
-        change: Replacement<'_>,
-    ) -> impl Future<Output = EditResult> + Send {
+    fn edit(&self, path: &str, change: Replacement<'_>) -> impl Future<Output = EditResult> + Send {
         files::when_writable(self, files::edit(self, path, change))
     }
 
-    fn adelete(&self, path: &str) -> impl Future<Output = DeleteResult> + Send {
+    fn delete(&self, path: &str) -> impl Future<Output = DeleteResult> + Send {
         files::when_writable(self, files::delete(self, path))
     }
 
-    fn aglob(&self, pattern: &str, path: &str) -> impl Future<Output = GlobResult> + Send {
+    fn glob(&self, pattern: &str, path: &str) -> impl Future<Output = GlobResult> + Send {
         search::glob(self, pattern, path)
     }
 
-    fn agrep(&self, query: GrepQuery<'_>) -> impl Future<Output = GrepResult> + Send {
+    fn grep(&self, query: GrepQuery<'_>) -> impl Future<Output = GrepResult> + Send {
         search::grep(self, query)
     }
 
-    fn aupload_files(
+    fn upload_files(
         &self,
         files: &[(String, Vec<u8>)],
     ) -> impl Future<Output = Vec<FileUploadResponse>> + Send {
@@ -161,7 +168,7 @@ where
             .collect()
     }
 
-    fn adownload_files(
+    fn download_files(
         &self,
         paths: &[String],
     ) -> impl Future<Output = Vec<FileDownloadResponse>> + Send {
@@ -170,7 +177,7 @@ where
             .collect()
     }
 
-    fn aexecute(
+    fn execute(
         &self,
         command: &str,
         timeout_seconds: Option<u64>,

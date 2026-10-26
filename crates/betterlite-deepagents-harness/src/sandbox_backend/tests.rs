@@ -141,7 +141,7 @@ fn id_carries_the_session_prefix() {
 async fn grep_whole_repo_skips_symlinks_out_of_workspace() {
     let (_dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), READ_ONLY);
-    let result = backend.agrep(query("AWS_SECRET", "/", None, None)).await;
+    let result = backend.grep(query("AWS_SECRET", "/", None, None)).await;
     assert_eq!(
         result,
         Reply::Done(Listing {
@@ -156,7 +156,7 @@ async fn grep_rooted_at_a_symlinked_dir_is_refused() {
     let (_dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), READ_ONLY);
     let result = backend
-        .agrep(query("AWS_SECRET", "/home_link", None, None))
+        .grep(query("AWS_SECRET", "/home_link", None, None))
         .await;
     assert_eq!(
         result,
@@ -171,7 +171,7 @@ async fn read_through_a_symlink_is_refused() {
     let (_dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), READ_ONLY);
     assert_eq!(
-        backend.aread("/creds_link", 0, 2000).await,
+        backend.read("/creds_link", 0, 2000).await,
         ReadResult::Error(
             "Error reading file '/creds_link': path resolves outside the workspace: /creds_link"
                 .to_owned()
@@ -188,7 +188,7 @@ async fn glob_does_not_list_files_behind_symlinks() {
         is_dir: false,
     };
     assert_eq!(
-        backend.aglob("**/*", "/").await,
+        backend.glob("**/*", "/").await,
         Reply::Done(Listing {
             matches: vec![readme],
             truncated: false
@@ -206,7 +206,7 @@ async fn grep_still_finds_real_repo_files() {
         text: "hello".to_owned(),
     };
     assert_eq!(
-        backend.agrep(query("hello", "", None, None)).await,
+        backend.grep(query("hello", "", None, None)).await,
         Reply::Done(Listing {
             matches: vec![hello],
             truncated: false
@@ -219,7 +219,7 @@ async fn write_into_a_new_nested_directory_is_allowed() {
     let (_dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), WRITABLE);
     let result = backend
-        .awrite("/new_dir/sub/file.py", "print('hi')\r\n")
+        .write("/new_dir/sub/file.py", "print('hi')\r\n")
         .await;
     assert_eq!(result, Reply::Done("/new_dir/sub/file.py".to_owned()));
     assert_eq!(on_disk(&repo, "new_dir/sub/file.py"), "print('hi')\r\n");
@@ -229,7 +229,7 @@ async fn write_into_a_new_nested_directory_is_allowed() {
 async fn write_under_a_symlinked_dir_is_refused() {
     let (dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), WRITABLE);
-    let result = backend.awrite("/home_link/new_dir/evil.txt", "x").await;
+    let result = backend.write("/home_link/new_dir/evil.txt", "x").await;
     assert_eq!(
         result,
         Reply::Error("Error writing file '/home_link/new_dir/evil.txt': path resolves outside the workspace: /home_link/new_dir/evil.txt".to_owned())
@@ -254,7 +254,7 @@ async fn ls_lists_entries_sorted_with_dirs_marked() {
         path: path.to_owned(),
         is_dir,
     });
-    assert_eq!(backend.als("/src").await, Reply::Done(entries.to_vec()));
+    assert_eq!(backend.ls("/src").await, Reply::Done(entries.to_vec()));
 }
 
 #[rstest]
@@ -268,7 +268,7 @@ async fn ls_lists_entries_sorted_with_dirs_marked() {
 async fn ls_names_why_it_cannot_list(#[case] path: &str, #[case] message: &str) {
     let (_dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), READ_ONLY);
-    assert_eq!(backend.als(path).await, Reply::Error(message.to_owned()));
+    assert_eq!(backend.ls(path).await, Reply::Error(message.to_owned()));
 }
 
 #[tokio::test]
@@ -278,13 +278,13 @@ async fn read_returns_binary_as_base64_and_text_as_a_window() {
     fs::write(Path::new(&repo).join("notes.txt"), "one\r\ntwo\nthree\n").unwrap();
     let backend = backend_at(&repo, Handle::current(), READ_ONLY);
     assert_eq!(
-        backend.aread("/blob.bin", 0, 2000).await,
+        backend.read("/blob.bin", 0, 2000).await,
         ReadResult::Whole(FileData {
             content: "/wBB".to_owned(),
             encoding: Encoding::Base64
         })
     );
-    let ReadResult::Window { file_data, window } = backend.aread("/notes.txt", 1, 1).await else {
+    let ReadResult::Window { file_data, window } = backend.read("/notes.txt", 1, 1).await else {
         panic!("expected a window");
     };
     assert_eq!(file_data.content, "two\n");
@@ -298,7 +298,7 @@ async fn read_returns_binary_as_base64_and_text_as_a_window() {
         (3, 2, 2, Some(2))
     );
     assert_eq!(
-        backend.aread("/missing.txt", 0, 2000).await,
+        backend.read("/missing.txt", 0, 2000).await,
         ReadResult::Error("File '/missing.txt' not found".to_owned())
     );
 }
@@ -309,18 +309,18 @@ async fn read_only_sessions_refuse_every_change() {
     let backend = backend_at(&repo, Handle::current(), READ_ONLY);
     let refused = "Error: this session is read-only; files cannot be changed".to_owned();
     assert_eq!(
-        backend.awrite("/a.txt", "x").await,
+        backend.write("/a.txt", "x").await,
         Reply::Error(refused.clone())
     );
     assert_eq!(
         backend
-            .aedit("/README.md", change("hello", "bye", false))
+            .edit("/README.md", change("hello", "bye", false))
             .await,
         Reply::Error(refused.clone())
     );
-    assert_eq!(backend.adelete("/README.md").await, Reply::Error(refused));
+    assert_eq!(backend.delete("/README.md").await, Reply::Error(refused));
     let upload = backend
-        .aupload_files(&[("/a.txt".to_owned(), b"x".to_vec())])
+        .upload_files(&[("/a.txt".to_owned(), b"x".to_vec())])
         .await;
     assert_eq!(
         upload,
@@ -344,7 +344,7 @@ async fn edit_normalizes_crlf_and_counts_occurrences() {
     };
     assert_eq!(
         backend
-            .aedit("/app.py", change(" 1\r\n", " 2\r\n", true))
+            .edit("/app.py", change(" 1\r\n", " 2\r\n", true))
             .await,
         Reply::Done(edited)
     );
@@ -374,7 +374,7 @@ async fn edit_names_why_it_changed_nothing(
     fs::write(Path::new(&repo).join("blob.bin"), [0xff_u8, 0x41]).unwrap();
     let backend = backend_at(&repo, Handle::current(), WRITABLE);
     assert_eq!(
-        backend.aedit(path, change(old, "new", false)).await,
+        backend.edit(path, change(old, "new", false)).await,
         Reply::Error(message.to_owned())
     );
     assert_eq!(
@@ -390,20 +390,20 @@ async fn delete_removes_files_and_refuses_the_root() {
     fs::write(Path::new(&repo).join("build/out.o"), "x").unwrap();
     let backend = backend_at(&repo, Handle::current(), WRITABLE);
     assert_eq!(
-        backend.adelete("/build").await,
+        backend.delete("/build").await,
         Reply::Done("/build".to_owned())
     );
     assert!(!Path::new(&repo).join("build").exists());
     assert_eq!(
-        backend.adelete("/").await,
+        backend.delete("/").await,
         Reply::Error("Error: refusing to delete the workspace root".to_owned())
     );
     assert_eq!(
-        backend.adelete("/../..").await,
+        backend.delete("/../..").await,
         Reply::Error("Error: refusing to delete the workspace root".to_owned())
     );
     assert_eq!(
-        backend.adelete("/build").await,
+        backend.delete("/build").await,
         Reply::Error("Error: '/build' not found".to_owned())
     );
     assert_eq!(on_disk(&repo, "README.md"), "hello\n");
@@ -419,14 +419,14 @@ async fn delete_removes_a_link_but_not_its_target() {
     .unwrap();
     let backend = backend_at(&repo, Handle::current(), WRITABLE);
     assert_eq!(
-        backend.adelete("/creds_link").await,
+        backend.delete("/creds_link").await,
         Reply::Error(
             "Error deleting '/creds_link': path resolves outside the workspace: /creds_link"
                 .to_owned()
         )
     );
     assert_eq!(
-        backend.adelete("/dangling").await,
+        backend.delete("/dangling").await,
         Reply::Done("/dangling".to_owned())
     );
     assert!(dir.path().join("host_home/credentials").exists());
@@ -450,10 +450,10 @@ async fn glob_skips_snapshot_dirs_and_matches_relative_to_its_root() {
         matches: files.to_vec(),
         truncated: false,
     });
-    assert_eq!(backend.aglob("*.py", "/").await, expected);
-    assert_eq!(backend.aglob("**/*.py", "/src").await, expected);
+    assert_eq!(backend.glob("*.py", "/").await, expected);
+    assert_eq!(backend.glob("**/*.py", "/src").await, expected);
     assert_eq!(
-        backend.aglob("../*.py", "/").await,
+        backend.glob("../*.py", "/").await,
         Reply::Error("Path traversal not allowed in glob pattern '../*.py'".to_owned())
     );
 }
@@ -466,7 +466,7 @@ async fn glob_marks_partial_results_when_find_fails() {
     fs::write(locked.join("hidden.md"), "x").unwrap();
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
     let backend = backend_at(&repo, Handle::current(), READ_ONLY);
-    let result = backend.aglob("*.md", "/").await;
+    let result = backend.glob("*.md", "/").await;
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
     let readme = FileInfo {
         path: "/README.md".to_owned(),
@@ -492,10 +492,7 @@ async fn grep_filters_by_include_glob_and_caps_the_count() {
     )
     .unwrap();
     let backend = backend_at(&repo, Handle::current(), READ_ONLY);
-    let Reply::Done(found) = backend
-        .agrep(query("hello", "/", Some("*.txt"), None))
-        .await
-    else {
+    let Reply::Done(found) = backend.grep(query("hello", "/", Some("*.txt"), None)).await else {
         panic!("grep failed");
     };
     let mut lines: Vec<(String, usize, String)> = found
@@ -511,11 +508,11 @@ async fn grep_filters_by_include_glob_and_caps_the_count() {
     ]
     .map(|(path, line, text)| (path.to_owned(), line, text.to_owned()));
     assert_eq!(lines, expected.to_vec());
-    let Reply::Done(capped) = backend.agrep(query("hello", "/sub", None, Some(1))).await else {
+    let Reply::Done(capped) = backend.grep(query("hello", "/sub", None, Some(1))).await else {
         panic!("grep failed");
     };
     assert_eq!((capped.matches.len(), capped.truncated), (1, true));
-    let fixed = backend.agrep(query("a.c", "/", None, None)).await;
+    let fixed = backend.grep(query("a.c", "/", None, None)).await;
     assert_eq!(
         fixed,
         Reply::Done(Listing {
@@ -529,12 +526,12 @@ async fn grep_filters_by_include_glob_and_caps_the_count() {
 async fn grep_reports_a_failing_search_with_its_stderr() {
     let (_dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), READ_ONLY);
-    let Reply::Error(message) = backend.agrep(query("x", "/nope", None, None)).await else {
+    let Reply::Error(message) = backend.grep(query("x", "/nope", None, None)).await else {
         panic!("expected an error");
     };
     assert!(message.starts_with("Path '/nope': find: "), "{message}");
     assert_eq!(
-        backend.agrep(query("x", "/", Some("../*"), None)).await,
+        backend.grep(query("x", "/", Some("../*"), None)).await,
         Reply::Error("Path '/': Path traversal not allowed in glob pattern '../*'".to_owned())
     );
 }
@@ -548,14 +545,14 @@ async fn upload_and_download_report_each_path() {
         ("/home_link/x", b"x".as_slice()),
     ]
     .map(|(path, data)| (path.to_owned(), data.to_vec()));
-    let uploaded = backend.aupload_files(&files).await;
+    let uploaded = backend.upload_files(&files).await;
     let outcomes: Vec<Result<(), TransferError>> = uploaded
         .into_iter()
         .map(|response| response.outcome)
         .collect();
     assert_eq!(outcomes, vec![Ok(()), Err(TransferError::InvalidPath)]);
     let paths = ["/data/a.bin", "/missing", "/creds_link"].map(str::to_owned);
-    let downloaded = backend.adownload_files(&paths).await;
+    let downloaded = backend.download_files(&paths).await;
     let expected = [
         ("/data/a.bin", Ok(vec![0_u8, 1])),
         ("/missing", Err(TransferError::FileNotFound)),
@@ -585,7 +582,7 @@ async fn execute_merges_stderr_into_stdout(
         exit_code,
         truncated: false,
     };
-    assert_eq!(backend.aexecute(command, None).await, expected);
+    assert_eq!(backend.execute(command, None).await, expected);
 }
 
 #[tokio::test]
@@ -593,7 +590,7 @@ async fn execute_truncates_on_a_character_boundary() {
     let (_dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), WRITABLE);
     let response = backend
-        .aexecute("printf a; yes \u{e9} | head -n 60000 | tr -d '\\n'", None)
+        .execute("printf a; yes \u{e9} | head -n 60000 | tr -d '\\n'", None)
         .await;
     assert_eq!(
         (
@@ -609,7 +606,7 @@ async fn execute_truncates_on_a_character_boundary() {
 async fn execute_maps_a_sandbox_failure_to_exit_124() {
     let (_dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), WRITABLE);
-    let response = backend.aexecute("exec sleep 3", Some(1)).await;
+    let response = backend.execute("exec sleep 3", Some(1)).await;
     assert_eq!((response.exit_code, response.truncated), (124_i32, false));
     assert!(
         response.output.starts_with("Error: the sandbox failed: "),
@@ -631,7 +628,7 @@ async fn execute_is_refused_when_disabled() {
         exit_code: 1,
         truncated: false,
     };
-    assert_eq!(backend.aexecute("touch made", None).await, refused);
+    assert_eq!(backend.execute("touch made", None).await, refused);
     assert!(!Path::new(&repo).join("made").exists());
 }
 
@@ -641,11 +638,17 @@ fn sync_methods_run_from_a_plain_thread() {
     let runtime = multi_thread();
     let backend = backend_at(&repo, runtime.handle().clone(), WRITABLE);
     assert_eq!(
-        backend.write("/b.txt", "bee").unwrap(),
+        backend.blocking_write("/b.txt", "bee").unwrap(),
         Reply::Done("/b.txt".to_owned())
     );
-    assert_eq!(backend.execute("cat b.txt", None).unwrap().output, "bee");
-    assert_eq!(backend.ls("/").unwrap(), runtime.block_on(backend.als("/")));
+    assert_eq!(
+        backend.blocking_execute("cat b.txt", None).unwrap().output,
+        "bee"
+    );
+    assert_eq!(
+        backend.blocking_ls("/").unwrap(),
+        runtime.block_on(backend.ls("/"))
+    );
 }
 
 #[test]
@@ -653,7 +656,7 @@ fn sync_methods_refuse_the_event_loop_thread() {
     let (_dir, repo) = repo_with_escape_links();
     let runtime = multi_thread();
     let backend = backend_at(&repo, runtime.handle().clone(), WRITABLE);
-    let refused = runtime.block_on(async { backend.write("/b.txt", "bee") });
+    let refused = runtime.block_on(async { backend.blocking_write("/b.txt", "bee") });
     let Err(error) = refused else {
         panic!("expected a refusal");
     };
