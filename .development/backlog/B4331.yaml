@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Share request Redis batches and drain deferred writes
 status: todo
 depends_on: [B4330]
-file: null
+file: tasks/B4331-request-redis-batches.yaml
 covers:
   - "litellm/caching/redis_batch.py"
 parent: B126

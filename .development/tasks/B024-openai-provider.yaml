@@ -135,7 +135,6 @@ scope:
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/openai_dispatch.rs
   - crates/betterlite-provider/src/openai_dispatch/**
-  - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/Cargo.toml
   - crates/betterlite-provider/src/provider.rs
   - crates/betterlite-provider/src/provider/**

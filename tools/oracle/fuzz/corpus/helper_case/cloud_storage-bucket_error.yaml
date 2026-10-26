@@ -1,0 +1,5 @@
+kind: helper
+name: cloud_storage-bucket_error
+call: {cloud_storage: {function: configured_bucket_split, value: false}}
+env: {}
+compare: {ignore: []}

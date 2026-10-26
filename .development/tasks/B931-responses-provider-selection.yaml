@@ -37,7 +37,6 @@ scope:
   - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_provider_selection.rs
   - crates/betterlite-core/src/api/responses_provider_selection/**
-  - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/response_compatible.rs
   - crates/betterlite-openai/src/response_compatible/**
   - crates/betterlite-config/src/api.rs

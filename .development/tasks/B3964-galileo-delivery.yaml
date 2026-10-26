@@ -1,0 +1,155 @@
+id: B3964
+title: Galileo authentication health and buffered delivery
+description: >-
+  Build Galileo configuration, API-key or login-token authentication, health probing, and
+  trace delivery with retained failed batches. Implement initialization with environment
+  variable lookup for GALILEO_API_KEY, GALILEO_PROJECT_ID, GALILEO_LOG_STREAM_ID, GALILEO_USERNAME,
+  GALILEO_PASSWORD, and GALILEO_BASE_URL (default https://api.galileo.ai for API-key auth).
+  Build authentication with two paths: direct API-key header (Galileo-API-Key) for v2 API,
+  or username/password login POST for token-based auth. Implement health check against /current_user
+  with configuration validation and authentication probe. Build ingest request construction
+  for both /ingest/traces/{project_id} (v2 API) and /v2/projects/{project_id}/traces (username/password).
+  Implement buffering with configurable batch size (default 1), capping in-memory records to 1000
+  with drop-oldest retention and warning. On successful flush, remove only the captured prefix;
+  on 401/403 rejection with token auth, invalidate cached headers for re-authentication on next flush.
+scope:
+  paths:
+    - crates/betterlite-logging/src/galileo.rs
+    - crates/betterlite-logging/src/galileo/delivery.rs
+    - tools/oracle/cases/helpers/galileo-delivery/**
+    - tools/oracle/helpers/b3964.py
+    - tools/oracle/helpers/b3964/**
+    - tools/oracle/src/helpers/logging/b3964.rs
+    - tools/oracle/src/helpers/logging/b3964/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L48-L65
+    why: Protocol declarations for login response and JSON responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L102-L115
+    why: "GalileoObserve.__init__: configuration loading, batch size, authentication method selection."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L117-L128
+    why: "Base URL normalization and configuration check logic."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L130-L173
+    why: "Health check implementation: validation and /current_user probe."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L175-L217
+    why: "Authentication: token login POST and header setup."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L350-L371
+    why: "Ingest request building for both API paths with payload snapshot."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L373-L457
+    why: "Diagnostic helpers: header redaction, payload logging and validation."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L767-L829
+    why: "Flush implementation: in-memory buffer management, batching and error recovery."
+dod:
+  - text: >-
+      Configuration loads GALILEO_API_KEY, GALILEO_PROJECT_ID, GALILEO_LOG_STREAM_ID, GALILEO_USERNAME,
+      GALILEO_PASSWORD and GALILEO_BASE_URL from the environment; batch_size defaults to 1 and api_key
+      selects v2 API (Galileo-API-Key header) while username/password uses token auth (/login POST).
+    proof: [galileo-delivery-tests]
+  - text: >-
+      Base URL normalization removes trailing slashes; default is https://api.galileo.ai for v2 API.
+    proof: [galileo-delivery-tests]
+  - text: >-
+      _is_configured returns true when project_id and base_url are set, and either api_key is set
+      (v2 API) or both username and password are set (token auth).
+    proof: [galileo-delivery-tests]
+  - text: >-
+      Health check validates project_id, base_url and authentication availability, calls async_health_check
+      which probes /current_user with authentication, and returns IntegrationHealthCheckStatus with status
+      and error_message fields.
+    proof: [galileo-delivery-tests, oracle]
+  - text: >-
+      Authentication with API key sets Galileo-API-Key header and Content-Type/accept; authentication
+      with username/password calls POST /login with form data, reads access_token from response body
+      and sets Bearer Authorization header.
+    proof: [galileo-delivery-tests, oracle]
+  - text: >-
+      _ensure_headers checks if headers are cached, returns cached headers if present, or builds headers
+      (API key immediately or username/password via login). Login failures log at debug level and return false.
+    proof: [galileo-delivery-tests, oracle]
+  - text: >-
+      Ingest request returns URL and payload tuple: /ingest/traces/{project_id} for v2 API or
+      /v2/projects/{project_id}/traces for token auth. Payload is built by B3963's _build_traces_payload.
+    proof: [galileo-delivery-tests]
+  - text: >-
+      Header redaction masks Galileo-API-Key and Authorization values to first 8 and last 4 chars,
+      or "***" for values 12 characters or shorter; other headers pass through unchanged.
+    proof: [galileo-delivery-tests]
+  - text: >-
+      Flush captures the record count before await, posts payload to endpoint, and on 2xx removes only
+      the captured prefix from in_memory_records. On 401/403 with token auth (not v2 API), sets headers to None
+      for re-authentication on next flush.
+    proof: [galileo-delivery-tests, oracle]
+  - text: >-
+      Failed flush (non-2xx response or exception) logs diagnostic details and retains all records;
+      successful flush returns without exception.
+    proof: [galileo-delivery-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: galileo-delivery-tests
+      why: authentication, health check, buffering or delivery logic fails or is absent
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^galileo_delivery::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: the oracle adapter is missing or fails strict Python checks
+      run: test -f tools/oracle/helpers/b3964.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: new-cases
+      why: no authentication, health or delivery scenarios were added
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/galileo-delivery)"
+oracle_cases:
+  - tools/oracle/cases/helpers/galileo-delivery/api-key-auth.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/username-password-auth.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/base-url-normalization.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/health-check-unhealthy-no-project-id.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/health-check-unhealthy-no-base-url.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/health-check-unhealthy-no-auth.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/health-check-probe-current-user.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/health-check-api-error.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/login-post-body-form-encoded.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/login-reads-access-token.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/ingest-url-v2-api.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/ingest-url-token-auth.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/header-redaction-api-key.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/header-redaction-bearer.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/login-rejected.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/flush-success-removes-prefix.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/flush-401-token-auth-invalidates-headers.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/flush-401-v2-api-keeps-headers.yaml
+  - tools/oracle/cases/helpers/galileo-delivery/flush-failure-retains-records.yaml
+deviations: []
+out_of_scope:
+  - >-
+      Payload projection (trace/span building, timestamp conversion, token metrics); owned by B3963.
+  - >-
+      Callback record construction, queue admission and batch triggering; owned by B3965.
+  - >-
+      Configuration defaults and environment variable loading beyond these fields; owned by B002.
+  - >-
+      HTTP pooling and request execution; owned by B173.
+  - >-
+      Callback registration and lifecycle; owned by B189.
+pitfalls:
+  - >-
+      Bearer token login is form-encoded POST to /login with username/password data; the response is
+      JSON with access_token field, which is read by _login_access_token helper.
+  - >-
+      The default API base URL is https://api.galileo.ai and applies only when api_key is set; username/password
+      auth requires GALILEO_BASE_URL to be explicitly set.
+  - >-
+      The v2 API path is /ingest/traces/{project_id}, while username/password auth uses /v2/projects/{project_id}/traces.
+      The use_v2_api flag determines both header style and endpoint selection.
+  - >-
+      A successful flush removes only the captured prefix (records_in_payload count from before the await),
+      preserving concurrent appends made during the POST. Failed flushes keep all records.
+  - >-
+      Auth rejection with 401/403 clears headers only for token auth (not v2_api); the next flush will
+      re-login. v2 API key auth retains headers since the key is static.
+  - >-
+      In-memory buffer is capped at 1000 (GALILEO_MAX_IN_MEMORY_RECORDS) and drops oldest records with warning
+      when exceeded. The warning mentions checking Galileo connectivity/credentials.
+  - >-
+      Header redaction masks Authorization and Galileo-API-Key values to first 8 and last 4 chars,
+      or "***" for values 12 chars or shorter. Other headers (accept, Content-Type) pass through unchanged.
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 1

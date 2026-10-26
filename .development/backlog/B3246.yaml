@@ -2,8 +2,8 @@ id: B3246
 milestone: M6 guardrails
 title: Pipeline streaming rewrite observation and legacy adaptation
 status: todo
-depends_on: [B3240, B732]
-file: null
+depends_on: [B3240, B732, B3664, B189]
+file: tasks/B3246-policy-stream-rewrites.yaml
 covers:
   - "litellm/proxy/policy_engine/pipeline_executor.py"
 parent: B079

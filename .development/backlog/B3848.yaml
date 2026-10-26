@@ -3,7 +3,7 @@ milestone: M7 observability
 title: OTel exporter factories and datastore attributes
 status: todo
 depends_on: [B002, B173, B3840, B3842, B3843]
-file: null
+file: tasks/B3848-otel-exporter-factories.yaml
 covers:
   - "litellm/integrations/otel/plumbing/{providers,otlp_json,events}.py"
   - "litellm/integrations/otel/model/db_endpoint.py"

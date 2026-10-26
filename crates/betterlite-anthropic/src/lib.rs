@@ -19,6 +19,7 @@ pub mod params;
 pub mod request;
 pub mod response;
 pub mod response_content;
+pub mod skills;
 pub mod stream_decode;
 pub mod stream_events;
 pub mod stream_state;

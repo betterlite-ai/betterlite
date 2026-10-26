@@ -1,2 +1,10 @@
+pub mod config;
+pub mod emitter;
+pub mod fan_out;
+pub mod integrations;
+pub mod mappers;
+pub mod model;
+pub mod plumbing;
+pub mod transforms;
 #[path = "otel/model/vocabulary.rs"]
 pub mod vocabulary;

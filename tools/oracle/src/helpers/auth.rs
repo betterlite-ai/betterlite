@@ -6,7 +6,7 @@ helper_group! {
     "auth_team_lookup" => team_lookup, "auth_user_lookup" => user_lookup,
     "auxiliary_routes" => auxiliary_routes, "b1221" => b1221, "b1625" => b1625,
     "b1626" => b1626, "b2326" => b2326, "b3001" => b3001, "b3004" => b3004, "b3006" => b3006,
-    "b3007" => b3007, "b855" => b855, "b875" => b875, "b876" => b876,
+    "b3007" => b3007, "b3017" => b3017, "b855" => b855, "b875" => b875, "b876" => b876,
     "budget_primitives" => budget_primitives, "budget_window_start" => budget_window_start,
     "carried_policy_records" => carried_policy_records, "cli_attribution" => cli_attribution,
     "counter_keys" => counter_keys, "current_spend" => current_spend,

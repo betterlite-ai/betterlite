@@ -31,6 +31,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,error,codestral_call}.rs
+    - crates/betterlite-openai/src/codestral_call.rs
     - crates/betterlite-openai/src/codestral_call/**
     - tools/oracle/src/helpers/openai/codestral_plan.rs
     - tools/oracle/src/helpers/openai/codestral_plan/**

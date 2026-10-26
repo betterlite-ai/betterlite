@@ -65,8 +65,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-logging/Cargo.toml
-  - crates/betterlite-logging/src/lib.rs
-  - crates/betterlite-logging/src/error.rs
   - crates/betterlite-logging/src/verbose_hooks.rs
   - crates/betterlite-logging/src/verbose_hooks/**
   - tools/oracle/Cargo.toml

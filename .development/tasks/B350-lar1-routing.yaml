@@ -48,7 +48,6 @@ scope:
   - tools/oracle/litellm/probes/lar1_routing.py
   - tools/oracle/cases/routing/lar1-routing/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/lar1-routing-*
-  - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/chat.rs
   - crates/betterlite-openai/src/request.rs
   - crates/betterlite-openai/src/request/**

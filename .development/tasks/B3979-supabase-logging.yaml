@@ -30,6 +30,7 @@ description: >-
 
 scope:
   paths:
+    - crates/betterlite-logging/src/supabase.rs
     - crates/betterlite-logging/src/supabase/**
   lint_tables: false
 

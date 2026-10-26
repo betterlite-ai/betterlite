@@ -1,0 +1,135 @@
+id: B3972
+title: DeepEval trace records and Confident API delivery
+description: >-
+  Build DeepEval's span/trace payloads and synchronous/asynchronous delivery
+  to the Confident API. DeepEvalLogger wraps each success or failure callback
+  as a single-span trace with LLM span type, extracting usage, output and
+  error strings from the standard_logging_object. The Api class sends POST
+  requests to /v1/tracing with UTC millisecond timestamps.
+
+  Preserve the misspelled LITELM_ENVIRONMENT setting (not LITELLM_ENVIRONMENT)
+  with validation against {production, development, staging}. In success cases,
+  extract output from choices[0].message.content (falling back to NO_OUTPUT).
+  In failure cases, extract error_string from standard_logging_object. Sync
+  send_request returns None from _http_request and raises on non-200 status;
+  async a_send_request does not re-check status before returning.
+
+  Environment defaults to development. API base is https://api.confident-ai.com.
+  UTC timestamps use ISO 8601 millisecond precision with Z suffix via
+  to_zod_compatible_iso. Trace UUID falls back to uuid.uuid4() when not
+  present in standard_logging_object. The base API span name is
+  litellm_success_callback or litellm_failure_callback.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/deepeval.rs
+    - crates/betterlite-logging/src/deepeval/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/__init__.py#L1-L3
+    why: DeepEvalLogger export contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/api.py#L10-L14
+    why: API base URL constants and retryable exception types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/api.py#L32-L50
+    why: HttpMethods and Endpoints enum definitions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/api.py#L54-L64
+    why: Api.__init__ constructs sync/async handlers and headers with CONFIDENT_API_KEY.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/api.py#L66-L79
+    why: _http_request POSTs to URL and raises on HTTPStatusError; returns None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/api.py#L81-L98
+    why: send_request constructs endpoint URL, calls _http_request, checks status 200 and raises on error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/api.py#L100-L115
+    why: a_send_request awaits self.async_http_handler.post directly and always returns None implicitly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L25-L32
+    why: DeepEvalLogger.__init__ reads CONFIDENT_API_KEY and LITELM_ENVIRONMENT (misspelled).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L34-L40
+    why: log_success_event and log_failure_event both delegate to _sync_event_handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L42-L48
+    why: async_log_failure_event and async_log_success_event both delegate to _async_event_handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L50-L76
+    why: _prepare_trace_api converts timestamps, builds base span and trace API, serializes with by_alias=True exclude_none=True.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L78-L88
+    why: _sync_event_handler builds body, calls api.send_request, logs response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L90-L98
+    why: _async_event_handler builds body, calls api.a_send_request, logs response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L100-L125
+    why: _create_base_api_span extracts usage/output/error, sets name/status/type/token counts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L127-L145
+    why: _create_trace_api wraps base span in TraceApi with environment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/utils.py#L7-L8
+    why: to_zod_compatible_iso formats datetime to UTC ISO 8601 milliseconds with Z suffix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/utils.py#L11-L14
+    why: validate_environment raises if environment not in {production, development, staging}.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/types.py#L1-L64
+    why: Pydantic models BaseApiSpan, TraceApi and enums SpanApiType, TraceSpanApiStatus, Environment.
+
+dod:
+  - text: Api.__init__ stores api_key, constructs headers with CONFIDENT_API_KEY, initializes sync and async HTTP handlers.
+    proof: [deepeval-tests]
+  - text: _http_request accepts POST method and raises on HTTPStatusError with response text; returns None.
+    proof: [deepeval-tests]
+  - text: send_request constructs endpoint URL, calls _http_request, checks status_code == 200, raises on non-200.
+    proof: [deepeval-tests]
+  - text: a_send_request constructs endpoint URL, awaits self.async_http_handler.post directly, and always returns None.
+    proof: [deepeval-tests]
+  - text: DeepEvalLogger.__init__ reads CONFIDENT_API_KEY from environment, raises if missing; reads LITELM_ENVIRONMENT (misspelled) with default development.
+    proof: [deepeval-tests]
+  - text: log_success_event and log_failure_event both call _sync_event_handler with is_success flag.
+    proof: [deepeval-tests]
+  - text: async_log_success_event and async_log_failure_event both call _async_event_handler with is_success flag.
+    proof: [deepeval-tests]
+  - text: _prepare_trace_api converts start_time/end_time to UTC milliseconds, builds base API span and trace API, serializes with by_alias and exclude_none.
+    proof: [deepeval-tests]
+  - text: _sync_event_handler builds body, calls api.send_request with POST and TRACING_ENDPOINT, logs response; raises on send_request exception.
+    proof: [deepeval-tests]
+  - text: _async_event_handler builds body, calls api.a_send_request with POST and TRACING_ENDPOINT, logs response.
+    proof: [deepeval-tests]
+  - text: _create_base_api_span extracts usage from standard_logging_object, sets output from choices[0].message.content on success or error_string on failure.
+    proof: [deepeval-tests]
+  - text: _create_base_api_span sets name to litellm_success_callback or litellm_failure_callback, status to SUCCESS or ERRORED, type to LLM.
+    proof: [deepeval-tests]
+  - text: _create_base_api_span uses uuid from standard_logging_object or generates uuid4(); uses trace_id for traceUuid; fallback trace_id to uuid4().
+    proof: [deepeval-tests]
+  - text: _create_trace_api wraps base_api_span in TraceApi with empty base/agent/retriever/tool spans, sets environment from self.litellm_environment.
+    proof: [deepeval-tests]
+  - text: to_zod_compatible_iso converts datetime to UTC, formats as ISO 8601 with milliseconds, replaces +00:00 suffix with Z.
+    proof: [deepeval-tests]
+  - text: validate_environment raises ValueError if environment not in {production, development, staging}.
+    proof: [deepeval-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: deepeval-tests
+      why: the deepeval tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^deepeval_logging::/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "_http_request returns None but send_request reads res.status_code without a null check, which would raise AttributeError in production. This is live LiteLLM code that relies on an undocumented precondition. betterlite must choose: fix the precondition silently (send_request always receives a response), document the bug as a known difference, or port the code as-is and let callers fail."
+    why: The source has a latent defect that surfaces only if _http_request returns None for a non-POST method or if an internal exception bypasses the POST path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/api.py#L81-L98
+
+out_of_scope:
+  - DEEPEVAL_BASE_URL at api.py:10 has no caller at the pin.
+  - DEEPEVAL_BASE_URL_EU at api.py:11 has no caller at the pin.
+  - API_BASE_URL_EU at api.py:13 has no caller at the pin.
+  - retryable_exceptions at api.py:14 has no caller at the pin.
+  - log_retry_error function at api.py:23-29 has no callers at the pinned commit.
+  - Unused HttpMethods enum variants (GET, DELETE, PUT) are declarations only.
+  - Unused Endpoints enum variants (DATASET_ENDPOINT, TEST_RUN_ENDPOINT, EVENT_ENDPOINT, FEEDBACK_ENDPOINT, PROMPT_ENDPOINT, RECOMMEND_ENDPOINT, EVALUATE_ENDPOINT, GUARD_ENDPOINT, GUARDRAILS_ENDPOINT, BASELINE_ATTACKS_ENDPOINT) are declarations only.
+
+pitfalls:
+  - LITELM_ENVIRONMENT is misspelled (missing an L); it should be read and validated exactly as spelled.
+  - _http_request does not return a response object on POST success, only raises on error; send_request must access res.status_code on a None return, which is a latent bug in the source.
+  - to_zod_compatible_iso must replace "+00:00" with "Z" to match DeepEval's expected format.
+  - _create_base_api_span falls back to uuid4() for both id and trace_id when standard_logging_object lacks them.
+  - Error span output uses error_string from standard_logging_object, not exception type or message; error_string may be an empty string.
+  - _prepare_trace_api uses Pydantic by_alias=True and exclude_none=True serialization; field aliases map snake_case to camelCase (traceUuid, startTime, etc.).
+
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

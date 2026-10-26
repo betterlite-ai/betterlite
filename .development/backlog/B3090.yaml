@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Define daily analytics metrics and canonical date errors
 status: todo
 depends_on: [B727, B1664]
-file: null
+file: tasks/B3090-daily-analytics-metrics.yaml
 covers:
   - "litellm/proxy/management_endpoints/common_daily_activity.py"
   - "litellm/types/proxy/management_endpoints/common_daily_activity.py"

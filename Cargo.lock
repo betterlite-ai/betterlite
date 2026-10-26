@@ -344,6 +344,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-a2a"
+version = "0.1.0"
+
+[[package]]
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
@@ -386,6 +390,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-cache"
+version = "0.1.0"
+
+[[package]]
 name = "betterlite-cli"
 version = "0.1.0"
 dependencies = [
@@ -422,6 +430,7 @@ dependencies = [
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
+ "percent-encoding",
  "rstest",
  "serde",
  "serde_json",
@@ -653,11 +662,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-prometheus"
+version = "0.1.0"
+
+[[package]]
 name = "betterlite-prompts"
 version = "0.1.0"
 
 [[package]]
 name = "betterlite-provider"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-proxy"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-rag"
 version = "0.1.0"
 
 [[package]]
@@ -705,6 +726,10 @@ version = "0.1.0"
 
 [[package]]
 name = "betterlite-sdk"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-secret-managers"
 version = "0.1.0"
 
 [[package]]
@@ -759,6 +784,10 @@ version = "0.1.0"
 
 [[package]]
 name = "betterlite-vertex"
+version = "0.1.0"
+
+[[package]]
+name = "betterlite-websearch"
 version = "0.1.0"
 
 [[package]]

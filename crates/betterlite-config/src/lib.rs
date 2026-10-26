@@ -1,3 +1,4 @@
+pub mod agentic_loop_ceiling;
 pub mod loader;
 mod providers;
 pub mod proxy;

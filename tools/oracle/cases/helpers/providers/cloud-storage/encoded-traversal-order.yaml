@@ -1,0 +1,5 @@
+kind: helper
+name: encoded-traversal-order
+call: {cloud_storage: {function: encoded_traversal_order, file_id: "gs://bucket/%2e%2e/x", scheme: "gs://", bucket: bucket, prefixes: [], legacy: true}}
+env: {}
+compare: {ignore: []}
