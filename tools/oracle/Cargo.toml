@@ -23,6 +23,7 @@ betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
 betterlite-postgres-fixture = { path = "../postgres-fixture" }
 betterlite-secrets = { path = "../../crates/betterlite-secrets" }
+betterlite-server = { path = "../../crates/betterlite-server" }
 chrono.workspace = true
 clap = { version = "4.6.7", features = ["derive", "env"] }
 futures-util = { version = "0.3.34", default-features = false }

@@ -1,0 +1,16 @@
+kind: helper
+name: resource-type-extensions
+call:
+  scim_record:
+    kind: resource_type
+    value:
+      id: User
+      name: User
+      endpoint: /Users
+      schema_: urn:ietf:params:scim:schemas:core:2.0:User
+      schemaExtensions:
+        - schema_: urn:ietf:params:scim:schemas:extension:enterprise:2.0:User
+          required: false
+env: {}
+compare:
+  ignore: []

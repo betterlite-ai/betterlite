@@ -1,0 +1,12 @@
+kind: helper
+name: padded-patch-op-is-rejected
+call:
+  scim_record:
+    kind: patch
+    value:
+      Operations: [{op: " add", path: active, value: true}]
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message

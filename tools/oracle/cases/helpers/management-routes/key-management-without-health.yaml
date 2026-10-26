@@ -1,0 +1,8 @@
+kind: helper
+name: key-management-without-health
+call:
+  management_routes:
+    group: key_management_routes
+env: {}
+compare:
+  ignore: []

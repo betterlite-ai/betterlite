@@ -1,0 +1,11 @@
+kind: helper
+name: email-special-use-domain
+call:
+  scim_record:
+    kind: user
+    value: {schemas: [u], emails: [{value: ada@example.test}]}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message

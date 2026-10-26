@@ -1,0 +1,15 @@
+kind: helper
+name: enterprise-manager-ref
+call:
+  scim_record:
+    kind: user
+    value:
+      schemas: [u]
+      urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:
+        costCenter: "4130"
+        manager:
+          $ref: /Users/1
+          displayName: Grace
+env: {}
+compare:
+  ignore: []

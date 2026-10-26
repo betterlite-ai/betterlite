@@ -1,7 +1,7 @@
 id: B3257
 milestone: M6 guardrails
 title: Published aviation and local EU PII catalog records
-status: todo
+status: done
 depends_on: []
 file: tasks/B3257-policy-catalog-aviation-eu-backup.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/policy_templates_backup.json"
 parent: B079
 split_from: B079
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 167
