@@ -111,5 +111,5 @@ pitfalls:
 - 'A missing type on a dict chunk emits event: message; forwarding raw JSON would break Anthropic clients.'
 review_level: security
 budget:
-  max_changed_lines: 580
+  max_changed_lines: 1000
   max_new_expects: 0

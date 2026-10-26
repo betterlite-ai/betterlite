@@ -342,6 +342,6 @@ pitfalls:
 - Qwen2 actually prefers generation over text, contrary to the emphasis in its docstring.
 - Qwen3 tool argument strings are interpolated into the prompt without JSON escaping.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

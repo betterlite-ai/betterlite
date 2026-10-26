@@ -197,6 +197,6 @@ pitfalls:
   - Rename/delete grants only when the last configured or stored sibling stops serving the old public
     name.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -1,0 +1,1 @@
+{"thinking":{"type":"adaptive"},"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"t","signature":"s"},{"type":"text","text":"a","cache_control":{"type":"ephemeral","ttl":"1h"}}]}]}

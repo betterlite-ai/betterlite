@@ -267,6 +267,6 @@ pitfalls:
   - The format validator accepts sk-a despite its docstring claiming a minimum length of 20.
   - An unhealthy callback test is normally HTTP 200; malformed callback metadata is HTTP 500.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

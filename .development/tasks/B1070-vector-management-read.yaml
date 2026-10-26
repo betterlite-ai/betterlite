@@ -99,5 +99,5 @@ pitfalls:
 - Info checks the DB connection before using a cache hit and preserves HTTP 403/404 from either source.
 review_level: security
 budget:
-  max_changed_lines: 690
+  max_changed_lines: 1000
   max_new_expects: 0

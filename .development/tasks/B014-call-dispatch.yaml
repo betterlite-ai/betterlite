@@ -78,5 +78,5 @@ pitfalls:
 - Do not reintroduce two independent logging/error pipelines when moving existing handlers into core.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

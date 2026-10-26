@@ -94,5 +94,5 @@ pitfalls:
 - Empty imageConfig and user survive selection; a truthiness filter changes requests.
 review_level: standard
 budget:
-  max_changed_lines: 440
+  max_changed_lines: 1000
   max_new_expects: 1

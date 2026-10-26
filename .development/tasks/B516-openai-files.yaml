@@ -323,6 +323,6 @@ pitfalls:
 - The chunk iterator owns context exit; closing only the outer FileContentStreamingResult would leak an entered
   response.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

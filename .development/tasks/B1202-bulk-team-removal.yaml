@@ -184,6 +184,6 @@ pitfalls:
   - Request duplicate detection and roster identity matching use different rules; do not reuse one predicate for both.
   - The module docstring's whole-user-batch atomicity belongs to B794, while this service commits one team's removal before cache work.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

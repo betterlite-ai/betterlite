@@ -201,6 +201,6 @@ pitfalls:
   - DELETE maps failures from post-commit cache and registry work through its own 503/404/500 catch.
   - PUT uses repaired old team memberships but only stored old key memberships when computing deltas.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

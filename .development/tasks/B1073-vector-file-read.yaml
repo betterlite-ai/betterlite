@@ -108,5 +108,5 @@ pitfalls:
 - The registry lookup runs after local provider selection, so its provider field cannot redirect a read to another adapter.
 review_level: security
 budget:
-  max_changed_lines: 610
+  max_changed_lines: 1000
   max_new_expects: 0

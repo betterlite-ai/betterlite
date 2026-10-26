@@ -201,6 +201,6 @@ pitfalls:
   - Two deployments with the same public name and date report the first deployment's metadata, even if their providers differ.
   - Supplying today does not freeze checked_at, which always comes from a fresh UTC clock sample.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

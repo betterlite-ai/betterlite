@@ -319,6 +319,6 @@ pitfalls:
 - Only searchResultLocation yields normalized citations; document/page locations are skipped.
 - Mixed synthetic JSON tools append their first payload to existing text; all-synthetic tools replace existing text.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

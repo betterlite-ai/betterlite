@@ -1,0 +1,21 @@
+[package]
+name = "betterlite-lens-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-lens = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "lens_model"
+path = "fuzz_targets/lens_model.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

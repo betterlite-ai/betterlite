@@ -289,6 +289,6 @@ pitfalls:
 - The async marker is removed after modelId is encoded, so the URL and provider-selection model intentionally differ.
 - AWS_REGION overrides AWS_REGION_NAME in embedding credential loading, unlike the general region resolver.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -100,5 +100,5 @@ pitfalls:
   - The audioread temporary file must be removed on both decode errors and successful conversion.
 review_level: standard
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0

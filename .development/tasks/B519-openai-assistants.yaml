@@ -266,6 +266,6 @@ pitfalls:
   arguments through would change the pin.
 - A supplied SDK client is used as-is, without the explicit missing/wrong-async checks used by files and batches.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

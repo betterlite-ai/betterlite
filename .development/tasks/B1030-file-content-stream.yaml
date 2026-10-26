@@ -120,5 +120,5 @@ pitfalls:
 - Vertex's live config prevents every environment read in the later legacy Vertex branch.
 review_level: security
 budget:
-  max_changed_lines: 690
+  max_changed_lines: 1000
   max_new_expects: 0

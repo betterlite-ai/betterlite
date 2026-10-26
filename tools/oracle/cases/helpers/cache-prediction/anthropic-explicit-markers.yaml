@@ -1,0 +1,8 @@
+kind: helper
+name: anthropic-explicit-markers
+call:
+  anthropic_cache_plan:
+    function: cache_plan
+    body: '{"model":"claude","max_tokens":32,"messages":[{"role":"user","content":[{"type":"text","text":"first","cache_control":{"type":"ephemeral","ttl":"1h"}}]},{"role":"assistant","content":[]},{"role":"user","content":[{"text":"second","type":"text","cache_control":{"type":"ephemeral"}}]}]}'
+env: {}
+compare: {ignore: []}

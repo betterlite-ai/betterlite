@@ -101,6 +101,6 @@ pitfalls:
   - disable_error_logs does not bypass reservation release.
   - An empty alias is already populated, so it prevents the null-alias key lookup.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

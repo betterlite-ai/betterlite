@@ -84,6 +84,6 @@ pitfalls:
   - Reset deliberately leaves user balances, cached counters and historical spend rows untouched.
   - The end-user report's api_key body field is not normalized even when it begins with sk-.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

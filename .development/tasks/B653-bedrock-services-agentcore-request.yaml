@@ -362,6 +362,6 @@ pitfalls:
 - The runtime ARN controls the URL region but does not overwrite the signing region, so the two can differ.
 - The 33-character session minimum appears only in a docstring; short supplied IDs are sent unchanged.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

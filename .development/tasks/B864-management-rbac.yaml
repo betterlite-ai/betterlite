@@ -143,6 +143,6 @@ pitfalls:
   - disable_key_generate_for_org_admin checks the global role, not membership rows.
   - A nonempty string 'false' is truthy in the source's runtime settings map.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

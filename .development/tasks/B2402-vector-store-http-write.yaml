@@ -159,5 +159,5 @@ pitfalls:
 - Header validation can mutate extra_headers before its apparent final overlay, so caller Authorization does not necessarily win.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0

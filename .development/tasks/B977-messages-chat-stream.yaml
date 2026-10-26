@@ -109,5 +109,5 @@ pitfalls:
 - The byte view starts with empty hidden params and does not itself implement provider-header forwarding.
 review_level: standard
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0

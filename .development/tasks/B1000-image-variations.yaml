@@ -104,5 +104,5 @@ pitfalls:
 - get_llm_provider's dynamic key is discarded before model-info credential resolution.
 review_level: standard
 budget:
-  max_changed_lines: 480
+  max_changed_lines: 1000
   max_new_expects: 1

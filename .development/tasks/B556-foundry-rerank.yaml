@@ -207,6 +207,6 @@ pitfalls:
 - A caller Authorization header does not bypass credential resolution, which runs before header merging.
 - The inferred base model is written to hidden model, not the public response model field.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

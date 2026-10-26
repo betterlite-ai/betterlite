@@ -89,6 +89,6 @@ pitfalls:
   - CLI completion stores only currently resolvable team rows, rather than copying stale membership IDs into the future credential.
   - A completed IdP callback still leaves user_code_verified false until the separate browser form succeeds.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

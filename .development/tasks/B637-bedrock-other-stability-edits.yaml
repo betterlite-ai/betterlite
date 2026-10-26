@@ -284,6 +284,6 @@ pitfalls:
 - The mapper's drop_params branch leaves unsupported fields in its initial copy.
 - Only the first Stability finish reason is inspected, unlike the generation adapter's joined reasons.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard
