@@ -19,11 +19,13 @@ pub(crate) enum Input {
     },
     ObjectComponentSanitization {
         value: Option<Scalar>,
-        fallback: Option<String>,
+        #[serde(default = "default_file_fallback")]
+        fallback: String,
     },
     ObjectPathSanitization {
         value: Option<Scalar>,
-        fallback: Option<String>,
+        #[serde(default = "default_file_fallback")]
+        fallback: String,
     },
     ConfiguredBucketSplit {
         value: Scalar,
@@ -59,10 +61,10 @@ impl crate::helpers::Helper for Op {
                 json!({"value": cloud_storage::is_managed_cloud_storage_uri(text(Some(value)).unwrap_or(""))}),
             ),
             Input::ObjectComponentSanitization { value, fallback } => Ok(
-                json!({"value": cloud_storage::sanitize_component(text(value.as_ref()), fallback.as_deref().unwrap_or("file"))}),
+                json!({"value": cloud_storage::sanitize_component(text(value.as_ref()), fallback)}),
             ),
             Input::ObjectPathSanitization { value, fallback } => Ok(
-                json!({"value": cloud_storage::sanitize_path(text(value.as_ref()), fallback.as_deref().unwrap_or("file")), "name": cloud_storage::build_object_name("raw/", text(value.as_ref()), fallback.as_deref().unwrap_or("file"), uuid::Uuid::nil())}),
+                json!({"value": cloud_storage::sanitize_path(text(value.as_ref()), fallback), "name": cloud_storage::build_object_name("raw/", text(value.as_ref()), fallback, uuid::Uuid::nil())}),
             ),
             Input::ConfiguredBucketSplit { value } => {
                 cloud_storage::split_bucket_name(text(Some(value)).unwrap_or(""))
@@ -94,6 +96,11 @@ impl crate::helpers::Helper for Op {
             }
         }
     }
+}
+fn default_file_fallback() -> String {
+    let mut fallback = String::new();
+    fallback.push_str("file");
+    fallback
 }
 fn legacy(value: &Scalar, trusted: bool) -> serde_json::Value {
     let setting = match value {
