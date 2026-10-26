@@ -1,0 +1,175 @@
+id: B3849
+title: OTel tenant fanout and scoped span delivery
+description: >-
+  Deliver a request's spans to its authorized tenant destinations with credential-aware
+  deduplication, scope filtering and bounded processor retention. Preserve projection of
+  tenant-visible attributes, operator suppression and asynchronous drain behavior.
+
+  _DrainPool manages background closure of shed destination processors so network timeouts
+  do not stall span export or process teardown. _SpanView lets one exporter see custom
+  attributes and resource while others see the unmodified span. Destination processors cache
+  by endpoint/credential account (normalized for header casing and credential aliases like
+  arize_space_id/space_id), evict LRU when past capacity once the drain has room, and shed
+  to the drain instead of running inline so one unreachable collector never blocks others.
+
+  TenantFanOutSpanProcessor reads request-scoped destinations and operator-account scopes
+  from context, applies scope filtering (full trace or llm_only), redacts operator-suppressed
+  backends and tenant-visible attributes (query strings from URLs, error text the
+  operator wrote), and hands each filtered span to its destination's processor. _OverriddenBackendFilter
+  wraps the operator's own exporter to hold back spans when the request overrode that account
+  to a tenant destination, preserving additive mode (where both export) and honoring per-destination
+  scope narrowing (llm_only destinations export model calls only unless wider siblings share the
+  same account).
+
+  attach_tenant_fan_out adds the fan-out to a provider idempotently on first call, consulting
+  the operator's v2 logger configs to build a map of operator exporter accounts by endpoint
+  and credential name. deliverable_destinations returns what the fan-out can actually export
+  to (buildable exporters, plugged-in protocols). operator_sink_scopes assembles that map for
+  operator exporter filtering. Named destination scopes are full or llm_only; unnamed operations
+  write the semantics of span filtering for cache/reasoning tokens, guardrail errors and
+  database systems (excluded by config, not by destination). Budget includes span attribute
+  redaction and request-specific deduplication state.
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/fan_out.rs
+    - crates/betterlite-logging/src/otel/fan_out/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/otel-fanout/**
+    - tools/oracle/helpers/b3849.py
+    - tools/oracle/helpers/b3849/**
+    - tools/oracle/src/helpers/logging/b3849.rs
+    - tools/oracle/src/helpers/logging/b3849/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L237-L362
+    why: _DrainPool and its worker threads for asynchronous processor closure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L364-L430
+    why: Span filtering constants and database/tenant-owned/LLM-call classification.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L432-L550
+    why: Scope filtering, attribute projection and the whole TenantFanOutSpanProcessor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L550-L620
+    why: Deduplication state, destination processor caching and span filtering methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L620-L773
+    why: Shutdown, force flush, cache eviction and draining protocol.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L774-L856
+    why: Destination processor builder, _OverriddenBackendFilter wrapper and handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L1165-L1269
+    why: attach_tenant_fan_out, deliverable_destinations, operator_sink_scopes and sink-key normalization.
+dod:
+  - text: >-
+      _DrainPool closes shed destination processors asynchronously with bounded workers,
+      queues saturated destinations away from new builds, and shutdown waits only for
+      the configured deadline before abandoning any still-flushing processor.
+    proof: [fanout-drain-behavior]
+  - text: >-
+      TenantFanOutSpanProcessor delivers each span to its destinations' processors after
+      filtering by scope, redacting operator-suppressed attributes, and deduplicating
+      already-exported spans, preserving the exact filtering rules and constants LiteLLM uses.
+    proof: [fanout-processor-behavior]
+  - text: >-
+      Destination processors cache by normalized endpoint/credential account (header casing,
+      credential aliases, no signal path), evict LRU when cache overflows, and shed evicted
+      processors to the drain rather than closing inline.
+    proof: [fanout-cache-behavior]
+  - text: >-
+      _OverriddenBackendFilter holds spans back from the operator's exporter when the request
+      routed that account to a tenant destination, honoring additive mode, scope narrowing
+      and per-destination sink widening.
+    proof: [fanout-filter-behavior]
+  - text: >-
+      attach_tenant_fan_out is idempotent and assembles operator-sink-scope map from v2
+      configs, skipping exporters with no fixed endpoint and consulting every config's own
+      provider scope.
+    proof: [fanout-attach-behavior]
+  - text: >-
+      deliverable_destinations returns only destinations whose exporters will build, blocking
+      new requests from anchoring to what cannot export.
+    proof: [fanout-deliverable-behavior]
+  - text: >-
+      Named destination scopes are full or llm_only; unnamed operations (cache tokens, database
+      spans) read the semantic definitions from B3840, excluded-database filter from B3842,
+      and request context from B3847.
+    proof: [fanout-semantics-behavior]
+  - text: >-
+      Every added oracle case names its input (span attributes, destination config, request
+      context) and matches the literal LiteLLM output at the pinned commit.
+    proof: [oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: fanout-drain-behavior
+      why: drain behavior tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::fanout_drain_behavior($|::)/) - test(/replays_the_/)'
+    - id: fanout-processor-behavior
+      why: processor behavior tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::fanout_processor_behavior($|::)/) - test(/replays_the_/)'
+    - id: fanout-cache-behavior
+      why: cache behavior tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::fanout_cache_behavior($|::)/) - test(/replays_the_/)'
+    - id: fanout-filter-behavior
+      why: filter behavior tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::fanout_filter_behavior($|::)/) - test(/replays_the_/)'
+    - id: fanout-attach-behavior
+      why: attach behavior tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::fanout_attach_behavior($|::)/) - test(/replays_the_/)'
+    - id: fanout-deliverable-behavior
+      why: deliverable behavior tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::fanout_deliverable_behavior($|::)/) - test(/replays_the_/)'
+    - id: fanout-semantics-behavior
+      why: semantics behavior tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::fanout_semantics_behavior($|::)/) - test(/replays_the_/)'
+    - id: helper-case-corpus
+      why: the fanout helper corpus is missing or replays fail
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/otel-fanout)" && test "$(ls -d tools/oracle/fuzz/corpus/helper_case/otel-fanout 2>/dev/null | wc -l)" -gt 0
+oracle_cases:
+  - tools/oracle/cases/helpers/otel-fanout
+deviations:
+  - what: >-
+      Span attribute redaction for operator-visible error text only redacts keys on database
+      and service spans that describe proxy infrastructure (database host, port, namespace)
+      when the span is not tenant-owned.
+    why: >-
+      Tenants see their own call errors. Operator-owned infrastructure spans (database,
+      service, guardrail endpoint) contain operator endpoints/credentials that tenants
+      must not see.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L363-L387
+  - what: >-
+      The whole query string is dropped from http.url, http.target, and url.full attributes,
+      and the url.query attribute is dropped outright from spans delivered to tenant destinations.
+    why: >-
+      Span attributes may carry HTTP request URLs with embedded credentials. LiteLLM accepts
+      virtual keys as query parameters, and query strings can hold credentials the operator
+      used that tenants must not see.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L379-L482
+  - what: >-
+      Captured HTTP header attributes from FastAPI instrumentation include request headers
+      the operator's own OTel configuration asked to capture, regardless of tenant scope,
+      and response headers the destination receives.
+    why: >-
+      Operator header capture is operator configuration (OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_*).
+      Tenant destinations see the request and response the tenant/operator exchanged, which
+      the captured headers describe.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L378-L381
+out_of_scope:
+  - _SpanView is a ReadableSpan view wrapper. The description lists its purpose; building it
+    requires only the inherited OTel SDK ReadableSpan construction.
+  - Operator exporter suppression via _OverriddenBackendFilter is a span processor wrapper; it
+    does not compute cost, redact messages or log metadata.
+  - Named destination span scopes (full vs llm_only) are read from OtelDestination records supplied
+    by B3842; the fan-out only uses them.
+  - Span redaction of operator-visible URLs and error text reads attribute keys from B3840 definitions
+    and request context from B3847; the redaction itself edits attributes before forwarding.
+pitfalls:
+  - "_CREDENTIAL_ALIASES maps provider-vendor pairs like {'arize_space_id': 'space_id'} so one exporter's output headers stay equal to the tenant destination's input headers under that name."
+  - "is_llm_call_span checks for gen_ai.operation.name to distinguish model calls from MCP tool calls, and it is called on both to separate them; neither check is an error."
+  - "Captured HTTP header attributes start with 'http.request.header.' and 'http.response.header.' prefixes set by FastAPI instrumentation, not tenant request parameters."
+  - "_SinkKey normalizes on (endpoint, sorted credential tuples), so header-name casing and different credential alias spellings map to the same account; _otlp_traces_endpoint strips the signal path."
+  - "Drain saturation is checked when buildable, not when acquire releases, so destinations anchored before saturation stay cacheable even while the drain overflows."
+  - "on_end runs on whatever thread ended the span and reaches shutdown while the SDK tears down; the drain submits all closing to workers so no tenant's network delay blocks the proxy."
+  - "Every destination processor build failure is logged but does not fail the span or break other destinations; deliverable filters out unbuildable ones before the request anchors them."
+  - "additive mode means nothing is suppressed; _OverriddenBackendFilter passes spans through and the operator's exporter still gets its copy, so destinations with the same account get the span twice."
+  - "llm_only scope delivers model calls as trace roots and holds back the rest unless wider siblings share the sink, so a request with one full destination and one llm_only to the same account widens the llm_only delivery to the full tree."
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0
+review_level: security

@@ -3,7 +3,7 @@ milestone: M5 api families
 title: S3 Vectors signed ingestion operations
 status: todo
 depends_on: [B594, B595, B173, B192]
-file: null
+file: tasks/B3458-rag-s3-vector-operations.yaml
 covers:
   - "litellm/rag/ingestion/s3_vectors_ingestion.py"
 parent: B097

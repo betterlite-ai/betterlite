@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Pass-through provider credential lookup
 status: todo
 depends_on: [B002, B174, B844]
-file: null
+file: tasks/B3602-passthrough-credentials.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/passthrough_endpoint_router.py"
 parent: B102

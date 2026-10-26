@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Block or rewrite forbidden request tools and forced choices
 status: todo
 depends_on: [B3810, B3811]
-file: null
+file: tasks/B3812-tool-permission-requests.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/tool_permission.py"
 parent: B109

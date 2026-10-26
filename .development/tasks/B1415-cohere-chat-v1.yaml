@@ -40,6 +40,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,error,cohere_chat_v1}.rs
+    - crates/betterlite-openai/src/cohere_chat_v1.rs
     - crates/betterlite-openai/src/cohere_chat_v1/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/cohere_chat_v1.rs

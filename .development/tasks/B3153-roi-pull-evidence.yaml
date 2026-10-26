@@ -1,0 +1,78 @@
+id: B3153
+title: Collect GitHub pull request evidence for ROI
+description: >-
+  Build merged-pull selection and complete metadata collection in crates/betterlite-server/src/roi_evidence.rs.
+  Preserve inclusive dates (start ≤ merged_at[:10] ≤ end), updated-date early stop on pull pages, 30 file pages,
+  three unauthenticated REST commit pages, authenticated GraphQL traversal up to 100 pages, author matching
+  by case-insensitive login, and incomplete-metadata detection when actual file or commit counts differ from GitHub's totals.
+  All methods are async and are called by B3157's sync runner. Depend on B3150 for ROIPullEvidence and normalize_email,
+  and on B3152 for the GitHub client foundation (_request, _pages, _collect, _url, profile_email), response models,
+  and SourceError contracts.
+
+scope:
+  paths:
+  - crates/betterlite-server/src/roi_evidence.rs
+  - crates/betterlite-server/src/roi_evidence/tests.rs
+  lint_tables: false
+
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L413-L432
+  why: GitHub.pulls method, merged-pull selection with inclusive dates and early stop.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L434-L495
+  why: GitHub.evidence method, complete metadata collection for one pull.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L518-L550
+  why: GitHub._commit_metadata method, REST vs GraphQL branching.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L552-L616
+  why: GitHub._graphql_commits method, recursive GraphQL pagination with page limit.
+
+dod:
+- text: GitHub.pulls filters by merged_at within inclusive dates and stops pagination when updated_at[:10] falls before start, returning merged pulls in the order GitHub returns them (sort=updated/direction=desc).
+  proof:
+  - pulls-behaviors
+- text: GitHub.evidence collects files (up to 30 pages), commits (via _commit_metadata), profile email, commit emails (matching author login), and detects incomplete metadata.
+  proof:
+  - evidence-behaviors
+- text: GitHub._commit_metadata uses REST (3 pages) when unauthenticated, GraphQL (100 pages) when authenticated, returns commits, authors (login, email pairs) and total count.
+  proof:
+  - commit-metadata-behaviors
+- text: GitHub._graphql_commits recurses while hasNextPage and raises SourceError when remaining_pages reaches zero on entry, accumulating commits and authors.
+  proof:
+  - graphql-pagination-behaviors
+
+checks:
+  optional: []
+  commands:
+  - id: pulls-behaviors
+    why: GitHub.pulls method is missing or does not match inclusive dates and early stop
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_evidence::pulls_/)'
+  - id: evidence-behaviors
+    why: GitHub.evidence method is missing or does not collect complete metadata
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_evidence::evidence_/)'
+  - id: commit-metadata-behaviors
+    why: GitHub._commit_metadata method is missing or does not branch on auth token
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_evidence::commit_metadata_/)'
+  - id: graphql-pagination-behaviors
+    why: GitHub._graphql_commits method is missing or does not recurse correctly
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_evidence::graphql_commits_/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+- Profile email loading (_load_profile_email), owned by B3152.
+- File evidence conversion (_PullFile.evidence), REST commit evidence (_rest_commit_evidence), GraphQL commit evidence (_graphql_commit_evidence), owned by B3152.
+- Network request retry and error handling (_request, _pages, _collect), owned by B3152.
+
+pitfalls:
+- Inclusive date check uses start.isoformat() <= merged_at[:10] <= end.isoformat(); off-by-one or exclusive bounds silently break the date range.
+- Early stop compares page[-1].updated_at[:10] < start.isoformat() (strict less-than) to catch all pulls outside the range before pagination adds cost.
+- Author matching is case-insensitive login comparison (author[0].casefold() == login.casefold()); case mismatches miss commits and wrong emails are collected.
+- Incomplete metadata is len(files) != changed_files or len(commits) != commit_count; using actual counts instead of GitHub's totals misses partial failures.
+- GraphQL recursion passes remaining_pages - 1; reaching zero raises SourceError rather than returning partial results.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 1

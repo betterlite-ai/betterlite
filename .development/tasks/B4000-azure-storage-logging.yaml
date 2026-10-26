@@ -1,0 +1,206 @@
+id: B4000
+title: Upload Azure Data Lake logs with account keys or Entra tokens
+description: >-
+  Implement Azure Blob Storage logging with dual authentication paths: account-key SDK uploads
+  and Entra-token-based HTTP REST uploads. Build the logger on CustomBatchLogger, handling
+  credential initialization, file lifecycle (create/append/flush), token refresh and client
+  lifecycle management.
+
+  Read AZURE_STORAGE_ACCOUNT_NAME, AZURE_STORAGE_FILE_SYSTEM (both required), AZURE_STORAGE_TENANT_ID,
+  AZURE_STORAGE_CLIENT_ID, AZURE_STORAGE_CLIENT_SECRET, AZURE_STORAGE_ACCOUNT_KEY (optional) and
+  AZURE_STORAGE_ENDPOINT_SUFFIX (default: core.windows.net) from B002. Use B256 for batch constructor
+  and periodic-flush wiring; B173 for async HTTP PUT/PATCH; B192 for safe_dumps; B673 for
+  Entra-token retrieval; B677 for the credential-chain provider. Logs inherit from CustomBatchLogger
+  and queue StandardLoggingPayload.
+
+  Two authentication paths run independently: when AZURE_STORAGE_ACCOUNT_KEY is set, use the Azure SDK
+  DataLakeServiceClient to upload with dated-directory paths and no trailing newline; otherwise, use
+  Entra tokens through HTTP REST to upload to a root directory with newline-terminated payloads.
+  The token path caches the credential-chain token provider, checks expiry with a 5-minute margin,
+  and refreshes by calling the provider in a worker thread. The account-key path creates clients on
+  demand, caches them with a TTL matching the HTTP client TTL, closes expired clients and recreates
+  them when needed.
+
+  On success (async_log_success_event), queue the standard_logging_object. On failure
+  (async_log_failure_event), also queue it; no other behavioral difference. File names use adls_safe_file_name
+  (translate "/" to "_", drop base64 padding, reject ".." and empty path segments). Create operation
+  uses x-ms-version header and Content-Length 0; append uses PATCH with action=append and position 0,
+  data as UTF-8 JSON; flush uses PATCH with action=flush and position set to the byte count. Preserve
+  the 3-step upload ordering and distinct bodies per path; omit _premium_user_check as per project policy.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/azure_storage_logging.rs
+    - crates/betterlite-logging/src/azure_storage_logging/**
+    - tools/oracle/cases/logging/azure_storage/**
+    - tools/oracle/helpers/b4000.py
+    - tools/oracle/helpers/b4000/**
+    - tools/oracle/src/helpers/logging/b4000.rs
+    - tools/oracle/src/helpers/logging/b4000/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L38-L47
+    why: adls_safe_file_name sanitizes base64 IDs and rejects "..", ".", empty segments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L50-L55
+    why: "_cached_credential_chain_token_provider uses B677's get_azure_ad_token_provider with DeploymentIdentityCredential."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L59-L108
+    why: "AzureBlobStorageLogger.__init__ reads six env vars, validates required ones, initializes batch state, periodic flush and token provider."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L110-L116
+    why: "Endpoint properties construct DFS and blob endpoints from account name and suffix."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L118-L161
+    why: "async_log_success_event (L118-139) and async_log_failure_event (L141-161) both queue the standard_logging_object; no _premium_user_check in betterlite."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L163-L214
+    why: "async_send_batch (L163-184) iterates the queue and calls async_upload_payload_to_azure_blob_storage per event; if one upload raises, the loop stops and remaining payloads are preserved by CustomBatchLogger for the next flush cycle. async_upload_payload_to_azure_blob_storage (L186-214) branches on account_key presence, sets token for HTTP path, constructs DFS endpoint URL with file name, executes create/append/flush."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L216-L266
+    why: "_create_file (L216-230), _append_data (L232-250), _flush_data (L252-266): HTTP operations with x-ms-version, Bearer token, Content-Type and position headers."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L271-L294
+    why: "set_valid_azure_ad_token refreshes token 5 minutes before expiry, runs credential chain in worker thread if no service principal, otherwise calls get_azure_ad_token_from_entra_id."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L296-L324
+    why: "get_azure_ad_token_from_azure_storage validates tenant/client/secret presence and calls B673's get_azure_ad_token_from_entra_id."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L326-L334
+    why: "_azure_ad_token_is_expired checks expiry with 5-minute margin using datetime arithmetic."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L347-L360
+    why: "get_service_client closes expired clients after TTL (DEFAULT_TTL_FOR_HTTPX_CLIENTS) and recreates them with account_url and credential."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L362-L406
+    why: "upload_to_azure_data_lake_with_azure_account_key uses DataLakeServiceClient from azure-storage-file-datalake SDK, creates dated directories, creates file, appends content, flushes."
+
+dod:
+  - text: "AzureBlobStorageLogger initializes with environment variable validation, credential provider setup, batch state and periodic-flush wiring from B256."
+    proof: [azure-init-test, azure-init-oracle]
+
+  - text: "AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_FILE_SYSTEM are required; missing either raises ValueError. Other env vars read with None defaults except AZURE_STORAGE_ENDPOINT_SUFFIX (default core.windows.net)."
+    proof: [azure-env-test, azure-env-oracle]
+
+  - text: "adls_safe_file_name sanitizes payload IDs by translating / to _, dropping base64 padding (=), and rejecting path segments that are '', '.', or '..'."
+    proof: [azure-filename-test, azure-filename-oracle]
+
+  - text: "Entra-token path sets token via set_valid_azure_ad_token, which caches the credential-chain provider, calls it in a worker thread, and refreshes 5 minutes before expiry."
+    proof: [azure-token-refresh-test, azure-token-refresh-oracle]
+
+  - text: "Account-key path uses DataLakeServiceClient, creates dated directories (YYYY-MM-DD), creates files, appends content, and flushes. Clients are cached with TTL and closed/recreated when expired."
+    proof: [azure-account-key-test, azure-account-key-oracle]
+
+  - text: "HTTP create operation uses x-ms-version header, Content-Length 0, and ?resource=file parameter. Append uses PATCH with action=append, position=0, and UTF-8 JSON body. Flush uses PATCH with action=flush and position set to byte count."
+    proof: [azure-http-ops-test, azure-http-ops-oracle]
+
+  - text: "async_log_success_event and async_log_failure_event both queue standard_logging_object without other behavioral difference. _premium_user_check is omitted as per project policy."
+    proof: [azure-logging-test, azure-logging-oracle]
+
+  - text: "async_send_batch iterates the log queue and calls async_upload_payload_to_azure_blob_storage per event. Queue is cleared after batch completion."
+    proof: [azure-batch-test, azure-batch-oracle]
+
+  - text: "When async_upload_payload_to_azure_blob_storage raises an exception during iteration in async_send_batch, the loop stops immediately and remaining queued payloads are not processed in that flush cycle. CustomBatchLogger's queue preservation allows retry in the next flush cycle."
+    proof: [azure-batch-early-exit-test, azure-batch-early-exit-oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: azure-init-test
+      why: Initialization tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_storage_logging::.*init($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: azure-env-test
+      why: Environment variable resolution tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_storage_logging::.*env($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: azure-filename-test
+      why: File name sanitization tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_storage_logging::.*filename($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: azure-token-refresh-test
+      why: Token refresh and expiry tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_storage_logging::.*token($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: azure-account-key-test
+      why: Account-key upload tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_storage_logging::.*account.*key($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: azure-http-ops-test
+      why: HTTP create/append/flush operation tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_storage_logging::.*http($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: azure-logging-test
+      why: Log success/failure event tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_storage_logging::.*logging($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: azure-batch-test
+      why: Batch send tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_storage_logging::.*batch($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: azure-init-oracle
+      why: Missing initialization oracle cases
+      run: grep -rlq 'azure.*init\|credential.*chain\|account.*name' tools/oracle/cases/logging/azure_storage/ || exit 1
+
+    - id: azure-env-oracle
+      why: Missing environment variable oracle cases
+      run: grep -rlq 'AZURE_STORAGE.*NAME\|AZURE_STORAGE.*FILE_SYSTEM\|AZURE_STORAGE.*ENDPOINT' tools/oracle/cases/logging/azure_storage/ || exit 1
+
+    - id: azure-filename-oracle
+      why: Missing file name sanitization oracle cases
+      run: grep -rlq 'adls.*filename\|base64.*padding\|path.*segment' tools/oracle/cases/logging/azure_storage/ || exit 1
+
+    - id: azure-token-refresh-oracle
+      why: Missing token refresh oracle cases
+      run: grep -rlq 'token.*expiry\|token.*refresh\|credential.*chain' tools/oracle/cases/logging/azure_storage/ || exit 1
+
+    - id: azure-account-key-oracle
+      why: Missing account-key upload oracle cases
+      run: grep -rlq 'account.*key\|DataLakeServiceClient\|dated.*directory' tools/oracle/cases/logging/azure_storage/ || exit 1
+
+    - id: azure-http-ops-oracle
+      why: Missing HTTP operation oracle cases
+      run: grep -rlq 'create.*file\|append.*data\|flush.*data\|x-ms-version' tools/oracle/cases/logging/azure_storage/ || exit 1
+
+    - id: azure-logging-oracle
+      why: Missing log event oracle cases
+      run: grep -rlq 'success.*event\|failure.*event\|standard.*payload' tools/oracle/cases/logging/azure_storage/ || exit 1
+
+    - id: azure-batch-oracle
+      why: Missing batch send oracle cases
+      run: grep -rlq 'async.*send.*batch\|log.*queue' tools/oracle/cases/logging/azure_storage/ || exit 1
+
+    - id: azure-batch-early-exit-test
+      why: Batch early-exit behavior tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_storage_logging::.*batch.*early.*exit($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: azure-batch-early-exit-oracle
+      why: Missing batch early-exit oracle cases
+      run: grep -rlq 'early.*exit\|payload.*fails\|remaining.*payloads' tools/oracle/cases/logging/azure_storage/ || exit 1
+
+oracle_cases:
+  - tools/oracle/cases/logging/azure_storage/account-key-env.yaml
+  - tools/oracle/cases/logging/azure_storage/account-key-upload.yaml
+  - tools/oracle/cases/logging/azure_storage/entra-token-env.yaml
+  - tools/oracle/cases/logging/azure_storage/entra-token-refresh.yaml
+  - tools/oracle/cases/logging/azure_storage/entra-token-http-ops.yaml
+  - tools/oracle/cases/logging/azure_storage/batch-send.yaml
+  - tools/oracle/cases/logging/azure_storage/batch-early-exit-first-fails.yaml
+  - tools/oracle/cases/logging/azure_storage/batch-early-exit-middle-fails.yaml
+
+deviations:
+  - what: "_premium_user_check is omitted and not called in async_log_success_event or async_log_failure_event."
+    why: "Project policy removes paid-tier restrictions; all features are on."
+
+out_of_scope:
+  - "Any generic Azure credential provider or token cache beyond the two-part chain (service principal or identity) built directly here; those are provided by B673 and B677."
+  - "Account-key SDK client pooling beyond the TTL lifecycle; the SDK manages connection pool internals."
+  - "Monitoring or observability beyond verbose_logger calls and exception logging."
+  - "_premium_user_check calls, stored-secret key derivation or enterprise feature gates."
+
+pitfalls:
+  - "AZURE_STORAGE_TENANT_ID, AZURE_STORAGE_CLIENT_ID and AZURE_STORAGE_CLIENT_SECRET are only required when AZURE_STORAGE_ACCOUNT_KEY is absent; present all three together or none to avoid a partially-configured state."
+  - "Token expiry check uses a 5-minute margin (datetime.now() + timedelta(minutes=5) >= token_expiry); exactly matching the expiry time without margin will miss refreshes."
+  - "The token path appends a newline to payloads (safe_dumps(payload) + '\\n'); the account-key path does not. These produce different files in cold storage."
+  - "Dated directories (YYYY-MM-DD) are created on demand for account-key uploads; they persist across flushes and are never removed."
+  - "The HTTP create operation uses ?resource=file parameter; the append and flush use ?action=append and ?action=flush respectively. Parameter order or missing parameters cause 400/403 errors."
+  - "Cached clients expire after DEFAULT_TTL_FOR_HTTPX_CLIENTS (check constants); close and recreate them after expiry to avoid stale connections. The clock argument allows test injection."
+  - "adls_safe_file_name returns IDs unchanged unless they are base64-like (start with 'resp_') or have problematic path segments (.., ., empty). Always adds .json extension."
+  - "set_valid_azure_ad_token calls the credential-chain provider in a worker thread; that operation is blocking and may hit IMDS or run CLI subprocesses."
+  - "When a per-event upload fails in async_send_batch's loop, the exception breaks the loop immediately; remaining payloads in the queue are not attempted in that flush cycle and only retry in the next cycle via CustomBatchLogger's queue preservation, not guaranteed delivery."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

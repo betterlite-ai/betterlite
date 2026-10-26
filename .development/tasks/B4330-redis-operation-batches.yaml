@@ -1,0 +1,129 @@
+id: B4330
+title: Batch independent Redis operations with isolated results
+description: 'Build the nontransactional batch engine and awaitable results so unrelated
+  MGET, Lua, increment, SET and DELETE operations share a round trip but keep separate
+  results and failures. Preserve per-operation reply widths, NOSCRIPT standalone recovery,
+  Cluster standalone execution, flush hooks, miss tracking, settled hooks and cancellation
+  cleanup. Reuse B360 async_batch_get_cache and async_increment for standalone fallback
+  when a pipeline cannot settle an operation; B393 circuit breaker and logging for
+  pipelined failures; B4324 namespace and cache logic helpers; B4325 async client
+  reuse and Cluster transport discriminant; B4326 async_delete_cache; B4327 async_set_cache_pipeline_with_ttls;
+  G1 get_ttl for operation TTLs; G5 async service success/failure hooks for pipelined
+  operations. Every operation declares a future and returns an awaitable BatchResult;
+  awaiting any result flushes the batch, settling all declared operations in one pipeline
+  round trip. Cluster caches run operations standalone. Pipeline failures set all
+  operations to exception; individual operation failures within a successful pipeline
+  trigger per-operation standalone retries and keep the batch engine below its declaring
+  callers. Miss tracking feeds subsequent read operations on the same request. Settled
+  hooks run after all operations are done, even if cancelled or the batch failed.'
+scope:
+  paths:
+  - crates/betterlite-redis/src/batch.rs
+  - crates/betterlite-redis/src/batch/**
+  - tools/oracle/src/cache_probes/batch.rs
+  - tools/oracle/src/cache_probes/batch/**
+  - tools/oracle/src/cache_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/batch.py
+  - tools/oracle/cases/caching/batch/**
+  - Cargo.toml
+  - tools/oracle/helpers/b4330.py
+  - tools/oracle/helpers/b4330/**
+  - tools/oracle/src/helpers/redis/b4330.rs
+  - tools/oracle/src/helpers/redis/b4330/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L41-L119
+  why: RegisteredScript and _RedisPipeline protocol, _Op base class and concrete
+    operation implementations verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L121-L256
+  why: Concrete operations _MGet, _Script, _Increment, _Set, _Delete verified against
+    the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L258-L338
+  why: BatchResult awaitable handle and RedisBatch public interface verified against
+    the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L340-L404
+  why: Batch flush and pipelined operation settlement logic verified against the pinned
+    checkout.
+dod:
+- text: Write tests named batch_behaviors and batch_boundaries under batch::tests.
+    The first asserts successful operations, pipeline failures, operation failures
+    with standalone recovery and miss tracking. The second asserts error fields, cancellation,
+    Cluster standalone execution, settled hook ordering and that hooks registered via
+    add_flush_hook run at the start of flush(), before pending operations are read.
+    Use rstest cases for tables; corpus replay cannot satisfy either check.
+  proof:
+  - batch-behaviors
+  - batch-boundaries
+- text: Every listed oracle case exercises the production batch engine and asserts
+    exact operation results, failure types, standalone recovery and settled hook calls;
+    only /error/message may be ignored for betterlite wording. Every declared deviation
+    asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright
+    without Any or broad suppressions.
+  proof:
+  - probe-python
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: batch-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/::batch_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: batch-boundaries
+    why: the task-specific boundary test is absent or fails
+    run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/::batch_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/batch.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/batch.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/caching/batch/mget-increments-shared-pipeline.yaml
+- tools/oracle/cases/caching/batch/set-delete-script-shared-round-trip.yaml
+- tools/oracle/cases/caching/batch/noscript-fallback-to-standalone.yaml
+- tools/oracle/cases/caching/batch/cluster-runs-operations-standalone.yaml
+- tools/oracle/cases/caching/batch/pipeline-failure-sets-all-to-exception.yaml
+- tools/oracle/cases/caching/batch/miss-tracking-answers-later-reads.yaml
+deviations:
+- what: Pipelined _Increment with explicit TTL always issues EXPIRE; standalone fallback
+    via B360's async_increment never refreshes TTL.
+  why: The batch engine pipelines both INCRBYFLOAT and EXPIRE for increments with TTL,
+    but the standalone recovery path (used for Cluster clients and NOSCRIPT failures)
+    goes through B360's nonrefreshing async_increment. This observable difference is
+    preserved until a unified TTL contract is established across the routing and general-cache
+    surfaces.
+out_of_scope:
+- B360 owns standalone increment/MGET/GET/SET and their nonrefreshing TTL behavior;
+  batch engine calls these for Cluster clients and NOSCRIPT recovery, not reimplementation.
+- B393 owns circuit breaker and logging; batch engine calls these services.
+- B4324 owns cache namespace and decode logic; batch engine calls these helpers.
+- B4325 owns async client initialization and Cluster transport discriminant; batch
+  engine calls these to prepare pipelines and decide dispatch.
+- B4326 owns async_delete_cache; batch engine calls it in DELETE operation fallback.
+- B4327 owns async_set_cache_pipeline_with_ttls; batch engine calls it in SET operation
+  fallback.
+- 'litellm/caching/redis_batch.py: All functions listed under owned functions above
+  are the sole responsibility of this task. No other LiteLLM caching code depends
+  on RedisBatch; it is used only through RequestRedisBatches (B4331) at the caller
+  entry points in litellm/proxy/proxy_server.py and litellm_logging.py.'
+pitfalls:
+- Settled hooks run even when cancelled or the batch fails; do not assume the operation
+  has a result value.
+- Cluster caches dispatch each operation standalone, not as a batch; a caller expecting
+  atomicity across operations must handle Cluster separately.
+- NOSCRIPT failures trigger standalone retries; callers must not assume the operation
+  has a script or does not need one.
+- Miss tracking records MGET keys that returned None; later SET or DELETE operations
+  clear miss entries for those keys, but subsequent MGET operations rediscover the
+  actual stored value if it was written since the earlier MGET.
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

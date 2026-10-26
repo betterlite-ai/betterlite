@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Fetch Google Secret Manager values with negative caching
 status: todo
 depends_on: [B002, B173, B2226, B4410]
-file: null
+file: tasks/B4420-google-secret-values.yaml
 covers:
   - "litellm/secret_managers/google_secret_manager.py"
 parent: B129

@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: A2A completion messages, metadata and streaming events
 status: todo
 depends_on: [B004, B198]
-file: null
+file: tasks/B4803-a2a-completion-records.yaml
 covers:
   - "litellm/a2a_protocol/litellm_completion_bridge/transformation.py"
   - "litellm/a2a_protocol/providers/base.py"

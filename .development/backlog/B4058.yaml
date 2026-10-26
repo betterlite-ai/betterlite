@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Prompt compilation orchestration and completion hooks
 status: todo
 depends_on: [B4050, B4052, B4054, B4056, B4057]
-file: null
+file: tasks/B4058-prompt-completion-hooks.yaml
 covers:
   - "litellm/integrations/prompt_management_base.py"
   - "litellm/integrations/dotprompt/dotprompt_manager.py"

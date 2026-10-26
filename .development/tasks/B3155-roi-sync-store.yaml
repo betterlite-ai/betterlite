@@ -1,0 +1,113 @@
+id: B3155
+title: ROI spend queries and database sync leases
+description: >-
+  Build ROI SQL operations in betterlite-db and the typed spend-reader adapter in betterlite-server.
+  Add sync_store.rs to manage distributed leases: 60-second write-side lock/heartbeat/release with owner
+  checks, atomic report publication, obsolete cached-pull cleanup via SQL, expired-worker detection and
+  cancellation. Preserve the exact column names and Prisma operations that betterlite-db::postgres_store
+  will build on. Add spend.rs to query daily spend per user per date, aggregate cost and request counts,
+  and fall back to user_id when user_email is absent. Expose a typed SpendReader that other tasks inject.
+  The spend function defines database table and aggregate contracts that B700 implements; use find_many_in
+  to batch user lookups in one query. The sync store uses query_raw and execute_raw for the lease logic
+  and report publication inside a single transaction; cancellation and report deletion are separate calls.
+  Preserve the daily-spend sort order (ascending date), the email fallback precedence (email > user_id),
+  the 60-second lease and heartbeat window, the owner constraint on finish, the cancel-flag check on
+  heartbeat, the separate cancel/clear_report methods, and the read-before-update pattern that checks
+  both lease expiry and running status. Every default, literal, env var, config key, error status, type,
+  message, param and code that a user or other task can observe gets a named case. Define no new spend
+  or lease error enum; only return what the database returns or adapt contracts. Owner is always required
+  on finish; the cancel-flag check is skipped only when report is null (the cache-cleanup path).
+scope:
+  paths:
+    - crates/betterlite-db/src/sync_store.rs
+    - crates/betterlite-db/src/spend.rs
+    - crates/betterlite-server/src/roi_spend.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L52-L89
+    why: The spend and sync store contracts that read_spend and SyncStore implement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L115-L159
+    why: The read_spend function that aggregates daily spend with email fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L171-L175
+    why: The SpendReader protocol and its injection point.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync_store.py#L28-L143
+    why: The SyncStore class with acquire, heartbeat, finish, status, cancel and clear_report methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L298
+    why: The LiteLLM_UserTable schema table at the pinned commit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L695
+    why: The LiteLLM_Config schema table at the pinned commit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L848
+    why: The LiteLLM_DailyUserSpend schema table at the pinned commit.
+dod:
+  - text: The spend query reads daily spend by user and date, normalizes emails with normalize_email, and falls back
+      to user_id when email is absent.
+    proof: [spend-integration-tests]
+  - text: The spend query handles missing users (user_email is null) and missing user records by falling back to
+      user_id passed through normalize_email.
+    proof: [spend-integration-tests]
+  - text: The spend query returns results in ascending date order and includes api_requests as an integer count.
+    proof: [spend-integration-tests]
+  - text: The sync store acquire call inserts or updates LiteLLM_Config with a 60-second lease check, respects
+      scheduled_interval as a scheduled-run window, and returns true only when the lock is held.
+    proof: [sync-store-integration-tests]
+  - text: The sync store heartbeat call refreshes last_run_at to NOW() on each successful call, extending the
+      lease; verifies owner and cancel flag; and returns false when the lease has expired or cancel is true.
+    proof: [sync-store-integration-tests]
+  - text: The sync store finish call requires ownership unconditionally, skips the cancel-flag check only when
+      report is null, publishes a report atomically when provided, cleans up obsolete cached pulls by
+      cache_key, and fails when the lease has expired.
+    proof: [sync-store-integration-tests]
+  - text: The sync store status call detects expired workers (last_run_at older than 60 seconds), marks them with
+      running=false, phase=error and the exact message LiteLLM sends, and returns null when no sync exists.
+    proof: [sync-store-integration-tests]
+  - text: The sync store cancel call sets the cancel flag and phase=cancelled regardless of expiry or ownership.
+    proof: [sync-store-integration-tests]
+  - text: The sync store clear_report call deletes the cached report without checking ownership or lease expiry.
+    proof: [sync-store-integration-tests]
+  - text: Every mutant in the spend query and sync store SQL is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: spend-integration-tests
+      why: the spend query or its tests fail, do not exist, or return incorrect results
+      run: cargo nextest run --locked -p betterlite-db -p betterlite-server --no-tests=fail -E 'test(/spend::/) | test(/roi_spend::/)'
+    - id: sync-store-integration-tests
+      why: the sync store or its tests fail, do not exist, or don't implement all seven methods
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/sync_store::/)'
+    - id: spend-contracts
+      why: the spend function signature or error contracts differ from LiteLLM's
+      run: grep -q "async fn read_spend" crates/betterlite-db/src/spend.rs && grep -q "struct.*SpendReader" crates/betterlite-server/src/roi_spend.rs
+    - id: sync-store-contracts
+      why: the SyncStore struct or its methods differ from LiteLLM's counts
+      run: grep -q "impl SyncStore" crates/betterlite-db/src/sync_store.rs && grep -qE "(acquire|heartbeat|finish|status|cancel|clear_report)" crates/betterlite-db/src/sync_store.rs
+oracle_cases: []
+deviations:
+  - what: Spend queries use a native Rust query builder instead of Prisma's Python query helpers.
+    why: betterlite is Rust and builds all SQL from typed operations.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L115-L159
+  - what: The sync store uses raw SQL UPDATEs with lease logic instead of Python context managers.
+    why: Distributed leases need atomic compare-and-swap semantics; Python's sync model is single-process.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync_store.py#L33-L143
+out_of_scope:
+  - The Prisma schema and table creation; B700 defines LiteLLM_Config and the spend tables.
+  - The completion callback and estimator that B3154 provides; this task only reads and stores their results.
+  - ROI cache publication and record eviction; B3156 handles cached pull storage and B3157 calls publish.
+  - Admin endpoints and configuration; B3158 exposes the spend reader through HTTP routes.
+  - GitHub access and pull request evidence; B3152 and B3153 fetch and transform that data.
+pitfalls:
+  - The finish method uses a CTE with FOR UPDATE to serialize ownership checks before report write. If the
+    owned check fails, the transaction rolls back and no rows are returned; do not skip the owner validation.
+  - The 60-second lease window is hardcoded in LiteLLM's SQL and betterlite's; do not parameterize it because
+    other parts of the system depend on the exact duration.
+  - The cancel() method does not check lease expiry; it sets cancel=true directly. Only heartbeat and finish
+    respect the expiry check.
+  - The finish() method skips the cancel-flag check (allows cancelled syncs to finish) only when report is
+    null, i.e., during cache cleanup; when a report is published, both owner and cancel checks apply.
+  - Email normalization must use the exact function from B3150's normalize_email helper; do not inline regex.
+  - The find_many_in call from B700 batches user lookups; the spend query passes user_ids from the group-by
+    result and expects a Sequence[Mapping[str, object]] back with user_id and user_email keys.
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

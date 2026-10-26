@@ -1,0 +1,165 @@
+id: B3806
+title: Presidio response and logging transformations
+description: >-
+  Build Presidio response and logging transformations for chat, embeddings, images and
+  Anthropic messages. The task covers logging-hook masking of input messages, selective
+  output masking based on apply_to_output (default false from instance config), and
+  unmasking via pii_tokens in request metadata. Preserve mask-output versus unmask-response
+  policy, response-type-specific behavior and the source's truncated-token fallback for
+  masked placeholders.
+
+  Core methods:
+
+  - `logging_hook`: Synchronous wrapper that schedules async_logging_hook on a new event
+    loop, handling nested event loop detection (yields to ThreadPoolExecutor if a loop
+    is already running).
+  - `async_logging_hook`: For /chat/completions and /acompletion requests, gather
+    concurrent check_pii calls for each message content (string or list items), replace
+    masked content in-place, and process the response if present (ModelResponse or
+    Anthropic native dict).
+  - `async_post_call_success_hook`: Check apply_to_output setting; if true, delegate to
+    _mask_output_response (chat) or _process_anthropic_response_for_pii (Anthropic).
+    Otherwise, if output_parse_pii is true, unmask the response using tokens from
+    request_data.metadata.pii_tokens.
+  - `_is_anthropic_message_response`: Return true if the response is a dict with
+    type=="message" and content is a list (Anthropic native message format).
+  - `_process_anthropic_response_for_pii`: Iterate content blocks with type=="text",
+    apply check_pii (mask mode) or _unmask_pii_text (unmask mode) to each text block.
+    Logs debug message on missing pii_tokens for unmask operations.
+  - `_process_response_for_pii`: For each choice in a ModelResponse, process message
+    content (string or list items with text field), tool_calls (function.arguments
+    field), and legacy function_call.arguments. Apply check_pii (mask mode) or
+    _unmask_pii_text (unmask mode). Skips missing or non-string content.
+  - `_mask_output_response`: Check response type; return non-ModelResponse unchanged.
+    Skip ModelResponseStream. Call _process_response_for_pii with mode="mask".
+
+  Settings and behavior: apply_to_output and output_parse_pii are instance fields
+  resolved by the lifecycle task from request config. pii_tokens dict in
+  request_data.metadata maps masked tokens to original text for unmasking. presidio_config
+  is resolved from request_data via get_presidio_settings_from_request_data (B3805).
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/presidio_response.rs
+    - crates/betterlite-guardrails/src/presidio_response/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1101-L1127
+    why: "logging_hook: sync wrapper with event loop detection and ThreadPoolExecutor for nested loops"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1129-L1203
+    why: "async_logging_hook: gathers concurrent check_pii calls, masks input, processes response"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1205-L1240
+    why: "async_post_call_success_hook: apply_to_output masking path vs output_parse_pii unmasking path"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1268-L1277
+    why: "_is_anthropic_message_response: type=='message' and content is list check"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1279-L1315
+    why: "_process_anthropic_response_for_pii: processes Anthropic native message content blocks"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1317-L1399
+    why: "_process_response_for_pii: processes ModelResponse choices, content, tool_calls, function_call"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1401-L1421
+    why: "_mask_output_response: filters response type and delegates to _process_response_for_pii"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1242-L1266
+    why: "_unmask_pii_text: token replacement with truncated-token fallback (owned by B3805)"
+
+dod:
+  - text: >-
+      logging_hook detects running event loops, runs async_logging_hook in ThreadPoolExecutor for nested
+      contexts, and otherwise runs it directly in a new event loop.
+    proof: [presidio-logging-hook-tests]
+
+  - text: >-
+      async_logging_hook masks input message content (string or list items) via concurrent check_pii calls for
+      /chat/completions and /acompletion requests, and processes the result (ModelResponse or Anthropic dict).
+    proof: [presidio-async-logging-tests]
+
+  - text: >-
+      async_post_call_success_hook applies output masking when apply_to_output=true, otherwise unmasks
+      (when output_parse_pii=true) using pii_tokens from request_data metadata.
+    proof: [presidio-post-call-hook-tests]
+
+  - text: >-
+      _is_anthropic_message_response returns true for dicts with type=="message" and content as a list,
+      false otherwise.
+    proof: [presidio-response-type-tests]
+
+  - text: >-
+      _process_anthropic_response_for_pii processes Anthropic content blocks with type=="text", applying
+      check_pii (mask mode) or _unmask_pii_text (unmask mode) to text fields.
+    proof: [presidio-anthropic-response-tests]
+
+  - text: >-
+      _process_response_for_pii processes ModelResponse choices for content (string or list items),
+      tool_calls (function.arguments), and legacy function_call.arguments in both mask and unmask modes.
+    proof: [presidio-model-response-tests]
+
+  - text: >-
+      _mask_output_response returns non-ModelResponse unchanged, skips ModelResponseStream, and calls
+      _process_response_for_pii with mode="mask".
+    proof: [presidio-mask-output-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: presidio-logging-hook-tests
+      why: "logging_hook event loop detection or ThreadPoolExecutor fallback is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::presidio_response_logging($|::)/)'
+
+    - id: presidio-async-logging-tests
+      why: "async_logging_hook masking of input messages or response processing is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::presidio_response_async_logging($|::)/)'
+
+    - id: presidio-post-call-hook-tests
+      why: "async_post_call_success_hook apply_to_output masking or output_parse_pii unmasking is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::presidio_response_post_call($|::)/)'
+
+    - id: presidio-response-type-tests
+      why: "_is_anthropic_message_response type checking is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::presidio_response_type($|::)/)'
+
+    - id: presidio-anthropic-response-tests
+      why: "_process_anthropic_response_for_pii content block processing is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::presidio_response_anthropic($|::)/)'
+
+    - id: presidio-model-response-tests
+      why: "_process_response_for_pii choice/content/tool_call/function_call processing is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::presidio_response_model($|::)/)'
+
+    - id: presidio-mask-output-tests
+      why: "_mask_output_response type filtering or delegation is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::presidio_response_mask($|::)/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "Analyzer and anonymizer calls, token mapping, and block exception handling (B3805)."
+  - "Request-level presidio settings resolution and environment configuration (B3805)."
+  - "PII token reversal fallback for truncated tokens (B3805 _unmask_pii_text)."
+  - "Buffered streaming response assembly and Anthropic SSE reconstruction (B3807)."
+  - "Stream chunk building via stream_chunk_builder from LiteLLM (B2227)."
+  - "Framework metadata observation, guardrail scheduling and role predicates (U1)."
+  - "apply_to_output and output_parse_pii resolution from request config (lifecycle/B108)."
+
+pitfalls:
+  - "logging_hook yields to ThreadPoolExecutor only when asyncio.get_running_loop() succeeds; RuntimeError from no running loop means safe synchronous execution."
+  - "async_logging_hook maps responses back to message indices using task_mappings list; order must match the order tasks were appended or masking writes to wrong indices."
+  - "Message content can be string (replace in-place) or list (replace each item's text field); non-string list items and missing text fields are skipped without error."
+  - "async_post_call_success_hook checks apply_to_output first; if true, it delegates and returns early (no unmasking in that path). Only when apply_to_output is false does it check output_parse_pii."
+  - "_process_response_for_pii uses getattr for optional fields (message, content, tool_calls, function_call); missing fields are silently skipped, not errors."
+  - "_unmask_pii_text fallback for truncated tokens checks only the end of the text; it replaces at most one truncated match per token with min_overlap threshold."
+  - "Anthropic message responses have type=='message' and content is a list; non-Anthropic dicts or dicts with different structure return false immediately."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

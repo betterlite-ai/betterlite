@@ -1,0 +1,108 @@
+id: B3864
+title: Phoenix prompt retrieval and compilation
+description: >-
+  Implement Phoenix prompt retrieval and compilation for the Arize Phoenix integration.
+  Fetch versioned prompts from the Arize Phoenix API, parse and cache templates locally,
+  render them with Mustache-style variable substitution, and expose the prompt-manager
+  interface used by the shared prompt dispatcher.
+
+  The integration supplies configuration through B002 (api_key from PHOENIX_API_KEY,
+  api_base from config), uses B173's HTTPHandler for outbound requests, and depends on
+  G3's CustomPromptManagement base class. Build URL sanitization that rejects path
+  traversal characters (/\\#?) and .. sequences, refusing the request with a descriptive
+  error rather than munging the identifier. Implement a Jinja2 sandboxed template environment
+  matching the LiteLLM hardening: variable delimiters {{ }}, block delimiters {% %},
+  autoescape for HTML/XML, and ImmutableSandboxedEnvironment to prevent attribute traversal
+  attacks. Cache fetched templates locally in a dictionary by prompt version ID. Parse
+  metadata from the API response (model_name, temperature, max_tokens, invocation_parameters)
+  and merge provider-specific parameters from nested openai/anthropic blocks. Render
+  templates with supplied variables and return message lists paired with resolved metadata
+  and optional parameters (temperature, max_tokens, frequency_penalty, presence_penalty, top_p).
+  The prompt_initializer registry function in __init__.py validates api_key and api_base,
+  constructs the manager, and returns it as the CustomPromptManagement instance for the
+  dispatcher. Preserve the exact error messages from LiteLLM for authentication failures
+  (401, 403, 404), distinguishing "Access denied", "Authentication failed" and "Not found"
+  cases in exception text.
+scope:
+  paths:
+    - crates/betterlite-logging/src/arize.rs
+    - crates/betterlite-logging/src/arize/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/__init__.py#L13-L44
+    why: The prompt_initializer function and registry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix_client.py#L11-L92
+    why: URL sanitization, HTTP client initialization, and prompt version fetching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix_prompt_manager.py#L25-L71
+    why: TypedDict records for template messages and metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix_prompt_manager.py#L77-L214
+    why: Template manager initialization, fetching from API, parsing, and rendering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix_prompt_manager.py#L221-L317
+    why: PromptManager initialization and integration properties.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix_prompt_manager.py#L384-L507
+    why: Prompt compilation, template rendering, and chat completion prompt interface.
+  - url: https://docs.rs/jinja2/latest/jinja2/
+    why: Sandboxed template environment with custom delimiters.
+dod:
+  - text: Rejects path traversal and URL-special characters in identifiers with errors.
+    proof: [sanitization-tests]
+  - text: HTTPHandler fetches versions using Bearer token authentication.
+    proof: [client-tests]
+  - text: HTTP error codes (401, 403, 404) produce correct exception messages.
+    proof: [client-error-tests]
+  - text: Parsing extracts messages, metadata and parameters from Phoenix responses.
+    proof: [parsing-tests]
+  - text: Templates cache locally and reuse without refetching.
+    proof: [caching-tests]
+  - text: Jinja2 renders templates with variable substitution and HTML/XML autoescape.
+    proof: [rendering-tests]
+  - text: Metadata extracts temperature and max_tokens from nested parameters.
+    proof: [metadata-tests]
+  - text: Manager compiles prompts into PromptManagementClient with rendered messages.
+    proof: [integration-tests]
+checks:
+  optional: []
+  commands:
+    - id: sanitization-tests
+      why: URL sanitization does not reject/accept the right characters, or error messages differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^arize::phoenix::sanitization/)'
+    - id: client-tests
+      why: ArizePhoenixClient initialization or HTTP requests fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^arize::phoenix::client/)'
+    - id: client-error-tests
+      why: HTTP error handling (401, 403, 404) does not match LiteLLM behavior
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^arize::phoenix::client.*error/)'
+    - id: parsing-tests
+      why: Template parsing does not extract messages, metadata or invocation parameters correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^arize::phoenix::parsing/)'
+    - id: caching-tests
+      why: Templates are not cached or are refetched unnecessarily
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^arize::phoenix::caching/)'
+    - id: rendering-tests
+      why: Jinja2 template rendering does not substitute variables or autoescape settings differ
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^arize::phoenix::rendering/)'
+    - id: metadata-tests
+      why: Metadata extraction or parameter merging does not match Phoenix API response structure
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^arize::phoenix::metadata/)'
+    - id: integration-tests
+      why: ArizePhoenixPromptManager does not implement the CustomPromptManagement interface or compile prompts correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^arize::phoenix::integration/)'
+oracle_cases: []
+deviations:
+  - what: prompt_initializer raises one ValueError naming both fields when either api_key or api_base is missing, not per-field messages.
+    why: LiteLLM's __init__.py:24-25 raises one combined message "api_key and api_base are required for Arize Phoenix prompt integration" regardless of which field is absent; the per-field messages belong to a different code path in ArizePhoenixClient.__init__ (arize_phoenix_client.py:41-45), which this task does not own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/__init__.py#L24-L25
+out_of_scope:
+  - The shared prompt-management dispatcher and CustomPromptManagement base class; G3 assigns their owners.
+  - "ArizePhoenixPromptTemplate.__repr__, ArizePhoenixPromptManager.get_available_prompts and ArizePhoenixClient.close: no caller at the pin"
+  - "ArizePhoenixTemplateManager.list_templates, ArizePhoenixPromptManager.pre_call_hook, ArizePhoenixPromptManager.reload_prompts and ArizePhoenixClient.test_connection: no caller at the pin. The live dispatcher uses compilation/get-chat-completion methods, not the older hook pattern."
+  - Arize workspace-based access control; the Phoenix API enforces it through 403 responses.
+pitfalls:
+  - "The Jinja2 ImmutableSandboxedEnvironment is not optional: templates from external users can execute arbitrary code without it. Use .sandbox with autoescape enabled and verify the exact delimiter strings match LiteLLM: variable {{ }}, block {% %}, comment {# #}."
+  - "URL encoding must preserve idempotency: _sanitize_id rejects characters before encoding, not after. A rejected identifier gets an error, not a munged URL."
+  - "Provider parameter extraction iterates invocation_parameters looking for openai or anthropic keys. If neither is found, it takes the first nested dict. Match LiteLLM's fallback logic exactly to avoid metadata mismatches."
+  - "Phoenix API returns status 404 for missing versions and 403 for access denial. Distinguish them in exception messages; the proxy and user must know which problem occurred."
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0
