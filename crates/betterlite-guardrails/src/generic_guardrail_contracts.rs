@@ -43,8 +43,9 @@ pub struct GenericGuardrailAPIMetadata {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct GenericGuardrailAPIOptionalParams {
-    pub additional_provider_specific_params: Option<BTreeMap<String, GuardrailExtraValue>>,
+pub struct GuardrailOptions {
+    #[serde(rename = "additional_provider_specific_params")]
+    pub provider_params: Option<BTreeMap<String, GuardrailExtraValue>>,
     pub unreachable_fallback: Option<String>,
     pub fail_on_error: Option<bool>,
     pub streaming_end_of_stream_only: Option<bool>,
@@ -55,7 +56,7 @@ pub struct GenericGuardrailAPIOptionalParams {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GenericGuardrailAPIConfigModel {
     #[serde(default)]
-    pub optional_params: Option<GenericGuardrailAPIOptionalParams>,
+    pub optional_params: Option<GuardrailOptions>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,7 +70,7 @@ pub struct GenericGuardrailAPISettings {
 
 impl GenericGuardrailAPISettings {
     #[must_use]
-    pub fn from_optional(optional_params: Option<GenericGuardrailAPIOptionalParams>) -> Self {
+    pub fn from_optional(optional_params: Option<GuardrailOptions>) -> Self {
         let resolved_params = optional_params.unwrap_or_default();
         Self {
             unreachable_fallback: resolved_params
@@ -99,7 +100,8 @@ pub struct GenericGuardrailAPIRequest {
     pub request_data: GenericGuardrailAPIMetadata,
     pub request_headers: Option<BTreeMap<String, String>>,
     pub litellm_version: Option<String>,
-    pub additional_provider_specific_params: Option<BTreeMap<String, GuardrailExtraValue>>,
+    #[serde(rename = "additional_provider_specific_params")]
+    pub provider_params: Option<BTreeMap<String, GuardrailExtraValue>>,
     pub tool_calls: Option<Vec<GuardrailExtraValue>>,
     pub model: Option<String>,
 }
@@ -145,17 +147,16 @@ pub fn sanitize_inbound_headers(
     headers: &BTreeMap<String, String>,
     extra_allowlist: Option<&[String]>,
 ) -> BTreeMap<String, String> {
-    headers
-        .iter()
-        .map(|(name, value)| {
-            let sanitized_value = if header_value_allowed(name, extra_allowlist) {
-                value.clone()
-            } else {
-                "[present]".to_owned()
-            };
-            (name.clone(), sanitized_value)
-        })
-        .collect()
+    let mut sanitized = BTreeMap::new();
+    for (name, value) in headers {
+        let sanitized_value = if header_value_allowed(name, extra_allowlist) {
+            value.clone()
+        } else {
+            "[present]".to_owned()
+        };
+        sanitized.insert(name.clone(), sanitized_value);
+    }
+    sanitized
 }
 
 fn header_value_allowed(name: &str, extra_allowlist: Option<&[String]>) -> bool {
