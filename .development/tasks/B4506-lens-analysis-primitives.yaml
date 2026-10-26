@@ -73,13 +73,13 @@ checks:
       run: grep -q "type ModelCall" crates/betterlite-lens/src/analysis.rs && grep -q "type ReadContent" crates/betterlite-lens/src/analysis.rs && grep -q "type ReportProgress" crates/betterlite-lens/src/analysis.rs
     - id: analysis-tests
       why: analysis primitives tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^analysis::/) and not test(replays_)'
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^analysis::/) and test(!replays_)'
     - id: concurrent-results-default-tests
       why: concurrent_results default concurrency is not 8, or the default is not asserted in tests.
       run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^analysis::concurrent_results::default_concurrency/)'
     - id: trace-store-tests
       why: trace storage tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^trace_store::/) and not test(replays_)'
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^trace_store::/) and test(!replays_)'
     - id: overview-content-formula-tests
       why: overview_content does not apply the dynamic formula only to root spans, or does not use 160 for non-root spans.
       run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^trace_store::overview_content::formula_root_only/)'
