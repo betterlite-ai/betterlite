@@ -1,7 +1,7 @@
 id: B3256
 milestone: M6 guardrails
 title: Local aviation and published EU PII catalog records
-status: todo
+status: done
 depends_on: []
 file: tasks/B3256-policy-catalog-aviation-eu-pii.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "policy_templates.json"
 parent: B079
 split_from: B079
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 165
