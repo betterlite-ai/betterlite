@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use super::primitives::*;
 use super::*;
 use crate::models::finding::Role;
 use rstest::rstest;

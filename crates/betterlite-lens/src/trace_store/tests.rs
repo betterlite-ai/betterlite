@@ -4,7 +4,7 @@ use rstest::rstest;
 use rusqlite::Connection;
 
 use super::*;
-use crate::analysis::evidence_valid;
+use crate::analysis::primitives::evidence_valid;
 use crate::models::execution::TracePart;
 use crate::models::finding::{Evidence, Role};
 

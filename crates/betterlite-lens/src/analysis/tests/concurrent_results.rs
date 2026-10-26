@@ -1,21 +1,27 @@
 #![cfg(test)]
 
-use super::{ANALYSIS_CONCURRENCY, AnalysisError, concurrent_results};
+use super::primitives::concurrent_results;
+use super::{ANALYSIS_CONCURRENCY, AnalysisError};
 use std::future::pending;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Semaphore;
 
 #[tokio::test]
 async fn default_concurrency() {
     assert_eq!(ANALYSIS_CONCURRENCY, 8);
+    let calls = AtomicUsize::new(0);
     let mut results = concurrent_results(
         (0_u32..10).collect(),
-        |value| async move { Ok(value) },
+        |value| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            async move { Ok(value) }
+        },
         None,
     )
     .unwrap();
     results.next().await.unwrap().unwrap();
-    assert_eq!(results.tasks.len(), 7);
+    assert_eq!(calls.load(Ordering::SeqCst), 8);
     let mut count = 1_u32;
     while results.next().await.is_some() {
         count += 1;

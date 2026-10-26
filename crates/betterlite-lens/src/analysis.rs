@@ -7,7 +7,7 @@ use tokio::task::JoinError;
 use crate::models::execution::{Coverage, Execution, ExecutionContent, TracePart};
 use crate::models::finding::{Evidence, FindingDraft};
 use crate::models::messages::{ModelRequest, ModelResult};
-use crate::trace_store::{TraceStore, TraceStoreError};
+use crate::trace_store::TraceStoreError;
 use garde::Validate;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
@@ -206,7 +206,7 @@ pub enum AnalysisError {
     Callback(String),
 }
 
-include!("analysis/primitives.rs");
+pub mod primitives;
 
 #[path = "analysis/tests/concurrent_results.rs"]
 mod concurrent_results;
