@@ -1,8 +1,8 @@
 task: B4811
 deviations:
   - what: The patch number of a protocolVersion must be ASCII digits. LiteLLM's Python regex `\d` also takes other Unicode decimal digits, so "0.3.٣" serves 0.3 there and falls back to 1.0 here.
-    why: Version strings from real A2A SDKs are ASCII, and Rust's standard library has no check for the Unicode decimal digit category alone.
+    why: Version strings from real A2A SDKs are ASCII; the implementation deliberately applies the semver ASCII grammar instead of reproducing Python regex Unicode-digit matching.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/agent_card.py#L25-L27
   - what: The merged card's top-level keys come out in alphabetical order. LiteLLM keeps the upstream card's key order and appends the keys it adds.
-    why: The card is a BTreeMap, and JSON object key order carries no meaning for A2A clients.
+    why: The typed Rust card uses BTreeMap fields, so serialized keys are alphabetical; JSON object key order carries no meaning for A2A clients.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/agent_card.py#L217
