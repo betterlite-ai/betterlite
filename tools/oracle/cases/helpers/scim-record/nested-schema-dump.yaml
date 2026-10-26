@@ -1,0 +1,17 @@
+kind: helper
+name: nested-schema-dump
+call:
+  scim_record:
+    kind: schema
+    value:
+      id: User
+      name: User
+      attributes:
+        - name: manager
+          type: complex
+          subAttributes:
+            - name: ref
+              type: string
+env: {}
+compare:
+  ignore: []

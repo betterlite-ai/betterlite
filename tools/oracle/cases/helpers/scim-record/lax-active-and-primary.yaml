@@ -1,0 +1,12 @@
+kind: helper
+name: lax-active-and-primary
+call:
+  scim_record:
+    kind: user
+    value:
+      schemas: [u]
+      active: "False"
+      emails: [{value: ada@example.com, primary: "YES"}, {value: bob@example.com, primary: 0}]
+env: {}
+compare:
+  ignore: []
