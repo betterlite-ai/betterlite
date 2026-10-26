@@ -61,10 +61,7 @@ fn whole_number(value: &AgenticLoopValue) -> Option<i64> {
         AgenticLoopValue::Text(text) => {
             let trimmed = text.trim();
             let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
-            if !digits
-                .split('_')
-                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
-            {
+            if !digits.split('_').all(|part| !part.is_empty()) {
                 return None;
             }
             trimmed.replace('_', "").parse().ok()
