@@ -25,12 +25,6 @@ pub struct PassThroughRegistry {
 
 impl PassThroughRegistry {
     #[must_use]
-    pub fn lookup_route(&self, route: &str) -> String {
-        let normalized = self.normalize_route(route);
-        normalized.unwrap_or_else(|| route.to_owned())
-    }
-
-    #[must_use]
     pub fn is_registered(&self, route: &str) -> bool {
         if let Some(normalized) = self.normalize_route(route)
             && MAPPED_PASS_THROUGH_ROUTES
@@ -39,7 +33,9 @@ impl PassThroughRegistry {
         {
             return true;
         }
-        let comparison_route = self.lookup_route(route);
+        let comparison_route = self
+            .normalize_route(route)
+            .unwrap_or_else(|| route.to_owned());
         !self.matching_registrations(&comparison_route).is_empty()
     }
 
@@ -49,7 +45,9 @@ impl PassThroughRegistry {
         route: &str,
         method: Option<&str>,
     ) -> Option<&PassThroughMetadata> {
-        let comparison_route = self.lookup_route(route);
+        let comparison_route = self
+            .normalize_route(route)
+            .unwrap_or_else(|| route.to_owned());
         self.matching_registrations(&comparison_route)
             .into_iter()
             .find_map(|(key, metadata)| {
@@ -58,7 +56,8 @@ impl PassThroughRegistry {
             })
     }
 
-    fn normalize_route(&self, route: &str) -> Option<String> {
+    #[must_use]
+    pub fn normalize_route(&self, route: &str) -> Option<String> {
         if self.root_path.is_empty() || self.root_path == "/" {
             return Some(route.to_owned());
         }

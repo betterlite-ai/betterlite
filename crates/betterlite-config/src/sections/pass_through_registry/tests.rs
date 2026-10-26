@@ -5,10 +5,29 @@ use std::collections::BTreeMap;
 
 use crate::loader::{ConfigError, ConfigLoader};
 
-fn root(source: &str) -> String {
-    ConfigLoader {
-        lookup: BTreeMap::<String, String>::new(),
-    }
+#[rstest]
+#[case::without_environment(None)]
+#[case::with_environment(Some("/environment/"))]
+fn rejects_top_level_root(#[case] environment: Option<&str>) {
+    let lookup = environment
+        .map(|value| ("SERVER_ROOT_PATH".to_owned(), value.to_owned()))
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+    let error = ConfigLoader { lookup }
+        .load("SERVER_ROOT_PATH: /yaml/")
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::Unsupported { paths } if paths == ["SERVER_ROOT_PATH"]
+    ));
+}
+
+fn root(source: &str, environment: Option<&str>) -> String {
+    let lookup = environment
+        .map(|value| ("SERVER_ROOT_PATH".to_owned(), value.to_owned()))
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+    ConfigLoader { lookup }
     .load(source)
     .expect("config should load")
     .sections
@@ -17,12 +36,12 @@ fn root(source: &str) -> String {
 }
 
 #[rstest]
-#[case::root_default_empty("{}", "")]
-#[case::root_slash("SERVER_ROOT_PATH: /", "/")]
-#[case::root_prefix("SERVER_ROOT_PATH: /proxy", "/proxy")]
-#[case::root_trailing_slash("SERVER_ROOT_PATH: /proxy/", "/proxy/")]
-fn loads_root(#[case] source: &str, #[case] expected: &str) {
-    assert_eq!(root(source), expected);
+#[case::root_default_empty(None, "")]
+#[case::root_slash(Some("/"), "/")]
+#[case::root_prefix(Some("/proxy"), "/proxy")]
+#[case::root_trailing_slash(Some("/proxy/"), "/proxy/")]
+fn loads_root(#[case] environment: Option<&str>, #[case] expected: &str) {
+    assert_eq!(root("{}", environment), expected);
 }
 
 #[test]
@@ -41,7 +60,7 @@ fn reads_root_from_environment() {
 #[test]
 fn root_coexists_with_general_settings() {
     assert_eq!(
-        root("SERVER_ROOT_PATH: /proxy\ngeneral_settings:\n  master_key: test-master\n"),
+        root("general_settings:\n  master_key: test-master\n", Some("/proxy")),
         "/proxy"
     );
 }

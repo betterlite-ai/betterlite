@@ -34,7 +34,12 @@ fn registry(root: &str, entries: Vec<(&str, PassThroughMetadata)>) -> PassThroug
 #[case::trailing_root_slash_literal("/proxy/", "/proxy/root/path", "/proxy/root/path")]
 #[case::trailing_root_double_slash("/proxy/", "/proxy//root/path", "/root/path")]
 fn normalizes_routes(#[case] root: &str, #[case] route: &str, #[case] expected: &str) {
-    assert_eq!(registry(root, Vec::new()).lookup_route(route), expected);
+    assert_eq!(
+        registry(root, Vec::new())
+            .normalize_route(route)
+            .unwrap_or_else(|| route.to_owned()),
+        expected
+    );
 }
 
 #[test]

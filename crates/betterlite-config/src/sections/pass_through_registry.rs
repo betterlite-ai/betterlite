@@ -4,10 +4,7 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {
-    #[serde(rename = "SERVER_ROOT_PATH")]
-    server_root_path: Option<String>,
-}
+pub struct Raw {}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
@@ -22,10 +19,7 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            server_root_path: self
-                .server_root_path
-                .or_else(|| lookup.lookup("SERVER_ROOT_PATH"))
-                .unwrap_or_default(),
+            server_root_path: lookup.lookup("SERVER_ROOT_PATH").unwrap_or_default(),
         })
     }
 }

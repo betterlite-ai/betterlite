@@ -58,7 +58,8 @@ impl crate::helpers::Helper for Op {
                     registry.get_registered(&query.route, query.method.as_deref());
                 let metadata = selected_metadata.map(metadata_value);
                 serde_json::json!({
-                    "normalized": registry.lookup_route(&query.route),
+                    "normalized": registry.normalize_route(&query.route)
+                        .unwrap_or_else(|| query.route.to_owned()),
                     "registered": registry.is_registered(&query.route),
                     "metadata": metadata,
                 })

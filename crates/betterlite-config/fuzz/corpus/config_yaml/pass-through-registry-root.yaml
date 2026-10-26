@@ -1,1 +1,2 @@
-SERVER_ROOT_PATH: /proxy/
+environment_variables:
+  SERVER_ROOT_PATH: /proxy/
