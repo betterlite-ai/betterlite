@@ -154,6 +154,42 @@ fn checks_signed_claims(
 }
 
 #[rstest]
+#[case::bad_crit(r#""crit":"b64""#, false)]
+#[case::null_crit(r#""crit":null"#, false)]
+#[case::empty_crit(r#""crit":[]"#, false)]
+#[case::non_string_crit(r#""crit":[1]"#, false)]
+#[case::unsupported_crit(r#""crit":["x"],"x":true"#, false)]
+#[case::missing_critical_header(r#""crit":["b64"]"#, false)]
+#[case::b64_false(r#""b64":false"#, false)]
+#[case::critical_b64_false(r#""crit":["b64"],"b64":false"#, false)]
+#[case::supported_crit(r#""crit":["b64"],"b64":true"#, true)]
+#[case::null_b64(r#""crit":["b64"],"b64":null"#, true)]
+#[case::non_boolean_b64(r#""crit":["b64"],"b64":0"#, true)]
+fn validates_header_extensions(
+    #[case] extension: &str,
+    #[case] valid: bool,
+    #[values(Hs256, OtherHs256, Rs256)] choice: Keys,
+) {
+    let algorithm = if matches!(choice, Rs256) {
+        "RS256"
+    } else {
+        "HS256"
+    };
+    let header = format!(r#"{{"alg":"{algorithm}","kid":"unknown",{extension}}}"#);
+    let payload = LITELLM_HS256.split('.').nth(1).unwrap();
+    let decoded = String::from_utf8(URL_SAFE_NO_PAD.decode(payload).unwrap()).unwrap();
+    let expected = match (valid, choice) {
+        (false, _) => Err(Malformed),
+        (true, Hs256) => Ok(()),
+        (true, _) => Err(BadSignature),
+    };
+    assert_eq!(
+        open_token(&forge(&header, &decoded), Session, &keys(choice), at(0)).map(drop),
+        expected
+    );
+}
+
+#[rstest]
 #[case::empty(String::new(), NotASessionToken)]
 #[case::refresh_prefix("llm_srefresh_a.b.c".to_owned(), NotASessionToken)]
 #[case::not_a_jwt("llm_session_not-a-jwt".to_owned(), Malformed)]

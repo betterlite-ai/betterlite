@@ -1,9 +1,9 @@
 task: B4652
 deviations:
   - what: >-
-      Token segments must be canonical unpadded base64url. LiteLLM decodes them through PyJWT with Python's lenient base64, so it drops characters outside the alphabet and accepts '=' padding, '+' and '/' and non-canonical trailing bits, and several different strings open as the same token. betterlite answers SessionMalformed for all of those.
-    why: Accepting many spellings of one signed token makes the signature malleable and gives a future jti revocation list more than one string per token; the canonical token LiteLLM mints opens the same way in both.
-    link: https://github.com/jpadilla/pyjwt/blob/2.15.1/jwt/utils.py
+      Token segments must be canonical unpadded base64url. PyJWT 2.15.1 accepts up to two trailing '=' padding characters when the padded segment length is a multiple of four; betterlite answers SessionMalformed for that padding.
+    why: Requiring unpadded segments gives each signature one accepted spelling; the canonical token LiteLLM mints opens the same way in both.
+    link: https://github.com/jpadilla/pyjwt/blob/2.15.1/jwt/api_jws.py
   - what: >-
       RSA keys above 8192 bits are refused when AsymmetricSessionKeys or SessionRotatedPublicKey is built. LiteLLM accepts any RSA key of at least 2048 bits.
     why: aws-lc-rs, the RSA backend, signs and verifies only keys of 2048 to 8192 bits, and the rsa crate that would allow more has an unfixed timing advisory (RUSTSEC-2023-0071).
@@ -13,7 +13,7 @@ deviations:
     why: The opener is meant to be total, and a crash on a valid 32-character secret is a PyJWT guard against algorithm confusion that does not apply when the algorithm is pinned by the key type.
     link: https://github.com/jpadilla/pyjwt/blob/2.15.1/jwt/algorithms.py
   - what: >-
-      Signed JSON with duplicate keys answers SessionMalformed, where Python keeps the last value. A header with "kid" null counts as no kid, where PyJWT answers SessionMalformed. Under RS256, a header with an unknown kid and a missing or non-string alg answers SessionMalformed, where LiteLLM answers SessionBadSignature.
+      Signed JSON with duplicate keys answers SessionMalformed, where Python keeps the last value. A header with "kid" null counts as no kid, where PyJWT answers SessionMalformed. Under RS256, a header with an unknown kid and a non-string alg answers SessionMalformed, where LiteLLM answers SessionBadSignature.
     why: serde rejects duplicate fields and reads null as an absent Option; every one of these inputs is rejected in both, or needs the signing key to produce.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/session_token.py#L494
   - what: >-

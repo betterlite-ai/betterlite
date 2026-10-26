@@ -11,7 +11,10 @@ use aws_lc_rs::{error::Unspecified, hmac};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, TimeDelta, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{Error as _, IgnoredAny},
+};
 use serde_json::ser::{Formatter, Serializer};
 use std::io::{self, Write};
 
@@ -68,10 +71,32 @@ struct Claims {
 #[derive(Serialize, Deserialize)]
 struct Header {
     alg: Option<String>,
+    #[serde(default, skip_serializing)]
+    b64: PayloadEncoding,
+    #[serde(default, skip_serializing, deserialize_with = "critical_headers")]
+    crit: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     kid: Option<String>,
     #[serde(skip_deserializing)]
     typ: &'static str,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(untagged)]
+enum PayloadEncoding {
+    #[default]
+    #[serde(skip)]
+    Missing,
+    Boolean(bool),
+    Other(IgnoredAny),
+}
+
+fn critical_headers<'de, D: Deserializer<'de>>(decoder: D) -> Result<Vec<String>, D::Error> {
+    let names = Vec::<String>::deserialize(decoder)?;
+    if names.is_empty() || names.iter().any(|name| name != "b64") {
+        return Err(D::Error::custom("unsupported critical headers"));
+    }
+    Ok(names)
 }
 
 // Python's json.dumps escapes everything outside printable ASCII, and the signature covers those bytes
@@ -151,6 +176,8 @@ fn sign(claims: &Claims, keys: &SigningKeys) -> Result<String, MintError> {
     };
     let header = python_json_segment(&Header {
         alg: Some(alg.to_owned()),
+        b64: PayloadEncoding::Missing,
+        crit: Vec::new(),
         kid: kid.map(str::to_owned),
         typ: "JWT",
     })?;
@@ -220,6 +247,11 @@ fn verified_claims(compact: &str, keys: &SigningKeys) -> Result<Claims, OpenErro
     let (header_segment, payload_segment) = signing_input.split_once('.').ok_or(Malformed)?;
     let header: Header =
         serde_json::from_slice(&decode(header_segment)?).map_err(|_source| Malformed)?;
+    if matches!(header.b64, PayloadEncoding::Boolean(false))
+        || (!header.crit.is_empty() && matches!(header.b64, PayloadEncoding::Missing))
+    {
+        return Err(Malformed);
+    }
     let payload = decode(payload_segment)?;
     let signature = decode(signature_segment)?;
     let message = signing_input.as_bytes();
