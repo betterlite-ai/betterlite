@@ -38,7 +38,7 @@ pub enum Shape {
     Number(f64),
     Text(String),
     List(Vec<IgnoredAny>),
-    Object(BTreeMap<String, IgnoredAny>),
+    Object(BTreeMap<String, Self>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,7 +66,7 @@ pub struct A2aRecord {
     #[serde(default)]
     pub parts: Field<ListValue>,
     #[serde(flatten)]
-    pub other_keys: BTreeMap<String, IgnoredAny>,
+    pub other_keys: BTreeMap<String, Shape>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,18 +102,17 @@ fn shape_is_truthy(shape: &Shape) -> bool {
 
 impl RecordValue {
     fn is_truthy(&self) -> bool {
-        match self {
-            Self::Record(record) => record_has_content(record),
-            Self::Other(shape) => shape_is_truthy(shape),
+        if let Self::Record(record) = self {
+            return matches!(record.kind, Field::Present(_))
+                || matches!(record.text, Field::Present(_))
+                || matches!(record.parts, Field::Present(_))
+                || !record.other_keys.is_empty();
         }
+        let Self::Other(shape) = self else {
+            return false;
+        };
+        shape_is_truthy(shape)
     }
-}
-
-fn record_has_content(record: &A2aRecord) -> bool {
-    matches!(record.kind, Field::Present(_))
-        || matches!(record.text, Field::Present(_))
-        || matches!(record.parts, Field::Present(_))
-        || !record.other_keys.is_empty()
 }
 
 pub fn extract_text_from_a2a_message(
