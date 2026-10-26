@@ -64,7 +64,7 @@ fn request_records_cases(#[case] name: &str) {
             let error = RequestRecordProjection::safe_copy(&mut invalid, false);
             assert!(matches!(
                 error,
-                Err(super::RequestRecordError::NonObjectMetadata { .. })
+                Err(super::RequestRecordError::MetadataMembership { .. })
             ));
             let mut string_without_span = record(r#"{"metadata":"ordinary"}"#);
             let string_copy = RequestRecordProjection::safe_copy(&mut string_without_span, false);
@@ -74,7 +74,12 @@ fn request_records_cases(#[case] name: &str) {
             let mut string_with_span = record(r#"{"metadata":"litellm_parent_otel_span"}"#);
             assert!(matches!(
                 RequestRecordProjection::safe_copy(&mut string_with_span, false),
-                Err(super::RequestRecordError::NonObjectMetadata { .. })
+                Err(super::RequestRecordError::MetadataMutation { .. })
+            ));
+            let mut array_with_span = record(r#"{"metadata":["litellm_parent_otel_span"]}"#);
+            assert!(matches!(
+                RequestRecordProjection::safe_copy(&mut array_with_span, false),
+                Err(super::RequestRecordError::MetadataMutation { .. })
             ));
         }
         "independent_snapshot" => {

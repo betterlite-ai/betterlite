@@ -6,8 +6,10 @@ use record::{HandleKind, RequestRecord};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum RequestRecordError {
-    #[error("{bucket} must be an object when it contains a parent span")]
-    NonObjectMetadata { bucket: String },
+    #[error("{bucket} metadata cannot test membership for a parent span")]
+    MetadataMembership { bucket: String },
+    #[error("{bucket} metadata cannot remove a parent span")]
+    MetadataMutation { bucket: String },
 }
 
 pub struct RequestRecordProjection;
@@ -21,27 +23,7 @@ impl RequestRecordProjection {
             return Ok(None);
         };
         let Some(bucket) = value.object_mut() else {
-            match value {
-                RequestRecord::String(text) if text.contains("litellm_parent_otel_span") => {
-                    return Err(RequestRecordError::NonObjectMetadata {
-                        bucket: name.to_owned(),
-                    });
-                }
-                RequestRecord::Null
-                | RequestRecord::Bool(_)
-                | RequestRecord::Signed(_)
-                | RequestRecord::Unsigned(_)
-                | RequestRecord::Decimal(_)
-                | RequestRecord::Handle(_) => {
-                    return Err(RequestRecordError::NonObjectMetadata {
-                        bucket: name.to_owned(),
-                    });
-                }
-                RequestRecord::Array(_) => return Ok(None),
-                RequestRecord::String(_) | RequestRecord::Object(_) => {
-                    return Ok(None);
-                }
-            }
+            return Self::sanitize_non_object(value, name);
         };
         let Some(span) = bucket.remove("litellm_parent_otel_span") else {
             return Ok(None);
@@ -51,6 +33,42 @@ impl RequestRecordProjection {
             RequestRecord::String("placeholder".to_owned()),
         );
         Ok(Some(span))
+    }
+
+    fn sanitize_non_object(
+        value: &RequestRecord,
+        name: &str,
+    ) -> Result<Option<RequestRecord>, RequestRecordError> {
+        match value {
+            RequestRecord::String(text) if text.contains("litellm_parent_otel_span") => {
+                Err(RequestRecordError::MetadataMutation {
+                    bucket: name.to_owned(),
+                })
+            }
+            RequestRecord::Array(values)
+                if values.iter().any(|candidate| {
+                    matches!(
+                        candidate,
+                        RequestRecord::String(text) if text == "litellm_parent_otel_span"
+                    )
+                }) =>
+            {
+                Err(RequestRecordError::MetadataMutation {
+                    bucket: name.to_owned(),
+                })
+            }
+            RequestRecord::Null
+            | RequestRecord::Bool(_)
+            | RequestRecord::Signed(_)
+            | RequestRecord::Unsigned(_)
+            | RequestRecord::Decimal(_)
+            | RequestRecord::Handle(_) => Err(RequestRecordError::MetadataMembership {
+                bucket: name.to_owned(),
+            }),
+            RequestRecord::Array(_) | RequestRecord::String(_) | RequestRecord::Object(_) => {
+                Ok(None)
+            }
+        }
     }
 
     fn restore(fields: &mut BTreeMap<String, RequestRecord>, name: &str, span: &RequestRecord) {
@@ -107,27 +125,13 @@ impl RequestRecordProjection {
             let copied = if matches!(key.as_str(), "metadata" | "litellm_metadata")
                 && let Some(bucket) = value.object()
             {
-                RequestRecord::Object(Self::snapshot_bucket(bucket))
+                RequestRecord::Object(bucket.clone())
             } else {
                 value.clone()
             };
             snapshot.insert(key.clone(), copied);
         }
         RequestRecord::Object(snapshot)
-    }
-
-    fn snapshot_bucket(
-        bucket: &BTreeMap<String, RequestRecord>,
-    ) -> BTreeMap<String, RequestRecord> {
-        let mut clean = bucket.clone();
-        if let Some(original) = clean.get("litellm_parent_otel_span").cloned() {
-            clean.insert(
-                "litellm_parent_otel_span".to_owned(),
-                RequestRecord::String("placeholder".to_owned()),
-            );
-            clean.insert("litellm_parent_otel_span".to_owned(), original);
-        }
-        clean
     }
 
     #[must_use]
@@ -172,7 +176,7 @@ impl RequestRecordProjection {
     fn filter_object(fields: BTreeMap<String, RequestRecord>, depth: i32) -> RequestRecord {
         let filtered = fields
             .into_iter()
-            .filter_map(|(key, value)| Self::filter_pair(key, value, depth))
+            .filter_map(|(key, value)| Self::filter_item(value, depth).map(|item| (key, item)))
             .collect();
         RequestRecord::Object(filtered)
     }
@@ -183,15 +187,6 @@ impl RequestRecordProjection {
             .filter_map(|value| Self::filter_item(value, depth))
             .collect();
         RequestRecord::Array(filtered)
-    }
-
-    fn filter_pair(
-        key: String,
-        value: RequestRecord,
-        depth: i32,
-    ) -> Option<(String, RequestRecord)> {
-        let filtered = Self::filter_item(value, depth);
-        filtered.map(|item| (key, item))
     }
 
     fn filter_item(value: RequestRecord, depth: i32) -> Option<RequestRecord> {

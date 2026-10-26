@@ -8,12 +8,7 @@ mod tests;
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 #[rustfmt::skip]
-pub(crate) enum Input { SafeCopy { record: RequestRecord, safe_memory_mode: bool }, IndependentSnapshot { record: RequestRecord }, FilterParameters { record: RequestRecord, #[serde(default = "default_depth")] max_depth: i32 }, FilterInternal { record: RequestRecord, additional: Vec<String> }, GatewayInjection { record: RequestRecord, steps: Vec<GatewayStep> } }
-
-const fn default_depth() -> i32 {
-    let base = 10_i32;
-    base + 10_i32
-}
+pub(crate) enum Input { SafeCopy { record: RequestRecord, safe_memory_mode: bool }, IndependentSnapshot { record: RequestRecord }, FilterParameters { record: RequestRecord, max_depth: i32 }, FilterInternal { record: RequestRecord, additional: Vec<String> }, GatewayInjection { record: RequestRecord, steps: Vec<GatewayStep> } }
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub(crate) struct GatewayStep {
@@ -47,8 +42,12 @@ impl crate::helpers::Helper for Op {
                 let mut changed = record.clone();
                 RequestRecordProjection::safe_copy(&mut changed, *safe_memory_mode)
                     .map_err(|error| {
+                        let class = match &error {
+                            betterlite_context::request_records::RequestRecordError::MetadataMembership { .. } => "TypeError",
+                            betterlite_context::request_records::RequestRecordError::MetadataMutation { .. } => "AttributeError",
+                        };
                         Box::new(crate::helpers::HelperError {
-                            class: "TypeError".to_owned(),
+                            class: class.to_owned(),
                             status: None,
                             error_type: None,
                             param: None,
