@@ -79,7 +79,10 @@ impl fmt::Debug for SettingsStore {
                     .flat_map(BTreeMap::keys)
                     .collect::<BTreeSet<_>>(),
             )
-            .field("runtime_keys", &self.runtime_values.keys().collect::<Vec<_>>())
+            .field(
+                "runtime_keys",
+                &self.runtime_values.keys().collect::<Vec<_>>(),
+            )
             .field("deleted_runtime_keys", &self.deleted_runtime_keys)
             .finish()
     }
