@@ -1,0 +1,5 @@
+kind: helper
+name: cloud-uri-detection
+call: {cloud_storage: {function: cloud_uri_detection, value: s3://}}
+env: {}
+compare: {ignore: []}

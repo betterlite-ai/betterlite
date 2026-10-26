@@ -1,0 +1,5 @@
+kind: helper
+name: cloud_storage-path_fallback
+call: {cloud_storage: {function: object_path_sanitization, value: null, fallback: ../fallback}}
+env: {}
+compare: {ignore: []}

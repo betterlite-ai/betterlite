@@ -1,0 +1,5 @@
+kind: helper
+name: cloud_storage-legacy_boundary
+call: {cloud_storage: {function: legacy_prefix_boundary, file_id: gs://bucket/prefix-evil/file, scheme: gs://, bucket: bucket/prefix, legacy: true}}
+env: {}
+compare: {ignore: []}
