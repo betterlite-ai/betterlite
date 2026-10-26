@@ -36,13 +36,15 @@ impl crate::helpers::Helper for Op {
                 new_headers,
             } => serde_json::to_value(
                 betterlite_router::routing_decision_headers::replace_complexity_headers(
-                    existing, new_headers,
+                    existing,
+                    new_headers,
                 ),
             ),
             Input::Quality { headers, request } => {
                 let mut headers = headers.clone();
                 betterlite_router::routing_decision_headers::apply_quality_headers(
-                    &mut headers, request,
+                    &mut headers,
+                    request,
                 );
                 serde_json::to_value(headers)
             }
