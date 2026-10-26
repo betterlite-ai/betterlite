@@ -82,7 +82,11 @@ fn request_records_cases(#[case] name: &str) {
                 Err(super::RequestRecordError::MetadataMutation { .. })
             ));
             let mut array_without_span = record(r#"{"metadata":["ordinary"]}"#);
-            assert!(RequestRecordProjection::safe_copy(&mut array_without_span, false).is_ok());
+            if let Err(copy_error) =
+                RequestRecordProjection::safe_copy(&mut array_without_span, false)
+            {
+                panic!("ordinary array metadata should copy: {copy_error}");
+            }
         }
         "independent_snapshot" => {
             let input =
