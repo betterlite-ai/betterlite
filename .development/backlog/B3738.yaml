@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Purview Graph authentication scopes and trusted identity
 status: todo
 depends_on: [B173, B171, B218, B732]
-file: null
+file: tasks/B3738-purview-graph-client.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py"
 parent: B106

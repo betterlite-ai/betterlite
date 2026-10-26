@@ -44,6 +44,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,host_model_identity}.rs
+    - crates/betterlite-openai/src/host_model_identity.rs
     - crates/betterlite-openai/src/host_model_identity/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/host_named_reply.rs

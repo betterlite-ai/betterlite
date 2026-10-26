@@ -27,6 +27,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,error,xai_realtime}.rs
+    - crates/betterlite-openai/src/xai_realtime.rs
     - crates/betterlite-openai/src/xai_realtime/**
     - tools/oracle/src/helpers/openai/xai_realtime.rs
     - tools/oracle/src/helpers/openai/xai_realtime/**

@@ -26,6 +26,7 @@ description: >-
 
 scope:
   paths:
+    - crates/betterlite-logging/src/mlflow.rs
     - crates/betterlite-logging/src/mlflow/**
   lint_tables: false
 

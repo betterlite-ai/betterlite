@@ -1,0 +1,248 @@
+id: B4122
+title: Code interpreter interception hooks and rerun plans
+description: >-
+  Build code-interpreter configuration, initial tool rewriting, activation gates and separate
+  chat/Responses rerun plans. Preserve server-minted request keys, identity/session keys,
+  buffered-stream markers, sequential tool execution and deletion on plan-building errors.
+
+  The pre-call hook strips interception metadata on root requests, rewrites the native code_interpreter
+  tool to a function tool, converts streams to buffered calls, and seeds session or request sandbox keys.
+  The gate decides whether to run a code-loop by detecting code-execution tool calls in the response.
+  Plan builders execute each tool call, build typed rerun messages and catch exceptions to clean up
+  on failure. Chat Completions and Responses dialects use different message/output shapes; both delete
+  request-scoped containers and preserve session-scoped ones through plan execution.
+
+  Configuration: enabled (default true), enabled_providers (unrestricted when absent),
+  sandbox_tool_name (none/None for no sandbox). Settings-level code_interpreter_interception_params
+  wins over callback-specific parameters; both resolve from proxy_config and schema/litellm settings.
+  Metadata keys: _code_interpreter_interception_active (boolean), _code_interpreter_interception_sandbox_key
+  (string), _code_interpreter_interception_session_scoped (boolean), _code_interpreter_interception_converted_stream
+  (boolean). Identity is user_api_key_hash; session scope activates when session_id is present in metadata.
+  Request-scoped sandbox keys use uuid.uuid4().hex; session-scoped keys are identity:session_id or session_id.
+
+scope:
+  paths:
+  - crates/betterlite-openai/src/code_interpreter_plans.rs
+  - crates/betterlite-openai/src/code_interpreter_plans/**
+  - crates/betterlite-models/src/code_interpreter_config.rs
+  - crates/betterlite-models/src/code_interpreter_config/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L210-L235
+  why: "CodeInterpreterInterceptionLogger class declaration and __init__ with enabled, enabled_providers, sandbox_tool_name and sandbox_config."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L237-L257
+  why: "Configuration loading from_config_yaml and initialize_from_proxy_config with fallback to callback parameters."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L259-L304
+  why: "Pre-call hook: stripping metadata on root requests, tool rewriting, stream conversion and metadata writing."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L387-L397
+  why: "_resolve_provider using custom_llm_provider field or litellm.get_llm_provider from model string."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L399-L424
+  why: "Gate decision: checking enabled state, interception activation, provider filter and detecting tool calls."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L426-L512
+  why: "Responses plan builder: cache pruning, container get/create, sequential tool execution, typed call records and optional params filtering."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L514-L567
+  why: "Chat Completions plan builder: cache pruning, container get/create, tool result messages and plan assembly."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L587-L612
+  why: "Tool result message building for Chat Completions with tool_call_id and code_interpreter_call records."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/code_interpreter_interception.py#L1-L22
+  why: "CodeInterpreterInterceptionConfig type definition with enabled, enabled_providers and sandbox_tool_name fields."
+dod:
+- text: CodeInterpreterInterceptionLogger initializes with enabled, enabled_providers (list or None), sandbox_tool_name (string or None) and sandbox_config (protocol or None), storing all in instance fields.
+  proof:
+  - logger-initialization
+- text: from_config_yaml constructs the logger from CodeInterpreterInterceptionConfig dict, extracting enabled (default true), enabled_providers and sandbox_tool_name.
+  proof:
+  - yaml-configuration
+- text: initialize_from_proxy_config reads proxy settings, preferring litellm_settings code_interpreter_interception_params over callback_specific_params, and falls back to empty config when both are missing.
+  proof:
+  - proxy-configuration
+- text: async_pre_call_deployment_hook strips interception metadata on root requests (_agentic_loop_depth is None/falsy), returns None when disabled/wrong call type/no tools/no code_interpreter tool.
+  proof:
+  - strip-root-metadata
+- text: async_pre_call_deployment_hook sets _code_interpreter_interception_active to true, seeds sandbox key (identity:session_id if session_scoped, uuid.uuid4().hex otherwise), marks session scope with _session_scoped, and writes all to litellm_metadata.
+  proof:
+  - sandbox-key-seeding
+- text: async_pre_call_deployment_hook converts stream=true to stream=false and sets _converted_stream marker when stream is present.
+  proof:
+  - stream-conversion
+- text: async_pre_call_deployment_hook rewrites each code_interpreter tool to a function tool using _get_function_tool, preserving all other tools in list order.
+  proof:
+  - tool-rewriting
+- text: async_pre_call_deployment_hook rewrites tool_choice when it targets code_interpreter to the function tool choice, leaving other tool_choice values unchanged.
+  proof:
+  - tool-choice-rewriting
+- text: _resolve_provider extracts custom_llm_provider if present and non-empty, falls back to litellm.get_llm_provider(model) returning the provider string, returns None on exception or non-string model.
+  proof:
+  - provider-resolution
+- text: "async_should_run_agentic_loop returns (false, {}) when disabled, interception not active in kwargs, or provider not in enabled_providers list; returns (true, {tool_calls: <list>}) when code-execution calls are detected."
+  proof:
+  - gate-conditions
+- text: async_should_run_agentic_loop detects code-execution tool calls using the appropriate extractor per API surface (chat vs responses dialect).
+  proof:
+  - gate-detection
+- text: async_build_agentic_loop_plan prunes the sandbox cache, extracts tool_calls/sandbox_key/session scope, gets or creates container, and executes each tool call sequentially, building typed CodeInterpreterCall records.
+  proof:
+  - plan-execution-sequence
+- text: Responses plan builder builds code_interpreter_calls list with id (ci_<uuid>), type, status completed, code (from _parse_code), container_id and outputs (logs if stdout present).
+  proof:
+  - code-interpreter-calls
+- text: Responses plan builder constructs input_list as array of function_call and function_call_output dicts, maintaining order of execution and stdout/error output.
+  proof:
+  - responses-message-format
+- text: Responses plan builder deletes container on exception (any Exception type, not caught selectively), then re-raises the exception for caller handling.
+  proof:
+  - error-cleanup
+- text: Responses plan builder returns AgenticLoopPlan with run_agentic_loop=true, request_patch (model, messages, tools, optional_params, kwargs), and metadata (tool_type, sandbox_key, is_session_scoped, code_interpreter_calls).
+  proof:
+  - plan-assembly-responses
+- text: _build_chat_completion_agentic_loop_plan prunes cache, extracts tool_calls/sandbox_key/session scope, gets or creates container, and builds tool result messages sequentially.
+  proof:
+  - chat-plan-sequence
+- text: _build_chat_completion_tool_result executes tool call and returns tuple (ChatCompletionToolMessage dict, CodeInterpreterCall record), using tool_call.id or call_id or uuid.uuid4().hex as tool_call_id.
+  proof:
+  - tool-result-pair
+- text: Chat Completions plan builder constructs messages list as original + assistant message with all tool calls + tool result messages for each execution.
+  proof:
+  - chat-message-format
+- text: Chat Completions plan builder returns AgenticLoopPlan with response_format "openai" in metadata, distinguishing the dialect for post-hook processing.
+  proof:
+  - plan-assembly-chat
+- text: Plan builders call _get_followup_tools to preserve non-code_interpreter tools and rewrite code_interpreter tools as function tools per call type.
+  proof:
+  - followup-tools-rewrite
+- text: Plan builders call _get_followup_optional_params to drop tools key and tool_choice only when tool_choice targets code_interpreter.
+  proof:
+  - followup-params-filtering
+- text: Plan builders call _filter_agentic_loop_kwargs to exclude litellm_logging_obj, acompletion, and interception-internal keys from follow-up kwargs.
+  proof:
+  - followup-kwargs-filtering
+- text: Sandbox key extraction via _extract_sandbox_key returns the string value of _sandbox_key from kwargs, or None if absent/non-string.
+  proof:
+  - sandbox-key-retrieval
+- text: Session scope detection reads _session_scoped from kwargs via bool(kwargs.get(_SESSION_SCOPED_KEY)) in plan builders, evaluating to true when present and truthy, false otherwise.
+  proof:
+  - session-scope-flag
+- text: Container identity is user_api_key_hash for session-scoped containers, None for request-scoped; used for LRU eviction when identity is non-None.
+  proof:
+  - identity-tracking
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: logger-initialization
+    why: CodeInterpreterInterceptionLogger.__init__ is missing or does not store all five parameters.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::initialization::init/)'
+  - id: yaml-configuration
+    why: from_config_yaml is missing or does not extract enabled, enabled_providers and sandbox_tool_name from config.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::configuration::from_yaml/)'
+  - id: proxy-configuration
+    why: initialize_from_proxy_config is missing or does not handle litellm_settings and callback_specific_params fallback correctly.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::configuration::from_proxy/)'
+  - id: strip-root-metadata
+    why: async_pre_call_deployment_hook does not strip interception metadata on root requests or return early for disabled/wrong conditions.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::pre_call::root_metadata/)'
+  - id: sandbox-key-seeding
+    why: Sandbox key is not seeded correctly (identity:session_id or uuid.uuid4().hex) or not written to metadata.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::pre_call::sandbox_key/)'
+  - id: stream-conversion
+    why: Stream conversion does not set stream=false and _converted_stream marker when stream is present.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::pre_call::stream/)'
+  - id: tool-rewriting
+    why: Code_interpreter tools are not rewritten to function tools or other tools are not preserved.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::pre_call::tool_rewriting/)'
+  - id: tool-choice-rewriting
+    why: tool_choice targeting code_interpreter is not rewritten to function tool choice.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::pre_call::tool_choice/)'
+  - id: provider-resolution
+    why: _resolve_provider does not extract custom_llm_provider or fall back to litellm.get_llm_provider correctly.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::provider::resolution/)'
+  - id: gate-conditions
+    why: async_should_run_agentic_loop does not correctly check enabled/interception/provider conditions.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::gate::conditions/)'
+  - id: gate-detection
+    why: async_should_run_agentic_loop does not detect code-execution tool calls using the correct dialect.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::gate::detection/)'
+  - id: plan-execution-sequence
+    why: Responses plan builder does not cache-prune, get/create container, or execute tool calls sequentially.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::responses_plan::execution/)'
+  - id: code-interpreter-calls
+    why: CodeInterpreterCall records are missing required fields or do not match the typed shape.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::responses_plan::call_records/)'
+  - id: responses-message-format
+    why: Responses input_list does not build function_call and function_call_output dicts in correct order.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::responses_plan::message_format/)'
+  - id: error-cleanup
+    why: Container is not deleted on exception before re-raising.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::error_handling::cleanup/)'
+  - id: plan-assembly-responses
+    why: Responses AgenticLoopPlan is missing run_agentic_loop, request_patch or metadata fields.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::responses_plan::assembly/)'
+  - id: chat-plan-sequence
+    why: Chat Completions plan builder does not follow cache-prune, container, tool result sequence.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::chat_plan::execution/)'
+  - id: tool-result-pair
+    why: _build_chat_completion_tool_result does not return (ChatCompletionToolMessage, CodeInterpreterCall) tuple with correct fields.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::chat_plan::tool_result/)'
+  - id: chat-message-format
+    why: Chat message list does not combine original + assistant + tool result messages in correct order.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::chat_plan::message_format/)'
+  - id: plan-assembly-chat
+    why: Chat Completions AgenticLoopPlan is missing response_format "openai" or other fields.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::chat_plan::assembly/)'
+  - id: followup-tools-rewrite
+    why: _get_followup_tools does not preserve non-code_interpreter tools or rewrite code_interpreter tools.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::followup::tools/)'
+  - id: followup-params-filtering
+    why: _get_followup_optional_params does not drop tools and tool_choice correctly.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::followup::params/)'
+  - id: followup-kwargs-filtering
+    why: _filter_agentic_loop_kwargs does not exclude logging globals and interception keys.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::followup::kwargs/)'
+  - id: sandbox-key-retrieval
+    why: _extract_sandbox_key does not return string value or None.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::extraction::sandbox_key/)'
+  - id: session-scope-flag
+    why: Session scope detection does not correctly read _session_scoped from kwargs.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::extraction::session_scope/)'
+  - id: identity-tracking
+    why: Container identity is not correctly extracted or passed to cache operations.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_interpreter_plans::extraction::identity/)'
+oracle_cases: []
+deviations:
+- what: async_pre_call_deployment_hook strips metadata at root agentic depth (when _agentic_loop_depth is falsy), not on every call; subsequent iterations preserve previous metadata.
+  why: Metadata markers must not leak between agentic-loop iterations, but root requests start with clean state.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L262-L265
+- what: Session-scoped sandbox keys use identity:session_id when identity is present (non-empty user_api_key_hash), session_id alone when identity is empty, and uuid for request scope.
+  why: Billing attribution ties sandbox lifecycle to user keys when available; anonymous requests get request-scoped sandboxes.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L285-L291
+- what: enabled_providers filter is checked both in the pre-call hook and the gate decision; absent field means no provider filtering.
+  why: Early exit in pre-call saves work rewriting tools; gate re-checks to handle manual override scenarios.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L275-L276,#L413-L414
+- what: Plan builders delete the container on any exception (Exception, not a specific subtype), re-raising after delete so the exception reaches the caller.
+  why: Container cleanup must happen unconditionally to avoid resource leak and orphaned sandboxes; errors propagate up for caller handling.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L487-L489,#L540-L542
+- what: Responses plan builds the input_list with function_call (model call) then function_call_output (result) for each tool call, preserving sequential order even with multiple calls.
+  why: Models expect call/output pairing in conversation order; separate lists would lose causality.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L456-L486
+- what: Chat Completions plan builds an assistant message before tool result messages, reconstructing the conversation shape from function_call fragments.
+  why: Chat API expects role=assistant with nested tool calls before role=tool messages; the fragments carry partial IDs that must be reconstructed.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L548-L556
+out_of_scope:
+- Tool call detection (B4120 recognizes tool names and extracts calls).
+- Sandbox lifecycle operations (B4121 manages container create/delete, cache expiry and LRU eviction).
+- Execution of tool calls (B4121's _run_tool_call parses arguments and executes code).
+- Post-hook response merging (B4121's async_post_agentic_loop_response_hook inserts code_interpreter_calls).
+- Provider model name resolution (B174 provides get_llm_provider).
+- AgenticLoopPlan and AgenticLoopRequestPatch type definitions (external contracts).
+pitfalls:
+- enabled_providers is None when absent, not an empty list; filtering is skipped only when the field is None, not when it is empty.
+- Stream conversion happens before tool rewriting and happens only once per root request, not per iteration.
+- Session scope is determined by presence of session_id in metadata, not by a separate session=true flag; the _session_scoped key records this state for later cleanup checks.
+- "Sandbox key construction with identity: when identity is non-empty, the key is identity:session_id; when identity is empty string, the key is session_id alone (no colon prefix)."
+- Tool_choice rewriting happens only when the dict is present and its type/name/function.name targets code_interpreter; other values pass through untouched (true, false, "none" strings).
+- The gate checks both disabled/provider filters; an enabled=false logger bypasses both pre-call and gate, so no rewritten tools exist even if the gate is bypassed.
+- Tool result messages use tool_call.id if present, else call_id, else a new uuid; the three cases must all be checked in order.
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 1

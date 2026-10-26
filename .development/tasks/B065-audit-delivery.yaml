@@ -45,7 +45,6 @@ scope:
     - crates/betterlite-server/src/audit.rs
     - crates/betterlite-server/src/audit/**
     - crates/betterlite-logging/Cargo.toml
-    - crates/betterlite-logging/src/lib.rs
     - crates/betterlite-logging/src/audit.rs
     - crates/betterlite-logging/src/audit/**
     - crates/betterlite-logging/src/registry.rs

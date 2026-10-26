@@ -1,0 +1,188 @@
+id: B3775
+title: Headroom retrieval plans and HiddenLayer authentication
+description: >-
+  Implement Headroom guardrail's agentic retrieval loop that runs after the model's initial response,
+  building the plan to follow up with retrieved content when headroom_retrieve tool calls are made.
+  Support Responses API, Anthropic Messages API, and OpenAI chat-style completion response formats,
+  rebuilding follow-up messages that echo the retrieve tool calls and pair them with their retrieved
+  content. Validate retrieved hashes against the per-call issued-hash set from compression (built by B3774)
+  to prevent hash forgery: only hashes issued by this request's own compression call are honored, scoped by
+  litellm_call_id. Implement _call_retrieve to fetch original content from /v1/retrieve, handling timeouts
+  and 404 responses that indicate expired content.
+
+
+  Build HiddenLayer guardrail authentication for both v1 (HiddenlayerGuardrail) and v2 (HiddenlayerGuardrailV2)
+  endpoints. For SaaS deployments (hiddenlayer.ai hostname), acquire a JWT token via OAuth2 client credentials
+  flow before the first request and refresh it when a 401 response indicates expiry. Implement is_saas to detect
+  SaaS based on URL hostname, and _get_jwt to exchange credentials for tokens synchronously during init. Store the
+  refresh lambda for auto-refresh during message evaluation. On-premises deployments skip JWT initialization and
+  use no Authorization header.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/headroom.rs
+    - crates/betterlite-guardrails/src/headroom/**
+    - crates/betterlite-guardrails/src/hiddenlayer.rs
+    - crates/betterlite-guardrails/src/hiddenlayer/**
+    - tools/oracle/cases/guardrails/headroom/retrieval/**
+    - tools/oracle/cases/guardrails/hiddenlayer/authentication/**
+    - crates/betterlite-config/src/sections/headroom_hiddenlayer_support.rs
+    - crates/betterlite-config/src/sections/headroom_hiddenlayer_support/**
+    - tools/oracle/helpers/b3775.py
+    - tools/oracle/helpers/b3775/**
+    - tools/oracle/src/helpers/guardrails/b3775.rs
+    - tools/oracle/src/helpers/guardrails/b3775/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L366-L401
+    why: Extract headroom_retrieve tool calls from response and build follow-up assistant message in OpenAI format.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L403-L411
+    why: Response format detection for Responses API and Anthropic Messages API.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L414-L447
+    why: Build Anthropic-format follow-up messages with tool_use blocks and tool results.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L450-L474
+    why: Build Responses API format follow-up items with function_call and function_call_output pairs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L728-L765
+    why: Content retrieval from service by hash, handling 404 expiry and error cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L899-L916
+    why: Detect when agentic loop should run based on presence of headroom_retrieve calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L918-L998
+    why: Build complete agentic loop plan with follow-up messages in correct format, hash validation, and model/token parameter forwarding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L184-L210
+    why: SaaS detection by hostname and JWT token acquisition via OAuth2 client credentials.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L223-L262
+    why: HiddenlayerGuardrail v1 constructor with JWT initialization for SaaS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L397-L420
+    why: JWT token refresh logic on 401 response in v1 _call_hiddenlayer method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L434-L472
+    why: HiddenlayerGuardrailV2 constructor with JWT initialization for SaaS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L604-L626
+    why: JWT token refresh logic on 401 response in v2 _call_hiddenlayer method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/headroom.py
+    why: HeadroomGuardrailConfigModel configuration schema.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/hiddenlayer.py
+    why: HiddenlayerGuardrailConfigModel and HiddenlayerMessages enum.
+dod:
+  - text: Agentic loop runs only when the response contains headroom_retrieve tool calls extracted via get_tool_calls_from_response (from B226).
+    proof: [headroom-retrieval-tests]
+  - text: OpenAI-format follow-up messages echo the retrieve tool calls with role assistant, paired with tool-result messages keyed by tool_call_id.
+    proof: [oracle]
+  - text: Anthropic-format follow-up messages rebuild assistant message with tool_use blocks matching the retrieve calls and user message with tool_result blocks.
+    proof: [oracle]
+  - text: Responses API follow-up items pair each retrieve function_call with a matching function_call_output by call_id.
+    proof: [oracle]
+  - text: Assistant text from the response is preserved and included in follow-up messages unless empty.
+    proof: [oracle]
+  - text: Retrieved content is fetched by calling _call_retrieve with hash and optional query parameter from the tool call arguments.
+    proof: [headroom-retrieval-tests]
+  - text: Hash validation rejects hashes not in the per-call issued-hash set scoped by litellm_call_id; rejected hashes are logged with warning.
+    proof: [headroom-retrieval-tests]
+  - text: Timeout and connection errors in _call_retrieve log a warning and return an error message string without raising.
+    proof: [oracle]
+  - text: HTTP 404 responses return an error message indicating hash expiry; other status codes log a warning and return an error message.
+    proof: [oracle]
+  - text: Model name from the response is forwarded in the agentic loop plan when available from logging object; falls back to request model.
+    proof: [oracle]
+  - text: max_tokens parameter is forwarded from anthropic_messages_optional_request_params when present, falling back to kwargs.
+    proof: [oracle]
+  - text: Optional parameters from anthropic_messages_optional_request_params are forwarded except max_tokens, which is handled separately.
+    proof: [oracle]
+  - text: On-premises HiddenLayer deployments (non-SaaS hostname) skip JWT token initialization and send no Authorization header.
+    proof: [oracle]
+  - text: SaaS HiddenLayer deployments (hiddenlayer.ai hostname) require both api_id and api_key, raising RuntimeError if either is missing.
+    proof: [hiddenlayer-auth-tests]
+  - text: JWT token is acquired synchronously via OAuth2 client credentials flow during constructor using credentials from config or environment.
+    proof: [hiddenlayer-auth-tests]
+  - text: JWT token refresh is stored as a lambda function for later invocation when 401 response indicates token expiry.
+    proof: [hiddenlayer-auth-tests]
+  - text: _call_hiddenlayer catches HTTPStatusError with status 401, calls refresh_jwt_func to get a new token, and retries the request with the new token.
+    proof: [oracle]
+  - text: Authorization header is set to "Bearer {jwt_token}" when jwt_token is present in both v1 and v2 HiddenLayer guardrails.
+    proof: [oracle]
+  - text: Timeout parameter passed to constructor is used for JWT token acquisition; defaults to 30 seconds if not provided.
+    proof: [hiddenlayer-auth-tests]
+checks:
+  optional: []
+  commands:
+    - id: headroom-retrieval-tests
+      why: retrieval hook, agentic loop detection, or hash validation fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^headroom_retrieval::|^headroom_agentic_loop::/)'
+    - id: hiddenlayer-auth-tests
+      why: JWT initialization, token refresh or SaaS detection fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer_authentication::|^hiddenlayer_jwt_refresh::/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/headroom/retrieval/agentic-loop-detects-retrieve-calls.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/agentic-loop-skips-no-retrieve-calls.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/openai-follow-up-format.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/openai-follow-up-preserves-assistant-text.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/anthropic-follow-up-format.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/anthropic-follow-up-preserves-assistant-text.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/responses-follow-up-format.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/responses-follow-up-function-call-output.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/retrieve-content-by-hash.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/retrieve-with-query-parameter.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/retrieve-hash-validation-issued.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/retrieve-hash-validation-rejected.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/retrieve-hash-expired-404.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/retrieve-timeout-error.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/retrieve-connection-error.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/agentic-plan-model-from-logging.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/agentic-plan-model-fallback-request.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/agentic-plan-max-tokens-preserved.yaml
+  - tools/oracle/cases/guardrails/headroom/retrieval/agentic-plan-optional-params-forwarded.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/authentication/saas-requires-api-id.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/authentication/saas-requires-api-key.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/authentication/saas-jwt-acquired-init.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/authentication/on-prem-no-jwt-init.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/authentication/jwt-refresh-on-401.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/authentication/jwt-bearer-header.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/authentication/jwt-timeout-default-30s.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/authentication/jwt-timeout-custom.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/authentication/hiddenlayer-v1-jwt-init.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/authentication/hiddenlayer-v2-jwt-init.yaml
+deviations:
+  - what: Hash validation is scoped to hashes issued by the current request's compression call via litellm_call_id, rejecting hashes not in that set.
+    why: LiteLLM validates any hash-shaped string found in message text; betterlite prevents hash forgery by only accepting hashes this request issued via compression, per-call validated.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L942-L952
+  - what: JWT token refresh happens synchronously in the _call_hiddenlayer retry path; if refresh fails, the error is raised to the caller.
+    why: LiteLLM acquires JWT tokens synchronously at init so no per-request flow is needed; betterlite reuses this pattern for refresh to keep the integration simple and maintain error transparency.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L254-L259
+  - what: On-premises HiddenLayer deployments do not initialize or store a JWT token; the Authorization header is omitted from requests.
+    why: JWT is only needed for SaaS; on-premises deployments may use API key in URL, basic auth, or other schemes. Betterlite checks the hostname to decide, following LiteLLM's pattern.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L239-L252
+out_of_scope:
+  - Tool-call extraction (get_tool_calls_from_response, has_headroom_retrieve_tool, _extract_headroom_tool_calls) provided by B226.
+  - Compression service call and message flattening (apply_guardrail's compression path, _call_compress, _flatten_messages_for_compression) provided by B3774.
+  - Protected message handling and compression failure details provided by B3774.
+  - Issued-hash tracking and pruning (_issued_hashes_by_call_id, _prune_expired_hashes, ccr_hashes recording) provided by B3774.
+  - Bypass header detection and background request skipping provided by B3774.
+  - Initialization from guardrail registry (owned by B107).
+  - ">-
+    CustomGuardrail base class lifecycle (CustomGuardrail.__init__, supported_event_hooks, log_guardrail_information decorator):
+    Framework base class for guardrail integration; no assigned task owner yet (B104 outline has no task file). Required for initialization and lifecycle; infrastructure dependency."
+  - ">-
+    HTTP client management (AsyncHTTPHandler, get_async_httpx_client): Infrastructure layer that provides pooled httpx clients with timeout handling;
+    no assigned task owner yet. Injected as dependency rather than constructed here."
+  - ">-
+    Logging utilities (verbose_proxy_logger, add_guardrail_to_applied_guardrails_header): Logging infrastructure; no assigned task owner yet.
+    Used as injected dependencies."
+pitfalls:
+  - ">-
+    Hash validation rejects hashes not in the issued-hash set from the current request, scoped by litellm_call_id.
+    A hash issued for one request will be rejected if echoed back in a different request, even if it was previously valid."
+  - ">-
+    Follow-up message construction differs by response format: OpenAI format uses role assistant with tool_calls,
+    Anthropic uses tool_use blocks in an assistant message and tool_result blocks in a user message, Responses API uses
+    function_call paired with function_call_output."
+  - ">-
+    JWT token refresh happens only on 401 status in _call_hiddenlayer; other status codes like 403 or 500 are not
+    retried and raise immediately."
+  - ">-
+    SaaS detection uses hostname matching hiddenlayer.ai; custom deployments with other hostnames skip JWT
+    initialization even if credentials are provided."
+  - ">-
+    Retrieved content is returned as a string or an error message; if the service returns non-string JSON or a
+    structure with no original_content field, it is stringified without decoding."
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 2

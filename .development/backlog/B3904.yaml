@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Langfuse REST prompts and project lookups
 status: todo
 depends_on: [B3900, B173]
-file: null
+file: tasks/B3904-langfuse-rest.yaml
 covers:
   - "litellm/integrations/langfuse/langfuse_sdk.py"
 parent: B112

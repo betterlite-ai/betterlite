@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Watsonx Orchestrate credentials and A2A record conversion
 status: todo
 depends_on: [B173, B198]
-file: null
+file: tasks/B4807-watsonx-a2a-credentials.yaml
 covers:
   - "litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py"
   - "litellm/a2a_protocol/providers/watsonx_orchestrate/transformation.py"
