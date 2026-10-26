@@ -1,7 +1,7 @@
 id: B3660
 milestone: M6 guardrails
 title: Guardrail identity and PII configuration vocabulary
-status: todo
+status: done
 depends_on: []
 file: tasks/B3660-guardrail-identity.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/base.py"
 parent: B104
 split_from: B104
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 175
