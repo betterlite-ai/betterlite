@@ -20,7 +20,7 @@ def usage_values(input_value: dict[str, Json]) -> tuple[int, int, int, int]:
         usage = input_value.get("response_api_usage")
     if not isinstance(usage, dict):
         return 0, 0, 0, 0
-    response_api = input_value.get("usage_kind") == "response_api"
+    response_api = input_value.get("usage_kind") in ("response_api", "mapping")
     input_tokens = integer(usage.get("input_tokens" if response_api else "prompt_tokens"))
     output_tokens = integer(usage.get("output_tokens" if response_api else "completion_tokens"))
     total_tokens = integer(usage.get("total_tokens"))

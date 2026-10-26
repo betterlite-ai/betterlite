@@ -82,26 +82,30 @@ pub enum ResponseObject {
 pub enum ResponseUsage<'usage> {
     Usage(&'usage Usage),
     ResponseApi(&'usage ResponseAPIUsage),
+    Mapping(&'usage Usage),
 }
 
 #[must_use]
-pub const fn get_rate_limit_type(rate_limit_type: TokenRateLimitType) -> TokenRateLimitType {
-    rate_limit_type
+pub const fn get_rate_limit_type(rate_limit_type: TokenRateLimitType) -> &'static str {
+    match rate_limit_type {
+        TokenRateLimitType::Output => OUTPUT,
+        TokenRateLimitType::Input => INPUT,
+        TokenRateLimitType::Total => TOTAL,
+    }
 }
 
 #[must_use]
 pub fn response_usage(response: &ResponseObject) -> Option<ResponseUsage<'_>> {
     match response {
-        ResponseObject::Usage(usage) | ResponseObject::Mapping(usage) => {
-            Some(ResponseUsage::Usage(usage))
-        }
+        ResponseObject::Usage(usage) => Some(ResponseUsage::Usage(usage)),
+        ResponseObject::Mapping(usage) => Some(ResponseUsage::Mapping(usage)),
         ResponseObject::ResponseApi(usage) => Some(ResponseUsage::ResponseApi(usage)),
         ResponseObject::WithUsage(usage) => usage.as_ref().map(ResponseUsage::Usage),
     }
 }
 
 fn cached_tokens(usage: &Usage) -> u64 {
-    usage
+    let cached = usage
         .cached_tokens
         .or_else(|| {
             usage
@@ -110,14 +114,16 @@ fn cached_tokens(usage: &Usage) -> u64 {
                 .map(|details| details.cached_tokens)
         })
         .or(usage.cache_read_input_tokens)
-        .unwrap_or(0)
+        .unwrap_or(0);
+    if cached == 0 { 0 } else { cached }
 }
 
 fn cached_response_api_tokens(usage: &ResponseAPIUsage) -> u64 {
-    usage
+    let cached = usage
         .input_tokens_details
         .as_ref()
-        .map_or(0, |details| details.cached_tokens)
+        .map_or(0, |details| details.cached_tokens);
+    if cached == 0 { 0 } else { cached }
 }
 
 #[must_use]
@@ -143,6 +149,14 @@ pub fn get_total_tokens_from_usage(
             };
             (count, cached_response_api_tokens(usage))
         }
+        ResponseUsage::Mapping(usage) => {
+            let count = match rate_limit_type {
+                TokenRateLimitType::Output => usage.output_tokens,
+                TokenRateLimitType::Input => usage.input_tokens,
+                TokenRateLimitType::Total => usage.total_tokens,
+            };
+            (count, cached_tokens(usage))
+        }
     };
     match rate_limit_type {
         TokenRateLimitType::Output => count,
@@ -166,6 +180,13 @@ pub const fn aggregate_only_total_tokens(source: Option<ResponseUsage<'_>>) -> u
             }
         }
         ResponseUsage::ResponseApi(usage) => {
+            if usage.input_tokens > 0 || usage.output_tokens > 0 {
+                0
+            } else {
+                usage.total_tokens
+            }
+        }
+        ResponseUsage::Mapping(usage) => {
             if usage.input_tokens > 0 || usage.output_tokens > 0 {
                 0
             } else {
@@ -206,6 +227,11 @@ pub fn reconcile_io_usage(response: &ResponseObject) -> (u64, u64, bool) {
             usage.input_tokens,
             usage.output_tokens,
             cached_response_api_tokens(usage),
+        ),
+        ResponseUsage::Mapping(usage) => (
+            usage.input_tokens.max(usage.prompt_tokens),
+            usage.output_tokens.max(usage.completion_tokens),
+            cached_tokens(usage),
         ),
     };
     if input == 0 && output == 0 {
