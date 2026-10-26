@@ -52,9 +52,10 @@ pub(super) fn summarize_person(
     let cost_per_hour = spend
         .filter(|_| complete_scope && eligible && hours > Decimal::ZERO)
         .map(|total| {
-            total.checked_div(hours).ok_or(SummaryError::Overflow {
+            let ratio = total.checked_div(hours).ok_or(SummaryError::Overflow {
                 figure: "cost per hour",
-            })
+            })?;
+            Ok(ratio.normalize())
         })
         .transpose()?;
     Ok(ROIPersonSummary {

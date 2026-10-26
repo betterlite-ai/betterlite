@@ -271,7 +271,7 @@ fn pull_summary(
         ],
     ),
     DEV,
-    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":7.5,"hours":2.0,"prs":4,"estimated_prs":2,"pending_prs":2,"match_methods":["profile email"],"eligible":false,"cost_per_hour":null}"#
+    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":7.5,"hours":2,"prs":4,"estimated_prs":2,"pending_prs":2,"match_methods":["profile email"],"eligible":false,"cost_per_hour":null}"#
 )]
 #[case::keeps_first_logins_and_methods_in_order(
     &[],
@@ -284,13 +284,13 @@ fn pull_summary(
         ],
     ),
     DEV,
-    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["Bob","alice"],"spend":1.0,"hours":3.0,"prs":3,"estimated_prs":3,"pending_prs":0,"match_methods":["commit email","profile email"],"eligible":true,"cost_per_hour":0.3333333333333333}"#
+    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["Bob","alice"],"spend":1,"hours":3,"prs":3,"estimated_prs":3,"pending_prs":0,"match_methods":["commit email","profile email"],"eligible":true,"cost_per_hour":0.3333333333333333333333333333}"#
 )]
 #[case::no_spend_is_not_eligible(
     &[("dev", DEV)],
     report(vec![], vec![pull("dev", &[], Some(1.0_f64))]),
     DEV,
-    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":null,"hours":1.0,"prs":1,"estimated_prs":1,"pending_prs":0,"match_methods":["manual"],"eligible":false,"cost_per_hour":null}"#
+    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":null,"hours":1,"prs":1,"estimated_prs":1,"pending_prs":0,"match_methods":["manual"],"eligible":false,"cost_per_hour":null}"#
 )]
 #[case::no_estimated_pull_is_not_eligible(
     &[],
@@ -299,7 +299,7 @@ fn pull_summary(
         vec![with_status(pull("dev", &[DEV], None), ROIEstimateStatus::Error)],
     ),
     DEV,
-    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":1.0,"hours":0.0,"prs":1,"estimated_prs":0,"pending_prs":1,"match_methods":["profile email"],"eligible":false,"cost_per_hour":null}"#
+    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":1,"hours":0,"prs":1,"estimated_prs":0,"pending_prs":1,"match_methods":["profile email"],"eligible":false,"cost_per_hour":null}"#
 )]
 #[case::pending_pull_is_not_eligible(
     &[],
@@ -311,31 +311,31 @@ fn pull_summary(
         ],
     ),
     DEV,
-    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":1.0,"hours":1.0,"prs":2,"estimated_prs":1,"pending_prs":1,"match_methods":["profile email"],"eligible":false,"cost_per_hour":null}"#
+    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":1,"hours":1,"prs":2,"estimated_prs":1,"pending_prs":1,"match_methods":["profile email"],"eligible":false,"cost_per_hour":null}"#
 )]
 #[case::incomplete_scope_has_no_cost_per_hour(
     &[],
     scoped(vec!["o/gone"], one_person("6", Some(3.0_f64))),
     DEV,
-    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":6.0,"hours":3.0,"prs":1,"estimated_prs":1,"pending_prs":0,"match_methods":["profile email"],"eligible":true,"cost_per_hour":null}"#
+    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":6,"hours":3,"prs":1,"estimated_prs":1,"pending_prs":0,"match_methods":["profile email"],"eligible":true,"cost_per_hour":null}"#
 )]
 #[case::empty_unavailable_list_is_complete(
     &[],
     scoped(vec![], one_person("6", Some(3.0_f64))),
     DEV,
-    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":6.0,"hours":3.0,"prs":1,"estimated_prs":1,"pending_prs":0,"match_methods":["profile email"],"eligible":true,"cost_per_hour":2.0}"#
+    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":6,"hours":3,"prs":1,"estimated_prs":1,"pending_prs":0,"match_methods":["profile email"],"eligible":true,"cost_per_hour":2}"#
 )]
 #[case::zero_hours_has_no_cost_per_hour(
     &[],
     one_person("6", None),
     DEV,
-    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":6.0,"hours":0.0,"prs":1,"estimated_prs":1,"pending_prs":0,"match_methods":["profile email"],"eligible":true,"cost_per_hour":null}"#
+    r#"{"id":"dev@example.com","email":"dev@example.com","logins":["dev"],"spend":6,"hours":0,"prs":1,"estimated_prs":1,"pending_prs":0,"match_methods":["profile email"],"eligible":true,"cost_per_hour":null}"#
 )]
 #[case::first_spend_email_wins_even_when_invalid(
     &[],
     report(vec![spend("user-1", "dev@localhost", "1"), spend("user-1", "", "1")], vec![]),
     "gateway:user-1",
-    r#"{"id":"gateway:user-1","email":"","logins":[],"spend":2.0,"hours":0.0,"prs":0,"estimated_prs":0,"pending_prs":0,"match_methods":[],"eligible":false,"cost_per_hour":null}"#
+    r#"{"id":"gateway:user-1","email":"","logins":[],"spend":2,"hours":0,"prs":0,"estimated_prs":0,"pending_prs":0,"match_methods":[],"eligible":false,"cost_per_hour":null}"#
 )]
 fn person_summary(
     #[case] pairs: &[(&str, &str)],
@@ -404,7 +404,7 @@ fn trend_counts_only_the_eligible_cohort() {
     let trend = serde_json::to_string(&summary(&team()).trend).unwrap();
     assert_eq!(
         trend,
-        r#"[{"date":"2026-01-01","spend":3.0,"hours":0.0,"prs":0},{"date":"2026-01-02","spend":1.0,"hours":2.0,"prs":1},{"date":"2026-01-04","spend":0.0,"hours":0.0,"prs":0}]"#
+        r#"[{"date":"2026-01-01","spend":3,"hours":0,"prs":0},{"date":"2026-01-02","spend":1,"hours":2,"prs":1},{"date":"2026-01-04","spend":0,"hours":0,"prs":0}]"#
     );
 }
 
@@ -413,7 +413,7 @@ fn metrics_split_the_cohort_from_totals() {
     let metrics = serde_json::to_string(&summary(&team()).metrics).unwrap();
     assert_eq!(
         metrics,
-        r#"{"matched_spend":4.0,"output_hours":2.0,"total_spend":9.0,"total_output_hours":3.0,"excluded_spend":5.0,"cost_per_hour":2.0,"hours_per_dollar":0.5,"merged_prs":3,"estimated_prs":2,"matched_prs":1,"cohort_people":1,"people_with_prs":2,"pending_prs":1}"#
+        r#"{"matched_spend":4,"output_hours":2,"total_spend":9,"total_output_hours":3,"excluded_spend":5,"cost_per_hour":2,"hours_per_dollar":0.5,"merged_prs":3,"estimated_prs":2,"matched_prs":1,"cohort_people":1,"people_with_prs":2,"pending_prs":1}"#
     );
 }
 
@@ -488,7 +488,7 @@ fn report_json(source: Option<ROIReport>) -> String {
     serde_json::to_string(&response).unwrap()
 }
 
-const REPORT_JSON: &str = r#"{"report":{"id":null,"mode":"live","start":"2026-01-01","end":"2026-01-08","synced_at":"2026-01-08T00:00:00Z","repos":["o/r"],"estimator_model":"model","estimator_prompt":"prompt","warnings":[],"effort_basis":"basis","metrics":{"matched_spend":2.0,"output_hours":3.0,"total_spend":2.0,"total_output_hours":3.0,"excluded_spend":0.0,"cost_per_hour":0.6666666666666666,"hours_per_dollar":1.5,"merged_prs":1,"estimated_prs":1,"matched_prs":1,"cohort_people":1,"people_with_prs":1,"pending_prs":0},"people":[{"id":"octo@example.com","email":"octo@example.com","logins":["Octo"],"spend":2.0,"hours":3.0,"prs":1,"estimated_prs":1,"pending_prs":0,"match_methods":["commit email"],"eligible":true,"cost_per_hour":0.6666666666666666}],"pulls":[{"repo":"o/r","number":1,"title":"t","url":"https://github.com/o/r/pull/1","login":"Octo","emails":["octo@example.com"],"profile_email":"home@example.com","merged_at":"2026-01-02T10:00:00Z","head_sha":"abc","additions":1,"deletions":2,"changed_files":3,"commit_count":4,"incomplete_metadata":false,"estimate":{"status":"estimated","hours":3.0,"reasoning":"r","model":null,"evidence_source":null,"effort_basis":null,"cached":false},"cache_key":null,"email":"octo@example.com","match_method":"commit email","matched":true}],"trend":[{"date":"2026-01-02","spend":2.0,"hours":3.0,"prs":1}]}}"#;
+const REPORT_JSON: &str = r#"{"report":{"id":null,"mode":"live","start":"2026-01-01","end":"2026-01-08","synced_at":"2026-01-08T00:00:00Z","repos":["o/r"],"estimator_model":"model","estimator_prompt":"prompt","warnings":[],"effort_basis":"basis","metrics":{"matched_spend":2,"output_hours":3,"total_spend":2,"total_output_hours":3,"excluded_spend":0,"cost_per_hour":0.6666666666666666666666666667,"hours_per_dollar":1.5,"merged_prs":1,"estimated_prs":1,"matched_prs":1,"cohort_people":1,"people_with_prs":1,"pending_prs":0},"people":[{"id":"octo@example.com","email":"octo@example.com","logins":["Octo"],"spend":2,"hours":3,"prs":1,"estimated_prs":1,"pending_prs":0,"match_methods":["commit email"],"eligible":true,"cost_per_hour":0.6666666666666666666666666667}],"pulls":[{"repo":"o/r","number":1,"title":"t","url":"https://github.com/o/r/pull/1","login":"Octo","emails":["octo@example.com"],"profile_email":"home@example.com","merged_at":"2026-01-02T10:00:00Z","head_sha":"abc","additions":1,"deletions":2,"changed_files":3,"commit_count":4,"incomplete_metadata":false,"estimate":{"status":"estimated","hours":3,"reasoning":"r","model":null,"evidence_source":null,"effort_basis":null,"cached":false},"cache_key":null,"email":"octo@example.com","match_method":"commit email","matched":true}],"trend":[{"date":"2026-01-02","spend":2,"hours":3,"prs":1}]}}"#;
 
 #[rstest]
 #[case::update_normalizes_login(
@@ -501,7 +501,7 @@ const REPORT_JSON: &str = r#"{"report":{"id":null,"mode":"live","start":"2026-01
 )]
 #[case::update_invalid_login(
     update_outcome(r#"{"github_login": "octo cat", "email": null}"#),
-    "Enter a valid GitHub username. at line 1 column 27"
+    "Enter a valid GitHub username."
 )]
 #[case::update_missing_email(
     update_outcome(r#"{"github_login": "octo"}"#),

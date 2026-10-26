@@ -1,26 +1,34 @@
 use indexmap::IndexMap;
-use serde::de::Error as _;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
-use crate::settings::normalize_login;
+use crate::settings::{SettingsError, normalize_login};
 use crate::summary::models::ROISummary;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "IdentityMapBody")]
 pub struct ROIIdentityMapUpdate {
-    #[serde(deserialize_with = "deserialize_login")]
     pub github_login: String,
-    // null removes the login from the identity map
-    #[serde(deserialize_with = "Option::deserialize")]
+    // None removes the login from the identity map
     pub email: Option<String>,
 }
 
-fn deserialize_login<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let login = String::deserialize(deserializer)?;
-    normalize_login(&login).map_err(D::Error::custom)
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IdentityMapBody {
+    github_login: String,
+    #[serde(deserialize_with = "Option::deserialize")]
+    email: Option<String>,
+}
+
+impl TryFrom<IdentityMapBody> for ROIIdentityMapUpdate {
+    type Error = SettingsError;
+
+    fn try_from(body: IdentityMapBody) -> Result<Self, Self::Error> {
+        Ok(Self {
+            github_login: normalize_login(&body.github_login)?,
+            email: body.email,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -69,5 +69,5 @@ fn ratio(
     let value = numerator
         .checked_div(denominator)
         .ok_or(SummaryError::Overflow { figure: "ratio" })?;
-    Ok(Some(value))
+    Ok(Some(value.normalize()))
 }

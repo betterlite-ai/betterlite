@@ -7,7 +7,6 @@ use crate::summary::models::{ROIPersonSummary, ROISummary};
 pub mod error;
 pub mod identity;
 pub mod identity_map;
-mod json_number;
 mod metrics;
 pub mod models;
 mod people;

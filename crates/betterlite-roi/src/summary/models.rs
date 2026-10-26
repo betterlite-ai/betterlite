@@ -4,12 +4,11 @@ use serde::Serialize;
 
 use crate::records::ROIEstimateStatus;
 use crate::summary::identity::MatchMethod;
-use crate::summary::json_number::NearestFloat;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ROIEstimateResponse {
     pub status: ROIEstimateStatus,
-    #[serde(serialize_with = "serde_with::As::<Option<NearestFloat>>::serialize")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub hours: Option<Decimal>,
     pub reasoning: String,
     pub model: Option<String>,
@@ -47,34 +46,34 @@ pub struct ROIPersonSummary {
     pub email: String,
     pub logins: IndexSet<String>,
     // absent means the person has no gateway spend rows, which keeps them out of the cohort
-    #[serde(serialize_with = "serde_with::As::<Option<NearestFloat>>::serialize")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub spend: Option<Decimal>,
-    #[serde(serialize_with = "serde_with::As::<NearestFloat>::serialize")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub hours: Decimal,
     pub prs: usize,
     pub estimated_prs: usize,
     pub pending_prs: usize,
     pub match_methods: IndexSet<MatchMethod>,
     pub eligible: bool,
-    #[serde(serialize_with = "serde_with::As::<Option<NearestFloat>>::serialize")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub cost_per_hour: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ROISummaryMetrics {
-    #[serde(serialize_with = "serde_with::As::<NearestFloat>::serialize")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub matched_spend: Decimal,
-    #[serde(serialize_with = "serde_with::As::<NearestFloat>::serialize")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub output_hours: Decimal,
-    #[serde(serialize_with = "serde_with::As::<NearestFloat>::serialize")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub total_spend: Decimal,
-    #[serde(serialize_with = "serde_with::As::<NearestFloat>::serialize")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub total_output_hours: Decimal,
-    #[serde(serialize_with = "serde_with::As::<NearestFloat>::serialize")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub excluded_spend: Decimal,
-    #[serde(serialize_with = "serde_with::As::<Option<NearestFloat>>::serialize")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub cost_per_hour: Option<Decimal>,
-    #[serde(serialize_with = "serde_with::As::<Option<NearestFloat>>::serialize")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub hours_per_dollar: Option<Decimal>,
     pub merged_prs: usize,
     pub estimated_prs: usize,
@@ -87,9 +86,9 @@ pub struct ROISummaryMetrics {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ROITrendDay {
     pub date: String,
-    #[serde(serialize_with = "serde_with::As::<NearestFloat>::serialize")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub spend: Decimal,
-    #[serde(serialize_with = "serde_with::As::<NearestFloat>::serialize")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub hours: Decimal,
     pub prs: usize,
 }

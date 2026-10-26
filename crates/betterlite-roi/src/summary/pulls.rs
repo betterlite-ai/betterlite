@@ -6,7 +6,7 @@ use rust_decimal::Decimal;
 use crate::records::{ROIEstimate, ROIPullRecord, ROIReport};
 use crate::settings::normalize_email;
 use crate::summary::error::SummaryError;
-use crate::summary::identity::{PullIdentity, match_identity};
+use crate::summary::identity::match_identity;
 use crate::summary::models::{ROIEstimateResponse, ROIPullSummary};
 
 fn estimate_response(estimate: &ROIEstimate) -> Result<ROIEstimateResponse, SummaryError> {
@@ -40,18 +40,16 @@ pub(super) fn pull_summaries(
     report
         .pulls
         .iter()
-        .map(|pull| {
-            let identity = match_identity(pull, &observed_emails, mappings);
-            pull_summary(pull, identity, &observed_emails)
-        })
+        .map(|pull| pull_summary(pull, &observed_emails, mappings))
         .collect()
 }
 
 fn pull_summary(
     pull: &ROIPullRecord,
-    identity: PullIdentity,
     observed_emails: &BTreeSet<String>,
+    mappings: &IndexMap<String, String>,
 ) -> Result<ROIPullSummary, SummaryError> {
+    let identity = match_identity(pull, observed_emails, mappings);
     Ok(ROIPullSummary {
         repo: pull.repo.clone(),
         number: pull.number,
