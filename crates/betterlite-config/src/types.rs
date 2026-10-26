@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_secrets::secret_codec::CipherSettings;
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, Serialize, de::Error as DeError};
 
 use crate::sections::Sections;
 
@@ -85,4 +85,35 @@ pub struct LiteLlmSettings {
     pub bedrock_metadata_fields: Vec<String>,
     pub modify_params: bool,
     pub default_max_tokens: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkerRegistryEntry {
+    pub worker_id: String,
+    pub name: String,
+    #[serde(deserialize_with = "deserialize_http_url")]
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("Worker URL must start with http:// or https://")]
+pub struct WorkerRegistryUrlError;
+
+impl WorkerRegistryEntry {
+    pub fn validate_url(url: &str) -> Result<(), WorkerRegistryUrlError> {
+        if url.starts_with("http://") || url.starts_with("https://") {
+            Ok(())
+        } else {
+            Err(WorkerRegistryUrlError)
+        }
+    }
+}
+
+fn deserialize_http_url<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let url = String::deserialize(deserializer)?;
+    WorkerRegistryEntry::validate_url(&url).map_err(DeError::custom)?;
+    Ok(url)
 }
