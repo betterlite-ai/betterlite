@@ -1,9 +1,10 @@
 #![cfg(test)]
 use super::policy::{LegacyCloudSetting, TrustedCloudCredentials, allow_legacy};
 use super::{
-    CloudStorageError, Encoding, build_object_name, decode_cloud_object_reference,
-    encode_object_name, is_managed_cloud_storage_uri, sanitize_component, sanitize_path,
-    split_bucket_name, validate_cloud_object_path,
+    BEDROCK_MANAGED_S3_PREFIXES, CloudStorageError, Encoding, VERTEX_AI_MANAGED_GCS_PREFIX,
+    build_object_name, decode_cloud_object_reference, encode_object_name,
+    is_managed_cloud_storage_uri, sanitize_component, sanitize_path, split_bucket_name,
+    validate_cloud_object_path,
 };
 use std::fs;
 #[rstest::rstest]
@@ -80,10 +81,10 @@ fn path_failures(#[case] value: &str, #[case] expected: CloudStorageError) {
 #[case::missing_object("gs://bucket", "bucket", &[], true, Err(CloudStorageError::MissingObject))]
 #[case::scheme("s3://bucket/x", "bucket", &[], true, Err(CloudStorageError::Scheme("gs://".to_owned())))]
 #[case::double_escape("gs://bucket/p/%252e", "bucket/p", &[], true, Ok("p/%2e"))]
-#[case::vertex("gs://bucket/p/litellm-vertex-files/x", "bucket/p", &[super::VERTEX_AI_MANAGED_GCS_PREFIX], false, Ok("p/litellm-vertex-files/x"))]
-#[case::batch("gs://bucket/litellm-bedrock-files-x", "bucket", &super::BEDROCK_MANAGED_S3_PREFIXES, false, Ok("litellm-bedrock-files-x"))]
-#[case::upload("gs://bucket/litellm-bedrock-files/x", "bucket", &super::BEDROCK_MANAGED_S3_PREFIXES, false, Ok("litellm-bedrock-files/x"))]
-#[case::output("gs://bucket/litellm-batch-outputs/x", "bucket", &super::BEDROCK_MANAGED_S3_PREFIXES, false, Ok("litellm-batch-outputs/x"))]
+#[case::vertex("gs://bucket/p/litellm-vertex-files/x", "bucket/p", &[VERTEX_AI_MANAGED_GCS_PREFIX], false, Ok("p/litellm-vertex-files/x"))]
+#[case::batch("gs://bucket/litellm-bedrock-files-x", "bucket", &BEDROCK_MANAGED_S3_PREFIXES, false, Ok("litellm-bedrock-files-x"))]
+#[case::upload("gs://bucket/litellm-bedrock-files/x", "bucket", &BEDROCK_MANAGED_S3_PREFIXES, false, Ok("litellm-bedrock-files/x"))]
+#[case::output("gs://bucket/litellm-batch-outputs/x", "bucket", &BEDROCK_MANAGED_S3_PREFIXES, false, Ok("litellm-batch-outputs/x"))]
 fn authorization_boundaries(
     #[case] uri: &str,
     #[case] bucket: &str,
