@@ -6,7 +6,7 @@ call:
     type: urn:litellm:error:unknown-query-parameter
     title: Unknown query parameter
     status: 400
-    detail: Unrecognized query parameter(s): nope.
+    detail: "Unrecognized query parameter(s): nope."
     document: true
 env: {}
 compare: {ignore: []}

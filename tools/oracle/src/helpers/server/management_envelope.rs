@@ -75,121 +75,72 @@ fn serialization_error(error: &serde_json::Error) -> Box<crate::helpers::HelperE
     })
 }
 
-fn invalid_input() -> crate::helpers::HelperResult {
-    let error = Box::new(crate::helpers::HelperError {
-        class: "InvalidInput".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: "management envelope variant mismatch".to_owned(),
-    });
-    Err(error)
+fn encode_response<T>(response: T) -> crate::helpers::HelperResult
+where
+    T: Serialize,
+{
+    let encoded = serde_json::to_value(response);
+    encoded.map_err(|error| serialization_error(&error))
 }
 
-fn problem_output(input: &Input) -> crate::helpers::HelperResult {
-    let Input::Problem {
-        r#type,
-        title,
-        status,
-        detail,
-        allowed,
-        document,
-    } = input
-    else {
-        return invalid_input();
+macro_rules! management_output {
+    (problem $problem_type:expr, $title:expr, $status:expr, $detail:expr, $allowed:expr, $document:expr) => {
+        if *$document {
+            encode_response(ProblemDocument {
+                r#type: $problem_type.clone(),
+                title: $title.clone(),
+                status: *$status,
+                detail: $detail.clone(),
+                allowed: $allowed.clone(),
+            })
+        } else {
+            encode_response(ProblemDetail {
+                r#type: $problem_type.clone(),
+                title: $title.clone(),
+                status: *$status,
+                detail: $detail.clone(),
+                allowed: $allowed.clone(),
+            })
+        }
     };
-    if *document {
-        serde_json::to_value(ProblemDocument {
-            r#type: r#type.clone(),
-            title: title.clone(),
-            status: *status,
-            detail: detail.clone(),
-            allowed: allowed.clone(),
+    (facet $data:expr, $page:expr, $page_size:expr, $has_more:expr, $self_link:expr, $prev:expr, $next:expr) => {
+        encode_response(FacetListResponse {
+            data: $data.clone(),
+            meta: PageMeta {
+                page: *$page,
+                page_size: *$page_size,
+                has_more: *$has_more,
+            },
+            links: PageLinks {
+                self_link: $self_link.clone(),
+                prev: $prev.clone(),
+                next: $next.clone(),
+            },
         })
-        .map_err(|error| serialization_error(&error))
-    } else {
-        serde_json::to_value(ProblemDetail {
-            r#type: r#type.clone(),
-            title: title.clone(),
-            status: *status,
-            detail: detail.clone(),
-            allowed: allowed.clone(),
+    };
+    (list $data:expr, $total_count:expr, $page:expr, $page_size:expr, $total_pages:expr, $self_link:expr, $first:expr, $prev:expr, $next:expr, $last:expr) => {
+        encode_response(ListResponse {
+            data: $data.clone(),
+            meta: ListMeta {
+                total_count: *$total_count,
+                page: *$page,
+                page_size: *$page_size,
+                total_pages: *$total_pages,
+            },
+            links: ListLinks {
+                self_link: $self_link.clone(),
+                first: $first.clone(),
+                prev: $prev.clone(),
+                next: $next.clone(),
+                last: $last.clone(),
+            },
         })
-        .map_err(|error| serialization_error(&error))
-    }
-}
-
-fn facet_output(input: &Input) -> crate::helpers::HelperResult {
-    let Input::Facet {
-        data,
-        page,
-        page_size,
-        has_more,
-        self_link,
-        prev,
-        next,
-    } = input
-    else {
-        return invalid_input();
     };
-    serde_json::to_value(FacetListResponse {
-        data: data.clone(),
-        meta: PageMeta {
-            page: *page,
-            page_size: *page_size,
-            has_more: *has_more,
-        },
-        links: PageLinks {
-            self_link: self_link.clone(),
-            prev: prev.clone(),
-            next: next.clone(),
-        },
-    })
-    .map_err(|error| serialization_error(&error))
-}
-
-fn list_output(input: &Input) -> crate::helpers::HelperResult {
-    let Input::List {
-        data,
-        total_count,
-        page,
-        page_size,
-        total_pages,
-        self_link,
-        first,
-        prev,
-        next,
-        last,
-    } = input
-    else {
-        return invalid_input();
+    (resource $data:expr) => {
+        encode_response(ResourceResponse {
+            data: $data.clone(),
+        })
     };
-    serde_json::to_value(ListResponse {
-        data: data.clone(),
-        meta: ListMeta {
-            total_count: *total_count,
-            page: *page,
-            page_size: *page_size,
-            total_pages: *total_pages,
-        },
-        links: ListLinks {
-            self_link: self_link.clone(),
-            first: first.clone(),
-            prev: prev.clone(),
-            next: next.clone(),
-            last: last.clone(),
-        },
-    })
-    .map_err(|error| serialization_error(&error))
-}
-
-fn resource_output(input: &Input) -> crate::helpers::HelperResult {
-    let Input::Resource { data } = input else {
-        return invalid_input();
-    };
-    serde_json::to_value(ResourceResponse { data: data.clone() })
-        .map_err(|error| serialization_error(&error))
 }
 
 impl crate::helpers::Helper for Op {
@@ -197,10 +148,38 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::Problem { .. } => problem_output(input),
-            Input::Facet { .. } => facet_output(input),
-            Input::List { .. } => list_output(input),
-            Input::Resource { .. } => resource_output(input),
+            Input::Problem {
+                r#type,
+                title,
+                status,
+                detail,
+                allowed,
+                document,
+            } => management_output!(problem r#type, title, status, detail, allowed, document),
+            Input::Facet {
+                data,
+                page,
+                page_size,
+                has_more,
+                self_link,
+                prev,
+                next,
+            } => management_output!(facet data, page, page_size, has_more, self_link, prev, next),
+            Input::List {
+                data,
+                total_count,
+                page,
+                page_size,
+                total_pages,
+                self_link,
+                first,
+                prev,
+                next,
+                last,
+            } => {
+                management_output!(list data, total_count, page, page_size, total_pages, self_link, first, prev, next, last)
+            }
+            Input::Resource { data } => management_output!(resource data),
         }
     }
 }
