@@ -128,22 +128,22 @@ impl RequestRecordProjection {
     }
 
     fn snapshot_value(key: &str, value: &RequestRecord) -> RequestRecord {
-        if !matches!(key, "metadata" | "litellm_metadata") {
-            return value.clone();
-        }
-        let Some(bucket) = value.object() else {
-            return value.clone();
-        };
-        let mut copied = bucket.clone();
-        let Some(original_span) = bucket.get("litellm_parent_otel_span") else {
+        if matches!(key, "metadata" | "litellm_metadata") {
+            let Some(bucket) = value.object() else {
+                return value.clone();
+            };
+            let mut copied = bucket.clone();
+            let Some(original_span) = bucket.get("litellm_parent_otel_span") else {
+                return RequestRecord::Object(copied);
+            };
+            copied.insert(
+                "litellm_parent_otel_span".to_owned(),
+                RequestRecord::String("placeholder".to_owned()),
+            );
+            copied.insert("litellm_parent_otel_span".to_owned(), original_span.clone());
             return RequestRecord::Object(copied);
-        };
-        copied.insert(
-            "litellm_parent_otel_span".to_owned(),
-            RequestRecord::String("placeholder".to_owned()),
-        );
-        copied.insert("litellm_parent_otel_span".to_owned(), original_span.clone());
-        RequestRecord::Object(copied)
+        }
+        value.clone()
     }
 
     #[must_use]
