@@ -56,13 +56,24 @@ fn agentic_followup_precedence(
 }
 
 #[rstest]
-#[case::depth("_agentic_loop_depth", AgenticKwargValue::Integer(3))]
-#[case::ceiling("max_agentic_loops", AgenticKwargValue::Integer(7))]
-#[case::fingerprints("_agentic_loop_fingerprints", AgenticKwargValue::Array(vec![AgenticKwargValue::Text("prior".to_owned()), AgenticKwargValue::Text("current".to_owned())]))]
-fn agentic_followup_metadata(#[case] key: &str, #[case] expected: AgenticKwargValue) {
+#[case::depth(false, "_agentic_loop_depth", AgenticKwargValue::Integer(3))]
+#[case::ceiling(false, "max_agentic_loops", AgenticKwargValue::Integer(7))]
+#[case::fingerprints(false, "_agentic_loop_fingerprints", AgenticKwargValue::Array(vec![AgenticKwargValue::Text("prior".to_owned()), AgenticKwargValue::Text("current".to_owned())]))]
+#[case::excluded_depth(true, "_agentic_loop_depth", AgenticKwargValue::Integer(3))]
+#[case::excluded_ceiling(true, "max_agentic_loops", AgenticKwargValue::Integer(7))]
+#[case::excluded_fingerprints(true, "_agentic_loop_fingerprints", AgenticKwargValue::Array(vec![AgenticKwargValue::Text("prior".to_owned()), AgenticKwargValue::Text("current".to_owned())]))]
+fn agentic_followup_metadata(
+    #[case] excluded: bool,
+    #[case] key: &str,
+    #[case] expected: AgenticKwargValue,
+) {
     let request = BTreeMap::from([(key.to_owned(), AgenticKwargValue::Null)]);
     let patch = BTreeMap::from([(key.to_owned(), AgenticKwargValue::Boolean(false))]);
-    let params = BTreeSet::from([key.to_owned()]);
+    let params = if excluded {
+        BTreeSet::from([key.to_owned()])
+    } else {
+        BTreeSet::new()
+    };
     let fingerprints = ["prior".to_owned()];
     let input = AgenticFollowupInput {
         request_kwargs: &request,
@@ -139,4 +150,28 @@ fn agentic_followup_snapshot() {
     let mut owned_copy = result.as_ref().clone();
     owned_copy.clear();
     assert_eq!(result.as_ref().len(), 4);
+}
+
+#[test]
+fn agentic_followup_repeated_fingerprint() {
+    let kwargs = BTreeMap::new();
+    let params = BTreeSet::new();
+    let fingerprints = ["current".to_owned()];
+    let input = AgenticFollowupInput {
+        request_kwargs: &kwargs,
+        patch_kwargs: &kwargs,
+        request_params: &params,
+        depth: 1,
+        max_loops: 3,
+        fingerprints: &fingerprints,
+        fingerprint: "current",
+    };
+    let result = build_agentic_followup_kwargs(&input).unwrap();
+    assert_eq!(
+        result.as_ref().get("_agentic_loop_fingerprints"),
+        Some(&AgenticKwargValue::Array(vec![
+            AgenticKwargValue::Text("current".to_owned()),
+            AgenticKwargValue::Text("current".to_owned())
+        ]))
+    );
 }
