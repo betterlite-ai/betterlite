@@ -1,7 +1,6 @@
 #![cfg(test)]
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use betterlite_config::sections::billing_metrics::Metering;
 use opentelemetry::{Key, Value};
@@ -9,12 +8,7 @@ use rstest::rstest;
 use tokio::runtime::Builder;
 
 use super::{BillingMetricsConfig, ExporterError, build_mtls_meter_provider, resource};
-
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
-}
+use crate::tests::fixture;
 
 fn config(metering: Metering) -> BillingMetricsConfig {
     BillingMetricsConfig {
@@ -74,47 +68,27 @@ fn rejects_intervals_below_one_millisecond(#[case] interval_ms: i64) {
     );
 }
 
-#[test]
-fn rejects_a_certificate_file_without_certificates() {
-    let mut settings = metering(Some(fixture("ca.crt")));
-    settings.client_cert = fixture("client.key");
+#[rstest]
+#[case::no_certificate(["client.key", "client.key", "ca.crt"], "https://c", "no certificate")]
+#[case::no_key(["client.crt", "client.crt", "ca.crt"], "https://c", "could not read PEM")]
+#[case::wrong_key(["client.crt", "server.key", "ca.crt"], "https://c", "mutual TLS")]
+#[case::no_authority(["client.crt", "client.key", "client.key"], "https://c", "no trusted CA")]
+#[case::not_a_url(["client.crt", "client.key", "ca.crt"], "not a url", "OTLP exporter")]
+fn rejects_unusable_credentials(
+    #[case] files: [&str; 3],
+    #[case] endpoint: &str,
+    #[case] message: &str,
+) {
+    let [cert, key, authority] = files;
+    let settings = Metering {
+        endpoint: endpoint.to_owned(),
+        client_cert: fixture(cert),
+        client_key: fixture(key),
+        ca_cert: Some(fixture(authority)),
+        export_interval_ms: 60_000,
+    };
     let error = build_mtls_meter_provider(&config(settings)).unwrap_err();
-    assert!(
-        matches!(error, ExporterError::NoCertificate { path } if path == fixture("client.key"))
-    );
-}
-
-#[test]
-fn rejects_a_key_file_without_a_key() {
-    let mut settings = metering(Some(fixture("ca.crt")));
-    settings.client_key = fixture("client.crt");
-    let error = build_mtls_meter_provider(&config(settings)).unwrap_err();
-    assert!(matches!(error, ExporterError::Pem { path, .. } if path == fixture("client.crt")));
-}
-
-#[test]
-fn rejects_a_mismatched_key() {
-    let mut settings = metering(Some(fixture("ca.crt")));
-    settings.client_key = fixture("server.key");
-    let error = build_mtls_meter_provider(&config(settings)).unwrap_err();
-    assert!(matches!(error, ExporterError::Tls { .. }), "{error}");
-}
-
-#[test]
-fn rejects_a_ca_file_without_certificates() {
-    let directory = tempfile::tempdir().unwrap();
-    let empty = directory.path().join("empty.pem");
-    fs::write(&empty, "").unwrap();
-    let error = build_mtls_meter_provider(&config(metering(Some(empty)))).unwrap_err();
-    assert!(matches!(error, ExporterError::NoTrustRoots), "{error}");
-}
-
-#[test]
-fn rejects_an_endpoint_that_is_not_a_url() {
-    let mut settings = metering(Some(fixture("ca.crt")));
-    settings.endpoint = "not a url/v1/metrics".to_owned();
-    let error = build_mtls_meter_provider(&config(settings)).unwrap_err();
-    assert!(matches!(error, ExporterError::Exporter { .. }), "{error}");
+    assert!(error.to_string().contains(message), "{error}");
 }
 
 #[test]

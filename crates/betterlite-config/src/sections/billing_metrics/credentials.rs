@@ -14,13 +14,7 @@ const PEM_FILE_MODE: u32 = 0o600;
 
 #[derive(Debug, Error)]
 pub(super) enum CredentialError {
-    #[error("could not create a private directory for inline certificate content under {}: {source}", root.display())]
-    Directory {
-        root: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("could not write inline certificate content to {}: {source}", path.display())]
+    #[error("could not write inline certificate content to disk at {}: {source}", path.display())]
     Write {
         path: PathBuf,
         #[source]
@@ -73,8 +67,8 @@ pub(super) fn resolve_paths(
         .prefix(PEM_DIRECTORY_PREFIX)
         .permissions(Permissions::from_mode(PEM_DIRECTORY_MODE))
         .tempdir_in(temp_root)
-        .map_err(|source| CredentialError::Directory {
-            root: temp_root.to_path_buf(),
+        .map_err(|source| CredentialError::Write {
+            path: temp_root.to_path_buf(),
             source,
         })?
         .keep();

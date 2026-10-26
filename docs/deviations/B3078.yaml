@@ -1,0 +1,20 @@
+task: B3078
+deviations:
+  - what: Configured metering is not gated on the premium flag after the initial check; an unlicensed deployment gets no recorder, a licensed one with the environment set meters regardless of tier.
+    why: betterlite has no paid tier, so every feature is on, vendor billing telemetry included.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L284-L323
+  - what: An invalid LITELLM_BILLING_METRICS_EXPORT_INTERVAL_MS warns when the config loads, on every deployment, instead of only when a licensed deployment builds the recorder.
+    why: The task puts the interval in betterlite-config, which parses environment values once at load.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L136-L146
+  - what: The client certificate, key and CA are parsed when the recorder is built, so a readable file without usable PEM disables metering with a startup warning; LiteLLM starts the recorder and fails on every export.
+    why: rustls needs the parsed identity to build the client, and a startup warning is easier to act on than repeated export failures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L95-L113
+  - what: A credential path counts as readable only when it is a regular file the proxy can open; LiteLLM checks os.path.isfile alone.
+    why: The task asks for paths that do not exist or are not readable to be named, and an unopenable file only fails later at export.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L232-L249
+  - what: Without LITELLM_BILLING_METRICS_CA_CERT the collector is verified against the operating system trust store, and the OTEL_EXPORTER_OTLP_CERTIFICATE fallback and OTLP timeout variables are not read; LiteLLM's requests session uses certifi's bundle and those variables. The client timeout is fixed at the OTLP default of 10 seconds.
+    why: The task specifies the system trust store, and environment reads belong to the config crate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L95-L113
+  - what: Inline PEM goes to a directory named betterlite-billing-mtls-* instead of litellm-billing-mtls-*, and setting a second active recorder logs a warning instead of replacing the first silently.
+    why: Names outside the wire stay off the LiteLLM name, and rule no-silent-drops forbids silent overwrites.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L264-L278
