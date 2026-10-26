@@ -133,7 +133,7 @@ fn large_nonzero_numbers_are_truthy_without_f64_narrowing() {
 fn falsy_numbers_are_replaced_in_version_and_streaming() {
     let result = merged(r#"{"version":0.0,"capabilities":{"streaming":0.0}}"#);
     assert_eq!(result["version"], value(r#""1.0.0""#));
-    assert_eq!(result["capabilities"], value(r#"{}"#));
+    assert_eq!(result["capabilities"], value("{}"));
 }
 
 #[test]
