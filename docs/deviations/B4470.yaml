@@ -1,0 +1,8 @@
+task: B4470
+deviations:
+  - what: betterlite uses Rust const slices and phf sets instead of LiteLLM Python tuples and frozensets.
+    why: The policies are immutable and only read after startup; these structures provide compile-time data and efficient lookup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/routes/allowlist.py#L18-L147
+  - what: Worker URL validation checks only the http:// or https:// prefix instead of parsing the full URL.
+    why: This matches LiteLLM's validator and preserves custom worker URL compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/control_plane_endpoints.py#L1-L14

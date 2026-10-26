@@ -1,0 +1,8 @@
+kind: helper
+name: provider-case-sensitive
+call:
+  resource_sdk_settings:
+    provider: "OpenAI"
+env: {}
+compare:
+  ignore: []

@@ -232,6 +232,6 @@ pitfalls:
   - An empty append list bypasses mutually exclusive target validation, but never bypasses the proxy-admin check.
   - All-team permission merging can overwrite a concurrent writer and is not a transaction across pages.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

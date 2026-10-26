@@ -145,5 +145,5 @@ pitfalls:
   - Timeout values default to 30 seconds for readiness but can be overridden per call; defaults come from B3517 constants.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 2

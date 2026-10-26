@@ -43,7 +43,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/search_settings.rs
     - crates/betterlite-server/fuzz/corpus/search_settings/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/search_settings.rs
     - crates/betterlite-config/src/search_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/search-settings-*
@@ -95,6 +94,6 @@ pitfalls:
   - A stored enabled=false must stay false even when this pod still has the web-search callback registered.
   - Native tool-search has top_k=5 and no enabled field; semantic filtering has top_k=10 and its own enabled switch.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

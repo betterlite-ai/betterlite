@@ -1,0 +1,6 @@
+kind: helper
+name: api-timeout
+call:
+  b3778: {call: {settings: {api_key: key, api_base: "http://lasso.test"}}}
+env: {}
+compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}

@@ -114,5 +114,5 @@ pitfalls:
 - Hook-name coercion handles both string enum values and Mode.tags which may be lists or single values.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

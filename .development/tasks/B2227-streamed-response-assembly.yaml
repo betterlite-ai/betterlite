@@ -366,6 +366,6 @@ pitfalls:
 - An empty nontext delta field disables the fast path because the check is non-None.
 - The generated citations list can be overwritten by a later explicit citations field.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

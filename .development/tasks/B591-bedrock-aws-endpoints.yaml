@@ -489,6 +489,6 @@ pitfalls:
 - LLM region lookup gives AWS_REGION_NAME priority, while the non-LLM branch lets AWS_REGION overwrite it.
 - An explicit model_id blocks ARN-region fallback to model even when that override is not an ARN.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

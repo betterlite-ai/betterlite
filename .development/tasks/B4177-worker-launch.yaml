@@ -86,5 +86,5 @@ pitfalls:
   - "Granian warnings for unsupported options are printed once at startup; they do not affect subsequent behavior. The flags are still parsed and validated by clap, so wrong values still raise click errors before the launch code runs."
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

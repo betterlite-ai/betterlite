@@ -146,5 +146,5 @@ pitfalls:
     thread but a different context (different event loop or outside the loop).
 review_level: security
 budget:
-  max_changed_lines: 1200
+  max_changed_lines: 1500
   max_new_expects: 2

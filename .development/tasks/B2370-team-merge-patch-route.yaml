@@ -82,6 +82,6 @@ pitfalls:
   - A patch without metadata does not perform this adapter's missing-team lookup; its error comes from update_team.
   - The merge depth limit counts dictionary recursion; replacing with an array is not recursive array patching.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

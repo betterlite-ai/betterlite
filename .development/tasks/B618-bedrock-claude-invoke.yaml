@@ -405,6 +405,6 @@ pitfalls:
 - The tool-search beta is computed from the original tools, while the body uses a renamed and filtered tool list.
 - An explicitly supplied user beta bypasses filtering even when the same automatically generated beta would be removed.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

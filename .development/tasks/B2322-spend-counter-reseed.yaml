@@ -119,6 +119,6 @@ pitfalls:
   - A clean Redis miss must not fall back to stale process memory, even after a batch miss.
   - The bounded LRU can evict an acquired lock; do not promise universal singleflight across eviction.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

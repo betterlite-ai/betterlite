@@ -119,6 +119,6 @@ pitfalls:
   - Hook failure returns zero even when token deletion already committed.
   - A release_lock exception escapes the finally block despite the worker's otherwise catch-and-return-zero behavior.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

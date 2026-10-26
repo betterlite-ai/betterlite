@@ -280,6 +280,6 @@ pitfalls:
 - The initial configuration marker does not set prompt_started, whereas session.update does.
 - G.711 changes only the declared sample rate; the provider body still declares audio/lpcm and 16-bit samples.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

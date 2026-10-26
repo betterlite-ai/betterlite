@@ -195,6 +195,6 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as fireworks_catalog_metadata in the models group. Replace the stub Op in tools/oracle/src/helpers/models/fireworks_catalog_metadata.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/fireworks_catalog_metadata.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The source casts capability values without validating bool, so truthiness and non-None tests differ.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

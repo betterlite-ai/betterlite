@@ -1,7 +1,7 @@
 id: B3770
 milestone: M6 guardrails
 title: Generic guardrail contracts and inbound header policy
-status: todo
+status: done
 depends_on: []
 file: tasks/B3770-generic-guardrail-contracts.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py"
 parent: B107
 split_from: B107
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 206

@@ -379,6 +379,6 @@ pitfalls:
 - The unused AmazonCohereChatConfig mapper contains an unconditional seed assignment; the active Cohere mapper is
   the separate B037 implementation.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

@@ -437,6 +437,6 @@ pitfalls:
 - The shape loader caches failure too; retrying it for each frame would repeat warnings and change failure behavior.
 - A completely framed but ignored event still prevents the no-events error; tally framing, not yielded chunks.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

@@ -162,6 +162,6 @@ pitfalls:
   - Authentication still runs for malformed bodies, but authorization and reservation must not run.
   - The master cache key is its hash; downstream identity must remain the stable master alias.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -15,6 +15,8 @@ scope:
     - crates/betterlite-harness/fuzz/corpus/payloads/**
     - crates/betterlite-harness/fuzz/fuzz_targets/snapshots.rs
     - crates/betterlite-harness/fuzz/corpus/snapshots/**
+    - crates/betterlite-harness/src/payloads/**
+    - crates/betterlite-harness/src/snapshots/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/utils.py#L21-L116
@@ -75,5 +77,5 @@ pitfalls:
     HARNESS_SNAPSHOT_SKIP_DIRS must match LiteLLM's set exactly: .git, node_modules, .venv, venv, __pycache__, .mypy_cache, .pytest_cache, .ruff_cache. An rstest case per directory ensures the skip list is correct.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1

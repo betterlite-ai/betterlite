@@ -250,6 +250,6 @@ pitfalls:
   - GET repairs assigned_team_ids in its response only; it does not persist the repaired mirror.
   - Missing resource labels remain null while the resource IDs and their duplicate order stay in the response.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

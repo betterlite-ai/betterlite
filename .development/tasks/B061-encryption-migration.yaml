@@ -58,6 +58,6 @@ pitfalls:
   - 'A v2:gcm: prefix is classified as migrated without proving that its ciphertext can be decrypted.'
   - Callback encryption's marker check intentionally survives rotation to a different salt key.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security
