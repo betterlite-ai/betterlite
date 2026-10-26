@@ -1,0 +1,10 @@
+# pass_through_registry_lookup
+kind: helper
+name: pass-through-registry-seed
+call:
+  pass_through_registry:
+    root_path: /proxy
+    registrations: []
+    queries: [{route: /proxy/openai, method: null}]
+env: {}
+compare: {ignore: []}

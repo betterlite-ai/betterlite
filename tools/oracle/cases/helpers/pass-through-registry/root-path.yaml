@@ -1,0 +1,12 @@
+kind: helper
+name: root-path
+call:
+  pass_through_registry:
+    root_path: /proxy
+    registrations: []
+    queries:
+      - {route: /proxy/registered, method: null}
+      - {route: /registered, method: null}
+      - {route: /proxy-other/registered, method: null}
+env: {}
+compare: {ignore: []}
