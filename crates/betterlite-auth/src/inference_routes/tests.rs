@@ -18,25 +18,19 @@ fn literal_membership(#[case] index: usize, #[case] literal: &str) {
 #[case::wrong_query_spelling("/realtime?model={model}")]
 #[case::fine_tuning_retrieve("/fine_tuning/jobs/{fine_tuning_job_id}")]
 fn literal_nonmembership(#[case] literal: &str) {
-    assert!(!OPENAI_ROUTES.iter().any(|route| *route == literal));
+    assert!(!OPENAI_ROUTES.contains(&literal));
 }
 
 #[test]
 fn alias_membership() {
     assert!(
-        OPENAI_ROUTES
-            .iter()
-            .any(|route| *route == "/v1/chat/completions")
+        OPENAI_ROUTES.contains(&"/v1/chat/completions")
     );
     assert!(
-        OPENAI_ROUTES
-            .iter()
-            .any(|route| *route == "/openai/v1/responses")
+        OPENAI_ROUTES.contains(&"/openai/v1/responses")
     );
     assert!(
-        ANTHROPIC_ROUTES
-            .iter()
-            .any(|route| *route == "/claude-code/plugins/{plugin_name}")
+        ANTHROPIC_ROUTES.contains(&"/claude-code/plugins/{plugin_name}")
     );
 }
 
@@ -54,8 +48,6 @@ fn group_expansion() {
 #[test]
 fn unknown_group_is_not_a_production_table() {
     assert!(
-        !["mcp_routes", "agent_routes"]
-            .iter()
-            .any(|group| *group == "llm_api_routes")
+        !["mcp_routes", "agent_routes"].contains(&"llm_api_routes")
     );
 }

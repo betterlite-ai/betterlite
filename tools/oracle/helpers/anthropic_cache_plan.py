@@ -58,7 +58,8 @@ def run(input_value: dict[str, Json]) -> Json:
         plan = parse_cache_plan(body_value(input_value))
         if isinstance(plan, UnsupportedCachePlan):
             return {"unsupported": plan.reason}
-        return {"full_body": plain(plan.full_body), "breakpoints": [boundary(item) for item in plan.breakpoints]}
+        breakpoints = [boundary(item) for item in plan.breakpoints]
+        return {"full_body": plain(plan.full_body), "breakpoints": breakpoints}
     if function == "prompt":
         return {"prompt": prompt(parse_prompt(body_value(input_value)))}
     if function == "cache_scope":
