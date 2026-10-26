@@ -1,0 +1,124 @@
+[
+  {
+    "provider": "OPENAI_LIKE",
+    "provider_display_name": "Openai Like",
+    "litellm_provider": "openai_like",
+    "credential_fields": [
+      {"key":"api_base","label":"API Base","placeholder":null,"tooltip":null,"required":false,"field_type":"text","options":null,"default_value":null},
+      {"key":"api_key","label":"API Key","placeholder":null,"tooltip":null,"required":false,"field_type":"password","options":null,"default_value":null}
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "OpenAI_Text",
+    "provider_display_name": "OpenAI Text Completion",
+    "litellm_provider": "text-completion-openai",
+    "credential_fields": [
+      {"key":"api_base","label":"API Base","placeholder":"https://api.openai.com/v1","tooltip":"Common endpoints: https://api.openai.com/v1, https://eu.api.openai.com, https://us.api.openai.com","required":false,"field_type":"text","options":null,"default_value":"https://api.openai.com/v1"},
+      {"key":"organization","label":"OpenAI Organization ID","placeholder":"[OPTIONAL] my-unique-org","tooltip":null,"required":false,"field_type":"text","options":null,"default_value":null},
+      {"key":"api_key","label":"OpenAI API Key","placeholder":null,"tooltip":null,"required":true,"field_type":"password","options":null,"default_value":null}
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "OpenAI_Compatible",
+    "provider_display_name": "OpenAI-Compatible Endpoints (Together AI, etc.)",
+    "litellm_provider": "openai",
+    "credential_fields": [
+      {"key":"api_base","label":"API Base","placeholder":"https://...","tooltip":null,"required":true,"field_type":"text","options":null,"default_value":null},
+      {"key":"api_key","label":"OpenAI API Key","placeholder":null,"tooltip":null,"required":true,"field_type":"password","options":null,"default_value":null}
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "OpenAI_Text_Compatible",
+    "provider_display_name": "OpenAI-Compatible Text Completion Models (Together AI, etc.)",
+    "litellm_provider": "text-completion-openai",
+    "credential_fields": [
+      {"key":"api_base","label":"API Base","placeholder":"https://...","tooltip":null,"required":true,"field_type":"text","options":null,"default_value":null},
+      {"key":"api_key","label":"OpenAI API Key","placeholder":null,"tooltip":null,"required":true,"field_type":"password","options":null,"default_value":null}
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "Openrouter",
+    "provider_display_name": "Openrouter",
+    "litellm_provider": "openrouter",
+    "credential_fields": [
+      {"key":"api_key","label":"API Key","placeholder":null,"tooltip":null,"required":true,"field_type":"password","options":null,"default_value":null}
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "Nadir",
+    "provider_display_name": "Nadir",
+    "litellm_provider": "nadir",
+    "credential_fields": [
+      {"key":"api_key","label":"API Key","placeholder":null,"tooltip":null,"required":true,"field_type":"password","options":null,"default_value":null}
+    ],
+    "default_model_placeholder": "nadir/auto"
+  },
+  {
+    "provider": "Oracle",
+    "provider_display_name": "Oracle Cloud Infrastructure (OCI)",
+    "litellm_provider": "oci",
+    "credential_fields": [
+      {"key":"oci_user","label":"OCI User OCID","placeholder":"ocid1.user.oc1..aaaaaaaaexample","tooltip":"The OCID of the user making the API call","required":true,"field_type":"text","options":null,"default_value":null},
+      {"key":"oci_fingerprint","label":"OCI Key Fingerprint","placeholder":"aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99","tooltip":"The fingerprint of the API signing key","required":true,"field_type":"text","options":null,"default_value":null},
+      {"key":"oci_tenancy","label":"OCI Tenancy OCID","placeholder":"ocid1.tenancy.oc1..aaaaaaaaexample","tooltip":"The OCID of your tenancy","required":true,"field_type":"text","options":null,"default_value":null},
+      {"key":"oci_region","label":"OCI Region","placeholder":"us-ashburn-1","tooltip":"The OCI region identifier (e.g., us-ashburn-1, eu-frankfurt-1)","required":true,"field_type":"text","options":null,"default_value":null},
+      {"key":"oci_compartment_id","label":"OCI Compartment OCID","placeholder":"ocid1.compartment.oc1..aaaaaaaaexample","tooltip":"The OCID of the compartment containing the GenAI resources","required":true,"field_type":"text","options":null,"default_value":null},
+      {"key":"oci_key","label":"OCI Private Key (PEM)","placeholder":"-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----","tooltip":"The full PEM-encoded private key content for API signing. Paste the entire key including BEGIN/END markers.","required":true,"field_type":"textarea","options":null,"default_value":null}
+    ],
+    "default_model_placeholder": "oci/xai.grok-3"
+  },
+  {
+    "provider": "OVHCLOUD",
+    "provider_display_name": "Ovhcloud",
+    "litellm_provider": "ovhcloud",
+    "credential_fields": [
+      {"key":"api_base","label":"API Base","placeholder":null,"tooltip":null,"required":false,"field_type":"text","options":null,"default_value":null},
+      {"key":"api_key","label":"API Key","placeholder":null,"tooltip":null,"required":false,"field_type":"password","options":null,"default_value":null}
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "Perplexity",
+    "provider_display_name": "Perplexity",
+    "litellm_provider": "perplexity",
+    "credential_fields": [
+      {"key":"api_key","label":"API Key","placeholder":null,"tooltip":null,"required":true,"field_type":"password","options":null,"default_value":null}
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "PETALS",
+    "provider_display_name": "Petals",
+    "litellm_provider": "petals",
+    "credential_fields": [
+      {"key":"api_base","label":"API Base","placeholder":null,"tooltip":null,"required":false,"field_type":"text","options":null,"default_value":null},
+      {"key":"api_key","label":"API Key","placeholder":null,"tooltip":null,"required":false,"field_type":"password","options":null,"default_value":null}
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "PG_VECTOR",
+    "provider_display_name": "Pg Vector",
+    "litellm_provider": "pg_vector",
+    "credential_fields": [
+      {"key":"api_base","label":"API Base","placeholder":null,"tooltip":null,"required":false,"field_type":"text","options":null,"default_value":null},
+      {"key":"api_key","label":"API Key","placeholder":null,"tooltip":null,"required":false,"field_type":"password","options":null,"default_value":null}
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "PREDIBASE",
+    "provider_display_name": "Predibase",
+    "litellm_provider": "predibase",
+    "credential_fields": [
+      {"key":"api_base","label":"API Base","placeholder":null,"tooltip":null,"required":false,"field_type":"text","options":null,"default_value":null},
+      {"key":"api_key","label":"API Key","placeholder":null,"tooltip":null,"required":false,"field_type":"password","options":null,"default_value":null}
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  }
+]
