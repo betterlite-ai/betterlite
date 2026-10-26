@@ -38,6 +38,8 @@ fn json_body_collision() {
 fn ordered_duplicate_parts() {
     let (content_type, bytes) = encode_parts(&[part("file", "one"), part("file", "two")]).unwrap();
     let decoded = decode_multipart_capture(&content_type, &bytes).unwrap();
+    assert_eq!(decoded.first().unwrap().name, "file");
+    assert_eq!(decoded[1].name, "file");
     assert_eq!(decoded.first().unwrap().body, b"one");
     assert_eq!(decoded[1].body, b"two");
 }
@@ -159,6 +161,7 @@ fn preserves_optional_fields() {
     }])
     .unwrap();
     let decoded = decode_multipart_capture(&content_type, &bytes).unwrap();
+    assert_eq!(decoded.first().unwrap().name, "x");
     assert_eq!(decoded.first().unwrap().filename, Some(String::new()));
     assert_eq!(decoded.first().unwrap().content_type, Some(String::new()));
 }
