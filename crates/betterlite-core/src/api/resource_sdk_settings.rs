@@ -90,15 +90,4 @@ impl ResourceSdkSettings {
             .unwrap_or("https://api.openai.com/v1")
             .to_owned()
     }
-
-    #[must_use]
-    pub fn vertex_base<'settings>(
-        &'settings self,
-        request: &'settings ResourceSdkRequestOptions,
-    ) -> &'settings str {
-        if let Some(value) = request.api_base.as_deref() {
-            return value;
-        }
-        ""
-    }
 }
