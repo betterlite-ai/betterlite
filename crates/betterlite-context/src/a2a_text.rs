@@ -4,6 +4,8 @@ use serde::Deserialize;
 use serde::de::IgnoredAny;
 use thiserror::Error;
 
+mod record_or;
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum A2aTextError {
     #[error("A2A message must be an object")]
@@ -19,6 +21,8 @@ pub enum A2aTextError {
     #[error("A2A artifacts object has no first item")]
     ArtifactsNotIndexed,
 }
+
+const SERDE_JSON_NUMBER_KEY: &str = "$serde_json::private::Number";
 
 // A key set to null is still present, so a plain Option would lose it
 #[derive(Debug, Default, Deserialize)]
@@ -41,8 +45,7 @@ pub enum Shape {
     Object(BTreeMap<String, Option<Self>>),
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug)]
 pub enum RecordOr<T> {
     Record(T),
     Other(Shape),
@@ -58,7 +61,6 @@ pub enum ListValue {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct A2aRecord {
     #[serde(default)]
     pub kind: Field<Shape>,
@@ -119,15 +121,26 @@ impl RecordValue {
     }
 }
 
+fn record_is_private_number(record: &A2aRecord) -> bool {
+    let key_present = record.other_keys.contains_key(SERDE_JSON_NUMBER_KEY);
+    if key_present {
+        return true;
+    }
+    false
+}
+
 pub fn extract_text_from_a2a_message(
     message: Option<&RecordValue>,
     depth: usize,
     max_depth: usize,
 ) -> Result<String, A2aTextError> {
     match message {
-        None => Ok(String::new()),
+        None | Some(RecordOr::Other(Shape::Null)) => Ok(String::new()),
         Some(_) if depth >= max_depth => Ok(String::new()),
         Some(RecordOr::Other(_)) => Err(A2aTextError::MessageNotObject),
+        Some(RecordOr::Record(record)) if record_is_private_number(record) => {
+            Err(A2aTextError::MessageNotObject)
+        }
         Some(RecordOr::Record(record)) => parts_text(&record.parts, depth, max_depth),
     }
 }

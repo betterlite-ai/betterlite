@@ -11,10 +11,10 @@ extract_response = cast(Callable[..., str], common_utils.extract_text_from_a2a_r
 
 
 def run(input_value: dict[str, Json]) -> str:
-    max_depth = input_value["max_depth"]
+    max_depth = input_value.get("max_depth")
     limit = {} if max_depth is None else {"max_depth": max_depth}
     if input_value["function"] == "message":
-        depth = input_value["depth"]
+        depth = input_value.get("depth")
         start = {} if depth is None else {"depth": depth}
         return extract_message(input_value["message"], **start, **limit)
     return extract_response(input_value["response"], **limit)

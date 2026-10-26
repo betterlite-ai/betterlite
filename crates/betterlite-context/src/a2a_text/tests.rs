@@ -1,6 +1,9 @@
 #![cfg(test)]
+use std::collections::BTreeMap;
+
 use super::{
-    A2aResponse, RecordValue, extract_text_from_a2a_message, extract_text_from_a2a_response,
+    A2aRecord, A2aResponse, Field, RecordOr, RecordValue, extract_text_from_a2a_message,
+    extract_text_from_a2a_response,
 };
 use rstest::rstest;
 use serde::Deserialize;
@@ -11,8 +14,13 @@ struct Probe {
     response: Option<A2aResponse>,
     #[serde(default)]
     depth: usize,
+    #[serde(default = "default_max_depth")]
     max_depth: usize,
     expect: Outcome,
+}
+
+fn default_max_depth() -> usize {
+    10
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -43,6 +51,9 @@ fn a2a_text_cases(#[case] source: &str) {
 
 #[rstest]
 #[case::none(r#"{"max_depth":10,"expect":{"text":""},"message":null}"#)]
+#[case::default_limits(
+    r#"{"expect":{"text":"default"},"message":{"parts":[{"kind":"text","text":"default"}]}}"#
+)]
 #[case::missing_parts(r#"{"max_depth":10,"expect":{"text":""},"message":{"kind":"message"}}"#)]
 #[case::depth_eight(r#"{"depth":8,"max_depth":10,"expect":{"text":"top inner"},"message":{"parts":[{"kind":"text","text":"top"},{"parts":[{"kind":"text","text":"inner"}]}]}}"#)]
 #[case::caller_zero_limit(
@@ -73,6 +84,11 @@ fn a2a_text_cases(#[case] source: &str) {
 #[case::text_null(r#"{"max_depth":10,"expect":{"error":"TextNotString"},"message":{"parts":[{"kind":"text","text":null}]}}"#)]
 #[case::nested_text_list(r#"{"max_depth":10,"expect":{"error":"TextNotString"},"message":{"parts":[{"parts":[{"kind":"text","text":[]}]}]}}"#)]
 #[case::list_result(r#"{"max_depth":10,"expect":{"text":""},"response":{"result":[{"parts":[{"kind":"text","text":"x"}]}]}}"#)]
+#[case::positional_result(r#"{"max_depth":10,"expect":{"text":""},"response":{"result":[{"parts":[{"kind":"text","text":"x"}]},null,null,null,null]}}"#)]
+#[case::positional_status(r#"{"max_depth":10,"expect":{"text":""},"response":{"result":{"status":[{"parts":[{"kind":"text","text":"x"}]}]}}}"#)]
+#[case::null_artifact(
+    r#"{"max_depth":10,"expect":{"text":""},"response":{"result":{"artifacts":[null]}}}"#
+)]
 #[case::direct_parts(r#"{"max_depth":10,"expect":{"text":"d"},"response":{"result":{"parts":[{"kind":"text","text":"d"}]}}}"#)]
 #[case::direct_parts_zero_limit(r#"{"max_depth":0,"expect":{"text":""},"response":{"result":{"parts":[{"kind":"text","text":"d"}]}}}"#)]
 #[case::message_wins(r#"{"max_depth":10,"expect":{"text":"m"},"response":{"result":{"message":{"parts":[{"kind":"text","text":"m"}]},"artifact":{"parts":[{"kind":"text","text":"a"}]}}}}"#)]
@@ -107,4 +123,18 @@ fn a2a_text_cases(#[case] source: &str) {
 )]
 fn projection(#[case] source: &str) {
     assert_projection(source);
+}
+
+#[test]
+fn serde_json_private_number_is_not_a_message() {
+    let record = A2aRecord {
+        kind: Field::Absent,
+        text: Field::Absent,
+        parts: Field::Absent,
+        role: Field::Absent,
+        other_keys: BTreeMap::from([("$serde_json::private::Number".to_owned(), None)]),
+    };
+    let message = RecordOr::Record(record);
+    let result = extract_text_from_a2a_message(Some(&message), 0, 10);
+    assert_eq!(result, Err(super::A2aTextError::MessageNotObject));
 }
