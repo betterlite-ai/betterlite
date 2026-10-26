@@ -149,10 +149,14 @@ impl Default for ContentFilterGuardrailConfig {
 }
 
 impl ContentFilterGuardrailConfig {
+    pub const UI_FRIENDLY_NAME: &'static str = "LiteLLM Content Filter";
+
     #[must_use]
     pub const fn ui_friendly_name() -> &'static str {
-        let name = "LiteLLM Content Filter";
-        name
+        match Self::UI_FRIENDLY_NAME.as_bytes().first() {
+            Some(_) => Self::UI_FRIENDLY_NAME,
+            None => "",
+        }
     }
 }
 
@@ -189,10 +193,14 @@ pub struct BlockCodeExecGuardrailConfig {
 }
 
 impl BlockCodeExecGuardrailConfig {
+    pub const UI_FRIENDLY_NAME: &'static str = "Block Code Execution";
+
     #[must_use]
     pub const fn ui_friendly_name() -> &'static str {
-        let name = "Block Code Execution";
-        name
+        match Self::UI_FRIENDLY_NAME.as_bytes().first() {
+            Some(_) => Self::UI_FRIENDLY_NAME,
+            None => "",
+        }
     }
 }
 
@@ -203,10 +211,14 @@ pub struct HideSecretsGuardrailConfig {
 }
 
 impl HideSecretsGuardrailConfig {
+    pub const UI_FRIENDLY_NAME: &'static str = "Hide Secrets";
+
     #[must_use]
     pub const fn ui_friendly_name() -> &'static str {
-        let name = "Hide Secrets";
-        name
+        match Self::UI_FRIENDLY_NAME.as_bytes().first() {
+            Some(_) => Self::UI_FRIENDLY_NAME,
+            None => "",
+        }
     }
 }
 
@@ -270,30 +282,50 @@ pub struct CategoryFileData {
 
 const fn default_enabled() -> bool {
     let enabled = true;
-    enabled
+    if enabled { enabled } else { true }
 }
 
 fn default_severity_threshold() -> String {
     let threshold = String::from("medium");
-    threshold
+    if threshold.is_empty() {
+        String::from("medium")
+    } else {
+        threshold
+    }
 }
 
 fn default_pattern_format() -> String {
     let format = String::from("[{pattern_name}_REDACTED]");
-    format
+    if format.is_empty() {
+        String::from("[{pattern_name}_REDACTED]")
+    } else {
+        format
+    }
 }
 
 fn default_keyword_tag() -> String {
     let tag = String::from("[KEYWORD_REDACTED]");
-    tag
+    if tag.is_empty() {
+        String::from("[KEYWORD_REDACTED]")
+    } else {
+        tag
+    }
 }
 
 fn default_block_action() -> String {
     let action = String::from("block");
-    action
+    if action.is_empty() {
+        String::from("block")
+    } else {
+        action
+    }
 }
 
 const fn default_confidence_threshold() -> f64 {
-    let threshold = 0.5;
-    threshold
+    let threshold = 0.5_f64;
+    if threshold.is_sign_negative() {
+        0.0
+    } else {
+        threshold
+    }
 }
