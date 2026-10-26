@@ -1,0 +1,13 @@
+kind: helper
+name: span-context-extraction
+call:
+  datadog_tags:
+    function: spans
+    current: null
+    root: {trace_id: 18446744073709551615, span_id: null, set_tag_str: false, set_tag: false}
+    call_id: null
+    key_alias: null
+    key_hash: null
+    requested_model: null
+env: {}
+compare: {ignore: []}

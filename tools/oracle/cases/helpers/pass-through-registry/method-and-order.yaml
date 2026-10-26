@@ -1,0 +1,17 @@
+kind: helper
+name: method-and-order
+call:
+  pass_through_registry:
+    root_path: ''
+    registrations:
+      - {key: 'first:exact:/method:POST', endpoint_id: first, route_type: exact, path: /method, methods: [GET], auth: false}
+      - {key: 'second:exact:/method:POST', endpoint_id: second, route_type: exact, path: /method, methods: [POST], auth: true}
+      - {key: 'old:exact:/old', endpoint_id: old, route_type: exact, path: /old, methods: []}
+      - {key: 'empty:exact:/empty:', endpoint_id: empty, route_type: exact, path: /empty, methods: []}
+    queries:
+      - {route: /method, method: POST}
+      - {route: /method, method: post}
+      - {route: /old, method: DELETE}
+      - {route: /empty, method: GET}
+env: {}
+compare: {ignore: []}

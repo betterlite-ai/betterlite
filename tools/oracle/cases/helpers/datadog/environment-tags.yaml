@@ -1,0 +1,19 @@
+kind: helper
+name: environment-tags
+call:
+  datadog_tags:
+    function: environment
+    env:
+      DD_SOURCE: custom-source
+      DD_ENV: production
+      DD_VERSION: v1
+      DD_BASE_URL: https://dd.example
+      USE_DDTRACE: " TRUE "
+      USE_DDPROFILER: "1"
+    request_tags: [" Foo.Bar ", "A__B / C"]
+    metadata:
+      user_api_key_team_alias: ""
+      team_alias: Platform Team
+      team_id: ignored
+env: {}
+compare: {ignore: []}

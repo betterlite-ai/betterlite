@@ -3,6 +3,7 @@ pub mod audit;
 pub mod batch;
 pub mod callback_config;
 pub mod cost_breakdown;
+pub mod datadog;
 pub mod dynamic_callbacks;
 pub mod end_user;
 pub mod error;
