@@ -25,7 +25,11 @@ fn finops_management_cloudzero_accepts_arbitrary_operation() {
 #[rstest]
 #[case::rfc3339(r#""2024-01-15T00:00:00Z""#, 1_705_276_800)]
 #[case::naive(r#""2024-01-15T00:00:00""#, 1_705_276_800)]
+#[case::without_seconds(r#""2024-01-15T00:00""#, 1_705_276_800)]
 #[case::unix_timestamp("1705276800", 1_705_276_800)]
+#[case::millisecond_timestamp("1705276800000", 1_705_276_800)]
+#[case::float_timestamp("1705276800.5", 1_705_276_800)]
+#[case::date_only(r#""2024-01-15""#, 1_705_276_800)]
 fn finops_management_cloudzero_accepts_supported_datetime_forms(
     #[case] value: &str,
     #[case] expected_timestamp: i64,

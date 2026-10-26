@@ -20,6 +20,7 @@ pub mod endpoints;
 pub mod entry;
 pub mod error;
 pub mod fetch_policy;
+pub(crate) mod finops_datetime;
 pub mod fireworks_catalog_metadata;
 pub mod full_model_metadata;
 pub mod guardrail_pricing;

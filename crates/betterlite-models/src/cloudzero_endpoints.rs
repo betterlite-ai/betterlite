@@ -28,12 +28,12 @@ pub struct CloudZeroExportRequest {
     pub operation: String,
     #[serde(
         default,
-        deserialize_with = "crate::decisions::deserialize_optional_datetime"
+        deserialize_with = "crate::finops_datetime::deserialize_optional_datetime"
     )]
     pub start_time_utc: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(
         default,
-        deserialize_with = "crate::decisions::deserialize_optional_datetime"
+        deserialize_with = "crate::finops_datetime::deserialize_optional_datetime"
     )]
     pub end_time_utc: Option<chrono::DateTime<chrono::Utc>>,
 }
