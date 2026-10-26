@@ -4,7 +4,7 @@ use crate::loader::ConfigLoader;
 use std::collections::BTreeMap;
 
 #[rstest::rstest]
-#[case::loads_default("", None, false)]
+#[case::loads_safe_memory_mode("", None, false)]
 #[case::loads_explicit_false("litellm_settings:\n  safe_memory_mode: false\n", Some("true"), false)]
 #[case::loads_explicit_true("litellm_settings:\n  safe_memory_mode: true\n", Some("false"), true)]
 fn request_records_config_cases(

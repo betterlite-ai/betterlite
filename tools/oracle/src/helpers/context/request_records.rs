@@ -1,42 +1,21 @@
-use betterlite_context::request_records::{
-    GatewayCacheAttribution, RequestRecord, RequestRecordProjection,
-};
+use betterlite_context::request_records::record::RequestRecord;
+use betterlite_context::request_records::{GatewayCacheAttribution, RequestRecordProjection};
 use serde_json::json;
 use std::collections::BTreeSet;
 
 mod tests;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum Input {
-    SafeCopy {
-        record: RequestRecord,
-        safe_memory_mode: bool,
-    },
-    IndependentSnapshot {
-        record: RequestRecord,
-    },
-    FilterParameters {
-        record: RequestRecord,
-        #[serde(default = "default_depth")]
-        max_depth: i32,
-    },
-    FilterInternal {
-        record: RequestRecord,
-        additional: Vec<String>,
-    },
-    GatewayInjection {
-        record: RequestRecord,
-        steps: Vec<GatewayStep>,
-    },
-}
+#[rustfmt::skip]
+pub(crate) enum Input { SafeCopy { record: RequestRecord, safe_memory_mode: bool }, IndependentSnapshot { record: RequestRecord }, FilterParameters { record: RequestRecord, #[serde(default = "default_depth")] max_depth: i32 }, FilterInternal { record: RequestRecord, additional: Vec<String> }, GatewayInjection { record: RequestRecord, steps: Vec<GatewayStep> } }
 
 const fn default_depth() -> i32 {
     let base = 10_i32;
     base + 10_i32
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub(crate) struct GatewayStep {
     added: i32,
     every_deployment: bool,

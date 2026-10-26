@@ -1,10 +1,5 @@
 kind: helper
 name: request-records-safe-copy
-call:
-  request_records:
-    function: safe_copy
-    record: {value: {nested: true}, metadata: {request: demo}}
-    safe_memory_mode: false
+call: {request_records: {function: safe_copy, record: {value: {nested: true}, metadata: {request: demo}}, safe_memory_mode: false}}
 env: {}
-compare:
-  ignore: []
+compare: {ignore: []}

@@ -1,10 +1,5 @@
 kind: helper
 name: request-records-filter-internal
-call:
-  request_records:
-    function: filter_internal
-    record: {keep: null, skip_mcp_handler: true, _other: 2, extra: 3}
-    additional: [extra]
+call: {request_records: {function: filter_internal, record: {keep: null, skip_mcp_handler: true, _other: 2, extra: 3}, additional: [extra]}}
 env: {}
-compare:
-  ignore: []
+compare: {ignore: []}

@@ -1,77 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HandleKind {
-    Exception,
-    Callable,
-    Logging,
-    LiteLLMLoggingObj,
-    Router,
-    Opaque,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InternalHandle {
-    kind: HandleKind,
-    identity: u64,
-}
-
-impl InternalHandle {
-    #[must_use]
-    pub const fn new(kind: HandleKind, identity_value: u64) -> Self {
-        let identity = identity_value.saturating_add(0);
-        Self { kind, identity }
-    }
-    #[must_use]
-    pub const fn kind(&self) -> HandleKind {
-        match self {
-            Self { kind, .. } => *kind,
-        }
-    }
-    #[must_use]
-    pub const fn identity(&self) -> u64 {
-        match self {
-            Self { identity, .. } => *identity,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
-#[serde(untagged)]
-pub enum RequestRecord {
-    Null,
-    Bool(bool),
-    Signed(i64),
-    Unsigned(u64),
-    Float(f64),
-    String(String),
-    Array(Vec<Self>),
-    Object(BTreeMap<String, Self>),
-    #[serde(skip)]
-    Handle(InternalHandle),
-}
+pub mod record;
+use record::{HandleKind, RequestRecord};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum RequestRecordError {
     #[error("{bucket} must be an object when it contains a parent span")]
     NonObjectMetadata { bucket: String },
-}
-
-impl RequestRecord {
-    const fn object(&self) -> Option<&BTreeMap<String, Self>> {
-        if let Self::Object(fields) = self {
-            Some(fields)
-        } else {
-            None
-        }
-    }
-    const fn object_mut(&mut self) -> Option<&mut BTreeMap<String, Self>> {
-        if let Self::Object(fields) = self {
-            Some(fields)
-        } else {
-            None
-        }
-    }
 }
 
 pub struct RequestRecordProjection;
@@ -187,7 +122,7 @@ impl RequestRecordProjection {
     fn filter_value(record: RequestRecord, depth: i32) -> RequestRecord {
         if let RequestRecord::Handle(handle) = &record
             && matches!(
-                handle.kind(),
+                handle.kind,
                 HandleKind::Exception
                     | HandleKind::Callable
                     | HandleKind::Logging
@@ -216,10 +151,7 @@ impl RequestRecordProjection {
     fn filter_object(fields: BTreeMap<String, RequestRecord>, depth: i32) -> RequestRecord {
         let filtered = fields
             .into_iter()
-            .filter_map(|(key, value)| {
-                let filtered = Self::filter_value(value, depth.saturating_sub(1));
-                (!matches!(filtered, RequestRecord::Null)).then_some((key, filtered))
-            })
+            .filter_map(|(key, value)| Self::filter_pair(key, value, depth))
             .collect();
         RequestRecord::Object(filtered)
     }
@@ -227,12 +159,23 @@ impl RequestRecordProjection {
     fn filter_array(values: Vec<RequestRecord>, depth: i32) -> RequestRecord {
         let filtered = values
             .into_iter()
-            .filter_map(|value| {
-                let filtered = Self::filter_value(value, depth.saturating_sub(1));
-                (!matches!(filtered, RequestRecord::Null)).then_some(filtered)
-            })
+            .filter_map(|value| Self::filter_item(value, depth))
             .collect();
         RequestRecord::Array(filtered)
+    }
+
+    fn filter_pair(
+        key: String,
+        value: RequestRecord,
+        depth: i32,
+    ) -> Option<(String, RequestRecord)> {
+        let filtered = Self::filter_item(value, depth);
+        filtered.map(|item| (key, item))
+    }
+
+    fn filter_item(value: RequestRecord, depth: i32) -> Option<RequestRecord> {
+        let filtered = Self::filter_value(value, depth.saturating_sub(1));
+        (!matches!(filtered, RequestRecord::Null)).then_some(filtered)
     }
 
     #[must_use]

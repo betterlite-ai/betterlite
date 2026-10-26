@@ -2,21 +2,16 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {
-    #[serde(default)]
-    pub litellm_settings: Global,
-}
+#[rustfmt::skip]
+pub struct Raw { #[serde(default)] pub litellm_settings: Global }
 
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Global {
-    #[serde(default)]
-    pub safe_memory_mode: bool,
-}
+#[rustfmt::skip]
+pub struct Global { #[serde(default)] pub safe_memory_mode: bool }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Settings {
-    pub safe_memory_mode: bool,
-}
+#[rustfmt::skip]
+pub struct Settings { pub safe_memory_mode: bool }
 
 impl Section for Raw {
     type Settings = Settings;
