@@ -539,7 +539,6 @@ dependencies = [
  "rust_decimal",
  "ryu",
  "serde",
- "serde_json",
  "strum",
  "thiserror",
  "tracing",
