@@ -3,10 +3,23 @@ use std::collections::BTreeMap;
 use super::enums::{Role, default_roles};
 use serde::{Deserialize, Serialize};
 
-pub type CallbackArgs = BTreeMap<String, BTreeMap<String, String>>;
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GuardrailValue {
+    Null,
+    Boolean(bool),
+    SignedInteger(i64),
+    UnsignedInteger(u64),
+    Decimal(f64),
+    Text(String),
+    Array(Vec<Self>),
+    Object(BTreeMap<String, Self>),
+}
+
+pub type CallbackArgs = BTreeMap<String, BTreeMap<String, GuardrailValue>>;
 pub type GuardrailFlag = bool;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GuardrailItem {
     pub callbacks: Vec<String>,
     #[serde(default)]
@@ -24,22 +37,6 @@ pub struct GuardrailItem {
 pub fn default_enabled_roles() -> Option<Vec<Role>> {
     let roles = default_roles();
     Some(roles)
-}
-
-impl GuardrailItem {
-    #[must_use]
-    pub fn new(callbacks: Vec<String>, guardrail_name: String) -> Self {
-        let mut item = Self {
-            callbacks,
-            default_on: false,
-            logging_only: None,
-            guardrail_name,
-            callback_args: CallbackArgs::new(),
-            enabled_roles: None,
-        };
-        item.enabled_roles = Some(default_roles());
-        item
-    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

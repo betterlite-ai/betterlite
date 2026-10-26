@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::enums::PiiAction;
+use super::item::GuardrailValue;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GuardrailParamUITypes {
@@ -58,7 +59,7 @@ pub struct PresidioConfigModel {
     #[serde(rename = "presidio_analyze_chunk_size_bytes")]
     pub analyze_chunk_size_bytes: Option<i64>,
     #[serde(default)]
-    pub mock_redacted_text: Option<BTreeMap<String, String>>,
+    pub mock_redacted_text: Option<BTreeMap<String, GuardrailValue>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,6 +149,24 @@ pub struct GuardrailConfigModel<T> {
     pub optional_params: Option<T>,
 }
 
-impl<T> GuardrailConfigModel<T> {
-    pub const UI_FRIENDLY_NAME: &'static str = "Guardrail";
+pub trait GuardrailConfigModelIdentity {
+    fn ui_friendly_name() -> &'static str;
+}
+
+impl GuardrailConfigModelIdentity for PresidioConfigModel {
+    fn ui_friendly_name() -> &'static str {
+        "Presidio Guardrail"
+    }
+}
+
+impl GuardrailConfigModelIdentity for LassoGuardrailConfigModel {
+    fn ui_friendly_name() -> &'static str {
+        "Lasso Guardrail"
+    }
+}
+
+impl GuardrailConfigModelIdentity for DeepKeepGuardrailConfigModel {
+    fn ui_friendly_name() -> &'static str {
+        "DeepKeep AI Firewall"
+    }
 }

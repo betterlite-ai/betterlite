@@ -218,7 +218,7 @@ pub enum PiiEntityType {
     SgNricFin,
     SgUen,
     AuAbn,
-    #[serde(rename = "AU_\x41\x43\x4e")]
+    #[serde(rename = "AU_ACN")]
     AuAcNumber,
     AuTfn,
     AuMedicare,
@@ -253,7 +253,7 @@ pub enum PiiEntityType {
     ThTnin,
     TrNationalId,
     TrLicensePlate,
-    #[serde(rename = "NG_\x4e\x49\x4e")]
+    #[serde(rename = "NG_NIN")]
     NgNationalId,
     NgVehicleRegistration,
     PhTin,

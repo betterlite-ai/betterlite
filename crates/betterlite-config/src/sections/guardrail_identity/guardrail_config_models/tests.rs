@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 
 use super::super::config_models::{
-    DeepKeepGuardrailConfigModel, LassoGuardrailConfigModel, PresidioConfigModel,
+    DeepKeepGuardrailConfigModel, GuardrailConfigModelIdentity as _, LassoGuardrailConfigModel,
+    PresidioConfigModel,
 };
 use crate::loader::{ConfigError, ConfigLoader};
 
@@ -31,4 +32,33 @@ fn defaults_are_preserved() {
     let deepkeep: DeepKeepGuardrailConfigModel =
         serde_json::from_str("{\"deepkeep_firewall_id\":null}").unwrap();
     assert_eq!(deepkeep.deepkeep_firewall_id, None);
+}
+
+#[test]
+fn concrete_models_provide_their_identity() {
+    assert_eq!(
+        PresidioConfigModel::ui_friendly_name(),
+        "Presidio Guardrail"
+    );
+    assert_eq!(
+        LassoGuardrailConfigModel::ui_friendly_name(),
+        "Lasso Guardrail"
+    );
+    assert_eq!(
+        DeepKeepGuardrailConfigModel::ui_friendly_name(),
+        "DeepKeep AI Firewall"
+    );
+}
+
+#[test]
+fn arbitrary_json_values_are_preserved() {
+    let model: PresidioConfigModel =
+        serde_json::from_str(r#"{"mock_redacted_text":{"text":"masked","items":[]}}"#).unwrap();
+    assert!(matches!(
+        model
+            .mock_redacted_text
+            .as_ref()
+            .and_then(|values| values.get("items")),
+        Some(super::super::item::GuardrailValue::Array(items)) if items.is_empty()
+    ));
 }
