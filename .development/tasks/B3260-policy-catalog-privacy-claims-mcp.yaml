@@ -191,5 +191,5 @@ pitfalls:
   - All four records include a templateData with policy_name and guardrails_add fields. The guardrails_add array must match the top-level guardrails array exactly; do not reorder or omit any.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

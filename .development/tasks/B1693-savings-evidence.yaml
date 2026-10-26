@@ -113,6 +113,6 @@ pitfalls:
   - The empty injection marker is intentional and means every deployment, not missing evidence.
   - Logged cache creation extraction prefers cache_write_tokens, but typed _cache_token_split prefers cache_creation_tokens.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

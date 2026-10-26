@@ -242,6 +242,6 @@ pitfalls:
 - An agent model must have exactly three segments; percent encoding occurs after splitting and cannot make a literal
   slash part of an ID.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

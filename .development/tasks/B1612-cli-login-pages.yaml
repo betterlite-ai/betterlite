@@ -74,6 +74,6 @@ pitfalls:
   - A single team must use a hidden team_id control even though its human-readable label remains visible.
   - The flow handle is an attribute value inside a POST form, never a query parameter in the complete_url.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

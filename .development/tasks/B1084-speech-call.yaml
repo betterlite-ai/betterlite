@@ -145,5 +145,5 @@ pitfalls:
 - Global num_retries=0 falls through to 2 while an explicit max_retries=0 does not.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1

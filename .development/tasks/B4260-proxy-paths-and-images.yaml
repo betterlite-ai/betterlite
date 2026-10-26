@@ -129,5 +129,5 @@ pitfalls:
 - detect_local_image_media_type returns None for empty headers or unrecognized signatures; the caller (resolve_validated_local_image_path) interprets None as an unsupported format and logs a warning.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

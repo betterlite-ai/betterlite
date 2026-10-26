@@ -1,0 +1,4 @@
+litellm_settings:
+  api_base: https://azure.example
+  api_version: version-example
+  azure_key: os.environ/AZURE_API_KEY

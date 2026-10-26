@@ -273,6 +273,6 @@ pitfalls:
 - An explicitly present empty embeddings list suppresses a direct embedding in the same Nova response.
 - An output_s3_uri inside inference parameters is removed but never used as the async wrapper argument.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

@@ -569,6 +569,6 @@ pitfalls:
   - Using the listing's widest group window for get_configured_token_limits can overrun its one selected deployment.
   - Azure's missing base_model error log does not terminate lookup, and a zeroed registration stub is not usable metadata.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

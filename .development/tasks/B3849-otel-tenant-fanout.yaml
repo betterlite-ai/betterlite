@@ -170,6 +170,6 @@ pitfalls:
   - "additive mode means nothing is suppressed; _OverriddenBackendFilter passes spans through and the operator's exporter still gets its copy, so destinations with the same account get the span twice."
   - "llm_only scope delivers model calls as trace roots and holds back the rest unless wider siblings share the sink, so a request with one full destination and one llm_only to the same account widens the llm_only delivery to the full tree."
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

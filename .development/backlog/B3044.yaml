@@ -1,14 +1,14 @@
 id: B3044
 milestone: M4 keys, spend and management
 title: Resolve billable and recovered token usage
-status: todo
+status: done
 depends_on: [B002]
 file: tasks/B3044-rate-limit-usage.yaml
 covers:
   - "litellm/proxy/hooks/parallel_request_limiter_v3.py"
 parent: B072
 split_from: B072
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 202

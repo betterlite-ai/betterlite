@@ -536,6 +536,6 @@ pitfalls:
   - A single-id request bypasses the list's health and discoverability filters but still invokes listing callbacks.
   - infer_model_from_keys is passed only when nonempty key/team grants already suppress inference.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

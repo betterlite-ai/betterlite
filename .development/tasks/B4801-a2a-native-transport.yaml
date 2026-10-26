@@ -86,5 +86,5 @@ pitfalls:
   - An empty non-streaming response (zero events) is an error; an empty streaming response (no chunks) is success.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

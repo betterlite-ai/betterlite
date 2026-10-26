@@ -679,6 +679,6 @@ pitfalls:
 - An empty cleaned requester_metadata map falls back to cleaning the entire metadata map.
 - Chat logs async calls here only when stream is truthy; text also logs acompletion=True.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -8,8 +8,11 @@ publish.workspace = true
 [dependencies]
 betterlite-config = { path = "../betterlite-config" }
 chrono.workspace = true
+parquet-format-safe = "0.2.4"
+parquet2 = { version = "0.17.2", default-features = false, features = ["snappy"] }
 regex.workspace = true
 rust_decimal.workspace = true
+ryu = "1.0.23"
 serde.workspace = true
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true

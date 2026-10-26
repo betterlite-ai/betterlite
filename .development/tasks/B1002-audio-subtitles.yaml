@@ -105,5 +105,5 @@ pitfalls:
 - Timing model validation failures drop the whole list silently; NaN/Infinity fail later and are not caught there.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1

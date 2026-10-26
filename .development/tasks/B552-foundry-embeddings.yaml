@@ -221,6 +221,6 @@ pitfalls:
 - The source computes filtered text input but passes the full original input to the text embedding call.
 - The error says /image/embeddings while the actual image URL uses /images/embeddings.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

@@ -45,7 +45,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/config_override.rs
     - crates/betterlite-server/fuzz/corpus/config_override/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/config_override.rs
     - crates/betterlite-config/src/config_override/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/config-override-*
@@ -102,6 +101,6 @@ pitfalls:
   - A valid non-object JSON config_value is not the same case as malformed JSON falling back to an empty mapping.
   - CyberArk rollback may reactivate Vault only after dropping an active CyberArk manager, not after every failed restore attempt.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

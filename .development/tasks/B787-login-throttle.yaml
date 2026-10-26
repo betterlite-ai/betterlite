@@ -285,6 +285,6 @@ pitfalls:
   - Local fallback refreshes count expiry on every failure while the Redis Lua window is fixed.
   - A successful sign-in clears the pair counter but cannot clear an existing block.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

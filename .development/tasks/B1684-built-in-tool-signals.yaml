@@ -108,6 +108,6 @@ pitfalls:
   - _get_tools_from_kwargs returns the original list regardless of the requested tool type, so the later first-match scan controls precedence.
   - A reported zero web-search request count beats the fallback minimum of one.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security
