@@ -6,10 +6,10 @@ fn patterns() -> &'static [Regex] {
     static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
     PATTERNS.get_or_init(|| {
         [
-            r"^#\s*(\S+\.\w+)",
-            r"^//\s*(\S+\.\w+)",
-            r"^File:\s*(\S+)",
-            r"^---\s*(\S+\.\w+)",
+            r"(?m)^#\s*(\S+\.\w+)",
+            r"(?m)^//\s*(\S+\.\w+)",
+            r"(?m)^File:\s*(\S+)",
+            r"(?m)^---\s*(\S+\.\w+)",
             r"`(\S+\.\w{1,5})`",
         ]
         .into_iter()

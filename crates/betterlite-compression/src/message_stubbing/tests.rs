@@ -13,3 +13,14 @@ fn stub_preserves_role_and_line_count() {
             .is_some_and(|text| text.contains("2 lines"))
     );
 }
+
+#[test]
+fn counts_the_line_after_a_trailing_newline() {
+    let stub = stub_message(&json!({"role":"user","content":"one\n"}), "note");
+    assert!(
+        stub["content"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("2 lines")
+    );
+}

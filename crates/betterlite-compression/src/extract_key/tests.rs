@@ -20,6 +20,13 @@ fn content_blocks_contribute_text_to_key_search() {
 }
 
 #[test]
+fn finds_path_patterns_after_the_first_line() {
+    let message = json!({"content":"context\nFile: src/config.yaml"});
+    let mut used = Vec::new();
+    assert_eq!(extract_key(&message, 0, &mut used), "config.yaml");
+}
+
+#[test]
 fn falls_back_to_message_index() {
     let mut used = Vec::new();
     assert_eq!(
