@@ -546,6 +546,7 @@ dependencies = [
 name = "betterlite-models"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "fancy-regex",
  "indexmap 2.14.2",
  "rstest",
