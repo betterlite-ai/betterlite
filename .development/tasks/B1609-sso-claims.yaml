@@ -78,6 +78,6 @@ pitfalls:
   - A DB team_ids_jwt_field adds to SSO-specific teams and does not deduplicate the result.
   - Empty or absent userinfo values have different claim-merge behavior from nonempty values, even when an ID token carries the same key.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

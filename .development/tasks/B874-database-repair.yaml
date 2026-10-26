@@ -133,6 +133,6 @@ pitfalls:
   - decode_verification_csv(&[u8]) uses the csv crate and typed column coercion, preserving JSON/null
     values and source per-row failure behavior.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

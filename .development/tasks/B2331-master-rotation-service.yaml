@@ -123,6 +123,6 @@ pitfalls:
   - current_master_key is not used to decrypt; the active salt remains authoritative during migration.
   - An error after model commit leaves those rows encrypted under the new key even if later stores fail.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

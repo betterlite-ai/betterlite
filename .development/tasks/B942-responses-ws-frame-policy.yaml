@@ -315,5 +315,5 @@ pitfalls:
 - 'A valid top-level `[1,2,3]` is safely ignored by quota selection but reaches `.get("type")` in all three masking methods; B943 must surface the typed non-object error as termination without a Rust panic.'
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

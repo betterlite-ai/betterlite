@@ -165,6 +165,6 @@ pitfalls:
   - A successful database write remains visible even when the local router reload reports degraded serving;
     do not roll back the database merely to disguise reload failure..
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -135,5 +135,5 @@ pitfalls:
   - wait=true is a query parameter string, not a JSON field; it gates collection write operations (points endpoint) and is set as a MappingProxyType constant.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -534,6 +534,6 @@ pitfalls:
   - A nonempty unsupported sortBy still triggers the 500-row fetch cap before sorting is skipped.
   - Sorting's comments claim missing values start descending results, but its sentinels put them last.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

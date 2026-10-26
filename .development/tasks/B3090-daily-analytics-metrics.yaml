@@ -77,6 +77,6 @@ pitfalls:
   - BreakdownMetrics uses nested dicts for api_key_breakdown and metadata. The Python code initializes them as field defaults; Rust struct literals must do the same to match.
   - raise_public pattern matches on error variants with assert_never. If a new error type is added to the union, the match will fail to compile until all arms are handled.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

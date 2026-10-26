@@ -185,6 +185,6 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as stream_tool_assembly in the streaming group. Replace the stub Op in tools/oracle/src/helpers/streaming/stream_tool_assembly.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/stream_tool_assembly.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A later tool ID replaces an earlier one for the same pair of indices; do not group fragments by ID.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard
