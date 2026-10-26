@@ -1,14 +1,14 @@
 id: B3262
 milestone: M6 guardrails
 title: Local injection, claims and airline topic catalog records
-status: todo
+status: done
 depends_on: []
 file: tasks/B3262-policy-catalog-local-injection-claims.yaml
 covers:
   - "litellm/policy_templates_backup.json"
 parent: B079
 split_from: B079
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 170
