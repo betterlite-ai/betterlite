@@ -1,6 +1,6 @@
 use betterlite_config::loader::EnvironmentLookup;
 use serde::Deserialize;
-use unicode_general_category::{GeneralCategory, get_general_category};
+use unicode_properties::{GeneralCategoryGroup, UnicodeGeneralCategory as _};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Environment {
@@ -68,15 +68,8 @@ pub fn normalize_value(value: &str) -> String {
     for character in value.to_lowercase().chars() {
         // Python's isalnum accepts letters and numbers, unlike Rust's broader Alphabetic property
         let alphanumeric = matches!(
-            get_general_category(character),
-            GeneralCategory::UppercaseLetter
-                | GeneralCategory::LowercaseLetter
-                | GeneralCategory::TitlecaseLetter
-                | GeneralCategory::ModifierLetter
-                | GeneralCategory::OtherLetter
-                | GeneralCategory::DecimalNumber
-                | GeneralCategory::LetterNumber
-                | GeneralCategory::OtherNumber
+            character.general_category_group(),
+            GeneralCategoryGroup::Letter | GeneralCategoryGroup::Number
         );
         let kept = if alphanumeric || "_-:./".contains(character) {
             character
