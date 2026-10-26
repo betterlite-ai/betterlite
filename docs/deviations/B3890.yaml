@@ -3,9 +3,6 @@ deviations:
   - what: OrgBudgetSnapshot.spend and all max_budget fields are rust_decimal::Decimal instead of LiteLLM's float fields. They read JSON numbers and numeric strings without float rounding and write JSON numbers that keep the Decimal's scale.
     why: The money-is-decimal rule requires exact monetary values from the moment they are read.
     link: https://docs.rs/rust_decimal/1.35/rust_decimal/struct.Decimal.html
-  - what: Deserializing a snapshot directly with serde rejects unknown fields, while LiteLLM's models use extra="ignore". from_metadata still ignores every key the snapshot does not carry, as LiteLLM does.
-    why: The task's definition of done asks every snapshot type to reject extra fields on deserialization.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/carried_budget_state.py#L18
   - what: from_metadata reads only the user_api_key_* alias keys. LiteLLM's populate_by_name also accepts the bare field names (spend, max_budget, budget_reset_at, user_alias) when the alias is missing, and pydantic's lax mode accepts unix timestamps and naive datetimes for budget_reset_at and booleans for money fields. Those inputs give None here.
     why: Auth only ever writes the aliased keys with ISO timestamps and numbers, and reading bare names would let unrelated metadata keys stand in for a carried budget.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/carried_budget_state.py#L18
