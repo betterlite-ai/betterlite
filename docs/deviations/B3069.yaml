@@ -1,0 +1,11 @@
+task: B3069
+deviations:
+  - what: "Custom provider names azure_ai and vertex_ai normalize to azure-ai and vertex-ai, not to azure and gcp."
+    why: "LiteLLM replaces underscores before looking up the provider map, so those enum keys no longer match."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_resource_names.py#L115-L136"
+  - what: "CBF records use a map-backed typed value representation because CBF field names contain forward slashes."
+    why: "The source uses dict[str, Any] rather than TypedDict for names such as time/usage_start and cost/cost."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/cloudzero.py#L1-L34"
+  - what: "Filtering warnings use tracing rather than Rich console output."
+    why: "betterlite logging is integrated with its Rust logging pipeline; tracing preserves warning visibility without adding a Rich dependency."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/transform.py#L81-L96"

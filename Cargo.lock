@@ -590,6 +590,7 @@ dependencies = [
  "chrono",
  "parquet-format-safe",
  "parquet2",
+ "regex",
  "rstest",
  "rust_decimal",
  "ryu",
