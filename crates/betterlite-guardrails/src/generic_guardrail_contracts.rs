@@ -105,7 +105,11 @@ impl GenericGuardrailAPIResponse {
     pub fn from_value(mut value: Value) -> Result<Self, serde_json::Error> {
         if let Some(holdback) = value.get_mut("stream_holdback_chars") {
             if let Value::Array(values) = holdback {
-                let coerced = values.iter().map(coerce_stream_holdback_value).collect();
+                let coerced = values
+                    .iter()
+                    .map(coerce_stream_holdback_value)
+                    .map(Value::from)
+                    .collect();
                 *holdback = Value::Array(coerced);
             }
         }
