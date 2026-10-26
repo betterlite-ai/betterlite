@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
 use rstest::rstest;
+use std::collections::BTreeMap;
 
 use crate::loader::{ConfigError, ConfigLoader};
 
@@ -32,7 +32,10 @@ fn reads_root_from_environment() {
     }
     .load("{}")
     .unwrap();
-    assert_eq!(config.sections.pass_through_registry.server_root_path, "/environment/");
+    assert_eq!(
+        config.sections.pass_through_registry.server_root_path,
+        "/environment/"
+    );
 }
 
 #[test]
