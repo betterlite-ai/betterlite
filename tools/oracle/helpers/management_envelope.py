@@ -1,4 +1,4 @@
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -75,30 +75,33 @@ class Input(TypedDict, total=False):
 
 
 def run(input_value: Input) -> dict[str, Any]:
-    function = input_value["function"]
+    values = cast(dict[str, object], input_value)
+    function = cast(str, values["function"])
     if function == "problem":
-        problem = ProblemDetail.model_validate(input_value)
+        problem = ProblemDetail.model_validate(values)
         return problem.model_dump(
-            mode="json", by_alias=True, exclude_none=input_value.get("document", False)
+            mode="json", by_alias=True,
+            exclude_none=cast(bool, values.get("document", False)),
         )
     if function == "facet":
         response = FacetListResponse(
-            data=input_value["data"],
+            data=cast(list[str], values["data"]),
             meta=PageMeta(
-                page=input_value["page"], page_size=input_value["page_size"],
-                has_more=input_value["has_more"],
+                page=cast(int, values["page"]), page_size=cast(int, values["page_size"]),
+                has_more=cast(bool, values["has_more"]),
             ),
-            links=PageLinks.model_validate(input_value),
+            links=PageLinks.model_validate(values),
         )
         return response.model_dump(mode="json", by_alias=True)
     if function == "list":
         response = ListResponse(
-            data=input_value["data"],
+            data=cast(list[Any], values["data"]),
             meta=ListMeta(
-                total_count=input_value["total_count"], page=input_value["page"],
-                page_size=input_value["page_size"], total_pages=input_value["total_pages"],
+                total_count=cast(int, values["total_count"]), page=cast(int, values["page"]),
+                page_size=cast(int, values["page_size"]),
+                total_pages=cast(int, values["total_pages"]),
             ),
-            links=ListLinks.model_validate(input_value),
+            links=ListLinks.model_validate(values),
         )
         return response.model_dump(mode="json", by_alias=True)
-    return {"data": input_value["data"]}
+    return {"data": cast(Any, values["data"])}
