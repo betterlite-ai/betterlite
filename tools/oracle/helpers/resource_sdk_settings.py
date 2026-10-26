@@ -31,10 +31,10 @@ def run(input_value: dict[str, object]) -> dict[str, object]:
     resolved = _resolve_fine_tuning_timeout(timeout, provider)
     if isinstance(resolved, httpx.Timeout):
         timeout_result: object = {
-            "connect": resolved.connect,
-            "read": resolved.read,
-            "write": resolved.write,
-            "pool": resolved.pool,
+            "connect": float(resolved.connect) if resolved.connect is not None else None,
+            "read": float(resolved.read) if resolved.read is not None else None,
+            "write": float(resolved.write) if resolved.write is not None else None,
+            "pool": float(resolved.pool) if resolved.pool is not None else None,
         }
     else:
         timeout_result = resolved

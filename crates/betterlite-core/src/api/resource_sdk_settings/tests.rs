@@ -296,11 +296,11 @@ fn request_options() -> ResourceSdkRequestOptions {
 }
 
 #[rstest::rstest]
-#[case::absent(None, 600.0)]
-#[case::empty(Some(TimeoutValue::String(String::new())), 600.0)]
-#[case::negative(Some(TimeoutValue::Number(-7.0)), -7.0)]
-#[case::numeric(Some(TimeoutValue::Number(7.0)), 7.0)]
-#[case::text_zero(Some(TimeoutValue::String("0".to_owned())), 0.0)]
+#[case::absent(None, 600.0_f64)]
+#[case::empty(Some(TimeoutValue::String(String::new())), 600.0_f64)]
+#[case::negative(Some(TimeoutValue::Number(-7.0_f64)), -7.0_f64)]
+#[case::numeric(Some(TimeoutValue::Number(7.0_f64)), 7.0_f64)]
+#[case::text_zero(Some(TimeoutValue::String("0".to_owned())), 0.0_f64)]
 fn raw_timeout_defaults(#[case] raw: Option<TimeoutValue>, #[case] expected: f64) {
     assert_eq!(
         resolve_fine_tuning_timeout(raw.as_ref(), "openai", None),
@@ -309,10 +309,10 @@ fn raw_timeout_defaults(#[case] raw: Option<TimeoutValue>, #[case] expected: f64
 }
 
 #[rstest::rstest]
-#[case::null(None, 600.0)]
-#[case::zero(Some(0.0), 600.0)]
-#[case::nonzero(Some(7.0), 7.0)]
-#[case::negative(Some(-7.0), -7.0)]
+#[case::null(None, 600.0_f64)]
+#[case::zero(Some(0.0_f64), 600.0_f64)]
+#[case::nonzero(Some(7.0_f64), 7.0_f64)]
+#[case::negative(Some(-7.0_f64), -7.0_f64)]
 fn unsupported_timeout_read(#[case] read: Option<f64>, #[case] expected: f64) {
     let structured = StructuredTimeout {
         connect: None,

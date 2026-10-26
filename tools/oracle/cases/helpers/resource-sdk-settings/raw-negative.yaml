@@ -1,0 +1,9 @@
+kind: helper
+name: raw-negative
+call:
+  resource_sdk_settings:
+    provider: "openai"
+    timeout: -7
+env: {}
+compare:
+  ignore: []
