@@ -10,10 +10,18 @@ cargo-fuzz = true
 [dependencies]
 betterlite-lens = { path = ".." }
 libfuzzer-sys = "0.4.9"
+serde_json = "1.0.154"
 
 [[bin]]
 name = "lens_model"
 path = "fuzz_targets/lens_model.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "structured_response"
+path = "fuzz_targets/structured_response.rs"
 test = false
 doc = false
 bench = false

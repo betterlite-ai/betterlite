@@ -1,0 +1,5 @@
+task: B4506
+deviations:
+  - what: Span storage is file-backed SQLite instead of LiteLLM's in-memory dictionary.
+    why: Betterlite needs bounded storage for large sample traces and deterministic cleanup for long-running workers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/trace_store.py#L17-L22
