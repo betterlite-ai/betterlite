@@ -1,0 +1,6 @@
+kind: helper
+name: constructor-missing-api-key
+call:
+  b3778: {construct: {settings: {}, environment: {}}}
+env: {}
+compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}

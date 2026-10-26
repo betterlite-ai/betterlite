@@ -1,0 +1,23 @@
+[package]
+name = "betterlite-mcp-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-mcp = { path = ".." }
+chrono = { version = "0.4.45", default-features = false }
+libfuzzer-sys = "0.4.9"
+secrecy = "0.10.3"
+
+[[bin]]
+name = "session_token"
+path = "fuzz_targets/session_token.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

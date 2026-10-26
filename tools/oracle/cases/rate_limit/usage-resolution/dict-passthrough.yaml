@@ -1,0 +1,10 @@
+kind: helper
+name: dict-passthrough
+call:
+  b3044:
+    rate_limit_type: output
+    usage_kind: mapping
+    usage: {unrelated_field: 7}
+env: {}
+compare:
+  ignore: []
