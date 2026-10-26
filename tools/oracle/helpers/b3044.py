@@ -1,25 +1,27 @@
-from collections.abc import Mapping
-from typing import TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, cast
 from unittest.mock import patch
 
 from litellm.proxy import proxy_server
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
-    _PROXY_MaxParallelRequestsHandler_v3 as ParallelRequestLimiter,
+    _PROXY_MaxParallelRequestsHandler_v3 as ParallelRequestLimiter,  # pyright: ignore[reportPrivateUsage]
 )
 from litellm.types.llms.openai import ResponseAPIUsage
-from litellm.types.rerank import RerankResponse
+from litellm.types.rerank import RerankBilledUnits, RerankResponse, RerankResponseMeta, RerankTokens
 from litellm.types.utils import Usage
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Object: TypeAlias = dict[str, Json]
 
 
 def typed_usage(value: Object) -> Usage:
-    return Usage(**value)
+    return Usage.model_validate(value)
 
 
 def typed_response_api_usage(value: Object) -> ResponseAPIUsage:
-    return ResponseAPIUsage(**value)
+    return ResponseAPIUsage.model_validate(value)
 
 
 def response_object(input_value: Object) -> object:
@@ -43,13 +45,15 @@ def response_object(input_value: Object) -> object:
 
 
 def rerank_response(input_value: Object) -> RerankResponse:
-    metadata: dict[str, object] = {}
+    metadata: RerankResponseMeta = {}
     tokens = input_value.get("rerank_tokens")
     if isinstance(tokens, dict):
-        metadata["tokens"] = tokens
+        metadata["tokens"] = cast(RerankTokens, tokens)
     billed_units = input_value.get("billed_units_total_tokens")
     if isinstance(billed_units, int):
-        metadata["billed_units"] = {"total_tokens": billed_units}
+        metadata["billed_units"] = cast(
+            RerankBilledUnits, {"total_tokens": billed_units}
+        )
     return RerankResponse(meta=metadata or None)
 
 
@@ -86,7 +90,9 @@ def run(input_value: Object) -> dict[str, Json]:
         combined = input_value.get("combined_usage_object")
         recovered = (0, 0, 0)
         if isinstance(combined, dict):
-            recovered_source: Mapping[str, object] = {"combined_usage_object": typed_usage(combined)}
+            recovered_source: Mapping[str, object] = {
+                "combined_usage_object": typed_usage(combined)
+            }
             recovered = limiter._recovered_partial_usage_tokens(recovered_source)  # pyright: ignore[reportPrivateUsage]
     return {
         "rate_limit_type": rate_limit_type,
