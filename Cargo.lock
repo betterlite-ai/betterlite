@@ -422,6 +422,7 @@ dependencies = [
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
+ "percent-encoding",
  "rstest",
  "serde",
  "serde_json",
