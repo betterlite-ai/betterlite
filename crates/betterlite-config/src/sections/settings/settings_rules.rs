@@ -1,32 +1,40 @@
 use std::collections::BTreeMap;
 
-use super::settings_resolution::JsonValue as Value;
+use serde::{Deserialize, Serialize};
+use serde_json::Number;
 
-use super::descriptors::FieldSource;
-use super::settings_store::SettingsStore;
-
-#[must_use]
-pub fn coerce_bool(value: Value) -> Value {
-    match value {
-        Value::Null | Value::Boolean(_) => value,
-        Value::Text(text) => Value::Boolean(text.eq_ignore_ascii_case("true")),
-        Value::SignedInteger(_) | Value::UnsignedInteger(_) | Value::Decimal(_) | Value::Array(_) | Value::Object(_) => Value::Boolean(!value.is_null()),
-    }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum JsonValue {
+    Null,
+    Bool(bool),
+    Number(Number),
+    Text(String),
+    List(Vec<Self>),
+    Object(BTreeMap<String, Self>),
 }
 
-#[must_use]
-pub fn source_for(store: &SettingsStore, key: &str, default: Option<&Value>) -> FieldSource {
-    match store.source(key) {
-        FieldSource::Unset if default.is_some() => FieldSource::Default,
-        FieldSource::Config => FieldSource::Config,
-        FieldSource::Db => FieldSource::Db,
-        FieldSource::Env => FieldSource::Env,
-        FieldSource::Default => FieldSource::Default,
-        FieldSource::Unset => FieldSource::Unset,
-    }
+// LiteLLM keeps no store for ui_settings; it is only the stored row behind the general_settings UI keys
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Section {
+    GeneralSettings,
+    RouterSettings,
+    LitellmSettings,
+    EnvironmentVariables,
 }
 
-pub(crate) const UI_SETTINGS_FIELDS: [&str; 10] = [
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DbRow {
+    GeneralSettings,
+    RouterSettings,
+    LitellmSettings,
+    EnvironmentVariables,
+    UiSettings,
+}
+
+pub const UI_SETTINGS_FIELDS: [&str; 10] = [
     "allow_public_health_readiness_details",
     "forward_client_headers_to_llm_api",
     "forward_llm_provider_auth_headers",
@@ -39,14 +47,34 @@ pub(crate) const UI_SETTINGS_FIELDS: [&str; 10] = [
     "team_admin_editable_team_fields",
 ];
 
-pub(crate) fn db_row_for<'section>(section: &'section str, key: &str) -> &'section str {
-    if section == "general_settings" && UI_SETTINGS_FIELDS.contains(&key) {
-        "ui_settings"
-    } else {
-        section
+impl Section {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::GeneralSettings => "general_settings",
+            Self::RouterSettings => "router_settings",
+            Self::LitellmSettings => "litellm_settings",
+            Self::EnvironmentVariables => "environment_variables",
+        }
     }
-}
 
-pub(crate) const fn empty_values() -> BTreeMap<String, Value> {
-    BTreeMap::new()
+    #[must_use]
+    pub fn row_for(self, key: &str) -> DbRow {
+        match self {
+            Self::GeneralSettings if UI_SETTINGS_FIELDS.contains(&key) => DbRow::UiSettings,
+            Self::GeneralSettings => DbRow::GeneralSettings,
+            Self::RouterSettings => DbRow::RouterSettings,
+            Self::LitellmSettings => DbRow::LitellmSettings,
+            Self::EnvironmentVariables => DbRow::EnvironmentVariables,
+        }
+    }
+
+    // pass_through_endpoints is a list of resources the proxy merges from both sources, so the file never owns it
+    #[must_use]
+    pub fn is_resource_list(self, key: &str) -> bool {
+        match self {
+            Self::GeneralSettings => key == "pass_through_endpoints",
+            Self::RouterSettings | Self::LitellmSettings | Self::EnvironmentVariables => false,
+        }
+    }
 }
