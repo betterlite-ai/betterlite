@@ -152,5 +152,5 @@ pitfalls:
 - Expiry check uses current timestamp minus entry timestamp, so a clock mock in tests must provide consistent time.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1

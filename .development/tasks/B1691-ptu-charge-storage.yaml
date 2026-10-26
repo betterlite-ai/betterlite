@@ -110,6 +110,6 @@ pitfalls:
   - scanned_ids includes deployments whose PTU terms were removed, otherwise their stale rows can never be pruned.
   - A 90-day subtraction followed by an inclusive range produces up to 91 backfill dates.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

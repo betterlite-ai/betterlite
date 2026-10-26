@@ -293,6 +293,6 @@ pitfalls:
 - The first marker occurrence controls the name check; a later valid titan-embed-text-v2 cannot rescue an earlier
   lookalike.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

@@ -83,6 +83,6 @@ pitfalls:
   - Object-team budget updates run before the shared store_model_in_db guard, so disabled storage can still leave team budgets changed.
   - organization_id="" is supplied and must be checked, while teams=[] deliberately avoids the team existence query.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

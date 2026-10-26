@@ -274,6 +274,6 @@ pitfalls:
 - return_documents defaults True but never causes Bedrock results to include documents.
 - An explicitly empty usage object suppresses the default search_units=1.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

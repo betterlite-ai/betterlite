@@ -154,6 +154,6 @@ pitfalls:
   - The database-presence check precedes even a cache hit, so cached credentials do not make a database-free store valid.
   - Empty user_id creates a UserIdentity but selects service_account as the principal type.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

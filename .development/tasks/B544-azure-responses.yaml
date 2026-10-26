@@ -290,6 +290,6 @@ pitfalls:
 - 'The method name get_stripped_model_name is misleading for azure/: only responses/, o_series/ and azure_ai/ are
   replaced.'
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

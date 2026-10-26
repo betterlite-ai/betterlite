@@ -110,5 +110,5 @@ pitfalls:
 - Do not apply Gemini's content ordering to Azure or Cohere.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

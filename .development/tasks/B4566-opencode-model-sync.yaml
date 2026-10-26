@@ -99,6 +99,6 @@ pitfalls:
   - OPENCODE_CONFIG_CONTENT_ENV check is on the input base_env map, not the runtime environment, so a stale env var in the calling process is overridden by the returned map only if the caller merges it; failing to merge means OpenCode sees the old config.
   - "apiKey in the OpenCode config uses {env:OPENAI_API_KEY_ENV}, not a literal key, so build_agent_env must export OPENAI_API_KEY_ENV for OpenCode to read it; an unset OPENAI_API_KEY_ENV means OpenCode falls back to a saved key or fails."
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

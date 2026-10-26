@@ -414,6 +414,6 @@ pitfalls:
   - Configured public routes are enabled deliberately, so their success cases are native deviation tests
     when LiteLLM lacks premium_user.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

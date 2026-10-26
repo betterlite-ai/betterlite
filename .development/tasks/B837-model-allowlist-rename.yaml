@@ -147,6 +147,6 @@ pitfalls:
   - Removing new_name before replacing old_name retains duplicate old-name positions as duplicate new-name grants.
   - A cache decoding or eviction error follows a committed CTE statement; rolling back the deployment rename here would invent atomicity.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

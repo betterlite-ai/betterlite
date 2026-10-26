@@ -29,7 +29,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/sso_return_target.rs
     - crates/betterlite-server/fuzz/corpus/sso_return_target/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/sso_return_targets.rs
     - crates/betterlite-config/src/sso_return_targets/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-return-target-*
@@ -83,6 +82,6 @@ pitfalls:
   - Marking token HttpOnly breaks the retained dashboard even though litellm_cp_return_to itself is HttpOnly.
   - The code redirect appends an ampersand whenever return_to already contains a question mark, matching the source even with a fragment.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

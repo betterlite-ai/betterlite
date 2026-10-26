@@ -72,6 +72,6 @@ pitfalls:
   - An empty sso_user_id is still non-null and therefore prevents merging that account.
   - Only listing uses an explicit transaction; wrapping the entire merge in one would hide the source's partial successes.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

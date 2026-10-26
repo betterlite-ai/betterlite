@@ -192,6 +192,6 @@ pitfalls:
   - 'GatewayRequestRedisBuffer acquires a lease that is never released, just renewed on every flush. This is a lock with a TTL that lapses if the holder crashes, releasing it to the next pod.'
   - 'The endpoint date range defaults are inclusive: a 30-day lookback from today includes today. start_date and end_date are inclusive on both ends of the WHERE clause.'
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard
