@@ -68,74 +68,17 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let output = match input {
-            Input::Problem {
-                r#type,
-                title,
-                status,
-                detail,
-                allowed,
-                document,
-            } => {
-                let problem = ProblemDetail {
-                    r#type: r#type.clone(),
-                    title: title.clone(),
-                    status: *status,
-                    detail: detail.clone(),
-                    allowed: allowed.clone(),
-                };
-                if *document {
-                    Output::ProblemDocument(problem.problem_document())
-                } else {
-                    Output::Problem(problem)
-                }
+            Input::Problem { r#type, title, status, detail, allowed, document } => {
+                let problem = ProblemDetail { r#type: r#type.clone(), title: title.clone(), status: *status, detail: detail.clone(), allowed: allowed.clone() };
+                if *document { Output::ProblemDocument(problem.problem_document()) } else { Output::Problem(problem) }
             }
-            Input::Facet {
-                data,
-                page,
-                page_size,
-                has_more,
-                self_link,
-                prev,
-                next,
-            } => Output::Facet(FacetListResponse {
-                data: data.clone(),
-                meta: PageMeta {
-                    page: *page,
-                    page_size: *page_size,
-                    has_more: *has_more,
-                },
-                links: PageLinks {
-                    self_link: self_link.clone(),
-                    prev: prev.clone(),
-                    next: next.clone(),
-                },
+            Input::Facet { data, page, page_size, has_more, self_link, prev, next } => Output::Facet(FacetListResponse {
+                data: data.clone(), meta: PageMeta { page: *page, page_size: *page_size, has_more: *has_more },
+                links: PageLinks { self_link: self_link.clone(), prev: prev.clone(), next: next.clone() },
             }),
-            Input::List {
-                data,
-                total_count,
-                page,
-                page_size,
-                total_pages,
-                self_link,
-                first,
-                prev,
-                next,
-                last,
-            } => Output::List(ListResponse {
-                data: data.clone(),
-                meta: ListMeta {
-                    total_count: *total_count,
-                    page: *page,
-                    page_size: *page_size,
-                    total_pages: *total_pages,
-                },
-                links: ListLinks {
-                    self_link: self_link.clone(),
-                    first: first.clone(),
-                    prev: prev.clone(),
-                    next: next.clone(),
-                    last: last.clone(),
-                },
+            Input::List { data, total_count, page, page_size, total_pages, self_link, first, prev, next, last } => Output::List(ListResponse {
+                data: data.clone(), meta: ListMeta { total_count: *total_count, page: *page, page_size: *page_size, total_pages: *total_pages },
+                links: ListLinks { self_link: self_link.clone(), first: first.clone(), prev: prev.clone(), next: next.clone(), last: last.clone() },
             }),
             Input::Resource { data } => Output::Resource(ResourceResponse { data: data.clone() }),
         };
