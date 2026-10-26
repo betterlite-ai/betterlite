@@ -59,7 +59,7 @@ impl crate::helpers::Helper for Op {
                 let metadata = selected_metadata.map(metadata_value);
                 serde_json::json!({
                     "normalized": registry.normalize_route(&query.route)
-                        .unwrap_or_else(|| query.route.to_owned()),
+                        .unwrap_or_else(|| query.route.clone()),
                     "registered": registry.is_registered(&query.route),
                     "metadata": metadata,
                 })
