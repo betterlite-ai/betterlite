@@ -32,7 +32,7 @@ fn agentic_loop_ceiling_accepts(#[case] value: AgenticLoopValue, #[case] expecte
 #[case::negative_infinity(AgenticLoopValue::Float(f64::NEG_INFINITY))]
 #[case::float_overflow(AgenticLoopValue::Float(f64::MAX))]
 #[case::integer_overflow(AgenticLoopValue::Integer(i64::MAX))]
-#[case::above_maximum(AgenticLoopValue::Integer(4_294_967_296))]
+#[case::above_maximum(AgenticLoopValue::Integer(0x0001_0000_0000))]
 #[case::text_overflow(AgenticLoopValue::Text("9223372036854775808".to_owned()))]
 #[case::non_numeric(AgenticLoopValue::Text("five".to_owned()))]
 #[case::unicode_digits(AgenticLoopValue::Text("\u{661}".to_owned()))]
