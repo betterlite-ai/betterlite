@@ -51,3 +51,27 @@ impl KeyManagementRoute {
         }
     }
 }
+
+pub const KEY_ENUM: &[KeyManagementRoute] = &[
+    KeyManagementRoute::KeyGenerate,
+    KeyManagementRoute::KeyUpdate,
+    KeyManagementRoute::KeyDelete,
+    KeyManagementRoute::KeyRegenerate,
+    KeyManagementRoute::KeyGenerateServiceAccount,
+    KeyManagementRoute::KeyRegenerateWithPathParam,
+    KeyManagementRoute::KeyBlock,
+    KeyManagementRoute::KeyUnblock,
+    KeyManagementRoute::KeyBulkUpdate,
+    KeyManagementRoute::TeamKeyBulkUpdate,
+    KeyManagementRoute::KeyResetSpend,
+    KeyManagementRoute::KeyAccessGroupAssignment,
+    KeyManagementRoute::AutoRouterManage,
+    KeyManagementRoute::KeyInfo,
+    KeyManagementRoute::KeyHealth,
+    KeyManagementRoute::KeyList,
+    KeyManagementRoute::KeyAliases,
+    KeyManagementRoute::TeamDailyActivity,
+    KeyManagementRoute::TeamDailyActivityAggregated,
+    KeyManagementRoute::SpendLogs,
+    KeyManagementRoute::SpendLogsV2,
+];

@@ -59,5 +59,7 @@ fn internal_roles_exclude_global_spend() {
 
 #[test]
 fn key_health_is_not_key_management() {
-    assert!(!KEY_MANAGEMENT_ROUTES.contains(&super::KeyManagementRoute::KeyHealth.value()));
+    assert!(
+        !KEY_MANAGEMENT_ROUTES.contains(&super::key_routes::KeyManagementRoute::KeyHealth.value(),)
+    );
 }

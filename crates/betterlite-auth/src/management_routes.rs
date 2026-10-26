@@ -1,7 +1,5 @@
-mod key_routes;
+pub mod key_routes;
 mod tests;
-
-pub use key_routes::KeyManagementRoute;
 
 use crate::auxiliary_routes::{
     AGENT_MANAGEMENT_ROUTES, COMPLIANCE_CHECK_ROUTES, INFO_ROUTES, MCP_MANAGEMENT_ROUTES,
