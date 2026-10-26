@@ -72,8 +72,8 @@ def environment(
         "source": datadog_handler.get_datadog_source(),
         "base_url": datadog_handler.get_datadog_base_url_from_env(),
         "flags": [
-            dd_tracing._should_use_dd_tracer(),  # noqa: SLF001 - the spec
-            dd_tracing._should_use_dd_profiler(),  # noqa: SLF001 - the spec
+            dd_tracing._should_use_dd_tracer(),  # noqa: SLF001 - the spec  # pyright: ignore[reportPrivateUsage]
+            dd_tracing._should_use_dd_profiler(),  # noqa: SLF001 - the spec  # pyright: ignore[reportPrivateUsage]
         ],
         "tags": datadog_handler.get_datadog_tags(payload),
     })
@@ -89,7 +89,7 @@ def spans(input_value: dict[str, Json]) -> Json:
         return root
 
     tracer = TracerStorage(current_span=current_span, current_root_span=current_root_span)
-    dd_tracing.tracer = datadog.tracer = tracer
+    dd_tracing.tracer = datadog.tracer = tracer  # pyright: ignore[reportPrivateImportUsage]
     DDSpanTagger.tag_call_id(text(input_value.get("call_id")))
     key = UserAPIKeyAuth(
         key_alias=text(input_value.get("key_alias")),
@@ -98,8 +98,8 @@ def spans(input_value: dict[str, Json]) -> Json:
     DDSpanTagger.tag_request(key, text(input_value.get("requested_model")))
     payload: dict[str, Json] = {}
     logger = datadog.DataDogLogger.__new__(datadog.DataDogLogger)
-    logger._add_trace_context_to_payload(  # noqa: SLF001 - the spec
-        cast("datadog.DatadogPayload", cast(object, payload))
+    logger._add_trace_context_to_payload(  # noqa: SLF001 - the spec  # pyright: ignore[reportPrivateUsage]
+        cast("datadog.DatadogPayload", cast(object, payload))  # pyright: ignore[reportPrivateImportUsage]
     )
     return cast(Json, {
         "payload": payload or None,
