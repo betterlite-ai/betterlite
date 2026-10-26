@@ -7,6 +7,8 @@ use crate::resolve::resolve_string;
 
 mod tests;
 
+pub const UI_FRIENDLY_NAME: &str = "Lasso Guardrail";
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Raw {

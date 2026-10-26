@@ -9,17 +9,19 @@ const LASSO_CONFIG: &str =
     "guardrails:\n  - guardrail_name: safety\n    litellm_params:\n      guardrail: lasso\n";
 
 #[test]
-fn lasso_config_preserves_missing_environment_error() {
+fn lasso_config_names_the_guardrail_for_the_ui() {
+    assert_eq!(super::UI_FRIENDLY_NAME, "Lasso Guardrail");
+}
+
+#[test]
+fn lasso_config_rejects_other_guardrail_kinds() {
     let loader = ConfigLoader {
         lookup: BTreeMap::new(),
     };
-    let error = loader
-        .load("general_settings:\n  master_key: os.environ/MISSING_MASTER_KEY\n")
-        .unwrap_err();
-    assert!(
-        matches!(error, ConfigError::MissingEnvironment { variable, path }
-        if variable == "MISSING_MASTER_KEY" && path == "general_settings.master_key")
-    );
+    let source = LASSO_CONFIG.replace("guardrail: lasso", "guardrail: aim");
+    let error = loader.load(&source).unwrap_err();
+    assert!(matches!(error, ConfigError::Unsupported { paths }
+        if paths == ["guardrails.0.litellm_params.guardrail"]));
 }
 
 #[test]
