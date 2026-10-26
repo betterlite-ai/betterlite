@@ -1,9 +1,9 @@
 #![cfg(test)]
 
 use super::{
-    BlockCodeExecGuardrailConfig, CategoryFileData, CodeBlockActionTaken, CodeBlockDetection,
-    ContentFilterAction, ContentFilterCategoryConfig, ContentFilterDetection,
-    ContentFilterGuardrailConfig, HideSecretsGuardrailConfig,
+    BlockCodeExecGuardrailConfig, CodeBlockActionTaken, CodeBlockDetection, ContentFilterAction,
+    ContentFilterCategoryConfig, ContentFilterDetection, ContentFilterGuardrailConfig,
+    HideSecretsGuardrailConfig, category_types::CategoryFileData,
 };
 
 #[test]
