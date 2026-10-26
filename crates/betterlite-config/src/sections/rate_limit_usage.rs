@@ -44,5 +44,4 @@ impl Section for Raw {
     }
 }
 
-#[cfg(test)]
 mod tests;

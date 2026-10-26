@@ -19,18 +19,7 @@ impl crate::helpers::Helper for Op {
             .get("rate_limit_type")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("total");
-        let total_tokens = integer(usage.and_then(|value| value.get("total_tokens")))
-            .saturating_sub(cached(usage));
-        let input_tokens = integer(
-            usage
-                .and_then(|value| value.get("prompt_tokens"))
-                .or_else(|| usage.and_then(|value| value.get("input_tokens"))),
-        );
-        let output_tokens = integer(
-            usage
-                .and_then(|value| value.get("completion_tokens"))
-                .or_else(|| usage.and_then(|value| value.get("output_tokens"))),
-        );
+        let (total_tokens, input_tokens, output_tokens) = counts(usage);
         let selected = match rate_type {
             "input" => input_tokens.saturating_sub(cached(usage)),
             "output" => output_tokens,
@@ -45,12 +34,37 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn integer(value: Option<&serde_json::Value>) -> u64 {
-    value.and_then(serde_json::Value::as_u64).unwrap_or(0)
+fn integer(source: Option<&serde_json::Value>) -> u64 {
+    let Some(value) = source else {
+        return 0;
+    };
+    value.as_u64().unwrap_or(0)
+}
+
+fn counts(usage: Option<&serde_json::Value>) -> (u64, u64, u64) {
+    let total =
+        integer(usage.and_then(|value| value.get("total_tokens"))).saturating_sub(cached(usage));
+    let input = integer(
+        usage
+            .and_then(|value| value.get("prompt_tokens"))
+            .or_else(|| {
+                let value = usage?;
+                value.get("input_tokens")
+            }),
+    );
+    let output = integer(
+        usage
+            .and_then(|value| value.get("completion_tokens"))
+            .or_else(|| {
+                let value = usage?;
+                value.get("output_tokens")
+            }),
+    );
+    (total, input, output)
 }
 
 fn cached(value: Option<&serde_json::Value>) -> u64 {
-    value
+    let nested = value
         .and_then(|usage| usage.get("prompt_tokens_details"))
         .and_then(serde_json::Value::as_object)
         .and_then(|details| details.get("cached_tokens"))
@@ -59,6 +73,6 @@ fn cached(value: Option<&serde_json::Value>) -> u64 {
             value
                 .and_then(|usage| usage.get("cache_read_input_tokens"))
                 .and_then(serde_json::Value::as_u64)
-        })
-        .unwrap_or(0)
+        });
+    nested.unwrap_or(0)
 }

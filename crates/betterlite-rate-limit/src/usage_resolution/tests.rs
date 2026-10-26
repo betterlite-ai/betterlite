@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use super::{
     ResponseObject, Usage, aggregate_only_total_tokens, get_rate_limit_type,
-    get_total_tokens_from_usage, recovered_partial_usage_tokens, resolve_io_token_reconcile_usage,
+    get_total_tokens_from_usage, reconcile_io_usage, recovered_partial_usage_tokens,
     resolve_rerank_token_usage, response_usage,
 };
 
@@ -12,9 +12,11 @@ fn usage() -> Usage {
     Usage {
         prompt_tokens: 100,
         completion_tokens: 20,
+        input_tokens: 0,
+        output_tokens: 0,
         total_tokens: 120,
         cached_tokens: Some(30),
-        ..Usage::default()
+        cache_read_input_tokens: None,
     }
 }
 
@@ -36,8 +38,13 @@ fn usage_filtering_behaviors() {
     assert_eq!(get_total_tokens_from_usage(Some(&value), "total"), 90);
     assert_eq!(
         aggregate_only_total_tokens(Some(&Usage {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            input_tokens: 0,
+            output_tokens: 0,
             total_tokens: 120,
-            ..Usage::default()
+            cached_tokens: None,
+            cache_read_input_tokens: None,
         })),
         120
     );
@@ -54,8 +61,13 @@ fn usage_filtering_boundaries() {
     assert_eq!(
         get_total_tokens_from_usage(
             Some(&Usage {
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 4,
-                ..Usage::default()
+                cached_tokens: None,
+                cache_read_input_tokens: None,
             }),
             "total"
         ),
@@ -82,11 +94,14 @@ fn io_reconcile_behaviors() {
     let value = Usage {
         input_tokens: 100,
         output_tokens: 12,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
         cached_tokens: Some(25),
-        ..Usage::default()
+        cache_read_input_tokens: None,
     };
     assert_eq!(
-        resolve_io_token_reconcile_usage(&ResponseObject::Usage(value)),
+        reconcile_io_usage(&ResponseObject::Usage(value)),
         (75, 12, true)
     );
 }
@@ -94,7 +109,7 @@ fn io_reconcile_behaviors() {
 #[test]
 fn io_reconcile_boundaries() {
     assert_eq!(
-        resolve_io_token_reconcile_usage(&ResponseObject::WithUsage(None)),
+        reconcile_io_usage(&ResponseObject::WithUsage(None)),
         (0, 0, false)
     );
 }

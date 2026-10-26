@@ -47,7 +47,8 @@ pub fn get_total_tokens_from_usage(source: Option<&Usage>, rate_limit_type: &str
         _ => usage.total_tokens,
     };
     if rate_limit_type == INPUT || rate_limit_type == TOTAL {
-        count.saturating_sub(cached_tokens(usage))
+        let cached = usage.cached_tokens.or(usage.cache_read_input_tokens);
+        count.saturating_sub(cached.unwrap_or(0))
     } else {
         count
     }
@@ -83,7 +84,7 @@ pub fn resolve_rerank_token_usage(
 }
 
 #[must_use]
-pub fn resolve_io_token_reconcile_usage(response: &ResponseObject) -> (u64, u64, bool) {
+pub fn reconcile_io_usage(response: &ResponseObject) -> (u64, u64, bool) {
     let Some(usage) = response_usage(response) else {
         return (0, 0, false);
     };
@@ -92,7 +93,8 @@ pub fn resolve_io_token_reconcile_usage(response: &ResponseObject) -> (u64, u64,
     if input == 0 && output == 0 {
         return (0, 0, false);
     }
-    (input.saturating_sub(cached_tokens(usage)), output, true)
+    let cached = usage.cached_tokens.or(usage.cache_read_input_tokens);
+    (input.saturating_sub(cached.unwrap_or(0)), output, true)
 }
 
 #[must_use]
@@ -106,8 +108,7 @@ pub fn recovered_partial_usage_tokens(
     if usage.completion_tokens == 0 && usage.output_tokens == 0 {
         return (0, 0, 0);
     }
-    let (input, output, _) =
-        resolve_io_token_reconcile_usage(&ResponseObject::Usage(usage.clone()));
+    let (input, output, _) = reconcile_io_usage(&ResponseObject::Usage(usage.clone()));
     (
         get_total_tokens_from_usage(Some(usage), rate_limit_type),
         input,
@@ -115,12 +116,4 @@ pub fn recovered_partial_usage_tokens(
     )
 }
 
-fn cached_tokens(usage: &Usage) -> u64 {
-    usage
-        .cached_tokens
-        .or(usage.cache_read_input_tokens)
-        .unwrap_or(0)
-}
-
-#[cfg(test)]
 mod tests;
