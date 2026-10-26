@@ -414,6 +414,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_ignored",
+ "serde_json",
  "thiserror",
  "url",
 ]
@@ -422,8 +423,10 @@ dependencies = [
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
+ "percent-encoding",
  "rstest",
  "serde",
+ "serde_json",
  "thiserror",
  "tracing",
  "tracing-subscriber",
@@ -531,10 +534,13 @@ dependencies = [
 name = "betterlite-logging"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "rstest",
+ "serde",
  "strum",
  "thiserror",
  "tracing",
+ "unicode-properties",
 ]
 
 [[package]]
@@ -590,6 +596,7 @@ dependencies = [
  "betterlite-postgres-fixture",
  "betterlite-rate-limit",
  "betterlite-secrets",
+ "betterlite-server",
  "chrono",
  "clap",
  "futures-util",
@@ -727,6 +734,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-config",
+ "email_address",
  "form_urlencoded",
  "hyper-util",
  "regex",
@@ -736,6 +744,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "subtle",
  "thiserror",
  "tokio",
@@ -1406,6 +1415,15 @@ name = "either"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
+
+[[package]]
+name = "email_address"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e079f19b08ca6239f47f8ba8509c11cf3ea30095831f7fed61441475edd8c449"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "encoding_rs"

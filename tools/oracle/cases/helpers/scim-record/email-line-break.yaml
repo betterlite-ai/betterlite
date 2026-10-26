@@ -1,0 +1,11 @@
+kind: helper
+name: email-line-break
+call:
+  scim_record:
+    kind: user
+    value: {schemas: [u], emails: [{value: "ada@example.com\n"}]}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message

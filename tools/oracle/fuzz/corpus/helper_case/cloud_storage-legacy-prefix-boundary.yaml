@@ -1,0 +1,5 @@
+kind: helper
+name: legacy-prefix-boundary
+call: {cloud_storage: {function: legacy_prefix_boundary, file_id: gs://bucket/key, scheme: gs://, bucket: bucket, prefixes: [], legacy: true}}
+env: {}
+compare: {ignore: []}
