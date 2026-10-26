@@ -89,5 +89,5 @@ pitfalls:
 - timeout is accepted and propagated to the async helper but omitted at the actual GET in both modes.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

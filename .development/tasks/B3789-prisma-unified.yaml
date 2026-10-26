@@ -139,6 +139,6 @@ pitfalls:
   - "_apply_mcp_masking may raise HTTPException on JSON parse failure; this exception must propagate without being silently caught or converted to allow, since invalid masked text indicates a critical policy failure."
   - "Synthesized MCP call_ids use the tool name slug as prefix for readability, but collision is still possible if two tools are invoked concurrently with the same UUID suffix."
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

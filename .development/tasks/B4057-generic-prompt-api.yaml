@@ -121,5 +121,5 @@ pitfalls:
   - "should_run_prompt_management returns true when prompt_id is not None or when provider_specific_query_params exist in the PromptSpec's litellm_params; an empty dict of params still counts as present."
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

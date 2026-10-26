@@ -30,7 +30,6 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso_user_sync.rs
     - crates/betterlite-server/src/sso_user_sync/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/sso_user_sync.rs
     - crates/betterlite-config/src/sso_user_sync/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-user-sync-*
@@ -86,6 +85,6 @@ pitfalls:
   - Updating an existing user's role in upsert does not mutate the returned in-memory user object, unlike the explicit JWT role-sync path.
   - The user_email argument to get_user_info_from_db is replaced by the email on the SSO identity before lookup.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -157,5 +157,5 @@ pitfalls:
   - Rejection phrase matching is case-insensitive substring match (text.lower().contains(phrase)), not regex or exact match; partial matches count (e.g., "no help" matches "no help with it").
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

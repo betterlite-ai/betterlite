@@ -332,6 +332,6 @@ pitfalls:
   - required_params checks fields_set, so a supplied null satisfies presence even if generation later fills a default.
   - The lower-level assigned-user check runs before its admin shortcut, while the outer team generation helper skips it for admins.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

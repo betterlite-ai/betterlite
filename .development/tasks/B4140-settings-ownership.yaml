@@ -96,5 +96,5 @@ pitfalls:
   - "Config ownership applies to any key in yaml_values, regardless of section. A write attempt raises ConfigOwnedKeyError with shadows_db_value=True only when a DB value exists and differs."
 review_level: security
 budget:
-  max_changed_lines: 1200
+  max_changed_lines: 1500
   max_new_expects: 0

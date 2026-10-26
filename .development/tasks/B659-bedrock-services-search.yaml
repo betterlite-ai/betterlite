@@ -384,6 +384,6 @@ pitfalls:
 - The source docstring says max_results is1-25, but the mapper sends any explicitly supplied value unchanged.
 - Bearer destination checks compare netloc, while the SigV4 custom-gateway check compares only hostname.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

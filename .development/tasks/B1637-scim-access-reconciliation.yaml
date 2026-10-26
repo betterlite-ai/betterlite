@@ -80,6 +80,6 @@ pitfalls:
   - SQL blocked=false alone misses existing NULL keys and would leave a deactivated user's credentials usable.
   - The absence of rollback is observable both when roster writes partially succeed and when key updates fail before eviction begins.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

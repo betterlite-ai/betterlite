@@ -100,5 +100,5 @@ pitfalls:
 - Terminal usage and DONE must each be emitted only when the pinned stream mapping emits them.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

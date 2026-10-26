@@ -119,6 +119,6 @@ pitfalls:
   - ON CONFLICT(request_id) DO NOTHING does not choose the newest duplicate during unpartitioning.
   - The pkey1 rename exists only in the unpartition script; adding it to partitioning changes collision behavior.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

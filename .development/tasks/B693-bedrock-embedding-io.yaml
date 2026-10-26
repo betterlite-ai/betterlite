@@ -265,6 +265,6 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as bedrock_embedding_io in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/embedding_io.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_embedding_io.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Embedding JSON response normalization differs between family shapes even when the HTTP status is successful.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security
