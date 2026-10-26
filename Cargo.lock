@@ -346,6 +346,15 @@ dependencies = [
 [[package]]
 name = "betterlite-anthropic"
 version = "0.1.0"
+dependencies = [
+ "hex",
+ "indexmap 2.14.2",
+ "rstest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-auth"
@@ -563,6 +572,7 @@ name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-bedrock",
  "betterlite-config",
