@@ -294,5 +294,5 @@ pitfalls:
 - '_failure_exception selects the first stored error or response.failed; response.incomplete, unknown events and an empty or multi-key service-tier partition do not create failure dispatch, and the latter records service_tier=None.'
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -71,5 +71,5 @@ pitfalls:
   - asyncio.create_task schedules the flush as a detached task. To drain it on shutdown (B003), the flush must be added to a JoinSet or TaskTracker that the server owns.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1

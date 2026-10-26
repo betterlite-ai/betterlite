@@ -106,6 +106,6 @@ pitfalls:
   - Null object_permission unlinks the old row, whereas an empty object is rejected before authorization.
   - An empty PATCH still writes updated_by and can fail when the organization row disappears.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

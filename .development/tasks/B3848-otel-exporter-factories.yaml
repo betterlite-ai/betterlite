@@ -150,5 +150,5 @@ pitfalls:
   - baggage_allowed_keys parsing must not silently drop entries that contain colons or commas; use simple split/strip logic to preserve header values.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 2

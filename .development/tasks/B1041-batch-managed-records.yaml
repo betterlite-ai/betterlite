@@ -243,5 +243,5 @@ pitfalls:
 - PROXY_BATCH_POLLING_ENABLED=true does not imply an active poller when check_batch_cost_job is absent.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1

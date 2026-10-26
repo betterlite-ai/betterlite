@@ -122,6 +122,6 @@ pitfalls:
   - Updating a group can remove every old grant before a later invalid model ID fails.
   - Deletion counts changed deployment rows and leaves the linked shared budget record intact.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

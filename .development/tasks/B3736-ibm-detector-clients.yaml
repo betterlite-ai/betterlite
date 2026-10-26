@@ -158,6 +158,6 @@ pitfalls:
   - "The orchestrator client detector params are passed as values in a detectors dict keyed by detector_id, while detector server detector params are passed directly; URL construction depends on is_detector_server flag and must not be confused between the two modes."
 
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

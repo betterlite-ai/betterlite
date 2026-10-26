@@ -179,6 +179,6 @@ pitfalls:
   - sslkey changes the meaning of sslcert in the reverse translation and bypasses Prisma CA handling.
   - Source verify-ca becomes strict hostname verification through the Prisma dialect.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

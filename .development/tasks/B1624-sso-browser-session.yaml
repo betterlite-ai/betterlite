@@ -97,6 +97,6 @@ pitfalls:
   - admin_only is checked after generate_key_helper_fn, so moving that check earlier changes observable database state on a denied login.
   - EXPERIMENTAL_UI_LOGIN replaces the exposed credential but does not prevent creation of the ordinary dashboard key.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

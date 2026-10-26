@@ -378,6 +378,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as jwt_keys in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/jwt_keys.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/jwt_keys.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A negative public_key_stale_ttl is validation failure, while zero disables stale fallback.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

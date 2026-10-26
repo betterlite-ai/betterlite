@@ -92,6 +92,6 @@ pitfalls:
   - Testing a provider entry by truthiness instead of membership incorrectly exposes the global margin when the provider explicitly supplies null or an empty object.
   - A fixed margin still applies when the base cost is zero, so skipping zero-cost requests before this helper changes billing.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

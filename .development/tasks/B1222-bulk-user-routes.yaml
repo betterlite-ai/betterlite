@@ -128,6 +128,6 @@ pitfalls:
   - A helper's non-ManagementProblem exception becomes 500 even when it carries a 4xx status; dependency authentication failures occur before that catch.
   - Adding the router's relative /users/bulk path as a public alias would expose a route absent from LiteLLM.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

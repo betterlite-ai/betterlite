@@ -117,6 +117,6 @@ pitfalls:
   - The schema.prisma index list both omits SQL partial indexes and includes two indexes built after migrations.
   - Comparing raw sequence OIDs or nextval schema names makes equivalent independent databases appear different.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

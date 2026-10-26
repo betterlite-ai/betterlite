@@ -124,5 +124,5 @@ pitfalls:
 - The last passthrough copy can overwrite a translated effort or stop value; preserve that order.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

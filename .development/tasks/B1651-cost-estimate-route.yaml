@@ -97,6 +97,6 @@ pitfalls:
   - Reporting a second catalog lookup's rates can disagree with the quoted total when provider inference, token tiers or an off-peak boundary changes pricing.
   - Cache-read/cache-write and reasoning lines are portions of input/output costs, not amounts to add again to the total.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -257,7 +257,7 @@ pitfalls:
   - cost_in_spend is typed as bool|None; missing values become None, not false. Only explicit False means report-only.
 
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 
 review_level: security

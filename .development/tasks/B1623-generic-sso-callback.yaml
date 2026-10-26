@@ -84,6 +84,6 @@ pitfalls:
   - Setting GENERIC_CLIENT_USE_PKCE=true does not itself select the direct exchange when no verifier survives permissive cache lookup.
   - The verifier is deleted after process_sso_jwt_access_token, so a role/team augmentation exception must leave the cache entry intact.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security
