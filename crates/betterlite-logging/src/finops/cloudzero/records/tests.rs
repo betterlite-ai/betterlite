@@ -167,26 +167,26 @@ fn cloudzero_cbf_preserves_source_dimensions_as_tags() {
         .create_cbf_record(&source)
         .expect("valid CBF record");
 
-    let expected = [
-        ("entity_type", "team"),
-        ("entity_id", "platform"),
-        ("team_alias", "platform"),
-        ("api_key_prefix", "12345678"),
-        ("api_key_alias", "prod"),
-        ("user_email", "owner@example.com"),
-        ("api_requests", "7"),
-        ("successful_requests", "1"),
-        ("failed_requests", "2"),
-        ("cache_creation_tokens", "3"),
-        ("cache_read_tokens", "4"),
-        ("organization_alias", "acme"),
-        ("project_alias", "inference"),
-        ("user_alias", "owner"),
-    ];
-    for (key, value) in expected {
-        assert_eq!(
-            record.get(&format!("resource/tag:{key}")),
-            Some(&CbfValue::Text(value.to_owned()))
-        );
+    macro_rules! assert_tag {
+        ($key:literal, $value:literal) => {
+            assert_eq!(
+                record.get(concat!("resource/tag:", $key)),
+                Some(&CbfValue::Text($value.to_owned()))
+            );
+        };
     }
+    assert_tag!("entity_type", "team");
+    assert_tag!("entity_id", "platform");
+    assert_tag!("team_alias", "platform");
+    assert_tag!("api_key_prefix", "12345678");
+    assert_tag!("api_key_alias", "prod");
+    assert_tag!("user_email", "owner@example.com");
+    assert_tag!("api_requests", "7");
+    assert_tag!("successful_requests", "1");
+    assert_tag!("failed_requests", "2");
+    assert_tag!("cache_creation_tokens", "3");
+    assert_tag!("cache_read_tokens", "4");
+    assert_tag!("organization_alias", "acme");
+    assert_tag!("project_alias", "inference");
+    assert_tag!("user_alias", "owner");
 }
