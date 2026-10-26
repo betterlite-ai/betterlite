@@ -35,6 +35,26 @@ fn generic_guardrail_header_extraction_uses_proxy_first() {
 }
 
 #[test]
+fn generic_guardrail_header_extraction_uses_logging_fallback() {
+    let request_data: InboundRequestContext = from_str(
+        r#"{"logging_obj":{"model_call_details":{"litellm_params":{"metadata":{"headers":{"X-Request-Id":"request-123"}}}}}}"#,
+    )
+    .expect("request context");
+    let headers = extract_inbound_headers(&request_data, None).expect("headers");
+    assert_eq!(headers.get("X-Request-Id"), Some(&"[present]".to_owned()));
+}
+
+#[test]
+fn generic_guardrail_header_extraction_uses_nested_extra_allowlist() {
+    let request_data: InboundRequestContext = from_str(
+        r#"{"litellm_params":{"extra_headers":["X-Request-Id"],"metadata":{"headers":{"X-Request-Id":"request-123"}}}}"#,
+    )
+    .expect("request context");
+    let headers = extract_inbound_headers(&request_data, None).expect("headers");
+    assert_eq!(headers.get("X-Request-Id"), Some(&"request-123".to_owned()));
+}
+
+#[test]
 fn generic_guardrail_constructor_defaults() {
     let settings = GenericGuardrailAPISettings::from_optional(None);
     assert_eq!(
