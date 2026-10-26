@@ -23,15 +23,9 @@ fn literal_nonmembership(#[case] literal: &str) {
 
 #[test]
 fn alias_membership() {
-    assert!(
-        OPENAI_ROUTES.contains(&"/v1/chat/completions")
-    );
-    assert!(
-        OPENAI_ROUTES.contains(&"/openai/v1/responses")
-    );
-    assert!(
-        ANTHROPIC_ROUTES.contains(&"/claude-code/plugins/{plugin_name}")
-    );
+    assert!(OPENAI_ROUTES.contains(&"/v1/chat/completions"));
+    assert!(OPENAI_ROUTES.contains(&"/openai/v1/responses"));
+    assert!(ANTHROPIC_ROUTES.contains(&"/claude-code/plugins/{plugin_name}"));
 }
 
 #[test]
@@ -47,7 +41,5 @@ fn group_expansion() {
 
 #[test]
 fn unknown_group_is_not_a_production_table() {
-    assert!(
-        !["mcp_routes", "agent_routes"].contains(&"llm_api_routes")
-    );
+    assert!(!["mcp_routes", "agent_routes"].contains(&"llm_api_routes"));
 }
