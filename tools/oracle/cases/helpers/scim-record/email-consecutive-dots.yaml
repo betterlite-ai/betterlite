@@ -1,0 +1,11 @@
+kind: helper
+name: email-consecutive-dots
+call:
+  scim_record:
+    kind: user
+    value: {schemas: [u], emails: [{value: ada..lovelace@example.com}]}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message

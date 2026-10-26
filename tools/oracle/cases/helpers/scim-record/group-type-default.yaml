@@ -1,0 +1,11 @@
+kind: helper
+name: group-type-default
+call:
+  scim_record:
+    kind: user
+    value:
+      schemas: [u]
+      groups: [{value: group-1}, {value: group-2, type: null}, {value: group-3, type: indirect}]
+env: {}
+compare:
+  ignore: []

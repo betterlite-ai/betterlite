@@ -1,0 +1,11 @@
+kind: helper
+name: meta-must-be-an-object
+call:
+  scim_record:
+    kind: user
+    value: {schemas: [u], meta: 5}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message
