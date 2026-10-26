@@ -1,107 +1,90 @@
-from typing import Any, Literal, TypedDict, cast
+from typing import Literal, NotRequired, TypedDict
 
-from pydantic import BaseModel, ConfigDict, Field
+from litellm.types.proxy.management_endpoints.management_v1 import (
+    FacetListResponse,
+    ListLinks,
+    ListMeta,
+    ListResponse,
+    PageLinks,
+    PageMeta,
+    ProblemDetail,
+    ResourceResponse,
+)
 
 
-class ProblemDetail(BaseModel):
+class ProblemInput(TypedDict):
+    function: Literal["problem"]
     type: str
     title: str
     status: int
     detail: str
-    allowed: list[str] | None = None
+    document: NotRequired[bool]
+    allowed: NotRequired[list[str] | None]
 
 
-class PageLinks(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-    self_link: str = Field(alias="self")
-    prev: str | None = None
-    next: str | None = None
-
-
-class PageMeta(BaseModel):
-    page: int
-    page_size: int
-    has_more: bool
-
-
-class FacetListResponse(BaseModel):
+class FacetInput(TypedDict):
+    function: Literal["facet"]
     data: list[str]
-    meta: PageMeta
-    links: PageLinks
-
-
-class ListMeta(BaseModel):
-    total_count: int
-    page: int
-    page_size: int
-    total_pages: int
-
-
-class ListLinks(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-    self_link: str = Field(alias="self")
-    first: str
-    prev: str | None = None
-    next: str | None = None
-    last: str
-
-
-class ListResponse(BaseModel):
-    data: list[Any]
-    meta: ListMeta
-    links: ListLinks
-
-
-class Input(TypedDict, total=False):
-    function: Literal["problem", "facet", "list", "resource"]
-    type: str
-    title: str
-    status: int
-    detail: str
-    allowed: list[str] | None
-    document: bool
-    data: Any
     page: int
     page_size: int
     has_more: bool
     self: str
-    self_link: str
     prev: str | None
     next: str | None
+
+
+class ListInput(TypedDict):
+    function: Literal["list"]
+    data: list[object]
     total_count: int
+    page: int
+    page_size: int
     total_pages: int
+    self_link: str
     first: str
+    prev: str | None
+    next: str | None
     last: str
 
 
-def run(input_value: Input) -> dict[str, Any]:
-    values = cast(dict[str, object], input_value)
-    function = cast(str, values["function"])
-    if function == "problem":
-        problem = ProblemDetail.model_validate(values)
-        return problem.model_dump(
-            mode="json", by_alias=True,
-            exclude_none=cast(bool, values.get("document", False)),
-        )
-    if function == "facet":
-        response = FacetListResponse(
-            data=cast(list[str], values["data"]),
-            meta=PageMeta(
-                page=cast(int, values["page"]), page_size=cast(int, values["page_size"]),
-                has_more=cast(bool, values["has_more"]),
-            ),
-            links=PageLinks.model_validate(values),
-        )
-        return response.model_dump(mode="json", by_alias=True)
-    if function == "list":
-        response = ListResponse(
-            data=cast(list[Any], values["data"]),
-            meta=ListMeta(
-                total_count=cast(int, values["total_count"]), page=cast(int, values["page"]),
-                page_size=cast(int, values["page_size"]),
-                total_pages=cast(int, values["total_pages"]),
-            ),
-            links=ListLinks.model_validate(values),
-        )
-        return response.model_dump(mode="json", by_alias=True)
-    return {"data": cast(Any, values["data"])}
+class ResourceInput(TypedDict):
+    function: Literal["resource"]
+    data: object
+
+
+Input = ProblemInput | FacetInput | ListInput | ResourceInput
+
+
+def run(input_value: Input) -> object:
+    match input_value["function"]:
+        case "problem":
+            problem = ProblemDetail.model_validate(input_value)
+            return problem.model_dump(
+                mode="json", by_alias=True, exclude_none=input_value.get("document", False)
+            )
+        case "facet":
+            response = FacetListResponse(
+                data=input_value["data"],
+                meta=PageMeta(
+                    page=input_value["page"],
+                    page_size=input_value["page_size"],
+                    has_more=input_value["has_more"],
+                ),
+                links=PageLinks.model_validate(input_value),
+            )
+            return response.model_dump(mode="json", by_alias=True)
+        case "list":
+            response = ListResponse(
+                data=input_value["data"],
+                meta=ListMeta(
+                    total_count=input_value["total_count"],
+                    page=input_value["page"],
+                    page_size=input_value["page_size"],
+                    total_pages=input_value["total_pages"],
+                ),
+                links=ListLinks.model_validate(input_value),
+            )
+            return response.model_dump(mode="json", by_alias=True)
+        case "resource":
+            response = ResourceResponse[object].model_validate({"data": input_value["data"]})
+            return response.model_dump(mode="json", by_alias=True)

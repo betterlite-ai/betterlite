@@ -12,6 +12,28 @@ pub struct ProblemDetail {
     pub allowed: Option<Vec<String>>,
 }
 
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct ProblemDocument {
+    pub r#type: String,
+    pub title: String,
+    pub status: u16,
+    pub detail: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed: Option<Vec<String>>,
+}
+
+impl ProblemDetail {
+    pub fn problem_document(&self) -> ProblemDocument {
+        ProblemDocument {
+            r#type: self.r#type.clone(),
+            title: self.title.clone(),
+            status: self.status,
+            detail: self.detail.clone(),
+            allowed: self.allowed.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct PageLinks {
     #[serde(rename = "self", alias = "self_link")]

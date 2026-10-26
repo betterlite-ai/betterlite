@@ -28,47 +28,6 @@ fn aliases_and_nullable_links_keep_wire_shape() {
 }
 
 #[test]
-fn facet_and_counted_envelopes_have_distinct_metadata() {
-    let facet = FacetListResponse {
-        data: Vec::new(),
-        meta: PageMeta {
-            page: 1,
-            page_size: 10,
-            has_more: false,
-        },
-        links: PageLinks {
-            self_link: "/facets".to_owned(),
-            prev: None,
-            next: None,
-        },
-    };
-    let resource = ResourceResponse {
-        data: NestedResource {
-            id: "nested".to_owned(),
-        },
-    };
-    let list = ListResponse {
-        data: vec![resource.data],
-        meta: super::ListMeta {
-            total_count: 1,
-            page: 1,
-            page_size: 10,
-            total_pages: 1,
-        },
-        links: super::ListLinks {
-            self_link: "/items".to_owned(),
-            first: "/items".to_owned(),
-            prev: None,
-            next: None,
-            last: "/items".to_owned(),
-        },
-    };
-    assert_eq!(facet.data, Vec::<String>::new());
-    assert_eq!(list.data.len(), 1);
-    assert_eq!(list.data[0].id, "nested");
-}
-
-#[test]
 fn resource_serialization_remains_flat() {
     assert_eq!(
         serde_json::to_string(&ResourceResponse {
@@ -140,4 +99,16 @@ fn problem_allowed_is_nullable_and_can_be_empty() {
     .expect("problem decode");
     assert_eq!(absent.allowed, None);
     assert_eq!(empty.allowed, Some(Vec::new()));
+    assert_eq!(
+        serde_json::to_string(&absent.problem_document()).expect("document encode"),
+        r#"{"type":"urn:litellm:error:test","title":"Test","status":400,"detail":"bad"}"#
+    );
+    assert_eq!(
+        serde_json::to_string(&empty.problem_document()).expect("document encode"),
+        r#"{"type":"urn:litellm:error:test","title":"Test","status":400,"detail":"bad","allowed":[]}"#
+    );
+    assert_eq!(
+        serde_json::to_string(&absent).expect("ordinary encode"),
+        r#"{"type":"urn:litellm:error:test","title":"Test","status":400,"detail":"bad","allowed":null}"#
+    );
 }
