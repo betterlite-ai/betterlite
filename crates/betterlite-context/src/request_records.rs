@@ -115,12 +115,6 @@ impl RequestRecordProjection {
     }
 
     #[must_use]
-    pub fn independent_snapshot(record: &RequestRecord) -> RequestRecord {
-        // A Handle clone keeps its identity, so each copied bucket keeps its own original span.
-        record.clone()
-    }
-
-    #[must_use]
     pub fn filter_parameters(record: RequestRecord, max_depth: i32) -> RequestRecord {
         if max_depth <= 0_i32 {
             return record;

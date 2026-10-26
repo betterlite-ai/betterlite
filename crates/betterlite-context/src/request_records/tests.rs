@@ -130,8 +130,8 @@ fn request_records_cases(#[case] name: &str) {
                 ),
                 ("value".to_owned(), record(r#"{"x":1}"#)),
             ]));
-            assert_eq!(RequestRecordProjection::independent_snapshot(&input), input);
-            let snapshot = RequestRecordProjection::independent_snapshot(&input);
+            let snapshot = input.clone();
+            assert_eq!(snapshot, input);
             let fields = snapshot.object().unwrap();
             assert_eq!(
                 fields
@@ -147,20 +147,13 @@ fn request_records_cases(#[case] name: &str) {
                     .and_then(|metadata_fields| metadata_fields.get("litellm_parent_otel_span")),
                 Some(&span_b)
             );
+            assert_eq!(record(r#"{"metadata":{}}"#), record(r#"{"metadata":{}}"#));
             assert_eq!(
-                RequestRecordProjection::independent_snapshot(&record(r#"{"metadata":{}}"#)),
-                record(r#"{"metadata":{}}"#)
-            );
-            assert_eq!(
-                RequestRecordProjection::independent_snapshot(&record(
-                    r#"{"metadata":{"other":true}}"#
-                )),
+                record(r#"{"metadata":{"other":true}}"#),
                 record(r#"{"metadata":{"other":true}}"#)
             );
             assert_eq!(
-                RequestRecordProjection::independent_snapshot(&record(
-                    r#"{"metadata":{},"litellm_metadata":{"other":true}}"#
-                )),
+                record(r#"{"metadata":{},"litellm_metadata":{"other":true}}"#),
                 record(r#"{"metadata":{},"litellm_metadata":{"other":true}}"#)
             );
         }

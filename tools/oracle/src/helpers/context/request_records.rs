@@ -59,7 +59,8 @@ impl crate::helpers::Helper for Op {
                     .into_owned()
             }
             Input::IndependentSnapshot { record } => {
-                RequestRecordProjection::independent_snapshot(record)
+                // A Handle clone keeps its identity, so each copied bucket keeps its own original span.
+                record.clone()
             }
             Input::FilterParameters { record, max_depth } => {
                 RequestRecordProjection::filter_parameters(record.clone(), *max_depth)
