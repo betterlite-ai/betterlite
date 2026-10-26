@@ -34,7 +34,7 @@ fn environment(value: Option<&str>) -> BTreeMap<String, SecretString> {
 }
 
 fn host(row: &str, env: Option<&str>, empty: EmptyDbValue) -> (Option<String>, FieldSource) {
-    let fields = resolve_fields(&HOST, &stored(row), &environment(env), empty).unwrap();
+    let fields = resolve_fields(&HOST, &stored(row), &environment(env), empty);
     let field = fields.first().unwrap();
     assert_eq!(field.field_name, "host");
     (
@@ -95,8 +95,7 @@ fn empty_db_means_absent_for_sso(
     #[case] env: Option<&str>,
     #[case] value: Option<&str>,
 ) {
-    let fields =
-        resolve_fields(&HOST, &stored(row), &environment(env), EmptyDbValue::Absent).unwrap();
+    let fields = resolve_fields(&HOST, &stored(row), &environment(env), EmptyDbValue::Absent);
     let resolved: Vec<Option<&str>> = fields
         .iter()
         .map(|field| {
@@ -126,8 +125,7 @@ fn email_port_and_tls_fall_back_to_mail_defaults(
         &stored(row),
         &environment,
         EmptyDbValue::Cleared,
-    )
-    .unwrap();
+    );
     let resolved: Vec<(Option<&str>, FieldSource)> = fields
         .iter()
         .map(|field| {
@@ -214,8 +212,7 @@ fn resolved_secret_debug_output_is_redacted() {
         &BTreeMap::new(),
         &BTreeMap::from([(String::from("SECRET"), SecretString::from("password"))]),
         EmptyDbValue::Absent,
-    )
-    .unwrap();
+    );
     assert_eq!(
         fields[0].value.as_ref().unwrap().expose_secret(),
         "password"
