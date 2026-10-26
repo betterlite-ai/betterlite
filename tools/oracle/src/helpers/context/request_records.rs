@@ -45,8 +45,8 @@ impl crate::helpers::Helper for Op {
                 safe_memory_mode,
             } => {
                 let mut changed = record.clone();
-                RequestRecordProjection::safe_copy(&mut changed, *safe_memory_mode).map_err(
-                    |error| {
+                RequestRecordProjection::safe_copy(&mut changed, *safe_memory_mode)
+                    .map_err(|error| {
                         Box::new(crate::helpers::HelperError {
                             class: "TypeError".to_owned(),
                             status: None,
@@ -55,9 +55,8 @@ impl crate::helpers::Helper for Op {
                             code: None,
                             message: error.to_string(),
                         })
-                    },
-                )?
-                .into_owned()
+                    })?
+                    .into_owned()
             }
             Input::IndependentSnapshot { record } => {
                 RequestRecordProjection::independent_snapshot(record)
