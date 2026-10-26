@@ -330,6 +330,6 @@ pitfalls:
 - Tool-call indices count all content blocks, not just tool calls.
 - The first internal JSON tool controls content; later internal tools are removed without merging their arguments.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

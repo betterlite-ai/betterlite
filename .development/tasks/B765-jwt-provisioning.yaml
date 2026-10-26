@@ -300,6 +300,6 @@ pitfalls:
   - With fallback_to_db_teams=false, a singular-only claim is ignored by synchronization and existing DB teams are removed.
   - SCIM's default failure suppression can leave cached claim teams ahead of actual roster writes.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

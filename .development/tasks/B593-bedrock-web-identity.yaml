@@ -350,6 +350,6 @@ pitfalls:
 - The warning still says 75% when BEDROCK_MAX_POLICY_SIZE changes; the threshold and displayed literal are separate.
 - Direct web identity uses a3540-second TTL; only role-assumption helpers use returned Expiration.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

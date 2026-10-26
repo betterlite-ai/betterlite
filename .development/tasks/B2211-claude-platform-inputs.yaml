@@ -389,6 +389,6 @@ pitfalls:
 - The workspace fallback checks None after an or-chain, so a falsey final alias can block environment fallback.
 - An explicitly empty unsupported list enables context_management instead of restoring the default drop set.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

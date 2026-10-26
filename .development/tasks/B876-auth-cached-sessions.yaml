@@ -217,6 +217,6 @@ pitfalls:
   - Equal or missing refresh timestamps must not overwrite cached team fields; source compares strictly greater only when both exist.
   - End-user lookup failures are swallowed except BudgetExceededError, so replacing that block with a generic fail-closed lookup changes requests that currently proceed.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

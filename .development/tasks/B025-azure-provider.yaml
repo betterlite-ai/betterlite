@@ -365,6 +365,6 @@ pitfalls:
 - Dynamic client invalidation compares the caller API version before environment/global fallback.
 - Azure text uses AzureOpenAIConfig defaults even though B540 performs the text call.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

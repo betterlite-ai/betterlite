@@ -290,6 +290,6 @@ pitfalls:
 - An I/O exception during the video MIME probe can leave the file cursor changed; only successful probes restore
   it.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

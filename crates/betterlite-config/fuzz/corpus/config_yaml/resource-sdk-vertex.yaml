@@ -1,0 +1,3 @@
+litellm_settings:
+  vertex_project: project-example
+  vertex_location: us-central1

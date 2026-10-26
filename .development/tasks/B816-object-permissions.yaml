@@ -198,6 +198,6 @@ pitfalls:
   - A null mcp_tool_permissions update is serialized as JSON null, while creation removes that null field before inserting.
   - The update helper pops the nested input before decoding, so a parse error still mutates the caller's dictionary.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

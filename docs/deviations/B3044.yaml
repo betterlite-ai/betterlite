@@ -1,0 +1,8 @@
+task: B3044
+deviations:
+  - what: cache-read tokens are excluded from input and total billable counts but remain available in the original usage values
+    why: providers such as AWS Bedrock report cached tokens but do not bill them toward TPM windows
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4226-L4243
+  - what: Responses API objects and mappings using input_tokens/output_tokens contribute their selected billable token counts, including cache exclusion for input and total
+    why: B3044 review explicitly requires these selectors; the pinned LiteLLM selector omits Responses API objects and only reads prompt_tokens/completion_tokens for mappings. Oracle cases ignore only the selected total, and Rust regression tests assert exact counts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4219-L4267

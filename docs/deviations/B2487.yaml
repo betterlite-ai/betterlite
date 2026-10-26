@@ -1,0 +1,5 @@
+task: B2487
+deviations:
+  - what: SDK timeout strings nan/inf/-inf fail before transport with invalid_timeout instead of becoming non-finite Python floats.
+    why: Enforce finite duration values at the typed boundary rather than relying on client-specific failures or unbounded waits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L140-L150

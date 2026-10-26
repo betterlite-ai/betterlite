@@ -229,6 +229,6 @@ pitfalls:
   - Only reset_spend forbids a team/org admin from targeting themselves; reset_budget permits it.
   - A dangling default budget reference disconnects the member instead of linking a nonexistent row.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

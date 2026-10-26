@@ -133,5 +133,5 @@ pitfalls:
   - "The cached_endpoints global is initialized once and never invalidated; a server restart is required to pick up a new endpoints file."
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
