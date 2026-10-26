@@ -141,7 +141,7 @@ pub fn get_total_tokens_from_usage(
 ) -> u64 {
     let Some(usage_source) = source else { return 0 };
     let (count, cached) = match usage_source {
-        ResponseUsage::Usage(usage) | ResponseUsage::Mapping(usage) => {
+        ResponseUsage::Usage(usage) => {
             let count = match rate_limit_type {
                 TokenRateLimitType::Output => usage.completion_tokens,
                 TokenRateLimitType::Input => usage.prompt_tokens,
@@ -149,7 +149,22 @@ pub fn get_total_tokens_from_usage(
             };
             (count, cached_tokens(usage))
         }
-        ResponseUsage::ResponseApi(_) => (0, 0),
+        ResponseUsage::ResponseApi(usage) => {
+            let count = match rate_limit_type {
+                TokenRateLimitType::Output => usage.output_tokens,
+                TokenRateLimitType::Input => usage.input_tokens,
+                TokenRateLimitType::Total => usage.total_tokens,
+            };
+            (count, cached_response_api_tokens(usage))
+        }
+        ResponseUsage::Mapping(usage) => {
+            let count = match rate_limit_type {
+                TokenRateLimitType::Output => usage.output_tokens.max(usage.completion_tokens),
+                TokenRateLimitType::Input => usage.input_tokens.max(usage.prompt_tokens),
+                TokenRateLimitType::Total => usage.total_tokens,
+            };
+            (count, cached_tokens(usage))
+        }
     };
     match rate_limit_type {
         TokenRateLimitType::Output => count,

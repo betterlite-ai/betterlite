@@ -7,4 +7,6 @@ call:
     usage: {input_tokens: 100, output_tokens: 20, total_tokens: 120, input_tokens_details: {cached_tokens: 30}}
 env: {}
 compare:
-  ignore: []
+  ignore:
+    - pointer: /value/total_tokens
+      why: B3044 restores Responses token selectors; pinned LiteLLM returns zero for this shape (docs/deviations/B3044.yaml); Rust regression tests assert exact counts
