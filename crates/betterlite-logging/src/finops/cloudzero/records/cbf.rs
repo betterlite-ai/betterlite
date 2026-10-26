@@ -99,9 +99,15 @@ fn insert_dimensions(
 fn parse_date(value: Option<&str>) -> Option<DateTime<Utc>> {
     let parsed_date =
         value.and_then(|date_text| NaiveDate::parse_from_str(date_text, "%Y-%m-%d").ok());
-    parsed_date
-        .and_then(|date_value| date_value.and_hms_opt(0, 0, 0))
-        .map(|date_value| DateTime::<Utc>::from_naive_utc_and_offset(date_value, Utc))
+    if let Some(parsed_day) = parsed_date {
+        return parsed_day
+            .and_hms_opt(0, 0, 0)
+            .map(|midnight| DateTime::<Utc>::from_naive_utc_and_offset(midnight, Utc));
+    }
+    let date_text = value?;
+    DateTime::parse_from_rfc3339(date_text)
+        .ok()
+        .map(|parsed_datetime| parsed_datetime.with_timezone(&Utc))
 }
 
 fn format_account(alias: Option<&str>, api_key: &str) -> String {
@@ -113,20 +119,15 @@ fn format_account(alias: Option<&str>, api_key: &str) -> String {
 }
 
 fn add_tags(record: &mut CbfRecord, row: &UsageRecord) {
-    add_tag(
-        record,
-        "entity_id",
-        Some(row.team_alias.as_deref().unwrap_or(&row.team_id)),
-    );
-    add_tag(
-        record,
-        "team_alias",
-        Some(row.team_alias.as_deref().unwrap_or("unknown")),
-    );
-    add_tag(record, "model", Some(row.model.as_str()));
-    add_tag(record, "model_group", Some(row.model_group.as_str()));
-    add_tag(record, "provider", Some(row.custom_llm_provider.as_str()));
-    add_tag(record, "api_key_prefix", Some(row.api_key.as_str()));
+    for (key, value) in source_identity_dimensions(row) {
+        add_tag(record, key, Some(value.as_str()));
+    }
+    for (key, value) in source_request_dimensions(row) {
+        add_tag(record, key, Some(value.as_str()));
+    }
+    for (key, value) in source_alias_dimensions(row) {
+        add_tag(record, key, Some(value.as_str()));
+    }
     add_tag(
         record,
         "prompt_tokens",
@@ -141,6 +142,63 @@ fn add_tags(record: &mut CbfRecord, row: &UsageRecord) {
             .then(|| row.completion_tokens.to_string())
             .as_deref(),
     );
+}
+
+fn source_identity_dimensions(row: &UsageRecord) -> [(&'static str, String); 7] {
+    let api_key_prefix: String = row.api_key.chars().take(8).collect();
+    [
+        ("entity_type", "team".to_owned()),
+        (
+            "entity_id",
+            row.team_alias.as_deref().unwrap_or(&row.team_id).to_owned(),
+        ),
+        (
+            "team_alias",
+            row.team_alias.as_deref().unwrap_or("unknown").to_owned(),
+        ),
+        ("model", row.model.clone()),
+        ("model_group", row.model_group.clone()),
+        ("provider", row.custom_llm_provider.clone()),
+        ("api_key_prefix", api_key_prefix),
+    ]
+}
+
+fn source_request_dimensions(row: &UsageRecord) -> [(&'static str, String); 5] {
+    [
+        ("api_requests", row.api_requests.to_string()),
+        ("successful_requests", row.successful_requests.to_string()),
+        ("failed_requests", row.failed_requests.to_string()),
+        (
+            "cache_creation_tokens",
+            row.cache_creation_input_tokens.to_string(),
+        ),
+        ("cache_read_tokens", row.cache_read_input_tokens.to_string()),
+    ]
+}
+
+fn source_alias_dimensions(row: &UsageRecord) -> [(&'static str, String); 5] {
+    [
+        (
+            "api_key_alias",
+            row.api_key_alias.as_deref().unwrap_or("").to_owned(),
+        ),
+        (
+            "user_email",
+            row.user_email.as_deref().unwrap_or("").to_owned(),
+        ),
+        (
+            "organization_alias",
+            row.organization_alias.as_deref().unwrap_or("").to_owned(),
+        ),
+        (
+            "project_alias",
+            row.project_alias.as_deref().unwrap_or("").to_owned(),
+        ),
+        (
+            "user_alias",
+            row.user_alias.as_deref().unwrap_or("").to_owned(),
+        ),
+    ]
 }
 
 fn add_tag(record: &mut CbfRecord, key: &str, tag_value: Option<&str>) {

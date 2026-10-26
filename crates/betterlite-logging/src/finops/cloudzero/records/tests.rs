@@ -132,3 +132,61 @@ fn cloudzero_date_and_czrn_failure_filtering() {
     assert_eq!(output.len(), 1);
     assert_eq!(output[0].get("time/usage_start"), Some(&CbfValue::None));
 }
+
+#[test]
+fn cloudzero_date_parser_accepts_iso_fallback() {
+    let mut source = row();
+    source.date = Some("2025-04-19T12:30:00+02:00".to_owned());
+
+    let record = CbfTransformer::default()
+        .create_cbf_record(&source)
+        .expect("valid CBF record");
+    assert_eq!(
+        record.get("time/usage_start"),
+        Some(&CbfValue::DateTime(
+            chrono::DateTime::parse_from_rfc3339("2025-04-19T12:30:00+02:00")
+                .expect("ISO date")
+                .with_timezone(&chrono::Utc),
+        ))
+    );
+}
+
+#[test]
+fn cloudzero_cbf_preserves_source_dimensions_as_tags() {
+    let mut source = row();
+    source.user_email = Some("owner@example.com".to_owned());
+    source.organization_alias = Some("acme".to_owned());
+    source.project_alias = Some("inference".to_owned());
+    source.user_alias = Some("owner".to_owned());
+    source.api_requests = 7;
+    source.failed_requests = 2;
+    source.cache_creation_input_tokens = 3;
+    source.cache_read_input_tokens = 4;
+
+    let record = CbfTransformer::default()
+        .create_cbf_record(&source)
+        .expect("valid CBF record");
+
+    let expected = [
+        ("entity_type", "team"),
+        ("entity_id", "platform"),
+        ("team_alias", "platform"),
+        ("api_key_prefix", "12345678"),
+        ("api_key_alias", "prod"),
+        ("user_email", "owner@example.com"),
+        ("api_requests", "7"),
+        ("successful_requests", "1"),
+        ("failed_requests", "2"),
+        ("cache_creation_tokens", "3"),
+        ("cache_read_tokens", "4"),
+        ("organization_alias", "acme"),
+        ("project_alias", "inference"),
+        ("user_alias", "owner"),
+    ];
+    for (key, value) in expected {
+        assert_eq!(
+            record.get(&format!("resource/tag:{key}")),
+            Some(&CbfValue::Text(value.to_owned()))
+        );
+    }
+}
