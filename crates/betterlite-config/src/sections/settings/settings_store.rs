@@ -18,15 +18,12 @@ pub struct ConfigOwnedKeyError {
 
 #[must_use]
 pub fn config_ownership_message(section: Section, key: &str, shadows_db_value: bool) -> String {
-    let stored = if shadows_db_value {
-        " The value stored in the database for it is ignored and will never be applied."
+    let message = super::config_ownership_message(section, key, shadows_db_value);
+    if message.is_empty() {
+        String::new()
     } else {
-        ""
-    };
-    format!(
-        "{}.{key} is set in the config file, so the config file owns it and it cannot be changed here.{stored} Edit the config file to change it, or remove it from the file to let the database own it.",
-        section.name()
-    )
+        message
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -165,14 +162,18 @@ impl SettingsStore {
 
     #[must_use]
     pub fn len(&self) -> usize {
-        let count = self.iter().count();
+        let mut count = 0_usize;
+        for _ in self.iter() {
+            count = count.saturating_add(1);
+        }
         count
     }
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        let empty = self.len() == 0;
-        empty
+        let mut iterator = self.iter();
+        let has_value = iterator.next().is_some();
+        !has_value
     }
 
     pub fn insert(&mut self, key: &str, value: JsonValue) -> Result<(), ConfigOwnedKeyError> {
