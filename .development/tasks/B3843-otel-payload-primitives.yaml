@@ -1,0 +1,263 @@
+id: B3843
+title: OTel usage and service payload primitives
+description: >-
+  Build frozen dataclass types for LLM usage, cost, errors, and service spans.
+  Implement request parameter capture (temperature, top_p, max_tokens, stop,
+  seed, frequency/presence penalties) parsed from model_parameters. Implement
+  LLMUsage with input/output token counts, cache and reasoning token tracking,
+  and computed properties (uncached_input_tokens, non_reasoning_output_tokens).
+  Implement LLMCost with per-component cost breakdown (input, output, cache,
+  discount, margin) parsed from StandardLoggingPayload cost_breakdown. Implement
+  SpanError with error_type, message, code, stack_trace, llm_provider. Implement
+  ServerInfo parsed from api_base URLs with address/port extraction.
+
+  Implement GuardrailSpanData for guardrail execution spans: guardrail_name,
+  mode, status (categorized as _ERROR_STATUSES), masked_entity_count, provider,
+  action, response_json (JSON-serialized), violation_categories, confidence/risk
+  scores, duration, start/end times (epoch seconds, overriding post-call
+  emission time), guardrail_id, policy_template, detection_method, usage_json,
+  cost, cost_in_spend flag, and error field for blocking/failed guardrails.
+  GuardrailSpanData.from_logging_entry parses from StandardLoggingGuardrailInformation
+  only (provider-agnostic), normalizing enum values to strings.
+
+  Implement ServiceSpanData for service call spans: service_name (from
+  ServiceLoggerPayload.service enum), call_type, caller, error, and sanitized
+  event_metadata (string-only, non-sensitive, length/count bounded). ServiceSpanData.from_payload
+  calls sanitize_event_metadata to filter caller-supplied metadata from
+  async_service_*_hook(event_metadata=...). Implement ProxyRequestSpanData for
+  HTTP proxy request context: http_method, route, url_path, status_code, identity.
+
+  Implement helper functions: _cache_token_value (merges multiple token sources
+  with explicit-zero priority); _guardrail_mode_str (normalizes GuardrailMode
+  enum to string value, joins list of modes with comma); _total_masked_entities
+  (sums a {entity_type: count} map); _dicts (extracts dict items from a list as
+  tuple); sanitize_event_metadata (keeps only str/int/float under non-sensitive
+  keys, strips secrets/headers/cookies, bounds count to 32 and per-value length
+  to 1024); _json_or_none (serializes value or returns None on failure).
+
+  Re-export RequestIdentity and RequestContext from betterlite-logging's otel::model
+  so existing model::payloads imports keep resolving them.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/model/payloads.rs
+    - crates/betterlite-logging/src/otel/model/payloads/**
+    - tools/oracle/cases/helpers/payload-primitives/**
+    - tools/oracle/fuzz/corpus/helper_case/payload-primitives-*
+    - tools/oracle/helpers/b3843.py
+    - tools/oracle/helpers/b3843/**
+    - tools/oracle/src/helpers/logging/b3843.rs
+    - tools/oracle/src/helpers/logging/b3843/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L92-L117
+    why: LLMRequestParams structure with from_model_parameters factory, token parameter normalization (max_tokens vs max_completion_tokens), and all required fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L121-L172
+    why: LLMUsage structure with token counts, cache token tracking, reasoning tokens, and computed properties for uncached/non-reasoning totals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L176-L215
+    why: LLMCost with cost_breakdown parsing, per-component fields, and from_breakdown factory.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L219-L224
+    why: SpanError structure with error_type, message, code, stack_trace, llm_provider.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L228-L239
+    why: ServerInfo with address/port extraction from api_base URLs, port falling back to scheme defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L243-L324
+    why: GuardrailSpanData with all fields, _ERROR_STATUSES constant, and from_logging_entry factory parsing StandardLoggingGuardrailInformation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L328-L356
+    why: ServiceSpanData structure, from_payload factory, and event_metadata sanitization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L360-L365
+    why: ProxyRequestSpanData structure for HTTP proxy request context.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L650-L675
+    why: sanitize_event_metadata function with sensitive key filtering, max count/length bounds, and primitive-only value preservation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L678-L685
+    why: _json_or_none helper for JSON serialization with string passthrough and exception handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L688-L710
+    why: _guardrail_mode_str normalizing enum to string value and joining lists of modes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L713-L718
+    why: _total_masked_entities summing a dict map of entity counts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L721-L725
+    why: _dicts extracting dict items from a list as tuple.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L67-L89
+    why: _cache_token_value function merging multiple token sources with explicit-zero and invalid-value handling.
+
+dod:
+  - text: >-
+      LLMRequestParams parses temperature, top_p, top_k, max_tokens (with
+      max_completion_tokens fallback), frequency_penalty, presence_penalty,
+      stop (as tuple), and seed from model_parameters; all fields are optional and
+      None when absent or invalid.
+    proof: [payload-primitives-usage-tests]
+  - text: >-
+      LLMUsage parses input_tokens, output_tokens, total_tokens from top-level
+      payload fields; cache tokens from nested usage_object (with fallback keys);
+      reasoning tokens from completion_tokens_details. uncached_input_tokens
+      subtracts cache_creation + cache_read from input_tokens. non_reasoning_output_tokens
+      subtracts reasoning_tokens from output_tokens. All computations return None
+      when the primary field is absent.
+    proof: [payload-primitives-usage-tests]
+  - text: >-
+      LLMCost parses input_cost, output_cost, cache_read_cost, cache_creation_cost,
+      tool_usage_cost, original_cost, discount_amount/percent, and margin_* fields
+      from cost_breakdown; all are optional floats, None when absent.
+    proof: [payload-primitives-usage-tests]
+  - text: >-
+      SpanError carries error_type, message, code, stack_trace, llm_provider fields,
+      all optional, for any span with a failure. from_logging_entry reads from
+      error_information dict and error_str fallback.
+    proof: [payload-primitives-error-tests]
+  - text: >-
+      ServerInfo extracts address and port from api_base URLs; _from_api_base returns
+      None when api_base is absent or hostname cannot be parsed. Port falls back to
+      scheme defaults (443 for https, 80 for http, None otherwise). urlsplit is used
+      for robustness.
+    proof: [payload-primitives-server-tests]
+  - text: >-
+      GuardrailSpanData carries guardrail_name (required string), mode, status, masked_entity_count,
+      provider, action, response_json, violation_categories (tuple), confidence/risk scores,
+      duration, start/end times (epoch seconds), guardrail_id, policy_template, detection_method,
+      usage_json, cost, cost_in_spend (bool|None), and error (SpanError|None). from_logging_entry
+      parses StandardLoggingGuardrailInformation only; normalizes mode and enums to strings;
+      marks status in _ERROR_STATUSES as errors.
+    proof: [payload-primitives-guardrail-tests]
+  - text: >-
+      ServiceSpanData carries service_name (required, from ServiceLoggerPayload.service enum value),
+      call_type, caller, error, and sanitized event_metadata (string-only). from_payload calls
+      sanitize_event_metadata to filter metadata from async_service_*_hook(event_metadata=...).
+      Service name is the enum's string value, not its repr.
+    proof: [payload-primitives-service-tests]
+  - text: >-
+      ProxyRequestSpanData carries http_method (required), route (required),
+      url_path (optional), status_code (optional), and identity (optional).
+    proof: [payload-primitives-proxy-request-tests]
+  - text: >-
+      _cache_token_value merges multiple token sources; prefers the first non-None
+      positive value; treats explicit 0 as valid; invalidates negative values
+      before an explicit zero (invalid_before_zero flag); returns 0 only when all
+      values are zero or the zero-first strategy applies; returns None on failure.
+    proof: [payload-primitives-helpers-tests]
+  - text: >-
+      sanitize_event_metadata keeps only str/int/float primitive values; drops
+      non-string keys and keys matching _DROP_METADATA_KEYS (function_*); drops
+      any key containing (case-insensitive) sensitive substrings (api_key, token,
+      secret, password, cookie, authorization, header, hidden_params); truncates
+      values to 1024 chars; stops at 32 items. Returns empty dict on None input.
+    proof: [payload-primitives-sanitize-tests]
+  - text: >-
+      _guardrail_mode_str normalizes GuardrailMode enums to their string values
+      (not repr); joins lists/tuples with commas; handles None inputs. Emits enum.value,
+      not str(enum) which would include the enum class name.
+    proof: [payload-primitives-helpers-tests]
+  - text: >-
+      _total_masked_entities sums a {entity_type: count} dict map, returning None
+      when the sum is zero or the input is not a mapping. Handles non-int values gracefully.
+    proof: [payload-primitives-helpers-tests]
+  - text: >-
+      _dicts extracts dict items from a list (or tuple), returning an empty tuple
+      when the input is not a list or contains no dicts. Preserves order.
+    proof: [payload-primitives-helpers-tests]
+  - text: >-
+      _json_or_none serializes value with json.dumps (default=str); strings pass through;
+      returns None on any exception (JSONDecodeError, circular references, custom type failures).
+    proof: [payload-primitives-helpers-tests]
+  - text: >-
+      Every named case covers one dataclass and its from_* factory (or helper function):
+      LLMRequestParams with all field combinations (absent, None, valid, invalid values);
+      LLMUsage with token caching scenarios; LLMCost with sparse/complete breakdown;
+      SpanError with all fields populated and absent; ServerInfo with various api_base formats;
+      GuardrailSpanData with _ERROR_STATUSES detection and metadata normalization; ServiceSpanData
+      with sanitized metadata; ProxyRequestSpanData; and each helper (_cache_token_value,
+      sanitize_event_metadata, _json_or_none, _guardrail_mode_str, _total_masked_entities, _dicts).
+    proof: [helper-case-corpus]
+  - text: >-
+      RequestIdentity and RequestContext are re-exported from betterlite-logging
+      so existing litellm.integrations.otel.model.payloads imports keep resolving them.
+    proof: [payload-primitives-reexport-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: payload-primitives-usage-tests
+      why: LLMRequestParams, LLMUsage, and LLMCost parsing must handle all token and cost fields, token merging, and computed properties correctly.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::(request_params|usage|cost)::/)'
+    - id: payload-primitives-error-tests
+      why: SpanError must parse error information from StandardLoggingPayload with all field fallbacks.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::error::/)'
+    - id: payload-primitives-server-tests
+      why: ServerInfo must extract address and port from api_base URLs with scheme defaults and robustness to malformed inputs.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::server::/)'
+    - id: payload-primitives-guardrail-tests
+      why: GuardrailSpanData must parse StandardLoggingGuardrailInformation with enum normalization, error status detection, and metadata handling.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::guardrail::/)'
+    - id: payload-primitives-service-tests
+      why: ServiceSpanData must parse ServiceLoggerPayload and sanitize event_metadata correctly.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::service::/)'
+    - id: payload-primitives-proxy-request-tests
+      why: ProxyRequestSpanData must carry http_method, route, url_path, status_code, and identity.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::proxy_request::/)'
+    - id: payload-primitives-helpers-tests
+      why: Helper functions (_cache_token_value, _guardrail_mode_str, _total_masked_entities, _dicts, _json_or_none, sanitize_event_metadata) must implement their exact specifications.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::helpers::/)'
+    - id: payload-primitives-sanitize-tests
+      why: sanitize_event_metadata must filter sensitive keys, bound counts/lengths, and preserve only primitives.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::sanitize_event_metadata::/)'
+    - id: payload-primitives-reexport-tests
+      why: RequestIdentity and RequestContext re-exports must resolve correctly.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::reexport::/)'
+    - id: helper-python
+      why: The independently invoked MIT helper semantics must match the production functions.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3843::/)'
+    - id: helper-case-corpus
+      why: Oracle helper cases and corpus must replay with the new payload primitives decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/payload-primitives tools/oracle/fuzz/corpus/helper_case/payload-primitives-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/payload-primitives/request-params-all-fields-optional.yaml
+  - tools/oracle/cases/helpers/payload-primitives/usage-cache-token-value-priority.yaml
+  - tools/oracle/cases/helpers/payload-primitives/cost-sparse-breakdown.yaml
+  - tools/oracle/cases/helpers/payload-primitives/server-info-api-base-port-defaults.yaml
+  - tools/oracle/cases/helpers/payload-primitives/guardrail-error-statuses-detection.yaml
+  - tools/oracle/cases/helpers/payload-primitives/service-sanitize-event-metadata-secrets.yaml
+  - tools/oracle/cases/helpers/payload-primitives/sanitize-bounds-count-and-length.yaml
+
+deviations:
+  - what: >-
+      LLMUsage computed properties (uncached_input_tokens, non_reasoning_output_tokens)
+      return None when the base token count is None, matching LiteLLM's behavior of
+      avoiding zero when the metric is absent.
+    why: >-
+      Computed token counts are derived only when the primary metric is known; a None
+      primary means the provider did not report it. zero for absent metrics would
+      be semantically incorrect.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L130-L140
+  - what: >-
+      GuardrailSpanData.from_logging_entry normalizes GuardrailMode enums and enum lists
+      to strings rather than taking raw fields; it reads only StandardLoggingGuardrailInformation
+      (provider-agnostic) keys and drops provider-specific fields.
+    why: >-
+      The canonical OTel payload is provider-agnostic; provider-specific shaping is
+      left to the mapper layer that consumes this data structure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L284-L324
+
+out_of_scope:
+  - LLM inference spans (LLMCallSpanData, message/choice parsing); B3844 owns full inference payloads.
+  - MCP tool spans (MCPToolCallSpanData, MCPListToolsSpanData); B3844 owns those.
+  - Response choice parsing and output type detection; B3844 owns those pipelines.
+  - Error parsing beyond _parse_error helper; the full error shape is B3844.
+  - Span emission and attribute stamping; the mapper owns those, not this task.
+
+pitfalls:
+  - max_tokens has a fallback to max_completion_tokens; always check both keys in from_model_parameters.
+  - _cache_token_value returns 0 only when all input values are zero or explicit_zero is true and invalid_before_zero is false; it returns None (not 0) when all inputs are None or invalid. Test the priority logic with multiple sources.
+  - sanitize_event_metadata uses case-insensitive substring matching for sensitive keys. Both "Authorization" and "authorization" should be filtered.
+  - _guardrail_mode_str handles enums, lists, and raw strings; emit enum.value, not str(enum). Join lists with comma (no spaces).
+  - ServerInfo.from_api_base returns None when api_base is empty, None, or has no hostname after parsing. Port is None when absent and the scheme is unknown (not http/https).
+  - Guardrail start/end times are epoch seconds from the logging entry, not from post-call emission. They override the span's own timing to reflect when the guardrail actually ran.
+  - ServiceSpanData.service_name comes from ServiceLoggerPayload.service enum's string value (.value), not the enum repr.
+  - Metadata flattening in service_metadata is owned by B3841; this task only filters and bounds the caller-supplied event_metadata dict.
+  - cost_in_spend is typed as bool|None; missing values become None, not false. Only explicit False means report-only.
+
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0
+
+review_level: security

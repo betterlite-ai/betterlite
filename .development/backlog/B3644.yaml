@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Transcribe passthrough ownership and admission policy
 status: todo
 depends_on: [B002, B193, B1018]
-file: null
+file: tasks/B3644-transcribe-relay-policy.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py"
 parent: B103

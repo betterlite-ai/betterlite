@@ -14,4 +14,11 @@ path = "fuzz_targets/key_header.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "scim_resource"
+path = "fuzz_targets/scim_resource.rs"
+test = false
+doc = false
+bench = false
 [workspace]

@@ -24,8 +24,6 @@ description: >-
   90 adapters and 30 wiring, 530 lines. B204 is unnecessary: subtitles do no token accounting.
 scope:
   paths:
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/api.rs
   - crates/betterlite-openai/src/api/**
   - crates/betterlite-openai/src/api/audio_subtitles.rs

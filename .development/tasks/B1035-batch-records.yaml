@@ -93,8 +93,6 @@ scope:
   - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/**
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/api/batch_records.rs
   - crates/betterlite-openai/src/api/batch_records/**
   - crates/betterlite-openai/src/api.rs

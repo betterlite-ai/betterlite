@@ -19,8 +19,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-logging/Cargo.toml
-  - crates/betterlite-logging/src/lib.rs
-  - crates/betterlite-logging/src/error.rs
   - crates/betterlite-logging/src/logging_streams.rs
   - crates/betterlite-logging/src/logging_streams/**
   - tools/oracle/Cargo.toml

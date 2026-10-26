@@ -1,0 +1,117 @@
+id: B3901
+title: Langfuse observation attributes and span identity
+description: >-
+  Build the typed observation/span primitives in betterlite-logging, starting with timestamp
+  conversion to OTel nanoseconds, stable ID normalization and hashing, trace and generation
+  attributes, and span lifecycle management. Provide a LangfuseObservation type wrapping an
+  OTel Span with its resolved ID, a context-variable-based ID generator to hand out requested
+  trace and span IDs, and a TraceIdHashSampler for sampling on trace ID SHA256 rather than
+  low bits. The trace_attributes and observation_attributes functions project v2's per-field
+  arguments into OTel span attributes, handling scalar fields, sequences, and flattened metadata;
+  required to support child observations, trace updates, and prompt links in later tasks. Keep
+  the provider and tracer injected so primitives never acquire an export channel or mutate the
+  host's global OTel state. Write the behavior rstest functions observation_attributes_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD.
+scope:
+  paths:
+  - crates/betterlite-logging/src/langfuse_observations.rs
+  - crates/betterlite-logging/src/langfuse_observations/**
+  - tools/oracle/cases/helpers/langfuse-observations/**
+  - tools/oracle/helpers/b3901.py
+  - tools/oracle/helpers/b3901/**
+  - tools/oracle/src/helpers/logging/b3901.rs
+  - tools/oracle/src/helpers/logging/b3901/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L74-L100
+  why: Trace and observation ID patterns, JSON-safe integer boundary, OTel ingestion version.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L125-L285
+  why: Timestamp conversion to unix nanoseconds, serialization helpers, trace and observation attribute projection.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L288-L301
+  why: LangfuseObservation type with id and trace_id properties.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L303-L460
+  why: Observation lifecycle (end, start_generation, start_child_span), requested-ID context variables and generator, parent context builder, TraceIdHashSampler.
+dod:
+- text: Timestamp normalization, ID resolution, and attribute projection match pinned behavior.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Trace and observation attributes flatten metadata, serialize non-native types, and preserve
+    prompt links and public flags as OTel span attributes.
+  proof:
+  - observation-attributes-tests
+- text: >-
+    Requested span and trace IDs flow through context variables; trace ID sampling on SHA256
+    matches the sampler's output; parent context carries explicit and existing-trace semantics.
+  proof:
+  - observation-attributes-tests
+- text: >-
+    LangfuseObservation ID property reads span context; child spans inherit parent public flag;
+    span end time converts to nanoseconds.
+  proof:
+  - observation-attributes-tests
+checks:
+  optional: []
+  commands:
+  - id: observation-attributes-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::observation_attributes_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/langfuse-observations/trace-id-uuid.yaml
+- tools/oracle/cases/helpers/langfuse-observations/trace-id-hash.yaml
+- tools/oracle/cases/helpers/langfuse-observations/observation-id-format.yaml
+- tools/oracle/cases/helpers/langfuse-observations/timestamp-conversion.yaml
+- tools/oracle/cases/helpers/langfuse-observations/trace-attributes-scalar.yaml
+- tools/oracle/cases/helpers/langfuse-observations/trace-attributes-metadata.yaml
+- tools/oracle/cases/helpers/langfuse-observations/observation-attributes-generation.yaml
+- tools/oracle/cases/helpers/langfuse-observations/observation-attributes-span.yaml
+- tools/oracle/cases/helpers/langfuse-observations/attribute-serialization.yaml
+- tools/oracle/cases/helpers/langfuse-observations/parent-context-fresh-trace.yaml
+- tools/oracle/cases/helpers/langfuse-observations/parent-context-with-parent-id.yaml
+- tools/oracle/cases/helpers/langfuse-observations/sampler-rate-boundary.yaml
+- tools/oracle/cases/helpers/langfuse-observations/child-span-public-flag.yaml
+deviations: []
+out_of_scope:
+- >-
+  LangfuseObservation.trace_id property: no caller at the pin; production uses the
+  resolved trace ID returned from generation assembly, accessed via LangfuseObservation.id
+  and span end lifecycle which are built here.
+- >-
+  LangfuseTracing, export channels, and the OTLP exporter are owned by B3903; these primitives
+  never call them. The OTel Span, Tracer and Context types are library interfaces, not B3903 ownership.
+- >-
+  Configuration (LANGFUSE_SAMPLE_RATE, LANGFUSE_TIMEOUT, etc.) is owned by B3900;
+  this task provides the projections and primitives only.
+- >-
+  LiteLLM's per-provider dispatch functions are out of scope; this task handles only the
+  observation/span abstractions shared across providers.
+pitfalls:
+- >-
+  resolve_observation_id returns None for empty/nil input, but resolve_trace_id
+  generates a random ID when input is empty. Both hash non-canonical strings to 32/16
+  hex characters respectively; only UUIDs and valid hex pass through unchanged.
+- >-
+  The tracer's ID generator is injected from the OTel provider; do not use OTel's global
+  provider or invoke the generator outside the request context where context variables are set.
+- >-
+  Metadata value serialization preserves ints in the JSON-safe range [-2^53+1, 2^53-1]
+  but stringifies larger ints and floats, matching what a JSON reader would do.
+- >-
+  Parent context creation differs on existing_trace: a fresh trace uses a new root context,
+  while existing_trace hangs under a synthetic parent to signal append-only to the server.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 2

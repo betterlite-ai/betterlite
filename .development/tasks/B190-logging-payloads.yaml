@@ -15,8 +15,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-logging/Cargo.toml
-  - crates/betterlite-logging/src/lib.rs
-  - crates/betterlite-logging/src/error.rs
   - crates/betterlite-logging/src/payload.rs
   - crates/betterlite-logging/src/payload/**
   - crates/betterlite-openai/**

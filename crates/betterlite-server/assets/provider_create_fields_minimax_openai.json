@@ -1,0 +1,376 @@
+[
+  {
+    "provider": "MINIMAX",
+    "provider_display_name": "MiniMax",
+    "litellm_provider": "minimax",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": "your-minimax-api-key",
+        "tooltip": "MiniMax API Key from https://platform.minimaxi.com/",
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_base",
+        "label": "API Base URL",
+        "placeholder": "https://api.minimax.io/v1",
+        "tooltip": "International: https://api.minimax.io/v1, China: https://api.minimaxi.com/v1",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.minimax.io/v1"
+      }
+    ],
+    "default_model_placeholder": "minimax/MiniMax-M2"
+  },
+  {
+    "provider": "MOONSHOT",
+    "provider_display_name": "Moonshot",
+    "litellm_provider": "moonshot",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "MORPH",
+    "provider_display_name": "Morph",
+    "litellm_provider": "morph",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "NEBIUS",
+    "provider_display_name": "Nebius",
+    "litellm_provider": "nebius",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "NLP_CLOUD",
+    "provider_display_name": "Nlp Cloud",
+    "litellm_provider": "nlp_cloud",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "NOVITA",
+    "provider_display_name": "Novita",
+    "litellm_provider": "novita",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "NSCALE",
+    "provider_display_name": "Nscale",
+    "litellm_provider": "nscale",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "NVIDIA_NIM",
+    "provider_display_name": "Nvidia Nim",
+    "litellm_provider": "nvidia_nim",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "NVIDIA_RIVA",
+    "provider_display_name": "Nvidia Riva",
+    "litellm_provider": "nvidia_riva",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "grpc.nvcf.nvidia.com:443",
+        "tooltip": "host:port of the Riva gRPC endpoint. Use grpc.nvcf.nvidia.com:443 for NVCF-hosted Riva, or your own host (e.g. localhost:50051) when self-hosting. Riva has no public default, so this is required.",
+        "required": true,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": "nvapi-...",
+        "tooltip": "Sent as gRPC authorization metadata. Required for NVCF-hosted Riva, optional for self-hosted deployments without auth.",
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "nvcf_function_id",
+        "label": "NVCF Function ID",
+        "placeholder": "1598d209-5e27-4d3c-8079-4751568b1081",
+        "tooltip": "NVCF function id of the hosted Riva model. Setting it turns on TLS and the function-id gRPC metadata. Leave empty for self-hosted Riva.",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "nvidia_riva/nvidia/parakeet-ctc-1_1b-asr"
+  },
+  {
+    "provider": "Ollama",
+    "provider_display_name": "Ollama",
+    "litellm_provider": "ollama",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "http://localhost:11434",
+        "tooltip": "The base URL for your Ollama server. Defaults to http://localhost:11434 if not specified.",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "http://localhost:11434"
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "OLLAMA_CHAT",
+    "provider_display_name": "Ollama Chat",
+    "litellm_provider": "ollama_chat",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "OOBABOOGA",
+    "provider_display_name": "Oobabooga",
+    "litellm_provider": "oobabooga",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "OpenAI",
+    "provider_display_name": "OpenAI",
+    "litellm_provider": "openai",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.openai.com/v1",
+        "tooltip": "Common endpoints: https://api.openai.com/v1, https://eu.api.openai.com, https://us.api.openai.com",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.openai.com/v1"
+      },
+      {
+        "key": "organization",
+        "label": "OpenAI Organization ID",
+        "placeholder": "[OPTIONAL] my-unique-org",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "OpenAI API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  }
+]

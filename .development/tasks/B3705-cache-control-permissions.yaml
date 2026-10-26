@@ -1,0 +1,82 @@
+id: B3705
+title: Authenticated cache control permissions
+description: >-
+  Build the pre-call permission check that validates a request's cache control parameters against the authenticated principal's allowed_cache_controls allowlist. A nonempty allowlist rejects each unauthorized control with HTTP 403; absent, None, or empty allowlists retain the pinned behavior and permit all cache controls. Non-dictionary cache input returns early without error.
+
+  Implement the hook as CacheControlPermissions with async_pre_call_hook receiving user_api_key_dict (carrying the allowed_cache_controls field from B720), cache (unused here), data (request dict), and call_type (unused). Iterate over cache_args dict keys when present; for each key not in allowed_cache_controls (when the allowlist exists and is nonempty), raise HTTPException with status 403. Catch and re-raise HTTPException; catch all other exceptions at debug level and return (warn-and-skip).
+
+scope:
+  paths:
+    - crates/betterlite-server/src/hooks/cache_control_permissions.rs
+    - crates/betterlite-server/src/hooks/cache_control_permissions/**
+    - Cargo.toml
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/cache_control_check.py
+    why: "Complete _PROXY_CacheControlCheck class with __init__ and async_pre_call_hook implementation, including early-return, allowlist validation and error handling behavior"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L38
+    why: "allowed_cache_controls field declared on LiteLLM_VerificationToken, inherited by UserAPIKeyAuth via _types.py"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
+    why: "UserAPIKeyAuth type showing inheritance chain from LiteLLM_VerificationToken"
+
+dod:
+  - text: CacheControlPermissions struct exists and implements an async_pre_call_hook method.
+    proof: [cache-control-hook-impl]
+  - text: The hook returns early if data does not contain a "cache" key or if "cache" is not a dictionary.
+    proof: [cache-control-early-return]
+  - text: For each key in cache_args dict, the hook checks if allowed_cache_controls is None, empty, or contains the key; only nonempty allowlists gate access.
+    proof: [cache-control-allowlist-check]
+  - text: Unauthorized cache control keys raise HTTPException with status code 403 and a clear error message naming the control and instructing to contact admin.
+    proof: [cache-control-forbidden-response]
+  - text: HTTPException is re-raised; all other exceptions are caught, logged at debug level and return without error (warn-and-skip).
+    proof: [cache-control-error-handling]
+  - text: Tests cover success (no cache, empty cache, nonempty allowlist with permitted keys), rejection (unauthorized key), absence (None/empty allowlist).
+    proof: [cache-control-behavior-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: cache-control-hook-impl
+      why: CacheControlPermissions and async_pre_call_hook are missing or incomplete
+      run: grep -q "struct CacheControlPermissions" crates/betterlite-server/src/hooks/cache_control_permissions.rs && grep -q "async fn async_pre_call_hook" crates/betterlite-server/src/hooks/cache_control_permissions.rs
+    - id: cache-control-early-return
+      why: The hook does not return early for missing or non-dict cache
+      run: grep -q "cache" crates/betterlite-server/src/hooks/cache_control_permissions.rs && grep -q "is_none\|is_empty\|dict" crates/betterlite-server/src/hooks/cache_control_permissions.rs
+    - id: cache-control-allowlist-check
+      why: The allowlist validation is missing or incorrect
+      run: grep -q "allowed_cache_controls" crates/betterlite-server/src/hooks/cache_control_permissions.rs && grep -q "contains\|iter" crates/betterlite-server/src/hooks/cache_control_permissions.rs
+    - id: cache-control-forbidden-response
+      why: HTTPException with 403 is not raised for unauthorized controls
+      run: grep -q "403\|Forbidden" crates/betterlite-server/src/hooks/cache_control_permissions.rs && grep -q "Not allowed\|permission" crates/betterlite-server/src/hooks/cache_control_permissions.rs
+    - id: cache-control-error-handling
+      why: HTTPException is not re-raised or other exceptions are not caught and logged
+      run: grep -q "HTTPException" crates/betterlite-server/src/hooks/cache_control_permissions.rs && grep -q "debug\|log\|warn" crates/betterlite-server/src/hooks/cache_control_permissions.rs
+    - id: cache-control-behavior-tests
+      why: Behavior tests for cache control permissions are missing or do not pass
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^hooks::cache_control_permissions::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "LiteLLM catches all exceptions and logs at exception level; betterlite catches HTTPException separately to re-raise it, and catches other exceptions to log at debug level and return gracefully."
+    why: "Separating exception types allows 403 errors to reach the caller while non-permission errors warn and permit the request to proceed, matching the warn-and-skip pattern in the source."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/cache_control_check.py#L53-L59"
+
+out_of_scope:
+  - "Hook registration and dispatcher mechanics (belongs to the hook framework task)"
+  - "UserAPIKeyAuth construction and field resolution (belongs to B720 and B732)"
+  - "DualCache implementation (belongs to B360)"
+
+pitfalls:
+  - "allowed_cache_controls is a list of strings or None; an empty list (not None) must also permit all controls per the source comment on prisma empty-list semantics."
+  - "The cache_args dict keys are strings; iteration must handle the case where cache_args is present but empty (no iteration, no error)."
+  - "HTTPException with status_code must be imported from fastapi; it is not a standard Rust Result type."
+  - "Debug logging must include the unauthorized key name for troubleshooting; the error message shows it to the user."
+  - "The hook returns early for non-dict cache_args without logging; this is intentional warn-and-skip behavior, not a configuration error."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

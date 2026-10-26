@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: MCP HTTP failure propagation and bounded cleanup
 status: todo
 depends_on: [B173]
-file: null
+file: tasks/B4743-mcp-client-cleanup.yaml
 covers:
   - "litellm/experimental_mcp_client/client.py"
 parent: B140

@@ -1,0 +1,197 @@
+id: B4835
+title: Translate Codex configuration, turns and JSONL events
+description: >-
+  Build crates/betterlite-harness/src/providers/codex/transformation.rs to translate Codex
+  configuration options into command-line arguments, turn requests into process invocations,
+  and Codex's JSONL event stream into harness events.
+
+  CodexHarnessConfig implements BaseCLIHarnessConfig (from B4830) with Codex-specific logic.
+  Every model call uses a custom provider (litellm, wire_api=responses) pointing at the session
+  endpoint; the bearer token travels only in the LITELLM_HARNESS_TOKEN env var, never in argv.
+  CODEX_HOME is the private session directory so the user's own Codex config and auth are never
+  read. Verified against codex-cli 0.135.0.
+
+  Build config transformation: toml_value encodes any Python value as a TOML value for `codex -c key=value`,
+  rejecting values deeper than DEFAULT_MAX_RECURSE_DEPTH. toml_key quotes keys that do not match the bare TOML
+  pattern. config_overrides takes a dict and returns a list of `-c` strings, rejecting keys in MANAGED_CONFIG_KEYS
+  (model, model_provider, model_providers, approval_policy, sandbox_mode, mcp_servers, developer_instructions,
+  web_search). Any key in CodexOptions.config that starts with one of these names is managed and must use a
+  matching agent() argument instead.
+
+  Build turn request transformation: transform_turn_request takes a prompt and native_session_id,
+  builds argv for `codex exec` (first turn) or `codex exec resume <session_id>` (resume), and sets stdin
+  to the prompt. _provider_overrides builds the litellm provider config for the custom model. _permission_args
+  maps ctx.permissions (read-only, full) to --sandbox mode or --dangerously-bypass-approvals-and-sandbox
+  inside containers. _feature_overrides translates ctx.model_reasoning_effort into model_reasoning_effort
+  and model_reasoning_summary=auto, ctx.instructions into developer_instructions, and options.web_search.
+  Build session setup: transform_session_setup sets CODEX_HOME and LITELLM_HARNESS_TOKEN env vars,
+  lists persisted_dirs as ("sessions", "codex/sessions"), sets skills_dir to "skills", and if ctx.output
+  is not None, builds an output schema file with strict_json_schema (from B4831) and includes it in files.
+
+  Build stream parsing: transform_stream_line returns a list of harness events for each JSONL line from
+  `codex exec --json`. CodexStreamState tracks thread_id, final_text, error, failed flag, and started item
+  ids. Parse thread.started to extract thread_id, item.started/item.updated/item.completed to parse tool calls
+  and results, error to record the error message, and turn.failed to mark the turn as failed. Ignore
+  turn.completed and unknown event types.
+
+  Parse tool items: _tool_item_events (command_execution, file_change, web_search, mcp_tool_call) into
+  ToolCall and ToolResult. _tool_input extracts name, native_name, input dict, and builtin flag. For built-ins:
+  command_execution -> bash with {"command": ...}, file_change -> edit with {"changes": ...}, web_search ->
+  web_search with {"query": ...}. For mcp_tool_call: name is "server.tool", native_name is just "tool",
+  input is the arguments dict (or {"arguments": value} if arguments is not a dict), builtin is False.
+  _tool_output extracts text and is_error flag. For command_execution: is_error if status is "failed" or
+  exit_code != 0, output is aggregated_output. For file_change: output is lines of "kind path" from changes,
+  is_error if status is "failed". For web_search: output is empty, is_error if status is "failed". For
+  mcp_tool_call: output is error.message if error exists, or result (stringified to JSON if not a string),
+  is_error if error exists or status is "failed".
+
+  Parse agent_message items: if completed, emit Text with the text. Parse reasoning items: if completed,
+  emit Reasoning with the text. Ignore other item types.
+
+  Turn response: transform_turn_response checks state.failed or nonzero exit_code and raises HarnessTurnError
+  with the error message. If ctx.output is not None, set output_json to state.final_text; otherwise None.
+  Set final_text to state.final_text. Use stderr_tail_text (from B4831) to format the exit code error.
+
+  Implement the CodexHarnessConfig class with harness = Harness.CODEX, options_type = CodexOptions,
+  and capabilities (structured_output=True, tool_approval=False, tool_filtering=False, history=False,
+  custom_tools=False, skills=True, resume=True, permission_modes={read-only, full}). Methods:
+  get_binary() returns "codex", get_install_hint() mentions npm and brew, create_stream_state() returns
+  CodexStreamState(), get_native_session_id(state) returns state.thread_id, validate_environment(ctx)
+  calls config_overrides to validate CodexOptions.config.
+
+  Copy every JSONL fixture from LiteLLM (tests/unit/llms/codex/harness/fixtures/*.jsonl) as
+  tools/oracle/cases/codex/fixtures/*.jsonl, byte for byte. For each fixture, write a helper test case
+  under tools/oracle/cases/codex/ with the fixture name, operations to parse the fixture and check that
+  no event is missed and every ToolCall precedes its ToolResult.
+scope:
+  paths:
+    - crates/betterlite-harness/src/providers/codex.rs
+    - crates/betterlite-harness/src/providers/codex/**
+    - tools/oracle/cases/codex/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py
+    why: The Codex transformation implementation, 350 lines covering config, turns and event parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/options.py#L1-L100
+    why: The CodexOptions fields (config, env, reasoning_effort, web_search).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py
+    why: The harness types (Event, Text, Reasoning, ToolCall, ToolResult, Harness, Capabilities).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/llms/codex/harness/test_transformation.py
+    why: "Unit tests: config encoding (toml_value, toml_key), session setup, turn argv, event parsing,
+         structured output, resume, permission modes."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/llms/codex/harness/fixtures/
+    why: Six JSONL fixtures (turn1_bash, turn2_resume_apply_patch, reasoning, turn_failed, structured_output) to copy.
+dod:
+  - text: "toml_value encodes bool, int, float, str, dict and list values correctly, and rejects
+           non-TOML types with OptionsMismatch."
+    proof: [codex-transforms-tests]
+  - text: "toml_key returns bare keys unchanged and quotes keys with spaces or special characters."
+    proof: [codex-transforms-tests]
+  - text: "config_overrides rejects keys starting with model, model_provider, approval_policy, sandbox_mode,
+           mcp_servers, developer_instructions or web_search with OptionsMismatch."
+    proof: [codex-transforms-tests]
+  - text: "config_overrides accepts keys like sandbox_workspace_write.network_access and returns
+           them as properly quoted TOML (-c flag values)."
+    proof: [codex-transforms-tests]
+  - text: "Session setup includes LITELLM_HARNESS_TOKEN and CODEX_HOME env vars, persisted_dirs
+           with codex/sessions, skills_dir, and output_schema.json when ctx.output is not None."
+    proof: [codex-transforms-tests]
+  - text: "First turn argv is (codex, exec, --json, --skip-git-repo-check, -m model, -c overrides...,
+           --sandbox mode, --output-schema path, -C workdir, -)."
+    proof: [codex-transforms-tests]
+  - text: "Resume turn argv is (codex, exec, resume, thread_id, --json, ..., -c sandbox_mode=..., -)."
+    proof: [codex-transforms-tests]
+  - text: "Permission modes: read-only maps to --sandbox read-only, full maps to --sandbox workspace-write,
+           and inside containers (is_container=True) maps to --dangerously-bypass-approvals-and-sandbox."
+    proof: [codex-transforms-tests]
+  - text: "Provider overrides set model_provider=litellm, model_providers.litellm.base_url to the
+           session endpoint /v1, model_providers.litellm.env_key=LITELLM_HARNESS_TOKEN,
+           model_providers.litellm.wire_api=responses, and approval_policy=never."
+    proof: [codex-transforms-tests]
+  - text: "Feature overrides translate ctx.instructions to developer_instructions=..., ctx.model_reasoning_effort
+           to model_reasoning_effort=... and model_reasoning_summary=auto, and options.web_search
+           to web_search=live or web_search=disabled."
+    proof: [codex-transforms-tests]
+  - text: "Event parsing: thread.started sets state.thread_id, item.completed with agent_message emits Text,
+           item.completed with reasoning emits Reasoning, item.started/completed with tool items
+           emits ToolCall then ToolResult, error sets state.error, turn.failed sets state.failed."
+    proof: [codex-transforms-tests]
+  - text: "Tool input parsing: command_execution -> bash, file_change -> edit, web_search -> web_search,
+           mcp_tool_call -> server.tool."
+    proof: [codex-transforms-tests]
+  - text: "Tool output parsing: command_execution returns aggregated_output and is_error for failed status
+           or nonzero exit_code, file_change returns changed paths and is_error for failed status."
+    proof: [codex-transforms-tests]
+  - text: "Turn response: state.failed or nonzero exit_code raises HarnessTurnError with the error message.
+           output_json is set only when ctx.output is not None."
+    proof: [codex-transforms-tests]
+  - text: "CodexHarnessConfig.capabilities has structured_output=true, skills=true, resume=true,
+           and permission_modes={read-only, full}."
+    proof: [codex-transforms-tests]
+  - text: "Every JSONL fixture from LiteLLM is copied byte-for-byte under tools/oracle/cases/codex/fixtures/."
+    proof: [codex-fixtures-pinned]
+  - text: "Every oracle helper case parses the matching fixture and verifies event sequences."
+    proof: [codex-oracle-cases]
+checks:
+  optional: []
+  commands:
+    - id: codex-transforms-tests
+      why: the Codex transformation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^codex_transformation::/)'
+    - id: codex-fixtures-pinned
+      why: a JSONL fixture is missing or differs from LiteLLM's file at the pinned commit
+      run: >-
+        test -d tools/oracle/cases/codex/fixtures && test "$(ls tools/oracle/cases/codex/fixtures | wc -l)" -ge 5
+        && cd tools/oracle/cases/codex/fixtures && sha256sum --check --quiet <<'SUMS'
+        623f7112e229278c42e37481d5f2fd22d32c59a3168becf68e4df3bb0e916ad7  turn1_bash.jsonl
+        e22cda5f68af32811e9405f4d14414a9192191e04c116f8a5aa12c169eea15e6  turn2_resume_apply_patch.jsonl
+        9bdd4f87ba2088c31a8acce9643d554f63bd2c87586320abdc5fc50f583f5315  reasoning.jsonl
+        5fd09f608cec0a2c84b4686c8b1397540443a3a0b0dde4067746ae0c7443efa3  turn_failed.jsonl
+        bef5c62d5c21ab9815359938b1c7ba7a7a6ea1e1849e23e474934eae453474f9  structured_output.jsonl
+        SUMS
+    - id: codex-oracle-cases
+      why: oracle helper cases for Codex event parsing are missing, invalid, or fail to run
+      run: >-
+        test -d tools/oracle/cases/codex/fixtures &&
+        test -f tools/oracle/cases/codex/turn1_bash.yaml &&
+        test -f tools/oracle/cases/codex/turn2_resume_apply_patch.yaml &&
+        test -f tools/oracle/cases/codex/reasoning.yaml &&
+        test -f tools/oracle/cases/codex/turn_failed.yaml &&
+        test -f tools/oracle/cases/codex/structured_output.yaml &&
+        cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/codex/*.yaml
+oracle_cases: []
+deviations:
+  - what: "CodexOptions.config keys are passed to `codex -c` as TOML, not as environment variables."
+    why: "Codex uses its own config format and does not read LiteLLM environment variables. Each config
+         value is translated to TOML syntax to pass on the command line."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L150-L171
+  - what: "Bearer token is passed only in LITELLM_HARNESS_TOKEN env var, never in argv or config."
+    why: "Command-line arguments are visible in process listings. The token is a secret and must stay out
+         of argv."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L233
+  - what: "CODEX_HOME is set to the private session directory, isolating the user's Codex config and auth."
+    why: "Codex loads ~/.codex by default. This deployment should use a clean session directory to avoid
+         mixing with the user's own Codex configuration."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L218-L234
+out_of_scope:
+  - Codex process execution and sandbox integration (B4831 or sandbox tasks).
+  - The custom litellm provider and session endpoint (outside the harness transformation scope).
+  - LiteLLM's enterprise Codex options or features not in the open-source version.
+pitfalls:
+  - "Bare TOML keys match ^[A-Za-z0-9_-]+$; keys with spaces, dots or other chars must be quoted with
+    json.dumps and not repr()."
+  - "MANAGED_CONFIG_KEYS is checked on the first path segment only; model_providers.litellm.base_url is
+    rejected because model_providers starts with model."
+  - "String values in TOML are json.dumps(value), which escapes quotes; bare strings are not valid."
+  - "The output_schema file is only written when ctx.output is not None; omit the file from transform_session_setup
+    when there is no output model."
+  - "tool_id is announced in item.started and completed in item.completed; track started ids to avoid
+    emitting ToolCall twice."
+  - "mcp_tool_call arguments may not be a dict; wrap non-dict arguments as {\"arguments\": value}."
+  - "Codex's aggregated_output for command_execution may be empty even when the command ran; check exit_code
+    to determine is_error, not output length."
+  - "Web search tool calls have no result field; output is always empty."
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 2

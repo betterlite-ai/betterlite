@@ -3,7 +3,7 @@ milestone: M7 observability
 title: OTel GenAI and legacy attribute mapping
 status: todo
 depends_on: [B3840, B3843, B3844, B3848]
-file: null
+file: tasks/B3845-otel-genai-mapping.yaml
 covers:
   - "litellm/integrations/otel/mappers/{base,utils,genai,legacy}.py"
   - "litellm/integrations/opentelemetry.py"

@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Agent preparation, catalog validation and execution
 status: todo
 depends_on: [B4562, B4564, B4565, B4566, B4567]
-file: null
+file: tasks/B4568-agent-execution.yaml
 covers:
   - "litellm/proxy/client/cli/commands/agents.py"
 parent: B134
