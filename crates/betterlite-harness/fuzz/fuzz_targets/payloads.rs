@@ -1,10 +1,9 @@
 #![no_main]
-
+use betterlite_harness::payloads::{decode_json_line, last_json_object};
 use libfuzzer_sys::fuzz_target;
-
-fuzz_target!(|input: &[u8]| {
-    let _ = betterlite_harness::payloads::decode_json_line(input);
-    if let Ok(text) = std::str::from_utf8(input) {
-        let _ = betterlite_harness::payloads::last_json_object(text);
+fuzz_target!(|line: &[u8]| {
+    let _ = decode_json_line(line);
+    if let Ok(text) = std::str::from_utf8(line) {
+        let _ = last_json_object(text);
     }
 });
