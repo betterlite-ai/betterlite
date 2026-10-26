@@ -9,7 +9,7 @@ pub struct FocusParquetSerializer;
 impl FocusSerializer for FocusParquetSerializer {
     const EXTENSION: &'static str = "parquet";
 
-    fn serialize(&self, frame: &DataFrame) -> Result<Vec<u8>> {
+    fn serialize(&self, frame: &DataFrame) -> Result<Vec<u8>, SerializationError> {
         let mut bytes = Cursor::new(Vec::new());
         ParquetWriter::new(&mut bytes)
             .with_compression(ParquetCompression::Snappy)
