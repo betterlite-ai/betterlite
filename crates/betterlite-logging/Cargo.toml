@@ -6,9 +6,12 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+betterlite-config = { path = "../betterlite-config" }
+serde.workspace = true
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tracing.workspace = true
+unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }
 
 [dev-dependencies]
 rstest = "=0.27.0"
