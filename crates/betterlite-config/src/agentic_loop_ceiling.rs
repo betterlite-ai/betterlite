@@ -52,12 +52,22 @@ fn whole_number(value: &AgenticLoopValue) -> Option<i64> {
         AgenticLoopValue::Boolean(_) | AgenticLoopValue::Null => None,
         AgenticLoopValue::Integer(integer) => Some(*integer),
         AgenticLoopValue::Float(float) => {
-            if float.is_finite() && float.fract() == 0.0 {
+            if float.fract() == 0.0 {
                 let text = float.to_string();
                 return text.parse().ok();
             }
             None
         }
-        AgenticLoopValue::Text(text) => text.trim().parse().ok(),
+        AgenticLoopValue::Text(text) => {
+            let trimmed = text.trim();
+            let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
+            if !digits
+                .split('_')
+                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+            {
+                return None;
+            }
+            trimmed.replace('_', "").parse().ok()
+        }
     }
 }

@@ -35,24 +35,9 @@ pub struct AgenticFollowupInput<'values> {
     pub fingerprint: &'values str,
 }
 
-impl AgenticFollowupKwargs {
-    #[must_use]
-    pub fn get(&self, key: &str) -> Option<&AgenticKwargValue> {
-        self.values.get(key)
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.values.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &AgenticKwargValue)> {
-        self.values.iter()
+impl AsRef<BTreeMap<String, AgenticKwargValue>> for AgenticFollowupKwargs {
+    fn as_ref(&self) -> &BTreeMap<String, AgenticKwargValue> {
+        &self.values
     }
 }
 
@@ -66,16 +51,10 @@ pub fn build_agentic_followup_kwargs(
     let mut values = input
         .request_kwargs
         .iter()
+        .chain(input.patch_kwargs)
         .filter(|(key, _)| !input.request_params.contains(*key))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<BTreeMap<_, _>>();
-    values.extend(
-        input
-            .patch_kwargs
-            .iter()
-            .filter(|(key, _)| !input.request_params.contains(*key))
-            .map(|(key, value)| (key.clone(), value.clone())),
-    );
     let mut seen = input.fingerprints.to_vec();
     seen.push(input.fingerprint.to_owned());
     values.insert(
