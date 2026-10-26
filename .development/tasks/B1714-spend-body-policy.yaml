@@ -53,7 +53,6 @@ scope:
     - crates/betterlite-logging/src/spend_bodies.rs
     - crates/betterlite-logging/src/spend_bodies/**
     - crates/betterlite-logging/fuzz/{Cargo.toml,fuzz_targets/classifier_snapshot.rs,corpus/classifier_snapshot/**}
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/spend_storage_policy.rs,corpus/spend_storage_policy/**}

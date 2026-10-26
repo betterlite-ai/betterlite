@@ -27,7 +27,6 @@ scope:
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/cli_claim_map.rs
     - crates/betterlite-auth/fuzz/corpus/cli_claim_map/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/cli_attribution.rs
     - crates/betterlite-config/src/cli_attribution/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/cli-attribution-*

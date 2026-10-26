@@ -31,7 +31,6 @@ scope:
     - crates/betterlite-server/src/microsoft_login/**
     - crates/betterlite-auth/fuzz/corpus/oauth_provider_document/microsoft-*
     - crates/betterlite-auth/fuzz/corpus/jwt_claims/microsoft-roles-*
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/microsoft_login.rs
     - crates/betterlite-config/src/microsoft_login/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/microsoft-login-*

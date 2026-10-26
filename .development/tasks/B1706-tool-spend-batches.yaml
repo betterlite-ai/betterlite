@@ -44,7 +44,6 @@ scope:
     - crates/betterlite-db/src/{spend_batches,tool_spend}/**
     - crates/betterlite-config/src/spend.rs
     - crates/betterlite-config/src/spend/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/spend_statement_limits.rs,corpus/spend_statement_limits/**}
     - tools/oracle/src/helpers/models/tool_spend.rs
     - tools/oracle/src/helpers/models/tool_spend/**

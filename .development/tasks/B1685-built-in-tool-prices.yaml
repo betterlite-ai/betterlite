@@ -56,7 +56,6 @@ scope:
     - crates/betterlite-models/src/tool_fees.rs
     - crates/betterlite-models/src/tool_fees/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/tool_prices.rs
     - crates/betterlite-config/src/tool_prices/**
     - crates/betterlite-config/fuzz/Cargo.toml

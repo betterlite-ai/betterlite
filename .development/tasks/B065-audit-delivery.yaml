@@ -49,7 +49,6 @@ scope:
     - crates/betterlite-logging/src/audit/**
     - crates/betterlite-logging/src/registry.rs
     - crates/betterlite-logging/src/worker.rs
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/audit.rs
     - crates/betterlite-config/src/audit/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/audit-*

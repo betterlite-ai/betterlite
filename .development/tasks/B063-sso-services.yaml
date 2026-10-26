@@ -33,7 +33,6 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso.rs
     - crates/betterlite-server/src/sso/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/sso.rs
     - crates/betterlite-config/src/sso/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-services-*

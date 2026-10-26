@@ -27,7 +27,6 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso_pkce.rs
     - crates/betterlite-server/src/sso_pkce/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/sso_pkce.rs
     - crates/betterlite-config/src/sso_pkce/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-pkce-*

@@ -44,7 +44,6 @@ scope:
     - crates/betterlite-models/fuzz/Cargo.toml
     - crates/betterlite-models/fuzz/fuzz_targets/ptu_instant.rs
     - crates/betterlite-models/fuzz/corpus/ptu_instant/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/ptu_pricing.rs
     - crates/betterlite-config/src/ptu_pricing/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/ptu-pricing-*

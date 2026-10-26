@@ -45,7 +45,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/ui_theme_input.rs
     - crates/betterlite-server/fuzz/corpus/ui_theme_input/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/ui_theme.rs
     - crates/betterlite-config/src/ui_theme/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/ui-theme-*

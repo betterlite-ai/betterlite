@@ -29,7 +29,6 @@ scope:
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/sso_mapping_input.rs
     - crates/betterlite-auth/fuzz/corpus/sso_mapping_input/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/sso_mappings.rs
     - crates/betterlite-config/src/sso_mappings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-mappings-*

@@ -36,7 +36,6 @@ scope:
     - crates/betterlite-cost/src/adjustments.rs
     - crates/betterlite-cost/src/adjustments/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/cost_adjustments.rs
     - crates/betterlite-config/src/cost_adjustments/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/cost-adjustment-*

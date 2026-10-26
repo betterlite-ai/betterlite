@@ -46,7 +46,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/stored_ui_settings.rs
     - crates/betterlite-server/fuzz/corpus/stored_ui_settings/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/ui_settings.rs
     - crates/betterlite-config/src/ui_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/ui-settings-*
