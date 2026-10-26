@@ -1,0 +1,57 @@
+kind: helper
+name: finding-evidence-cap-20-entries
+call:
+  lens_state:
+    merge_finding:
+      lens:
+        id: lens-1
+        scope: {team_id: team-a}
+        settings: {name: Support replies, context: Replies cite the help center., model: gpt-4o-mini}
+        created_at: "2026-01-10T08:00:00Z"
+        next_run_at: "2026-01-15T10:00:00Z"
+        findings:
+          - title: Slow replies
+            description: Replies take longer than a minute.
+            check_id: tone
+            evidence:
+              - {execution_id: old-01, span_id: span, quote: waiting}
+              - {execution_id: old-02, span_id: span, quote: waiting}
+              - {execution_id: old-03, span_id: span, quote: waiting}
+              - {execution_id: old-04, span_id: span, quote: waiting}
+              - {execution_id: old-05, span_id: span, quote: waiting}
+              - {execution_id: old-06, span_id: span, quote: waiting}
+              - {execution_id: old-07, span_id: span, quote: waiting}
+              - {execution_id: old-08, span_id: span, quote: waiting}
+              - {execution_id: old-09, span_id: span, quote: waiting}
+              - {execution_id: old-10, span_id: span, quote: waiting}
+              - {execution_id: old-11, span_id: span, quote: waiting}
+              - {execution_id: old-12, span_id: span, quote: waiting}
+              - {execution_id: old-13, span_id: span, quote: waiting}
+              - {execution_id: old-14, span_id: span, quote: waiting}
+              - {execution_id: old-15, span_id: span, quote: waiting}
+            id: 1cc65b3b75d75cc977f1a629
+            first_seen: "2026-01-11T08:00:00Z"
+            last_seen: "2026-01-12T08:00:00Z"
+            occurrences: [old-01]
+            revision: 2
+        budget_month: "2026-01"
+      draft:
+        title: Slow replies
+        description: Replies take longer than a minute.
+        check_id: tone
+        evidence:
+          - {execution_id: new-01, span_id: span, quote: waiting}
+          - {execution_id: new-02, span_id: span, quote: waiting}
+          - {execution_id: new-03, span_id: span, quote: waiting}
+          - {execution_id: new-04, span_id: span, quote: waiting}
+          - {execution_id: new-05, span_id: span, quote: waiting}
+          - {execution_id: new-06, span_id: span, quote: waiting}
+          - {execution_id: new-07, span_id: span, quote: waiting}
+          - {execution_id: new-08, span_id: span, quote: waiting}
+          - {execution_id: new-09, span_id: span, quote: waiting}
+          - {execution_id: new-10, span_id: span, quote: waiting}
+      revision: 5
+      now: "2026-01-15T10:00:00Z"
+env: {}
+compare:
+  ignore: []

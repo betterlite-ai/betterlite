@@ -1,0 +1,29 @@
+kind: helper
+name: claim-job-attempt-limit
+call:
+  lens_state:
+    claim_job:
+      lens:
+        id: lens-1
+        scope: {team_id: team-a}
+        settings: {name: Support replies, context: Replies cite the help center., model: gpt-4o-mini, interval_minutes: 30}
+        created_at: "2026-01-10T08:00:00Z"
+        next_run_at: "2026-01-15T10:00:00Z"
+        jobs:
+          - id: job-1
+            status: running
+            stage: Screening
+            created_at: "2026-01-15T09:00:00Z"
+            start: "2026-01-14T09:00:00Z"
+            end: "2026-01-15T08:58:00Z"
+            settings: {name: Support replies, context: Replies cite the help center., model: gpt-4o-mini}
+            revision: 1
+            worker_id: worker-0
+            lease_until: "2026-01-15T09:55:00Z"
+            attempts: 3
+        budget_month: "2026-01"
+      worker: {id: worker-1, name: analysis box, scope: {team_id: team-a}, last_seen: "2026-01-15T09:59:00Z"}
+      now: "2026-01-15T10:00:00Z"
+env: {}
+compare:
+  ignore: []

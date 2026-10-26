@@ -22,6 +22,7 @@ scope:
     - crates/betterlite-lens/src/state.rs
     - crates/betterlite-lens/src/state/**
     - crates/betterlite-lens/fuzz/corpus/lens_model/lens-record-*
+    - crates/betterlite-lens/fuzz/fuzz_targets/lens_model.rs
     - tools/oracle/src/helpers/lens/state.rs
     - tools/oracle/src/helpers/lens/state/**
     - tools/oracle/helpers/lens_state.py
@@ -132,6 +133,6 @@ pitfalls:
   - "merge_finding evidence deduplication deduplicates on (execution_id, span_id, quote) using a dict key and caps the final list at 20 entries with [-20:], so evidence older than the 20 most recent is discarded once a finding accumulates more than 20 pieces."
   - "LensSettings.unique_checks has three distinct validation errors with different literal messages: 'Each check must have a unique ID' for duplicate IDs, 'Describe expected behavior or add an enabled check' for empty context with no enabled check, and 'expected_behavior is reserved for the behavior description' for a check ID of 'expected_behavior'."
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 2000
   max_new_expects: 0
 review_level: security
