@@ -4,7 +4,7 @@ use std::time::Duration;
 use betterlite_config::sections::lasso_classification::Configured;
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 use serde_json::value::RawValue;
 use ulid::Ulid;
 
@@ -29,39 +29,18 @@ pub trait ConversationCache {
 
 #[derive(Debug, Clone)]
 pub struct LassoGuardrail {
-    api_key: SecretString,
-    api_base: String,
-    user_id: Option<String>,
-    conversation_id: Option<String>,
-    client: reqwest::Client,
-    timeout: Duration,
-    new_id: fn() -> Ulid,
+    pub settings: Configured,
+    pub client: reqwest::Client,
+    pub timeout: Duration,
+    pub new_id: fn() -> Ulid,
 }
 
 impl LassoGuardrail {
-    #[must_use]
-    pub fn new(
-        settings: &Configured,
-        client: reqwest::Client,
-        timeout: Duration,
-        new_id: fn() -> Ulid,
-    ) -> Self {
-        Self {
-            api_key: settings.api_key.clone(),
-            api_base: settings.api_base.clone(),
-            user_id: settings.user_id.clone(),
-            conversation_id: settings.conversation_id.clone(),
-            client,
-            timeout,
-            new_id,
-        }
-    }
-
     pub fn conversation_id<C>(&self, litellm_call_id: Option<&str>, cache: &C) -> String
     where
         C: ConversationCache,
     {
-        if let Some(configured) = self.conversation_id.as_deref() {
+        if let Some(configured) = self.settings.conversation_id.as_deref() {
             return configured.to_owned();
         }
         let Some(call_id) = litellm_call_id.filter(|id| !id.is_empty()) else {
@@ -90,7 +69,7 @@ impl LassoGuardrail {
     {
         let mut headers = HeaderMap::new();
         let mut api_key =
-            HeaderValue::from_str(self.api_key.expose_secret()).map_err(|source| {
+            HeaderValue::from_str(self.settings.api_key.expose_secret()).map_err(|source| {
                 LassoError::InvalidHeader {
                     name: "lasso-api-key",
                     source,
@@ -99,7 +78,7 @@ impl LassoGuardrail {
         api_key.set_sensitive(true);
         headers.insert(HeaderName::from_static("lasso-api-key"), api_key);
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        if let Some(user_id) = self.user_id.as_deref() {
+        if let Some(user_id) = self.settings.user_id.as_deref() {
             let value =
                 HeaderValue::from_str(user_id).map_err(|source| LassoError::InvalidHeader {
                     name: "lasso-user-id",
@@ -150,7 +129,7 @@ impl LassoGuardrail {
             messages,
             message_type,
             session_id: self.conversation_id(data.litellm_call_id.as_deref(), cache),
-            user_id: self.user_id.clone(),
+            user_id: self.settings.user_id.clone(),
             tools,
             source: Source {
                 source_type: "litellm".to_owned(),
@@ -164,8 +143,10 @@ impl LassoGuardrail {
         payload: &LassoPayload,
         api_url: Option<&str>,
     ) -> Result<LassoResponse, LassoError> {
-        let endpoint =
-            api_url.map_or_else(|| format!("{}/classify", self.api_base), ToOwned::to_owned);
+        let endpoint = api_url.map_or_else(
+            || format!("{}/classify", self.settings.api_base),
+            ToOwned::to_owned,
+        );
         let mut response = self
             .client
             .post(endpoint)

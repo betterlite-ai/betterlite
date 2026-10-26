@@ -68,7 +68,12 @@ fn settings(user_id: Option<&str>, conversation_id: Option<&str>) -> Configured 
 }
 
 fn guardrail(settings: &Configured, timeout: Duration) -> LassoGuardrail {
-    LassoGuardrail::new(settings, reqwest::Client::default(), timeout, fixed_id)
+    LassoGuardrail {
+        settings: settings.clone(),
+        client: reqwest::Client::default(),
+        timeout,
+        new_id: fixed_id,
+    }
 }
 
 #[test]

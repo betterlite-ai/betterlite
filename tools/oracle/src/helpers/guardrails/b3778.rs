@@ -6,9 +6,9 @@ use std::time::Duration;
 
 use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::lasso_classification::Configured;
-use betterlite_guardrails::lasso::wire::{LassoRequestData, LassoResponse, MessageType};
 use betterlite_guardrails::lasso::error::LassoError;
-use betterlite_guardrails::lasso::{ConversationCache, LassoGuardrail};
+use betterlite_guardrails::lasso::wire::{LassoRequestData, LassoResponse, MessageType};
+use betterlite_guardrails::lasso::{ConversationCache, DEFAULT_TIMEOUT, LassoGuardrail};
 use reqwest::header::HeaderMap;
 use serde_json::json;
 use serde_json::value::RawValue;
@@ -174,15 +174,9 @@ fn call(
         Some(provider) => provider.base_url.clone(),
         None => format!("http://{}", silent.local_addr().map_err(io)?),
     };
-    let mut configured = configure(settings, BTreeMap::new())?;
-    configured.api_base.clone_from(&base);
-    let timeout = Duration::from_millis(200);
-    let lasso = LassoGuardrail::new(
-        &configured,
-        reqwest::Client::default(),
-        timeout,
-        Ulid::generate,
-    );
+    let mut lasso = guardrail(settings)?;
+    lasso.settings.api_base.clone_from(&base);
+    lasso.timeout = Duration::from_millis(200);
     let data = LassoRequestData {
         litellm_call_id: None,
         tools: Vec::new(),
@@ -233,13 +227,12 @@ fn configure(
 
 fn guardrail(settings: &Settings) -> Result<LassoGuardrail, Box<HelperError>> {
     let configured = configure(settings, BTreeMap::new())?;
-    let timeout = Duration::from_secs(10);
-    Ok(LassoGuardrail::new(
-        &configured,
-        reqwest::Client::default(),
-        timeout,
-        Ulid::generate,
-    ))
+    Ok(LassoGuardrail {
+        settings: configured,
+        client: reqwest::Client::default(),
+        timeout: DEFAULT_TIMEOUT,
+        new_id: Ulid::generate,
+    })
 }
 
 fn lasso_failure(error: &LassoError) -> Box<HelperError> {
