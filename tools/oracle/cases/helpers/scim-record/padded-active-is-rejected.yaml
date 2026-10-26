@@ -1,0 +1,11 @@
+kind: helper
+name: padded-active-is-rejected
+call:
+  scim_record:
+    kind: user
+    value: {schemas: [u], active: " true"}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message

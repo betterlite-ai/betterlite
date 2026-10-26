@@ -1,0 +1,11 @@
+kind: helper
+name: mixed-case-email
+call:
+  scim_record:
+    kind: user
+    value:
+      schemas: [u]
+      emails: [{value: Ada.Lovelace@EXAMPLE.Com, type: work}, {value: "Grace <grace@Example.ORG>"}]
+env: {}
+compare:
+  ignore: []
