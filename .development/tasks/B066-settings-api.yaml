@@ -110,6 +110,6 @@ pitfalls:
   - Banner PATCH is a complete replacement despite its verb, and republishing identical text still creates a new revision.
   - A callback can appear in success_and_failure through the general callback list even when neither dedicated phase list contains it.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

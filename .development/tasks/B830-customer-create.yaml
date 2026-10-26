@@ -154,6 +154,6 @@ pitfalls:
   - A new budget can remain orphaned after the customer user_id uniqueness check fails.
   - A duration-only customer budget overrides a supplied budget_id even though max_budget plus budget_id is rejected by the request model.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

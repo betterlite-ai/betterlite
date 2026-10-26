@@ -109,5 +109,5 @@ pitfalls:
   - run_agent replaces the process and never returns on success; reattach_terminal is the last thing before _hand_off.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

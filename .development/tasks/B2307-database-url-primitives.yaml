@@ -155,6 +155,6 @@ pitfalls:
   - The three boolean parsers in token_auth, extras utils and secret_managers accept different strings.
   - Token refresh inherits translated sslcert but deliberately discards schema and options.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

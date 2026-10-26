@@ -235,6 +235,6 @@ pitfalls:
   - The first reference sweep precedes the locked transaction, so its writes survive a later team-delete rollback.
   - Archives accept the raw litellm-changed-by header even when the audit actor policy ignores that header.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

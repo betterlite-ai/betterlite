@@ -193,6 +193,6 @@ pitfalls:
   - A permanent inner engine fault outranks the transient outer reconnect failure when selecting the 503 explanation.
   - handle_db_exception uses the direct connection predicate, so enabling outage mode does not swallow every error classified as 503.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

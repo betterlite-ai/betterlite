@@ -85,6 +85,6 @@ pitfalls:
   - A user groups replace uses a separately retained replacement set, so later add/remove operations cannot be folded into it as group PATCH does.
   - Removing scim_active changes the displayed default but does not satisfy the route's non-null transition condition for unblocking keys.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

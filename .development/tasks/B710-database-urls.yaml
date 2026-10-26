@@ -180,6 +180,6 @@ pitfalls:
   - An empty replica password inherits the writer password because the fallback uses truthiness.
   - The CLI does not apply DATABASE_MAX_IDLE_CONNECTION_LIFETIME as its idle-timeout fallback.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

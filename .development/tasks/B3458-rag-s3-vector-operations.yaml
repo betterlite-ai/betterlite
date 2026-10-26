@@ -41,6 +41,7 @@ scope:
   paths:
     - crates/betterlite-rag/src/s3_vectors_ingestion.rs
     - crates/betterlite-rag/src/s3_vectors_ingestion/tests.rs
+    - crates/betterlite-rag/src/s3_vectors_ingestion/tests/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L191-L264
@@ -142,5 +143,5 @@ pitfalls:
   - "The split_s3_vectors_store_id helper validates that both bucket and index parts are non-empty strings."
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 2

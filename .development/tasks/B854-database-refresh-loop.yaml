@@ -235,15 +235,15 @@ out_of_scope:
   - 'litellm/proxy/db/prisma_client.py::PrismaManager._get_prisma_dir: Prisma filesystem/tool discovery
     is absent from the native runner.'
   - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._get_engine_pid: Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
+    has no equivalent process in native tokio-postgres; owned pool tasks replace it.'
   - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._kill_engine_process: Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
+    has no equivalent process in native tokio-postgres; owned pool tasks replace it.'
 pitfalls:
   - 'The oracle helper for this task is pre-registered as database_refresh_loop in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_refresh_loop.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_refresh_loop.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Expiry equality is not expired, but exactly 180 seconds of runway is already eligible for refresh.
   - A replacement callback can fail after publication; restoring credentials then does not restore the old pool.
   - There is no random jitter and no warn-level fallback in this loop.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

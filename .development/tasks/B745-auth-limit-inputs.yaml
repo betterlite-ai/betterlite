@@ -270,6 +270,6 @@ pitfalls:
   - An unchanged estimate resent by a non-admin is allowed, but replacing metadata without that field can be a forbidden removal.
   - Empty key model-limit metadata falls through, whereas an empty team model-limit map blocks deployment inheritance.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

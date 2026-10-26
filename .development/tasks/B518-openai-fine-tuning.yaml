@@ -277,6 +277,6 @@ pitfalls:
 - Azure canceling is mapped to terminal cancelled, even though the upstream job may still be cancelling.
 - List returns the SDK page without per-job Azure normalization; do not apply the single-job normalizer to its entries.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

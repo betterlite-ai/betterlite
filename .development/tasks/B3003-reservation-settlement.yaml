@@ -117,5 +117,5 @@ pitfalls:
   - "Batch scope MGET reads all counters once at entry; _counter_can_apply_adjustment uses stale values for counters that changed during adjustment, which is the contract for why reseed exists."
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

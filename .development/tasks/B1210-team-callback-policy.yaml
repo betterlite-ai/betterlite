@@ -151,6 +151,6 @@ pitfalls:
   - Audit masking hides all callback variables, but GET masking must retain ordinary project, bucket and host configuration.
   - A present empty logging array suppresses the legacy callback_settings object rather than merging it.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

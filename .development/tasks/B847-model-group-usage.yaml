@@ -556,6 +556,6 @@ pitfalls:
   - Ordinary TPM/RPM remaining headers can be negative while IO remaining headers clamp to zero.
   - No overlap with access groups leaves candidates untouched; this filter is not an authorization verdict.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

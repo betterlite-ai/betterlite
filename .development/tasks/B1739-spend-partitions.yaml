@@ -103,6 +103,6 @@ pitfalls:
   - DEFAULT must be retained even when other text in its catalog expression resembles a timestamp bound.
   - is_partitioned returns false on a catalog failure, while _list_partitions lets its failure terminate that cleanup attempt.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security
