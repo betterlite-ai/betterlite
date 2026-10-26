@@ -38,6 +38,7 @@ pub enum SerializeError {
 }
 
 impl FocusFormat {
+    #[must_use = "format extension must be used"]
     pub const fn extension(self) -> &'static str {
         match self {
             Self::Csv => "csv",
@@ -45,6 +46,7 @@ impl FocusFormat {
         }
     }
 
+    #[must_use = "serialized FOCUS content must be delivered or handled"]
     pub fn encode(self, table: &FocusTable) -> Result<Vec<u8>, SerializeError> {
         match self {
             Self::Csv => csv::encode(table),
