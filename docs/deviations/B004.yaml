@@ -1,0 +1,5 @@
+task: B004
+deviations:
+  - what: betterlite does not send the x-stainless-* headers or the OpenAI SDK user-agent upstream
+    why: Those headers describe LiteLLM's Python client, not the user's request.
+    link: https://github.com/openai/openai-python
