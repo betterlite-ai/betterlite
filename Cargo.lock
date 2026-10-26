@@ -433,6 +433,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-compression"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde_json",
+ "strum",
+ "thiserror",
+]
+
+[[package]]
 name = "betterlite-config"
 version = "0.1.0"
 dependencies = [

@@ -1,7 +1,7 @@
 id: B3540
 milestone: M5 api families
 title: Compression message normalization and protected history
-status: todo
+status: done
 depends_on: []
 file: tasks/B3540-compression-message-policy.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/compression/message_stubbing.py"
 parent: B100
 split_from: B100
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 210
