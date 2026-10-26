@@ -18,9 +18,13 @@ pub mod discovery;
 pub mod email;
 pub mod group;
 pub mod lax_bool;
+pub mod list_response;
+pub mod patch;
+pub mod placeholder_merge_result;
 pub mod raw_object;
 mod tests;
 pub mod user;
+pub mod user_metadata;
 pub const ENTERPRISE_USER_SCHEMA: &str =
     "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
 pub const ENTERPRISE_METADATA_KEY: &str = "scim_enterprise";
@@ -44,7 +48,7 @@ pub enum ResourceKind {
 pub enum ScimResource {
     User(Box<user::User>),
     Group(group::Group),
-    Patch(group::Patch),
+    Patch(patch::Patch),
 }
 pub fn decode_scim_resource(
     bytes: &[u8],

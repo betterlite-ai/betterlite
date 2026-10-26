@@ -1,6 +1,7 @@
 #![cfg(test)]
 use crate::scim_records::discovery::{ResourceType, ServiceProviderConfig};
 use crate::scim_records::lax_bool::ScimBool;
+use crate::scim_records::list_response::{ListResponse, ListSchemas};
 use crate::scim_records::user::{Active, User};
 use crate::scim_records::{ResourceKind, decode_scim_resource};
 use rstest::rstest;
@@ -97,6 +98,27 @@ fn service_provider_config_supports_only_patch() {
     );
     let dumped = serde_json::to_string(&ServiceProviderConfig::default());
     assert_eq!(dumped.unwrap(), expected);
+}
+#[rstest]
+#[case::first_page(1, 2)]
+#[case::empty_later_page(21, 0)]
+fn list_response_keeps_pagination(#[case] start_index: u64, #[case] items_per_page: u64) {
+    let response = ListResponse {
+        schemas: ListSchemas::default(),
+        total_results: 2,
+        start_index,
+        items_per_page,
+        resources: vec![(); usize::try_from(items_per_page).unwrap()],
+    };
+    let resources = if items_per_page == 0 {
+        "[]"
+    } else {
+        "[null,null]"
+    };
+    let expected = format!(
+        r#"{{"schemas":["urn:ietf:params:scim:api:messages:2.0:ListResponse"],"totalResults":2,"startIndex":{start_index},"itemsPerPage":{items_per_page},"Resources":{resources}}}"#
+    );
+    assert_eq!(serde_json::to_string(&response).unwrap(), expected);
 }
 #[rstest]
 fn replays_the_scim_resource_corpus(#[files("fuzz/corpus/scim_resource/*")] path: PathBuf) {

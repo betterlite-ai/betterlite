@@ -5,7 +5,6 @@ use super::raw_object::RawObject;
 schema_list! { ResourceTypeSchemas, "urn:ietf:params:scim:schemas:core:2.0:ResourceType" }
 schema_list! { SchemaSchemas, "urn:ietf:params:scim:schemas:core:2.0:Schema" }
 schema_list! { ProviderSchemas, "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig" }
-schema_list! { ListSchemas, "urn:ietf:params:scim:api:messages:2.0:ListResponse" }
 // LiteLLM renames schema_ only in ResourceType.model_dump, which nested extensions never reach
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchemaExtension {
@@ -126,27 +125,4 @@ impl Default for ServiceProviderConfig {
             meta: None,
         }
     }
-}
-// LiteLLM lists only users or only groups, so Resource is User or Group
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ListResponse<Resource> {
-    pub schemas: ListSchemas,
-    pub total_results: u64,
-    pub start_index: Option<u64>,
-    pub items_per_page: Option<u64>,
-    #[serde(rename = "Resources")]
-    pub resources: Vec<Resource>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlaceholderMergeResult {
-    pub placeholder_user_id: String,
-    pub merged_into_user_id: String,
-    pub team_ids: Vec<String>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UserScimMetadata {
-    pub given_name: Option<String>,
-    pub family_name: Option<String>,
 }
