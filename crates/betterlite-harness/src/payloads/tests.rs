@@ -7,8 +7,8 @@ use std::{env, fs, os, process, str};
 use rstest::rstest;
 
 use crate::payloads::{
-    PayloadError, decode_json_line, last_json_object, native_tool_names, normalize_tool_name,
-    read_skill_files, stderr_tail_text, strict_json_schema, structured_output_instruction,
+    PayloadError, decode_json_line, last_json_object, native_tool_names, read_skill_files,
+    stderr_tail_text, strict_json_schema, structured_output_instruction,
 };
 use crate::types::JsonObject;
 
@@ -36,15 +36,6 @@ fn native_names_expand_in_order_without_duplicates() {
         native_tool_names(&normalized, &mapping),
         ["Read", "View", "bash", "Edit"]
     );
-}
-
-#[rstest]
-#[case::mapped("Read", "read")]
-#[case::unmapped("custom", "custom")]
-fn normalize_names_uses_mapping_or_input(#[case] native: &str, #[case] expected: &str) {
-    let mapping = BTreeMap::from([(String::from("Read"), String::from("read"))]);
-
-    assert_eq!(normalize_tool_name(native, &mapping), expected);
 }
 
 #[rstest]
