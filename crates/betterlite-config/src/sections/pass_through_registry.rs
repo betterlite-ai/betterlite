@@ -4,7 +4,6 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
 #[derive(Debug, Default, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Raw {
     #[serde(rename = "SERVER_ROOT_PATH")]
     server_root_path: Option<String>,
