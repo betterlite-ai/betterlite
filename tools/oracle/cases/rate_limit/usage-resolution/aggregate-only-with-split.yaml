@@ -3,7 +3,7 @@ name: aggregate-only-with-split
 call:
   b3044:
     rate_limit_type: output
-    usage: {prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, prompt_tokens_details: {cached_tokens: 30}}
+    usage: {prompt_tokens: 100, completion_tokens: 20, total_tokens: 120}
 env: {}
 compare:
   ignore: []

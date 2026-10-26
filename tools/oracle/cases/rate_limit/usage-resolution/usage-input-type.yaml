@@ -2,7 +2,7 @@ kind: helper
 name: usage-input-type
 call:
   b3044:
-    rate_limit_type: output
+    rate_limit_type: input
     usage: {prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, prompt_tokens_details: {cached_tokens: 30}}
 env: {}
 compare:

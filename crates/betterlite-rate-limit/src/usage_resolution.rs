@@ -1,75 +1,182 @@
-use std::collections::BTreeMap;
+use serde::Deserialize;
 
 pub const OUTPUT: &str = "output";
 pub const INPUT: &str = "input";
 pub const TOTAL: &str = "total";
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TokenRateLimitType {
+    Output,
+    Input,
+    #[default]
+    Total,
+}
+
+impl TokenRateLimitType {
+    #[must_use]
+    pub fn from_config(value: Option<&str>) -> Self {
+        match value {
+            Some(OUTPUT) => Self::Output,
+            Some(INPUT) => Self::Input,
+            _ => Self::Total,
+        }
+    }
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Output => OUTPUT,
+            Self::Input => INPUT,
+            Self::Total => TOTAL,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+pub struct TokenDetails {
+    #[serde(default)]
+    pub cached_tokens: u64,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 pub struct Usage {
+    #[serde(default)]
     pub prompt_tokens: u64,
+    #[serde(default)]
     pub completion_tokens: u64,
+    #[serde(default)]
     pub input_tokens: u64,
+    #[serde(default)]
     pub output_tokens: u64,
+    #[serde(default)]
     pub total_tokens: u64,
+    #[serde(default)]
+    pub prompt_tokens_details: Option<TokenDetails>,
+    #[serde(default)]
     pub cached_tokens: Option<u64>,
+    #[serde(default)]
     pub cache_read_input_tokens: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+pub struct ResponseAPIUsage {
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
+    #[serde(default)]
+    pub total_tokens: u64,
+    #[serde(default)]
+    pub input_tokens_details: Option<TokenDetails>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResponseObject {
     Usage(Usage),
+    ResponseApi(ResponseAPIUsage),
     WithUsage(Option<Usage>),
     Mapping(Usage),
 }
 
-pub fn get_rate_limit_type(settings: &BTreeMap<String, String>) -> &'static str {
-    match settings.get("token_rate_limit_type").map(String::as_str) {
-        Some(OUTPUT) => OUTPUT,
-        Some(INPUT) => INPUT,
-        _ => TOTAL,
-    }
+#[derive(Debug, PartialEq, Eq)]
+pub enum ResponseUsage<'usage> {
+    Usage(&'usage Usage),
+    ResponseApi(&'usage ResponseAPIUsage),
 }
 
 #[must_use]
-pub const fn response_usage(response: &ResponseObject) -> Option<&Usage> {
+pub const fn get_rate_limit_type(rate_limit_type: TokenRateLimitType) -> TokenRateLimitType {
+    rate_limit_type
+}
+
+#[must_use]
+pub fn response_usage(response: &ResponseObject) -> Option<ResponseUsage<'_>> {
     match response {
-        ResponseObject::Usage(usage) | ResponseObject::Mapping(usage) => Some(usage),
-        ResponseObject::WithUsage(usage) => usage.as_ref(),
+        ResponseObject::Usage(usage) | ResponseObject::Mapping(usage) => {
+            Some(ResponseUsage::Usage(usage))
+        }
+        ResponseObject::ResponseApi(usage) => Some(ResponseUsage::ResponseApi(usage)),
+        ResponseObject::WithUsage(usage) => usage.as_ref().map(ResponseUsage::Usage),
     }
 }
 
+fn cached_tokens(usage: &Usage) -> u64 {
+    usage
+        .cached_tokens
+        .or_else(|| {
+            usage
+                .prompt_tokens_details
+                .as_ref()
+                .map(|details| details.cached_tokens)
+        })
+        .or(usage.cache_read_input_tokens)
+        .unwrap_or(0)
+}
+
+fn cached_response_api_tokens(usage: &ResponseAPIUsage) -> u64 {
+    usage
+        .input_tokens_details
+        .as_ref()
+        .map_or(0, |details| details.cached_tokens)
+}
+
 #[must_use]
-pub fn get_total_tokens_from_usage(source: Option<&Usage>, rate_limit_type: &str) -> u64 {
-    let Some(usage) = source else { return 0 };
-    let count = match rate_limit_type {
-        OUTPUT => usage.output_tokens.max(usage.completion_tokens),
-        INPUT => usage.input_tokens.max(usage.prompt_tokens),
-        _ => usage.total_tokens,
+pub fn get_total_tokens_from_usage(
+    source: Option<ResponseUsage<'_>>,
+    rate_limit_type: TokenRateLimitType,
+) -> u64 {
+    let Some(usage_source) = source else { return 0 };
+    let (count, cached) = match usage_source {
+        ResponseUsage::Usage(usage) => {
+            let count = match rate_limit_type {
+                TokenRateLimitType::Output => usage.completion_tokens,
+                TokenRateLimitType::Input => usage.prompt_tokens,
+                TokenRateLimitType::Total => usage.total_tokens,
+            };
+            (count, cached_tokens(usage))
+        }
+        ResponseUsage::ResponseApi(usage) => {
+            let count = match rate_limit_type {
+                TokenRateLimitType::Output => usage.output_tokens,
+                TokenRateLimitType::Input => usage.input_tokens,
+                TokenRateLimitType::Total => usage.total_tokens,
+            };
+            (count, cached_response_api_tokens(usage))
+        }
     };
-    if rate_limit_type == INPUT || rate_limit_type == TOTAL {
-        let cached = usage.cached_tokens.or(usage.cache_read_input_tokens);
-        count.saturating_sub(cached.unwrap_or(0))
-    } else {
-        count
+    match rate_limit_type {
+        TokenRateLimitType::Output => count,
+        TokenRateLimitType::Input | TokenRateLimitType::Total => count.saturating_sub(cached),
     }
 }
 
 #[must_use]
-pub const fn aggregate_only_total_tokens(source: Option<&Usage>) -> u64 {
-    let Some(usage) = source else { return 0 };
-    if usage.prompt_tokens > 0
-        || usage.completion_tokens > 0
-        || usage.input_tokens > 0
-        || usage.output_tokens > 0
-    {
-        0
-    } else {
-        usage.total_tokens
+pub const fn aggregate_only_total_tokens(source: Option<ResponseUsage<'_>>) -> u64 {
+    let Some(usage_source) = source else { return 0 };
+    match usage_source {
+        ResponseUsage::Usage(usage) => {
+            if usage.prompt_tokens > 0
+                || usage.completion_tokens > 0
+                || usage.input_tokens > 0
+                || usage.output_tokens > 0
+            {
+                0
+            } else {
+                usage.total_tokens
+            }
+        }
+        ResponseUsage::ResponseApi(usage) => {
+            if usage.input_tokens > 0 || usage.output_tokens > 0 {
+                0
+            } else {
+                usage.total_tokens
+            }
+        }
     }
 }
 
 #[must_use]
-pub fn resolve_rerank_token_usage(
+pub const fn resolve_rerank_token_usage(
     tokens: Option<(u64, u64)>,
     billed_total: Option<u64>,
 ) -> Option<(u64, u64, bool)> {
@@ -78,29 +185,39 @@ pub fn resolve_rerank_token_usage(
     {
         return Some((input, output, true));
     }
-    billed_total
-        .filter(|total| *total > 0)
-        .map(|total| (total, 0, true))
+    match billed_total {
+        Some(total) if total > 0 => Some((total, 0, true)),
+        _ => None,
+    }
 }
 
 #[must_use]
 pub fn reconcile_io_usage(response: &ResponseObject) -> (u64, u64, bool) {
-    let Some(usage) = response_usage(response) else {
+    let Some(source) = response_usage(response) else {
         return (0, 0, false);
     };
-    let input = usage.input_tokens.max(usage.prompt_tokens);
-    let output = usage.output_tokens.max(usage.completion_tokens);
+    let (input, output, cached) = match source {
+        ResponseUsage::Usage(usage) => (
+            usage.prompt_tokens.max(usage.input_tokens),
+            usage.completion_tokens.max(usage.output_tokens),
+            cached_tokens(usage),
+        ),
+        ResponseUsage::ResponseApi(usage) => (
+            usage.input_tokens,
+            usage.output_tokens,
+            cached_response_api_tokens(usage),
+        ),
+    };
     if input == 0 && output == 0 {
         return (0, 0, false);
     }
-    let cached = usage.cached_tokens.or(usage.cache_read_input_tokens);
-    (input.saturating_sub(cached.unwrap_or(0)), output, true)
+    (input.saturating_sub(cached), output, true)
 }
 
 #[must_use]
 pub fn recovered_partial_usage_tokens(
     source: Option<&Usage>,
-    rate_limit_type: &str,
+    rate_limit_type: TokenRateLimitType,
 ) -> (u64, u64, u64) {
     let Some(usage) = source else {
         return (0, 0, 0);
@@ -108,9 +225,10 @@ pub fn recovered_partial_usage_tokens(
     if usage.completion_tokens == 0 && usage.output_tokens == 0 {
         return (0, 0, 0);
     }
-    let (input, output, _) = reconcile_io_usage(&ResponseObject::Usage(usage.clone()));
+    let response = ResponseObject::Usage(usage.clone());
+    let (input, output, _) = reconcile_io_usage(&response);
     (
-        get_total_tokens_from_usage(Some(usage), rate_limit_type),
+        get_total_tokens_from_usage(response_usage(&response), rate_limit_type),
         input,
         output,
     )

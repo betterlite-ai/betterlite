@@ -1,3 +1,4 @@
+use betterlite_rate_limit::usage_resolution::TokenRateLimitType;
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -16,13 +17,13 @@ struct RawGeneral {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
-    pub token_rate_limit_type: String,
+    pub token_rate_limit_type: TokenRateLimitType,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            token_rate_limit_type: "total".to_owned(),
+            token_rate_limit_type: TokenRateLimitType::Total,
         }
     }
 }
@@ -34,10 +35,8 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let token_rate_limit_type = self
-            .general_settings
-            .token_rate_limit_type
-            .unwrap_or_else(|| "total".to_owned());
+        let token_rate_limit_type =
+            TokenRateLimitType::from_config(self.general_settings.token_rate_limit_type.as_deref());
         Ok(Settings {
             token_rate_limit_type,
         })

@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::loader::ConfigLoader;
+use betterlite_rate_limit::usage_resolution::TokenRateLimitType;
 
 #[test]
 fn loads_token_rate_limit_type_from_general_settings() {
@@ -13,6 +14,6 @@ fn loads_token_rate_limit_type_from_general_settings() {
     .expect("config should load");
     assert_eq!(
         config.sections.rate_limit_usage.token_rate_limit_type,
-        "input"
+        TokenRateLimitType::Input
     );
 }

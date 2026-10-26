@@ -1,78 +1,108 @@
+use betterlite_rate_limit::usage_resolution::{
+    ResponseAPIUsage, ResponseObject, TokenRateLimitType, Usage, aggregate_only_total_tokens,
+    get_rate_limit_type, get_total_tokens_from_usage, reconcile_io_usage,
+    resolve_rerank_token_usage, response_usage,
+};
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct Input {
+    rate_limit_type: Option<String>,
+    usage: Option<Usage>,
+    response_api_usage: Option<ResponseAPIUsage>,
+    #[serde(default)]
+    usage_kind: UsageKind,
+    rerank_tokens: Option<TokenPair>,
+    billed_units_total_tokens: Option<u64>,
+    combined_usage_object: Option<Usage>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum UsageKind {
+    #[default]
+    Usage,
+    ResponseApi,
+    Mapping,
+    Missing,
+}
+
+#[derive(Debug, Deserialize)]
+struct TokenPair {
+    input_tokens: u64,
+    output_tokens: u64,
+}
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
-
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let object = input.as_object().ok_or_else(|| {
-            Box::new(crate::helpers::HelperError {
-                class: "InvalidInput".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: "usage resolution input must be an object".to_owned(),
-            })
-        })?;
-        let usage = object.get("usage");
-        let rate_type = object
-            .get("rate_limit_type")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("total");
-        let (total_tokens, input_tokens, output_tokens) = counts(usage);
-        let selected = match rate_type {
-            "input" => input_tokens.saturating_sub(cached(usage)),
-            "output" => output_tokens,
-            _ => total_tokens,
-        };
-        Ok(serde_json::json!({
-            "rate_limit_type": if matches!(rate_type, "input" | "output" | "total") { rate_type } else { "total" },
-            "total_tokens": selected,
-            "input_tokens": input_tokens.saturating_sub(cached(usage)),
-            "output_tokens": output_tokens,
-        }))
+fn response(input: &Input) -> ResponseObject {
+    match input.usage_kind {
+        UsageKind::Usage => ResponseObject::Usage(input.usage.clone().unwrap_or_default()),
+        UsageKind::ResponseApi => {
+            ResponseObject::ResponseApi(input.response_api_usage.clone().unwrap_or_default())
+        }
+        UsageKind::Mapping => ResponseObject::Mapping(input.usage.clone().unwrap_or_default()),
+        UsageKind::Missing => ResponseObject::WithUsage(None),
     }
 }
 
-fn integer(source: Option<&serde_json::Value>) -> u64 {
-    let Some(value) = source else {
-        return 0;
-    };
-    value.as_u64().unwrap_or(0)
+fn resolved_counts(
+    rerank: Option<(u64, u64, bool)>,
+    usage: Option<betterlite_rate_limit::usage_resolution::ResponseUsage<'_>>,
+    response: &ResponseObject,
+    rate_limit_type: TokenRateLimitType,
+) -> Result<(u64, u64, u64, bool), Box<crate::helpers::HelperError>> {
+    if let Some((rerank_input, rerank_output, resolved)) = rerank {
+        let total = match rate_limit_type {
+            TokenRateLimitType::Input => rerank_input,
+            TokenRateLimitType::Output => rerank_output,
+            TokenRateLimitType::Total => rerank_input.checked_add(rerank_output).ok_or_else(|| {
+                Box::new(crate::helpers::HelperError { class: "InvalidInput".to_owned(), status: None, error_type: None, param: None, code: None, message: "token count overflow".to_owned() })
+            })?,
+        };
+        return Ok((total, rerank_input, rerank_output, resolved));
+    }
+    let total = get_total_tokens_from_usage(usage, rate_limit_type);
+    let (input_tokens, output_tokens, resolved) = reconcile_io_usage(response);
+    Ok((total, input_tokens, output_tokens, resolved))
 }
 
-fn counts(usage: Option<&serde_json::Value>) -> (u64, u64, u64) {
-    let total =
-        integer(usage.and_then(|value| value.get("total_tokens"))).saturating_sub(cached(usage));
-    let input = integer(
-        usage
-            .and_then(|value| value.get("prompt_tokens"))
-            .or_else(|| {
-                let value = usage?;
-                value.get("input_tokens")
-            }),
-    );
-    let output = integer(
-        usage
-            .and_then(|value| value.get("completion_tokens"))
-            .or_else(|| {
-                let value = usage?;
-                value.get("output_tokens")
-            }),
-    );
-    (total, input, output)
-}
+impl crate::helpers::Helper for Op {
+    type Input = Input;
 
-fn cached(value: Option<&serde_json::Value>) -> u64 {
-    let nested = value
-        .and_then(|usage| usage.get("prompt_tokens_details"))
-        .and_then(serde_json::Value::as_object)
-        .and_then(|details| details.get("cached_tokens"))
-        .and_then(serde_json::Value::as_u64)
-        .or_else(|| {
-            value
-                .and_then(|usage| usage.get("cache_read_input_tokens"))
-                .and_then(serde_json::Value::as_u64)
-        });
-    nested.unwrap_or(0)
+    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        let configured = TokenRateLimitType::from_config(input.rate_limit_type.as_deref());
+        let rate_limit_type = get_rate_limit_type(configured);
+        let rerank = resolve_rerank_token_usage(
+            input
+                .rerank_tokens
+                .as_ref()
+                .map(|tokens| (tokens.input_tokens, tokens.output_tokens)),
+            input.billed_units_total_tokens,
+        );
+        let response = response(input);
+        let usage = response_usage(&response);
+        let (total_tokens, input_tokens, output_tokens, resolved) =
+            resolved_counts(rerank, usage, &response, rate_limit_type)?;
+        let aggregate = aggregate_only_total_tokens(response_usage(&response));
+        let recovered = input
+            .combined_usage_object
+            .as_ref()
+            .map_or((0, 0, 0), |combined_usage| {
+                betterlite_rate_limit::usage_resolution::recovered_partial_usage_tokens(
+                    Some(combined_usage),
+                    rate_limit_type,
+                )
+            });
+        Ok(serde_json::json!({
+            "rate_limit_type": rate_limit_type.as_str(),
+            "total_tokens": total_tokens,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "usage_resolved": resolved,
+            "aggregate_only_total_tokens": aggregate,
+            "recovered": [recovered.0, recovered.1, recovered.2],
+        }))
+    }
 }

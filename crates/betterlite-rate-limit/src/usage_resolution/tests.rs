@@ -1,77 +1,84 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
-
 use super::{
-    ResponseObject, Usage, aggregate_only_total_tokens, get_rate_limit_type,
-    get_total_tokens_from_usage, reconcile_io_usage, recovered_partial_usage_tokens,
-    resolve_rerank_token_usage, response_usage,
+    ResponseObject, ResponseUsage, TokenRateLimitType, Usage, aggregate_only_total_tokens,
+    get_rate_limit_type, get_total_tokens_from_usage, reconcile_io_usage,
+    recovered_partial_usage_tokens, resolve_rerank_token_usage, response_usage,
 };
 
 fn usage() -> Usage {
     Usage {
         prompt_tokens: 100,
         completion_tokens: 20,
-        input_tokens: 0,
-        output_tokens: 0,
         total_tokens: 120,
         cached_tokens: Some(30),
-        cache_read_input_tokens: None,
+        ..Usage::default()
     }
 }
 
 #[test]
 fn rate_limit_type_behaviors() {
-    let mut settings = BTreeMap::new();
-    assert_eq!(get_rate_limit_type(&settings), "total");
-    settings.insert("token_rate_limit_type".to_owned(), "input".to_owned());
-    assert_eq!(get_rate_limit_type(&settings), "input");
-    settings.insert("token_rate_limit_type".to_owned(), "invalid".to_owned());
-    assert_eq!(get_rate_limit_type(&settings), "total");
+    assert_eq!(
+        get_rate_limit_type(TokenRateLimitType::Total),
+        TokenRateLimitType::Total
+    );
+    assert_eq!(
+        TokenRateLimitType::from_config(Some("input")),
+        TokenRateLimitType::Input
+    );
+    assert_eq!(
+        TokenRateLimitType::from_config(Some("invalid")),
+        TokenRateLimitType::Total
+    );
 }
 
 #[test]
 fn usage_filtering_behaviors() {
     let value = usage();
-    assert_eq!(get_total_tokens_from_usage(Some(&value), "output"), 20);
-    assert_eq!(get_total_tokens_from_usage(Some(&value), "input"), 70);
-    assert_eq!(get_total_tokens_from_usage(Some(&value), "total"), 90);
     assert_eq!(
-        aggregate_only_total_tokens(Some(&Usage {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            input_tokens: 0,
-            output_tokens: 0,
-            total_tokens: 120,
-            cached_tokens: None,
-            cache_read_input_tokens: None,
-        })),
+        get_total_tokens_from_usage(
+            Some(ResponseUsage::Usage(&value)),
+            TokenRateLimitType::Output
+        ),
+        20
+    );
+    assert_eq!(
+        get_total_tokens_from_usage(
+            Some(ResponseUsage::Usage(&value)),
+            TokenRateLimitType::Input
+        ),
+        70
+    );
+    assert_eq!(
+        get_total_tokens_from_usage(
+            Some(ResponseUsage::Usage(&value)),
+            TokenRateLimitType::Total
+        ),
+        90
+    );
+    let aggregate = Usage {
+        total_tokens: 120,
+        ..Usage::default()
+    };
+    assert_eq!(
+        aggregate_only_total_tokens(Some(ResponseUsage::Usage(&aggregate))),
         120
     );
-    assert_eq!(aggregate_only_total_tokens(Some(&value)), 0);
     assert_eq!(
-        response_usage(&ResponseObject::Mapping(value.clone())),
-        Some(&value)
+        aggregate_only_total_tokens(Some(ResponseUsage::Usage(&value))),
+        0
     );
+    assert!(matches!(
+        response_usage(&ResponseObject::Mapping(value)),
+        Some(ResponseUsage::Usage(_))
+    ));
 }
 
 #[test]
 fn usage_filtering_boundaries() {
-    assert_eq!(get_total_tokens_from_usage(None, "total"), 0);
     assert_eq!(
-        get_total_tokens_from_usage(
-            Some(&Usage {
-                prompt_tokens: 0,
-                completion_tokens: 0,
-                input_tokens: 0,
-                output_tokens: 0,
-                total_tokens: 4,
-                cached_tokens: None,
-                cache_read_input_tokens: None,
-            }),
-            "total"
-        ),
-        4
+        get_total_tokens_from_usage(None, TokenRateLimitType::Total),
+        0
     );
     assert_eq!(response_usage(&ResponseObject::WithUsage(None)), None);
 }
@@ -94,11 +101,8 @@ fn io_reconcile_behaviors() {
     let value = Usage {
         input_tokens: 100,
         output_tokens: 12,
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        total_tokens: 0,
         cached_tokens: Some(25),
-        cache_read_input_tokens: None,
+        ..Usage::default()
     };
     assert_eq!(
         reconcile_io_usage(&ResponseObject::Usage(value)),
@@ -118,8 +122,11 @@ fn io_reconcile_boundaries() {
 fn recovered_usage_behaviors() {
     let value = usage();
     assert_eq!(
-        recovered_partial_usage_tokens(Some(&value), "total"),
+        recovered_partial_usage_tokens(Some(&value), TokenRateLimitType::Total),
         (90, 70, 20)
     );
-    assert_eq!(recovered_partial_usage_tokens(None, "total"), (0, 0, 0));
+    assert_eq!(
+        recovered_partial_usage_tokens(None, TokenRateLimitType::Total),
+        (0, 0, 0)
+    );
 }

@@ -3,7 +3,8 @@ name: io-reconcile-response-api
 call:
   b3044:
     rate_limit_type: output
-    usage: {prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, prompt_tokens_details: {cached_tokens: 30}}
+    usage_kind: response_api
+    response_api_usage: {input_tokens: 100, output_tokens: 20, total_tokens: 120, input_tokens_details: {cached_tokens: 25}}
 env: {}
 compare:
   ignore: []

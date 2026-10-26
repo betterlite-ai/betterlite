@@ -404,6 +404,7 @@ dependencies = [
 name = "betterlite-config"
 version = "0.1.0"
 dependencies = [
+ "betterlite-rate-limit",
  "betterlite-secrets",
  "insta",
  "netrc-rs",
@@ -587,6 +588,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-paths",
  "betterlite-postgres-fixture",
+ "betterlite-rate-limit",
  "betterlite-secrets",
  "chrono",
  "clap",
@@ -655,6 +657,9 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-rate-limit"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "betterlite-redact"
