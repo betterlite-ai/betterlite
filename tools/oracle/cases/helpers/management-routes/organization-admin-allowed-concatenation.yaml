@@ -1,0 +1,8 @@
+kind: helper
+name: organization-admin-allowed-concatenation
+call:
+  management_routes:
+    group: org_admin_allowed_routes
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,8 @@
+kind: helper
+name: internal-user-without-global-spend
+call:
+  management_routes:
+    group: internal_user_routes
+env: {}
+compare:
+  ignore: []
