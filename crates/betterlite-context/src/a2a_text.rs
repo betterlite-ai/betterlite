@@ -22,6 +22,7 @@ pub enum A2aTextError {
     ArtifactsNotIndexed,
 }
 
+// serde_json::Number serializes as a struct named this way, so flatten can surface it as a fake record field
 const SERDE_JSON_NUMBER_KEY: &str = "$serde_json::private::Number";
 
 // A key set to null is still present, so a plain Option would lose it
@@ -121,14 +122,6 @@ impl RecordValue {
     }
 }
 
-fn record_is_private_number(record: &A2aRecord) -> bool {
-    let key_present = record.other_keys.contains_key(SERDE_JSON_NUMBER_KEY);
-    if key_present {
-        return true;
-    }
-    false
-}
-
 pub fn extract_text_from_a2a_message(
     message: Option<&RecordValue>,
     depth: usize,
@@ -138,7 +131,7 @@ pub fn extract_text_from_a2a_message(
         None | Some(RecordOr::Other(Shape::Null)) => Ok(String::new()),
         Some(_) if depth >= max_depth => Ok(String::new()),
         Some(RecordOr::Other(_)) => Err(A2aTextError::MessageNotObject),
-        Some(RecordOr::Record(record)) if record_is_private_number(record) => {
+        Some(RecordOr::Record(record)) if record.other_keys.contains_key(SERDE_JSON_NUMBER_KEY) => {
             Err(A2aTextError::MessageNotObject)
         }
         Some(RecordOr::Record(record)) => parts_text(&record.parts, depth, max_depth),
