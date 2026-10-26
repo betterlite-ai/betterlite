@@ -1,0 +1,8 @@
+kind: helper
+name: tag-normalization
+call:
+  datadog_tags:
+    function: normalize
+    values: [" Foo.Bar ", "A__B / C", "__Ä__", "hello--world:one/two", "😀", "a\u09beb", "a\u24d0b", "1\u2160\u00b2", "a\u02b0b", "a\u4e00b"]
+env: {}
+compare: {ignore: []}

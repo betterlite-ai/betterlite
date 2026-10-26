@@ -1,0 +1,8 @@
+kind: helper
+name: datadog-tags-normalize-seed
+call:
+  datadog_tags:
+    function: normalize
+    values: ["a\u0345b", "__Foo.Bar__", "A__B / C", "a\u09beb", "a\u24d0b", "1\u2160\u00b2", "a\u02b0b", "a\u4e00b"]
+env: {}
+compare: {ignore: []}

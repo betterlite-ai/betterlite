@@ -1,0 +1,14 @@
+kind: helper
+name: enterprise-field-names
+call:
+  scim_record:
+    kind: user
+    value:
+      schemas: [u]
+      enterprise_user:
+        department: R&D
+        manager:
+          ref: /Users/2
+env: {}
+compare:
+  ignore: []
