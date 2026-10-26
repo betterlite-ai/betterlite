@@ -29,14 +29,6 @@ pub enum PayloadError {
 }
 
 #[must_use]
-pub fn normalize_tool_name(native_name: &str, mapping: &BTreeMap<String, String>) -> String {
-    mapping
-        .get(native_name)
-        .map_or(native_name, String::as_str)
-        .to_owned()
-}
-
-#[must_use]
 pub fn native_tool_names(
     normalized: &[String],
     mapping: &BTreeMap<String, Vec<String>>,

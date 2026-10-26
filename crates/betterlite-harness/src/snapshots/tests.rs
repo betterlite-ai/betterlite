@@ -12,9 +12,8 @@ use crate::errors::{CappedOperation, HarnessError};
 use crate::events::FileChange;
 use crate::sandbox::{CompletedRun, Process, Sandbox, SandboxCommand};
 use crate::snapshots::{
-    HARNESS_MAX_DIFF_BYTES, HARNESS_SNAPSHOT_MAX_FILE_BYTES, HARNESS_SNAPSHOT_MAX_TOTAL_BYTES,
-    build_file_changes, capture_text_contents, diff_snapshots, snapshot_local, snapshot_local_sync,
-    unified_diff,
+    MAX_DIFF_BYTES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, build_file_changes, capture_text_contents,
+    diff_snapshots, snapshot_local, snapshot_local_sync, unified_diff,
 };
 use crate::types::FileChangeKind;
 
@@ -201,7 +200,7 @@ fn snapshot_skips_tool_folders_at_any_depth(#[case] skipped: &str) {
 #[case::past_the_limit(1, false)]
 fn snapshot_leaves_out_huge_files(#[case] extra: usize, #[case] kept: bool) {
     let root = fresh_workspace(&format!("huge{extra}"));
-    let size = u64::try_from(HARNESS_SNAPSHOT_MAX_FILE_BYTES.checked_add(extra).unwrap()).unwrap();
+    let size = u64::try_from(MAX_FILE_BYTES.checked_add(extra).unwrap()).unwrap();
     fs::File::create(root.join("big.bin"))
         .unwrap()
         .set_len(size)
@@ -272,7 +271,7 @@ fn builds_unified_diffs(
 #[rstest]
 #[case::text("a.txt", b"hello\n", true)]
 #[case::binary("a.txt", b"a\0b", false)]
-#[case::not_utf8("a.txt", b"caf\xe9", false)]
+#[case::not_utf8("a.txt", b"r\xe9sum\xe9", false)]
 #[case::missing("elsewhere.txt", b"hello\n", false)]
 fn captures_small_text_files(#[case] stored: &str, #[case] data: &[u8], #[case] kept: bool) {
     let sandbox = sandbox_with(&[(stored, data)]);
@@ -290,8 +289,8 @@ fn captures_small_text_files(#[case] stored: &str, #[case] data: &[u8], #[case] 
 }
 
 #[rstest]
-#[case::at_the_diff_limit(HARNESS_MAX_DIFF_BYTES, true)]
-#[case::past_the_diff_limit(HARNESS_MAX_DIFF_BYTES + 1, false)]
+#[case::at_the_diff_limit(MAX_DIFF_BYTES, true)]
+#[case::past_the_diff_limit(MAX_DIFF_BYTES + 1, false)]
 fn captures_files_up_to_the_diff_limit(#[case] size: usize, #[case] kept: bool) {
     let text = vec![b'x'; size];
     let sandbox = sandbox_with(&[("a.txt", &text)]);
@@ -304,8 +303,8 @@ fn captures_files_up_to_the_diff_limit(#[case] size: usize, #[case] kept: bool) 
 }
 
 #[rstest]
-#[case::budget_spent(HARNESS_SNAPSHOT_MAX_TOTAL_BYTES, false)]
-#[case::budget_left(HARNESS_SNAPSHOT_MAX_TOTAL_BYTES - 1, true)]
+#[case::budget_spent(MAX_TOTAL_BYTES, false)]
+#[case::budget_left(MAX_TOTAL_BYTES - 1, true)]
 fn capture_stops_at_the_total_budget(#[case] first_size: usize, #[case] later_kept: bool) {
     let first = vec![b'x'; first_size];
     let sandbox = sandbox_with(&[("a.txt", &first), ("b.txt", b"later\n")]);
@@ -383,7 +382,7 @@ fn file_changes_diff_text_on_both_sides(
 
 #[test]
 fn a_created_file_too_large_to_diff_has_no_diff() {
-    let large = vec![b'x'; HARNESS_MAX_DIFF_BYTES.checked_add(1).unwrap()];
+    let large = vec![b'x'; MAX_DIFF_BYTES.checked_add(1).unwrap()];
     let sandbox = sandbox_with(&[("large.txt", &large)]);
     let after = hashes(&[("large.txt", "1")]);
     let changes = futures_util::FutureExt::now_or_never(build_file_changes(

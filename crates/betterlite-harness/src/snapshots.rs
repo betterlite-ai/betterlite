@@ -15,10 +15,10 @@ use crate::events::FileChange;
 use crate::sandbox::Sandbox;
 use crate::types::FileChangeKind;
 
-pub const HARNESS_SNAPSHOT_MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
-pub const HARNESS_SNAPSHOT_MAX_TOTAL_BYTES: usize = 16 * 1024 * 1024;
-pub const HARNESS_MAX_DIFF_BYTES: usize = 256 * 1024;
-pub const HARNESS_SNAPSHOT_SKIP_DIRS: [&str; 8] = [
+pub const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
+pub const MAX_TOTAL_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_DIFF_BYTES: usize = 256 * 1024;
+pub const SKIP_DIRS: [&str; 8] = [
     ".git",
     "node_modules",
     ".venv",
@@ -56,10 +56,7 @@ pub fn snapshot_local_sync(root: &Path) -> BTreeMap<String, String> {
                 continue;
             }
             let name = entry.file_name();
-            if !HARNESS_SNAPSHOT_SKIP_DIRS
-                .iter()
-                .any(|skipped| name == *skipped)
-            {
+            if !SKIP_DIRS.iter().any(|skipped| name == *skipped) {
                 pending.push(entry.path());
             }
         }
@@ -71,7 +68,7 @@ fn hash_entry(root: &Path, entry: &DirEntry) -> Option<(String, String)> {
     // DirEntry::metadata does not follow links, so a symlink is never a regular file here
     let metadata = entry.metadata().ok()?;
     let size = usize::try_from(metadata.len()).ok()?;
-    if !metadata.is_file() || size > HARNESS_SNAPSHOT_MAX_FILE_BYTES {
+    if !metadata.is_file() || size > MAX_FILE_BYTES {
         return None;
     }
     let path = entry.path();
@@ -123,7 +120,7 @@ pub fn diff_snapshots(
 }
 
 fn diffable_text(data: &[u8]) -> Option<&str> {
-    if data.len() > HARNESS_MAX_DIFF_BYTES || data.contains(&0) {
+    if data.len() > MAX_DIFF_BYTES || data.contains(&0) {
         return None;
     }
     str::from_utf8(data).ok()
@@ -149,11 +146,11 @@ where
     let mut captured = BTreeMap::new();
     let mut total = 0_usize;
     for path in paths_hashes.keys() {
-        if total >= HARNESS_SNAPSHOT_MAX_TOTAL_BYTES {
+        if total >= MAX_TOTAL_BYTES {
             break;
         }
         // LiteLLM treats a file it cannot read as one it never saw
-        let Ok(data) = sandbox.read(path, HARNESS_SNAPSHOT_MAX_FILE_BYTES).await else {
+        let Ok(data) = sandbox.read(path, MAX_FILE_BYTES).await else {
             continue;
         };
         total = total.saturating_add(data.len());
@@ -176,7 +173,7 @@ where
     if kind == FileChangeKind::Deleted {
         return old.map(|text| unified_diff(path, Some(text), None));
     }
-    let current = sandbox.read(path, HARNESS_MAX_DIFF_BYTES).await.ok()?;
+    let current = sandbox.read(path, MAX_DIFF_BYTES).await.ok()?;
     let new = diffable_text(&current)?;
     match kind {
         FileChangeKind::Modified => old.map(|text| unified_diff(path, Some(text), Some(new))),

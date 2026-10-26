@@ -7,8 +7,8 @@ use std::{env, fs, os, process, str};
 use rstest::rstest;
 
 use crate::payloads::{
-    PayloadError, decode_json_line, last_json_object, native_tool_names, normalize_tool_name,
-    read_skill_files, stderr_tail_text, strict_json_schema, structured_output_instruction,
+    PayloadError, decode_json_line, last_json_object, native_tool_names, read_skill_files,
+    stderr_tail_text, strict_json_schema, structured_output_instruction,
 };
 use crate::types::JsonObject;
 
@@ -17,14 +17,6 @@ fn fresh_folder(name: &str) -> PathBuf {
     drop(fs::remove_dir_all(&folder));
     fs::create_dir_all(&folder).unwrap();
     folder
-}
-
-#[rstest]
-#[case::mapped("Bash", "bash")]
-#[case::unmapped("WebFetch", "WebFetch")]
-fn normalizes_native_tool_names(#[case] native: &str, #[case] expected: &str) {
-    let mapping = BTreeMap::from([("Bash".to_owned(), "bash".to_owned())]);
-    assert_eq!(normalize_tool_name(native, &mapping), expected);
 }
 
 #[test]
@@ -57,8 +49,8 @@ fn native_names_expand_in_order_without_duplicates() {
 #[case::keys_keep_their_order("{\"b\":1,\"a\":2}", Some("{\"b\": 1, \"a\": 2}"))]
 #[case::empty_containers("{\"a\":{},\"b\":[]}", Some("{\"a\": {}, \"b\": []}"))]
 #[case::non_ascii_escaped(
-    "{\"name\":\"caf\u{e9} \u{1f600}\"}",
-    Some("{\"name\": \"caf\\u00e9 \\ud83d\\ude00\"}")
+    "{\"name\":\"r\u{e9}sum\u{e9} \u{1f600}\"}",
+    Some("{\"name\": \"r\\u00e9sum\\u00e9 \\ud83d\\ude00\"}")
 )]
 #[case::controls_escaped(r#"{"k":"a\u007fb\n\u0001"}"#, Some(r#"{"k": "a\u007fb\n\u0001"}"#))]
 #[case::literals(
@@ -93,11 +85,11 @@ fn finds_the_last_json_object(#[case] text: &str, #[case] expected: Option<&str>
 #[test]
 fn instruction_embeds_the_schema_as_python_json() {
     let schema: JsonObject =
-        serde_json::from_str(r#"{"type": "object", "properties": {"answer": {"type": "string"}}}"#)
+        serde_json::from_str(r#"{"type": "object", "properties": {"answer": {"type": "number", "maximum": 1e3, "minimum": -0}}}"#)
             .unwrap();
     assert_eq!(
         structured_output_instruction(&schema).unwrap(),
-        "When you have finished, your final message must be a single JSON object that matches this JSON schema, with no other text before or after it:\n{\"properties\": {\"answer\": {\"type\": \"string\"}}, \"type\": \"object\"}"
+        "When you have finished, your final message must be a single JSON object that matches this JSON schema, with no other text before or after it:\n{\"properties\": {\"answer\": {\"maximum\": 1000.0, \"minimum\": 0, \"type\": \"number\"}}, \"type\": \"object\"}"
     );
 }
 
@@ -241,7 +233,7 @@ fn a_broken_link_in_a_skill_fails_the_read() {
 #[case::bom("bom", true, Some("{\"event\": \"start\"}"))]
 #[case::broken("broken", false, Some("{\"ok\": 1}"))]
 #[case::invalid("invalid", false, None)]
-#[case::nested("nested", false, Some("{\"name\": \"caf\\u00e9\"}"))]
+#[case::nested("nested", false, Some("{\"name\": \"r\\u00e9sum\\u00e9\"}"))]
 #[case::object("object", true, Some("{\"event\": \"done\"}"))]
 fn replays_the_payloads_corpus(
     #[case] seed: &str,
