@@ -3,7 +3,9 @@
 use chrono::{Datelike as _, Timelike as _};
 use rust_decimal::Decimal;
 
-use super::super::{CbfValue, CzrnComponents, CzrnGenerator, UsageRecord};
+use rstest::rstest;
+
+use super::super::{CbfValue, CzbEntityType, CzrnComponents, CzrnGenerator, UsageRecord};
 use super::CbfTransformer;
 
 fn row() -> UsageRecord {
@@ -34,6 +36,7 @@ fn row() -> UsageRecord {
 #[test]
 fn cloudzero_czrn_validates_and_extracts_components() {
     let generator = CzrnGenerator;
+    assert_eq!(CzbEntityType::Team.as_str(), "team");
     let value = generator
         .create_from_litellm_data(&row())
         .expect("valid CZRN");
@@ -46,6 +49,27 @@ fn cloudzero_czrn_validates_and_extracts_components() {
     assert_eq!(
         generator.extract_components(&value).expect("components")[1],
         "anthropic"
+    );
+}
+
+#[rstest]
+#[case::azure("azure", "azure")]
+#[case::anthropic("anthropic", "anthropic")]
+#[case::vertex_ai("vertex_ai", "vertex-ai")]
+#[case::gemini("gemini", "google")]
+#[case::cohere("cohere", "cohere")]
+#[case::huggingface("huggingface", "huggingface")]
+#[case::replicate("replicate", "replicate")]
+#[case::together_ai("together_ai", "together-ai")]
+fn cloudzero_provider_map_covers_supported_values(#[case] provider: &str, #[case] expected: &str) {
+    let generator = CzrnGenerator;
+    let mut source = row();
+    source.custom_llm_provider = provider.to_owned();
+    assert!(
+        generator
+            .create_from_litellm_data(&source)
+            .expect("CZRN")
+            .contains(&format!(":{expected}:"))
     );
 }
 
