@@ -1,24 +1,26 @@
+use crate::agents::json::AgentJson;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::de::DeserializeOwned;
+use serde::de::value::MapDeserializer;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 
 pub trait BudgetSnapshot: Serialize + DeserializeOwned {
     const METADATA_KEYS: &'static [&'static str];
 
-    fn metadata_entries(&self) -> Result<Map<String, Value>, serde_json::Error> {
+    fn metadata_entries(&self) -> Result<BTreeMap<String, AgentJson>, serde_json::Error> {
         serde_json::from_value(serde_json::to_value(self)?)
     }
 
     // An invalid carried record means the logger falls back to its own lookup, so the error is not surfaced
-    fn from_metadata(metadata: &Map<String, Value>) -> Option<Self> {
+    #[must_use]
+    fn from_metadata(metadata: &BTreeMap<String, AgentJson>) -> Option<Self> {
         let carried = Self::METADATA_KEYS
             .iter()
             .filter_map(|key| metadata.get_key_value(*key))
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect::<Map<String, Value>>();
-        serde_json::from_value(Value::Object(carried)).ok()
+            .map(|(key, value)| (key.as_str(), value));
+        Self::deserialize(MapDeserializer::<_, serde_json::Error>::new(carried)).ok()
     }
 }
 

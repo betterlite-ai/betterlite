@@ -3,29 +3,31 @@
 use super::{
     BudgetSnapshot, KeyBudgetSnapshot, OrgBudgetSnapshot, TeamBudgetSnapshot, UserBudgetSnapshot,
 };
+use crate::agents::json::AgentJson;
 use chrono::{DateTime, Utc};
 use rstest::rstest;
 use rust_decimal::Decimal;
-use serde_json::{Map, Value, json};
+use std::collections::BTreeMap;
+use std::fmt::Debug;
 
 fn reset_at() -> DateTime<Utc> {
     "2026-01-15T10:00:00Z".parse().unwrap()
 }
 
-fn metadata(value: Value) -> Map<String, Value> {
-    serde_json::from_value(value).unwrap()
+fn metadata(text: &str) -> BTreeMap<String, AgentJson> {
+    serde_json::from_str(text).unwrap()
 }
 
 fn decimal(text: &str) -> Decimal {
     Decimal::from_str_exact(text).unwrap()
 }
 
-fn round_trip<Snapshot>(snapshot: &Snapshot, expected: &Value)
+fn round_trip<Snapshot>(snapshot: &Snapshot, expected: &str)
 where
-    Snapshot: BudgetSnapshot + PartialEq + std::fmt::Debug,
+    Snapshot: BudgetSnapshot + PartialEq + Debug,
 {
     let entries = snapshot.metadata_entries().unwrap();
-    assert_eq!(Value::Object(entries.clone()), *expected);
+    assert_eq!(entries, metadata(expected));
     assert_eq!(Snapshot::from_metadata(&entries).as_ref(), Some(snapshot));
 }
 
@@ -35,7 +37,7 @@ fn key_snapshot_round_trips_under_its_alias() {
         &KeyBudgetSnapshot {
             budget_reset_at: Some(reset_at()),
         },
-        &json!({"user_api_key_budget_reset_at": "2026-01-15T10:00:00Z"}),
+        r#"{"user_api_key_budget_reset_at": "2026-01-15T10:00:00Z"}"#,
     );
 }
 
@@ -46,10 +48,10 @@ fn team_snapshot_round_trips_under_its_aliases() {
             budget_reset_at: Some(reset_at()),
             max_budget: Some(decimal("300.0")),
         },
-        &json!({
+        r#"{
             "user_api_key_team_budget_reset_at": "2026-01-15T10:00:00Z",
-            "user_api_key_team_table_max_budget": 300.0,
-        }),
+            "user_api_key_team_table_max_budget": 300.0
+        }"#,
     );
 }
 
@@ -61,11 +63,11 @@ fn user_snapshot_round_trips_under_its_aliases() {
             max_budget: Some(decimal("50.25")),
             user_alias: Some("Alice".to_owned()),
         },
-        &json!({
+        r#"{
             "user_api_key_user_budget_reset_at": null,
             "user_api_key_user_table_max_budget": 50.25,
-            "user_api_key_user_alias": "Alice",
-        }),
+            "user_api_key_user_alias": "Alice"
+        }"#,
     );
 }
 
@@ -76,49 +78,49 @@ fn org_snapshot_round_trips_under_its_aliases() {
             spend: decimal("3.0"),
             max_budget: None,
         },
-        &json!({"user_api_key_org_spend": 3.0, "user_api_key_org_max_budget": null}),
+        r#"{"user_api_key_org_spend": 3.0, "user_api_key_org_max_budget": null}"#,
     );
 }
 
 #[rstest]
-#[case::key_without_reset(json!({}), KeyBudgetSnapshot::from_metadata)]
+#[case::key_without_reset("{}", KeyBudgetSnapshot::from_metadata)]
 #[case::team_without_reset(
-    json!({"user_api_key_team_table_max_budget": 300.0}),
+    r#"{"user_api_key_team_table_max_budget": 300.0}"#,
     TeamBudgetSnapshot::from_metadata
 )]
 #[case::user_with_alias_only(
-    json!({"user_api_key_user_alias": "Alice"}),
+    r#"{"user_api_key_user_alias": "Alice"}"#,
     UserBudgetSnapshot::from_metadata
 )]
 #[case::org_without_max_budget(
-    json!({"user_api_key_org_spend": 1.0}),
+    r#"{"user_api_key_org_spend": 1.0}"#,
     OrgBudgetSnapshot::from_metadata
 )]
 #[case::org_with_null_spend(
-    json!({"user_api_key_org_spend": null, "user_api_key_org_max_budget": null}),
+    r#"{"user_api_key_org_spend": null, "user_api_key_org_max_budget": null}"#,
     OrgBudgetSnapshot::from_metadata
 )]
 #[case::org_with_text_spend(
-    json!({"user_api_key_org_spend": "not-a-decimal", "user_api_key_org_max_budget": null}),
+    r#"{"user_api_key_org_spend": "not-a-decimal", "user_api_key_org_max_budget": null}"#,
     OrgBudgetSnapshot::from_metadata
 )]
 #[case::team_with_bad_reset(
-    json!({"user_api_key_team_budget_reset_at": "soon", "user_api_key_team_table_max_budget": null}),
+    r#"{"user_api_key_team_budget_reset_at": "soon", "user_api_key_team_table_max_budget": null}"#,
     TeamBudgetSnapshot::from_metadata
 )]
 #[case::user_with_numeric_alias(
-    json!({
+    r#"{
         "user_api_key_user_budget_reset_at": null,
         "user_api_key_user_table_max_budget": null,
-        "user_api_key_user_alias": 5,
-    }),
+        "user_api_key_user_alias": 5
+    }"#,
     UserBudgetSnapshot::from_metadata
 )]
 fn from_metadata_gives_none_when_a_carried_field_is_missing_or_invalid<Snapshot>(
-    #[case] carried: Value,
-    #[case] from_metadata: fn(&Map<String, Value>) -> Option<Snapshot>,
+    #[case] carried: &str,
+    #[case] from_metadata: fn(&BTreeMap<String, AgentJson>) -> Option<Snapshot>,
 ) where
-    Snapshot: std::fmt::Debug,
+    Snapshot: Debug,
 {
     assert!(from_metadata(&metadata(carried)).is_none());
 }
@@ -126,14 +128,14 @@ fn from_metadata_gives_none_when_a_carried_field_is_missing_or_invalid<Snapshot>
 #[test]
 fn from_metadata_accepts_null_and_offset_timestamps() {
     assert_eq!(
-        KeyBudgetSnapshot::from_metadata(&metadata(json!({"user_api_key_budget_reset_at": null}))),
+        KeyBudgetSnapshot::from_metadata(&metadata(r#"{"user_api_key_budget_reset_at": null}"#)),
         Some(KeyBudgetSnapshot {
             budget_reset_at: None
         })
     );
     assert_eq!(
         KeyBudgetSnapshot::from_metadata(&metadata(
-            json!({"user_api_key_budget_reset_at": "2026-01-15T12:00:00+02:00"})
+            r#"{"user_api_key_budget_reset_at": "2026-01-15T12:00:00+02:00"}"#
         )),
         Some(KeyBudgetSnapshot {
             budget_reset_at: Some(reset_at())
@@ -143,12 +145,14 @@ fn from_metadata_accepts_null_and_offset_timestamps() {
 
 #[test]
 fn from_metadata_ignores_keys_it_does_not_carry() {
-    let carried = metadata(json!({
-        "user_api_key_org_spend": 2.5,
-        "user_api_key_org_max_budget": 10,
-        "user_api_key_team_table_max_budget": 300.0,
-        "requester_ip_address": "10.0.0.1",
-    }));
+    let carried = metadata(
+        r#"{
+            "user_api_key_org_spend": 2.5,
+            "user_api_key_org_max_budget": 10,
+            "user_api_key_team_table_max_budget": 300.0,
+            "requester_ip_address": "10.0.0.1"
+        }"#,
+    );
     assert_eq!(
         OrgBudgetSnapshot::from_metadata(&carried),
         Some(OrgBudgetSnapshot {
@@ -160,10 +164,9 @@ fn from_metadata_ignores_keys_it_does_not_carry() {
 
 #[test]
 fn direct_deserialization_rejects_unknown_fields() {
-    let error = serde_json::from_value::<KeyBudgetSnapshot>(json!({
-        "user_api_key_budget_reset_at": null,
-        "unexpected": true,
-    }))
+    let error = serde_json::from_str::<KeyBudgetSnapshot>(
+        r#"{"user_api_key_budget_reset_at": null, "unexpected": true}"#,
+    )
     .unwrap_err();
     assert!(error.to_string().contains("unknown field `unexpected`"));
 }
@@ -177,10 +180,9 @@ fn direct_deserialization_rejects_unknown_fields() {
     "12345678901234567890.123456789"
 )]
 fn money_reads_without_float_rounding(#[case] spend: &str, #[case] expected: &str) {
-    let carried = serde_json::from_str(&format!(
+    let carried = metadata(&format!(
         r#"{{"user_api_key_org_spend": {spend}, "user_api_key_org_max_budget": {spend}}}"#
-    ))
-    .unwrap();
+    ));
     let snapshot = OrgBudgetSnapshot::from_metadata(&carried).unwrap();
     assert_eq!(snapshot.spend, decimal(expected));
     assert_eq!(snapshot.max_budget, Some(decimal(expected)));
