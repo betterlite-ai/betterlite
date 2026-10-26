@@ -2,7 +2,7 @@ use chrono::{DateTime, TimeZone as _, Utc};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer};
 use serde_json::Number;
-use speedate::{Date, DateTime as SpeedateDateTime};
+use speedate::{Date, DateTime as SpeedateDateTime, DateTimeConfig, TimeConfig, TimestampUnit};
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -28,9 +28,13 @@ fn parse_datetime(input: DateTimeInput) -> Result<DateTime<Utc>, speedate::Parse
         DateTimeInput::Text(text) => text,
         DateTimeInput::Number(number) => number.to_string(),
     };
-    let parsed = SpeedateDateTime::parse_str(&text).or_else(|_| {
+    let config = DateTimeConfig {
+        timestamp_unit: TimestampUnit::Infer,
+        time_config: TimeConfig::default(),
+    };
+    let parsed = SpeedateDateTime::parse_str_with_config(&text, &config).or_else(|_| {
         let date = Date::parse_str(&text)?;
-        SpeedateDateTime::parse_str(&format!("{date}T00:00:00"))
+        SpeedateDateTime::parse_str_with_config(&format!("{date}T00:00:00"), &config)
     })?;
     let nanoseconds = parsed
         .time
