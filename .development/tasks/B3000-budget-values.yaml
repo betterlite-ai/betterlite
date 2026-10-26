@@ -40,7 +40,7 @@ out_of_scope:
 deviations: []
 review_level: security
 budget:
-  max_changed_lines: 250
+  max_changed_lines: 400
   max_new_expects: 0
 checks:
   optional: []

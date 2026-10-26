@@ -1,0 +1,3 @@
+task: B3000
+deviations:
+  - {what: "Non-finite or out-of-range numeric values return None.", why: "Budget counters use bounded Decimal and i64 representations.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1695-L1710"}
