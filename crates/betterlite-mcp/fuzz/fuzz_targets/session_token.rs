@@ -1,9 +1,8 @@
 #![no_main]
 
 use betterlite_mcp::session_tokens::open_session_token;
-use betterlite_mcp::types::{
-    AsymmetricSessionKeys, SessionKeys, SessionSigningKeys, SessionTokenKind,
-};
+use betterlite_mcp::types::SessionSigningKeys::{Asymmetric, Symmetric};
+use betterlite_mcp::types::{AsymmetricSessionKeys, SessionKeys, SessionTokenKind};
 use chrono::DateTime;
 use libfuzzer_sys::fuzz_target;
 use secrecy::SecretString;
@@ -17,12 +16,7 @@ fuzz_target!(|bytes: &[u8]| {
     ) else {
         return;
     };
-    let keys = [
-        SessionSigningKeys::Symmetric(symmetric),
-        SessionSigningKeys::Asymmetric(asymmetric),
-    ];
-    for signing in &keys {
-        let _ = open_session_token(candidate, SessionTokenKind::Session, signing, now);
-        let _ = open_session_token(candidate, SessionTokenKind::Refresh, signing, now);
+    for signing in [Symmetric(symmetric), Asymmetric(asymmetric)] {
+        let _ = open_session_token(candidate, SessionTokenKind::Session, &signing, now);
     }
 });

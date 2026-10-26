@@ -1,4 +1,3 @@
-use self::Keys::{Hs256, OtherHs256, OtherRs256, Previous, Rotated, Rs256};
 use crate::errors::SessionOpenError::{BadSignature, Expired, Malformed, NotASessionToken};
 use crate::errors::{SessionKeyError, SessionOpenError};
 use crate::session_tokens::{
@@ -17,6 +16,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use std::{fs, path::Path};
 
 const SECRET: &str = "0123456789abcdef0123456789abcdef";
+const OTHER_SECRET: &str = "fedcba9876543210fedcba9876543210";
 const PRIVATE: &str = include_str!("../../fixtures/session-private.pem");
 const PKCS1: &str = include_str!("../../fixtures/session-pkcs1.pem");
 const PUBLIC: &str = include_str!("../../fixtures/session-public.pem");
@@ -27,24 +27,14 @@ const WEAK_PUBLIC: &str = include_str!("../../fixtures/session-weak-public.pem")
 const ENTROPY: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 const NOW: i64 = 1_767_225_600;
 const HS256: &str = r#"{"alg":"HS256"}"#;
+const CLAIMS: &str = r#"{"iss":"litellm-mcp-gateway","iat":1,"exp":9999999999,"jti":"j","kind":"session","user_id":"u","client_id":"c","team_id":null}"#;
 // LiteLLM 1.105.1 mints this for principal() at NOW with jti bytes 0..16, as the oracle case symmetric-hs256-access shows
 const LITELLM_HS256: &str = "llm_session_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJsaXRlbGxtLW1jcC1nYXRld2F5IiwiaWF0IjoxNzY3MjI1NjAwLCJleHAiOjE3NjcyMjkyMDAsImp0aSI6IkFBRUNBd1FGQmdjSUNRb0xEQTBPRHciLCJraW5kIjoic2Vzc2lvbiIsInVzZXJfaWQiOiJcdTAwZmNzZXItMSIsImNsaWVudF9pZCI6ImNsaWVudC0xIiwicmVzb3VyY2Vfc2VydmVyX2lkIjoic2VydmVyLTEiLCJhdWRpZW5jZSI6InByb3h5X2FwaSIsInRlYW1faWQiOiJ0ZWFtLTEifQ.cDBqeejUJNbkdpbcKXkSYFte9nqUrT1rQ4QajEW9w4A";
 
-#[derive(Clone, Copy)]
-enum Keys {
-    Hs256,
-    OtherHs256,
-    Rs256,
-    OtherRs256,
-    Previous,
-    Rotated,
-}
+type Opened = Result<(), SessionOpenError>;
+type RsaKeys = Result<AsymmetricSessionKeys, SessionKeyError>;
 
-fn asymmetric(
-    pem: &str,
-    kid: &str,
-    previous: Vec<SessionRotatedPublicKey>,
-) -> Result<AsymmetricSessionKeys, SessionKeyError> {
+fn asymmetric(pem: &str, kid: &str, previous: Vec<SessionRotatedPublicKey>) -> RsaKeys {
     AsymmetricSessionKeys::new(&SecretString::from(pem), kid.to_owned(), previous)
 }
 
@@ -52,74 +42,64 @@ fn rotated(kid: &str, pem: &str) -> Result<Vec<SessionRotatedPublicKey>, Session
     SessionRotatedPublicKey::new(kid.to_owned(), pem).map(|key| vec![key])
 }
 
-fn keys(choice: Keys) -> SessionSigningKeys {
-    let symmetric = |secret: &str| {
-        SessionSigningKeys::Symmetric(SessionKeys::new(SecretString::from(secret)).unwrap())
-    };
-    let rsa = match choice {
-        Hs256 => return symmetric(SECRET),
-        OtherHs256 => return symmetric("fedcba9876543210fedcba9876543210"),
-        Rs256 => asymmetric(PRIVATE, "current", Vec::new()),
-        OtherRs256 => asymmetric(PREVIOUS, "current", Vec::new()),
-        Previous => asymmetric(PREVIOUS, "previous", Vec::new()),
-        Rotated => asymmetric(
-            PKCS1,
-            "current",
-            rotated("previous", PREVIOUS_PUBLIC).unwrap(),
-        ),
-    };
-    SessionSigningKeys::Asymmetric(rsa.unwrap())
+fn hs256(secret: &str) -> SessionSigningKeys {
+    SessionSigningKeys::Symmetric(SessionKeys::new(SecretString::from(secret)).unwrap())
+}
+
+fn rs256(pem: &str, kid: &str) -> SessionSigningKeys {
+    SessionSigningKeys::Asymmetric(asymmetric(pem, kid, Vec::new()).unwrap())
+}
+
+fn rotation() -> SessionSigningKeys {
+    let previous = rotated("previous", PREVIOUS_PUBLIC).unwrap();
+    SessionSigningKeys::Asymmetric(asymmetric(PKCS1, "current", previous).unwrap())
 }
 
 fn principal() -> SessionPrincipal {
-    let fixture = include_str!("../../fixtures/session-principal.json");
-    serde_json::from_str(fixture).unwrap()
+    serde_json::from_str(include_str!("../../fixtures/session-principal.json")).unwrap()
 }
 
 fn at(seconds_later: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(NOW.checked_add(seconds_later).unwrap(), 0).unwrap()
 }
 
-fn mint(choice: Keys, kind: SessionTokenKind) -> String {
-    let minted = mint_token(&principal(), kind, &keys(choice), at(0), || Ok(ENTROPY)).unwrap();
+fn mint(keys: &SessionSigningKeys, kind: SessionTokenKind) -> String {
+    let minted = mint_token(&principal(), kind, keys, at(0), || Ok(ENTROPY)).unwrap();
     minted.token.expose_secret().to_owned()
 }
 
 fn forge(header: &str, payload: &str) -> String {
-    let encoded = format!(
-        "{}.{}",
-        URL_SAFE_NO_PAD.encode(header),
-        URL_SAFE_NO_PAD.encode(payload)
-    );
+    let header_segment = URL_SAFE_NO_PAD.encode(header);
+    let encoded = format!("{header_segment}.{}", URL_SAFE_NO_PAD.encode(payload));
     let key = hmac::Key::new(hmac::HMAC_SHA256, SECRET.as_bytes());
     let tag = hmac::sign(&key, encoded.as_bytes());
     format!("llm_session_{encoded}.{}", URL_SAFE_NO_PAD.encode(tag))
 }
 
 #[rstest]
-#[case::hs256_access((Hs256, Session), (Hs256, Session), 0, Ok(3_600))]
-#[case::hs256_refresh((Hs256, Refresh), (Hs256, Refresh), 1_209_599, Ok(1_209_600))]
-#[case::rs256_access((Rs256, Session), (Rs256, Session), 0, Ok(3_600))]
-#[case::rs256_refresh((Rs256, Refresh), (Rs256, Refresh), 0, Ok(1_209_600))]
-#[case::rotation_current_pkcs1((Rs256, Session), (Rotated, Session), 0, Ok(3_600))]
-#[case::rotation_previous((Previous, Session), (Rotated, Session), 0, Ok(3_600))]
-#[case::unknown_kid((Previous, Session), (Rs256, Session), 0, Err(BadSignature))]
-#[case::last_valid_second((Hs256, Session), (Hs256, Session), 3_599, Ok(3_600))]
-#[case::expired_access((Hs256, Session), (Hs256, Session), 3_600, Err(Expired))]
-#[case::expired_refresh((Rs256, Refresh), (Rs256, Refresh), 1_209_600, Err(Expired))]
-#[case::bad_signature_hs256((Hs256, Session), (OtherHs256, Session), 0, Err(BadSignature))]
-#[case::bad_signature_rs256((OtherRs256, Session), (Rs256, Session), 0, Err(BadSignature))]
-#[case::access_opened_as_refresh((Hs256, Session), (Hs256, Refresh), 0, Err(NotASessionToken))]
-#[case::hs256_token_under_rs256((Hs256, Session), (Rs256, Session), 0, Err(BadSignature))]
-#[case::rs256_token_under_hs256((Rs256, Session), (Hs256, Session), 0, Err(Malformed))]
+#[case::hs256_access((hs256(SECRET), Session), (hs256(SECRET), Session), 0, Ok(3_600))]
+#[case::hs256_refresh((hs256(SECRET), Refresh), (hs256(SECRET), Refresh), 1_209_599, Ok(1_209_600))]
+#[case::rs256_access((rs256(PRIVATE, "current"), Session), (rs256(PRIVATE, "current"), Session), 0, Ok(3_600))]
+#[case::rs256_refresh((rs256(PRIVATE, "current"), Refresh), (rs256(PRIVATE, "current"), Refresh), 0, Ok(1_209_600))]
+#[case::rotation_current_pkcs1((rs256(PRIVATE, "current"), Session), (rotation(), Session), 0, Ok(3_600))]
+#[case::rotation_previous((rs256(PREVIOUS, "previous"), Session), (rotation(), Session), 0, Ok(3_600))]
+#[case::unknown_kid((rs256(PREVIOUS, "previous"), Session), (rs256(PRIVATE, "current"), Session), 0, Err(BadSignature))]
+#[case::last_valid_second((hs256(SECRET), Session), (hs256(SECRET), Session), 3_599, Ok(3_600))]
+#[case::expired_access((hs256(SECRET), Session), (hs256(SECRET), Session), 3_600, Err(Expired))]
+#[case::expired_refresh((rs256(PRIVATE, "current"), Refresh), (rs256(PRIVATE, "current"), Refresh), 1_209_600, Err(Expired))]
+#[case::bad_signature_hs256((hs256(SECRET), Session), (hs256(OTHER_SECRET), Session), 0, Err(BadSignature))]
+#[case::bad_signature_rs256((rs256(PREVIOUS, "current"), Session), (rs256(PRIVATE, "current"), Session), 0, Err(BadSignature))]
+#[case::access_opened_as_refresh((hs256(SECRET), Session), (hs256(SECRET), Refresh), 0, Err(NotASessionToken))]
+#[case::hs256_token_under_rs256((hs256(SECRET), Session), (rs256(PRIVATE, "current"), Session), 0, Err(BadSignature))]
+#[case::rs256_token_under_hs256((rs256(PRIVATE, "current"), Session), (hs256(SECRET), Session), 0, Err(Malformed))]
 fn opens_what_it_mints(
-    #[case] minted: (Keys, SessionTokenKind),
-    #[case] opened_as: (Keys, SessionTokenKind),
+    #[case] minted: (SessionSigningKeys, SessionTokenKind),
+    #[case] opened_as: (SessionSigningKeys, SessionTokenKind),
     #[case] seconds_later: i64,
     #[case] lifetime: Result<i64, SessionOpenError>,
 ) {
-    let token = mint(minted.0, minted.1);
-    let opened = open_token(&token, opened_as.1, &keys(opened_as.0), at(seconds_later));
+    let token = mint(&minted.0, minted.1);
+    let opened = open_token(&token, opened_as.1, &opened_as.0, at(seconds_later));
     let expected = lifetime.map(|seconds| OpenedSessionToken {
         principal: principal(),
         jti: "AAECAwQFBgcICQoLDA0ODw".to_owned(),
@@ -131,7 +111,7 @@ fn opens_what_it_mints(
 }
 
 #[rstest]
-#[case::control(HS256, r#"{"iss":"litellm-mcp-gateway","iat":1,"exp":9999999999,"jti":"j","kind":"session","user_id":"u","client_id":"c","team_id":null}"#, Ok(()))]
+#[case::control(HS256, CLAIMS, Ok(()))]
 #[case::wrong_issuer(HS256, r#"{"iss":"elsewhere","iat":1,"exp":9999999999,"jti":"j","kind":"session","user_id":"u","client_id":"c"}"#, Err(Malformed))]
 #[case::missing_exp(HS256, r#"{"iss":"litellm-mcp-gateway","iat":1,"jti":"j","kind":"session","user_id":"u","client_id":"c"}"#, Err(Malformed))]
 #[case::string_exp(HS256, r#"{"iss":"litellm-mcp-gateway","iat":1,"exp":"9999999999","jti":"j","kind":"session","user_id":"u","client_id":"c"}"#, Err(Malformed))]
@@ -144,12 +124,8 @@ fn opens_what_it_mints(
 #[case::claims_not_an_object(HS256, "[]", Err(Malformed))]
 #[case::alg_none(r#"{"alg":"none"}"#, "{}", Err(Malformed))]
 #[case::numeric_kid(r#"{"alg":"HS256","kid":5}"#, "{}", Err(Malformed))]
-fn checks_signed_claims(
-    #[case] header: &str,
-    #[case] payload: &str,
-    #[case] expected: Result<(), SessionOpenError>,
-) {
-    let opened = open_token(&forge(header, payload), Session, &keys(Hs256), at(0));
+fn checks_signed_claims(#[case] header: &str, #[case] payload: &str, #[case] expected: Opened) {
+    let opened = open_token(&forge(header, payload), Session, &hs256(SECRET), at(0));
     assert_eq!(opened.map(drop), expected);
 }
 
@@ -168,25 +144,14 @@ fn checks_signed_claims(
 fn validates_header_extensions(
     #[case] extension: &str,
     #[case] valid: bool,
-    #[values(Hs256, OtherHs256, Rs256)] choice: Keys,
+    #[values((hs256(SECRET), "HS256", Ok(())), (hs256(OTHER_SECRET), "HS256", Err(BadSignature)), (rs256(PRIVATE, "current"), "RS256", Err(BadSignature)))]
+    signing: (SessionSigningKeys, &str, Opened),
 ) {
-    let algorithm = if matches!(choice, Rs256) {
-        "RS256"
-    } else {
-        "HS256"
-    };
+    let (keys, algorithm, signed) = signing;
     let header = format!(r#"{{"alg":"{algorithm}","kid":"unknown",{extension}}}"#);
-    let payload = LITELLM_HS256.split('.').nth(1).unwrap();
-    let decoded = String::from_utf8(URL_SAFE_NO_PAD.decode(payload).unwrap()).unwrap();
-    let expected = match (valid, choice) {
-        (false, _) => Err(Malformed),
-        (true, Hs256) => Ok(()),
-        (true, _) => Err(BadSignature),
-    };
-    assert_eq!(
-        open_token(&forge(&header, &decoded), Session, &keys(choice), at(0)).map(drop),
-        expected
-    );
+    let expected = if valid { signed } else { Err(Malformed) };
+    let opened = open_token(&forge(&header, CLAIMS), Session, &keys, at(0));
+    assert_eq!(opened.map(drop), expected);
 }
 
 #[rstest]
@@ -199,10 +164,8 @@ fn validates_header_extensions(
 #[case::one_byte_over(format!("llm_session_{}", "x".repeat(4_085)), Malformed)]
 #[case::multibyte_over(format!("llm_session_{}", "\u{e9}".repeat(2_043)), Malformed)]
 fn rejects_hostile_candidates(#[case] candidate: String, #[case] expected: SessionOpenError) {
-    assert_eq!(
-        open_token(&candidate, Session, &keys(Hs256), at(0)),
-        Err(expected)
-    );
+    let opened = open_token(&candidate, Session, &hs256(SECRET), at(0));
+    assert_eq!(opened, Err(expected));
 }
 
 #[test]
@@ -212,46 +175,44 @@ fn replays_the_session_token_corpus() {
         .unwrap()
         .filter_map(|entry| String::from_utf8(fs::read(entry.unwrap().path()).unwrap()).ok())
         .collect();
-    let keys = [keys(Hs256), keys(Rs256)];
+    let keys = [hs256(SECRET), rs256(PRIVATE, "current")];
     let opened = seeds
         .iter()
-        .flat_map(|seed| keys.iter().map(move |signing| (seed, signing)))
-        .filter(|(seed, signing)| open_token(seed, Session, signing, at(0)).is_ok())
+        .filter(|seed| {
+            keys.iter()
+                .any(|signing| open_token(seed, Session, signing, at(0)).is_ok())
+        })
         .count();
     assert_eq!((seeds.len() > 100, opened), (true, 1));
 }
 
 #[test]
 fn matches_litellm_signature_byte_for_byte() {
-    assert_eq!(mint(Hs256, Session), LITELLM_HS256);
+    assert_eq!(mint(&hs256(SECRET), Session), LITELLM_HS256);
 }
 
 #[rstest]
 #[case::oversized_client_id("x".repeat(4_096), "TooLarge { size_bytes: 5853, max_bytes: 4096 }")]
 #[case::empty_client_id(String::new(), "EmptyIdentity")]
 fn refuses_to_mint(#[case] client_id: String, #[case] expected: &str) {
-    let principal = SessionPrincipal {
-        client_id,
-        ..principal()
-    };
-    let minted = mint_token(&principal, Session, &keys(Hs256), at(0), || Ok(ENTROPY));
+    let mut identity = principal();
+    identity.client_id = client_id;
+    let minted = mint_token(&identity, Session, &hs256(SECRET), at(0), || Ok(ENTROPY));
     assert_eq!(format!("{:?}", minted.unwrap_err()), expected);
 }
 
 #[test]
 fn keeps_sub_second_expiry_and_fresh_jti() {
     let now = DateTime::from_timestamp(NOW, 500_000_000).unwrap();
-    let keys = keys(Hs256);
+    let keys = hs256(SECRET);
     let random = || rand::generate(&rand::SystemRandom::new()).map(rand::Random::expose);
     let first = mint_token(&principal(), Session, &keys, now, random).unwrap();
     let second = mint_token(&principal(), Session, &keys, now, random).unwrap();
     assert_eq!(first.expires_at, now + TimeDelta::seconds(3_600));
     assert_ne!(first.token.expose_secret(), second.token.expose_secret());
     let opened = open_token(first.token.expose_secret(), Session, &keys, now).unwrap();
-    assert_eq!(
-        (opened.iat, opened.exp, opened.jti.len()),
-        (NOW, NOW + 3_600, 22)
-    );
+    assert_eq!([opened.iat, opened.exp], [NOW, NOW + 3_600]);
+    assert_eq!(opened.jti.len(), 22);
 }
 
 #[rstest]
@@ -262,11 +223,8 @@ fn keeps_sub_second_expiry_and_fresh_jti() {
 #[case::upper_case("LLM_SESSION_x", false, false)]
 #[case::empty("", false, false)]
 fn routes_by_prefix(#[case] candidate: &str, #[case] access: bool, #[case] refresh: bool) {
-    let routed = (
-        candidate.is_session_token(),
-        candidate.is_session_refresh_token(),
-    );
-    assert_eq!(routed, (access, refresh));
+    assert_eq!(candidate.is_session_token(), access);
+    assert_eq!(candidate.is_session_refresh_token(), refresh);
 }
 
 #[rstest]
