@@ -1,0 +1,102 @@
+id: B3760
+title: Cisco verdict enforcement and audit metadata
+description: >-
+  Implement final verdict logging, metadata attachment, redaction dispatch, block payloads and API-error fallback for Cisco AI Defense guardrail verdicts.
+  Build functions to attach verdict metadata to request context logs; sanitize verdicts for logging by stripping privacy-sensitive keys and recursing into nested dicts; construct blocked-response payloads; convert HTTP exceptions to decision objects; dispatch redaction to request or response surfaces; and translate API errors to block or monitor fallback action.
+  A missing action allows even when is_safe is false; an explicit unknown action normalizes to block.
+  A final BLOCK without a BLOCK policy produces no violations; WARN/REDACT/SANITIZE do not become new local actions.
+  Invalid API responses and network timeouts fall back to block or monitor based on the configured policy.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/cisco_verdict_enforcement.rs
+    - crates/betterlite-guardrails/src/cisco_verdict_enforcement/**
+  lint_tables: false
+
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1113-L1155"
+    why: "\_REDACTED_LOG_KEYS frozenset, \_sanitize_response_for_logging wrapper and \_strip_sensitive_keys recursive filtering logic that removes keys starting with underscore and known-sensitive keys (raw_request, sanitized_payload, sanitizedPayload, modified_payload, modifiedPayload) while recursing into nested dicts."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L538-L573"
+    why: "\_build_block_payload constructs a blocked-response body; \_http_exception_to_error_obj converts network/HTTP errors to decision objects."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L666-L718"
+    why: "\_log_decision attaches verdict metadata (action, is_safe, classifications, severity, rules, event_id) to request context with configurable logging on each surface."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L950-L1090"
+    why: "\_finalize_inspection extracts verdict from multiple envelope shapes, normalizes action and is_safe, sanitizes for logging, logs the decision, dispatches redaction by surface, handles missing action (allow) and unknown action (block), and falls back to block/monitor on API error or missing verdict."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1092-L1111"
+    why: "\_stash_verdict_on_request stores final verdict on request for retrieval by output hooks."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1330-L1355"
+    why: "\_apply_redaction dispatches sanitized content to request and response redaction helpers, handling incomplete rewrites."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1763-L1819"
+    why: "\_handle_api_error translates connection failures, timeouts and non-200 responses to block or monitor fallback based on configured policy, preserving upstream status/detail internally but returning normalized decision to caller."
+
+dod:
+  - text: "Block payloads are constructed with status 200 and guardrail-signed message content, matching Cisco's expected format."
+    proof: [block-payload-format]
+  - text: "HTTP exceptions (connection, timeout, non-200 status) are translated to decision objects with allow/block action and preserved error details."
+    proof: [error-decision-translation]
+  - text: "Verdict metadata (action, is_safe, classifications, severity, rules, event_id) attaches to the request when each surface is inspected, gated by configured log flags."
+    proof: [verdict-metadata-logging]
+  - text: "Sensitive keys (underscore-prefixed and raw_request, sanitized_payload, sanitizedPayload, modified_payload, modifiedPayload) are stripped recursively from verdicts before logging."
+    proof: [sensitive-key-stripping]
+  - text: "A missing action allows; an explicit unknown action normalizes to block; a missing is_safe defaults to false."
+    proof: [verdict-normalization]
+  - text: "Redaction dispatch calls _redact_mcp_input, _redact_chat_input and _redact_chat_output based on surface and sanitized content, handling incomplete rewrites."
+    proof: [redaction-dispatch]
+  - text: "API errors fall back to block or monitor based on configured fallback_mode, not based on HTTP status."
+    proof: [api-error-fallback]
+
+checks:
+  optional: []
+  commands:
+    - id: verdict-enforcement-tests
+      why: "the cisco verdict enforcement module's tests fail or do not exist"
+      run: "cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^cisco_verdict_enforcement::/) - test(replays_the_cisco_verdict_enforcement_corpus)'"
+    - id: block-payload-format
+      why: "block payloads are missing or use incorrect status/structure"
+      run: "grep -q 'fn.*_build_block_payload' crates/betterlite-guardrails/src/cisco_verdict_enforcement.rs"
+    - id: error-decision-translation
+      why: "HTTP exceptions are not translated to decision objects"
+      run: "grep -q 'fn.*_http_exception_to_error_obj' crates/betterlite-guardrails/src/cisco_verdict_enforcement.rs"
+    - id: verdict-metadata-logging
+      why: "verdict metadata is not attached to request context logs"
+      run: "grep -q 'fn.*_log_decision' crates/betterlite-guardrails/src/cisco_verdict_enforcement.rs"
+    - id: sensitive-key-stripping
+      why: "sensitive keys are not stripped from verdicts before logging"
+      run: "grep -q 'fn.*_strip_sensitive_keys' crates/betterlite-guardrails/src/cisco_verdict_enforcement.rs && grep -q '_REDACTED_LOG_KEYS' crates/betterlite-guardrails/src/cisco_verdict_enforcement.rs"
+    - id: verdict-normalization
+      why: "missing or unknown actions are not normalized correctly"
+      run: "grep -q '_normalize_action' crates/betterlite-guardrails/src/cisco_verdict_enforcement.rs"
+    - id: redaction-dispatch
+      why: "redaction is not dispatched to the correct surface handlers"
+      run: "grep -q 'fn.*_apply_redaction' crates/betterlite-guardrails/src/cisco_verdict_enforcement.rs"
+    - id: api-error-fallback
+      why: "API errors do not fall back to configured block/monitor action"
+      run: "grep -q 'fn.*_handle_api_error' crates/betterlite-guardrails/src/cisco_verdict_enforcement.rs"
+
+oracle_cases: []
+
+deviations:
+  - what: "Missing action (null in response) allows the request; unknown action strings normalize to block."
+    why: "LiteLLM permits null action, treating it as allow; any unrecognized action is treated as block, not as a distinct unknown category."
+  - what: "API errors (timeout, connection failure, non-200 status) fall back to configured fallback_mode (block or monitor), not based on HTTP status code."
+    why: "LiteLLM applies the same fallback_mode to all classes of API error; status code alone does not determine the action."
+
+out_of_scope:
+  - "The configuration model for fallback_mode and log flags; owned by B3759."
+  - "The request/response redaction helpers (_redact_mcp_input, _redact_chat_input, _redact_chat_output); owned by B3757."
+  - "The verdict envelope extraction and normalization helpers (_unwrap_verdict_envelope, _extract_jsonrpc_error, _normalize_action, _extract_sanitized_text, _extract_sanitized_messages, _extract_sanitized_mcp_arguments, _extract_masked_entity_count); owned by B3758."
+  - "The shared scan/verdict records and _ScanContext; owned by B3759."
+  - "MCP tool response text replacement (_set_mcp_tool_response_text); owned by B3761."
+  - "The guardrail-standard logging helper (add_standard_logging_guardrail_information_to_request_data); external dependency F."
+
+pitfalls:
+  - "The _REDACTED_LOG_KEYS set must include all five keys: raw_request, sanitized_payload, sanitizedPayload, modified_payload, modifiedPayload; a typo or missing key leaves secrets in logs."
+  - "Recursion in _strip_sensitive_keys must descend into all nested dicts; MCP verdicts wrap the verdict under result, so a shallow strip leaves result.raw_request intact."
+  - "A missing action field in the response is distinct from an explicit null or 'allow' string; the first allows, the second allows, the third allows, but an unknown string like 'unknown' blocks."
+  - "Incomplete redaction rewrites (only some parts updated) must not be treated as full success; store the incomplete flag and let the verdict engine decide whether to return a partially-redacted response or fall back to block."
+  - "Network timeouts and HTTP errors like 502/503/504 use the same fallback_mode, not distinct policies based on the error type."
+
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

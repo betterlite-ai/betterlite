@@ -39,7 +39,6 @@ description: >-
   plus 66 error-helper lines; budget 350 implementation and 450 tests/config/oracle/fuzz.
 scope:
   paths:
-    - crates/betterlite-logging/src/lib.rs
     - crates/betterlite-logging/src/{collector_producer,spend_error}.rs
     - crates/betterlite-logging/src/{collector_producer,spend_error}/**
     - crates/betterlite-config/src/lib.rs

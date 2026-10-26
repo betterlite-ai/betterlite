@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Prisma AIRS scan transport and verdicts
 status: todo
 depends_on: [B3787, B173]
-file: null
+file: tasks/B3786-prisma-scan.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py"
 parent: B108

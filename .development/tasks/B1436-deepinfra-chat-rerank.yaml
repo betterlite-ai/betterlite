@@ -52,6 +52,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,deepinfra}.rs
+    - crates/betterlite-openai/src/deepinfra.rs
     - crates/betterlite-openai/src/deepinfra/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/deepinfra_payload.rs

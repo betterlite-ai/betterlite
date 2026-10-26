@@ -1,0 +1,193 @@
+id: B4055
+title: Bitbucket prompt transport and templates
+description: >-
+  Build Bitbucket client for file acquisition and template manager for prompt loading and rendering.
+  The client handles app-password and bearer-token authentication, path validation, response fallback
+  (text or base64 decoded), and status code distinctions. The template manager loads .prompt files,
+  parses YAML frontmatter, and renders templates in a sandboxed Jinja2 environment. Keep Bitbucket's
+  behavior distinct from dotprompt: YAML parsing errors erase metadata rather than failing, role prefixes
+  are case-insensitive, and blank lines in templates are dropped during parsing. Preserve branch default "main",
+  non-text base64-or-text fallback, and 404/401/403 distinctions. Implement list_templates to enumerate cached
+  templates. Reject ".." path segments and "?" and "#" characters; then quote path segments separately.
+  The default API base is "https://api.bitbucket.org/2.0", but the override uses config key "" (empty string),
+  not the documented "base_url". Basic auth requires both auth_method and username; otherwise bearer auth is used.
+  Fuzz these external bytes and the YAML parser; do not silently fix the empty-key behavior.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-prompts/src/bitbucket_client.rs
+    - crates/betterlite-prompts/src/bitbucket_client/**
+    - crates/betterlite-prompts/src/bitbucket_prompt_manager.rs
+    - crates/betterlite-prompts/src/bitbucket_prompt_manager/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_client.py#L1-L12
+    why: Imports and type definitions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_client.py#L39-L103
+    why: _sanitize_file_path path validation and BitBucketClient constructor with auth setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_client.py#L104-L145
+    why: get_file_content with raw/JSON fallback and HTTP error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L1-L52
+    why: Imports and BitBucketPromptTemplate construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L54-L98
+    why: BitBucketTemplateManager construction and _load_prompt_from_bitbucket.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L99-L165
+    why: _load_prompt_from_bitbucket, _parse_prompt_file, _parse_yaml_basic, render_template.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L176-L182
+    why: get_template and list_templates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/README.md
+    why: Documentation and configuration examples.
+dod:
+  - text: BitBucketClient accepts workspace, repository and access_token as required config; branch defaults to "main", base_url defaults to "https://api.bitbucket.org/2.0".
+    proof: [bitbucket-client-config-tests]
+  - text: BitBucketClient auth_method defaults to "token" (Bearer auth) or "basic" (with username); basic auth encodes username:access_token in base64.
+    proof: [bitbucket-client-auth-tests]
+  - text: _sanitize_file_path rejects ".." segments and "?" and "#" characters, then URL-encodes each segment separately with safe="".
+    proof: [bitbucket-client-path-tests]
+  - text: BitBucketClient.get_file_content constructs the correct src endpoint URL and distinguishes 404/401/403 errors from other HTTP errors.
+    proof: [bitbucket-client-error-tests]
+  - text: get_file_content returns text when content-type starts with "text/", else attempts base64 decode with UTF-8 fallback to raw text.
+    proof: [bitbucket-client-content-tests]
+  - text: BitBucketPromptTemplate stores template_id, content, metadata, model (from config or metadata), temperature, max_tokens, input schema and optional_params.
+    proof: [bitbucket-template-tests]
+  - text: BitBucketTemplateManager respects "prompts_path" config key, scoped relative to repository root.
+    proof: [bitbucket-manager-path-tests]
+  - text: >-
+      _parse_prompt_file splits frontmatter on --- delimiters (at start), parses YAML or falls back to _parse_yaml_basic,
+      treats empty/invalid YAML as empty metadata.
+    proof: [bitbucket-parse-tests]
+  - text: >-
+      _parse_yaml_basic parses key: value lines, handles true/false/numeric/string values,
+      and rejects comments and malformed lines.
+    proof: [bitbucket-yaml-tests]
+  - text: BitBucketTemplateManager.render_template uses ImmutableSandboxedEnvironment with Jinja2 syntax, autoescape for HTML/XML, and returns rendered string.
+    proof: [bitbucket-render-tests]
+  - text: BitBucketTemplateManager.get_template returns the cached BitBucketPromptTemplate or None.
+    proof: [bitbucket-load-tests]
+  - text: BitBucketTemplateManager.list_templates returns a list of all cached template IDs.
+    proof: [bitbucket-list-tests]
+  - text: Base URL override uses config key "" (empty string), not "base_url"; the override value replaces the default API endpoint.
+    proof: [bitbucket-base-url-empty-key]
+  - text: Client config with auth_method=basic requires username; missing username falls back to bearer auth.
+    proof: [bitbucket-auth-config-tests]
+checks:
+  optional: []
+  commands:
+    - id: bitbucket-client-config-tests
+      why: config validation or client initialization tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_client::.*config/)'
+    - id: bitbucket-client-auth-tests
+      why: authentication setup tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_client::.*auth/)'
+    - id: bitbucket-client-path-tests
+      why: path sanitization tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_client::.*path/)'
+    - id: bitbucket-client-error-tests
+      why: HTTP error handling and status code distinction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_client::.*error/)'
+    - id: bitbucket-client-content-tests
+      why: file content fetching and encoding handling tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_client::.*content/)'
+    - id: bitbucket-template-tests
+      why: BitBucketPromptTemplate construction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*template/)'
+    - id: bitbucket-manager-path-tests
+      why: path mapping and scoping tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*path/)'
+    - id: bitbucket-load-tests
+      why: prompt loading tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*load/)'
+    - id: bitbucket-parse-tests
+      why: frontmatter and file parsing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*parse/)'
+    - id: bitbucket-yaml-tests
+      why: YAML parsing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*yaml/)'
+    - id: bitbucket-render-tests
+      why: template rendering tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*render/)'
+    - id: bitbucket-list-tests
+      why: template listing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*list/)'
+    - id: bitbucket-base-url-empty-key
+      why: base URL override with empty-string config key test fails or does not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_client::.*base_url_empty_key/)'
+    - id: bitbucket-auth-config-tests
+      why: basic auth fallback and username validation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_client::.*auth_config/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      YAML parsing errors (invalid syntax, missing dependencies) result in empty metadata rather than
+      failing the prompt load. Invalid YAML in _parse_yaml_basic silently skips malformed lines instead of stopping.
+    why: LiteLLM does the same to make repository corruption non-fatal; it falls back to empty metadata and continues.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L129-L137
+  - what: Role prefixes in templates (System:, User:, Assistant:) are matched case-insensitively during message parsing.
+    why: LiteLLM uses case-insensitive prefix matching; line.lower().startswith() at the pinned commit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L341-L370
+  - what: Blank lines in template content are skipped during message parsing (stripped lines that are empty are skipped).
+    why: LiteLLM treats blank lines as separators and skips them during parsing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L335-L338
+  - what: >-
+      Base URL override is read from config key "" (empty string), not "base_url" as documented;
+      betterlite preserves this as-is without correction.
+    why: LiteLLM behavior at the pinned commit; this is a quirk in the source code that users have adapted to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_client.py#L79
+  - what: >-
+      Basic auth requires both auth_method="basic" and a non-empty username;
+      if username is missing, falls back to bearer token auth.
+    why: LiteLLM checks both conditions before applying basic auth; missing username silently uses bearer auth instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_client.py#L92
+out_of_scope:
+  - >-
+    BitBucketClient.list_files, get_repository_info, test_connection, get_branches,
+    get_file_metadata, close: no caller at the pin in the prompt compilation flow.
+  - >-
+    BitBucketPromptTemplate.__repr__: no caller at the pin in runtime paths.
+  - >-
+    BitBucketPromptManager and all its methods (integration_name, prompt_manager,
+    get_prompt_template, pre_call_hook, post_call_hook, get_available_prompts, reload_prompts,
+    should_run_prompt_management, _compile_prompt_helper, async_compile_prompt_helper,
+    get_chat_completion_prompt, async_get_chat_completion_prompt, _parse_prompt_to_messages):
+    owned by B4056 (the Bitbucket compiler task), not this transport task.
+pitfalls:
+  - >-
+    _sanitize_file_path must reject ALL occurrences of "..", not just one;
+    it splits on "/" and checks each part for equality with the literal string "..".
+  - >-
+    _sanitize_file_path must also reject any path containing "?" or "#" characters
+    before processing; these are URL special characters that cannot be safely encoded.
+  - >-
+    _sanitize_file_path encodes each segment separately using urllib.parse.quote with safe="",
+    so "/" itself gets encoded in segments (e.g., "a/b" encodes to "a%2Fb").
+  - >-
+    get_file_content checks content-type header: if it starts with "text/", return response.text directly;
+    otherwise attempt base64 decode with UTF-8 fallback to raw text.
+  - >-
+    BitBucketClient.__init__ reads base_url from config key "" (empty string), not "base_url";
+    the override completely replaces the default "https://api.bitbucket.org/2.0".
+  - >-
+    Basic auth requires auth_method="basic" AND a non-empty username;
+    if either is missing, bearer token auth is used instead.
+  - >-
+    Basic auth encodes the string "username:access_token" in base64,
+    then sets Authorization header to "Basic <encoded>".
+  - >-
+    Bearer auth sets Authorization header to "Bearer <access_token>"
+    (default when auth_method is not "basic" or username is missing).
+  - >-
+    ImmutableSandboxedEnvironment from jinja2.sandbox blocks attribute traversal and __class__ access;
+    normal {{ var }} substitution works but RCE payloads are caught.
+  - >-
+    _parse_prompt_file checks frontmatter start with --- and splits on the second ---,
+    preserving content after it exactly; missing second --- treats the whole file as template content.
+  - >-
+    _parse_yaml_basic splits on ":" character only once per line (split(':', 1)),
+    so keys or values with colons work correctly.
+  - >-
+    Role prefix matching uses case-insensitive comparison (.lower());
+    System:, system:, SYSTEM: all match; blank lines (after strip()) are skipped.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

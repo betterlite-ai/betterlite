@@ -1,0 +1,163 @@
+id: B3786
+title: Prisma AIRS scan transport and verdicts
+description: >-
+  Build Palo Alto Networks Prisma AIRS synchronous scanning, tool-call scans and metadata/error projection.
+  The task covers the core API transport layer, error handling with permanent/transient failure distinction,
+  and tool-call scanning with name/arguments separation for non-MCP tool formats.
+
+  Core transport methods:
+  - `_call_panw_api`: HTTP POST to the AIRS v1/scan/sync/request endpoint with payload construction,
+    profile handling, redirects disabled, and error classification into permanent (401, 403, 4xx except 429, profile errors) and transient (429, 5xx, network/timeout) categories. Fail-open returns
+    `{"action": "block", "_is_transient": true}` for transient errors unless an explicit permanent error
+    override is set; permanent errors and missing-call-id return `_always_block: true`.
+    MCP tool_events are allowed without a call_id; all other paths remain fail-closed.
+  - `_get_mcp_server_name`: Resolve MCP server display name from request_data fields or the MCP registry,
+    returning "unknown" on any lookup failure without raising exceptions.
+  - `_get_masked_text`: Extract either prompt_masked_data or response_masked_data (keyed by is_response)
+    from the scan result, returning None if absent or not a dict.
+
+  Error handling and metadata methods:
+  - `_build_error_detail`: Construct LiteLLM-compatible error response with action type (Prompt/Response),
+    category, code suffix (_blocked or _response_blocked), rendered violation message and scan fields.
+    Omit response_masked_data from client-visible details; prompt_masked_data is retained per LIT-5638.
+  - `_record_scan_id`: Add the scan_id to request metadata headers for audit/observability via
+    add_guardrail_scan_id, at the pre_call or post_call stage as specified.
+  - `_handle_api_error_with_logging`: Distinguish _always_block (config_error, permanent client/request errors)
+    from _is_transient (rate-limit, server errors, network failures). Log standard guardrail information and
+    raise HTTPException(500) for permanent errors; for transient errors with fallback_on_error='allow',
+    log a warning, add the guardrail to applied-guardrails header and return (allow unscanned).
+    Otherwise raise guardrail_scan_error. Keep the source's distinction between config errors and scan failures.
+  - `_prepare_metadata_from_request`: Extract app_name (user-provided, prefixed with LiteLLM-),
+    profile_name, profile_id, user_ip (from user_metadata or requester_metadata.user_ip), app_user,
+    user and model from request_data, building a metadata dict for _call_panw_api.
+    litellm_trace_id is pulled from data.litellm_trace_id, user_metadata.litellm_trace_id,
+    user_metadata.trace_id or requester_metadata.litellm_trace_id in priority order (the proxy's x-litellm-trace-id
+    header arrives as trace_id, not litellm_trace_id).
+
+  Tool-call scanning:
+  - `_scan_tool_calls_for_guardrail`: Iterate tool_calls, extracting name and arguments via B3787's
+    _get_tool_call_function, scanning the newline-separated name+args string via _call_panw_api.
+    On permanent/transient error, call _handle_api_error_with_logging.
+    On block, raise HTTPException(400); on allow, apply masked arguments if present and
+    mask_request/response_content allows it. Tool names and arguments are plain text (AIRS tool_event
+    schema only accepts ecosystem: mcp), so scanning does not require the tool-event structure
+    and name-only calls without arguments are still scanned for policy firing.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/panw_prisma_airs.rs
+    - crates/betterlite-guardrails/src/panw_prisma_airs/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L334-L593
+    why: "_call_panw_api: full HTTP transport, payload construction, profile handling, error classification"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L555-L586
+    why: "_get_mcp_server_name: MCP registry lookup with graceful fallback"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L587-L593
+    why: "_get_masked_text: extract masked data from scan result by key"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L722-L758
+    why: "_build_error_detail: error response construction with category, code, rendered message"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L760-L771
+    why: "_record_scan_id: add scan ID to headers via add_guardrail_scan_id"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L773-L838
+    why: "_handle_api_error_with_logging: permanent vs transient error handling, fallback_on_error='allow' logic"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L840-L883
+    why: "_prepare_metadata_from_request: metadata extraction with priority order for trace_id"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1481-L1549
+    why: "_scan_tool_calls_for_guardrail: tool call iteration, scanning, error handling, and masking"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L163-L252
+    why: "PanwPrismaAirsHandler constructor and configuration defaults for timeout, app_name, fallback_on_error"
+
+dod:
+  - text: "_call_panw_api builds and sends payload with profile_name/profile_id (metadata priority), app_name (LiteLLM prefix), user_ip, litellm_trace_id and app_user, posts to v1/scan/sync/request with follow_redirects=False, validates response format and parses action/category."
+    proof: [panw-transport-tests]
+  - text: "HTTP permanent errors (401, 403, 4xx except 429, profile errors) set _always_block=true; transient errors (429, 5xx, timeout, network) set _is_transient=true; missing call_id blocks unless ecosystem=mcp tool_event."
+    proof: [panw-error-classification-tests]
+  - text: "_get_mcp_server_name resolves from request_data.mcp_server_name, request_data.server_name or global MCP registry, never raising, returning 'unknown' on any failure."
+    proof: [panw-mcp-name-tests]
+  - text: "_get_masked_text returns the data subfield from response_masked_data (is_response=true) or prompt_masked_data (is_response=false), None if missing or not a dict."
+    proof: [panw-masked-text-tests]
+  - text: "_build_error_detail omits response_masked_data from client-visible details, retains prompt_masked_data, builds code panw_prisma_airs_blocked or panw_prisma_airs_response_blocked, renders violation_message_template."
+    proof: [panw-error-detail-tests]
+  - text: "_record_scan_id calls add_guardrail_scan_id with guardrail_name, provider, stage (pre_call or post_call) and scan_id from result."
+    proof: [panw-scan-id-tests]
+  - text: "_handle_api_error_with_logging raises HTTPException(500) for _always_block, allows unscanned (with header) on transient + fallback_on_error='allow', otherwise raises HTTPException(500) with guardrail_scan_error."
+    proof: [panw-error-handling-tests]
+  - text: "_prepare_metadata_from_request extracts user, model, profile_name, profile_id, user_ip, app_name (LiteLLM- prefix), app_user; trace_id checked in order: data.litellm_trace_id, user_metadata, user_metadata.trace_id, requester_metadata.litellm_trace_id."
+    proof: [panw-metadata-tests]
+  - text: "_scan_tool_calls_for_guardrail iterates tool_calls, calls B3787._get_tool_call_function, scans newline-separated name+args, records scan_id, applies masking (allow+masked_args or block+mask_*_content), raises HTTPException(400) on block."
+    proof: [panw-tool-scan-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: panw-transport-tests
+      why: "HTTP API call construction, payload serialization, or request configuration is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_scan_transport($|::)/)'
+    - id: panw-error-classification-tests
+      why: "HTTP error classification, _always_block/_is_transient assignment, or permanent/transient logic is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_scan_error_classification($|::)/)'
+    - id: panw-mcp-name-tests
+      why: "MCP server name resolution or fallback to 'unknown' is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_scan_mcp_name($|::)/)'
+    - id: panw-masked-text-tests
+      why: "Masked text extraction from response_masked_data or prompt_masked_data is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_scan_masked_text($|::)/)'
+    - id: panw-error-detail-tests
+      why: "Error detail construction, response_masked_data exclusion, or prompt_masked_data inclusion is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_scan_error_detail($|::)/)'
+    - id: panw-scan-id-tests
+      why: "Scan ID recording via add_guardrail_scan_id is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_scan_scan_id($|::)/)'
+    - id: panw-error-handling-tests
+      why: "Permanent/transient error handling or fallback_on_error='allow' logic is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_scan_error_handling($|::)/)'
+    - id: panw-metadata-tests
+      why: "Metadata extraction, trace_id priority resolution, or profile handling is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_scan_metadata($|::)/)'
+    - id: panw-tool-scan-tests
+      why: "Tool call scanning, function name/arguments extraction, or scan error handling is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_scan_tool_call($|::)/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Permanent errors with allow fallback (transient + fallback_on_error='allow') log a warning but allow the request through without scanning. Only transient errors respect the fallback setting; permanent config/request errors always block."
+    why: "LiteLLM distinguishes configuration errors (permanent, fail-closed) from API unavailability (transient, fallback to allow if configured). Missing call_id outside MCP tool_events is permanent."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L797-L838
+  - what: "response_masked_data is omitted from the client-visible error detail; prompt_masked_data is included. This prevents the caller from recovering the masked response content when the policy declines to deliver it."
+    why: "The model's generation (response_masked_data) is the operator's policy boundary; returning it defeats the blocking intent. The caller's input (prompt_masked_data) is diagnostically valuable per LIT-5638."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L155-L161
+
+out_of_scope:
+  - "Content extraction from messages and responses (belongs to B3787 _extract_text_from_messages, _extract_text_from_content_list, _extract_response_text, _extract_text_from_sse_bytes, _extract_text_from_streaming_events)"
+  - "Content masking and MCP masking helpers (belongs to B3787 _mask_content_list, _apply_mcp_masking, _apply_masking_to_messages, _apply_masking_to_response)"
+  - "Tool call helper functions (belongs to B3787 _get_tool_call_function, _set_tool_call_arguments, _masked_tool_call_arguments)"
+  - "Message selection for unified scanning (belongs to B3789 _message_texts, _get_latest_user_text_indices, _reasoning_item_text_indices, _text_source_message_indices)"
+  - "Hook lifecycle and orchestration (belongs to B3788 async_pre_call_hook, async_post_call_success_hook, async_post_call_streaming_iterator_hook)"
+  - "MCP server lookup and observation headers (U1/U3/U4, unresolved)"
+
+pitfalls:
+  - "HTTP status 400 from PANW API is permanent and blocks (fail-closed) for content/tool_event validation errors; wrap detailed diagnostics including tool_event.metadata and input length. 401/403/profile errors also block despite being potentially transient in deployments — keep the fail-closed semantics."
+  - "follow_redirects=False must be passed through to httpx to prevent redirect attacks; the B173 AsyncHTTPHandler wrapper may not expose it directly, requiring fallback to async_client.client.post."
+  - "Masking precedence: allow+masked_args applies masks regardless of mask_*_content flags, since allowed content is transformed on policy instructions. Block respects mask_*_content; if both are false, raise the block exception."
+  - "Tool name and arguments are scanned as plain text separated by newline (name\nargs), not as AIRS tool_event schema, because OpenAI tool calls are not the MCP format ecosystem=mcp requires. A call with no arguments is still scanned so tool-name policies fire."
+  - "trace_id priority order: data.litellm_trace_id > user_metadata.litellm_trace_id > user_metadata.trace_id (from x-litellm-trace-id header) > requester_metadata.litellm_trace_id. The proxy stores header values as trace_id, not litellm_trace_id."
+  - "app_name from metadata is prefixed with 'LiteLLM-' per-request, but the handler's app_name is already prefixed if user-supplied; do not double-prefix in _call_panw_api."
+  - "Calls B173's get_async_httpx_client(llm_provider=httpxSpecialProvider.GuardrailCallback) and accesses async_client.client for direct httpx.AsyncClient control."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

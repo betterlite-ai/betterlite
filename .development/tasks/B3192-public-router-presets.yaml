@@ -1,0 +1,123 @@
+id: B3192
+title: Public router presets and scorer defaults
+description: >-
+  Build GET `/public/autorouter_presets`, `/public/complexity_router/scorer_defaults` and `/public/complexity_router/fuse_presets`
+  in `betterlite-server::public_endpoints::router_presets`.
+
+  The scorer_defaults endpoint returns the three baseline collections the complexity router ships with: `DEFAULT_DIMENSION_WEIGHTS`,
+  `DEFAULT_TIER_BOUNDARIES` and `DEFAULT_TOKEN_THRESHOLDS` from B328.
+  The fuse_presets endpoint calls B353's `get_fuse_presets` and returns its catalog.
+  The autorouter_presets endpoint fetches from `litellm_settings.autorouter_presets_url` (env override `LITELLM_AUTOROUTER_PRESETS_URL`,
+  default `https://raw.githubusercontent.com/BerriAI/litellm/main/litellm/proxy/public_endpoints/autorouter_presets.json`)
+  with a five-second timeout using B173's pooled client, caching the result once per process, and falling back to the bundled catalog
+  on any failure with a warning logged. Local-only mode activates only for case-insensitive `LITELLM_LOCAL_AUTOROUTER_PRESETS=true`;
+  empty remote maps count as a failure, while bundled-map decode errors propagate.
+
+  Add a betterlite-config section (crates/betterlite-config/src/sections/public_router_presets.rs) to load
+  litellm_settings.autorouter_presets_url with LITELLM_AUTOROUTER_PRESETS_URL env override and LITELLM_LOCAL_AUTOROUTER_PRESETS
+  for local-only mode. The config loader resolves both env vars so router_presets.rs only reads the resolved values through its constructor.
+
+  The AutoRouterPresetTiers record enforces exactly the four built-in tiers `SIMPLE`, `MEDIUM`, `COMPLEX` and `REASONING` with strict validation
+  (`extra="forbid"`), since a tier name the dashboard cannot apply would grey out or crash the preset picker. The AutoRouterPresetConfig
+  allows forward-compatible extra fields elsewhere (`extra="allow"`). Preserve the five complete preset records in the bundled JSON as data;
+  their model names do not create provider execution dependencies.
+scope:
+  paths:
+    - crates/betterlite-server/src/public_endpoints/router_presets.rs
+    - crates/betterlite-server/src/public_endpoints/router_presets/**
+    - tools/oracle/cases/public/autorouter-presets.yaml
+    - tools/oracle/cases/public/scorer-defaults.yaml
+    - tools/oracle/cases/public/fuse-presets.yaml
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/autorouter_presets.rs
+    - crates/betterlite-server/fuzz/corpus/autorouter_presets/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/public-router-presets-*
+    - crates/betterlite-config/src/sections/public_router_presets.rs
+    - crates/betterlite-config/src/sections/public_router_presets/**
+    - tools/oracle/helpers/b3192.py
+    - tools/oracle/helpers/b3192/**
+    - tools/oracle/src/helpers/server/b3192.rs
+    - tools/oracle/src/helpers/server/b3192/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L422-L441
+    why: The get_complexity_scorer_defaults handler and its return type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L444-L449
+    why: The get_public_fuse_presets handler that delegates to B353's get_fuse_presets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L495-L515
+    why: The adapter and remote fetch function with httpx client and five-second timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L518-L572
+    why: The resolver, cache, and public endpoint for one-time preset fetch with bundled fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/public_endpoints/public_endpoints.py#L76-L123
+    why: All four preset and default record types with tier validation and forward-compatible extra fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/autorouter_presets.json
+    why: The bundled five-preset catalog for local fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L440-L465
+    why: The three baseline defaults (DEFAULT_DIMENSION_WEIGHTS, DEFAULT_TIER_BOUNDARIES, DEFAULT_TOKEN_THRESHOLDS).
+dod:
+  - text: The scorer_defaults endpoint returns the three baseline defaults from B328 with the same structure LiteLLM uses.
+    proof: [oracle, settings-tests]
+  - text: The fuse_presets endpoint calls B353's get_fuse_presets and returns its catalog unchanged.
+    proof: [oracle]
+  - text: The autorouter_presets endpoint fetches from litellm_settings.autorouter_presets_url, falls back to bundled on any failure, and caches once per process.
+    proof: [oracle, fallback-tests]
+  - text: LITELLM_LOCAL_AUTOROUTER_PRESETS=true (case-insensitive) forces local-only mode; any other value fetches remotely.
+    proof: [behavior-tests, settings-tests]
+  - text: LITELLM_AUTOROUTER_PRESETS_URL overrides the default remote URL through litellm_settings.autorouter_presets_url.
+    proof: [settings-tests]
+  - text: A five-second timeout on the remote fetch uses B173's pooled client.
+    proof: [behavior-tests, concurrent-tests]
+  - text: AutoRouterPresetTiers enforces exactly the four built-in tiers with strict validation; unknown tiers are rejected.
+    proof: [corpus-replay]
+  - text: AutoRouterPresetConfig allows forward-compatible extra fields on the complexity_router_config.
+    proof: [corpus-replay]
+  - text: Empty remote catalogs and invalid tier structures fail and trigger bundled fallback; catalog decode errors propagate.
+    proof: [behavior-tests, fallback-tests]
+  - text: The autorouter preset decoder fuzz target rejects oversize and malformed input within limits and replays corpus files without panic.
+    proof: [fuzz-corpus, corpus-replay]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: the fetch, cache, fallback or timeout behavior differs from LiteLLM's
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::router_presets::/)'
+    - id: settings-tests
+      why: autorouter_presets_url config loading or env override behavior is missing or incorrect
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::public_router_presets::/)'
+    - id: concurrent-tests
+      why: concurrent requests do not share a single fetch or timeout does not apply
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^router_presets.*concurrent/)'
+    - id: fallback-tests
+      why: fallback to bundled presets on failure or local-only mode does not work
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^router_presets.*fallback/)'
+    - id: fuzz-corpus
+      why: the autorouter preset decoder fuzz target or corpus is missing
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/autorouter_presets.rs && test -d crates/betterlite-server/fuzz/corpus/autorouter_presets
+    - id: corpus-replay
+      why: the preset decoder fuzz corpus does not replay or new seeds were not added
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/autorouter_presets/)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::router_presets::tests::replays_autorouter_presets_corpus$/)'
+oracle_cases:
+  - tools/oracle/cases/public/autorouter-presets.yaml
+  - tools/oracle/cases/public/scorer-defaults.yaml
+  - tools/oracle/cases/public/fuse-presets.yaml
+deviations: []
+out_of_scope:
+  - |
+    B353's `get_fuse_presets` implementation and the FusePresetCatalog type it returns; B3192
+    only calls and serializes the result.
+  - |
+    B328's complexity router constants (DEFAULT_DIMENSION_WEIGHTS, DEFAULT_TIER_BOUNDARIES, DEFAULT_TOKEN_THRESHOLDS);
+    this task reads them once at request time.
+  - |
+    B002's config loader integration; this task only supplies the new betterlite-config section that types the URLs and env overrides.
+pitfalls:
+  - The four tiers `SIMPLE`, `MEDIUM`, `COMPLEX`, `REASONING` are required and case-sensitive; a catalog with unknown tiers rejects at the type level.
+  - Remote fetch empties are treated as failures and trigger fallback, not as valid empty catalogs.
+  - LITELLM_LOCAL_AUTOROUTER_PRESETS only activates for the exact case-insensitive match to `"true"`; any other value fetches remotely, and LiteLLM does not trim whitespace.
+  - The five bundled presets are loaded once on first request with no per-request IO overhead; a cache miss re-enters the fetch/fallback loop but only once.
+  - Fuzz the remote preset decoder like any parser of untrusted bytes; the bundled catalog is trusted.
+  - The betterlite-config section must handle both LITELLM_AUTOROUTER_PRESETS_URL (override) and LITELLM_LOCAL_AUTOROUTER_PRESETS (local mode), with no trimming of whitespace.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

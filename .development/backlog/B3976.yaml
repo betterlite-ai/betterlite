@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Rubrik configuration webhook transport and retry queue
 status: todo
 depends_on: [B002, B173, B256]
-file: null
+file: tasks/B3976-rubrik-delivery.yaml
 covers:
   - "litellm/integrations/rubrik.py"
 parent: B114

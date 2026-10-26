@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Construct Redis, Sentinel and Cluster clients and pools
 status: todo
 depends_on: [B002, B244, B4320, B4321, B4322]
-file: null
+file: tasks/B4323-redis-client-factories.yaml
 covers:
   - "litellm/_redis.py"
 parent: B126

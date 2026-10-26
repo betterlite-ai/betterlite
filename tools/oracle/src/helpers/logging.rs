@@ -1,5 +1,8 @@
 helper_group! {
-    "audit_attribution" => audit_attribution, "b203" => b203,
+    "audit_attribution" => audit_attribution, "b203" => b203, "b3843" => b3843,
+    "b3845" => b3845, "b3846" => b3846, "b3849" => b3849, "b3901" => b3901, "b3902" => b3902,
+    "b3960" => b3960, "b3963" => b3963, "b3964" => b3964, "b3976" => b3976, "b3978" => b3978,
+    "b3993" => b3993, "b3996" => b3996, "b4000" => b4000, "b4002" => b4002,
     "batch_delivery" => batch_delivery, "billing_context" => billing_context,
     "callback_registry" => callback_registry, "callback_validation" => callback_validation,
     "collector_policy" => collector_policy, "datadog_tags" => datadog_tags,

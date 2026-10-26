@@ -1,0 +1,150 @@
+id: B4569
+title: Persistent Codex provider settings and undo
+description: >-
+  Build TOML-based Codex provider configuration with comment preservation, fingerprint-based ownership
+  and safe undo. Stage the receipt JSON before the settings file so that settings-write failures leave
+  a usable receipt for retry; on settings failure, restore the receipt to its prior state and discard
+  the staged settings.
+
+  The Codex agent reads base_url and model from its home/config.toml. configure_codex_settings injects
+  the proxy gateway URL, an Authorization header with the API key, and the selected model. Ownership
+  is tracked per field using SHA256 fingerprints: a field is ours if its current fingerprint matches
+  what we wrote. Unconfigure restores only our owned fields, leaves unknown fields untouched, and
+  classifies each field as restored (changed), kept (unchanged), or removed (file deleted if empty).
+
+  Receipt files live in ~/.litellm/codex_configure_<hash>.json, keyed by the resolved settings path,
+  so each settings file gets its own undo receipt. require_safe_codex does a version preflight:
+  the Codex CLI must be 0.129.0 or newer (stable) because older versions allow repository settings
+  to redirect authenticated requests.
+
+  Snapshots are TOML fragments with structure {value: <thing>}, so fingerprints hash both the value
+  and the "missing" sentinel identically across multiple reads. The Authorization header is built
+  directly from the api_key parameter and written into settings.toml as Bearer <api_key>, so this
+  entire task is the receipt/fingerprint machinery for installing and later removing that credential
+  from the user's Codex config.
+
+  Preserve comment and whitespace preservation from tomlkit (no re-parsing), the SHA256 fingerprint
+  algorithm, the receipt-first-then-settings commit order, rollback-on-failure paths with receipt
+  restoration, field classification (restored/kept/file_removed) on unconfigure, and the 0.129.0
+  version gate.
+scope:
+  paths:
+    - tools/management-cli/src/codex_settings.rs
+    - tools/management-cli/src/codex_settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_settings.py#L58-L79
+    why: Receipt path derivation from settings path, TOML structure validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_settings.py#L90-L118
+    why: Snapshot extraction, fingerprinting, TOML modification with _with.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_settings.py#L99-L101
+    why: Fingerprint determinism; SHA256 of "missing" sentinel vs parsed value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_settings.py#L121-L140
+    why: Receipt structure and validation; read/validate/reject invalid receipts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_settings.py#L143-L160
+    why: Codex version check; 0.129.0 gate and version parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_settings.py#L187-L271
+    why: configure_codex_settings; receipt-first-then-settings staging, rollback on settings failure, receipt restoration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_settings.py#L274-L306
+    why: unconfigure_codex_settings; restored/kept/file_removed classification and restore-only-owned behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L129-L138
+    why: codex_proxy_provider returns frozen mapping; Authorization header field is provider_config dependent.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_settings.py#L27-L33
+    why: "Owned TOML paths: model_provider, model, profile, model_providers.litellm; version constant."
+dod:
+  - text: >-
+      Case receipt_path_deterministic verifies that codex_configure_state_path returns the same path
+      for the same settings_path across multiple calls. Case snapshot_missing_sentinel verifies that
+      _fingerprint returns the same hash for None (missing) as for the string "missing". Case
+      fingerprint_determinism verifies that _fingerprint returns the same hash for the same TOML value
+      across multiple invocations.
+    proof: [codex-settings-fingerprinting]
+  - text: >-
+      Case snapshot_extracted_correct and snapshot_restored_modified verify that _snapshot extracts the
+      correct value from nested TOML paths and that modifications apply correctly to the document.
+      Case snapshot_missing_returns_none verifies None for missing paths.
+    proof: [codex-settings-fingerprinting]
+  - text: >-
+      Case version_gate_met verifies that require_safe_codex succeeds for version 0.129.0 and newer.
+      Case version_gate_old_rejected verifies that 0.128.9 is rejected. Case version_not_installed
+      verifies that missing Codex (codex --version fails) raises CodexSettingsError.
+    proof: [codex-settings-version-check]
+  - text: >-
+      Case configure_receipt_staged_first verifies that configure_codex_settings stages the receipt JSON
+      before the settings TOML. Case configure_settings_failure_discards_settings_keeps_receipt verifies
+      that if the settings commit fails, the receipt remains and the settings are discarded. Case
+      configure_settings_rollback_restores_receipt verifies that if settings commit fails and an earlier
+      receipt existed, it is restored and receipt-restore failures halt the rollback with a specific error.
+    proof: [codex-settings-configure-flow]
+  - text: >-
+      Case configure_builds_authorization_header verifies that the Authorization header is set to
+      f"Bearer {api_key}" and appears in the provider config at model_providers.litellm.http_headers.
+      Case configure_selects_model_and_provider verifies that model_provider is set to CODEX_PROXY_PROVIDER
+      and model is set to the selected model name.
+    proof: [codex-settings-configure-flow]
+  - text: >-
+      Case unconfigure_restored_classification verifies that fields owned by an earlier configure
+      (fingerprint matches) that differ from the current document are listed as restored. Case
+      unconfigure_kept_classification verifies that owned fields that still match their receipt
+      snapshot are listed as kept. Case unconfigure_file_removed_classification verifies that
+      file_removed is true only when the resulting document is empty and the file did not exist before.
+    proof: [codex-settings-unconfigure-outcome]
+  - text: >-
+      Case preflight_codex_validates_version verifies that preflight_codex_settings runs the version check.
+      Case preflight_codex_validates_toml verifies that it parses and validates the TOML structure
+      (model_providers must be a table). Case preflight_codex_validates_receipt verifies that it checks
+      for a valid existing receipt.
+    proof: [codex-settings-preflight]
+checks:
+  optional: []
+  commands:
+    - id: codex-settings-fingerprinting
+      why: Receipt path derivation, snapshot extraction, or fingerprint determinism is missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:receipt_path_deterministic|snapshot_missing_sentinel|fingerprint_determinism|snapshot_extracted_correct|snapshot_restored_modified|snapshot_missing_returns_none)/)'
+    - id: codex-settings-version-check
+      why: Version check against 0.129.0 or version command parsing is missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:version_gate_met|version_gate_old_rejected|version_not_installed)/)'
+    - id: codex-settings-configure-flow
+      why: Receipt staging order, settings commit failure handling, or Authorization header building is incorrect.
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:configure_receipt_staged_first|configure_settings_failure_discards_settings_keeps_receipt|configure_settings_rollback_restores_receipt|configure_builds_authorization_header|configure_selects_model_and_provider)/)'
+    - id: codex-settings-unconfigure-outcome
+      why: Unconfigure does not correctly classify restored, kept or file_removed fields.
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:unconfigure_restored_classification|unconfigure_kept_classification|unconfigure_file_removed_classification)/)'
+    - id: codex-settings-preflight
+      why: Preflight validation for version, TOML structure or receipt is missing or does not fail correctly on invalid input.
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:preflight_codex_validates_version|preflight_codex_validates_toml|preflight_codex_validates_receipt)/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Command registration and CLI integration. B4571 owns configure_codex and reconfigure_codex commands;
+    B4572 owns unconfigure_codex. This task builds the configuration logic only.
+  - Management client HTTP calls to the proxy. The CLI dispatches configure operations with injected
+    HTTP clients, not direct calls to server route handlers.
+  - Claude settings configuration, merge logic and receipts. B4562 and B4563 own those; this task
+    handles only Codex (OpenAI-style) provider settings in TOML.
+pitfalls:
+  - >-
+    Fingerprints must hash the "missing" sentinel (JSON null or a string "missing") the same way as absent values,
+    so restore-only-owned behavior works correctly across Codex versions.
+  - >-
+    Receipt paths are keyed by the resolved settings_path, so symlinks and relative paths must be resolved before hashing.
+    Multiple receipts for the same logical config are an error.
+  - >-
+    The Authorization header is built directly from api_key without additional escaping or encoding; the value must
+    survive TOML parsing and be read back byte-for-byte by Codex.
+  - >-
+    Commit order matters: stage receipt first, then settings, so that a settings-commit failure leaves a usable receipt
+    for retry. Rollback must restore the receipt to its prior state if settings fails.
+  - >-
+    TOML modification preserves comments and whitespace through tomlkit; naive re-parsing or string substitution loses
+    both and corrupts user edits.
+  - >-
+    Unconfigure classifies fields independently: restored (changed), kept (unchanged), file_removed (whole file deleted).
+    A field in `kept` is still owned but unchanged, so no action is needed.
+  - >-
+    The 0.129.0 version gate is not negotiable; older Codex versions allow repository settings to redirect authenticated
+    requests, creating a security issue.
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0
