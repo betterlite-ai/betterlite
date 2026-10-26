@@ -46,7 +46,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/stored_ui_settings.rs
     - crates/betterlite-server/fuzz/corpus/stored_ui_settings/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/ui_settings.rs
     - crates/betterlite-config/src/ui_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/ui-settings-*
@@ -96,6 +95,6 @@ pitfalls:
   - The cache-hit path returns a dictionary without reapplying the allowlist, unlike a fresh database read.
   - scope_user_search_to_org is a persisted UI flag but is not one of the ten flags copied into general_settings.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

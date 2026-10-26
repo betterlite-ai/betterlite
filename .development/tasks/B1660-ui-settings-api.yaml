@@ -88,6 +88,6 @@ pitfalls:
   - PATCH returns stored unknown keys that GET intentionally removes, so sharing one final response sanitizer would change behavior.
   - A configured flag can shadow a successful DB patch; this endpoint does not perform the allowed-IP API's config-owned-write rejection.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

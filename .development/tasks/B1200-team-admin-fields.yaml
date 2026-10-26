@@ -224,6 +224,6 @@ pitfalls:
   - The spend check uses field presence because the stored row can lag live counters, so equal-value diffing is insufficient.
   - Removing duplicate budget windows before comparison would erase the source's raw-comparison fallback.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

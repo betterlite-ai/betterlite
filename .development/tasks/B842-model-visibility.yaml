@@ -195,6 +195,6 @@ pitfalls:
   - A wildcard's hidden row is only a candidate; a visible sibling resolved for the requested name prevents hiding it.
   - healthy_only=false cannot undo the proxy-wide setting, and an unexpected health lookup error still propagates.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

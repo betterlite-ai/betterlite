@@ -126,6 +126,6 @@ pitfalls:
   - Archived token duplicates must be collapsed before joining logs, or lifetime spend is multiplied.
   - The historical operation alone does not enforce total_spend >= spend; the floor script is a separate operator action.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

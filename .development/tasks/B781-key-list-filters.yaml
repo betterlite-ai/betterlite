@@ -246,6 +246,6 @@ pitfalls:
   - A non-admin member with /key/list permission does receive full visibility for that team in the list route.
   - A failed key-hash database query is intentionally indistinguishable from a missing hash in this helper.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

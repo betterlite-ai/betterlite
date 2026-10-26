@@ -122,6 +122,6 @@ pitfalls:
   - Deleting an agent removes its live identity while retaining the retired binding with agent_id=NULL.
   - Engine-to-Lens renaming includes index names; renaming only tables leaves the pinned catalog mismatched.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

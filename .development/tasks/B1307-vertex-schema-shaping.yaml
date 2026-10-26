@@ -90,6 +90,6 @@ pitfalls:
   - responseJsonSchema must not lose additionalProperties or expand $defs as a side effect of shared code.
   - The anyOf null pass runs before type-array conversion, so reordering those passes changes output.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1
 review_level: standard

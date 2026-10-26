@@ -130,6 +130,6 @@ pitfalls:
   - The database count includes the modified deployment if its primary rename/delete has not happened yet.
   - Replacing duplicate old names can produce duplicate new names despite first removing pre-existing new-name entries.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

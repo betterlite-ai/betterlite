@@ -116,6 +116,6 @@ pitfalls:
   - Fallthrough for non-mocked URLs must preserve exact request parameters (headers, data, json, timeout, stream, content) to avoid altering unintended calls.
   - Mock latency sleeps before returning; a zero-duration sleep still applies asyncio.sleep() and yields control, not a no-op.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

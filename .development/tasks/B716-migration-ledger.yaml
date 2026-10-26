@@ -299,6 +299,6 @@ pitfalls:
   - A baseline row has applied_steps_count=0, while interrupted-step completion requires exactly 1.
   - Whitespace-only logs qualify as completion evidence, but the guarded update still compares their original bytes.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

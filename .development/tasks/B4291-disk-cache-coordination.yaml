@@ -39,6 +39,7 @@ scope:
     - tools/oracle/helpers/b4291/**
     - tools/oracle/src/helpers/cache/b4291.rs
     - tools/oracle/src/helpers/cache/b4291/**
+    - crates/betterlite-cache/src/codec/**
   lint_tables: false
 
 references:
@@ -123,5 +124,5 @@ pitfalls:
 
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

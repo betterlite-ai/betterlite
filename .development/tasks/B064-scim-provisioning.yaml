@@ -100,6 +100,6 @@ pitfalls:
   - An absolute members replace must not be rebased onto a concurrently changed roster, or a member explicitly removed by the IdP can survive.
   - Group PATCH rereads after roster changes and can therefore return different member data from otherwise similar group PUT operations.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

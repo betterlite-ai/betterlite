@@ -101,5 +101,5 @@ pitfalls:
   - 'Agent catalog paths and file reading are relative to the module runtime location; the path construction must match the actual package layout.'
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -49,6 +49,7 @@ scope:
     - crates/betterlite-provider/src/vertex_dispatch/**
     - crates/betterlite-config/src/{env,settings}.rs
     - crates/betterlite-config/src/providers/{vertex,gemini}.rs
+    - crates/betterlite-config/src/providers/vertex/dispatch.rs
     - crates/betterlite-config/src/providers/vertex/dispatch/**
     - tools/oracle/cases/chat/vertex-gemini/**
     - tools/oracle/fixtures/vertex-gemini/**
