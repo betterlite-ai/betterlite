@@ -1,7 +1,7 @@
 id: B3061
 milestone: M4 keys, spend and management
 title: Normalize and serialize FOCUS usage records
-status: todo
+status: done
 depends_on: []
 file: tasks/B3061-focus-records.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/integrations/focus/destinations/base.py"
 parent: B073
 split_from: B073
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 199
