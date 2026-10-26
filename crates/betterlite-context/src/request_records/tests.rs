@@ -66,6 +66,13 @@ fn request_records_cases(#[case] name: &str) {
                 error,
                 Err(super::RequestRecordError::NonObjectMetadata { .. })
             ));
+            let mut string_without_span = record(r#"{"metadata":"ordinary"}"#);
+            assert!(RequestRecordProjection::safe_copy(&mut string_without_span, false).is_ok());
+            let mut string_with_span = record(r#"{"metadata":"litellm_parent_otel_span"}"#);
+            assert!(matches!(
+                RequestRecordProjection::safe_copy(&mut string_with_span, false),
+                Err(super::RequestRecordError::NonObjectMetadata { .. })
+            ));
         }
         "independent_snapshot" => {
             let input =
