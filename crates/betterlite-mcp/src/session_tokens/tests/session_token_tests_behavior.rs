@@ -154,6 +154,15 @@ fn validates_header_extensions(
     assert_eq!(opened.map(drop), expected);
 }
 
+#[test]
+fn preserves_rsa_key_selection_for_empty_detached_payload() {
+    let header =
+        URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","kid":"unknown","crit":["b64"],"b64":false}"#);
+    let candidate = format!("llm_session_{header}..AA");
+    let opened = open_token(&candidate, Session, &rs256(PRIVATE, "current"), at(0));
+    assert_eq!(opened, Err(BadSignature));
+}
+
 #[rstest]
 #[case::empty(String::new(), NotASessionToken)]
 #[case::refresh_prefix("llm_srefresh_a.b.c".to_owned(), NotASessionToken)]

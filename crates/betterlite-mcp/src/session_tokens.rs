@@ -21,7 +21,6 @@ pub const SESSION_ISSUER: &str = "litellm-mcp-gateway";
 pub const SESSION_TTL_SECONDS: i64 = 3_600;
 pub const SESSION_REFRESH_TTL_SECONDS: i64 = 1_209_600;
 pub const MAX_SESSION_TOKEN_BYTES: usize = 4_096;
-
 pub trait SessionPrefix {
     fn is_session_token(&self) -> bool;
     fn is_session_refresh_token(&self) -> bool;
@@ -36,7 +35,6 @@ impl SessionPrefix for str {
         self.starts_with(SESSION_REFRESH_PREFIX)
     }
 }
-
 impl SessionTokenKind {
     const fn wire_shape(self) -> (&'static str, i64) {
         match self {
@@ -45,7 +43,6 @@ impl SessionTokenKind {
         }
     }
 }
-
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Claims {
@@ -63,7 +60,6 @@ struct Claims {
     #[serde(skip_serializing_if = "Option::is_none")]
     team_id: Option<String>,
 }
-
 // PyJWT sorts header keys before signing, so LiteLLM's signatures cover them in this order
 #[derive(Serialize, Deserialize)]
 struct Header {
@@ -77,7 +73,6 @@ struct Header {
     #[serde(skip_deserializing)]
     typ: &'static str,
 }
-
 #[derive(Default, Deserialize)]
 #[serde(untagged)]
 enum PayloadEncoding {
@@ -87,7 +82,6 @@ enum PayloadEncoding {
     Boolean(bool),
     Other(IgnoredAny),
 }
-
 #[derive(Default, Deserialize)]
 #[serde(untagged)]
 enum CriticalHeaders {
@@ -114,7 +108,6 @@ impl Formatter for AsciiFormatter {
         Ok(())
     }
 }
-
 pub fn mint_session_token<R>(
     principal: &SessionPrincipal,
     kind: SessionTokenKind,
@@ -157,7 +150,6 @@ where
         expires_at,
     })
 }
-
 fn python_json_segment<T>(value: &T) -> Result<String, MintError>
 where
     T: Serialize,
@@ -245,19 +237,17 @@ fn verified_claims(compact: &str, keys: &SigningKeys) -> Result<Claims, OpenErro
     let (header_segment, payload_segment) = signing_input.split_once('.').ok_or(Malformed)?;
     let header: Header =
         serde_json::from_slice(&decode(header_segment)?).map_err(|_source| Malformed)?;
-    let invalid_crit = match &header.crit {
-        CriticalHeaders::Missing => false,
-        CriticalHeaders::Names(names) => {
-            names.is_empty()
-                || names.iter().any(|name| name != "b64")
-                || matches!(header.b64, PayloadEncoding::Missing)
-        }
-    };
-    if invalid_crit || matches!(header.b64, PayloadEncoding::Boolean(false)) {
+    if matches!(&header.crit, CriticalHeaders::Names(names) if names.is_empty()
+        || names.iter().any(|name| name != "b64")
+        || matches!(header.b64, PayloadEncoding::Missing))
+    {
         return Err(Malformed);
     }
     let payload = decode(payload_segment)?;
     let signature = decode(signature_segment)?;
+    if matches!(header.b64, PayloadEncoding::Boolean(false)) && !payload_segment.is_empty() {
+        return Err(Malformed);
+    }
     let message = signing_input.as_bytes();
     let (algorithm, verified) = match keys {
         SigningKeys::Symmetric(symmetric) => {
