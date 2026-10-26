@@ -55,12 +55,9 @@ pub fn sanitize_component(input: Option<&str>, fallback: &str) -> String {
     };
     let replaced = value.replace('\\', "/");
     let component = replaced.rsplit('/').next().unwrap_or_default();
-    let trimmed_component = component.trim_matches(|character: char| {
-        character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character)
-    });
-    let mut sanitized = String::with_capacity(trimmed_component.len());
+    let mut sanitized = String::with_capacity(component.len());
     let mut outside = false;
-    for raw in trimmed_component.chars() {
+    for raw in component.chars() {
         let character = if raw.is_ascii_control() { '_' } else { raw };
         let allowed = character.is_ascii_alphanumeric() || "._-".contains(character);
         if allowed || !outside {
