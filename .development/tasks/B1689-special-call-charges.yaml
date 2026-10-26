@@ -60,7 +60,6 @@ scope:
     - crates/betterlite-models/src/protocol_cost/**
     - crates/betterlite-provider/src/pricing.rs
     - crates/betterlite-provider/src/pricing/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/replicate_price.rs
     - crates/betterlite-config/src/replicate_price/**
     - crates/betterlite-config/fuzz/Cargo.toml

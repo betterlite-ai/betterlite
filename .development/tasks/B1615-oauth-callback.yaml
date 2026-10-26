@@ -35,7 +35,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/oauth_callback_query.rs
     - crates/betterlite-server/fuzz/corpus/oauth_callback_query/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/oauth_callback.rs
     - crates/betterlite-config/src/oauth_callback/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/oauth-callback-*

@@ -52,7 +52,6 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/pod_owner.rs
     - crates/betterlite-db/fuzz/corpus/pod_owner/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/spend_queue.rs
     - crates/betterlite-config/src/spend_queue/**
     - crates/betterlite-config/fuzz/Cargo.toml

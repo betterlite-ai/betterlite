@@ -38,7 +38,6 @@ scope:
   paths:
     - crates/betterlite-db/src/redis_spend.rs
     - crates/betterlite-db/src/redis_spend/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/redis-spend-*

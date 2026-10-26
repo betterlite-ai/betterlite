@@ -31,7 +31,6 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/scim_role_settings.rs
     - crates/betterlite-server/src/scim_role_settings/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/scim_role_settings.rs
     - crates/betterlite-config/src/scim_role_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/scim-role-*

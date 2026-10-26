@@ -36,7 +36,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/sso_login_query.rs
     - crates/betterlite-server/fuzz/corpus/sso_login_query/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/sso_login_entry.rs
     - crates/betterlite-config/src/sso_login_entry/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-login-entry-*

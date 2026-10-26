@@ -19,8 +19,9 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-config/src/**
     - Cargo.toml
+    - crates/betterlite-config/src/sections/content_filter_records.rs
+    - crates/betterlite-config/src/sections/content_filter_records/**
   lint_tables: false
 
 references:
@@ -54,25 +55,25 @@ checks:
   commands:
     - id: config-types-exist
       why: The guardrail configuration types are missing or incomplete
-      run: grep -q "struct ContentFilterGuardrailConfig" crates/betterlite-config/src/*.rs && grep -q "struct BlockCodeExecGuardrailConfig" crates/betterlite-config/src/*.rs && grep -q "struct HideSecretsGuardrailConfig" crates/betterlite-config/src/*.rs
+      run: grep -q -r "struct ContentFilterGuardrailConfig" crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records && grep -q -r "struct BlockCodeExecGuardrailConfig" crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records && grep -q -r "struct HideSecretsGuardrailConfig" crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records
     - id: ui-names-present
       why: The ui_friendly_name implementations are missing or incorrect
-      run: grep -q '"LiteLLM Content Filter"' crates/betterlite-config/src/*.rs && grep -q '"Block Code Execution"' crates/betterlite-config/src/*.rs && grep -q '"Hide Secrets"' crates/betterlite-config/src/*.rs
+      run: grep -q -r '"LiteLLM Content Filter"' crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records && grep -q -r '"Block Code Execution"' crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records && grep -q -r '"Hide Secrets"' crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records
     - id: detection-types-exist
       why: Detection types or the detection union is missing
-      run: grep -q "PatternDetection" crates/betterlite-config/src/*.rs && grep -q "BlockedWordDetection" crates/betterlite-config/src/*.rs && grep -q "CategoryKeywordDetection" crates/betterlite-config/src/*.rs && grep -q "CompetitorIntentDetection" crates/betterlite-config/src/*.rs
+      run: grep -q -r "PatternDetection" crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records && grep -q -r "BlockedWordDetection" crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records && grep -q -r "CategoryKeywordDetection" crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records && grep -q -r "CompetitorIntentDetection" crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records
     - id: code-action-type-exists
       why: CodeBlockActionTaken type is missing
-      run: grep -q "CodeBlockActionTaken" crates/betterlite-config/src/*.rs
+      run: grep -q -r "CodeBlockActionTaken" crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records
     - id: category-config-exists
       why: ContentFilterCategoryConfig type is missing or incomplete
-      run: grep -q "struct ContentFilterCategoryConfig" crates/betterlite-config/src/*.rs && grep -q "enabled" crates/betterlite-config/src/*.rs && grep -q "severity_threshold" crates/betterlite-config/src/*.rs
+      run: grep -q -r "struct ContentFilterCategoryConfig" crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records && grep -q -r "enabled" crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records && grep -q -r "severity_threshold" crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records
     - id: category-types-exist
       why: Category file data or intermediate types are missing
-      run: grep -q "CategoryFileData" crates/betterlite-config/src/*.rs && grep -q "ConditionalCategoryConfig" crates/betterlite-config/src/*.rs
+      run: grep -q -r "CategoryFileData" crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records && grep -q -r "ConditionalCategoryConfig" crates/betterlite-config/src/sections/content_filter_records.rs crates/betterlite-config/src/sections/content_filter_records
     - id: config-types-tests
       why: Type tests do not exist or do not pass
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^config_types::/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::content_filter_records::config_types::/)'
 
 oracle_cases: []
 
