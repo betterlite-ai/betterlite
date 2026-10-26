@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
 
@@ -15,15 +16,23 @@ fn root(source: &str) -> String {
     .server_root_path
 }
 
-#[test]
-fn defaults_to_empty_root() {
-    assert_eq!(root("{}"), "");
+#[rstest]
+#[case::root_default_empty("{}", "")]
+#[case::root_slash("SERVER_ROOT_PATH: /", "/")]
+#[case::root_prefix("SERVER_ROOT_PATH: /proxy", "/proxy")]
+#[case::root_trailing_slash("SERVER_ROOT_PATH: /proxy/", "/proxy/")]
+fn loads_root(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(root(source), expected);
 }
 
 #[test]
-fn loads_explicit_root_values() {
-    assert_eq!(root("SERVER_ROOT_PATH: /proxy"), "/proxy");
-    assert_eq!(root("SERVER_ROOT_PATH: /proxy/"), "/proxy/");
+fn reads_root_from_environment() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::from([("SERVER_ROOT_PATH".to_owned(), "/environment/".to_owned())]),
+    }
+    .load("{}")
+    .unwrap();
+    assert_eq!(config.sections.pass_through_registry.server_root_path, "/environment/");
 }
 
 #[test]

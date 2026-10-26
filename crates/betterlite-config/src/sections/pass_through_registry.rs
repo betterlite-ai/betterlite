@@ -17,12 +17,15 @@ pub struct Settings {
 impl Section for Raw {
     type Settings = Settings;
 
-    fn convert<L>(self, _lookup: &L) -> Result<Self::Settings, ConfigError>
+    fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
     where
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            server_root_path: self.server_root_path.unwrap_or_default(),
+            server_root_path: self
+                .server_root_path
+                .or_else(|| lookup.lookup("SERVER_ROOT_PATH"))
+                .unwrap_or_default(),
         })
     }
 }

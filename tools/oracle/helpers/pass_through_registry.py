@@ -1,8 +1,7 @@
 import os
-from collections.abc import MutableMapping, Sequence
+from collections.abc import MutableMapping
 from typing import TypeAlias, cast
 
-from litellm.proxy._types import LiteLLMRoutes
 from litellm.proxy.pass_through_endpoints import pass_through_endpoints
 from litellm.proxy.utils import normalize_route_for_root_path
 
@@ -71,11 +70,6 @@ def query_registry(queries: list[Json]) -> list[dict[str, Json]]:
         normalized = normalize_route_for_root_path(route)
         comparison = normalized if normalized is not None else route
         metadata = init_helpers.get_registered_pass_through_route(route, method)
-        prefixes = cast(Sequence[str], LiteLLMRoutes.mapped_pass_through_routes.value)
-        mapped = normalized is not None and any(
-            comparison.startswith(prefix)
-            for prefix in prefixes
-        )
-        registered = mapped or init_helpers.is_registered_pass_through_route(route)
+        registered = init_helpers.is_registered_pass_through_route(route)
         answers.append({"normalized": comparison, "registered": registered, "metadata": metadata})
     return answers
