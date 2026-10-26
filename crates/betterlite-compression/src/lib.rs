@@ -10,7 +10,6 @@
     clippy::excessive_nesting,
     clippy::else_if_without_else,
     clippy::uninlined_format_args,
-    clippy::default_numeric_fallback,
     clippy::return_and_then,
     clippy::wildcard_enum_match_arm,
     reason = "normalization mirrors LiteLLM's bounded index, line and heuristic operations"
