@@ -43,7 +43,7 @@ def run(input_value: dict[str, object]) -> dict[str, object]:
     numeric = (int, float, type(None))
     if not isinstance(request_timeout, numeric) or not isinstance(global_timeout, numeric):
         raise ValueError("request timeout values must be numbers or null")
-    selected = request_timeout or global_timeout or 600
+    selected = float(request_timeout or global_timeout or 600)
     return {
         "supports_httpx_timeout": supports,
         "timeout": timeout_result,
