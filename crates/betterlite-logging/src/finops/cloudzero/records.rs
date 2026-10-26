@@ -152,15 +152,8 @@ impl CzrnGenerator {
     fn normalize_provider(provider: &str) -> String {
         let normalized = provider.to_lowercase().replace('_', "-");
         match normalized.as_str() {
-            "azure" => "azure".to_owned(),
-            "anthropic" => "anthropic".to_owned(),
             "bedrock" => "aws".to_owned(),
-            "vertex-ai" => "vertex-ai".to_owned(),
             "gemini" => "google".to_owned(),
-            "cohere" => "cohere".to_owned(),
-            "huggingface" => "huggingface".to_owned(),
-            "replicate" => "replicate".to_owned(),
-            "together-ai" => "together-ai".to_owned(),
             _ => normalized,
         }
     }
