@@ -154,12 +154,13 @@ fn signing_keys(keys: &Keys) -> Result<SessionSigningKeys, Box<HelperError>> {
 }
 
 fn failure(class: &str, message: &str) -> Box<HelperError> {
-    Box::new(HelperError {
+    let error = Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
         message: message.to_owned(),
-    })
+    });
+    error
 }
