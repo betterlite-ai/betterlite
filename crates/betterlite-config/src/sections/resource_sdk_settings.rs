@@ -7,6 +7,7 @@ use secrecy::SecretString;
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {
+    #[serde(default)]
     #[serde(rename = "litellm_settings")]
     pub settings: RawSettings,
 }
@@ -71,7 +72,7 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let configured = self.settings.convert(lookup)?;
-        let mut settings = Settings::from_configured(configured);
+        let mut settings = Settings::from(configured);
         settings.apply_environment(lookup);
         Ok(settings)
     }
@@ -118,9 +119,9 @@ impl RawSettings {
     }
 }
 
-impl Settings {
-    fn from_configured(configured: ConfiguredSettings) -> Self {
-        let settings = Self {
+impl From<ConfiguredSettings> for Settings {
+    fn from(configured: ConfiguredSettings) -> Self {
+        Self {
             api_base: configured.api_base,
             api_version: configured.api_version,
             api_key: configured.api_key,
@@ -142,10 +143,11 @@ impl Settings {
             vertexai_project: None,
             vertexai_location: None,
             vertexai_credentials: None,
-        };
-        settings
+        }
     }
+}
 
+impl Settings {
     fn apply_environment<L>(&mut self, lookup: &L)
     where
         L: EnvironmentLookup,
