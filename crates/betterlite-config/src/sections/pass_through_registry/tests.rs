@@ -28,11 +28,11 @@ fn root(source: &str, environment: Option<&str>) -> String {
         .into_iter()
         .collect::<BTreeMap<_, _>>();
     ConfigLoader { lookup }
-    .load(source)
-    .expect("config should load")
-    .sections
-    .pass_through_registry
-    .server_root_path
+        .load(source)
+        .expect("config should load")
+        .sections
+        .pass_through_registry
+        .server_root_path
 }
 
 #[rstest]
@@ -60,7 +60,10 @@ fn reads_root_from_environment() {
 #[test]
 fn root_coexists_with_general_settings() {
     assert_eq!(
-        root("general_settings:\n  master_key: test-master\n", Some("/proxy")),
+        root(
+            "general_settings:\n  master_key: test-master\n",
+            Some("/proxy")
+        ),
         "/proxy"
     );
 }
