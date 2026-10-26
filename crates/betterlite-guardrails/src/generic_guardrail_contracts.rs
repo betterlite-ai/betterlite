@@ -4,7 +4,10 @@ mod tests;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use response::RawGenericGuardrailAPIResponse;
+
+pub type GuardrailExtraValue = GuardrailValue;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -25,19 +28,6 @@ pub enum UnreachableFallback {
 pub enum StreamingTransformMode {
     BlockOnly,
     IncrementalDiff,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum GuardrailExtraValue {
-    Null,
-    Boolean(bool),
-    SignedInteger(i64),
-    UnsignedInteger(u64),
-    Decimal(f64),
-    Text(String),
-    Array(Vec<Self>),
-    Object(BTreeMap<String, Self>),
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]

@@ -473,6 +473,7 @@ version = "0.1.0"
 name = "betterlite-guardrails"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "serde",
  "serde_json",
  "thiserror",
