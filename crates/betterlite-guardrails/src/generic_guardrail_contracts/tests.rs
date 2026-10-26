@@ -37,10 +37,29 @@ fn generic_guardrail_header_extraction_uses_proxy_first() {
 #[test]
 fn generic_guardrail_constructor_defaults() {
     let settings = GenericGuardrailAPISettings::from_optional(None);
-    assert_eq!(settings.unreachable_fallback, "fail_closed");
+    assert_eq!(
+        settings.unreachable_fallback,
+        UnreachableFallback::FailClosed
+    );
     assert!(settings.fail_on_error);
     assert_eq!(settings.streaming_sampling_rate, 5);
-    assert_eq!(settings.streaming_transform_mode, "block_only");
+    assert_eq!(
+        settings.streaming_transform_mode,
+        StreamingTransformMode::BlockOnly
+    );
+}
+
+#[test]
+fn generic_guardrail_contracts_reject_unknown_closed_values() {
+    drop(from_str::<GuardrailOptions>(r#"{"unreachable_fallback":"typo"}"#).unwrap_err());
+    drop(from_str::<GuardrailOptions>(r#"{"streaming_transform_mode":"typo"}"#).unwrap_err());
+}
+
+#[test]
+fn generic_guardrail_response_coerces_holdback_values() {
+    let response: GenericGuardrailAPIResponse =
+        from_str(r#"{"stream_holdback_chars":[null,-2,"3",false,"bad"]}"#).expect("response");
+    assert_eq!(response.stream_holdback_chars, Some(vec![0, 0, 3, 0, 0]));
 }
 
 #[test]

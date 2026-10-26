@@ -1,7 +1,10 @@
+pub mod response;
 mod tests;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+use response::RawGenericGuardrailAPIResponse;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -10,12 +13,28 @@ pub enum GuardrailInputType {
     Response,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnreachableFallback {
+    FailClosed,
+    FailOpen,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamingTransformMode {
+    BlockOnly,
+    IncrementalDiff,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum GuardrailExtraValue {
     Null,
     Boolean(bool),
-    Number(i64),
+    SignedInteger(i64),
+    UnsignedInteger(u64),
+    Decimal(f64),
     Text(String),
     Array(Vec<Self>),
     Object(BTreeMap<String, Self>),
@@ -38,19 +57,27 @@ pub struct GuardrailToolParam {
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct GenericGuardrailAPIMetadata {
+    pub user_api_key_hash: Option<String>,
+    pub user_api_key_alias: Option<String>,
+    pub user_api_key_user_id: Option<String>,
+    pub user_api_key_user_email: Option<String>,
+    pub user_api_key_team_id: Option<String>,
+    pub user_api_key_team_alias: Option<String>,
+    pub user_api_key_end_user_id: Option<String>,
+    pub user_api_key_org_id: Option<String>,
     #[serde(flatten)]
-    pub fields: BTreeMap<String, Option<String>>,
+    pub extra: BTreeMap<String, Option<String>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct GuardrailOptions {
     #[serde(rename = "additional_provider_specific_params")]
     pub provider_params: Option<BTreeMap<String, GuardrailExtraValue>>,
-    pub unreachable_fallback: Option<String>,
+    pub unreachable_fallback: Option<UnreachableFallback>,
     pub fail_on_error: Option<bool>,
     pub streaming_end_of_stream_only: Option<bool>,
     pub streaming_sampling_rate: Option<u32>,
-    pub streaming_transform_mode: Option<String>,
+    pub streaming_transform_mode: Option<StreamingTransformMode>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -61,11 +88,11 @@ pub struct GenericGuardrailAPIConfigModel {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenericGuardrailAPISettings {
-    pub unreachable_fallback: String,
+    pub unreachable_fallback: UnreachableFallback,
     pub fail_on_error: bool,
     pub streaming_end_of_stream_only: bool,
     pub streaming_sampling_rate: u32,
-    pub streaming_transform_mode: String,
+    pub streaming_transform_mode: StreamingTransformMode,
 }
 
 impl GenericGuardrailAPISettings {
@@ -75,7 +102,7 @@ impl GenericGuardrailAPISettings {
         Self {
             unreachable_fallback: resolved_params
                 .unreachable_fallback
-                .unwrap_or_else(|| "fail_closed".to_owned()),
+                .unwrap_or(UnreachableFallback::FailClosed),
             fail_on_error: resolved_params.fail_on_error.unwrap_or(true),
             streaming_end_of_stream_only: resolved_params
                 .streaming_end_of_stream_only
@@ -83,7 +110,7 @@ impl GenericGuardrailAPISettings {
             streaming_sampling_rate: resolved_params.streaming_sampling_rate.unwrap_or(5),
             streaming_transform_mode: resolved_params
                 .streaming_transform_mode
-                .unwrap_or_else(|| "block_only".to_owned()),
+                .unwrap_or(StreamingTransformMode::BlockOnly),
         }
     }
 }
@@ -107,8 +134,8 @@ pub struct GenericGuardrailAPIRequest {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(from = "RawGenericGuardrailAPIResponse")]
 pub struct GenericGuardrailAPIResponse {
-    #[serde(default = "default_action")]
     pub action: String,
     pub texts: Option<Vec<String>>,
     pub images: Option<Vec<String>>,
@@ -116,11 +143,6 @@ pub struct GenericGuardrailAPIResponse {
     pub structured_messages: Option<Vec<GuardrailMessage>>,
     pub blocked_reason: Option<String>,
     pub stream_holdback_chars: Option<Vec<u32>>,
-}
-
-fn default_action() -> String {
-    let action_name = "NONE";
-    action_name.to_owned()
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
