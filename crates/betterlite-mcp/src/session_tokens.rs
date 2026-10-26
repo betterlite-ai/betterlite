@@ -11,10 +11,7 @@ use aws_lc_rs::{error::Unspecified, hmac};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, TimeDelta, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{
-    Deserialize, Deserializer, Serialize,
-    de::{Error as _, IgnoredAny},
-};
+use serde::{Deserialize, Serialize, de::IgnoredAny};
 use serde_json::ser::{Formatter, Serializer};
 use std::io::{self, Write};
 
@@ -73,8 +70,8 @@ struct Header {
     alg: Option<String>,
     #[serde(default, skip_serializing)]
     b64: PayloadEncoding,
-    #[serde(default, skip_serializing, deserialize_with = "critical_headers")]
-    crit: Vec<String>,
+    #[serde(default, skip_serializing)]
+    crit: CriticalHeaders,
     #[serde(skip_serializing_if = "Option::is_none")]
     kid: Option<String>,
     #[serde(skip_deserializing)]
@@ -91,12 +88,13 @@ enum PayloadEncoding {
     Other(IgnoredAny),
 }
 
-fn critical_headers<'de, D: Deserializer<'de>>(decoder: D) -> Result<Vec<String>, D::Error> {
-    let names = Vec::<String>::deserialize(decoder)?;
-    if names.is_empty() || names.iter().any(|name| name != "b64") {
-        return Err(D::Error::custom("unsupported critical headers"));
-    }
-    Ok(names)
+#[derive(Default, Deserialize)]
+#[serde(untagged)]
+enum CriticalHeaders {
+    #[default]
+    #[serde(skip)]
+    Missing,
+    Names(Vec<String>),
 }
 
 // Python's json.dumps escapes everything outside printable ASCII, and the signature covers those bytes
@@ -177,7 +175,7 @@ fn sign(claims: &Claims, keys: &SigningKeys) -> Result<String, MintError> {
     let header = python_json_segment(&Header {
         alg: Some(alg.to_owned()),
         b64: PayloadEncoding::Missing,
-        crit: Vec::new(),
+        crit: CriticalHeaders::Missing,
         kid: kid.map(str::to_owned),
         typ: "JWT",
     })?;
@@ -247,9 +245,15 @@ fn verified_claims(compact: &str, keys: &SigningKeys) -> Result<Claims, OpenErro
     let (header_segment, payload_segment) = signing_input.split_once('.').ok_or(Malformed)?;
     let header: Header =
         serde_json::from_slice(&decode(header_segment)?).map_err(|_source| Malformed)?;
-    if matches!(header.b64, PayloadEncoding::Boolean(false))
-        || (!header.crit.is_empty() && matches!(header.b64, PayloadEncoding::Missing))
-    {
+    let invalid_crit = match &header.crit {
+        CriticalHeaders::Missing => false,
+        CriticalHeaders::Names(names) => {
+            names.is_empty()
+                || names.iter().any(|name| name != "b64")
+                || matches!(header.b64, PayloadEncoding::Missing)
+        }
+    };
+    if invalid_crit || matches!(header.b64, PayloadEncoding::Boolean(false)) {
         return Err(Malformed);
     }
     let payload = decode(payload_segment)?;
