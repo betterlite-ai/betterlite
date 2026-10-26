@@ -13,11 +13,8 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
 pub const ANALYSIS_CONCURRENCY: usize = 8;
-pub trait Record: Serialize + DeserializeOwned + Send + Sync {
-    fn model_validate_json(bytes: &[u8]) -> Result<Self, DecodeError>
-    where
-        Self: Validate<Context = ()>,
-    {
+pub trait Record: Serialize + DeserializeOwned + Send + Sync + Validate<Context = ()> {
+    fn model_validate_json(bytes: &[u8]) -> Result<Self, DecodeError> {
         decode(bytes)
     }
 }
@@ -177,6 +174,7 @@ impl Record for Examined {}
 #[serde(deny_unknown_fields)]
 #[garde(allow_unvalidated)]
 pub struct Investigation {
+    #[serde(deserialize_with = "Option::deserialize")]
     #[garde(dive)]
     pub finding: Option<FindingDraft>,
     pub parts: Vec<TracePart>,

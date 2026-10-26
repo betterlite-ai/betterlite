@@ -3,9 +3,12 @@
 use super::primitives::*;
 use super::*;
 use crate::models::finding::Role;
+use crate::models::messages::{Claim, Purpose};
 use rstest::rstest;
+use rust_decimal::Decimal;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[test]
 fn records_have_the_expected_shapes() {
@@ -14,6 +17,7 @@ fn records_have_the_expected_shapes() {
     assert_eq!(observation.kind, ObservationKind::Issue);
     let decision: Decision = serde_json::from_str(r#"{"action":"read"}"#).unwrap();
     assert_eq!(decision.page, 0);
+    Investigation::model_validate_json(br#"{"parts":[]}"#).unwrap_err();
 }
 
 #[test]
@@ -50,15 +54,19 @@ fn content_partitions_account_for_serialized_bytes() {
     let width = serde_json::to_vec(&part).unwrap().len() + 20;
     let parts = vec![part.clone(), part.clone()];
     assert_eq!(
-        partition_content(&parts, width).unwrap(),
+        partition_content(&parts, Some(width)).unwrap(),
         vec![vec![part.clone()], vec![part]]
     );
     assert_eq!(
-        partition_content(&parts, width * 2).unwrap(),
+        partition_content(&parts, Some(width * 2)).unwrap(),
         vec![parts.clone()]
     );
-    partition_content(&parts, width - 1).unwrap_err();
-    assert!(partition_content(&[], width).unwrap().is_empty());
+    assert_eq!(
+        partition_content(&parts, None).unwrap(),
+        vec![parts.clone()]
+    );
+    partition_content(&parts, Some(width - 1)).unwrap_err();
+    assert!(partition_content(&[], Some(width)).unwrap().is_empty());
 }
 
 #[test]
@@ -89,9 +97,6 @@ fn review_inherits_cannot_assess() {
 #[case::semantic(r#"{"action":"read"}"#)]
 #[tokio::test]
 async fn repairs_once(#[case] first: &str) {
-    use crate::models::messages::Purpose;
-    use rust_decimal::Decimal;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     let calls = AtomicUsize::new(0);
     let request = ModelRequest {
         prompt: String::from("original evidence"),
@@ -145,7 +150,9 @@ async fn read_summary_preserves_final_page(#[case] last: Option<&'static str>) {
     .unwrap()
     .execution;
     let reply = execution.clone();
+    let calls = AtomicUsize::new(0);
     let read: ReadContent = Arc::new(move |id, cursor, offset| {
+        assert!(calls.fetch_add(1, Ordering::SeqCst) < 2);
         assert_eq!(id, "e");
         assert_eq!(offset, 0);
         let mut result = reply.clone();
@@ -176,9 +183,6 @@ async fn read_summary_preserves_final_page(#[case] last: Option<&'static str>) {
 #[case::invalid("{", 2)]
 #[tokio::test]
 async fn final_response_limits_attempts(#[case] content: &str, #[case] attempts: usize) {
-    use crate::models::messages::Purpose;
-    use rust_decimal::Decimal;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     let calls = AtomicUsize::new(0);
     let model = |_| {
         calls.fetch_add(1, Ordering::SeqCst);
@@ -200,4 +204,16 @@ async fn final_response_limits_attempts(#[case] content: &str, #[case] attempts:
     .await;
     assert_eq!(result.is_ok(), attempts == 1);
     assert_eq!(calls.load(Ordering::SeqCst), attempts);
+}
+
+#[test]
+fn feedback_shape_and_filter() {
+    let claim: Claim = serde_json::from_str(include_str!("fixtures/claim.json")).unwrap();
+    let pages = feedback_pages(&claim, Some("check")).unwrap();
+    assert_eq!(
+        serde_json::to_string(&pages).unwrap(),
+        r#"[[["f","check","title","resolved","reason"]]]"#
+    );
+    assert!(feedback_pages(&claim, Some("other")).unwrap().is_empty());
+    assert_eq!(feedback_pages(&claim, None).unwrap(), pages);
 }

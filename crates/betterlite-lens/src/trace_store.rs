@@ -1,7 +1,4 @@
-use std::io::Error;
-use std::iter::from_fn;
-use std::num::TryFromIntError;
-use std::path::Path;
+use std::{io::Error, iter::from_fn, num::TryFromIntError, slice::from_ref};
 
 use self::catalogs::Catalogs;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -9,6 +6,7 @@ mod catalogs;
 use tempfile::TempDir;
 use thiserror::Error;
 
+use crate::analysis::primitives::evidence_valid;
 use crate::models::execution::TracePart;
 use crate::models::finding::Evidence;
 
@@ -33,23 +31,18 @@ pub struct TraceStore {
 
 impl TraceStore {
     pub fn new(connection: Connection) -> Result<Self, TraceStoreError> {
-        let store = Self {
-            connection,
-            directory: None,
-        };
-        store.create_tables()?;
-        Ok(store)
-    }
-    fn create_tables(&self) -> Result<(), TraceStoreError> {
-        self.connection.execute(
+        connection.execute(
             "CREATE TABLE spans (span_id TEXT PRIMARY KEY, body TEXT NOT NULL)",
             [],
         )?;
-        self.connection.execute(
+        connection.execute(
             "CREATE TABLE reads (span_id TEXT, body TEXT, UNIQUE(span_id, body))",
             [],
         )?;
-        Ok(())
+        Ok(Self {
+            connection,
+            directory: None,
+        })
     }
     pub fn add(&self, parts: &[TracePart]) -> Result<(), TraceStoreError> {
         let statement = "INSERT OR REPLACE INTO spans VALUES (?, ?)";
@@ -75,12 +68,7 @@ impl TraceStore {
         })?;
         for row in rows {
             let part: TracePart = serde_json::from_str(&row?)?;
-            if part.execution_id == evidence.execution_id
-                && part
-                    .content
-                    .split("\n[... content omitted ...]\n")
-                    .any(|segment| segment.contains(&evidence.quote))
-            {
+            if evidence_valid(evidence, from_ref(&part)) {
                 return Ok(Some(part));
             }
         }
@@ -183,7 +171,7 @@ pub fn overview_content(part: &TracePart, root_count: usize) -> String {
 pub fn trace_store() -> Result<TraceStore, TraceStoreError> {
     let directory = tempfile::Builder::new().prefix("lens-trace-").tempdir()?;
     let path = directory.path().join("trace.sqlite");
-    let connection = Connection::open(Path::new(&path))?;
+    let connection = Connection::open(&path)?;
     let mut store = TraceStore::new(connection)?;
     store.directory = Some(directory);
     Ok(store)

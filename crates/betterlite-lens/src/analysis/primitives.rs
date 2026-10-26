@@ -3,7 +3,6 @@ use crate::models::execution::{Execution, ExecutionContent, TracePart};
 use crate::models::finding::Evidence;
 use crate::models::messages::{ModelRequest, ModelResult};
 use crate::trace_store::TraceStore;
-use garde::Validate;
 use std::convert::identity;
 use std::future::Future;
 use std::vec::IntoIter;
@@ -18,7 +17,7 @@ pub async fn structured_response<T, F, Fut, V>(
     validate: V,
 ) -> Result<T, AnalysisError>
 where
-    T: Record + Validate<Context = ()>,
+    T: Record,
     V: Fn(&T) -> Option<String>,
     F: Fn(ModelRequest) -> Fut,
     Fut: Future<Output = Result<ModelResult, AnalysisError>>,
@@ -41,7 +40,7 @@ where
 
 fn parse_record<T, V>(content: &str, validate: &V) -> Result<T, AnalysisError>
 where
-    T: Record + Validate<Context = ()>,
+    T: Record,
     V: Fn(&T) -> Option<String>,
 {
     let value = T::model_validate_json(content.as_bytes())?;
@@ -166,13 +165,14 @@ where
 
 pub fn partition_content(
     parts: &[TracePart],
-    limit: usize,
+    limit: Option<usize>,
 ) -> Result<Vec<Vec<TracePart>>, AnalysisError> {
+    let ceiling = limit.unwrap_or(24_000);
     let sized = parts
         .iter()
         .map(|part| Ok((part, serde_json::to_vec(part)?.len().saturating_add(20))))
         .collect::<Result<Vec<_>, AnalysisError>>()?;
-    Ok(partition_items(&sized, |(_, size)| *size, limit)?
+    Ok(partition_items(&sized, |(_, size)| *size, ceiling)?
         .into_iter()
         .map(|batch| batch.into_iter().map(|(part, _)| part.clone()).collect())
         .collect())
