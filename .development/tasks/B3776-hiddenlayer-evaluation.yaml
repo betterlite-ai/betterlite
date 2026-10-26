@@ -1,0 +1,202 @@
+id: B3776
+title: HiddenLayer v1 and v2 evaluation
+description: >-
+  Implement HiddenLayer's distinct v1 and v2 request/response evaluation contracts and version dispatch logic. V1 scans the last user message
+  and returns evaluation actions (Block, Redact) with analysis results and modified data. V2 evaluates complete request/response payloads
+  including structured messages, tools and tool calls, returning modified output and block signals via response headers.
+  Both versions handle JWT refresh when 401 response indicates token expiry; is_saas and _get_jwt are provided by B3775.
+  Build helper functions _proxy_request_headers and _logged_request_headers to extract hl-* metadata headers from request and logging objects,
+  _scannable_text to flatten structured message content for v1 scanning, _interaction_body to decode v1 response JSON, _proxy_server_request
+  to access proxy request headers and _header_value to read response headers with defaults. Implement version dispatch via initialize_guardrail
+  that selects v1 or v2 based on version config parameter (default v1). Both versions build Authorization Bearer header from jwt_token
+  and retry with token refresh on 401 response. V2's config model accessor remains with B107 to keep this part bounded.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/hiddenlayer.rs
+    - crates/betterlite-guardrails/src/hiddenlayer/**
+    - tools/oracle/cases/guardrails/hiddenlayer/evaluation/**
+    - crates/betterlite-config/src/sections/hiddenlayer_evaluation.rs
+    - crates/betterlite-config/src/sections/hiddenlayer_evaluation/**
+    - tools/oracle/helpers/b3776.py
+    - tools/oracle/helpers/b3776/**
+    - tools/oracle/src/helpers/guardrails/b3776.rs
+    - tools/oracle/src/helpers/guardrails/b3776/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L135-L181
+    why: Helper functions _interaction_body, _proxy_server_request, _proxy_request_headers, _logged_request_headers, _scannable_text for request/response data extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L155-L156
+    why: Helper function _header_value for reading response headers with defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L213-L221
+    why: HiddenlayerGuardrail v1 class definition and get_supported_event_hooks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L223-L262
+    why: HiddenlayerGuardrail v1 constructor calling is_saas and _get_jwt from B3775.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L264-L356
+    why: HiddenlayerGuardrail v1 apply_guardrail with last-message scanning via _scannable_text, Block and Redact action handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L286-L291
+    why: V1 apply_guardrail uses _proxy_request_headers and _logged_request_headers to extract hl-* metadata headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L358-L420
+    why: HiddenlayerGuardrail v1 _call_hiddenlayer with Authorization Bearer header from jwt_token and 401 JWT refresh retry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L392
+    why: V1 _call_hiddenlayer uses _interaction_body to decode v1 response JSON.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L422-L428
+    why: HiddenlayerGuardrail v1 get_config_model method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L431-L432
+    why: HiddenlayerGuardrailV2 class definition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L434-L472
+    why: HiddenlayerGuardrailV2 constructor calling is_saas and _get_jwt from B3775.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L474-L569
+    why: HiddenlayerGuardrailV2 apply_guardrail with complete payload evaluation, hl-roundtrip-id injection via _proxy_server_request, response format handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L489-L491
+    why: V2 apply_guardrail uses _proxy_request_headers, _logged_request_headers, and _proxy_server_request for header extraction and hl-roundtrip-id injection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L536
+    why: V2 apply_guardrail uses _header_value to check hl-runtime-action response header for block signal (case-insensitive).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L571-L626
+    why: HiddenlayerGuardrailV2 _call_hiddenlayer with Authorization Bearer header from jwt_token, request/response path selection and 401 JWT refresh retry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L628-L634
+    why: HiddenlayerGuardrailV2 get_config_model method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/hiddenlayer.py
+    why: HiddenlayerGuardrailConfigModel, HiddenlayerAction and HiddenlayerMessages enums.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/__init__.py#L11-L43
+    why: initialize_guardrail function dispatching to v1 or v2 HiddenlayerGuardrail based on version parameter (default v1).
+dod:
+  - text: HiddenlayerGuardrail v1 scans only the last user message via _scannable_text from structured_messages or texts.
+    proof: [oracle]
+  - text: V1 returns Block action with 400 status, threat_level and detected analysis when evaluation returns action Block.
+    proof: [oracle]
+  - text: V1 returns Redact action by modifying inputs structured_messages and texts when evaluation returns action Redact.
+    proof: [oracle]
+  - text: V1 forwards hl-requester-id and hl-project-id headers from request or logging object, using default requester_id LiteLLM.
+    proof: [oracle]
+  - text: V1 sends model name as metadata to the detection endpoint, extracted from logging object or falling back to unknown.
+    proof: [oracle]
+  - text: V1 calls /detection/v1/interactions endpoint with input or output payload based on input_type.
+    proof: [oracle]
+  - text: V2 evaluates complete request payloads including structured_messages, model and tools; evaluates response texts, tool_calls or choices.
+    proof: [oracle]
+  - text: V2 returns Block action with 400 status when response hl-runtime-action header equals block (case-insensitive).
+    proof: [oracle]
+  - text: V2 updates structured_messages and texts with modified output from v2/request-evaluations response.
+    proof: [oracle]
+  - text: V2 updates texts with modified content from v2/response-evaluations when input_type is response and texts present.
+    proof: [oracle]
+  - text: V2 updates tool_calls with response output when input_type is response and tool_calls present.
+    proof: [oracle]
+  - text: V2 extracts hl-* headers from request headers, preserves case-insensitive matching and injected roundtrip-id via _proxy_server_request.
+    proof: [oracle]
+  - text: V2 injects hl-roundtrip-id into proxy_server_request headers when not already present and proxy_server_request exists.
+    proof: [oracle]
+  - text: V2 calls /detection/v2/request-evaluations or /detection/v2/response-evaluations based on input_type.
+    proof: [oracle]
+  - text: Both v1 and v2 catch HTTPStatusError with 401 status, call refresh_jwt_func and retry with new Authorization Bearer token.
+    proof: [oracle]
+  - text: V1 includes hl-runtime-edge-provider litellm and hl-runtime-edge-provider-version 1 headers in requests.
+    proof: [oracle]
+  - text: V2 includes hl-runtime-edge-provider litellm and hl-runtime-edge-provider-version 2 headers in requests.
+    proof: [oracle]
+  - text: Both set HL-Project-Id request header when project_id is present.
+    proof: [oracle]
+  - text: Both set Authorization header to Bearer {jwt_token} when jwt_token is present.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: hiddenlayer-v1-tests
+      why: HiddenlayerGuardrail v1 constructor, apply_guardrail or _call_hiddenlayer fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer_v1::|^hiddenlayer_evaluation_v1::/)'
+    - id: hiddenlayer-v2-tests
+      why: HiddenlayerGuardrailV2 constructor, apply_guardrail or _call_hiddenlayer fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer_v2::|^hiddenlayer_evaluation_v2::/)'
+    - id: v1-v2-dispatch-test
+      why: initialize_guardrail does not correctly dispatch to v1 or v2 based on version parameter
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer_version_dispatch::/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-last-message-scan.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-block-action-400.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-block-threat-level.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-block-detected-reasons.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-redact-action-modifies-messages.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-redact-action-modifies-texts.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-requester-id-default.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-project-id-forwarded.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-model-metadata.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-endpoint-detection-v1-interactions.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-endpoint-input-payload.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-endpoint-output-payload.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-jwt-refresh-on-401.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-provider-header-version-1.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-full-request-payload.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-full-response-payload-texts.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-full-response-payload-tool-calls.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-full-response-payload-choices.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-block-header-check.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-block-header-case-insensitive.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-request-output-updated.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-response-texts-updated.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-response-tool-calls-updated.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-roundtrip-id-injected.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-roundtrip-id-preserved.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-hl-headers-extracted.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-endpoint-detection-v2-request.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-endpoint-detection-v2-response.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-jwt-refresh-on-401.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v2-provider-header-version-2.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/both-project-id-header.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/both-authorization-bearer.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/dispatch-v1-default.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/dispatch-v1-explicit.yaml
+  - tools/oracle/cases/guardrails/hiddenlayer/evaluation/dispatch-v2-version-2.yaml
+deviations:
+  - what: V1 and V2 both use case-insensitive header key matching for hl-* metadata headers extracted from request.
+    why: LiteLLM HTTP header lookup uses exact case-insensitive matching via dict.get; betterlite normalizes to lowercase for consistent access patterns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L286-L291
+  - what: V2 block signal check on hl-runtime-action header uses case-insensitive comparison.
+    why: HTTP headers are case-insensitive per RFC 7230; betterlite normalizes header value comparison to lowercase for robustness.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L536
+  - what: Both v1 and v2 use AsyncHTTPHandler.post (missing owner H) for HTTP requests instead of the native httpx client.
+    why: Shared transport layer provides pooled httpx clients with consistent timeout and error handling across all guardrails; this task does not own the transport.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L385-L407
+  - what: V2 reads response body via response.json() directly without struct deserialization.
+    why: V2 endpoints return untyped JSON that varies by request type; betterlite defers schema validation to the guardrail logic rather than pre-parsing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L531-L534
+out_of_scope:
+  - HiddenLayer SaaS detection and JWT token acquisition (is_saas, _get_jwt, JWT refresh lambda storage) provided by B3775.
+  - ">-
+    CustomGuardrail base class lifecycle (CustomGuardrail.__init__, log_guardrail_information decorator, supported_event_hooks):
+    Framework base class for guardrail integration; no assigned task owner yet (B104 outline has no task file). Required for initialization and lifecycle; infrastructure dependency."
+  - ">-
+    HTTP client management (AsyncHTTPHandler, get_async_httpx_client): Infrastructure layer that provides pooled httpx clients with timeout handling;
+    no assigned task owner yet. Injected as dependency rather than constructed here."
+  - ">-
+    Guardrail callback registration (add_litellm_callback): Callback pipeline registration; no assigned task owner yet.
+    Used as injected dependency from logging callback manager."
+  - V2 config model accessor that determines which HiddenlayerGuardrailConfigModel to return based on request context; owned by B107.
+pitfalls:
+  - ">-
+    V1 scans only the last message from structured_messages (role and content flattened via _scannable_text) or texts array.
+    Earlier messages in the conversation are not evaluated, only the final user input."
+  - ">-
+    V2 evaluates the complete request or response payload; request evaluation includes model and tools fields alongside messages,
+    while response evaluation handles texts, tool_calls, or choices depending on what is present in inputs."
+  - ">-
+    V1 Block action raises HTTPException with 400 status and detail dict containing error, hiddenlayer_guardrail_response,
+    block_reasons and threat_level fields. V2 Block action raises HTTPException with 400 status but only error and hiddenlayer_guardrail_response fields."
+  - ">-
+    V1 Redact action updates both structured_messages and texts independently, extracting text from content which may be a string or list of dicts with type field.
+    Empty text lists result in [empty string] fallback."
+  - ">-
+    V2 hl-roundtrip-id is injected into proxy_server_request headers directly when _proxy_server_request returns a request dict with headers field.
+    If proxy_server_request is None or missing headers field, the ID is not injected."
+  - ">-
+    V2 hl-* header extraction uses lowercase key normalization from the original request headers, preserving only headers that start with hl- prefix.
+    Case-insensitive matching allows clients to send headers with any casing and still be matched."
+  - ">-
+    JWT refresh on 401 only happens in the except HTTPStatusError handler; other status codes (403, 404, 500, etc.) are not retried
+    and raise immediately."
+  - ">-
+    Both versions default hl-requester-id to LiteLLM if the header is not present in the request or logging metadata.
+    Explicit empty string in headers overrides the default."
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

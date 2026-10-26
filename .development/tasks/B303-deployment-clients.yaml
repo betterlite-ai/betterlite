@@ -49,7 +49,6 @@ scope:
   - tools/oracle/litellm/probes/deployment_clients.py
   - tools/oracle/cases/routing/deployment-clients/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/deployment-clients-*
-  - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/chat.rs
   - crates/betterlite-openai/src/request.rs
   - crates/betterlite-openai/src/request/**

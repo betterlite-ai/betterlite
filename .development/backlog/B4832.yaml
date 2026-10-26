@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Run local sandbox commands with filtered credentials and owned processes
 status: todo
 depends_on: [B4830, B4831]
-file: null
+file: tasks/B4832-harness-local-sandbox.yaml
 covers:
   - "litellm/harness/sandbox/local.py"
 parent: B143

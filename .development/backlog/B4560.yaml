@@ -3,7 +3,7 @@ milestone: M8 platform
 title: CLI configuration, context and Windows argument quoting
 status: todo
 depends_on: [B192]
-file: null
+file: tasks/B4560-cli-config-context-quoting.yaml
 covers:
   - "litellm/proxy/client/cli/commands/{config,_cli_context,cmd_quoting}.py"
 parent: B134

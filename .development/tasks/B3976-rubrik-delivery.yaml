@@ -1,0 +1,178 @@
+id: B3976
+title: Rubrik configuration webhook transport and retry queue
+description: >-
+  Build Rubrik initialization, moderation clients and the bounded, retry-preserving
+  logging queue. Implement the RubrikLogger class over CustomGuardrail and CustomBatchLogger,
+  with configuration parsing for API keys, webhook URLs, sampling rates and batch sizes.
+  Set up HTTP clients for moderation webhooks (5-second timeout, 2-second connect) and
+  logging batch delivery. Implement a snapshot-based queue flush that captures a consistent
+  prefix, sends it, and drains only what was successfully sent, avoiding the coupling between
+  a separate queue length capture and a snapshot inside async_send_batch. Keep the bounded
+  retry queue with drop-oldest backpressure at 10,000 events, warning every 60 seconds when
+  overflow occurs. Support both moderation and logging webhooks through the unified JSON POST
+  layer. Preserve stream flags streaming_end_of_stream_only and streaming_buffer_until_moderated
+  set to true. Default event hook is post_call with default_on false. Sampling defaults to 1.0
+  and clamps to [0,1]. Missing API keys warn and send requests unauthenticated. Config key lookups
+  delegate to B002 for RUBRIK_API_KEY, RUBRIK_WEBHOOK_URL, RUBRIK_SAMPLING_RATE and RUBRIK_BATCH_SIZE.
+scope:
+  paths:
+  - crates/betterlite-logging/src/rubrik_delivery.rs
+  - crates/betterlite-logging/src/rubrik_delivery/**
+  - tools/oracle/cases/logging/rubrik-delivery/**
+  - tools/oracle/helpers/b3976.py
+  - tools/oracle/helpers/b3976/**
+  - tools/oracle/src/helpers/logging/b3976.rs
+  - tools/oracle/src/helpers/logging/b3976/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L49-L72
+  why: Transport endpoint paths, response and message TypedDicts for moderation service contracts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L173-L247
+  why: RubrikLogger.__init__ with configuration, HTTP client setup, stream flags and queue initialization.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L249-L293
+  why: Event hook support, sampling rate parsing, batch size parsing and moderation client setup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L295-L305
+  why: Periodic flush task lifecycle management and ensure logic.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L783-L806
+  why: Queue append with batch-size flush trigger, max queue size enforcement with drop-oldest backpressure.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L1049-L1107
+  why: Batch logging POST and flush_queue snapshot-based drain implementation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L1111-L1160
+  why: Unified JSON POST layer and two moderation endpoint helpers.
+dod:
+- text: Write tests named rubrik_initialization_tests and rubrik_client_setup_tests under
+    rubrik_delivery::tests. The first asserts configuration parsing from environment and defaults,
+    HTTP client construction with correct timeout values, stream flags set to true, and queue
+    initialization. The second asserts moderation and logging endpoint URL construction from
+    webhook base URL with correct path segments. Initialization with no RUBRIK_WEBHOOK_URL env var
+    and null api_base parameter raises ValueError with text "Rubrik webhook URL not configured. Set RUBRIK_WEBHOOK_URL or pass api_base."
+  proof:
+  - rubrik-init-tests
+  - rubrik-client-tests
+- text: Write tests named rubrik_queue_management_tests asserting append-to-flush behavior,
+    batch-size threshold triggering immediate flush, max queue overflow with drop-oldest
+    backpressure, and warning interval enforcement. A full queue at cap drops oldest entries.
+  proof:
+  - rubrik-queue-tests
+- text: Write tests named rubrik_flush_snapshot_tests asserting snapshot-based flush captures
+    queue state consistently, sends the snapshot, and drains exactly the prefix that was sent.
+    Snapshot contents are unchanged by mutations after capture. Failed sends retain the snapshot.
+  proof:
+  - rubrik-flush-tests
+- text: Write tests named rubrik_json_post_tests asserting the unified POST layer sends
+    correct headers (Content-Type and Authorization when API key is present), handles both
+    response moderation (request/response envelope) and prompt moderation (bare request) payloads,
+    and raises on non-dict responses or network failures. Missing API keys send without Authorization.
+  proof:
+  - rubrik-json-tests
+- text: Every listed oracle case exercises initialization with various configuration sources,
+    queue management including overflow and flush triggers, and JSON POST to all three endpoints.
+    Cases verify endpoint URLs, Authorization headers, timeout enforcement and failure modes.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any
+    or broad suppressions.
+  proof:
+  - probe-python
+  - oracle
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: rubrik-init-tests
+    why: initialization tests are absent, fail or do not cover all config sources
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_initialization_tests::/)
+      - test(/replays_the_.*_corpus/)'
+  - id: rubrik-client-tests
+    why: client setup tests are absent, fail or do not test endpoint URLs
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_client_setup_tests::/)
+      - test(/replays_the_.*_corpus/)'
+  - id: rubrik-queue-tests
+    why: queue management tests are absent, fail or do not test overflow/warning
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_queue_management_tests::/)
+      - test(/replays_the_.*_corpus/)'
+  - id: rubrik-flush-tests
+    why: snapshot-based flush tests are absent, fail or do not test drain consistency
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_flush_snapshot_tests::/)
+      - test(/replays_the_.*_corpus/)'
+  - id: rubrik-json-tests
+    why: JSON POST tests are absent, fail or do not test all endpoints
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_json_post_tests::/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/helpers/b3976.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/helpers/b3976.py)" && uv run --locked --project
+      tools/oracle ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle basedpyright tools/oracle/helpers
+oracle_cases:
+- tools/oracle/cases/logging/rubrik-delivery/initialization-missing-webhook-url.yaml
+- tools/oracle/cases/logging/rubrik-delivery/initialization-env.yaml
+- tools/oracle/cases/logging/rubrik-delivery/initialization-defaults.yaml
+- tools/oracle/cases/logging/rubrik-delivery/sampling-rate-parsing.yaml
+- tools/oracle/cases/logging/rubrik-delivery/batch-size-parsing.yaml
+- tools/oracle/cases/logging/rubrik-delivery/endpoint-url-construction.yaml
+- tools/oracle/cases/logging/rubrik-delivery/queue-append-and-flush.yaml
+- tools/oracle/cases/logging/rubrik-delivery/queue-overflow-drop-oldest.yaml
+- tools/oracle/cases/logging/rubrik-delivery/flush-snapshot-drain.yaml
+- tools/oracle/cases/logging/rubrik-delivery/json-post-response-endpoint.yaml
+- tools/oracle/cases/logging/rubrik-delivery/json-post-prompt-endpoint.yaml
+- tools/oracle/cases/logging/rubrik-delivery/json-post-logging-batch.yaml
+- tools/oracle/cases/logging/rubrik-delivery/json-post-authorization-header.yaml
+- tools/oracle/cases/logging/rubrik-delivery/json-post-missing-api-key.yaml
+- tools/oracle/cases/logging/rubrik-delivery/json-post-non-dict-response.yaml
+- tools/oracle/cases/logging/rubrik-delivery/warning-interval-enforcement.yaml
+deviations:
+- what: Configuration resolution reads environment and injected values through B002's lookup contract.
+  why: Prevents coupling tests to the real process environment while reusing the standard config
+    dependency pattern.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L220-L236
+out_of_scope:
+- Prompt and response moderation hooks (B3978).
+- Sampled log event enqueueing and block event handling (B3977).
+- Payload construction and correlation ID assignment (B3975, B3977).
+- Guardrail framework integration and mode/default_on inheritance.
+- Periodic flush scheduling and timer cancellation on shutdown.
+- Native Rubrik SDK integration or alternative transport implementations.
+- Stream chunk buffering or end-of-stream detection; streaming flags are read-only from guardrail config.
+pitfalls:
+- >-
+  RUBRIK_SAMPLING_RATE missing env var defaults to 1.0 silently with no warning; present-but-invalid
+  (non-float string) defaults to 1.0 with a warning; valid float but out-of-range clamps to [0.0, 1.0]
+  with a separate warning.
+- >-
+  RUBRIK_BATCH_SIZE parsing accepts positive integers only; zero, negative or non-integer values
+  fall back to the base CustomBatchLogger default (litellm.DEFAULT_BATCH_SIZE is 512) with a warning.
+- >-
+  The webhook URL preprocessing strips trailing slashes and removes "/v1" suffix, allowing webhook
+  URLs to be provided with or without that segment; endpoint paths always include "/v1/..." segments.
+- >-
+  Moderation clients use httpxSpecialProvider.LoggingCallback and have separate timeout parameters
+  (5-second timeout, 2-second connect) distinct from the logging batch client timeout, which comes
+  from the per-request self.timeout override.
+- >-
+  The snapshot-based flush captures len(snapshot) at the time of successful POST and drains exactly
+  that many items with del self.log_queue[:len(snapshot)], not len(self.log_queue); failed sends
+  leave the queue untouched.
+- >-
+  max_queue_size enforcement with drop-oldest happens on every append; del self.log_queue[:overflow]
+  removes the exact overflow count, not ceiling or rounding.
+- >-
+  Queue overflow warning interval uses wall-clock time (time.time()), not message count or iteration;
+  the interval resets after each warning.
+- >-
+  Missing API keys result in a warning log but requests are sent with headers containing only
+  Content-Type: "application/json", no Authorization header.
+- >-
+  The unified _post_json endpoint accepts Mapping[str, object] payload and dict() converts it for
+  httpx.post's json= parameter; _post_to_response_moderation_endpoint wraps in {"request": ..., "response": ...} envelope.
+- >-
+  Both stream flags are set in __init__, not read from config; they are detect-only (streaming_end_of_stream_only)
+  and buffer-until-moderated (streaming_buffer_until_moderated), both defaulting to True.
+- >-
+  RubrikLogger.flush_queue overrides the base implementation and requires self.flush_lock is not None;
+  the lock is created by CustomBatchLogger.__init__ and passed through super().__init__(..., flush_lock=...).
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

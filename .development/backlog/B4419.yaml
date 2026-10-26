@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Load custom Python secret managers and expose their live methods
 status: todo
 depends_on: [B4410]
-file: null
+file: tasks/B4419-custom-secret-managers.yaml
 covers:
   - "litellm/secret_managers/custom_secret_manager_loader.py"
   - "litellm/integrations/custom_secret_manager.py"

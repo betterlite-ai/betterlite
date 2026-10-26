@@ -1,0 +1,87 @@
+id: B4800
+title: A2A card resolution and protocol errors
+description: >-
+  Build A2A agent card discovery from three probe paths and typed errors for the protocol layer.
+
+  Card discovery probes /.well-known/agent-card.json, /.well-known/agent.json, then /agentCard/v1.0 in order using the injected HTTP pool from B173, returning the first successful response or raising A2AAgentCardDiscoveryError with all failures. A supplied relative path bypasses probing. Provide localhost/internal URL detection (matching localhost, 127.0.0.1, 0.0.0.0 and their variants) for use by B4813 when classifying connection errors. Normalize agent card interfaces by uppercasing lowercase protocol bindings like "jsonrpc" to "JSONRPC", detecting spec-adjacent servers and downgrading their protocolVersion to 0.3 when a mis-cased binding is found. Preserve the original requested URL in discovery error messages.
+
+  A2AError is the base exception type with status 500, llm_provider "a2a_agent", and optional fields for model, response, debug info, and retry counts. A2AConnectionError (status 503) wraps connection failures including unreachable agents. A2AAgentCardError (status 404) covers card fetch failures and invalid formats. A2AAgentCardDiscoveryError lists all attempted paths and status codes. A2ALocalhostURLError is defined for use by B4813 to report localhost URLs detected in connection errors, carrying the detected URL, replacement base URL and original error for retry logic.
+
+  The task builds a pure Rust module consuming the HTTP pool contract from B173 and returning typed results. Error messages use betterlite's own wording, keeping status codes and types aligned with LiteLLM's response format.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-a2a/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L40-L46
+    why: Discovery status code selection from all failures, preferring non-404.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L49-L67
+    why: Localhost/internal URL detection patterns and classification.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L81-L104
+    why: Protocol binding normalization and version downgrade logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L107-L127
+    why: Agent card URL getters and setters on resolved cards.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L171-L209
+    why: Card resolver class, multipath probing and first-reachable-path logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L12-L52
+    why: A2AError base class with message, status, provider and retry field structure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L55-L86
+    why: A2AConnectionError for unreachable agents and URL field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L88-L126
+    why: A2AAgentCardError and A2AAgentCardDiscoveryError for card fetch failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L129-L160
+    why: A2ALocalhostURLError with localhost URL, base URL and retry semantics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L581-L589
+    why: LOCALHOST_URL_PATTERNS constant for internal URL matching.
+dod:
+  - text: Card discovery via three probe paths returns the first successful card.
+    proof: [card-resolver-tests]
+  - text: Discovery with a supplied relative path bypasses probing and uses that path only.
+    proof: [card-resolver-tests]
+  - text: Discovery failure lists all attempted paths and non-404 status codes in order.
+    proof: [card-resolver-tests]
+  - text: Localhost/internal URL detection function matches all LiteLLM patterns and is available for use by B4813.
+    proof: [localhost-patterns]
+  - text: Lowercase protocol bindings are uppercased and trigger version downgrade to 0.3.
+    proof: [card-resolver-tests]
+  - text: A2AError and all subclasses have the correct status codes and type fields matching LiteLLM.
+    proof: [error-tests]
+  - text: Error messages use betterlite's own wording and are never copied from LiteLLM.
+    proof: [error-tests]
+  - text: Localhost patterns match LiteLLM's LOCALHOST_URL_PATTERNS constant exactly.
+    proof: [localhost-patterns]
+checks:
+  optional: []
+  commands:
+    - id: card-resolver-tests
+      why: card resolver behavior tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^card_resolver_behavior($|::)/)'
+    - id: error-tests
+      why: error type tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^a2a_error($|::)/)'
+    - id: localhost-patterns
+      why: localhost pattern matching does not match LiteLLM
+      run: grep -qE '"localhost"|"127\.0\.0\.1"|"0\.0\.0\.0"|"::"' crates/betterlite-a2a/src/errors.rs || grep -qE 'localhost|127\.0\.0\.1|0\.0\.0\.0|::' crates/betterlite-a2a/src/card_resolver.rs
+oracle_cases: []
+deviations:
+  - what: >-
+      Error messages are in betterlite's own wording instead of LiteLLM's "litellm.A2AError: ..." prefix.
+    why: betterlite errors never credit LiteLLM in their text (rule litellm-boundaries), and messages name betterlite's own component names.
+  - what: >-
+      Card discovery probes in order: /.well-known/agent-card.json, /.well-known/agent.json, /agentCard/v1.0.
+    why: Probe order and path choices match LiteLLM's source, not arbitrary sequences.
+out_of_scope:
+  - a2a_protocol/card_resolver.py:130-158 (fix_agent_card_url), owned by no caller at the pin; active retry calls set_agent_card_url instead.
+  - A2A SDK protobuf conversion and transport, sourced from the a2a crate's own contract.
+  - Request retries and policy, owned by B4801 (native client transport).
+pitfalls:
+  - Localhost detection is substring-based, matching patterns anywhere in the URL (case-insensitive match for localhost, not path-suffix only).
+  - LOCALHOST_URL_PATTERNS must be read from litellm/constants.py:584 and the pattern list; do not invent URLs that look internal.
+  - Protobuf AgentCard mutation (CopyFrom, field assignment) requires types from the a2a crate at its version; confirm the proto layout matches before mutation.
+  - First non-404 status means the first response that is not 404; all non-response failures (network, timeout, parse) are collected and reported in the error.
+  - Interface normalization triggers on lowercase bindings anywhere in the binding string, not just an exact lowercase match.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

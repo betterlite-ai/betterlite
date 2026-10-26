@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Bound OIDC token lifetime and credential file access
 status: todo
 depends_on: [B002, B173]
-file: null
+file: tasks/B4411-oidc-credential-boundaries.yaml
 covers:
   - "litellm/secret_managers/main.py"
 parent: B129

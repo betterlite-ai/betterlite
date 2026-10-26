@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Share model-budget window increments and Redis flushing
 status: todo
 depends_on: [B199, B360, B390, B2226]
-file: null
+file: tasks/B3016-budget-window-increments.yaml
 covers:
   - "litellm/router_strategy/budget_limiter.py"
 parent: B071

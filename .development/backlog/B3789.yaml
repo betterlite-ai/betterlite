@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Prisma AIRS unified text and tool selection
 status: todo
 depends_on: [B3786, B3787]
-file: null
+file: tasks/B3789-prisma-unified.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/panw_prisma_airs.py"

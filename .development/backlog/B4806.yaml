@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Pydantic AI submission, polling and provider entry points
 status: todo
 depends_on: [B173, B4803, B4805]
-file: null
+file: tasks/B4806-pydantic-a2a-polling.yaml
 covers:
   - "litellm/a2a_protocol/providers/pydantic_ai_agents/**"
 parent: B142
