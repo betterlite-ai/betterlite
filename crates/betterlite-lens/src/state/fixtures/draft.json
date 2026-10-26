@@ -1,0 +1,11 @@
+{
+  "title": "Slow Replies",
+  "description": "Replies still take longer than a minute.",
+  "check_id": "tone",
+  "priority": "high",
+  "suggestion": "Cache the help center index.",
+  "evidence": [
+    {"execution_id": "exec-2", "span_id": "span-7", "quote": "still waiting"},
+    {"execution_id": "exec-3", "span_id": "span-9", "quote": "answered at once", "role": "counterexample"}
+  ]
+}

@@ -147,6 +147,29 @@ fn case_loads_directories_and_ignores_non_yaml_files() {
 }
 
 #[test]
+fn a_case_says_its_kind_wherever_it_lives() {
+    let root = temporary_case_path("kinds");
+    let folder = root.join("helpers");
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(folder.join("http.yaml"), valid_case_yaml()).unwrap();
+    let helper = root.join("helper.yaml");
+    fs::write(
+        &helper,
+        "kind: helper\nname: outside\ncall:\n  url_path:\n    function: segments\n    value: a\n    field_name: path\nenv: {}\ncompare:\n  ignore: []\n",
+    )
+    .unwrap();
+    assert!(matches!(
+        load_cases(&[folder.join("http.yaml")]).unwrap().as_slice(),
+        [LoadedCase::Http(_)]
+    ));
+    assert!(matches!(
+        load_cases(slice::from_ref(&helper)).unwrap().as_slice(),
+        [LoadedCase::Helper(_)]
+    ));
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
 fn exit_status_maps_success_and_difference() {
     assert_eq!(runner::exit_status(false), process::ExitCode::SUCCESS);
     assert_eq!(runner::exit_status(true), process::ExitCode::from(1));

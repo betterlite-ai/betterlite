@@ -87,6 +87,10 @@ scope:
   - tools/oracle/fuzz/corpus/multipart_capture/**
   - tools/oracle/cases/harness/multipart-oracle/**
   - tools/oracle/fixtures/multipart-oracle/**
+  - tools/oracle/helpers/b900.py
+  - tools/oracle/helpers/b900/**
+  - tools/oracle/src/helpers/oracle/b900.rs
+  - tools/oracle/src/helpers/oracle/b900/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L453-L467
@@ -280,5 +284,5 @@ pitfalls:
 - Preserve every duplicate multipart part even though B1101 later applies repeated plain-key last-wins; collapsing capture records loses the input order needed by downstream route cases.
 review_level: standard
 budget:
-  max_changed_lines: 620
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -282,6 +282,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as trusted_network in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/trusted_network.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/trusted_network.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - IPv4-mapped IPv6 must normalize before CIDR and forwarded-hop checks.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

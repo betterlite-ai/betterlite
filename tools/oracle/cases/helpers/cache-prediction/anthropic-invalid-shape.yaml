@@ -1,0 +1,8 @@
+kind: helper
+name: anthropic-invalid-shape
+call:
+  anthropic_cache_plan:
+    function: cache_plan
+    body: '{"model":"claude","max_tokens":32,"unknown":true,"messages":[{"role":"user","content":"hello"}]}'
+env: {}
+compare: {ignore: []}

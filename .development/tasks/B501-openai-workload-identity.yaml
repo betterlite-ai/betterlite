@@ -346,6 +346,6 @@ pitfalls:
 - SDK 2.54.0 omits client_id from token-exchange JSON even though LiteLLM sets client_id=litellm in its workload
   identity record.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

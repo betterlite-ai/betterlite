@@ -39,6 +39,10 @@ scope:
     - crates/betterlite-server/fuzz/corpus/scim_resource/group-patch-*
     - tools/oracle/cases/management/scim-group-patch/**
     - tools/oracle/fuzz/corpus/http_case/scim-composition-*
+    - tools/oracle/helpers/b064.py
+    - tools/oracle/helpers/b064/**
+    - tools/oracle/src/helpers/server/b064.rs
+    - tools/oracle/src/helpers/server/b064/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L262-L269
@@ -96,6 +100,6 @@ pitfalls:
   - An absolute members replace must not be rebased onto a concurrently changed roster, or a member explicitly removed by the IdP can survive.
   - Group PATCH rereads after roster changes and can therefore return different member data from otherwise similar group PUT operations.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

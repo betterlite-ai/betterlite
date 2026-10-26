@@ -106,6 +106,10 @@ scope:
   - Cargo.lock
   - tools/oracle/cases/api/claude-plugin-write/**
   - tools/oracle/fixtures/claude-plugin-write/**
+  - tools/oracle/helpers/b992.py
+  - tools/oracle/helpers/b992/**
+  - tools/oracle/src/helpers/server/b992.rs
+  - tools/oracle/src/helpers/server/b992/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L277-L388
@@ -214,5 +218,5 @@ pitfalls:
   detail={''error'': ''Plugin name must be kebab-case (lowercase letters, numbers, hyphens)''}) and its nested guards.'
 review_level: security
 budget:
-  max_changed_lines: 460
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -115,6 +115,10 @@ scope:
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-delete/**
     - crates/betterlite-server/src/key_delete/fixtures/**
+    - tools/oracle/helpers/b777.py
+    - tools/oracle/helpers/b777/**
+    - tools/oracle/src/helpers/server/b777.rs
+    - tools/oracle/src/helpers/server/b777/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4069-L4175
@@ -279,6 +283,6 @@ pitfalls:
   - The successful response is an echo, not proof that each requested identifier existed or was deleted.
   - Cache cleanup hashes an already normalized token again; replacing it with raw-key eviction changes behavior.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

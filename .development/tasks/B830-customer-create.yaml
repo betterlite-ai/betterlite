@@ -84,6 +84,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/customer-create/**
+    - tools/oracle/helpers/b830.py
+    - tools/oracle/helpers/b830/**
+    - tools/oracle/src/helpers/server/b830.rs
+    - tools/oracle/src/helpers/server/b830/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L98-L305
@@ -150,6 +154,6 @@ pitfalls:
   - A new budget can remain orphaned after the customer user_id uniqueness check fails.
   - A duration-only customer budget overrides a supplied budget_id even though max_budget plus budget_id is rejected by the request model.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

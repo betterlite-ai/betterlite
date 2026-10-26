@@ -410,6 +410,6 @@ pitfalls:
   response has none of those headers.
 - An explicit response bypasses synthesis; error_response_text must not consume an unread streaming body.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -68,6 +68,10 @@ scope:
   - Cargo.lock
   - tools/oracle/cases/api/responses-read-routes/**
   - tools/oracle/fixtures/responses-read-routes/**
+  - tools/oracle/helpers/b938.py
+  - tools/oracle/helpers/b938/**
+  - tools/oracle/src/helpers/server/b938.rs
+  - tools/oracle/src/helpers/server/b938/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L677-L790
@@ -251,5 +255,5 @@ pitfalls:
 - 'Polling HTTPException responses retain a FastAPI detail field, but provider exceptions pass through B004 and proxy_server emits an error object with a string code and forwarded headers; one shared error serializer changes the wire contract.'
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -31,6 +31,10 @@ scope:
     - tools/oracle/cases/guardrails/cato/**
     - crates/betterlite-config/src/sections/cato_projections.rs
     - crates/betterlite-config/src/sections/cato_projections/**
+    - tools/oracle/helpers/b3754.py
+    - tools/oracle/helpers/b3754/**
+    - tools/oracle/src/helpers/guardrails/b3754.rs
+    - tools/oracle/src/helpers/guardrails/b3754/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/cato_networks.py#L95-L512
@@ -139,5 +143,5 @@ pitfalls:
     logic that prevents spoofing via caller-supplied end_user_id.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 1

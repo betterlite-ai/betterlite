@@ -33,6 +33,7 @@ use std::str::Utf8Error;
 use std::time::{Duration, SystemTimeError};
 
 use axum::http::status::InvalidStatusCode;
+use betterlite_postgres_fixture::error::FixtureError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -53,6 +54,16 @@ pub enum OracleError {
     },
     #[error("invalid case {path}: {message}")]
     CaseInvalid { path: PathBuf, message: String },
+    #[error("case is not valid UTF-8: {source}")]
+    CaseUtf8 {
+        #[source]
+        source: Utf8Error,
+    },
+    #[error("HTTP case fixture is invalid: {source}")]
+    HttpCaseFixture {
+        #[source]
+        source: FixtureError,
+    },
     #[error("HTTP request failed: {0}")]
     HttpRequest(#[source] reqwest::Error),
     #[error("HTTP I/O failed: {0}")]
@@ -165,6 +176,26 @@ pub enum OracleError {
     },
     #[error("helper output is not valid JSON: {0}")]
     HelperJson(#[source] serde_json::Error),
+    #[error("database fixture failed: {0}")]
+    DatabaseFixture(#[source] FixtureError),
+    #[error("cases declare different database fixtures: {cases:?}")]
+    DatabaseFixturesDiffer { cases: Vec<String> },
+    #[error("database fixture cleanup failed: {0}")]
+    DatabaseCleanup(#[source] FixtureError),
+    #[error("oracle operation failed and fixture cleanup failed: {operation}; {cleanup}")]
+    OperationCleanup {
+        #[source]
+        operation: Box<Self>,
+        cleanup: FixtureError,
+    },
+    #[error("cannot parse generated gateway config: {0}")]
+    GeneratedConfig(#[source] Box<serde_saphyr::Error>),
+    #[error("cannot serialize generated gateway config: {0}")]
+    GeneratedConfigSerialize(#[source] serde_saphyr::SerializeError),
+    #[error("gateway config already sets general_settings.database_url")]
+    DatabaseUrlConflict,
+    #[error("gateway config already sets general_settings.disable_prisma_schema_update")]
+    DisableSchemaUpdateConflict,
 }
 
 pub fn run() -> Result<ExitCode, OracleError> {

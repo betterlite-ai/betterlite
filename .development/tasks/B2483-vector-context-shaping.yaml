@@ -101,5 +101,5 @@ pitfalls:
 - Nonempty text is joined with two trailing newlines per item, with no citation labels or trimming.
 review_level: security
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0

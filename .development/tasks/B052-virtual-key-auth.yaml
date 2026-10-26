@@ -91,6 +91,10 @@ scope:
     - tools/oracle/cases/auth/virtual-key-auth/**
     - crates/betterlite-config/src/sections/virtual_key_auth.rs
     - crates/betterlite-config/src/sections/virtual_key_auth/**
+    - tools/oracle/helpers/b052.py
+    - tools/oracle/helpers/b052/**
+    - tools/oracle/src/helpers/server/b052.rs
+    - tools/oracle/src/helpers/server/b052/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1475-L1602
@@ -158,6 +162,6 @@ pitfalls:
   - Authentication still runs for malformed bodies, but authorization and reservation must not run.
   - The master cache key is its hash; downstream identity must remain the stable master alias.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

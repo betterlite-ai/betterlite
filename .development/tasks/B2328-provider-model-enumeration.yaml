@@ -109,6 +109,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as available_models in the models group. Replace the stub Op in tools/oracle/src/helpers/models/available_models.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/available_models.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The source constructor's positional arguments make the default capacity 300 and TTL 1000 despite their parameter names.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

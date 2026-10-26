@@ -192,6 +192,6 @@ pitfalls:
   - return_exceptions=True hides enrollment failures from this helper's caller after successful writes remain committed.
   - An empty teams list is falsey in get_user_object, so the port must return before add_new_user_to_default_team runs.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -196,6 +196,6 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as bedrock_image_dispatch in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/bedrock_image_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_image_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Canvas and Stability edit dispatch share transport but select different request and reply projections.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

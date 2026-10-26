@@ -269,6 +269,6 @@ pitfalls:
 - The dispatcher contract cannot depend on completed chat composition or it recreates the Bedrock batch dependency
   cycle.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

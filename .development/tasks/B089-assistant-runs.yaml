@@ -37,6 +37,10 @@ scope:
   - tools/oracle/fixtures/assistant-runs/**
   - crates/betterlite-config/src/sections/assistant_keepalive.rs
   - crates/betterlite-config/src/sections/assistant_keepalive/**
+  - tools/oracle/helpers/b089.py
+  - tools/oracle/helpers/b089/**
+  - tools/oracle/src/helpers/server/b089.rs
+  - tools/oracle/src/helpers/server/b089/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L13679-L13798
@@ -156,5 +160,5 @@ pitfalls:
 - Streaming starts with empty custom headers and returns before the success-status block below it.
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0

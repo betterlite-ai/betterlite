@@ -84,6 +84,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-member-bulk/**
+    - tools/oracle/helpers/b810.py
+    - tools/oracle/helpers/b810/**
+    - tools/oracle/src/helpers/server/b810.rs
+    - tools/oracle/src/helpers/server/b810/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4126-L4308
@@ -228,6 +232,6 @@ pitfalls:
   - An empty append list bypasses mutually exclusive target validation, but never bypasses the proxy-admin check.
   - All-team permission merging can overwrite a concurrent writer and is not a transaction across pages.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

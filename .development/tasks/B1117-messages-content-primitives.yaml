@@ -181,5 +181,5 @@ pitfalls:
 - One surviving text part collapses to a scalar string, but two surviving parts, including text plus an image, remain a list.
 review_level: standard
 budget:
-  max_changed_lines: 620
+  max_changed_lines: 1000
   max_new_expects: 0

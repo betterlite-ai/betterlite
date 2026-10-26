@@ -28,6 +28,10 @@ scope:
   - tools/oracle/fuzz/Cargo.toml
   - tools/oracle/fuzz/fuzz_targets/scenario.rs
   - tools/oracle/fuzz/corpus/scenario/routing-scenarios-*
+  - tools/oracle/helpers/b300.py
+  - tools/oracle/helpers/b300/**
+  - tools/oracle/src/helpers/oracle/b300.rs
+  - tools/oracle/src/helpers/oracle/b300/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7660-L7887
@@ -98,5 +102,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 1

@@ -34,6 +34,10 @@ scope:
     - tools/oracle/cases/guardrails/akto/**
     - crates/betterlite-config/src/sections/akto_mirroring.rs
     - crates/betterlite-config/src/sections/akto_mirroring/**
+    - tools/oracle/helpers/b3751.py
+    - tools/oracle/helpers/b3751/**
+    - tools/oracle/src/helpers/guardrails/b3751.rs
+    - tools/oracle/src/helpers/guardrails/b3751/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L62-L486
@@ -128,5 +132,5 @@ pitfalls:
     in the Authorization header.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 1

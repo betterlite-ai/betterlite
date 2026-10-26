@@ -76,6 +76,6 @@ pitfalls:
   - One permission can produce several override display rows sharing the same override_id.
   - A failed owner lookup must not erase tools already read successfully.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

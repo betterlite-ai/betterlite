@@ -54,6 +54,10 @@ scope:
   - tools/oracle/fuzz/corpus/sdk_http_case/speech-call-*
   - crates/betterlite-config/src/sections/speech_call.rs
   - crates/betterlite-config/src/sections/speech_call/**
+  - tools/oracle/helpers/b1084.py
+  - tools/oracle/helpers/b1084/**
+  - tools/oracle/src/helpers/core_ops/b1084.rs
+  - tools/oracle/src/helpers/core_ops/b1084/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8237-L8719
@@ -141,5 +145,5 @@ pitfalls:
 - Global num_retries=0 falls through to 2 while an explicit max_retries=0 does not.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 1

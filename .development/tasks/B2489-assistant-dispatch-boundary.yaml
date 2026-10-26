@@ -42,6 +42,10 @@ scope:
   - tools/oracle/fuzz/corpus/sdk_http_case/assistant-dispatch-*
   - crates/betterlite-config/src/sections/assistant_settings.rs
   - crates/betterlite-config/src/sections/assistant_settings/**
+  - tools/oracle/helpers/b2489.py
+  - tools/oracle/helpers/b2489/**
+  - tools/oracle/src/helpers/server/b2489.rs
+  - tools/oracle/src/helpers/server/b2489/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1899-L1908
@@ -134,5 +138,5 @@ pitfalls:
 - TypedDict does not validate provider literals or missing keys at runtime, so a Rust enum must not accidentally move those errors to startup.
 review_level: security
 budget:
-  max_changed_lines: 760
+  max_changed_lines: 1000
   max_new_expects: 0

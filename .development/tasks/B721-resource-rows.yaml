@@ -167,6 +167,6 @@ pitfalls:
   - Model params text 'null' is invalid, but model_info text 'null' is accepted.
   - Config's dict-only model is stricter than the ConfigParam wrapper used by repository reads.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

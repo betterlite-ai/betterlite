@@ -160,5 +160,5 @@ pitfalls:
 - current_index is one mutable cursor shared by __next__ and __anext__; alternating them consumes frames once, and changing response after construction cannot affect the byte list.
 review_level: standard
 budget:
-  max_changed_lines: 580
+  max_changed_lines: 1000
   max_new_expects: 0

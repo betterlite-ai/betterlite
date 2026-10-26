@@ -97,6 +97,10 @@ scope:
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/access-group-write/**
     - crates/betterlite-server/src/access_group_write/fixtures/**
+    - tools/oracle/helpers/b822.py
+    - tools/oracle/helpers/b822/**
+    - tools/oracle/src/helpers/server/b822.rs
+    - tools/oracle/src/helpers/server/b822/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L317-L577
@@ -197,6 +201,6 @@ pitfalls:
   - DELETE maps failures from post-commit cache and registry work through its own 503/404/500 catch.
   - PUT uses repaired old team memberships but only stored old key memberships when computing deltas.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

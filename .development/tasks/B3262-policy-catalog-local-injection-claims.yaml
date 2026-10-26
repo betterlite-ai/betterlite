@@ -177,5 +177,5 @@ pitfalls:
   - The airline-off-topic-restriction category must be airline_off_topic_restriction with category_file pointing to policy_templates/airline_off_topic_restriction.yaml; mismatches prevent off-topic blocking.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

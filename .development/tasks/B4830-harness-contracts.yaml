@@ -113,5 +113,5 @@ pitfalls:
     and raises OptionsMismatch if called with the wrong options type.
 review_level: security
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1150
   max_new_expects: 1

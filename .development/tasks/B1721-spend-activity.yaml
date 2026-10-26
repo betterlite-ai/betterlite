@@ -40,6 +40,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/activity_query.rs
     - crates/betterlite-server/fuzz/corpus/activity_query/**
     - tools/oracle/cases/http/spend-activity/**
+    - tools/oracle/helpers/b1721.py
+    - tools/oracle/helpers/b1721/**
+    - tools/oracle/src/helpers/server/b1721.rs
+    - tools/oracle/src/helpers/server/b1721/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L620-L941
@@ -73,6 +77,6 @@ pitfalls:
   - February labels sort before January labels because this API sorts formatted text, not timestamps.
   - Historical spend for a deleted deployment disappears from the provider report instead of entering Unknown.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -67,6 +67,10 @@ scope:
   - crates/betterlite-router/fuzz/corpus/cap_reply/capability-forecast-*
   - crates/betterlite-config/src/sections/capability_forecast.rs
   - crates/betterlite-config/src/sections/capability_forecast/**
+  - tools/oracle/helpers/b394.py
+  - tools/oracle/helpers/b394/**
+  - tools/oracle/src/helpers/router/b394.rs
+  - tools/oracle/src/helpers/router/b394/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/capability_classifier.py#L17-L227
@@ -204,5 +208,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 1

@@ -426,6 +426,6 @@ pitfalls:
 - Adaptive effort keeps an existing output_config.effort; this differs from the direct Anthropic mapper that replaces
   it.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

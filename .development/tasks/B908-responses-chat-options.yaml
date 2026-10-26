@@ -105,5 +105,5 @@ pitfalls:
 - reasoning.summary is forwarded only to a chat request known to bridge back to Responses.
 review_level: standard
 budget:
-  max_changed_lines: 590
+  max_changed_lines: 1000
   max_new_expects: 1

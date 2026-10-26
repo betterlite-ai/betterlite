@@ -487,6 +487,6 @@ pitfalls:
 - This creation function parses the S3 URI without invoking the stricter download authorization helper; apply authorization
   at its actual API owner.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

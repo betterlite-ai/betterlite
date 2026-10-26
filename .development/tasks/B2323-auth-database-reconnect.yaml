@@ -123,6 +123,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as auth_reconnect in the db group. Replace the stub Op in tools/oracle/src/helpers/db/auth_reconnect.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_reconnect.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A false forced-recreate result can mean another generation already recovered, so it must not increment the failure count.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

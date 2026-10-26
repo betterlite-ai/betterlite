@@ -117,5 +117,5 @@ pitfalls:
 - Python waits for all futures on executor-context exit; its losing work is owned, not detached.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

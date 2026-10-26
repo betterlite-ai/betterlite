@@ -41,6 +41,10 @@ scope:
   - tools/oracle/fuzz/corpus/sdk_http_case/image-edit-call-*
   - crates/betterlite-config/src/sections/image_edit_call.rs
   - crates/betterlite-config/src/sections/image_edit_call/**
+  - tools/oracle/helpers/b999.py
+  - tools/oracle/helpers/b999/**
+  - tools/oracle/src/helpers/core_ops/b999.rs
+  - tools/oracle/src/helpers/core_ops/b999/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L711-L1056
@@ -114,5 +118,5 @@ pitfalls:
 - Bedrock's zero timeout is retained while other edit handlers replace zero with REQUEST_TIMEOUT.
 review_level: security
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 1

@@ -95,6 +95,6 @@ pitfalls:
   - Caching savings substitutes the input price for a zero write price while actual custom billing preserves that zero as free.
   - A zero detail cache counter permits fallback to the private top-level counter; the check is truthiness rather than presence.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

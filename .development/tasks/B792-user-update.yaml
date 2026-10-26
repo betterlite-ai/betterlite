@@ -157,6 +157,10 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/user-update-*
     - crates/betterlite-config/src/sections/user_update.rs
     - crates/betterlite-config/src/sections/user_update/**
+    - tools/oracle/helpers/b792.py
+    - tools/oracle/helpers/b792/**
+    - tools/oracle/src/helpers/server/b792.rs
+    - tools/oracle/src/helpers/server/b792/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1286-L1753
@@ -283,6 +287,6 @@ out_of_scope:
 pitfalls:
   - Self-edit permission does not permit user_role escalation.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

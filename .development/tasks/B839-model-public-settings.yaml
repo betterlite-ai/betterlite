@@ -78,6 +78,10 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/model-public-settings-*
     - crates/betterlite-config/src/sections/model_public_settings.rs
     - crates/betterlite-config/src/sections/model_public_settings/**
+    - tools/oracle/helpers/b839.py
+    - tools/oracle/helpers/b839/**
+    - tools/oracle/src/helpers/server/b839.rs
+    - tools/oracle/src/helpers/server/b839/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2789-L2934
@@ -193,6 +197,6 @@ out_of_scope:
 pitfalls:
   - Useful link URLs are rendered data and never fetched during validation.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security
