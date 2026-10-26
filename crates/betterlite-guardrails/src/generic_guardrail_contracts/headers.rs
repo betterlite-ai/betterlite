@@ -148,46 +148,11 @@ fn logging_headers(
 }
 
 fn coerce_header_value(raw_value: &GuardrailExtraValue) -> String {
-    match raw_value {
-        GuardrailExtraValue::Null => "None".to_owned(),
-        GuardrailExtraValue::Boolean(boolean) => {
-            if *boolean {
-                "True".to_owned()
-            } else {
-                "False".to_owned()
-            }
-        }
-        GuardrailExtraValue::SignedInteger(number) => number.to_string(),
-        GuardrailExtraValue::UnsignedInteger(number) => number.to_string(),
-        GuardrailExtraValue::Decimal(number) => number.to_string(),
-        GuardrailExtraValue::Text(text) => text.clone(),
-        GuardrailExtraValue::Array(values) => format_python_array(values),
-        GuardrailExtraValue::Object(values) => format_python_object(values),
+    if let GuardrailExtraValue::Text(text) = raw_value {
+        text.clone()
+    } else {
+        format_python_value(raw_value)
     }
-}
-
-fn format_python_array(values: &[GuardrailExtraValue]) -> String {
-    let rendered_values = values
-        .iter()
-        .map(format_python_value)
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("[{rendered_values}]")
-}
-
-fn format_python_object(values: &BTreeMap<String, GuardrailExtraValue>) -> String {
-    let rendered_values = values
-        .iter()
-        .map(|(key, value)| {
-            format!(
-                "{}: {}",
-                quote_python_string(key),
-                format_python_value(value)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("{{{rendered_values}}}")
 }
 
 fn format_python_value(value: &GuardrailExtraValue) -> String {
@@ -204,8 +169,28 @@ fn format_python_value(value: &GuardrailExtraValue) -> String {
         GuardrailExtraValue::UnsignedInteger(number) => number.to_string(),
         GuardrailExtraValue::Decimal(number) => number.to_string(),
         GuardrailExtraValue::Text(text) => quote_python_string(text),
-        GuardrailExtraValue::Array(values) => format_python_array(values),
-        GuardrailExtraValue::Object(values) => format_python_object(values),
+        GuardrailExtraValue::Array(values) => {
+            let rendered_values = values
+                .iter()
+                .map(format_python_value)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{rendered_values}]")
+        }
+        GuardrailExtraValue::Object(values) => {
+            let rendered_values = values
+                .iter()
+                .map(|(key, nested_value)| {
+                    format!(
+                        "{}: {}",
+                        quote_python_string(key),
+                        format_python_value(nested_value)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{rendered_values}}}")
+        }
     }
 }
 
