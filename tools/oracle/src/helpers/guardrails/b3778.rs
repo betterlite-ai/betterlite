@@ -1,4 +1,6 @@
-use betterlite_guardrails::lasso::{LassoError, extract_tool_arguments};
+use betterlite_guardrails::lasso::{
+    LassoError, LassoGuardrail, LassoResponse, LassoSettings, OpenAiTool, extract_tool_arguments,
+};
 
 pub(crate) struct Op;
 
@@ -7,36 +9,60 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let operation = input.get("operation").and_then(serde_json::Value::as_str);
-        let value = input.get("value").cloned().unwrap_or(serde_json::Value::Null);
+        let value = input
+            .get("value")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         match operation {
-            Some("extract_tool_arguments") => Ok(extract_tool_arguments(&value).unwrap_or(serde_json::Value::Null)),
+            Some("extract_tool_arguments") => {
+                let tool: OpenAiTool = serde_json::from_value(value)
+                    .map_err(|error| helper_error("InvalidInput", error.to_string()))?;
+                serde_json::to_value(extract_tool_arguments(&tool))
+                    .map_err(|error| helper_error("SerializationError", error.to_string()))
+            }
             Some("process_response") => {
-                let guardrail = betterlite_guardrails::lasso::LassoGuardrail::new(
-                    Some("oracle-key".to_owned()), None, None, None, false,
-                ).map_err(|error| helper_error("ConstructorError", error))?;
-                guardrail.process_response(value).map(|_| serde_json::json!(null)).map_err(|error| {
-                    helper_error(error_class(&error), error)
-                })
+                let guardrail = LassoGuardrail::new(
+                    LassoSettings {
+                        api_key: Some("oracle-key".to_owned()),
+                        api_base: None,
+                        user_id: None,
+                        conversation_id: None,
+                        mask: false,
+                    },
+                    reqwest::Client::default(),
+                )
+                .map_err(|error| helper_error("ConstructorError", error.to_string()))?;
+                let response: LassoResponse = serde_json::from_value(value)
+                    .map_err(|error| helper_error("InvalidInput", error.to_string()))?;
+                guardrail
+                    .process_response(response)
+                    .map(|()| serde_json::Value::Null)
+                    .map_err(|error| helper_error(error_class(&error), error.to_string()))
             }
             _ => Self::not_built("b3778"),
         }
     }
 }
 
-fn error_class(error: &LassoError) -> &str {
+const fn error_class(error: &LassoError) -> &str {
     match error {
         LassoError::Blocked { .. } => "HTTPException",
-        _ => "LassoError",
+        LassoError::MissingSecrets
+        | LassoError::Cache { .. }
+        | LassoError::Request { .. }
+        | LassoError::HttpStatus { .. }
+        | LassoError::ResponseJson { .. } => "LassoError",
     }
 }
 
-fn helper_error(class: &str, error: LassoError) -> Box<crate::helpers::HelperError> {
+fn helper_error(class_name: &str, message: String) -> Box<crate::helpers::HelperError> {
+    let class = class_name.to_owned();
     Box::new(crate::helpers::HelperError {
-        class: class.to_owned(),
+        class,
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: error.to_string(),
+        message,
     })
 }

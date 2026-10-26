@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
+use std::fmt::{self, Debug, Formatter};
 use std::time::Duration;
 
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::value::RawValue;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -33,7 +34,7 @@ pub enum LassoError {
     #[error("Lasso blocked the request: {deputies:?}")]
     Blocked {
         deputies: Vec<String>,
-        response: Value,
+        response: LassoResponse,
     },
 }
 
@@ -47,10 +48,9 @@ pub struct LassoGuardrail {
     client: reqwest::Client,
 }
 
-impl std::fmt::Debug for LassoGuardrail {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("LassoGuardrail")
+impl Debug for LassoGuardrail {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LassoGuardrail")
             .field("api_base", &self.api_base)
             .field("user_id", &self.user_id)
             .field("conversation_id", &self.conversation_id)
@@ -59,62 +59,67 @@ impl std::fmt::Debug for LassoGuardrail {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct LassoSettings {
+    pub api_key: Option<String>,
+    pub api_base: Option<String>,
+    pub user_id: Option<String>,
+    pub conversation_id: Option<String>,
+    pub mask: bool,
+}
+
 impl LassoGuardrail {
-    pub fn new(
-        api_key: Option<String>,
-        api_base: Option<String>,
-        user_id: Option<String>,
-        conversation_id: Option<String>,
-        mask: bool,
-    ) -> Result<Self, LassoError> {
-        let api_key = api_key.ok_or(LassoError::MissingSecrets)?;
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()
-            .map_err(|source| LassoError::Request { source })?;
+    pub fn new(settings: LassoSettings, client: reqwest::Client) -> Result<Self, LassoError> {
+        let resolved_api_key = settings.api_key.ok_or(LassoError::MissingSecrets)?;
         Ok(Self {
-            api_key,
-            api_base: api_base.unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
-            user_id,
-            conversation_id,
-            mask,
+            api_key: resolved_api_key,
+            api_base: settings
+                .api_base
+                .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
+            user_id: settings.user_id,
+            conversation_id: settings.conversation_id,
+            mask: settings.mask,
             client,
         })
     }
 
-    pub fn conversation_id<C: ConversationCache>(
-        &self,
-        litellm_call_id: Option<&str>,
-        cache: &C,
-    ) -> String {
+    pub fn conversation_id<C>(&self, litellm_call_id: Option<&str>, cache: &C) -> String
+    where
+        C: ConversationCache,
+    {
         if let Some(conversation_id) = self.conversation_id.as_deref() {
             return conversation_id.to_owned();
         }
         let Some(call_id) = litellm_call_id.filter(|value| !value.is_empty()) else {
-            return Self::generate_conversation_id();
+            return Uuid::new_v4().to_string();
         };
         let key = format!("lasso_conversation_id:{call_id}");
         if let Ok(Some(value)) = cache.get_cache(&key) {
             return value;
         }
-        let generated = Self::generate_conversation_id();
-        let _ = cache.set_cache(&key, &generated, CACHE_TTL_SECONDS);
+        let generated = Uuid::new_v4().to_string();
+        drop(cache.set_cache(&key, &generated, CACHE_TTL_SECONDS));
         generated
     }
 
-    pub fn prepare_headers<C: ConversationCache>(
+    pub fn prepare_headers<C>(
         &self,
         litellm_call_id: Option<&str>,
         cache: &C,
-    ) -> Result<HeaderMap, LassoError> {
+    ) -> Result<HeaderMap, LassoError>
+    where
+        C: ConversationCache,
+    {
         let conversation_id = self.conversation_id(litellm_call_id, cache);
-        let mut headers = HeaderMap::new();
         let api_key =
-            HeaderValue::from_str(&self.api_key).map_err(|_| LassoError::MissingSecrets)?;
-        let conversation =
-            HeaderValue::from_str(&conversation_id).map_err(|_| LassoError::Cache {
-                message: "invalid conversation ID".to_owned(),
+            HeaderValue::from_str(&self.api_key).map_err(|invalid| LassoError::Cache {
+                message: format!("invalid API key header: {invalid}"),
             })?;
+        let conversation =
+            HeaderValue::from_str(&conversation_id).map_err(|invalid| LassoError::Cache {
+                message: format!("invalid conversation ID header: {invalid}"),
+            })?;
+        let mut headers = HeaderMap::new();
         headers.insert(HeaderName::from_static("lasso-api-key"), api_key);
         headers.insert(
             HeaderName::from_static("lasso-conversation-id"),
@@ -122,47 +127,55 @@ impl LassoGuardrail {
         );
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         if let Some(user_id) = self.user_id.as_deref() {
-            let value = HeaderValue::from_str(user_id).map_err(|_| LassoError::Cache {
-                message: "invalid user ID".to_owned(),
+            let value = HeaderValue::from_str(user_id).map_err(|invalid| LassoError::Cache {
+                message: format!("invalid user ID header: {invalid}"),
             })?;
             headers.insert(HeaderName::from_static("lasso-user-id"), value);
         }
         Ok(headers)
     }
 
-    pub fn prepare_payload<C: ConversationCache>(
+    pub fn prepare_payload<C>(
         &self,
-        messages: Vec<Value>,
-        data: &Value,
-        message_type: &str,
+        messages: Vec<Box<RawValue>>,
+        data: &LassoRequestData,
+        message_type: MessageType,
         cache: &C,
-    ) -> Value {
-        let call_id = data.get("litellm_call_id").and_then(Value::as_str);
-        let session_id = self.conversation_id(call_id, cache);
-        let mut payload = Map::new();
-        payload.insert("messages".to_owned(), Value::Array(messages));
-        payload.insert(
-            "messageType".to_owned(),
-            Value::String(message_type.to_owned()),
-        );
-        payload.insert("sessionId".to_owned(), Value::String(session_id));
-        payload.insert("source".to_owned(), serde_json::json!({"type": "litellm"}));
-        if let Some(user_id) = self.user_id.as_deref() {
-            payload.insert("userId".to_owned(), Value::String(user_id.to_owned()));
+    ) -> LassoPayload
+    where
+        C: ConversationCache,
+    {
+        let session_id = self.conversation_id(data.litellm_call_id.as_deref(), cache);
+        LassoPayload {
+            messages,
+            message_type,
+            session_id,
+            user_id: self.user_id.clone(),
+            tools: data
+                .tools
+                .iter()
+                .filter_map(|tool| {
+                    let function = tool.function.as_ref()?;
+                    let name = function.name.clone()?;
+                    Some(ToolDefinition {
+                        name,
+                        description: function.description.clone(),
+                        parameters: function.parameters.clone(),
+                    })
+                })
+                .collect(),
+            source: Source {
+                source_type: "litellm".to_owned(),
+            },
         }
-        let tools = flatten_tools(data.get("tools"));
-        if !tools.is_empty() {
-            payload.insert("tools".to_owned(), Value::Array(tools));
-        }
-        Value::Object(payload)
     }
 
     pub async fn call_api(
         &self,
         headers: HeaderMap,
-        payload: &Value,
+        payload: &LassoPayload,
         api_url: Option<&str>,
-    ) -> Result<Value, LassoError> {
+    ) -> Result<LassoResponse, LassoError> {
         let endpoint = api_url.map_or_else(
             || {
                 format!(
@@ -178,6 +191,7 @@ impl LassoGuardrail {
             .post(endpoint)
             .headers(headers)
             .json(payload)
+            .timeout(Duration::from_secs(10))
             .send()
             .await
             .map_err(|source| LassoError::Request { source })?;
@@ -192,90 +206,116 @@ impl LassoGuardrail {
         serde_json::from_str(&body).map_err(|source| LassoError::ResponseJson { source })
     }
 
-    pub fn process_response(&self, response: Value) -> Result<(), LassoError> {
-        if response.get("violations_detected") != Some(&Value::Bool(true)) {
+    pub fn process_response(&self, response: LassoResponse) -> Result<(), LassoError> {
+        if !response.violations_detected {
             return Ok(());
         }
-        let deputies = blocking_deputies(&response);
+        let deputies: Vec<String> = response
+            .findings
+            .iter()
+            .filter(|(_, findings)| {
+                findings
+                    .iter()
+                    .any(|finding| finding.action.as_deref() == Some("BLOCK"))
+            })
+            .map(|(deputy, _)| deputy.clone())
+            .collect();
         if deputies.is_empty() {
             return Ok(());
         }
         Err(LassoError::Blocked { deputies, response })
     }
-
-    fn generate_conversation_id() -> String {
-        Uuid::new_v4().to_string()
-    }
 }
 
-fn flatten_tools(value: Option<&Value>) -> Vec<Value> {
-    let Some(Value::Array(tools)) = value else {
-        return Vec::new();
-    };
-    tools
-        .iter()
-        .filter_map(|tool| {
-            let function = tool.get("function")?.as_object()?;
-            let name = function.get("name")?.clone();
-            let mut definition = Map::new();
-            definition.insert("name".to_owned(), name);
-            for field in ["description", "parameters"] {
-                if let Some(value) = function.get(field) {
-                    definition.insert(field.to_owned(), value.clone());
-                }
-            }
-            Some(Value::Object(definition))
-        })
-        .collect()
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct LassoRequestData {
+    pub litellm_call_id: Option<String>,
+    #[serde(default)]
+    pub tools: Vec<OpenAiTool>,
 }
 
-pub fn extract_tool_arguments(tool_call: &Value) -> Option<Value> {
-    let arguments = tool_call.get("function")?.get("arguments")?;
-    let raw = arguments.as_str()?;
-    match serde_json::from_str::<Value>(raw) {
-        Ok(Value::Object(object)) => Some(Value::Object(object)),
-        _ => Some(serde_json::json!({"arguments": raw})),
-    }
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OpenAiTool {
+    pub function: Option<OpenAiFunction>,
 }
 
-fn blocking_deputies(response: &Value) -> Vec<String> {
-    let Some(findings) = response.get("findings").and_then(Value::as_object) else {
-        return Vec::new();
-    };
-    findings
-        .iter()
-        .filter_map(|(deputy, entries)| {
-            let blocked = entries
-                .as_array()?
-                .iter()
-                .any(|entry| entry.get("action").and_then(Value::as_str) == Some("BLOCK"));
-            blocked.then(|| deputy.clone())
-        })
-        .collect()
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OpenAiFunction {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub parameters: Option<Box<RawValue>>,
+    pub arguments: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct MemoryCacheEntry {
-    pub value: String,
-    pub ttl_seconds: u64,
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ToolDefinition {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<Box<RawValue>>,
 }
 
-impl ConversationCache for std::cell::RefCell<BTreeMap<String, MemoryCacheEntry>> {
-    fn get_cache(&self, key: &str) -> Result<Option<String>, String> {
-        Ok(self.borrow().get(key).map(|entry| entry.value.clone()))
-    }
-
-    fn set_cache(&self, key: &str, value: &str, ttl_seconds: u64) -> Result<(), String> {
-        self.borrow_mut().insert(
-            key.to_owned(),
-            MemoryCacheEntry {
-                value: value.to_owned(),
-                ttl_seconds,
-            },
-        );
-        Ok(())
-    }
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct LassoPayload {
+    pub messages: Vec<Box<RawValue>>,
+    #[serde(rename = "messageType")]
+    pub message_type: MessageType,
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(rename = "userId", skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<ToolDefinition>,
+    pub source: Source,
 }
 
-#[cfg(test)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Source {
+    #[serde(rename = "type")]
+    pub source_type: String,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub enum MessageType {
+    #[serde(rename = "PROMPT")]
+    Prompt,
+    #[serde(rename = "COMPLETION")]
+    Completion,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LassoResponse {
+    #[serde(default)]
+    pub violations_detected: bool,
+    #[serde(default)]
+    pub findings: BTreeMap<String, Vec<Finding>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Finding {
+    pub action: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum ToolArguments {
+    Parsed(BTreeMap<String, Box<RawValue>>),
+    Malformed { arguments: String },
+}
+
+#[must_use]
+pub fn extract_tool_arguments(tool_call: &OpenAiTool) -> Option<ToolArguments> {
+    let raw = tool_call.function.as_ref()?.arguments.as_deref()?;
+    serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(raw).map_or_else(
+        |_| {
+            Some(ToolArguments::Malformed {
+                arguments: raw.to_owned(),
+            })
+        },
+        |parsed| Some(ToolArguments::Parsed(parsed)),
+    )
+}
+
+#[path = "lasso/tests.rs"]
 mod tests;
