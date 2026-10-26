@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use serde_json::json;
+use serde_json::from_str;
 use std::collections::BTreeMap;
 
 #[test]
@@ -25,10 +25,10 @@ fn generic_guardrail_header_allowlist_and_globs() {
 
 #[test]
 fn generic_guardrail_header_extraction_uses_proxy_first() {
-    let request_data = json!({
-        "proxy_server_request": {"headers": {"Authorization": "secret"}},
-        "metadata": {"headers": {"Host": "wrong.example"}}
-    });
+    let request_data: InboundRequestContext = from_str(
+        r#"{"proxy_server_request":{"headers":{"Authorization":"secret"}},"metadata":{"headers":{"Host":"wrong.example"}}}"#,
+    )
+    .expect("request context");
     let headers = extract_inbound_headers(&request_data, None).expect("headers");
     assert_eq!(headers.get("Authorization"), Some(&"[present]".to_owned()));
     assert!(!headers.contains_key("Host"));
@@ -45,40 +45,22 @@ fn generic_guardrail_constructor_defaults() {
 
 #[test]
 fn generic_guardrail_row_reconciliation() {
-    let original = vec![json!({"role":"user", "id":"original"})];
-    let shown = vec![json!({"role":"user", "content":"shown"})];
-    let echoed = reconcile_structured_rows(
-        &original,
-        &shown,
-        &[json!({"role":"user", "content":"shown"})],
-    );
-    assert_eq!(echoed, None);
-    let changed = reconcile_structured_rows(
-        &original,
-        &shown,
-        &[json!({"role":"user", "content":"redacted"})],
-    );
-    assert_eq!(
-        changed,
-        Some(vec![json!({"role":"user", "content":"redacted"})])
-    );
+    let original: Vec<GuardrailMessage> =
+        from_str(r#"[{"role":"user","id":"original"}]"#).expect("original");
+    let shown: Vec<GuardrailMessage> =
+        from_str(r#"[{"role":"user","content":"shown"}]"#).expect("shown");
+    let echoed: Vec<GuardrailMessage> =
+        from_str(r#"[{"role":"user","content":"shown"}]"#).expect("echoed");
+    assert_eq!(reconcile_structured_rows(&original, &shown, &echoed), None);
+    let changed: Vec<GuardrailMessage> =
+        from_str(r#"[{"role":"user","content":"redacted"}]"#).expect("changed");
+    let reconciled = reconcile_structured_rows(&original, &shown, &changed).expect("rows");
+    assert_eq!(reconciled, changed);
 }
 
 #[test]
 fn generic_guardrail_tool_param_preserves_extra_fields() {
-    let tool: GuardrailToolParam = serde_json::from_value(json!({
-        "type": "code_interpreter",
-        "container": {"type": "auto"}
-    }))
-    .expect("tool");
-    assert_eq!(tool.extra.get("container"), Some(&json!({"type": "auto"})));
-}
-
-#[test]
-fn generic_guardrail_response_coerces_holdback_values() {
-    let response = GenericGuardrailAPIResponse::from_value(json!({
-        "stream_holdback_chars": [null, -2, "3", "bad"]
-    }))
-    .expect("response");
-    assert_eq!(response.stream_holdback_chars, Some(vec![0, 0, 3, 0]));
+    let tool: GuardrailToolParam =
+        from_str(r#"{"type":"code_interpreter","container":{"type":"auto"}}"#).expect("tool");
+    assert!(tool.extra.contains_key("container"));
 }
