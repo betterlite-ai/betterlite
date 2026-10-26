@@ -2,10 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use crate::loader::{ConfigError, ConfigLoader};
 use super::super::config_models::{
     DeepKeepGuardrailConfigModel, LassoGuardrailConfigModel, PresidioConfigModel,
 };
+use crate::loader::{ConfigError, ConfigLoader};
 
 #[test]
 fn identity_section_preserves_environment_errors() {
