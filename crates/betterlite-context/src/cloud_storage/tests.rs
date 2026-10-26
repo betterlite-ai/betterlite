@@ -128,7 +128,7 @@ fn cloud_storage_secret_safe_failure() {
             .unwrap_err();
     assert!(!format!("{error:?} {error}").contains(secret));
     let credentials = TrustedCloudCredentials::from(LegacyCloudSetting::Text(secret.to_owned()));
-    assert!(!format!("{credentials:?}").contains(secret));
+    assert_eq!(format!("{credentials:?}"), "TrustedCloudCredentials");
 }
 #[test]
 fn replays_the_cloud_object_path_corpus() {
