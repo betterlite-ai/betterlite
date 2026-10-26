@@ -159,7 +159,8 @@ impl SettingsStore {
 
     #[must_use]
     pub fn source(&self, key: &str) -> FieldSource {
-        self.resolution(key).source()
+        let resolution = self.resolution(key);
+        resolution.source()
     }
 
     #[must_use]
