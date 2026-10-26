@@ -1,0 +1,2 @@
+model_list: [{model_name: a, litellm_params: {allow_legacy_cloud_file_ids: true}}, {model_name: b, litellm_params: {allow_legacy_cloud_file_ids: "yes"}}, {model_name: c, litellm_params: {allow_legacy_cloud_file_ids: 1}}]
+litellm_settings: {allow_legacy_cloud_file_ids: false}
