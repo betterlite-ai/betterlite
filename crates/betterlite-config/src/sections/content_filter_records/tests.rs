@@ -3,7 +3,7 @@
 use super::{
     BlockCodeExecGuardrailConfig, CodeBlockActionTaken, CodeBlockDetection, ContentFilterAction,
     ContentFilterCategoryConfig, ContentFilterDetection, ContentFilterGuardrailConfig,
-    HideSecretsGuardrailConfig, category_types::CategoryFileData,
+    ContentFilterSeverity, HideSecretsGuardrailConfig, category_types::CategoryFileData,
 };
 
 #[test]
@@ -17,7 +17,7 @@ fn config_defaults_match_litellm() {
     assert_eq!(content.keyword_redaction_tag, "[KEYWORD_REDACTED]");
 
     let code: BlockCodeExecGuardrailConfig = serde_json::from_str("{}").unwrap();
-    assert_eq!(code.action, "block");
+    assert_eq!(code.action, ContentFilterAction::Block);
     assert!((code.confidence_threshold - 0.5_f64).abs() < f64::EPSILON);
     assert!(code.detect_execution_intent);
 }
@@ -25,12 +25,16 @@ fn config_defaults_match_litellm() {
 #[test]
 fn config_records_load_litellm_fields() {
     let category: ContentFilterCategoryConfig = serde_json::from_str(
-        r#"{"category":"harmful_self_harm","action":"BLOCK","category_file":"custom.yaml"}"#,
+        r#"{"category":"harmful_self_harm","action":"BLOCK","severity_threshold":"high","category_file":"custom.yaml"}"#,
     )
     .unwrap();
     assert_eq!(category.action, ContentFilterAction::Block);
     assert!(category.enabled);
-    assert_eq!(category.severity_threshold, "medium");
+    assert_eq!(category.severity_threshold, ContentFilterSeverity::High);
+
+    let code: BlockCodeExecGuardrailConfig =
+        serde_json::from_str(r#"{"action":"mask"}"#).unwrap();
+    assert_eq!(code.action, ContentFilterAction::Mask);
 
     let secrets: HideSecretsGuardrailConfig =
         serde_json::from_str(r#"{"detect_secrets_config":{"plugins_used":[]}}"#).unwrap();

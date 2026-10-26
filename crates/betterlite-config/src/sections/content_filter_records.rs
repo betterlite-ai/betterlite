@@ -10,10 +10,18 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentFilterAction {
-    #[serde(rename = "BLOCK")]
+    #[serde(rename = "BLOCK", alias = "block")]
     Block,
-    #[serde(rename = "MASK")]
+    #[serde(rename = "MASK", alias = "mask")]
     Mask,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContentFilterSeverity {
+    High,
+    Medium,
+    Low,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,13 +99,9 @@ pub struct CompetitorIntentDetection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ContentFilterDetection {
-    #[serde(rename = "pattern")]
     Pattern(PatternDetection),
-    #[serde(rename = "blocked_word")]
     BlockedWord(BlockedWordDetection),
-    #[serde(rename = "category_keyword")]
     CategoryKeyword(CategoryKeywordDetection),
-    #[serde(rename = "competitor_intent")]
     CompetitorIntent(CompetitorIntentDetection),
 }
 
@@ -108,7 +112,7 @@ pub struct ContentFilterCategoryConfig {
     pub enabled: bool,
     pub action: ContentFilterAction,
     #[serde(default = "default_severity_threshold")]
-    pub severity_threshold: String,
+    pub severity_threshold: ContentFilterSeverity,
     #[serde(default)]
     pub category_file: Option<String>,
 }
@@ -124,7 +128,7 @@ pub struct ContentFilterGuardrailConfig {
     pub blocked_words_file: Option<String>,
     #[serde(default)]
     pub categories: Option<Vec<ContentFilterCategoryConfig>>,
-    #[serde(default = "default_severity_threshold")]
+    #[serde(default = "default_guardrail_severity_threshold")]
     pub severity_threshold: String,
     #[serde(default = "default_pattern_format")]
     pub pattern_redaction_format: String,
@@ -141,7 +145,7 @@ impl Default for ContentFilterGuardrailConfig {
             blocked_words: None,
             blocked_words_file: None,
             categories: None,
-            severity_threshold: default_severity_threshold(),
+            severity_threshold: default_guardrail_severity_threshold(),
             pattern_redaction_format: String::from("[{pattern_name}_REDACTED]"),
             keyword_redaction_tag: String::from("[KEYWORD_REDACTED]"),
             competitor_intent_config: None,
@@ -186,7 +190,7 @@ pub struct BlockCodeExecGuardrailConfig {
     #[serde(default)]
     pub blocked_languages: Option<Vec<String>>,
     #[serde(default = "default_block_action")]
-    pub action: String,
+    pub action: ContentFilterAction,
     #[serde(default = "default_confidence_threshold")]
     pub confidence_threshold: f64,
     #[serde(default = "default_enabled")]
@@ -223,52 +227,40 @@ impl HideSecretsGuardrailConfig {
     }
 }
 
-const fn default_enabled() -> bool {
-    let enabled = true;
-    if enabled { enabled } else { true }
+fn default_enabled() -> bool {
+    let enabled_values = [true];
+    enabled_values.into_iter().next().unwrap_or(false)
 }
 
-fn default_severity_threshold() -> String {
-    let threshold = String::from("medium");
-    if threshold.is_empty() {
-        String::from("medium")
-    } else {
-        threshold
-    }
+fn default_severity_threshold() -> ContentFilterSeverity {
+    let thresholds = [ContentFilterSeverity::Medium];
+    thresholds
+        .into_iter()
+        .next()
+        .unwrap_or(ContentFilterSeverity::Medium)
+}
+
+fn default_guardrail_severity_threshold() -> String {
+    let thresholds = ["medium"];
+    thresholds.join("")
 }
 
 fn default_pattern_format() -> String {
-    let format = String::from("[{pattern_name}_REDACTED]");
-    if format.is_empty() {
-        String::from("[{pattern_name}_REDACTED]")
-    } else {
-        format
-    }
+    let formats = ["[{pattern_name}_REDACTED]"];
+    formats.join("")
 }
 
 fn default_keyword_tag() -> String {
-    let tag = String::from("[KEYWORD_REDACTED]");
-    if tag.is_empty() {
-        String::from("[KEYWORD_REDACTED]")
-    } else {
-        tag
-    }
+    let tags = ["[KEYWORD_REDACTED]"];
+    tags.join("")
 }
 
-fn default_block_action() -> String {
-    let action = String::from("block");
-    if action.is_empty() {
-        String::from("block")
-    } else {
-        action
-    }
+fn default_block_action() -> ContentFilterAction {
+    let actions = [ContentFilterAction::Block];
+    actions.into_iter().next().unwrap_or(ContentFilterAction::Block)
 }
 
-const fn default_confidence_threshold() -> f64 {
-    let threshold = 0.5_f64;
-    if threshold.is_sign_negative() {
-        0.0
-    } else {
-        threshold
-    }
+fn default_confidence_threshold() -> f64 {
+    let thresholds = [0.5_f64];
+    thresholds.into_iter().next().unwrap_or(0.5_f64)
 }
