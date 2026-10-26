@@ -24,11 +24,10 @@ pub trait BudgetSnapshot: Serialize + DeserializeOwned {
     }
 }
 
-// LiteLLM treats missing optional carrier fields like explicit null values.
+// LiteLLM requires every carrier key, so only an explicit null becomes None.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct KeyBudgetSnapshot {
     #[serde(
-        default,
         rename = "user_api_key_budget_reset_at",
         deserialize_with = "Option::deserialize"
     )]
@@ -42,13 +41,11 @@ impl BudgetSnapshot for KeyBudgetSnapshot {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TeamBudgetSnapshot {
     #[serde(
-        default,
         rename = "user_api_key_team_budget_reset_at",
         deserialize_with = "Option::deserialize"
     )]
     pub budget_reset_at: Option<DateTime<Utc>>,
     #[serde(
-        default,
         rename = "user_api_key_team_table_max_budget",
         with = "rust_decimal::serde::arbitrary_precision_option"
     )]
@@ -65,19 +62,16 @@ impl BudgetSnapshot for TeamBudgetSnapshot {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct UserBudgetSnapshot {
     #[serde(
-        default,
         rename = "user_api_key_user_budget_reset_at",
         deserialize_with = "Option::deserialize"
     )]
     pub budget_reset_at: Option<DateTime<Utc>>,
     #[serde(
-        default,
         rename = "user_api_key_user_table_max_budget",
         with = "rust_decimal::serde::arbitrary_precision_option"
     )]
     pub max_budget: Option<Decimal>,
     #[serde(
-        default,
         rename = "user_api_key_user_alias",
         deserialize_with = "Option::deserialize"
     )]
@@ -100,7 +94,6 @@ pub struct OrgBudgetSnapshot {
     )]
     pub spend: Decimal,
     #[serde(
-        default,
         rename = "user_api_key_org_max_budget",
         with = "rust_decimal::serde::arbitrary_precision_option"
     )]

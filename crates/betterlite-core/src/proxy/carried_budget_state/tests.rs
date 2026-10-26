@@ -82,41 +82,20 @@ fn org_snapshot_round_trips_under_its_aliases() {
     );
 }
 
-#[test]
-fn from_metadata_accepts_missing_optional_fields() {
-    assert_eq!(
-        KeyBudgetSnapshot::from_metadata(&metadata("{}")),
-        Some(KeyBudgetSnapshot {
-            budget_reset_at: None
-        })
-    );
-    assert_eq!(
-        TeamBudgetSnapshot::from_metadata(&metadata(
-            r#"{"user_api_key_team_table_max_budget": 300.0}"#
-        )),
-        Some(TeamBudgetSnapshot {
-            budget_reset_at: None,
-            max_budget: Some(decimal("300")),
-        })
-    );
-    assert_eq!(
-        UserBudgetSnapshot::from_metadata(&metadata(r#"{"user_api_key_user_alias": "Alice"}"#)),
-        Some(UserBudgetSnapshot {
-            budget_reset_at: None,
-            max_budget: None,
-            user_alias: Some("Alice".to_owned()),
-        })
-    );
-    assert_eq!(
-        OrgBudgetSnapshot::from_metadata(&metadata(r#"{"user_api_key_org_spend": 1.0}"#)),
-        Some(OrgBudgetSnapshot {
-            spend: decimal("1"),
-            max_budget: None,
-        })
-    );
-}
-
 #[rstest]
+#[case::key_without_reset("{}", KeyBudgetSnapshot::from_metadata)]
+#[case::team_without_reset(
+    r#"{"user_api_key_team_table_max_budget": 300.0}"#,
+    TeamBudgetSnapshot::from_metadata
+)]
+#[case::user_with_alias_only(
+    r#"{"user_api_key_user_alias": "Alice"}"#,
+    UserBudgetSnapshot::from_metadata
+)]
+#[case::org_without_max_budget(
+    r#"{"user_api_key_org_spend": 1.0}"#,
+    OrgBudgetSnapshot::from_metadata
+)]
 #[case::org_with_null_spend(
     r#"{"user_api_key_org_spend": null, "user_api_key_org_max_budget": null}"#,
     OrgBudgetSnapshot::from_metadata
