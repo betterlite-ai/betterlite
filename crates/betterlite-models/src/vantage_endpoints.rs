@@ -31,12 +31,12 @@ pub struct VantageExportRequest {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields, default)]
 pub struct VantageDryRunRequest {
-    pub limit: i64,
+    pub limit: Option<i64>,
 }
 
 impl Default for VantageDryRunRequest {
     fn default() -> Self {
-        let limit = 500;
+        let limit = Some(500);
         Self { limit }
     }
 }
@@ -77,7 +77,7 @@ struct VantageInitRequestRaw {
 }
 
 impl TryFrom<VantageInitRequestRaw> for VantageInitRequest {
-    type Error = String;
+    type Error = VantageValidationError;
 
     fn try_from(raw: VantageInitRequestRaw) -> Result<Self, Self::Error> {
         convert_init_request(raw)
@@ -93,7 +93,7 @@ struct VantageSettingsUpdateRaw {
 }
 
 impl TryFrom<VantageSettingsUpdateRaw> for VantageSettingsUpdate {
-    type Error = String;
+    type Error = VantageValidationError;
 
     fn try_from(raw: VantageSettingsUpdateRaw) -> Result<Self, Self::Error> {
         convert_settings_update(raw)
@@ -106,17 +106,30 @@ fn default_base_url() -> String {
     base_url
 }
 
-fn validate_required_credentials(api_key: &str, integration_token: &str) -> Result<(), String> {
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum VantageValidationError {
+    #[error("api_key must be a non-empty string")]
+    EmptyApiKey,
+    #[error("integration_token must be a non-empty string")]
+    EmptyIntegrationToken,
+}
+
+fn validate_required_credentials(
+    api_key: &str,
+    integration_token: &str,
+) -> Result<(), VantageValidationError> {
     if api_key.trim().is_empty() {
-        return Err(String::from("api_key must be a non-empty string"));
+        return Err(VantageValidationError::EmptyApiKey);
     }
     if integration_token.trim().is_empty() {
-        return Err(String::from("integration_token must be a non-empty string"));
+        return Err(VantageValidationError::EmptyIntegrationToken);
     }
     Ok(())
 }
 
-fn convert_init_request(raw: VantageInitRequestRaw) -> Result<VantageInitRequest, String> {
+fn convert_init_request(
+    raw: VantageInitRequestRaw,
+) -> Result<VantageInitRequest, VantageValidationError> {
     validate_required_credentials(&raw.api_key, &raw.integration_token)?;
     let request = VantageInitRequest {
         api_key: raw.api_key,
@@ -129,14 +142,19 @@ fn convert_init_request(raw: VantageInitRequestRaw) -> Result<VantageInitRequest
 fn validate_optional_credentials(
     api_key: Option<&str>,
     integration_token: Option<&str>,
-) -> Result<(), String> {
-    if api_key.is_some_and(str_trim_is_empty) || integration_token.is_some_and(str_trim_is_empty) {
-        return Err(String::from("credentials must be non-empty strings"));
+) -> Result<(), VantageValidationError> {
+    if api_key.is_some_and(str_trim_is_empty) {
+        return Err(VantageValidationError::EmptyApiKey);
+    }
+    if integration_token.is_some_and(str_trim_is_empty) {
+        return Err(VantageValidationError::EmptyIntegrationToken);
     }
     Ok(())
 }
 
-fn convert_settings_update(raw: VantageSettingsUpdateRaw) -> Result<VantageSettingsUpdate, String> {
+fn convert_settings_update(
+    raw: VantageSettingsUpdateRaw,
+) -> Result<VantageSettingsUpdate, VantageValidationError> {
     validate_optional_credentials(raw.api_key.as_deref(), raw.integration_token.as_deref())?;
     let update = VantageSettingsUpdate {
         api_key: raw.api_key,

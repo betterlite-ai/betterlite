@@ -12,7 +12,7 @@ fn finops_management_vantage_defaults() {
     assert_eq!(init.base_url, "https://api.vantage.sh");
 
     let dry_run: VantageDryRunRequest = serde_json::from_str("{}").expect("valid dry run request");
-    assert_eq!(dry_run.limit, 500);
+    assert_eq!(dry_run.limit, Some(500));
 
     let export: VantageExportRequest = serde_json::from_str("{}").expect("valid export request");
     assert_eq!(export.limit, None);
