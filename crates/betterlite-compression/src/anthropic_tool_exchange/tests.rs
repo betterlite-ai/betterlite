@@ -46,3 +46,14 @@ fn validates_multiple_pairs_and_all_tool_ids() {
         Some("invalid_anthropic_tool_sequence")
     );
 }
+
+#[test]
+fn skips_assistant_messages_without_tool_use() {
+    let messages = vec![
+        json!({"role":"assistant","content":[{"type":"text","text":"plain"}]}),
+        json!({"role":"user","content":"next"}),
+        json!({"role":"assistant","content":[{"type":"tool_use","id":"a"}]}),
+        json!({"role":"user","content":[{"type":"tool_result","tool_use_id":"a"}]}),
+    ];
+    assert_eq!(extract_exchange_spans(&messages).0, vec![vec![2, 3]]);
+}
