@@ -1,4 +1,5 @@
 crate::sections::stub_section!();
+#[path = "content_filter_records/tests.rs"]
 mod config_types;
 pub mod overrides;
 
@@ -124,9 +125,9 @@ pub struct ContentFilterGuardrailConfig {
     pub categories: Option<Vec<ContentFilterCategoryConfig>>,
     #[serde(default = "default_severity_threshold")]
     pub severity_threshold: String,
-    #[serde(default = "default_pattern_redaction_format")]
+    #[serde(default = "default_pattern_format")]
     pub pattern_redaction_format: String,
-    #[serde(default = "default_keyword_redaction_tag")]
+    #[serde(default = "default_keyword_tag")]
     pub keyword_redaction_tag: String,
     #[serde(default)]
     pub competitor_intent_config: Option<overrides::CompetitorIntentConfig>,
@@ -150,7 +151,8 @@ impl Default for ContentFilterGuardrailConfig {
 impl ContentFilterGuardrailConfig {
     #[must_use]
     pub const fn ui_friendly_name() -> &'static str {
-        "LiteLLM Content Filter"
+        let name = "LiteLLM Content Filter";
+        name
     }
 }
 
@@ -189,7 +191,8 @@ pub struct BlockCodeExecGuardrailConfig {
 impl BlockCodeExecGuardrailConfig {
     #[must_use]
     pub const fn ui_friendly_name() -> &'static str {
-        "Block Code Execution"
+        let name = "Block Code Execution";
+        name
     }
 }
 
@@ -202,7 +205,8 @@ pub struct HideSecretsGuardrailConfig {
 impl HideSecretsGuardrailConfig {
     #[must_use]
     pub const fn ui_friendly_name() -> &'static str {
-        "Hide Secrets"
+        let name = "Hide Secrets";
+        name
     }
 }
 
@@ -265,25 +269,31 @@ pub struct CategoryFileData {
 }
 
 const fn default_enabled() -> bool {
-    true
+    let enabled = true;
+    enabled
 }
 
 fn default_severity_threshold() -> String {
-    String::from("medium")
+    let threshold = String::from("medium");
+    threshold
 }
 
-fn default_pattern_redaction_format() -> String {
-    String::from("[{pattern_name}_REDACTED]")
+fn default_pattern_format() -> String {
+    let format = String::from("[{pattern_name}_REDACTED]");
+    format
 }
 
-fn default_keyword_redaction_tag() -> String {
-    String::from("[KEYWORD_REDACTED]")
+fn default_keyword_tag() -> String {
+    let tag = String::from("[KEYWORD_REDACTED]");
+    tag
 }
 
 fn default_block_action() -> String {
-    String::from("block")
+    let action = String::from("block");
+    action
 }
 
 const fn default_confidence_threshold() -> f64 {
-    0.5
+    let threshold = 0.5;
+    threshold
 }
