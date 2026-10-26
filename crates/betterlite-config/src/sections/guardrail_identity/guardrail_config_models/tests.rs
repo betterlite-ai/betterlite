@@ -1,19 +1,22 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
+use crate::loader::{ConfigError, ConfigLoader};
 use super::super::config_models::{
     DeepKeepGuardrailConfigModel, LassoGuardrailConfigModel, PresidioConfigModel,
 };
 
 #[test]
 fn identity_section_preserves_environment_errors() {
-    let loader = crate::loader::ConfigLoader {
-        lookup: std::collections::BTreeMap::new(),
+    let loader = ConfigLoader {
+        lookup: BTreeMap::new(),
     };
     let error = loader
         .load("general_settings:\n  master_key: os.environ/MISSING_MASTER_KEY\n")
         .unwrap_err();
     assert!(
-        matches!(error, crate::loader::ConfigError::MissingEnvironment { variable, path }
+        matches!(error, ConfigError::MissingEnvironment { variable, path }
         if variable == "MISSING_MASTER_KEY" && path == "general_settings.master_key")
     );
 }
