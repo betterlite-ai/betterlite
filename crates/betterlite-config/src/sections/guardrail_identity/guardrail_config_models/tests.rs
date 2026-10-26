@@ -5,6 +5,20 @@ use super::super::config_models::{
 };
 
 #[test]
+fn identity_section_preserves_environment_errors() {
+    let loader = crate::loader::ConfigLoader {
+        lookup: std::collections::BTreeMap::new(),
+    };
+    let error = loader
+        .load("general_settings:\n  master_key: os.environ/MISSING_MASTER_KEY\n")
+        .unwrap_err();
+    assert!(
+        matches!(error, crate::loader::ConfigError::MissingEnvironment { variable, path }
+        if variable == "MISSING_MASTER_KEY" && path == "general_settings.master_key")
+    );
+}
+
+#[test]
 fn defaults_are_preserved() {
     let presidio: PresidioConfigModel = serde_json::from_str("{}").unwrap();
     assert_eq!(presidio.presidio_language.as_deref(), Some("en"));
