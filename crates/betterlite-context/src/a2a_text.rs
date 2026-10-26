@@ -66,6 +66,8 @@ pub struct A2aRecord {
     pub text: Field<Shape>,
     #[serde(default)]
     pub parts: Field<ListValue>,
+    #[serde(default)]
+    pub role: Field<Shape>,
     #[serde(flatten)]
     pub other_keys: BTreeMap<String, Option<Shape>>,
 }
@@ -107,6 +109,7 @@ impl RecordValue {
             return matches!(record.kind, Field::Present(_))
                 || matches!(record.text, Field::Present(_))
                 || matches!(record.parts, Field::Present(_))
+                || matches!(record.role, Field::Present(_))
                 || !record.other_keys.is_empty();
         }
         let Self::Other(shape) = self else {
