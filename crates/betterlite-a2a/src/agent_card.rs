@@ -157,16 +157,18 @@ pub fn normalize_version_bytes(bytes: &[u8]) -> Option<&'static str> {
 }
 
 #[must_use]
-pub fn resolve_served_version(card: Option<&AgentCard>) -> &'static str {
-    let result = card
-        .and_then(|agent_card| agent_card.protocol_version.as_ref())
+pub fn resolve_served_version(upstream_card: Option<&AgentCard>) -> &'static str {
+    let Some(card) = upstream_card else {
+        return DEFAULT_VERSION;
+    };
+    card.protocol_version
+        .as_ref()
         .and_then(|value| match value {
             WireValue::Typed(text) => Some(text.as_str()),
             WireValue::Passthrough(_) => None,
         })
         .and_then(|version| normalize_protocol_version(&AgentJson::String(version.to_owned())))
-        .unwrap_or(DEFAULT_VERSION);
-    result
+        .unwrap_or(DEFAULT_VERSION)
 }
 
 #[must_use]
@@ -260,10 +262,12 @@ fn is_truthy_option<T>(field: Option<&WireValue<T>>) -> bool
 where
     T: Serialize,
 {
-    let result = field
+    if field.is_none() {
+        return false;
+    }
+    field
         .and_then(|value| serde_json::to_value(value).ok())
-        .is_some_and(|value| is_truthy(&value));
-    result
+        .is_some_and(|value| is_truthy(&value))
 }
 fn truthy_wire(value: WireValue<bool>) -> Option<WireValue<bool>> {
     let json = serde_json::to_value(&value).ok()?;
