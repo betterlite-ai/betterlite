@@ -1,0 +1,53 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyManagementRoute {
+    KeyGenerate,
+    KeyUpdate,
+    KeyDelete,
+    KeyRegenerate,
+    KeyGenerateServiceAccount,
+    KeyRegenerateWithPathParam,
+    KeyBlock,
+    KeyUnblock,
+    KeyBulkUpdate,
+    TeamKeyBulkUpdate,
+    KeyResetSpend,
+    KeyAccessGroupAssignment,
+    AutoRouterManage,
+    KeyInfo,
+    KeyHealth,
+    KeyList,
+    KeyAliases,
+    TeamDailyActivity,
+    TeamDailyActivityAggregated,
+    SpendLogs,
+    SpendLogsV2,
+}
+
+impl KeyManagementRoute {
+    #[must_use]
+    pub const fn value(self) -> &'static str {
+        match self {
+            Self::KeyGenerate => "/key/generate",
+            Self::KeyUpdate => "/key/update",
+            Self::KeyDelete => "/key/delete",
+            Self::KeyRegenerate => "/key/regenerate",
+            Self::KeyGenerateServiceAccount => "/key/service-account/generate",
+            Self::KeyRegenerateWithPathParam => "/key/{key_id}/regenerate",
+            Self::KeyBlock => "/key/block",
+            Self::KeyUnblock => "/key/unblock",
+            Self::KeyBulkUpdate => "/key/bulk_update",
+            Self::TeamKeyBulkUpdate => "/team/key/bulk_update",
+            Self::KeyResetSpend => "/key/{key_id}/reset_spend",
+            Self::KeyAccessGroupAssignment => "/key/access_group_assignment",
+            Self::AutoRouterManage => "/auto_router/manage",
+            Self::KeyInfo => "/key/info",
+            Self::KeyHealth => "/key/health",
+            Self::KeyList => "/key/list",
+            Self::KeyAliases => "/key/aliases",
+            Self::TeamDailyActivity => "/team/daily/activity",
+            Self::TeamDailyActivityAggregated => "/team/daily/activity/aggregated",
+            Self::SpendLogs => "/spend/logs",
+            Self::SpendLogsV2 => "/spend/logs/v2",
+        }
+    }
+}
