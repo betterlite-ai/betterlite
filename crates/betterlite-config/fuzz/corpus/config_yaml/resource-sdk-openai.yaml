@@ -1,0 +1,4 @@
+litellm_settings:
+  api_base: https://global.example/v1
+  api_key: os.environ/OPENAI_API_KEY
+  organization: org-example

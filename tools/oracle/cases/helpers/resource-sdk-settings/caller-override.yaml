@@ -1,0 +1,10 @@
+kind: helper
+name: caller-override
+call:
+  resource_sdk_settings:
+    provider: "openai"
+    request_timeout: 7
+    global_request_timeout: 9
+env: {}
+compare:
+  ignore: []

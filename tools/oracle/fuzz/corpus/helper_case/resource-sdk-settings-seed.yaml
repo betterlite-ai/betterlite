@@ -1,0 +1,12 @@
+kind: helper
+name: resource-sdk-settings-seed
+call:
+  resource_sdk_settings:
+    provider: azure
+    timeout: "7.5"
+    request_timeout: 0
+    global_request_timeout: 600
+    structured: null
+env: {}
+compare:
+  ignore: []
