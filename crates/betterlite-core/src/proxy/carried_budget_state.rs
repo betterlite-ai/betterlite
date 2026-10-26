@@ -109,5 +109,4 @@ impl BudgetSnapshot for OrgBudgetSnapshot {
         &["user_api_key_org_spend", "user_api_key_org_max_budget"];
 }
 
-#[cfg(test)]
 mod tests;
