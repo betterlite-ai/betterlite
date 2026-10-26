@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 
 const DEFAULT_VERSION: &str = "1.0";
 
+pub mod version_parser;
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum WireValue<T> {
@@ -148,12 +150,6 @@ pub fn normalize_protocol_version(raw_version: &AgentJson) -> Option<&'static st
         ("1", "0") => Some(DEFAULT_VERSION),
         _ => None,
     }
-}
-
-#[must_use]
-pub fn normalize_version_bytes(bytes: &[u8]) -> Option<&'static str> {
-    let value = serde_json::from_slice::<AgentJson>(bytes).ok()?;
-    normalize_protocol_version(&value)
 }
 
 #[must_use]
