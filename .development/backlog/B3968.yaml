@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Humanloop prompt fetching caching and compilation
 status: todo
 depends_on: [B002, B173, B2226]
-file: null
+file: tasks/B3968-humanloop-prompts.yaml
 covers:
   - "litellm/integrations/humanloop.py"
 parent: B114

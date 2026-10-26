@@ -1,7 +1,7 @@
 id: B3268
 milestone: M6 guardrails
 title: Basic safety and local topic filtering catalog records
-status: todo
+status: done
 depends_on: []
 file: tasks/B3268-policy-catalog-basic-topic-safety.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "policy_templates.json"
 parent: B079
 split_from: B079
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 182

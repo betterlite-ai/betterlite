@@ -38,7 +38,6 @@ description: >-
   oracle/fuzz integration, with an 800-line ceiling.
 scope:
   paths:
-    - crates/betterlite-logging/src/lib.rs
     - crates/betterlite-logging/src/spend_event.rs
     - crates/betterlite-logging/src/spend_event/**
     - crates/betterlite-logging/fuzz/{Cargo.toml,fuzz_targets/spend_event.rs,corpus/spend_event/**}

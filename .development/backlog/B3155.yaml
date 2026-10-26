@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: ROI spend queries and database sync leases
 status: todo
 depends_on: [B3150, B700]
-file: null
+file: tasks/B3155-roi-sync-store.yaml
 covers:
   - "litellm/proxy/roi_calculator/sync.py"
   - "litellm/proxy/roi_calculator/sync_store.py"

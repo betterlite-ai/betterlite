@@ -72,8 +72,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-http/Cargo.toml
-  - crates/betterlite-http/src/lib.rs
-  - crates/betterlite-http/src/error.rs
   - crates/betterlite-http/src/openai_mock_transport.rs
   - crates/betterlite-http/src/openai_mock_transport/**
   - tools/oracle/Cargo.toml

@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Public provider forms and endpoint support metadata
 status: todo
 depends_on: [B001, B003, B209, B3180, B3181, B3182, B3183, B3184, B3185, B3186, B3187, B3188, B3189]
-file: null
+file: tasks/B3190-public-provider-metadata.yaml
 covers:
   - "litellm/proxy/public_endpoints/public_endpoints.py"
   - "litellm/proxy/public_endpoints/provider_create_fields.json"

@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Helicone provider envelopes and metadata
 status: todo
 depends_on: [B002, B173]
-file: null
+file: tasks/B3966-helicone-logging.yaml
 covers:
   - "litellm/integrations/helicone.py"
 parent: B114

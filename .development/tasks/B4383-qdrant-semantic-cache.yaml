@@ -1,0 +1,139 @@
+id: B4383
+title: Initialize Qdrant collections and search scoped semantic responses
+description: >-
+  Build Qdrant semantic-cache collection initialization, payload indexing and synchronous/asynchronous reads and writes through betterlite-http.
+  The Qdrant transport replaces LiteLLM's httpx client and all direct HTTP calls. Collection name and similarity_threshold are required constructor arguments.
+  Resolve os.environ/ values before URL fallback: explicit qdrant_api_base wins, then QDRANT_URL, then QDRANT_API_BASE; api_key looks for explicit value, then QDRANT_API_KEY.
+  Collection size defaults to 1536 (QDRANT_VECTOR_SIZE) and quantile to 0.99 (QDRANT_SCALAR_QUANTILE); the config task owns these keys.
+  Preserve binary/scalar/product quantization choices, warn and skip on index creation failures, and preserve the existing-collection path's lack of quantization validation.
+  Key filtering and post-search payload validation both enforce isolation: every hit with matching cache key proceeds, old payloads without the cache_key field miss with zero similarity, and mismatched keys miss the same way.
+  Searches use one result with payloads, quantization rescore with 3.0 oversampling, and equality meets the threshold.
+  Reads propagate operation errors; batch operations propagate gather errors without Redis's broad error-to-miss conversion.
+  Copy the async httpx client lookup from B173 and UUID generation from B198 instead of using LiteLLM's functions.
+  Config loading replaces environment lookups at the constructor boundary using B002's lookup and secret resolution (os.environ/ prefix only).
+scope:
+  paths:
+    - crates/betterlite-prompts/src/qdrant_semantic_cache.rs
+    - crates/betterlite-prompts/src/qdrant_semantic_cache/**
+    - tools/oracle/cases/helpers/qdrant-semantic-cache/**
+    - tools/oracle/helpers/b4383.py
+    - tools/oracle/helpers/b4383/**
+    - tools/oracle/src/helpers/prompts/b4383.rs
+    - tools/oracle/src/helpers/prompts/b4383/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L57-L173
+    why: QdrantSemanticCache.__init__ and collection setup, with quantization config, client creation and index initialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L184-L218
+    why: Cache key filtering, payload index creation and hit validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L283-L321
+    why: Synchronous set_cache with embedding, vector write and payload storage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L323-L394
+    why: Synchronous get_cache with embedding, search and post-hit validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L396-L431
+    why: Asynchronous async_set_cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L433-L501
+    why: Asynchronous async_get_cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L506-L510
+    why: Async batch write with async_set_cache_pipeline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L175-L182
+    why: _get_cache_logic from B4380.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L220-L281
+    why: Embedding operations and imports, owned by B4381 and inherited from Redis pattern.
+dod:
+  - text: "Collection name and similarity_threshold are required: passing None raises a named error, with only collection_name and similarity_threshold shown."
+    proof: [init-required-fields]
+  - text: "os.environ/ prefixed URLs resolve through the supplied config loader, and missing variables fail with the variable name and the field path."
+    proof: [config-env-resolution]
+  - text: "Config loader resolves QDRANT_VECTOR_SIZE and QDRANT_SCALAR_QUANTILE and defaults are 1536 and 0.99; explicit size and quantile args take precedence."
+    proof: [quantization-config-tests]
+  - text: "Binary, scalar and product quantization modes all work; unsupported modes and missing quantization_config default to binary with always_ram=false."
+    proof: [quantization-config-tests]
+  - text: "Index creation warnings are printed on status codes outside 200-201 or on any exception, and do not stop collection operations."
+    proof: [index-creation-tests]
+  - text: "Every search uses /collections/{name}/points/search with limit=1, with_payload=true, quantization rescore=true and oversampling=3.0."
+    proof: [search-oracle]
+  - text: "Cache key filtering matches litellm_cache_key, and mismatched keys and missing payloads return no hit, with zero similarity set in metadata."
+    proof: [key-filter-tests, search-oracle]
+  - text: "Similarities equal to and above the threshold return a cached response; below the threshold return None and set zero similarity in metadata."
+    proof: [similarity-threshold-tests, search-oracle]
+  - text: "Sync set_cache and get_cache work end-to-end with the embedding service; async versions use the provided execution context."
+    proof: [cache-roundtrip-tests]
+  - text: "async_set_cache_pipeline gathers all async_set_cache tasks and propagates any gather error, not individual cache write errors."
+    proof: [batch-write-tests]
+  - text: "All four cache operations and collection initialization use betterlite-http client methods, never httpx directly."
+    proof: [http-client-tests]
+  - text: "UUID generation in set_cache and async_set_cache calls the injected UUID provider, not uuid.uuid4."
+    proof: [uuid-injection-tests]
+  - text: "Every status code check and JSON field access matches the Qdrant API; every response parse failure for known json structure raises with context."
+    proof: [response-parsing-tests]
+checks:
+  optional: []
+  commands:
+    - id: init-required-fields
+      why: required constructor fields are not enforced or error messages lack field names
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^qdrant_semantic.*init.*collection_name/) | test(/^qdrant_semantic.*init.*similarity_threshold/)'
+    - id: config-env-resolution
+      why: os.environ/ prefixes do not resolve through config loader or missing vars lack error context
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^qdrant_semantic.*env.*resolution/) | test(/^qdrant_semantic.*env.*missing/)'
+    - id: quantization-config-tests
+      why: quantization modes do not work, config defaults are wrong, or explicit args do not override
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^qdrant_semantic.*quantization.*binary/) | test(/^qdrant_semantic.*quantization.*scalar/) | test(/^qdrant_semantic.*quantization.*product/) | test(/^qdrant_semantic.*vector_size/) | test(/^qdrant_semantic.*quantile/)'
+    - id: index-creation-tests
+      why: index creation errors stop collection operations, don't warn, or exceptions are not caught
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^qdrant_semantic.*index.*warn/) | test(/^qdrant_semantic.*index.*creation/) | test(/^qdrant_semantic.*index.*failure/)'
+    - id: key-filter-tests
+      why: cache key filtering does not match, mismatches do not miss, or payloads without keys are not rejected
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^qdrant_semantic.*filter.*key/) | test(/^qdrant_semantic.*payload.*match/) | test(/^qdrant_semantic.*payload.*missing/) | test(/^qdrant_semantic.*scope/)'
+    - id: similarity-threshold-tests
+      why: similarities above threshold do not return, equal values miss, or zero similarity is not set on no hit
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^qdrant_semantic.*similarity.*threshold/) | test(/^qdrant_semantic.*similarity.*metadata/) | test(/^qdrant_semantic.*miss/)'
+    - id: cache-roundtrip-tests
+      why: set and get do not complete end-to-end or async operations fail
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(qdrant_semantic_cache_roundtrip) | test(qdrant_semantic_cache_async)'
+    - id: batch-write-tests
+      why: async_set_cache_pipeline does not await all tasks or gather errors are not propagated
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^qdrant_semantic.*batch/) | test(/^qdrant_semantic.*pipeline/)'
+    - id: http-client-tests
+      why: collection operations do not use betterlite-http client methods
+      run: grep -q 'betterlite_http' crates/betterlite-prompts/src/qdrant_semantic_cache.rs || grep -q 'self.http_client' crates/betterlite-prompts/src/qdrant_semantic_cache.rs
+    - id: uuid-injection-tests
+      why: UUID generation is not injected or still calls uuid.uuid4
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^qdrant_semantic.*uuid/)' && grep -v 'uuid.uuid4\|uuid::Uuid::new_v4' crates/betterlite-prompts/src/qdrant_semantic_cache.rs | grep -q 'uuid'
+    - id: response-parsing-tests
+      why: response parsing does not match Qdrant JSON structure or errors lack context
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^qdrant_semantic.*response/) | test(/^qdrant_semantic.*parse/)'
+    - id: search-oracle
+      why: search oracle cases are missing or the corpus replay test fails
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/qdrant-semantic-cache/)" && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_qdrant_semantic_search_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/qdrant-semantic-cache/search-single-result.yaml
+  - tools/oracle/cases/helpers/qdrant-semantic-cache/search-key-isolation.yaml
+  - tools/oracle/cases/helpers/qdrant-semantic-cache/search-similarity-threshold.yaml
+  - tools/oracle/cases/helpers/qdrant-semantic-cache/search-no-matching-key.yaml
+  - tools/oracle/cases/helpers/qdrant-semantic-cache/search-quantization-rescore.yaml
+deviations:
+  - what: Collection operations use betterlite-http pooled client instead of LiteLLM's httpx per-call clients.
+    why: Pooled client matches the async server pattern and reduces allocations.
+  - what: UUID generation is injected as a dependency instead of calling uuid.uuid4.
+    why: Injected UUIDs let tests use fixed IDs and avoid non-determinism.
+  - what: Config keys QDRANT_VECTOR_SIZE and QDRANT_SCALAR_QUANTILE are loaded by B002, not read by this task from environment.
+    why: Centralized config loading follows the betterlite pattern and prevents duplicate env lookups.
+  - what: Credential-bearing config and key-isolation behavior require security review before shipment.
+    why: API keys in URLs and cache-key filtering are security-critical and must be validated.
+out_of_scope:
+  - The cache factory (caching.py:221-261) that constructs backends; owned by the eventual backend composition task.
+  - Embedding service dispatch and router/direct model selection; owned by B4381 and its prerequisites.
+  - TTL handling (Qdrant does not use per-call TTL like Redis); B4380's `_get_ttl` and B002 config apply to Redis/Valkey only.
+  - The _collection_info method (qdrant_semantic_cache.py:503-504); no caller at the pin, kept for struct completeness.
+pitfalls:
+  - LiteLLM accepts strings for quantization_config ("binary", "scalar", "product") but rejects anything else with a generic exception, not a named error; preserve that behavior and error message exactly.
+  - The status code check for collection existence is 200; creation is 200-201. Treating 201 as error silently loses created collections.
+  - Qdrant returns search results as a JSON object with a "result" key that is either null, an empty list or a list with one hit; accessing it before checking type misses empty lists.
+  - Payload validation happens after the hit is confirmed; a mismatch sets zero similarity and returns None without accessing the cached value.
+  - api-key is the exact header name Qdrant expects, not x-api-key or Api-Key; using wrong headers makes auth fail silently.
+  - wait=true is a query parameter string, not a JSON field; it gates collection write operations (points endpoint) and is set as a MappingProxyType constant.
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

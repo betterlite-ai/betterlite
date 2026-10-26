@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Publish Lago and OpenMeter usage events
 status: todo
 depends_on: [B002, B005, B006, B173, B189]
-file: null
+file: tasks/B3072-metering-events.yaml
 covers:
   - "litellm/integrations/{lago,openmeter}.py"
 parent: B073

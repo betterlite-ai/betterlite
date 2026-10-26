@@ -1,0 +1,5 @@
+kind: helper
+name: object-component-sanitization
+call: {cloud_storage: {function: object_component_sanitization, value: 'a b'}}
+env: {}
+compare: {ignore: []}

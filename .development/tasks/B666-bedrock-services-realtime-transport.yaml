@@ -121,8 +121,6 @@ scope:
   - Cargo.toml
   - deny.toml
   - crates/betterlite-http/Cargo.toml
-  - crates/betterlite-http/src/lib.rs
-  - crates/betterlite-http/src/error.rs
   - crates/betterlite-http/src/aws_duplex.rs
   - crates/betterlite-http/src/aws_duplex/**
   - tools/oracle/Cargo.toml

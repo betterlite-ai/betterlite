@@ -1,0 +1,5 @@
+kind: helper
+name: managed-id-authorization
+call: {cloud_storage: {function: managed_id_authorization, file_id: gs://bucket/prefix/key, scheme: gs://, bucket: bucket, prefixes: [prefix/], legacy: false}}
+env: {}
+compare: {ignore: []}

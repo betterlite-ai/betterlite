@@ -47,7 +47,6 @@ description: >-
   source lines; reserve 380 implementation and 420 tests/config/oracle integration.
 scope:
   paths:
-    - crates/betterlite-logging/src/lib.rs
     - crates/betterlite-logging/src/spend_metadata.rs
     - crates/betterlite-logging/src/spend_metadata/**
     - crates/betterlite-models/src/key_digest.rs

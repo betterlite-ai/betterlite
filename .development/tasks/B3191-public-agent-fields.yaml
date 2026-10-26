@@ -1,0 +1,105 @@
+id: B3191
+title: Public agent creation fields and credential inheritance
+description: >-
+  Build betterlite-server::public_endpoints::agent_fields for GET `/public/agents/fields`,
+  exposing agent creation metadata with inherited provider credential fields. Load
+  the bundled agent_create_fields.json catalog of eight agent types, each declaring
+  its credential form fields, optional litellm_params template, and optional model
+  template. For agents specifying inherit_credentials_from_provider (bedrock_agentcore,
+  azure_ai_foundry, vertex_agent_engine), fetch the provider's credential fields
+  from B3190's raw provider catalog read and append them with include_in_litellm_params=true.
+  Remove the inherit_credentials_from_provider directive before serializing. Return
+  the full AgentCreateInfo array in source order.
+
+  Preserve every LiteLLM behavior: exact agent-to-provider name matching (Azure AI
+  to Azure_AI_Studio lookup fails silently, contributing no inherited fields), the
+  use_a2a_form_fields flag removed by FastAPI response validation (not in AgentCreateInfo),
+  and credential field attributes including validation_pattern and validation_message
+  for UI constraints. Expose the raw agent catalog read for testing; use bounded decoding.
+  Register the GET handler through B003.
+scope:
+  paths:
+    - crates/betterlite-server/src/public_endpoints/agent_fields.rs
+    - crates/betterlite-server/src/public_endpoints/agent_fields/**
+    - crates/betterlite-server/data/**
+    - tools/oracle/cases/helpers/agent-fields/**
+    - tools/oracle/cases/agent-fields/**
+    - tools/oracle/helpers/b3191.py
+    - tools/oracle/helpers/b3191/**
+    - tools/oracle/src/helpers/server/b3191.rs
+    - tools/oracle/src/helpers/server/b3191/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/public_endpoints/public_endpoints.py#L36-L57
+    why: AgentCredentialField and AgentCreateInfo response records with validation attributes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L593-L639
+    why: "get_agent_fields loads agent_create_fields.json, matches agents to providers by name, appends inherited credential fields with include_in_litellm_params=true, and removes the inherit directive."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/agent_create_fields.json#L1-L310
+    why: "Eight complete agent records including bedrock_agentcore (inherits from Bedrock), azure_ai_foundry (inherits from Azure AI), and vertex_agent_engine (inherits from Vertex_AI)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/public_endpoints/public_endpoints.py#L1-L5
+    why: "Imports from pydantic and typing."
+dod:
+  - text: GET /public/agents/fields returns the AgentCreateInfo array in source order with all eight agents from agent_create_fields.json.
+    proof: [behavior-tests, agent-fields-oracle]
+  - text: Agent credential field inheritance appends provider fields only when the agent's inherit_credentials_from_provider matches a provider name exactly from B3190's raw catalog read.
+    proof: [behavior-tests, agent-fields-oracle]
+  - text: Inherited credential fields are appended with include_in_litellm_params=true set on every copied field; agent's own fields appear first.
+    proof: [behavior-tests, agent-fields-oracle]
+  - text: bedrock_agentcore inherits Bedrock credentials and returns agent fields followed by Bedrock AWS credential fields in source order.
+    proof: [behavior-tests, agent-fields-oracle]
+  - text: vertex_agent_engine inherits Vertex_AI credentials and returns agent fields followed by Vertex_AI provider credentials in source order.
+    proof: [behavior-tests, agent-fields-oracle]
+  - text: azure_ai_foundry attempts to inherit from Azure AI provider key, which does not match the bundled Azure_AI_Studio key, so no inherited fields are added.
+    proof: [behavior-tests, agent-fields-oracle]
+  - text: The inherit_credentials_from_provider directive is removed from the response before serialization; it never appears in AgentCreateInfo.
+    proof: [behavior-tests, agent-fields-oracle]
+  - text: The use_a2a_form_fields flag is absent from AgentCreateInfo, so FastAPI response validation drops it from responses.
+    proof: [behavior-tests, agent-fields-oracle]
+  - text: AgentCredentialField records match LiteLLM's shape with validation_pattern and validation_message for UI constraints.
+    proof: [behavior-tests]
+  - text: Agent credential field order is preserved through inheritance; agent-owned fields remain first, inherited fields appended.
+    proof: [behavior-tests, agent-fields-oracle]
+  - text: A raw agent catalog read function exposes the validated agent_create_fields array for testing without caching or HTTP round-trip.
+    proof: [agent-fields-oracle]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Agent loading, provider credential inheritance, directive removal and field ordering must preserve LiteLLM behavior exactly.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::agent_fields::/)'
+    - id: agent-fields-oracle
+      why: Every agent type, inherited field, field order and directive behavior must match LiteLLM on the same requests.
+      run: test -f tools/oracle/helpers/b3191.py && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::server::b3191::/)'
+oracle_cases:
+  - tools/oracle/cases/agent-fields/agent-fields-list.yaml
+  - tools/oracle/cases/agent-fields/agent-fields-inheritance.yaml
+  - tools/oracle/cases/agent-fields/agent-fields-no-match.yaml
+  - tools/oracle/cases/helpers/agent-fields/bedrock-inheritance.yaml
+  - tools/oracle/cases/helpers/agent-fields/vertex-inheritance.yaml
+  - tools/oracle/cases/helpers/agent-fields/azure-no-inheritance.yaml
+  - tools/oracle/cases/helpers/agent-fields/field-order.yaml
+  - tools/oracle/cases/helpers/agent-fields/directive-removal.yaml
+deviations:
+  - what: Agent catalog is loaded from a bundled file path constructed relative to the module, not through importlib.resources.files.
+    why: Rust crates include data files in the build output directory; runtime path resolution matches the runtime layout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L605-L611
+  - what: Provider-to-agent name matching is exact and case-sensitive; Azure AI in the agent record does not match Azure_AI_Studio in the bundled provider catalog.
+    why: "LiteLLM matches by string equality; Azure AI and Azure_AI_Studio are distinct keys and no mapping layer bridges them."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L626-L627
+out_of_scope:
+  - "Integration with agent creation, provisioning, execution or provider dispatch: these tasks call this task but are not called by it."
+  - "B3190 provider catalog loading and caching: this task calls B3190's raw catalog read to access provider credential fields without implementing the read itself."
+  - "B003 Axum router setup and error response translation: this task hands off HTTPException translation to the existing server integration."
+  - "B001 HTTP oracle comparison and request/response capture: the oracle runner handles LiteLLM bridge and case execution."
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as b3191 in the server group. Replace the stub Op in tools/oracle/src/helpers/server/b3191.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b3191.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The inherit_credentials_from_provider field is present in the bundled JSON but removed before returning; parse the raw JSON with the field present, then drop it only from the response structure.'
+  - 'Provider name matching is exact string equality; "Azure AI" in the agent record does not match "Azure_AI_Studio" in the provider catalog, and inheritance silently contributes nothing.'
+  - 'The use_a2a_form_fields flag appears in one agent''s JSON but is not part of AgentCreateInfo; FastAPI validation filters it out automatically on serialization.'
+  - 'Inherited credential fields are appended after agent-owned fields in source order; the full ordered credential_fields array is the response, not a separate inherited_fields list.'
+  - 'Validation_pattern and validation_message fields carry regex patterns and error messages for UI form validation; preserve these exactly from the provider catalog copy.'
+  - 'Agent catalog paths and file reading are relative to the module runtime location; the path construction must match the actual package layout.'
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

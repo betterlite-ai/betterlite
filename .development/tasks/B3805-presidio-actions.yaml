@@ -1,0 +1,143 @@
+id: B3805
+title: Presidio entity actions and reversible tokens
+description: >-
+  Implement Presidio anonymizer integration with entity action detection, anonymized
+  text finalization, and reversible numbered token replacements. Build analyzer-result
+  filtering and block exception raising; orchestrate PII detection, blocking, and
+  masking with per-request settings. Preserve request-local token maps for unmasking,
+  calling the anonymizer before replacing results with sequentially numbered placeholders,
+  and truncated-token fallback matching.
+
+  Key behavior: validate_environment resolves PRESIDIO_ANALYZER_API_BASE and
+  PRESIDIO_ANONYMIZER_API_BASE environment variables, appending trailing slashes
+  and defaulting to http:// for schemeless URLs. _post_presidio_anonymize POSTs
+  analysis results to the anonymizer endpoint with timeout handling. anonymize_text
+  calls the anonymizer once and returns either the original anonymized text or
+  reconstructed text with numbered placeholders (PERSON_1, EMAIL_2, etc.) stored
+  in request_data.metadata.pii_tokens; tokens are applied in reverse text order
+  to prevent offset shifting. check_pii orchestrates the full flow: analyze text,
+  filter by score and deny list, raise GuardrailRaisedException if blocked entities
+  are detected, anonymize the text, and return either simple or numbered results.
+  _unmask_pii_text replaces numbered tokens and handles truncation fallback (minimum
+  20-character overlap or half the token length, whichever is smaller).
+  get_presidio_settings_from_request_data extracts per-request config from
+  request_data.metadata.guardrail_config.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/presidio_actions.rs
+    - crates/betterlite-guardrails/src/presidio_actions/**
+    - tools/oracle/cases/presidio-actions/**
+
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L270-L302
+    why: validate_environment resolves PRESIDIO_ANALYZER_API_BASE and PRESIDIO_ANONYMIZER_API_BASE, appends trailing slashes, and defaults to http://
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L735-L772
+    why: _post_presidio_anonymize POSTs to /anonymize with analyzed text, error handling and content-type validation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L774-L787
+    why: _finalize_presidio_anonymize_simple returns anonymizer's output text without token mapping
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L789-L837
+    why: _finalize_presidio_anonymize_numbered_tokens builds numbered placeholders, stores original text in pii_tokens, applies replacements in reverse order
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L839-L873
+    why: anonymize_text calls _post_presidio_anonymize and finalizes result, handles empty results and exception sanitization
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L915-L938
+    why: raise_exception_if_blocked_entities_detected raises BlockedPiiEntityError if pii_entities_config has BLOCK action for an entity type
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L940-L1009
+    why: check_pii orchestrates analyze, filter, block check, anonymize with mock_redacted_text override and guardrail logging
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1242-L1266
+    why: _unmask_pii_text replaces numbered tokens with original values and handles truncated tokens with min_overlap fallback
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1690-L1700
+    why: get_presidio_settings_from_request_data extracts PresidioPerRequestConfig from request_data.metadata.guardrail_config
+
+dod:
+  - text: validate_environment resolves PRESIDIO_ANALYZER_API_BASE and PRESIDIO_ANONYMIZER_API_BASE from environment or passed arguments, appending trailing slashes and defaulting to http:// for schemeless URLs, raising an error if either URL is missing.
+    proof: [validate-environment]
+  - text: _post_presidio_anonymize POSTs the anonymizer request with text and analyzer_results, validates HTTP status < 400 and content-type is application/json, and returns the parsed response body or raises on error.
+    proof: [post-anonymize]
+  - text: _finalize_presidio_anonymize_simple returns the anonymizer's output text directly, counting anonymized entities per type.
+    proof: [finalize-simple]
+  - text: _finalize_presidio_anonymize_numbered_tokens builds numbered placeholders (PERSON_1, EMAIL_2, etc.), stores original text in request_data.metadata.pii_tokens, applies replacements in reverse text order to preserve offsets, and counts anonymized entities.
+    proof: [finalize-numbered]
+  - text: anonymize_text calls _post_presidio_anonymize and delegates to the appropriate _finalize_* function based on output_parse_pii, returns the original text if analyze_results is empty, and sanitizes exceptions.
+    proof: [anonymize-text]
+  - text: raise_exception_if_blocked_entities_detected raises BlockedPiiEntityError if pii_entities_config is set and any detected entity type has action BLOCK.
+    proof: [raise-blocked]
+  - text: check_pii calls analyze_text, filters results by score and deny list, checks for blocked entities, calls anonymize_text, and updates guardrail logging information with entity counts and status.
+    proof: [check-pii-orchestration]
+  - text: check_pii returns the anonymized text and preserves mock_redacted_text override behavior when set.
+    proof: [check-pii-mock]
+  - text: _unmask_pii_text replaces numbered tokens with their original values and handles tokens truncated by max_tokens using a fallback minimum overlap of min(20, len(token) // 2).
+    proof: [unmask-tokens]
+  - text: _unmask_pii_text only checks for truncated tokens at the end of the text.
+    proof: [unmask-truncation]
+  - text: get_presidio_settings_from_request_data extracts PresidioPerRequestConfig from request_data.metadata.guardrail_config, returning None if metadata or guardrail_config is missing.
+    proof: [get-presidio-settings]
+
+checks:
+  optional: []
+  commands:
+    - id: validate-environment
+      why: validate_environment is missing or does not resolve URLs from environment
+      run: grep -q "validate_environment" crates/betterlite-guardrails/src/presidio_actions.rs
+    - id: post-anonymize
+      why: _post_presidio_anonymize does not exist or does not POST to anonymizer endpoint
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_actions::post_anonymize/)'
+    - id: finalize-simple
+      why: _finalize_presidio_anonymize_simple is missing or does not return original anonymized text
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_actions::finalize_simple/)'
+    - id: finalize-numbered
+      why: _finalize_presidio_anonymize_numbered_tokens is missing or does not build numbered tokens correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_actions::finalize_numbered/)'
+    - id: anonymize-text
+      why: anonymize_text does not exist or does not call anonymizer and return finalized text
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_actions::anonymize_text/)'
+    - id: raise-blocked
+      why: raise_exception_if_blocked_entities_detected does not exist or does not raise on blocked entities
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_actions::raise_blocked/)'
+    - id: check-pii-orchestration
+      why: check_pii does not exist or does not orchestrate analyze, filter, block check and anonymize
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_actions::check_pii/)'
+    - id: check-pii-mock
+      why: check_pii does not preserve mock_redacted_text override behavior
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_actions::check_pii_mock/)'
+    - id: unmask-tokens
+      why: _unmask_pii_text does not exist or does not replace tokens and handle truncation
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_actions::unmask/)'
+    - id: unmask-truncation
+      why: _unmask_pii_text does not check for truncation only at the end of text
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_actions::unmask_truncation/)'
+    - id: get-presidio-settings
+      why: get_presidio_settings_from_request_data does not exist or does not extract settings from request_data
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_actions::get_presidio_settings/)'
+
+oracle_cases: []
+
+deviations:
+  - what: validate_environment raises an error if either PRESIDIO_ANALYZER_API_BASE or PRESIDIO_ANONYMIZER_API_BASE is missing; it does not fall back to a default service.
+    why: LiteLLM requires both URLs to be explicitly configured. betterlite preserves this fail-closed behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L282-L294
+
+out_of_scope:
+  - "async_pre_call_hook, logging_hook, async_logging_hook, async_post_call_success_hook and streaming hooks: owned by lifecycle tasks."
+  - "_is_anthropic_message_response, _process_anthropic_response_for_pii, _process_response_for_pii, _mask_output_response: owned by B3806 (response transformations)."
+  - "_mask_buffered_model_response_stream, _stream_apply_output_masking, _stream_pii_unmasking, async_post_call_streaming_iterator_hook: owned by B3807 (streamed masking)."
+  - "apply_guardrail, update_in_memory_litellm_params: owned by lifecycle/application tasks."
+  - "get_supported_event_hooks, __init__: owned by lifecycle tasks."
+  - "Example Presidio fixture (example_presidio_ad_hoc_recognizer.json): owned by the lifecycle task that loads ad-hoc recognizers."
+
+pitfalls:
+  - "Numbered tokens must be applied in reverse text order (from end to beginning) to prevent earlier replacements from shifting the offsets of later detections."
+  - "The pii_tokens dict is stored in request_data.metadata.pii_tokens, which must be created if it does not exist; a missing metadata dict also needs initialization."
+  - "Truncated token fallback only checks the end of the text; a token prefix at the beginning is never considered a valid match."
+  - "The minimum overlap for truncation matching is min(20, len(token) // 2); this prevents false matches when tokens share common prefixes."
+  - "An empty analyze_results list (no detections) returns the original text without calling the anonymizer."
+  - "Blocked entity exceptions are raised before calling the anonymizer; the anonymizer is never called for blocked content."
+  - "A missing pii_entities_config means no entities are blocked, even if analyze_results contains matches."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0
