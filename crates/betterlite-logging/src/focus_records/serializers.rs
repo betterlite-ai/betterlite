@@ -38,7 +38,6 @@ pub enum SerializeError {
 }
 
 impl FocusFormat {
-    #[must_use]
     pub const fn extension(self) -> &'static str {
         match self {
             Self::Csv => "csv",
