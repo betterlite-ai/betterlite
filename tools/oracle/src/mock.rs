@@ -1,4 +1,5 @@
 use axum::http::StatusCode;
+use axum::http::request::Parts;
 use std::collections::BTreeMap;
 use std::io::{Error, Write as _};
 use std::net::TcpListener;
@@ -151,10 +152,7 @@ async fn read_body(state: &Arc<Mutex<Recording>>, body: Body) -> Result<Vec<u8>,
     Ok(bytes.to_vec())
 }
 
-fn capture_request(
-    parts: &axum::http::request::Parts,
-    bytes: &[u8],
-) -> Result<ProviderRequest, StatusCode> {
+fn capture_request(parts: &Parts, bytes: &[u8]) -> Result<ProviderRequest, StatusCode> {
     let mut headers = parts
         .headers
         .iter()

@@ -57,20 +57,13 @@ pub(super) fn first_difference(left: &Value, right: &Value, pointer: &str) -> Op
             })
         }
         (Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_), _)
-        | (_, Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)) => {
-            Some(if pointer.is_empty() {
-                "/".to_owned()
-            } else {
-                pointer.to_owned()
-            })
-        }
-        (Value::Array(_), Value::Object(_)) | (Value::Object(_), Value::Array(_)) => {
-            Some(if pointer.is_empty() {
-                "/".to_owned()
-            } else {
-                pointer.to_owned()
-            })
-        }
+        | (_, Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_))
+        | (Value::Array(_), Value::Object(_))
+        | (Value::Object(_), Value::Array(_)) => Some(if pointer.is_empty() {
+            "/".to_owned()
+        } else {
+            pointer.to_owned()
+        }),
     }
 }
 

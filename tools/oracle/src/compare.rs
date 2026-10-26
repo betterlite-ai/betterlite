@@ -105,6 +105,15 @@ pub(crate) fn compare(
     right_requests: &[ProviderRequest],
     compare: &Compare,
 ) -> Result<(), Difference> {
+    compare_responses(left, right, compare)?;
+    compare_provider_requests(left_requests, right_requests, compare)
+}
+
+fn compare_responses(
+    left: &Response,
+    right: &Response,
+    compare: &Compare,
+) -> Result<(), Difference> {
     let difference = |pointer: &str, message: &str| Difference {
         pointer: pointer.to_owned(),
         message: message.to_owned(),
@@ -112,28 +121,7 @@ pub(crate) fn compare(
     if left.status != right.status {
         return Err(difference("/status", "response statuses differ"));
     }
-    let mut left_body = left.body.clone();
-    let mut right_body = right.body.clone();
-    for ignored in &compare.ignore {
-        remove_pointer(&mut left_body, &ignored.pointer);
-        remove_pointer(&mut right_body, &ignored.pointer);
-    }
-    if let Some(body_pointer) = first_difference(&left_body, &right_body, "") {
-        let binary_response = left
-            .headers
-            .get("content-type")
-            .is_some_and(|value| value.starts_with("application/octet-stream"))
-            && right
-                .headers
-                .get("content-type")
-                .is_some_and(|value| value.starts_with("application/octet-stream"));
-        let response_pointer = if binary_response {
-            "/response/bytes"
-        } else {
-            &body_pointer
-        };
-        return Err(difference(response_pointer, "response bodies differ"));
-    }
+    compare_response_body(left, right, &compare.ignore, &difference)?;
     for header in &compare.headers {
         let name = header.to_ascii_lowercase();
         if left.headers.get(&name) != right.headers.get(&name) {
@@ -152,7 +140,38 @@ pub(crate) fn compare(
             ));
         }
     }
-    compare_provider_requests(left_requests, right_requests, compare)
+    Ok(())
+}
+
+fn compare_response_body(
+    left: &Response,
+    right: &Response,
+    ignores: &[Ignore],
+    difference: &dyn Fn(&str, &str) -> Difference,
+) -> Result<(), Difference> {
+    let mut left_body = left.body.clone();
+    let mut right_body = right.body.clone();
+    for ignored in ignores {
+        remove_pointer(&mut left_body, &ignored.pointer);
+        remove_pointer(&mut right_body, &ignored.pointer);
+    }
+    let Some(body_pointer) = first_difference(&left_body, &right_body, "") else {
+        return Ok(());
+    };
+    let binary_response = left
+        .headers
+        .get("content-type")
+        .is_some_and(|value| value.starts_with("application/octet-stream"))
+        && right
+            .headers
+            .get("content-type")
+            .is_some_and(|value| value.starts_with("application/octet-stream"));
+    let response_pointer = if binary_response {
+        "/response/bytes"
+    } else {
+        &body_pointer
+    };
+    Err(difference(response_pointer, "response bodies differ"))
 }
 
 fn compare_provider_requests(

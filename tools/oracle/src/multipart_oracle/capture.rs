@@ -15,7 +15,7 @@ pub fn decode_multipart_capture(content_type: &str, body: &[u8]) -> Result<Vec<P
 fn decode_parts(body: &[u8], marker: &[u8], boundary: &str) -> Result<Vec<Part>, OracleError> {
     let mut parts = Vec::new();
     let mut cursor = 0;
-    while let Some(start) = find_marker(body, cursor, &marker) {
+    while let Some(start) = find_marker(body, cursor, marker) {
         let marker_end = start
             .checked_add(marker.len())
             .ok_or(OracleError::Multipart(
@@ -33,7 +33,7 @@ fn decode_parts(body: &[u8], marker: &[u8], boundary: &str) -> Result<Vec<Part>,
         let content_start = marker_end.checked_add(2).ok_or(OracleError::Multipart(
             "multipart capture has no valid boundary",
         ))?;
-        let next = find_marker(body, content_start, &marker).ok_or(OracleError::Multipart(
+        let next = find_marker(body, content_start, marker).ok_or(OracleError::Multipart(
             "multipart capture has no valid boundary",
         ))?;
         parts.push(parse_part(body.get(content_start..next).ok_or(
