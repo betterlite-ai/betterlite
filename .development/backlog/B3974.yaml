@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Opik callback delivery and native client selection
 status: todo
 depends_on: [B3973, B173, B256]
-file: null
+file: tasks/B3974-opik-delivery.yaml
 covers:
   - "litellm/integrations/opik/opik.py"
 parent: B114

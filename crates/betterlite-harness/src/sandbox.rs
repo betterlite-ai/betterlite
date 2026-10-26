@@ -1,3 +1,5 @@
+pub mod local;
+
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::time::Duration;

@@ -49,6 +49,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,agent_and_diffusion_hosts}.rs
+    - crates/betterlite-openai/src/agent_and_diffusion_hosts.rs
     - crates/betterlite-openai/src/agent_and_diffusion_hosts/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,agent_hosts}.rs

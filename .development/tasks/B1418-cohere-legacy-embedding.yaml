@@ -34,6 +34,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,error,cohere_legacy_embedding}.rs
+    - crates/betterlite-openai/src/cohere_legacy_embedding.rs
     - crates/betterlite-openai/src/cohere_legacy_embedding/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/cohere_legacy_embedding.rs

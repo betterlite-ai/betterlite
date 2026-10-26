@@ -45,6 +45,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,deepseek_chat}.rs
+    - crates/betterlite-openai/src/deepseek_chat.rs
     - crates/betterlite-openai/src/deepseek_chat/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,deepseek}.rs

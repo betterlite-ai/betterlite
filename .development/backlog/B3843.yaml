@@ -3,7 +3,7 @@ milestone: M7 observability
 title: OTel usage and service payload primitives
 status: todo
 depends_on: [B3841]
-file: null
+file: tasks/B3843-otel-payload-primitives.yaml
 covers:
   - "litellm/integrations/otel/model/payloads.py"
 parent: B110

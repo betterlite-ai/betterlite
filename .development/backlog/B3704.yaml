@@ -2,8 +2,8 @@ id: B3704
 milestone: M6 guardrails
 title: Tenant-scoped sensitive data session routing
 status: todo
-depends_on: [B360, B393, B732, B002]
-file: null
+depends_on: [B360, B393, B732, B002, B124, B126]
+file: tasks/B3704-sensitive-data-routing.yaml
 covers:
   - "litellm/proxy/hooks/sensitive_data_routing.py"
 parent: B105

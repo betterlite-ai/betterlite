@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Langfuse observation attributes and span identity
 status: todo
 depends_on: [B192]
-file: null
+file: tasks/B3901-langfuse-observations.yaml
 covers:
   - "litellm/integrations/langfuse/langfuse_sdk.py"
 parent: B112

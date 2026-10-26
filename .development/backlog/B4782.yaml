@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Fetch and cache Databricks agent OAuth tokens
 status: todo
 depends_on: [B002, B173, B2226]
-file: null
+file: tasks/B4782-agent-databricks-oauth.yaml
 covers:
   - "litellm/proxy/agent_endpoints/databricks_oauth.py"
 parent: B141

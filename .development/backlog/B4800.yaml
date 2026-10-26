@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: A2A card resolution and protocol errors
 status: todo
 depends_on: [B173]
-file: null
+file: tasks/B4800-a2a-card-resolution.yaml
 covers:
   - "litellm/a2a_protocol/card_resolver.py"
   - "litellm/a2a_protocol/exceptions.py"

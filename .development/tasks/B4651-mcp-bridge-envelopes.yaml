@@ -1,0 +1,81 @@
+id: B4651
+title: MCP bridge access and refresh envelopes
+description: >-
+  Implement envelope.rs to seal and open client-held credentials for the DCR bridge. The
+  gateway mints envelopes holding an upstream OAuth grant and a litellm identity; the MCP
+  edge opens them to validate and recover both, forwarding only the inner access token
+  upstream. Build all model types (EnvelopeIdentity, UpstreamTokenGrant, RefreshCredential,
+  EnvelopeKeys, SealedEnvelope, OpenedEnvelope, OpenedRefreshEnvelope) from serde, with
+  secrecy::SecretString for all tokens so Debug never leaks them. The wire format is a prefix
+  plus an HS256-signed JWT: access envelopes use llm_env_ and kind="access", refresh
+  envelopes use llm_refresh_ and kind="refresh", so each can route without crypto and one
+  cannot be replayed as the other. The grant inside is sealed with B1600's encrypt_value and
+  decrypt_value (NaCl XSalsa20-Poly1305 secretbox, SHA-256-derived key), base64url-encoded
+  so the inner token never appears in plaintext. Public functions: is_envelope and
+  is_refresh_envelope for cheap prefix checks, mint_envelope and open_envelope for access
+  credentials, mint_refresh_envelope and open_refresh_envelope for refresh credentials.
+  mint_envelope uses grant.expires_in when present or MAX_ENVELOPE_TTL_SECONDS (3600) as
+  the fallback; mint_refresh_envelope caps refresh lifetime at MAX_REFRESH_TTL_SECONDS
+  (1209600 seconds, 14 days), passing the cap alone when upstream omits it. Oversized
+  envelopes return EnvelopeTooLarge with sizes when serialized envelope exceeds
+  MAX_ENVELOPE_BYTES (12288). Overflow minting an access envelope's expiry returns
+  EnvelopeUnrepresentable with the positive lifetime. open_envelope and open_refresh_envelope
+  are total over hostile input: they never panic, only return a discriminated EnvelopeOpenError
+  (NotAnEnvelope, BadSignature, Expired, MalformedPayload, DecryptFailed). Prefix-route with
+  the wire marker, size-bound in O(1), verify the HS256 signature, enforce kind matching,
+  check expiry against the injected now, and decrypt the grant blob. Every failure maps to a
+  distinct error variant: signature mismatch → BadSignature, jwt decode failure or validation
+  error → MalformedPayload, crypto error or base64 decode failure → DecryptFailed. The module
+  imports nothing from bridge or edge code, reads no globals, and takes all key material and
+  the clock as explicit parameters.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/envelope.rs
+    - crates/betterlite-mcp/src/envelope/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/envelope.py#L1-L32
+    why: Module scope, public API, and the pure-function contract with no side effects or globals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/envelope.py#L34-L116
+    why: Constants, wire prefixes, issuer, TTL bounds, size caps, and EnvelopeIdentity model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/envelope.py#L118-L157
+    why: Helper constructors and sealed token models (UpstreamTokenGrant, RefreshCredential, EnvelopeKeys, SealedEnvelope, OpenedEnvelope, OpenedRefreshEnvelope).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/envelope.py#L196-L280
+    why: Error types (EnvelopeTooLarge, EnvelopeUnrepresentable, NotAnEnvelope, BadSignature, Expired, MalformedPayload, DecryptFailed) and decoded-claims model with type-gate constraints.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/envelope.py#L298-L411
+    why: Public prefix checks and minting/opening functions for both envelope kinds, with TTL selection and overflow handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/envelope.py#L414-L545
+    why: Shared envelope sealing, claim validation and signature verification with size enforcement; grant/refresh plaintext serialization and encryption.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/envelope.py#L546-L583
+    why: Decrypt helper functions mapping CryptoError/ValueError to DecryptFailed and ValidationError to MalformedPayload, enforcing the kind-isolation guarantee.
+dod:
+  - text: Envelope sealing and opening preserve the wire format, HS256 signing, size bounds and TTL selection exactly as the pinned functions.
+    proof: [envelope-tests]
+  - text: Every error case (oversized, unrepresentable lifetime, bad signature, expired, malformed claims/grant, decryption failure) maps to the correct EnvelopeOpenError variant without panicking.
+    proof: [envelope-tests]
+  - text: Access and refresh envelopes are routable by prefix and kind-claim, so one cannot be replayed as the other even with signature reuse.
+    proof: [envelope-tests]
+checks:
+  optional: []
+  commands:
+    - id: envelope-tests
+      why: Envelope sealing/opening loses a claim, mishandles overflow, maps errors incorrectly, or opens the wrong envelope kind.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^envelope::/)'
+oracle_cases: []
+deviations:
+  - what: The vault is built as part of B1600's symmetric encryption; this task uses it without rebuilding it.
+    why: B1600 owns encrypt_value and decrypt_value in encrypt_decrypt_utils.py.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L167-L212
+out_of_scope:
+  - B1600 owns every encryption function (encrypt_value, decrypt_value) and the key derivation (SHA-256 of the signing key).
+  - B4650 and B4652 own the identity construction and the envelope minting endpoints.
+  - B4653 and B4658 own envelope usage at the MCP edge and gateway token endpoint.
+pitfalls:
+  - The error variants NotAnEnvelope, BadSignature, Expired, MalformedPayload and DecryptFailed are discriminated on the tag field, and each maps to a distinct jwt or validation failure path; a match that loses the distinction hides the real error.
+  - The kind claim is part of the signed payload; a malicious re-prefix of an access envelope as a refresh one is rejected as MalformedPayload because the kind field is wrong, not on the prefix alone.
+  - Refresh envelopes cap the upstream refresh lifetime at MAX_REFRESH_TTL_SECONDS even when the upstream reports a longer one; a test against a real upstream response proves the cap is applied.
+  - The now parameter is injected and compared directly against claims.exp, so tests that use different now values (mint with one, open with another) prove the expiry gate works without relying on system time.
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,8 @@
+task: B4110
+deviations:
+  - what: Ceiling values are limited to positive u32 values, and follow-up depth uses checked u32 arithmetic.
+    why: Rust loop counters are bounded; overflow returns a typed error instead of wrapping. Python integers have no corresponding upper bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/agentic_loop_settings.py#L27-L59
+  - what: Numeric strings accept ASCII digits, signs, surrounding whitespace, and single underscores between digits, but reject non-ASCII decimal digits.
+    why: The validator uses Rust integer parsing without adding Unicode numeric tables; Python int also accepts Unicode decimal digits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/agentic_loop_settings.py#L27-L59

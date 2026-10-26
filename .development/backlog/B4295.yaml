@@ -2,8 +2,8 @@ id: B4295
 milestone: M8 platform
 title: Queue request-scoped cache writes and increments
 status: todo
-depends_on: [B2226, B390, B360, B393, B4290, B4293]
-file: null
+depends_on: [B2226, B390, B360, B393, B4290, B4293, B4330, B4331]
+file: tasks/B4295-dual-cache-deferred-writes.yaml
 covers:
   - "litellm/caching/dual_cache.py"
 parent: B125
