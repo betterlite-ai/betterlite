@@ -10,6 +10,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite/src/guardrails/content_filter_matching.rs
+    - crates/betterlite/src/guardrails/content_filter_matching/**
   lint_tables: false
 
 references:

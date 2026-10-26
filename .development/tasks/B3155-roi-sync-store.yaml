@@ -22,6 +22,9 @@ scope:
     - crates/betterlite-db/src/sync_store.rs
     - crates/betterlite-db/src/spend.rs
     - crates/betterlite-server/src/roi_spend.rs
+    - crates/betterlite-db/src/sync_store/**
+    - crates/betterlite-db/src/spend/**
+    - crates/betterlite-server/src/roi_spend/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L52-L89

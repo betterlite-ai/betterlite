@@ -39,6 +39,7 @@ scope:
     - tools/oracle/helpers/b4291/**
     - tools/oracle/src/helpers/cache/b4291.rs
     - tools/oracle/src/helpers/cache/b4291/**
+    - crates/betterlite-cache/src/codec/**
   lint_tables: false
 
 references:
