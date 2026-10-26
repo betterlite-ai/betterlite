@@ -1,0 +1,106 @@
+id: B3993
+title: Sign S3 log uploads and fetch cold-storage objects
+description: >-
+  Build the shared signed S3 HTTP transport with exact serialized bodies, checksums, retry classification and credential snapshots. Expose upload and cold-object retrieval independently of queue ownership.
+  Implement SigV4 signing for PUT and GET requests. PUT operations freeze RefreshableCredentials before signing to prevent mixed-generation signatures from concurrent refresh. GET requests sign without freezing, following LiteLLM's behavior. PUT retries on retryable statuses (403/500/503) up to three times with exponential backoff (1 and 2 seconds), and skips retries for terminal XML error codes when configured. GET returns the parsed JSON object or None on failures, errors or non-200 responses. When adaptive concurrency is enabled, the limiter samples status codes 429/503 and the S3 error code SlowDown as throttle signals.
+  Decode error responses by searching for <Code>text</Code> in the XML body, defaulting to None for missing codes, empty/non-XML bodies or any status outside 400/403.
+  This task owns the signed transport layer only; B3994 calls uploads through the return value of async_upload_data_to_s3, cold_storage_handler calls retrieval and must depend on this leaf, never the reverse.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-logging/src/s3_transport.rs
+    - crates/betterlite-logging/src/s3_transport/**
+    - crates/betterlite-logging/fuzz/Cargo.toml
+    - crates/betterlite-logging/fuzz/fuzz_targets/s3_error_classifier.rs
+    - crates/betterlite-logging/fuzz/corpus/s3_error_classifier/**
+    - tools/oracle/cases/s3_log_transport/**
+    - tools/oracle/helpers/b3993.py
+    - tools/oracle/helpers/b3993/**
+    - tools/oracle/src/helpers/logging/b3993.rs
+    - tools/oracle/src/helpers/logging/b3993/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L92-L101"
+    why: Error code extraction and terminal status classification logic.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L393-L431"
+    why: "S3 URL building with safe key encoding, SigV4 signing with frozen RefreshableCredentials."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L433-L467"
+    why: "SSE header construction and PUT request preparation with content hashes."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L555-L624"
+    why: "Async upload with credential resolution, signing and retry logic."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L731-L746"
+    why: "Adaptive concurrency metrics recording based on response status."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L923-L1011"
+    why: "S3 object download with SigV4 signed GET, JSON parsing and cold-storage retrieval."
+dod:
+  - text: S3 object URLs are built correctly for three endpoint shapes with percent-encoded keys.
+    proof: [s3-url-shapes]
+  - text: S3 error code extraction from XML responses handles missing/malformed bodies safely.
+    proof: [s3-transport-tests]
+  - text: Terminal error classification correctly identifies 400/403 with known terminal codes and safe-fails on unknown/empty/non-XML bodies.
+    proof: [s3-transport-tests]
+  - text: SigV4 signing for PUT requests freezes RefreshableCredentials before reading access key/secret/token.
+    proof: [s3-transport-tests]
+  - text: PUT requests include Content-Type, Content-MD5, x-amz-content-sha256, Content-Language, Content-Disposition and Cache-Control headers with exact values from prepared state.
+    proof: [s3-transport-tests, oracle-s3-put]
+  - text: SSE headers are added only when configured with non-empty values.
+    proof: [s3-transport-tests]
+  - text: Async upload retries only 403/500/503 with exponential backoff (1s, 2s).
+    proof: [oracle-s3-put]
+  - text: Upload skips retries for terminal errors when configured, and drops those objects.
+    proof: [oracle-s3-put]
+  - text: Adaptive concurrency records throttle=true for 429, 503 and SlowDown code.
+    proof: [s3-transport-tests]
+  - text: GET requests include x-amz-content-sha256 header with hash of empty string and SigV4 signature without credential freezing.
+    proof: [s3-transport-tests, oracle-s3-get]
+  - text: Cold-storage retrieval returns parsed JSON on 200 and None on any other status or parse error.
+    proof: [oracle-s3-get]
+checks:
+  optional: [mutants]
+  commands:
+    - id: s3-url-shapes
+      why: URL construction does not cover all three endpoint shapes or percent-encoding fails
+      run: |-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_transport::url_construction::/)' &&
+        grep -qE 'virtual.?hosted|path.?style|default.*aws' crates/betterlite-logging/src/s3_transport.rs &&
+        grep -q 'quote.*safe' crates/betterlite-logging/src/s3_transport.rs
+    - id: s3-transport-tests
+      why: the s3 transport tests fail, do not exist or do not cover error classification
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_transport::/ - test(replays_the_s3_error_classifier_corpus))'
+    - id: s3-error-classifier-fuzz
+      why: the S3 error classifier fuzz corpus is missing or replay fails
+      run: test -f crates/betterlite-logging/fuzz/fuzz_targets/s3_error_classifier.rs && test "$(ls crates/betterlite-logging/fuzz/corpus/s3_error_classifier 2>/dev/null | wc -l)" -ge 5 && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_s3_error_classifier_corpus)'
+    - id: oracle-s3-put
+      why: oracle cases for S3 PUT with retries, terminal errors and adaptive sampling fail or do not exist
+      run: cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/s3_log_transport/put
+    - id: oracle-s3-get
+      why: oracle cases for S3 GET with 200/non-200 responses and JSON parsing fail or do not exist
+      run: cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/s3_log_transport/get
+oracle_cases:
+  - tools/oracle/cases/s3_log_transport/put/success_with_sse.yaml
+  - tools/oracle/cases/s3_log_transport/put/retryable_500.yaml
+  - tools/oracle/cases/s3_log_transport/put/terminal_entity_too_large.yaml
+  - tools/oracle/cases/s3_log_transport/put/400_unknown_code.yaml
+  - tools/oracle/cases/s3_log_transport/get/success_json.yaml
+  - tools/oracle/cases/s3_log_transport/get/404_not_found.yaml
+  - tools/oracle/cases/s3_log_transport/get/200_invalid_json.yaml
+deviations:
+  - what: PUT request signing freezes RefreshableCredentials before reading access key, secret and token, but GET request signing does not.
+    why: LiteLLM freezes credentials for PUT (line 425-427) but not for GET (line 971). Betterlite follows this behavior exactly, matching LiteLLM's asymmetry. GET may experience mixed-generation signatures under rapid credential refresh, but this matches the pinned LiteLLM code.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L413-L431"
+  - what: Terminal error classification is conservative; unknown/empty/non-XML bodies fail safe toward retry.
+    why: Malformed or unexpected responses should retry rather than silently drop.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L98-L101"
+out_of_scope:
+  - "upload_data_to_s3 sync method (lines 870-921): no caller at the pin outside direct tests; active v2 callbacks use the async uploader"
+pitfalls:
+  - "RefreshableCredentials must be frozen before extracting access key, secret and token separately, or a concurrent refresh produces a mixed-generation signature rejected by S3 as 403 SignatureDoesNotMatch."
+  - "S3 canonicalizes received paths by encoding reserved characters. Quote the key once with quote(safe=\"/\") so the encoded form matches the canonical form SigV4 signs."
+  - "The x-amz-content-sha256 header for PUT is the SHA256 hash of the JSON body, but for GET it is the hash of an empty string (since GET has no body)."
+  - "Terminal error codes are fixed (EntityTooLarge, InvalidArgument, etc.) and only apply to 400/403 responses. Every other status, empty/non-XML bodies and unknown codes fail safe toward retry."
+  - "Adaptive concurrency samples 429 and 503 (HTTP throttling) plus the S3-specific SlowDown error code. Standard 5xx errors (like 500) are retried but not sampled."
+  - "Cold-storage GET returns None on any non-200 response or JSON parse failure, not a partial/corrupted object."
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 2

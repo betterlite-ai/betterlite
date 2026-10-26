@@ -1,0 +1,134 @@
+id: B5072
+title: Local Compose stacks and their shared configuration
+description: >-
+  Create docker-compose.yml for local source-build development with Postgres database persistence, Prometheus metrics collection
+  and health checks matching LiteLLM's pinned behavior. Build the betterlite runtime image with build.args.target=runtime.
+  Provide docker/docker-compose.quickstart.yml for published-image deployments that waits for database health and requires both
+  LITELLM_MASTER_KEY and LITELLM_SALT_KEY from the environment. Create docker/.env.example documenting the required secrets.
+  Copy proxy_server_config.yaml as the shared proxy configuration file, preserving its complete model list, provider-specific
+  routing, callbacks, Redis settings and pass-through endpoints. Create prometheus.yml with the 15-second scrape interval.
+  The root Compose publishes proxy port 4000, database port 5432 and Prometheus 9090 with named volume litellm_postgres_data,
+  uses 30s/10s/3/40s liveness probe intervals and retains Prometheus metrics for 15 days. The quickstart publishes only proxy
+  port 4000 and stores credentials in .env with no expiry warning. Do not change database volume names or salt identifiers when
+  rebranding, and do not describe the hardened overlay as the only egress control: the shared proxy config is a CI fixture with
+  multiple providers and should remain unmodified for compatibility.
+scope:
+  paths:
+    - packaging/docker/docker-compose.yml
+    - packaging/docker/docker-compose.quickstart.yml
+    - packaging/docker/proxy_server_config.yaml
+    - packaging/docker/prometheus.yml
+    - packaging/docker/.env.example
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker-compose.yml
+    why: The root Compose stack structure, service definitions, database persistence and health checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/docker-compose.quickstart.yml
+    why: The published-image quickstart stack, credential requirements and service health conditions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/proxy_server_config.yaml
+    why: The shared proxy configuration with model list, provider routing, callbacks and pass-through endpoints.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/prometheus.yml
+    why: The Prometheus scrape configuration with 15-second interval and litellm job target.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/.env.example
+    why: The environment example file documenting secrets and database configuration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1959-L1977
+    why: The GET /health/liveliness endpoint that the Compose health check calls.
+dod:
+  - text: docker-compose.yml builds the runtime image with build.args.target, mounts no config by default,
+      publishes 4000/5432/9090, uses the named volume litellm_postgres_data for database persistence,
+      and applies 30s/10s/3/40s health probe intervals.
+    proof: [compose-structure]
+  - text: docker/docker-compose.quickstart.yml publishes only port 4000, waits for database service_healthy,
+      requires both LITELLM_MASTER_KEY and LITELLM_SALT_KEY from environment and .env file, and uses Postgres 16.
+    proof: [compose-structure]
+  - text: prometheus.yml scrapes litellm:4000/metrics at 15-second intervals, stores 15 days of metrics,
+      and has no bearer authentication configured.
+    proof: [compose-structure]
+  - text: docker/.env.example documents LITELLM_MASTER_KEY, DATABASE_URL and SMTP configuration placeholders.
+    proof: [compose-structure]
+  - text: proxy_server_config.yaml contains the complete model list, provider-specific routing, Langfuse callbacks,
+      Redis settings and pass-through endpoints matching the pinned LiteLLM configuration.
+    proof: [compose-structure]
+  - text: Both Compose files reference only images and services that betterlite supplies or standard images (postgres, prometheus).
+    proof: [compose-structure]
+checks:
+  optional: []
+  commands:
+    - id: compose-structure
+      why: The Compose stacks, configuration files or environment example are missing or malformed.
+      run: |-
+        test -f packaging/docker/docker-compose.yml &&
+        test -f packaging/docker/docker-compose.quickstart.yml &&
+        test -f packaging/docker/proxy_server_config.yaml &&
+        test -f packaging/docker/prometheus.yml &&
+        test -f packaging/docker/.env.example &&
+        grep -q 'build:' packaging/docker/docker-compose.yml &&
+        grep -q 'args:' packaging/docker/docker-compose.yml &&
+        grep -q 'target: runtime' packaging/docker/docker-compose.yml &&
+        grep -q '"4000:4000"' packaging/docker/docker-compose.yml &&
+        grep -q '"5432:5432"' packaging/docker/docker-compose.yml &&
+        grep -q '"9090:9090"' packaging/docker/docker-compose.yml &&
+        grep -q 'interval: 30s' packaging/docker/docker-compose.yml &&
+        grep -q 'timeout: 10s' packaging/docker/docker-compose.yml &&
+        grep -q 'retries: 3' packaging/docker/docker-compose.yml &&
+        grep -q 'start_period: 40s' packaging/docker/docker-compose.yml &&
+        grep -q 'postgres:16' packaging/docker/docker-compose.quickstart.yml &&
+        grep -q '"4000:4000"' packaging/docker/docker-compose.quickstart.yml &&
+        grep -q 'image: docker.litellm.ai/berriai/litellm:main-stable' packaging/docker/docker-compose.quickstart.yml &&
+        grep -q 'service_healthy' packaging/docker/docker-compose.quickstart.yml &&
+        grep -q 'LITELLM_MASTER_KEY' packaging/docker/docker-compose.quickstart.yml &&
+        grep -q 'LITELLM_SALT_KEY' packaging/docker/docker-compose.quickstart.yml &&
+        grep -q 'scrape_interval: 15s' packaging/docker/prometheus.yml &&
+        grep -q 'retention.time=15d' packaging/docker/docker-compose.yml &&
+        grep -q 'LITELLM_MASTER_KEY' packaging/docker/.env.example &&
+        grep -q 'DATABASE_URL' packaging/docker/.env.example &&
+        grep -q 'SMTP_HOST' packaging/docker/.env.example &&
+        grep -q 'model_list:' packaging/docker/proxy_server_config.yaml &&
+        grep -q 'litellm_settings:' packaging/docker/proxy_server_config.yaml &&
+        grep -q 'gpt-5-mini' packaging/docker/proxy_server_config.yaml &&
+        grep -q 'redis_host' packaging/docker/proxy_server_config.yaml &&
+        grep -q 'pass_through_endpoints' packaging/docker/proxy_server_config.yaml
+oracle_cases: []
+deviations:
+  - what: betterlite uses the root Compose build.args.target instead of a separate non-root image reference in this base stack.
+    why: B5073 provides the non-root image separately as a hardened overlay; the base stack builds the standard runtime.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker-compose.yml#L4-L6
+  - what: The shared proxy_server_config.yaml is a complete CI fixture with mock providers, wildcard deployments and provider
+      credentials, not a minimal quickstart example.
+    why: It is called by CI at .circleci/config.yml:1847 and by the hardened overlay test; the configuration must remain complete
+      for compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/proxy_server_config.yaml#L1-10
+  - what: betterlite does not provide a separate database image for migration-only use; migrations run natively through
+      betterlite-db-admin.
+    why: The native database administration tool (B1232) replaces the Python migration launcher; Dockerfile.database remains
+      a variant of the root runtime for consistency, not a migration-only entrypoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/Dockerfile.database#L161
+out_of_scope:
+  - Database schema and migration execution, owned by B1232 (the native admin command shell) and B051 (the registered migration service).
+  - The health check endpoint itself (GET /health/liveliness), owned by B003.
+  - The betterlite runtime image build (docker/prod_entrypoint.sh and its dependencies), owned by B5071.
+  - The hardened overlay that consumes proxy_server_config.yaml, owned by B5073.
+  - The metrics scraping implementation and /metrics endpoint, owned by B3886.
+  - Dashboard UI assets and their build, owned by B144.
+  - Published Python package release artifacts used by docker/docker-compose.quickstart.yml, owned by a Python packaging task not yet assigned.
+pitfalls:
+  - >-
+    The root docker-compose.yml must use build.args.target, not build.target, for the Dockerfile ARG to apply.
+  - >-
+    The database volume name litellm_postgres_data must not be changed during rebranding: existing databases use this name and changing
+    it orphans stored data without warning.
+  - >-
+    The LITELLM_SALT_KEY in .env is persistent: regenerating it makes all stored credentials unreadable and should not happen in
+    local stacks; the quickstart header documents this.
+  - >-
+    The proxy_server_config.yaml contains os.environ/ references that are resolved by the proxy at startup; these are not shell variables
+    and do not expand at Compose parse time.
+  - >-
+    The prometheus.yml target litellm:4000 depends on the Compose service name; changing the litellm service name breaks the scrape target.
+  - >-
+    Both Compose files depend on order-of-startup behavior but the root stack uses depends_on without service_healthy; the database must
+    be ready before the proxy connects, enforced by the database health check timeout and proxy retries, not by Compose waiting.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

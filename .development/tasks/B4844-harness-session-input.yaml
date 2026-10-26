@@ -1,0 +1,99 @@
+id: B4844
+title: Validate harness sessions and resolve model routes and output
+description: >-
+  Implement SessionConfig normalization, gateway routing, capability checks and output parsing in crates/betterlite-harness. Normalize skill paths and permissions, resolve gateway versus direct model routing using litellm_proxy/ prefixes or litellm.use_litellm_proxy, validate permissions/max_turns/timeout/install parameters, check harness capabilities against config options, and parse final structured output from text.
+
+  SessionConfig holds every per-session parameter normalized and validated: harness, sandbox, model, gateway (GatewayTarget or None), api_key, api_base, instructions, tools, skills (absolute paths with verified SKILL.md manifests), disable_tools, permissions (one of full/read-only/ask/edit), on_approval handler, output schema type, max_turns (>=1), timeout (>0), metadata, harness-specific options and install flag.
+
+  resolve_model_route handles litellm_proxy/<group> prefixes and litellm.use_litellm_proxy to route through the gateway. With no prefix and use_litellm_proxy false, returns (model, None) for direct SDK calls. Otherwise builds GatewayTarget from explicit api_base/api_key or LITELLM_PROXY_API_BASE/LITELLM_PROXY_API_KEY environment variables. Explicit values beat environment, strings are stripped of whitespace, and trailing slashes are removed from the base URL.
+
+  _check_basic validates permissions, max_turns>=1, timeout>0 and rejects install=True with CapabilityUnsupported. _check_options compares the supplied options against the harness config's expected type and raises OptionsMismatch if they mismatch. _check_capabilities guards permissions against the harness: permission modes, ask-mode approval support, output schema support, custom tools, skills and tool filtering. validate calls all three checks and fails the entire session before anything starts.
+
+  build_config normalizes keyword arguments into SessionConfig: converts skill paths to absolute verified paths, resolves model routing, freezes sequences, maps permissions and applies defaults. _context_for builds SessionContext from SessionConfig with a new session UUID. parse_output finds the final JSON object in the text or structured-output JSON field, validates it against the supplied Pydantic model, and returns (parsed_model, None) on success or (None, error_message) on failure.
+
+  Preserve skill-manifest verification (SKILL.md presence), enum-only harness selection, permission-mode whitelist, gateway string normalization (strip and rstrip(/)), interactive mode guards for permissions='ask' without on_approval handler.
+
+scope:
+  paths:
+    - crates/betterlite-harness/src/session.rs
+    - crates/betterlite-harness/src/session/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L71-L93
+    why: SessionConfig dataclass with all parameters, field types and defaults
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L95-L117
+    why: resolve_model_route function, litellm_proxy/ prefix handling and gateway routing logic
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L120-L128
+    why: Skill path normalization, os.path.abspath and SKILL.md file verification
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L131-L176
+    why: _check_basic, _check_options, _check_capabilities and validate functions
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L179-L221
+    why: build_config function normalizing all parameters and returning SessionConfig
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L224-L244
+    why: _context_for building SessionContext from SessionConfig with uuid4 session_id
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L247-L255
+    why: parse_output function parsing final JSON and validating against Pydantic model
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py#L17
+    why: PermissionMode type definition and PERMISSION_MODES constant values (built in litellm/harness/runtime.py:63)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/context.py#L1-L63
+    why: SessionContext and GatewayTarget structures imported from B4830
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/transformation.py#L79-L98
+    why: BaseHarnessConfig.capabilities and options_type contracts from B4830
+dod:
+  - text: SessionConfig holds normalized parameters, frozen and with all field defaults matching LiteLLM.
+    proof: [session-tests]
+  - text: resolve_model_route handles litellm_proxy/ prefixes, litellm.use_litellm_proxy=true, explicit api_base/api_key, LITELLM_PROXY_API_BASE/LITELLM_PROXY_API_KEY env vars, whitespace stripping and trailing / removal.
+    proof: [session-tests]
+  - text: resolve_model_route returns (model, None) for direct calls and (group, GatewayTarget) for proxied calls; raises with helpful messages when gateway URL or key is missing.
+    proof: [session-tests]
+  - text: _normalize_skill verifies SKILL.md presence and converts paths to absolute; _normalize_skills handles sequences of paths.
+    proof: [session-tests]
+  - text: _check_basic validates permission mode, max_turns>=1, timeout>0 and rejects install=True with CapabilityUnsupported.
+    proof: [session-tests]
+  - text: _check_options compares supplied options type against harness_config.options_type and raises OptionsMismatch if they differ.
+    proof: [session-tests]
+  - text: _check_capabilities checks permissions against harness capabilities, ask-mode approval support, output schema support, custom tools, skills and tool filtering.
+    proof: [session-tests]
+  - text: validate calls _check_basic, _check_options and _check_capabilities in order.
+    proof: [session-tests]
+  - text: build_config normalizes keyword arguments and returns SessionConfig with normalized skills, resolved model routing, frozen sequences and proper defaults.
+    proof: [session-tests]
+  - text: _context_for builds SessionContext from SessionConfig, generating a new session UUID.
+    proof: [session-tests]
+  - text: parse_output finds the final JSON object in text using last_json_object, validates against the supplied output model and returns (parsed, None) or (None, error_message).
+    proof: [session-tests]
+  - text: PERMISSION_MODES matches LiteLLM exactly (full, read-only, ask, edit).
+    proof: [session-tests]
+  - text: Every function in the covered LiteLLM ranges is implemented or listed out of scope with its reason.
+    proof: [session-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: session-tests
+      why: session validation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^session_input::/)'
+oracle_cases: []
+deviations:
+  - what: Gateway URL and key are required when routing through litellm_proxy/ or litellm.use_litellm_proxy=true; missing values raise ValueError instead of failing silently.
+    why: Silent fallback would route through a different backend than the user requested. Explicit errors are cheaper than debugging silent divergence.
+  - what: Trailing slashes are stripped from api_base; explicit gateway targets must not include the trailing slash.
+    why: URL joining and consistency; LiteLLM also removes trailing slashes.
+  - what: install=True is rejected immediately with CapabilityUnsupported and requires the binary on PATH in the sandbox.
+    why: Runtime environment setup is outside this validation layer. Users must stage their binaries before starting.
+  - what: parse_output calls last_json_object from B4831 and uses Pydantic model_validate_json; JSON decoding failures are string error messages.
+    why: Pydantic validation matches LiteLLM's behavior and last_json_object is a shared helper.
+out_of_scope:
+  - Concrete harness configuration selection and handler instantiation. B4846 owns binding the selected harness to a handler.
+  - Endpoint construction or route registration. B4841–B4843 own the endpoint server and session lifecycle.
+  - Workspace changes, file diffing or snapshot functions. B4831 owns those helpers.
+  - Harness-specific transformations or CLI handlers. B4834–B4836 own harness translations; B4839 owns CLI handler lifecycle.
+pitfalls:
+  - resolve_model_route returns (None, gateway_target) when litellm_proxy/ prefixes the model. The group is the part after the prefix (model[len(LITELLM_PROXY_PREFIX):]), not the original model name.
+  - _normalize_skill and _normalize_skills are separate functions; only _normalize_skills handles sequences.
+  - PERMISSION_MODES must match LiteLLM's exact set (full, read-only, ask, edit); any typo or case mismatch breaks permission validation.
+  - _check_capabilities checks ask-mode without on_approval handler only if not interactive; interactive=true allows ask-mode to work through stream events.
+  - parse_output returns (None, error_message) for JSON parse failures, not raising exceptions. OutputInvalid is raised by the turn engine after parse_output returns, if an error is present.
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 2

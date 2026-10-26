@@ -50,7 +50,6 @@ description: >-
   allow 310 implementation and 490 tests/adapters/config/fuzz, capped at 800.
 scope:
   paths:
-    - crates/betterlite-logging/src/lib.rs
     - crates/betterlite-logging/src/spend_bodies.rs
     - crates/betterlite-logging/src/spend_bodies/**
     - crates/betterlite-logging/fuzz/{Cargo.toml,fuzz_targets/classifier_snapshot.rs,corpus/classifier_snapshot/**}

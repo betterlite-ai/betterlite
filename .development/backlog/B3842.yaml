@@ -3,7 +3,7 @@ milestone: M7 observability
 title: OTel V2 settings and destination contracts
 status: todo
 depends_on: [B002, B172, B3840]
-file: null
+file: tasks/B3842-otel-settings.yaml
 covers:
   - "litellm/integrations/otel/model/{config,destination}.py"
   - "litellm/integrations/otel/plumbing/otlp_tls.py"

@@ -1,0 +1,95 @@
+id: B3070
+title: Send CloudZero daily billing drops
+description: >-
+  Implement CloudZero AnyCost delivery in `betterlite-logging::finops::cloudzero`, grouping billing records by UTC date and sending each batch in a single 30-second POST to CloudZero's API.
+  CloudZeroStreamer takes injected credentials (api_key and connection_id stored as SecretString, never logged), an optional user timezone, and a clock.
+  The streamer consumes CBF-shaped DataFrames where each row carries fields like time/usage_start, cost/cost, resource/id. It groups records by date extracted from time/usage_start (converted to UTC), batches them by YYYY-MM-DD, and sends each day's batch with operation parameter (defaults to "replace_hourly", also accepts "sum") flowing unchanged into the payload.
+  When time/usage_start is missing or empty, skip that record silently with no warning. When a timestamp is malformed and cannot be parsed, skip the record with a warning showing the timestamp and error message.
+  Timestamps without timezone info are treated as user_timezone before converting to UTC. Unknown timezone names fall back to UTC without panic.
+  Each record is converted to API format by iterating fields, stripping None values, converting numeric values to string with ten-decimal precision and no scientific notation (`f"{value:.10f}".rstrip("0").rstrip(".")`), and ensuring time/usage_start is in UTC ISO 8601 format with Z suffix.
+  If batch_data is empty before processing, skip sending without a POST. If all records fail conversion to API format, a POST with empty data list is still sent.
+  Each daily batch sends one POST to https://api.cloudzero.com/v2/connections/billing/anycost/{connection_id}/billing_drops with Authorization Bearer header, 30-second timeout, and immediate error propagation.
+scope:
+  paths:
+    - crates/betterlite-logging/src/finops/cloudzero/delivery.rs
+    - crates/betterlite-logging/src/finops/cloudzero/delivery/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L33-L252
+    why: The CloudZeroStreamer class with all eight methods, including initialization, batching, timestamp parsing with timezone handling, API formatting and delivery.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L33-L49
+    why: "__init__: credential storage, base URL, timezone resolution with zoneinfo.ZoneInfo and UTC fallback for unknown names."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L51-L67
+    why: "send_batched: empty-data skip, daily grouping by UTC date, and per-batch delivery."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L69-L104
+    why: "_group_by_date: per-row iteration, timestamp parsing, batch_date extraction as YYYY-MM-DD, records grouped by date string, invalid-timestamp skip with warning."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L106-L153
+    why: "_parse_and_convert_timestamp: ISO 8601 parsing (Z suffix, ±HH:MM offsets), timezone application when absent, and UTC conversion."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L155-L189
+    why: "_send_daily_batch: Bearer auth header, endpoint URL format, payload preparation, httpx.Client with 30-second timeout, status check via raise_for_status, and exception propagation."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L191-L210
+    why: "_prepare_batch_payload: YYYY-MM-DD to YYYY-MM conversion, per-row API format conversion, and month/operation/data structure."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L212-L240
+    why: "_convert_cbf_to_api_format: CBF field iteration, numeric-to-string conversion with .10f precision and rstrip, time/usage_start UTC-format override, and invalid-record skip with warning."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L242-L252
+    why: "_ensure_utc_timestamp: current-time fallback for empty/invalid timestamps, UTC ISO format with Z suffix for the API."
+dod:
+  - text: API key and connection ID credentials are stored as SecretString and never logged, displayed or included in error messages or Debug output.
+    proof: [behavior-tests]
+  - text: send_batched defaults operation to "replace_hourly" when the caller does not pass one, and the value flows unchanged into the payload's operation field. "sum" is accepted as an alternate.
+    proof: [behavior-tests]
+  - text: CloudZeroStreamer initializes with API key, connection ID, and optional user timezone, defaulting to UTC when the timezone name is unrecognized.
+    proof: [behavior-tests]
+  - text: send_batched skips empty DataFrames (before grouping), groups by UTC date in YYYY-MM-DD format, and sends each batch with a 30-second request timeout.
+    proof: [behavior-tests]
+  - text: Timestamps parse as ISO 8601 (Z suffix, ±HH:MM offset, or no offset), apply user timezone when absent, and convert to UTC.
+    proof: [behavior-tests]
+  - text: Records with missing or empty time/usage_start are silently skipped with no warning.
+    proof: [behavior-tests]
+  - text: Records with malformed or unparseable timestamps are skipped with a warning showing the timestamp and error message.
+    proof: [behavior-tests]
+  - text: Numeric values convert to strings with .10f precision, trailing zeros and dots stripped, and no scientific notation.
+    proof: [behavior-tests]
+  - text: Records failing format conversion due to missing CBF fields are skipped with a warning, and the batch is still sent.
+    proof: [behavior-tests]
+  - text: If all records fail conversion to API format, a POST with an empty data list is still sent (batch_data is non-empty before conversion but data_records is empty after).
+    proof: [behavior-tests]
+  - text: Each daily batch sends exactly one POST to the AnyCost endpoint with Bearer auth, monthly payload structure and operation field, with failure propagation stopping the send.
+    proof: [behavior-tests]
+  - text: Unknown timezone names fall back to UTC without panicking, and parsing falls back to current UTC when a timestamp is empty or unparseable.
+    proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: batching, timestamp handling, credential security, operation defaults, conversion or HTTP behavior differs from source
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^cloudzero_delivery_behaviors($|::)/) - test(/replays_the_/)'
+oracle_cases: []
+deviations:
+  - what: Timezone fallback uses UTC without a warning, instead of logging via the Rich console like LiteLLM does.
+    why: betterlite's logging infrastructure differs from LiteLLM's console output; warnings are delegated to the caller's logging setup or tracing infrastructure, not printed inline.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L45-L47"
+  - what: Invalid-timestamp and invalid-record warnings are returned as a count or logged separately, not printed to a console stream during iteration.
+    why: betterlite uses injected logger/instrumentation (tracing) rather than side-channel console output, allowing callers to control logging without coupling delivery to Rich.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L95-L97"
+  - what: The clock is injected rather than calling `datetime.now()` inline.
+    why: Injected clocks enable testing without time-dependent behavior and allow callers to control fallback timestamps.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L245"
+out_of_scope:
+  - CBF record transformation (covered by B3069).
+  - Daily usage row querying (covered by B3060).
+  - CloudZero export scheduling and configuration (covered by B3071).
+  - HTTP client pooling and configuration (covered by B173).
+pitfalls:
+  - The Python code applies the user_timezone only when a timestamp has no offset, not when it has one; timestamps with explicit offsets should never use user_timezone.
+  - 'The decimal formatting line f"{value:.10f}".rstrip("0").rstrip(".") strips trailing zeros first, then trailing dots, so 1.0 becomes "1" and 1.1000000000 becomes "1.1"; an integer-like float cannot stay as "1.0".'
+  - 'The payload month_str is YYYY-MM (from the batch_date''s first day), not the batch_date itself; converting batch_date like "2025-10-15" gives month "2025-10", not "2025-10-15".'
+  - Invalid records in _convert_cbf_to_api_format return None and are filtered by the caller in _prepare_batch_payload, so the batch might send fewer records than grouped; skip the record, not the batch.
+  - Empty DataFrames before grouping skip sending without a POST. All-rows-fail-conversion scenarios (batch_data is non-empty but data_records is empty after conversion) still send a POST with an empty data list.
+  - The HTTP timeout is 30 seconds, not milliseconds; httpx timeout units are seconds.
+  - 'Bearer auth formatting is exact: "Authorization: Bearer {api_key}" with a space between Bearer and the key. Never log the api_key itself.'
+  - 'The endpoint URL is https://api.cloudzero.com/v2/connections/billing/anycost/{connection_id}/billing_drops, not a typo or variant.'
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 2

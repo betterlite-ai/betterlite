@@ -35,6 +35,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,error,mistral_chat}.rs
+    - crates/betterlite-openai/src/mistral_chat.rs
     - crates/betterlite-openai/src/mistral_chat/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/mistral_chat.rs

@@ -31,6 +31,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,error,xai_chat}.rs
+    - crates/betterlite-openai/src/xai_chat.rs
     - crates/betterlite-openai/src/xai_chat/**
     - crates/betterlite-openai/fuzz/corpus/{chat_response,sse_events}/xai*
     - tools/oracle/src/helpers/openai/xai_chat.rs
