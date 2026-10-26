@@ -6,8 +6,8 @@ use super::WorkerRegistryEntry;
 fn worker_registry_accepts_http_urls() {
     let http = WorkerRegistryEntry::validate_url("http://worker");
     let https = WorkerRegistryEntry::validate_url("https://worker/path");
-    assert!(http.is_ok());
-    assert!(https.is_ok());
+    http.expect("http URL should validate");
+    https.expect("https URL should validate");
 }
 
 #[test]
