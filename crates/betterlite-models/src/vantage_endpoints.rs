@@ -114,23 +114,14 @@ pub enum VantageValidationError {
     EmptyIntegrationToken,
 }
 
-fn validate_required_credentials(
-    api_key: &str,
-    integration_token: &str,
-) -> Result<(), VantageValidationError> {
-    if api_key.trim().is_empty() {
-        return Err(VantageValidationError::EmptyApiKey);
-    }
-    if integration_token.trim().is_empty() {
-        return Err(VantageValidationError::EmptyIntegrationToken);
-    }
-    Ok(())
-}
-
 fn convert_init_request(
     raw: VantageInitRequestRaw,
 ) -> Result<VantageInitRequest, VantageValidationError> {
-    validate_required_credentials(&raw.api_key, &raw.integration_token)?;
+    validate_credential(Some(&raw.api_key), VantageValidationError::EmptyApiKey)?;
+    validate_credential(
+        Some(&raw.integration_token),
+        VantageValidationError::EmptyIntegrationToken,
+    )?;
     let request = VantageInitRequest {
         api_key: raw.api_key,
         integration_token: raw.integration_token,
@@ -139,15 +130,12 @@ fn convert_init_request(
     Ok(request)
 }
 
-fn validate_optional_credentials(
-    api_key: Option<&str>,
-    integration_token: Option<&str>,
+fn validate_credential(
+    value: Option<&str>,
+    error: VantageValidationError,
 ) -> Result<(), VantageValidationError> {
-    if api_key.is_some_and(str_trim_is_empty) {
-        return Err(VantageValidationError::EmptyApiKey);
-    }
-    if integration_token.is_some_and(str_trim_is_empty) {
-        return Err(VantageValidationError::EmptyIntegrationToken);
+    if value.is_some_and(str_trim_is_empty) {
+        return Err(error);
     }
     Ok(())
 }
@@ -155,7 +143,11 @@ fn validate_optional_credentials(
 fn convert_settings_update(
     raw: VantageSettingsUpdateRaw,
 ) -> Result<VantageSettingsUpdate, VantageValidationError> {
-    validate_optional_credentials(raw.api_key.as_deref(), raw.integration_token.as_deref())?;
+    validate_credential(raw.api_key.as_deref(), VantageValidationError::EmptyApiKey)?;
+    validate_credential(
+        raw.integration_token.as_deref(),
+        VantageValidationError::EmptyIntegrationToken,
+    )?;
     let update = VantageSettingsUpdate {
         api_key: raw.api_key,
         integration_token: raw.integration_token,
