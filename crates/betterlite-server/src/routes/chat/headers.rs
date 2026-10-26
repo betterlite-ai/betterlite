@@ -1,7 +1,6 @@
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatOutcome};
-use std::iter;
 use std::time::Duration;
 
 // LiteLLM's OPENAI_RESPONSE_HEADERS, repeated without the llm_provider- prefix on a success
@@ -49,10 +48,8 @@ pub(super) fn failure_headers(
     call_id: &str,
     deployment: Option<&ChatDeployment>,
 ) -> HeaderMap {
-    let mut headers = match error {
-        ChatError::Provider { response } => {
-            provider_headers(&response.headers, FAILURE_RATE_LIMIT_HEADERS)
-        }
+    let upstream = match error {
+        ChatError::Provider { response } => Some(&response.headers),
         ChatError::UnknownModel { .. }
         | ChatError::Request { .. }
         | ChatError::Streaming
@@ -62,14 +59,20 @@ pub(super) fn failure_headers(
         | ChatError::Encode { .. }
         | ChatError::Decode { .. }
         | ChatError::TooLarge
-        | ChatError::Http { .. } => HeaderMap::new(),
+        | ChatError::Http { .. } => None,
     };
-    let timeout =
-        deployment.map(|picked| ("x-litellm-timeout", python_float(picked.timeout_seconds)));
-    insert_all(
-        &mut headers,
-        iter::once(("x-litellm-call-id", call_id.to_owned())).chain(timeout),
-    );
+    let mut headers = upstream.map_or_else(HeaderMap::new, |forwarded| {
+        provider_headers(forwarded, FAILURE_RATE_LIMIT_HEADERS)
+    });
+    if let Ok(value) = HeaderValue::from_str(call_id) {
+        headers.insert("x-litellm-call-id", value);
+    }
+    // LiteLLM reports the timeout only once the router has picked a deployment
+    if let Some(picked) = deployment
+        && let Ok(value) = HeaderValue::try_from(python_float(picked.timeout_seconds))
+    {
+        headers.insert("x-litellm-timeout", value);
+    }
     headers
 }
 

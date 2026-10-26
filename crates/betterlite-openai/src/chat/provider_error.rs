@@ -51,41 +51,46 @@ impl ChatError {
     }
 }
 
-// LiteLLM checks the provider's error text before its status, in this order, so every 429 is a throttling_error
 fn classify(status: u16, body: &str) -> ProviderFailure {
+    let (code, fields, keeps_param) =
+        text_rule(status, body).unwrap_or_else(|| status_rule(status));
+    failure(code, fields, keeps_param.then_some(body))
+}
+
+// LiteLLM checks the provider's error text before its status, in this order, so every 429 is a throttling_error
+fn text_rule(status: u16, body: &str) -> Option<(u16, Fields, bool)> {
     let lower = body.to_lowercase();
     let invalid_request = body.contains("invalid_request_error");
-    let (code, fields) = if status == 429 || mentions_rate_limit(&lower) {
-        (429, Fields::Fixed("throttling_error"))
+    if status == 429 || mentions_rate_limit(&lower) {
+        Some((429, Fields::Fixed("throttling_error"), true))
     } else if context_window_exceeded(&lower) {
-        return failure(status, Fields::Fallback, None);
+        Some((status, Fields::Fallback, false))
     } else if invalid_request && body.contains("model_not_found") {
-        return failure(404, Fields::Fallback, None);
+        Some((404, Fields::Fallback, false))
     } else if body.contains("A timeout occurred") {
-        return failure(408, Fields::Fallback, None);
+        Some((408, Fields::Fallback, false))
     } else if content_policy_violation(body, &lower)
         || body.contains("invalid_encrypted_content")
         || body.contains("could not be verified")
         || (invalid_request && !body.contains("Incorrect API key provided"))
     {
-        (status, Fields::FromBody)
+        Some((status, Fields::FromBody, true))
     } else if body.contains("Web server is returning an unknown error")
         || body.contains("The server had an error processing your request.")
     {
-        (500, Fields::Fixed("internal_server_error"))
+        Some((500, Fields::Fixed("internal_server_error"), true))
     } else if body.contains("Request too large") {
-        (429, Fields::Fixed("throttling_error"))
+        Some((429, Fields::Fixed("throttling_error"), true))
     } else {
-        return by_status(status, body);
-    };
-    failure(code, fields, Some(body))
+        None
+    }
 }
 
-fn by_status(status: u16, body: &str) -> ProviderFailure {
+const fn status_rule(status: u16) -> (u16, Fields, bool) {
     match status {
-        400 | 422 => failure(status, Fields::FromBody, Some(body)),
-        500 => failure(500, Fields::Fixed("internal_server_error"), Some(body)),
-        _ => failure(status, Fields::Fallback, None),
+        400 | 422 => (status, Fields::FromBody, true),
+        500 => (500, Fields::Fixed("internal_server_error"), true),
+        _ => (status, Fields::Fallback, false),
     }
 }
 
