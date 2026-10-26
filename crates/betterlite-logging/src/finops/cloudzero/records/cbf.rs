@@ -40,6 +40,7 @@ impl CbfTransformer {
             );
         }
         let mut result = Vec::with_capacity(filtered.len());
+        let filtered_count = filtered.len();
         let mut invalid = 0_usize;
         for row in filtered {
             match self.create_cbf_record(row) {
@@ -50,7 +51,7 @@ impl CbfTransformer {
         if let Some(dropped) = NonZeroUsize::new(invalid) {
             warn!(
                 dropped = dropped.get(),
-                filtered = result.len(),
+                filtered = filtered_count,
                 "dropped records with invalid CZRNs"
             );
         }

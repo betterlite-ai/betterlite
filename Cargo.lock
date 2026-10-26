@@ -543,6 +543,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "chrono",
+ "regex",
  "rstest",
  "rust_decimal",
  "serde",

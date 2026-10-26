@@ -15,6 +15,7 @@ limitations under the License."#;
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
+use regex::Regex;
 use rust_decimal::Decimal;
 use thiserror::Error;
 
@@ -185,14 +186,15 @@ impl CzrnGenerator {
         } else {
             component.to_lowercase()
         };
-        let mut result = String::new();
-        for character in value.chars() {
-            let valid = character.is_ascii_alphanumeric() || character == '-';
-            if valid || !result.ends_with('-') {
-                result.push(component_character(character, valid));
-            }
-        }
-        let trimmed = result.trim_matches('-');
+        let Ok(invalid_characters) = Regex::new("[^a-zA-Z0-9-]") else {
+            return "unknown".to_owned();
+        };
+        let substituted = invalid_characters.replace_all(&value, "-");
+        let Ok(consecutive_hyphens) = Regex::new("-+") else {
+            return "unknown".to_owned();
+        };
+        let collapsed = consecutive_hyphens.replace_all(&substituted, "-");
+        let trimmed = collapsed.trim_matches('-');
         if trimmed.is_empty() {
             "unknown".to_owned()
         } else {
@@ -201,20 +203,15 @@ impl CzrnGenerator {
     }
 }
 
-const fn component_character(character: char, valid: bool) -> char {
-    if valid { character } else { '-' }
-}
-
 fn valid_component(value: &str, uppercase: bool) -> bool {
-    if value.is_empty() {
+    let Ok(pattern) = Regex::new(if uppercase {
+        "^[a-zA-Z0-9-]+$"
+    } else {
+        "^[a-z0-9-]+$"
+    }) else {
         return false;
-    }
-    value.chars().all(|character| {
-        character.is_ascii_lowercase()
-            || character.is_ascii_digit()
-            || character == '-'
-            || (uppercase && character.is_ascii_uppercase())
-    })
+    };
+    pattern.is_match(value)
 }
 
 pub mod cbf;

@@ -112,6 +112,25 @@ fn cloudzero_provider_and_component_normalization_preserve_lookup_order() {
 }
 
 #[test]
+fn cloudzero_component_normalization_collapses_literal_double_hyphens() {
+    let generator = CzrnGenerator;
+    let czrn = generator
+        .create_from_components(CzrnComponents {
+            service_type: "litellm",
+            provider: "provider--name",
+            region: "us--east",
+            owner_account_id: "team--one",
+            resource_type: "llm--usage",
+            cloud_local_id: "model",
+        })
+        .expect("literal double hyphens are collapsed");
+    assert_eq!(
+        czrn,
+        "czrn:litellm:provider-name:us-east:team-one:llm-usage:model"
+    );
+}
+
+#[test]
 fn cloudzero_zero_request_cbf_record_account_formatting_token_tags() {
     let mut zero = row();
     zero.successful_requests = 0;
