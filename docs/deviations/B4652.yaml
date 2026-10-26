@@ -1,0 +1,17 @@
+task: B4652
+deviations:
+  - what: Token segments must be canonical unpadded base64url. PyJWT 2.15.1 accepts up to two trailing '=' padding characters when the padded segment length is a multiple of four; betterlite answers SessionMalformed for that padding.
+    why: Requiring unpadded segments gives each signature one accepted spelling; the canonical token LiteLLM mints opens the same way in both.
+    link: https://github.com/jpadilla/pyjwt/blob/2.15.1/jwt/api_jws.py
+  - what: RSA keys above 8192 bits are refused when AsymmetricSessionKeys or SessionRotatedPublicKey is built. LiteLLM accepts any RSA key of at least 2048 bits.
+    why: aws-lc-rs, the RSA backend, signs and verifies only keys of 2048 to 8192 bits, and the rsa crate that would allow more has an unfixed timing advisory (RUSTSEC-2023-0071).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/session_token.py#L84
+  - what: An HS256 signing key that looks like a PEM document or an SSH public key signs and verifies normally. In LiteLLM, PyJWT raises InvalidKeyError for such a key, and the exception escapes mint_session_token and open_session_token.
+    why: The opener is meant to be total, and a crash on a valid 32-character secret is a PyJWT guard against algorithm confusion that does not apply when the algorithm is pinned by the key type.
+    link: https://github.com/jpadilla/pyjwt/blob/2.15.1/jwt/algorithms.py
+  - what: Signed JSON with duplicate keys answers SessionMalformed, where Python keeps the last value. A header with "kid" null counts as no kid, where PyJWT answers SessionMalformed. Under RS256, a header with an unknown kid and a non-string alg answers SessionMalformed, where LiteLLM answers SessionBadSignature.
+    why: serde rejects duplicate fields and reads null as an absent Option; every one of these inputs is rejected in both, or needs the signing key to produce.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/session_token.py#L494
+  - what: For a clock before 1970 with a fractional second, iat and exp round down to the earlier second. LiteLLM's int() truncates toward zero, one second later.
+    why: chrono's timestamp() floors; the expiry check itself is exact in both, and no real clock is before 1970.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/session_token.py#L399

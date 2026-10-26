@@ -1,0 +1,11 @@
+kind: helper
+name: invalid-timeout
+call:
+  resource_sdk_settings:
+    provider: openai
+    timeout: bad
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own message
