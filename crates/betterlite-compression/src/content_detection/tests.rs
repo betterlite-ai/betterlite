@@ -35,4 +35,10 @@ fn keeps_strict_indentation_boundaries_as_text() {
         detect_content_type("one\n    two\n    three\nfour\nfive"),
         "text"
     );
+    assert_eq!(
+        detect_content_type(
+            "one\n    two\n    three\n    four\nfive\nsix\nseven\neight\nnine\nten"
+        ),
+        "text"
+    );
 }
