@@ -30,7 +30,8 @@ pub enum TimeoutError {
 
 #[must_use]
 pub fn supports_httpx_timeout(provider: &str) -> bool {
-    matches!(provider, "openai" | "azure" | "bedrock")
+    let supported = ["openai", "azure", "bedrock"];
+    supported.contains(&provider)
 }
 
 pub fn resolve_fine_tuning_timeout(

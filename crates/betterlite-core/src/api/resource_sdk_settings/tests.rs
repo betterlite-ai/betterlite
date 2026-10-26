@@ -172,6 +172,9 @@ fn assert_raw_timeout_values() {
 fn assert_invalid_timeout_values() {
     assert_invalid_timeout("bad");
     assert_invalid_timeout("_1");
+    assert_invalid_timeout("1_");
+    assert_invalid_timeout("1_.0");
+    assert_invalid_timeout("1._0");
     assert_invalid_timeout("1__0");
 }
 
@@ -233,6 +236,24 @@ fn settings_debug_redacts_secret_fields() {
     assert!(!format!("{settings:?}").contains("secret"));
 }
 
+#[test]
+fn empty_request_values_fall_through() {
+    let mut settings = test_settings();
+    let mut request = request_options();
+    request.api_base = Some(String::new());
+    request.api_key = Some(SecretString::from(""));
+    assert_eq!(settings.openai_base(&request), "https://api.openai.com/v1");
+    assert_eq!(settings.azure_base(&request), None);
+    assert!(settings.openai_api_key(&request).is_none());
+    assert!(settings.azure_api_key(&request).is_none());
+    settings.api_base = Some("global".to_owned());
+    settings.api_key = Some(SecretString::from("global"));
+    assert_eq!(settings.openai_base(&request), "global");
+    assert_eq!(settings.azure_base(&request), Some("global"));
+    assert_eq!(exposed(settings.openai_api_key(&request)), Some("global"));
+    assert_eq!(exposed(settings.azure_api_key(&request)), Some("global"));
+}
+
 fn test_settings() -> super::ResourceSdkSettings {
     super::ResourceSdkSettings {
         api_base: None,
@@ -272,4 +293,47 @@ fn request_options() -> ResourceSdkRequestOptions {
         vertex_location: None,
         vertex_credentials: None,
     }
+}
+
+#[rstest::rstest]
+#[case::absent(None, 600.0)]
+#[case::empty(Some(TimeoutValue::String(String::new())), 600.0)]
+#[case::negative(Some(TimeoutValue::Number(-7.0)), -7.0)]
+#[case::numeric(Some(TimeoutValue::Number(7.0)), 7.0)]
+#[case::text_zero(Some(TimeoutValue::String("0".to_owned())), 0.0)]
+fn raw_timeout_defaults(#[case] raw: Option<TimeoutValue>, #[case] expected: f64) {
+    assert_eq!(
+        resolve_fine_tuning_timeout(raw.as_ref(), "openai", None),
+        Ok(FineTuningTimeout::Seconds(expected))
+    );
+}
+
+#[rstest::rstest]
+#[case::null(None, 600.0)]
+#[case::zero(Some(0.0), 600.0)]
+#[case::nonzero(Some(7.0), 7.0)]
+#[case::negative(Some(-7.0), -7.0)]
+fn unsupported_timeout_read(#[case] read: Option<f64>, #[case] expected: f64) {
+    let structured = StructuredTimeout {
+        connect: None,
+        read,
+        write: None,
+        pool: None,
+    };
+    assert_eq!(
+        resolve_fine_tuning_timeout(None, "vertex_ai", Some(structured)),
+        Ok(FineTuningTimeout::Seconds(expected))
+    );
+}
+
+#[rstest::rstest]
+#[case::nan("nan")]
+#[case::infinity("inf")]
+#[case::negative_infinity("-inf")]
+fn nonfinite_strings(#[case] text: &str) {
+    let raw = TimeoutValue::String(text.to_owned());
+    assert_eq!(
+        resolve_fine_tuning_timeout(Some(&raw), "openai", None),
+        Err(TimeoutError::NonFinite)
+    );
 }

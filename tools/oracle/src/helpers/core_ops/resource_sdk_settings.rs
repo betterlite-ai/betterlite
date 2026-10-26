@@ -1,66 +1,46 @@
+use betterlite_core::api::resource_sdk_settings::timeout::{
+    FineTuningTimeout, TimeoutError, resolve_fine_tuning_timeout, supports_httpx_timeout,
+};
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let supports = betterlite_core::api::resource_sdk_settings::timeout::supports_httpx_timeout(
-            &input.provider,
-        );
-        let timeout_json = timeout_json(input)?;
-        let request_timeout = request_timeout(input)?;
+        let resolved =
+            resolve_fine_tuning_timeout(input.timeout.as_ref(), &input.provider, input.structured)
+                .map_err(|error| invalid_timeout(&error))?;
+        let timeout = match resolved {
+            FineTuningTimeout::Seconds(value) => serde_json::json!(value),
+            FineTuningTimeout::Structured(value) => serde_json::json!({
+                "connect": value.connect, "read": value.read,
+                "write": value.write, "pool": value.pool,
+            }),
+        };
+        let request_timeout =
+            betterlite_core::api::resource_sdk_settings::timeout::request_timeout(
+                input.request_timeout,
+                input.global_request_timeout,
+            )
+            .map_err(|error| invalid_timeout(&error))?;
         Ok(serde_json::json!({
-            "supports_httpx_timeout": supports,
-            "timeout": timeout_json,
+            "supports_httpx_timeout": supports_httpx_timeout(&input.provider),
+            "timeout": timeout,
             "request_timeout": request_timeout,
         }))
     }
 }
 
-fn timeout_json(input: &Input) -> crate::helpers::HelperResult {
-    let resolved =
-        betterlite_core::api::resource_sdk_settings::timeout::resolve_fine_tuning_timeout(
-            input.timeout.as_ref(),
-            &input.provider,
-            input.structured,
-        )
-        .map_err(|error| invalid_timeout(format!("invalid timeout: {error:?}")))?;
-    let value = match resolved {
-        betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout::Seconds(value) => {
-            serde_json::json!(value)
-        }
-        betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout::Structured(
-            value,
-        ) => {
-            serde_json::json!({"connect": value.connect, "read": value.read, "write": value.write, "pool": value.pool})
-        }
-    };
-    Ok(value)
-}
-
-fn request_timeout(input: &Input) -> crate::helpers::HelperResult {
-    let value = betterlite_core::api::resource_sdk_settings::timeout::request_timeout(
-        input.request_timeout,
-        input.global_request_timeout,
-    )
-    .map(|value| serde_json::json!(value))
-    .map_err(|error| invalid_timeout(format!("invalid timeout: {error}")))?;
-    Ok(serde_json::json!(value))
-}
-
-fn invalid_timeout(message: String) -> crate::helpers::HelperError {
-    let error_message = if message.is_empty() {
-        "invalid timeout".to_owned()
-    } else {
-        message
-    };
+fn invalid_timeout(error: &TimeoutError) -> crate::helpers::HelperError {
+    let message = format!("invalid timeout: {error}");
     crate::helpers::HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
         param: Some(Some("timeout".to_owned())),
         code: None,
-        message: error_message,
+        message,
     }
 }
 
