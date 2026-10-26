@@ -35,3 +35,12 @@ fn finops_management_vantage_allows_null_update_credentials() {
         .expect("null means leave the stored credential unchanged");
     assert_eq!(update.api_key, None);
 }
+
+#[test]
+fn finops_management_vantage_accepts_non_empty_update_credentials() {
+    let update: VantageSettingsUpdate =
+        serde_json::from_str(r#"{"api_key":"new-key","integration_token":"new-token"}"#)
+            .expect("non-empty credentials are valid");
+    assert_eq!(update.api_key.as_deref(), Some("new-key"));
+    assert_eq!(update.integration_token.as_deref(), Some("new-token"));
+}
