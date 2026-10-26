@@ -107,7 +107,7 @@ pub fn response_usage(response: &ResponseObject) -> Option<ResponseUsage<'_>> {
 }
 
 fn cached_tokens(usage: &Usage) -> u64 {
-    usage
+    let Some(cached) = usage
         .cached_tokens
         .or_else(|| {
             usage
@@ -122,14 +122,21 @@ fn cached_tokens(usage: &Usage) -> u64 {
                 .map(|details| details.cached_tokens)
         })
         .or(usage.cache_read_input_tokens)
-        .unwrap_or(0)
+    else {
+        return 0;
+    };
+    cached
 }
 
 fn cached_response_api_tokens(usage: &ResponseAPIUsage) -> u64 {
-    usage
+    let Some(cached) = usage
         .input_tokens_details
         .as_ref()
-        .map_or(0, |details| details.cached_tokens)
+        .map(|details| details.cached_tokens)
+    else {
+        return 0;
+    };
+    cached
 }
 
 #[must_use]
