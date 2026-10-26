@@ -1,5 +1,77 @@
 kind: helper
 name: asymmetric-rs256-access
-call: {mcp_session_token: {action: prefix, candidate: "llm_session_rs256"}}
+call:
+  mcp_session_token:
+    mint:
+      kind: session
+      now: 1767225600
+      entropy: 000102030405060708090a0b0c0d0e0f
+      keys:
+        kid: current
+        private_key_pem: |
+          -----BEGIN PRIVATE KEY-----
+          MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDN0PVcLfAjLAF7
+          TAedBTOCdhQTe/GYM0Y2JyAJ1rpNsr99KklwqnlRiRjB/VyNKl7tvOZ14bjhRgL4
+          88lWSe8Wt3CBwrMvwEoYnsJfF/NW6+k3a/UeO5HBSdN7LkBCfNpzfBoL7V3+iQPg
+          rNbNRgtOUlXmnHijK1pJD2/oTaW/ihBA0yaG1WpmTHdJHlnWPbPYneg00FQHnYqp
+          aTOBIQ9ASAfTqbOjpwxHK7HmXVBu3F/1wB66dziyYof/8ZREHAdcopUh/ZK94Vnh
+          BMML0nkCiR1Uts6A8HRSa8pmOmzJI+tYCwM85BczTLegdA5pxp4c7Yo4byJlivmb
+          YaVLQKl9AgMBAAECggEAK7NEyaICZUFsfhy+WBd44KhIKnvsaAvpCkoD6jri22kK
+          8h1WsxqrQEX7EQOGEX4v4kwz5c875W8rZedDdnQj1R+1foPT7p1mTjR1YmIQO8JD
+          Bk7AoL72u4L8qaDAKa3fZ1pwIFyx0sAOZ/fi8vp+n45paVoLXl/v32fs87b67MBX
+          GDNsWSLwcXp57qvLLZHN+HjxCVBT2APZvh93QMRUiie91cHmLbvDZjN6Ve623h03
+          udioJWhCIvHH2cTyxRooOTjDyOX98faABnSBnKGO4Hzomlm8u5njy4+D2UNzGE1R
+          bZGOM1Wxmx9SZU0dXsdLbBSjlbBQVaJLxC2kTOaWeQKBgQDuRV7RDmHLw6Z1z843
+          /qd5ZRlV80orcM2KDfWsJdAkFDFJ8mA3D2xlQn7mfv9Q6AvbGxTwu+LL9gbUsOtn
+          CKWmAu2q4SJWAQ4A0IkOZkliXpvr3hzCa30XZNCm+qYC0insNxmW/7yekkrrGG/g
+          4J8HmZtQUcj++LNPi4zL6vl32QKBgQDdIWJgnjhcd5dxBscfaWEiNBFkQQLt5Dp8
+          Cv5ZzkvbwEph7BdOH7sMPVqjGPCC970lKkjBYtdOeTOAgRTper/uL9lU+yPhihxF
+          Af60l+/auYwLtlm/dCbm68URJZUiTt7GHRWmohwwtqlmkC829i1kpAoOVKWhzN9w
+          XCA2kgC8RQKBgQDYLVAtVGMeQFCSqwtqejzwQu2NscIlT57sFmZC3bvOQBPIB4OL
+          8Q5jgMUp0ydJ/H5lOFjzYUQP0RO5fRrWzF2eFSIU21YPub0+t/Thf6Qs/7FveoGV
+          U3iW9PzpwpdED/HBQuyQt04mgIxAaFd5K9KdTpw/bzRxQKtPDEmd6X6VYQKBgF3z
+          4j2U2/OFqGWQcKgK+Qc0QjNrX9g9gQ/VB+6WNSrgD3p9egVqe+meY9UqMn4izk1t
+          Is5vtXUVD+nIbl8pFUUZNWji74LTUGGNkG+gons3HKaZSpaKvkCc6fT4F94kzog0
+          MU/ETt/vrBf0qOrcO7sn61HdayZMyp6Nte4ZqJBVAoGAGDZwN7D+fx1I6DSO59xZ
+          izFNFdF7d+r03o79imTiKJFCatowOlK8wSWcIYmF4MiSYroTFl/WQfBUVA8Q4lC2
+          5hFEbIT3RRcyEtuduXK60dTb7F8bpuRkMKusTlMj62cj5wlZjIVDQ7u27Kvzh4b/
+          QGWXNHR3IrnDcCeJUCY6+mA=
+          -----END PRIVATE KEY-----
+      principal: {user_id: user-1, client_id: client-1, resource_server_id: server-1, audience: proxy_api, team_id: team-1}
+    open:
+      kind: session
+      now: 1767225600
+      keys:
+        kid: current
+        private_key_pem: |
+          -----BEGIN PRIVATE KEY-----
+          MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDN0PVcLfAjLAF7
+          TAedBTOCdhQTe/GYM0Y2JyAJ1rpNsr99KklwqnlRiRjB/VyNKl7tvOZ14bjhRgL4
+          88lWSe8Wt3CBwrMvwEoYnsJfF/NW6+k3a/UeO5HBSdN7LkBCfNpzfBoL7V3+iQPg
+          rNbNRgtOUlXmnHijK1pJD2/oTaW/ihBA0yaG1WpmTHdJHlnWPbPYneg00FQHnYqp
+          aTOBIQ9ASAfTqbOjpwxHK7HmXVBu3F/1wB66dziyYof/8ZREHAdcopUh/ZK94Vnh
+          BMML0nkCiR1Uts6A8HRSa8pmOmzJI+tYCwM85BczTLegdA5pxp4c7Yo4byJlivmb
+          YaVLQKl9AgMBAAECggEAK7NEyaICZUFsfhy+WBd44KhIKnvsaAvpCkoD6jri22kK
+          8h1WsxqrQEX7EQOGEX4v4kwz5c875W8rZedDdnQj1R+1foPT7p1mTjR1YmIQO8JD
+          Bk7AoL72u4L8qaDAKa3fZ1pwIFyx0sAOZ/fi8vp+n45paVoLXl/v32fs87b67MBX
+          GDNsWSLwcXp57qvLLZHN+HjxCVBT2APZvh93QMRUiie91cHmLbvDZjN6Ve623h03
+          udioJWhCIvHH2cTyxRooOTjDyOX98faABnSBnKGO4Hzomlm8u5njy4+D2UNzGE1R
+          bZGOM1Wxmx9SZU0dXsdLbBSjlbBQVaJLxC2kTOaWeQKBgQDuRV7RDmHLw6Z1z843
+          /qd5ZRlV80orcM2KDfWsJdAkFDFJ8mA3D2xlQn7mfv9Q6AvbGxTwu+LL9gbUsOtn
+          CKWmAu2q4SJWAQ4A0IkOZkliXpvr3hzCa30XZNCm+qYC0insNxmW/7yekkrrGG/g
+          4J8HmZtQUcj++LNPi4zL6vl32QKBgQDdIWJgnjhcd5dxBscfaWEiNBFkQQLt5Dp8
+          Cv5ZzkvbwEph7BdOH7sMPVqjGPCC970lKkjBYtdOeTOAgRTper/uL9lU+yPhihxF
+          Af60l+/auYwLtlm/dCbm68URJZUiTt7GHRWmohwwtqlmkC829i1kpAoOVKWhzN9w
+          XCA2kgC8RQKBgQDYLVAtVGMeQFCSqwtqejzwQu2NscIlT57sFmZC3bvOQBPIB4OL
+          8Q5jgMUp0ydJ/H5lOFjzYUQP0RO5fRrWzF2eFSIU21YPub0+t/Thf6Qs/7FveoGV
+          U3iW9PzpwpdED/HBQuyQt04mgIxAaFd5K9KdTpw/bzRxQKtPDEmd6X6VYQKBgF3z
+          4j2U2/OFqGWQcKgK+Qc0QjNrX9g9gQ/VB+6WNSrgD3p9egVqe+meY9UqMn4izk1t
+          Is5vtXUVD+nIbl8pFUUZNWji74LTUGGNkG+gons3HKaZSpaKvkCc6fT4F94kzog0
+          MU/ETt/vrBf0qOrcO7sn61HdayZMyp6Nte4ZqJBVAoGAGDZwN7D+fx1I6DSO59xZ
+          izFNFdF7d+r03o79imTiKJFCatowOlK8wSWcIYmF4MiSYroTFl/WQfBUVA8Q4lC2
+          5hFEbIT3RRcyEtuduXK60dTb7F8bpuRkMKusTlMj62cj5wlZjIVDQ7u27Kvzh4b/
+          QGWXNHR3IrnDcCeJUCY6+mA=
+          -----END PRIVATE KEY-----
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

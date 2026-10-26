@@ -1,5 +1,88 @@
 kind: helper
 name: rs256-rotation-previous
-call: {mcp_session_token: {action: open, candidate: "llm_session_unknown", key: 0123456789abcdef0123456789abcdef, now: 1767225600, refresh: false}}
+call:
+  mcp_session_token:
+    mint:
+      kind: session
+      now: 1767225600
+      entropy: 000102030405060708090a0b0c0d0e0f
+      keys:
+        kid: previous
+        private_key_pem: |
+          -----BEGIN PRIVATE KEY-----
+          MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDIJE8hxF8PMj0l
+          5UHjyg6JcBXTNrgq84A8ObTZxOGLBetJq+0mydLoaGwjB8Z4yDG4yJR81QOAfj6W
+          Tyx4e88+eBsj2M0FIPwdZveSzuQ8L2fTrelZPzf858JUAJyqPfuJKNSmPl63387C
+          soG9yBdgEtC1oL83TufmXyw1k5zOghPc6v5AO1V2+JiIjP1vnUCLUNtU3qJiHtWC
+          1Y35sR9Q9px9WTwzHX8HMGXYSVKsRywlmTsZ8lA9Fm2vSnkoFkwice5OdivIxJJu
+          PqeKG4pFGQodIxE3aIsM7gamZIX3Rtltue1RQCPaE/Bx6TUT+rTdAhMGBJQSRYkS
+          CxyyY2RbAgMBAAECggEAX95om0ulnzFY8gyRlcwFT5dFlRFqgYR3QiIAO6ofwYi5
+          zmXQ6NoXMWVHmzYPv25hxtopqmwcy9FtKHHPYv0nZgyBL5gbiN/mdC0M3SFGWX/5
+          s39kPfBW4MmhH7zVToT3Npm81s8cbuaBc2ivVhmA/O+2UrInthYRZhvjoNxO6emz
+          POMuX0yXWSxB61Pr/x5pvk8XFGoZOgDY+8Hrn57MUjTIHMUSZj8tY8ll/j+q0lvk
+          KiIKmBP2iLXqalELJjtHSByZBXc4ppR6upZMrLjMoLyVPgBoxt6Z3HjN9IKiBlP9
+          82UERCk3UR8vq0k/Ut9q2rtKk0yuWwYBA6k4JZH5bQKBgQDlCRohpA8kHCm4HKZs
+          kfNEGTakNF1j35JmXUKQ5gzWGOeb93pqmIR98t8yyRs3qo7GrPjtpZmEdQUBSj44
+          AcWpr2GG+hVtomNb3wLZsnULHMB4Du+XZ9B6E82KIKikPphDmIghb2I2lU29lrMc
+          qSXnfCntZfWVdE8IsPIn0WbmtQKBgQDftGE1P7vpeuie4nb8KI79oFh7efx2V0+n
+          AaL+Tb7Ula/wU7mVHwG7NpoMVstbuBKLJ4ZeTzvcoMENeIWbR0w27NEBzC2kzWOn
+          KR90r4VP2epTZbN0iFBTltf+qqVdsf6xG4SP+LRg0+hQ5yaQSsbcGLWwvMo7YHwi
+          VSHpgCJ4zwKBgQCek+7D3BOfrOA12aBhC6yjOdHbX2ZKAEIdHfU43g+FLTkvg+n+
+          ZBtYGRDw2M0/fZfdd2XjJQVl8J/GhOEPZiq1kfi0u/KaNhUVRxNyJ11ilEWu2qiI
+          7Bgsbgmh2XrqPWyvYKzgeX5GzJlG61CYR4U3AYEGHdIr6JvQKLOBXjshAQKBgQC8
+          NWR7im2sl+3SjzIQIId9N0R6Tj1ryzWGisf5MKvW60Ek7yv6HCY2vk+JBhT9y7Y+
+          QTi5a+wvSUhi7v1pkOi8ZS3LV18ngm3PG7gNUgbVEcAl/jCnYHBEg2qiJiwO0kw3
+          8bDr+BC6Tk7ski1NxLvePSPP2GZE4n5N3FY1v8pA3QKBgQChndlfL5VUdtZoybx9
+          tqVG7JegLWONhqpE/W67lb42JHRzmjZHD17kbNq+RKwVYma8uFXeEKClCH1oGxZ7
+          ZhnMPCgOX7Kt+y5J4KDr39mtQVJiP14y3nXSJijXkUh2lBZ4OqMuTNmKONk0PvBo
+          IXxuWXzrNtBcI7dvMFWCVlW2qQ==
+          -----END PRIVATE KEY-----
+      principal: {user_id: user-1, client_id: client-1}
+    open:
+      kind: session
+      now: 1767225600
+      keys:
+        kid: current
+        private_key_pem: |
+          -----BEGIN RSA PRIVATE KEY-----
+          MIIEowIBAAKCAQEAzdD1XC3wIywBe0wHnQUzgnYUE3vxmDNGNicgCda6TbK/fSpJ
+          cKp5UYkYwf1cjSpe7bzmdeG44UYC+PPJVknvFrdwgcKzL8BKGJ7CXxfzVuvpN2v1
+          HjuRwUnTey5AQnzac3waC+1d/okD4KzWzUYLTlJV5px4oytaSQ9v6E2lv4oQQNMm
+          htVqZkx3SR5Z1j2z2J3oNNBUB52KqWkzgSEPQEgH06mzo6cMRyux5l1Qbtxf9cAe
+          unc4smKH//GURBwHXKKVIf2SveFZ4QTDC9J5AokdVLbOgPB0UmvKZjpsySPrWAsD
+          POQXM0y3oHQOacaeHO2KOG8iZYr5m2GlS0CpfQIDAQABAoIBACuzRMmiAmVBbH4c
+          vlgXeOCoSCp77GgL6QpKA+o64ttpCvIdVrMaq0BF+xEDhhF+L+JMM+XPO+VvK2Xn
+          Q3Z0I9UftX6D0+6dZk40dWJiEDvCQwZOwKC+9ruC/KmgwCmt32dacCBcsdLADmf3
+          4vL6fp+OaWlaC15f799n7PO2+uzAVxgzbFki8HF6ee6ryy2Rzfh48QlQU9gD2b4f
+          d0DEVIonvdXB5i27w2YzelXutt4dN7nYqCVoQiLxx9nE8sUaKDk4w8jl/fH2gAZ0
+          gZyhjuB86JpZvLuZ48uPg9lDcxhNUW2RjjNVsZsfUmVNHV7HS2wUo5WwUFWiS8Qt
+          pEzmlnkCgYEA7kVe0Q5hy8Omdc/ON/6neWUZVfNKK3DNig31rCXQJBQxSfJgNw9s
+          ZUJ+5n7/UOgL2xsU8Lviy/YG1LDrZwilpgLtquEiVgEOANCJDmZJYl6b694cwmt9
+          F2TQpvqmAtIp7DcZlv+8npJK6xhv4OCfB5mbUFHI/vizT4uMy+r5d9kCgYEA3SFi
+          YJ44XHeXcQbHH2lhIjQRZEEC7eQ6fAr+Wc5L28BKYewXTh+7DD1aoxjwgve9JSpI
+          wWLXTnkzgIEU6Xq/7i/ZVPsj4YocRQH+tJfv2rmMC7ZZv3Qm5uvFESWVIk7exh0V
+          pqIcMLapZpAvNvYtZKQKDlSloczfcFwgNpIAvEUCgYEA2C1QLVRjHkBQkqsLano8
+          8ELtjbHCJU+e7BZmQt27zkATyAeDi/EOY4DFKdMnSfx+ZThY82FED9ETuX0a1sxd
+          nhUiFNtWD7m9Prf04X+kLP+xb3qBlVN4lvT86cKXRA/xwULskLdOJoCMQGhXeSvS
+          nU6cP280cUCrTwxJnel+lWECgYBd8+I9lNvzhahlkHCoCvkHNEIza1/YPYEP1Qfu
+          ljUq4A96fXoFanvpnmPVKjJ+Is5NbSLOb7V1FQ/pyG5fKRVFGTVo4u+C01BhjZBv
+          oKJ7NxymmUqWir5AnOn0+BfeJM6INDFPxE7f76wX9Kjq3Du7J+tR3WsmTMqejbXu
+          GaiQVQKBgBg2cDew/n8dSOg0jufcWYsxTRXRe3fq9N6O/Ypk4iiRQmraMDpSvMEl
+          nCGJheDIkmK6ExZf1kHwVFQPEOJQtuYRRGyE90UXMhLbnblyutHU2+xfG6bkZDCr
+          rE5TI+tnI+cJWYyFQ0O7tuyr84eG/0BllzR0dyK5w3AniVAmOvpg
+          -----END RSA PRIVATE KEY-----
+        previous_public_keys:
+          - kid: previous
+            public_key_pem: |
+              -----BEGIN PUBLIC KEY-----
+              MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyCRPIcRfDzI9JeVB48oO
+              iXAV0za4KvOAPDm02cThiwXrSavtJsnS6GhsIwfGeMgxuMiUfNUDgH4+lk8seHvP
+              PngbI9jNBSD8HWb3ks7kPC9n063pWT83/OfCVACcqj37iSjUpj5et9/OwrKBvcgX
+              YBLQtaC/N07n5l8sNZOczoIT3Or+QDtVdviYiIz9b51Ai1DbVN6iYh7VgtWN+bEf
+              UPacfVk8Mx1/BzBl2ElSrEcsJZk7GfJQPRZtr0p5KBZMInHuTnYryMSSbj6nihuK
+              RRkKHSMRN2iLDO4GpmSF90bZbbntUUAj2hPwcek1E/q03QITBgSUEkWJEgscsmNk
+              WwIDAQAB
+              -----END PUBLIC KEY-----
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

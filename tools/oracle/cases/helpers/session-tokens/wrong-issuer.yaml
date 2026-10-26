@@ -1,5 +1,12 @@
 kind: helper
 name: wrong-issuer
-call: {mcp_session_token: {action: open, candidate: "llm_session_wrong.issuer.token", key: 0123456789abcdef0123456789abcdef, now: 1767225600, refresh: false}}
+call:
+  mcp_session_token:
+    open:
+      kind: session
+      now: 1767225600
+      keys: {signing_key: 0123456789abcdef0123456789abcdef}
+      candidate: "llm_session_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzb21lb25lLWVsc2UiLCJpYXQiOjE3NjcyMjU2MDAsImV4cCI6MTc2NzIyOTIwMCwianRpIjoiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsImtpbmQiOiJzZXNzaW9uIiwidXNlcl9pZCI6InVzZXItMSIsImNsaWVudF9pZCI6ImNsaWVudC0xIn0.as_we2PprVjsQhUjOVJR6vsXeQFV1B1Hn-0TNV59K58"
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

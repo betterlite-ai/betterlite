@@ -1,5 +1,12 @@
 kind: helper
 name: wrong-kind-access
-call: {mcp_session_token: {action: open, candidate: "llm_srefresh_not.a.jwt", key: 0123456789abcdef0123456789abcdef, now: 1767225600, refresh: false}}
+call:
+  mcp_session_token:
+    open:
+      kind: session
+      now: 1767225600
+      keys: {signing_key: 0123456789abcdef0123456789abcdef}
+      candidate: "llm_session_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJsaXRlbGxtLW1jcC1nYXRld2F5IiwiaWF0IjoxNzY3MjI1NjAwLCJleHAiOjE3Njg0MzUyMDAsImp0aSI6IkFBRUNBd1FGQmdjSUNRb0xEQTBPRHciLCJraW5kIjoic2Vzc2lvbl9yZWZyZXNoIiwidXNlcl9pZCI6InVzZXItMSIsImNsaWVudF9pZCI6ImNsaWVudC0xIn0.K2R4pwdK_Z9ovC2kqi6PpcYM-X84qh1c6FS7VxfuPdQ"
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

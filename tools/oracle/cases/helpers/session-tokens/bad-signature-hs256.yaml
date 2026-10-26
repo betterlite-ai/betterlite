@@ -1,5 +1,17 @@
 kind: helper
 name: bad-signature-hs256
-call: {mcp_session_token: {action: open, candidate: "llm_session_bad.signature.token", key: 0123456789abcdef0123456789abcdef, now: 1767225600, refresh: false}}
+call:
+  mcp_session_token:
+    mint:
+      kind: session
+      now: 1767225600
+      entropy: 000102030405060708090a0b0c0d0e0f
+      keys: {signing_key: 0123456789abcdef0123456789abcdef}
+      principal: {user_id: user-1, client_id: client-1}
+    open:
+      kind: session
+      now: 1767225600
+      keys: {signing_key: fedcba9876543210fedcba9876543210}
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

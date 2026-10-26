@@ -1,5 +1,12 @@
 kind: helper
 name: malformed-jwt-missing-exp
-call: {mcp_session_token: {action: open, candidate: "llm_session_missing.exp", key: 0123456789abcdef0123456789abcdef, now: 1767225600, refresh: false}}
+call:
+  mcp_session_token:
+    open:
+      kind: session
+      now: 1767225600
+      keys: {signing_key: 0123456789abcdef0123456789abcdef}
+      candidate: "llm_session_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJsaXRlbGxtLW1jcC1nYXRld2F5IiwiaWF0IjoxNzY3MjI1NjAwLCJqdGkiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwia2luZCI6InNlc3Npb24iLCJ1c2VyX2lkIjoidXNlci0xIiwiY2xpZW50X2lkIjoiY2xpZW50LTEifQ.kf0NW1f-g-mp53ZOqjdSmCRVGG_4f1WGl-K_lj1BjPw"
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

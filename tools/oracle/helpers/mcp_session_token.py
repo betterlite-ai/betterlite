@@ -1,57 +1,61 @@
-import jwt
-ISSUER = "litellm-mcp-gateway"
-MAX_BYTES = 4096
+import secrets
+from datetime import UTC, datetime
+from typing import TypeAlias
+from unittest.mock import patch
 
-def run(fields: dict[str, object]) -> object:
-    action = fields.get("action")
-    candidate = fields.get("candidate", "")
-    if action == "prefix":
-        return {"session": isinstance(candidate, str) and candidate.startswith("llm_session_"), "refresh": isinstance(candidate, str) and candidate.startswith("llm_srefresh_")}
-    if action == "mint":
-        return mint(fields)
-    if action == "open":
-        return open_token(fields)
-    raise ValueError("unknown session token action")
-def mint(fields: dict[str, object]) -> dict[str, object]:
-    refresh = fields.get("refresh") is True
-    user_id, client_id, key, now = fields.get("user_id", ""), fields.get("client_id", ""), fields.get("key", ""), fields.get("now", 0)
-    if client_id == "__oversized__":
-        client_id = "x" * 4096
-    if not all(isinstance(value, str) for value in (user_id, client_id, key)) or not isinstance(now, int) or not user_id or not client_id:
-        return {"error": "session token is malformed"}
-    ttl = 1209600 if refresh else 3600
-    claims = {"iss": ISSUER, "iat": now, "exp": now + ttl, "jti": "x" * 22, "kind": "session_refresh" if refresh else "session", "user_id": user_id, "client_id": client_id}
-    for name in ("resource_server_id", "audience", "team_id"):
-        if fields.get(name) is not None:
-            claims[name] = fields[name]
-    token = ("llm_srefresh_" if refresh else "llm_session_") + jwt.encode(claims, key, algorithm="HS256")
-    size = len(token.encode())
-    if size > MAX_BYTES:
-        return {"error": f"session token is too large: {size} bytes, maximum {MAX_BYTES}"}
-    return {"expires_at": now + ttl, "prefix": "llm_srefresh_" if refresh else "llm_session_", "token_bytes": size}
-def open_token(fields: dict[str, object]) -> dict[str, object]:
-    refresh = fields.get("refresh") is True
-    candidate, key, now = fields.get("candidate", ""), fields.get("key", ""), fields.get("now", 0)
-    if candidate == "__oversized__":
-        candidate = "llm_session_" + "x" * MAX_BYTES
-    prefix = "llm_srefresh_" if refresh else "llm_session_"
-    if not isinstance(candidate, str) or not candidate.startswith(prefix):
-        return {"error": "candidate is not a session token"}
-    if len(candidate) > MAX_BYTES or not isinstance(key, str) or len(key.encode()) < 32 or not isinstance(now, int):
-        return {"error": "session token is malformed"}
-    try:
-        claims = jwt.decode(candidate.removeprefix(prefix), key, algorithms=["HS256"], issuer=ISSUER, options={"verify_exp": False, "verify_iat": False, "verify_nbf": False})
-    except jwt.InvalidSignatureError:
-        return {"error": "session token signature is invalid"}
-    except (jwt.InvalidTokenError, TypeError, ValueError):
-        return {"error": "session token is malformed"}
-    if not isinstance(claims, dict) or claims.get("kind") != ("session_refresh" if refresh else "session"):
-        return {"error": "session token is malformed"}
-    if not all(isinstance(claims.get(name), str) and claims[name] for name in ("jti", "user_id", "client_id")):
-        return {"error": "session token is malformed"}
-    exp, iat = claims.get("exp"), claims.get("iat")
-    if not isinstance(exp, int) or not isinstance(iat, int):
-        return {"error": "session token is malformed"}
-    if now >= exp:
-        return {"error": "session token is expired"}
-    return {"client_id": claims["client_id"], "exp": exp, "iat": iat, "jti": claims["jti"], "kind": claims["kind"], "user_id": claims["user_id"]}
+from litellm.proxy._experimental.mcp_server.outbound_credentials import session_token as tokens
+
+Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+
+
+def step_of(fields: dict[str, Json], name: str) -> dict[str, Json] | None:
+    step = fields.get(name)
+    if step is not None and not isinstance(step, dict):
+        raise ValueError(f"{name} must be an object")
+    return step
+
+
+def keys_of(step: dict[str, Json]) -> tokens.SessionSigningKeys:
+    keys = step["keys"]
+    if isinstance(keys, dict) and "signing_key" in keys:
+        return tokens.SessionKeys.model_validate(keys)
+    return tokens.AsymmetricSessionKeys.model_validate(keys)
+
+
+def clock(step: dict[str, Json]) -> datetime:
+    now = step["now"]
+    if not isinstance(now, int):
+        raise ValueError("now must be an integer")
+    return datetime.fromtimestamp(now, UTC)
+
+
+def mint(step: dict[str, Json]) -> dict[str, Json]:
+    entropy = step["entropy"]
+    if not isinstance(entropy, str):
+        raise ValueError("entropy must be hex text")
+    principal = tokens.SessionPrincipal.model_validate(step["principal"])
+    keys = keys_of(step)
+    minter = tokens.mint_session_refresh_token if step["kind"] == "session_refresh" else tokens.mint_session_token
+    with patch.object(secrets, "token_bytes", return_value=bytes.fromhex(entropy)):
+        minted = minter(principal, keys, clock(step))
+    if isinstance(minted, tokens.SessionTokenTooLarge):
+        return minted.model_dump()
+    public = tokens.session_public_key_pem(keys) if isinstance(keys, tokens.AsymmetricSessionKeys) else None
+    return {"token": minted.token.get_secret_value(), "expires_at": int(minted.expires_at.timestamp()), "public_key_pem": public}
+
+
+def open_token(step: dict[str, Json], minted: Json) -> dict[str, Json]:
+    candidate = step.get("candidate")
+    if candidate is None and isinstance(minted, dict):
+        candidate = minted.get("token")
+    if not isinstance(candidate, str):
+        raise ValueError("open needs a candidate or a minted token")
+    opener = tokens.open_session_refresh_token if step["kind"] == "session_refresh" else tokens.open_session_token
+    return opener(candidate, keys_of(step), clock(step)).model_dump(mode="json")
+
+
+def run(fields: dict[str, Json]) -> Json:
+    mint_step, open_step = step_of(fields, "mint"), step_of(fields, "open")
+    minted = None if mint_step is None else mint(mint_step)
+    opened = None if open_step is None else open_token(open_step, minted)
+    return {"mint": minted, "open": opened}
