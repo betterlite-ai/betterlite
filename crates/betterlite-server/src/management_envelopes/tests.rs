@@ -4,6 +4,7 @@ use super::{
     FacetListResponse, ListResponse, PageLinks, PageMeta, ProblemDetail, ResourceResponse,
 };
 
+#[derive(serde::Serialize)]
 struct NestedResource {
     id: String,
 }
@@ -15,6 +16,13 @@ fn aliases_and_nullable_links_keep_wire_shape() {
             .expect("links decode");
     assert_eq!(
         serde_json::to_string(&links).expect("links encode"),
+        r#"{"self":"/management/v1/items","prev":null,"next":null}"#
+    );
+
+    let missing_neighbors: PageLinks =
+        serde_json::from_str(r#"{"self":"/management/v1/items"}"#).expect("links decode");
+    assert_eq!(
+        serde_json::to_string(&missing_neighbors).expect("links encode"),
         r#"{"self":"/management/v1/items","prev":null,"next":null}"#
     );
 }
@@ -58,6 +66,34 @@ fn facet_and_counted_envelopes_have_distinct_metadata() {
     assert_eq!(facet.data, Vec::<String>::new());
     assert_eq!(list.data.len(), 1);
     assert_eq!(list.data[0].id, "nested");
+    assert_eq!(
+        serde_json::to_value(ResourceResponse {
+            data: NestedResource {
+                id: "nested".to_owned(),
+            },
+        })
+        .expect("resource encode"),
+        serde_json::json!({"data": {"id": "nested"}})
+    );
+    assert_eq!(
+        serde_json::to_value(facet).expect("facet encode"),
+        serde_json::json!({
+            "data": [],
+            "meta": {"page": 1, "page_size": 10, "has_more": false},
+            "links": {"self": "/facets", "prev": null, "next": null}
+        })
+    );
+    assert_eq!(
+        serde_json::to_value(list).expect("list encode"),
+        serde_json::json!({
+            "data": [{"id": "nested"}],
+            "meta": {"total_count": 1, "page": 1, "page_size": 10, "total_pages": 1},
+            "links": {
+                "self": "/items", "first": "/items", "prev": null,
+                "next": null, "last": "/items"
+            }
+        })
+    );
 }
 
 #[test]
