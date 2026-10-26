@@ -26,7 +26,10 @@ fn stored(text: &str) -> BTreeMap<String, JsonValue> {
 }
 
 fn environment(value: Option<&str>) -> BTreeMap<String, String> {
-    value.map(|text| (String::from("HOST_ENV"), text.to_owned())).into_iter().collect()
+    value
+        .map(|text| (String::from("HOST_ENV"), text.to_owned()))
+        .into_iter()
+        .collect()
 }
 
 fn host(row: &str, env: Option<&str>, empty: EmptyDbValue) -> (Option<String>, FieldSource) {
@@ -44,8 +47,18 @@ fn host(row: &str, env: Option<&str>, empty: EmptyDbValue) -> (Option<String>, F
 #[case::true_reads_like_python(r#"{"SMTP_HOST": true}"#, None, Some("True"), FieldSource::Db)]
 #[case::false_reads_like_python(r#"{"SMTP_HOST": false}"#, None, Some("False"), FieldSource::Db)]
 #[case::number_as_text(r#"{"SMTP_HOST": 2525}"#, None, Some("2525"), FieldSource::Db)]
-#[case::list_as_json(r#"{"SMTP_HOST": [1, "a"]}"#, None, Some(r#"[1,"a"]"#), FieldSource::Db)]
-#[case::object_as_json(r#"{"SMTP_HOST": {"a": 1}}"#, None, Some(r#"{"a":1}"#), FieldSource::Db)]
+#[case::list_as_json(
+    r#"{"SMTP_HOST": [1, "a"]}"#,
+    None,
+    Some(r#"[1,"a"]"#),
+    FieldSource::Db
+)]
+#[case::object_as_json(
+    r#"{"SMTP_HOST": {"a": 1}}"#,
+    None,
+    Some(r#"{"a":1}"#),
+    FieldSource::Db
+)]
 #[case::env_without_db("{}", Some(" env "), Some(" env "), FieldSource::Env)]
 #[case::blank_env_is_unset("{}", Some(" \t\n"), None, FieldSource::Unset)]
 #[case::separator_env_is_unset("{}", Some("\u{1c}\u{1f}"), None, FieldSource::Unset)]
@@ -56,7 +69,10 @@ fn empty_db_means_cleared_for_alerting(
     #[case] value: Option<&str>,
     #[case] source: FieldSource,
 ) {
-    assert_eq!(host(row, env, EmptyDbValue::Cleared), (value.map(str::to_owned), source));
+    assert_eq!(
+        host(row, env, EmptyDbValue::Cleared),
+        (value.map(str::to_owned), source)
+    );
 }
 
 #[rstest]
@@ -72,7 +88,8 @@ fn empty_db_means_absent_for_sso(
     #[case] env: Option<&str>,
     #[case] value: Option<&str>,
 ) {
-    let fields = resolve_fields(&HOST, &stored(row), &environment(env), EmptyDbValue::Absent).unwrap();
+    let fields =
+        resolve_fields(&HOST, &stored(row), &environment(env), EmptyDbValue::Absent).unwrap();
     let resolved: Vec<Option<&str>> = fields.iter().map(|field| field.value.as_deref()).collect();
     assert_eq!(resolved, vec![value]);
 }
@@ -85,12 +102,27 @@ fn email_port_and_tls_fall_back_to_mail_defaults(
     #[case] env: &[(&str, &str)],
     #[case] expected: [(&str, FieldSource); 2],
 ) {
-    let environment = env.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())).collect();
-    let fields = resolve_fields(&EMAIL_DESCRIPTORS, &stored(row), &environment, EmptyDbValue::Cleared).unwrap();
-    let resolved: Vec<(Option<&str>, FieldSource)> = fields.iter().map(|field| (field.value.as_deref(), field.source)).collect();
+    let environment = env
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    let fields = resolve_fields(
+        &EMAIL_DESCRIPTORS,
+        &stored(row),
+        &environment,
+        EmptyDbValue::Cleared,
+    )
+    .unwrap();
+    let resolved: Vec<(Option<&str>, FieldSource)> = fields
+        .iter()
+        .map(|field| (field.value.as_deref(), field.source))
+        .collect();
     let unset = (None, FieldSource::Unset);
     let [port, tls] = expected.map(|(value, source)| (Some(value), source));
-    assert_eq!(resolved, vec![unset, port, tls, unset, unset, unset, unset, unset, unset]);
+    assert_eq!(
+        resolved,
+        vec![unset, port, tls, unset, unset, unset, unset, unset, unset]
+    );
 }
 
 #[rstest]
@@ -102,11 +134,23 @@ fn alerting_tables_name_their_env_vars(
     #[case] names: &[&str],
     #[case] secrets: &[&str],
 ) {
-    let listed: Vec<&str> = descriptors.iter().map(|descriptor| descriptor.field_name).collect();
-    let secret: Vec<&str> = descriptors.iter().filter(|descriptor| descriptor.is_secret).map(|descriptor| descriptor.field_name).collect();
+    let listed: Vec<&str> = descriptors
+        .iter()
+        .map(|descriptor| descriptor.field_name)
+        .collect();
+    let secret: Vec<&str> = descriptors
+        .iter()
+        .filter(|descriptor| descriptor.is_secret)
+        .map(|descriptor| descriptor.field_name)
+        .collect();
     assert_eq!(listed, names);
     assert_eq!(secret, secrets);
-    assert!(descriptors.iter().all(|descriptor| descriptor.db_key == descriptor.field_name && descriptor.env_var == descriptor.field_name));
+    assert!(
+        descriptors
+            .iter()
+            .all(|descriptor| descriptor.db_key == descriptor.field_name
+                && descriptor.env_var == descriptor.field_name)
+    );
 }
 
 #[rstest]
@@ -123,12 +167,27 @@ fn source_for_reports_default_when_unset(
 ) {
     let mut store = SettingsStore::from(Section::RouterSettings);
     store.load_yaml(stored(r#"{"owned": 1}"#));
-    store.apply_db_row(DbRow::RouterSettings, stored(r#"{"stored": 2, "missing": null}"#));
-    assert_eq!(source_for(&store, key, default.map(json).as_ref()), expected);
+    store.apply_db_row(
+        DbRow::RouterSettings,
+        stored(r#"{"stored": 2, "missing": null}"#),
+    );
+    assert_eq!(
+        source_for(&store, key, default.map(json).as_ref()),
+        expected
+    );
 }
 
 #[test]
 fn sources_serialize_as_litellm_names() {
-    let sources = [FieldSource::Config, FieldSource::Db, FieldSource::Env, FieldSource::Default, FieldSource::Unset];
-    assert_eq!(serde_json::to_string(&sources).unwrap(), r#"["config","db","env","default","unset"]"#);
+    let sources = [
+        FieldSource::Config,
+        FieldSource::Db,
+        FieldSource::Env,
+        FieldSource::Default,
+        FieldSource::Unset,
+    ];
+    assert_eq!(
+        serde_json::to_string(&sources).unwrap(),
+        r#"["config","db","env","default","unset"]"#
+    );
 }

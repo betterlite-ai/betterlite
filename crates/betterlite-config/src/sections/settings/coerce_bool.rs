@@ -2,7 +2,6 @@ use std::num::FpCategory;
 
 use super::settings_rules::JsonValue;
 
-#[cfg(test)]
 mod tests;
 
 #[must_use]

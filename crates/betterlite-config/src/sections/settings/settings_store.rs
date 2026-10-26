@@ -5,7 +5,6 @@ use thiserror::Error;
 use super::settings_resolution::FieldSource;
 use super::settings_rules::{DbRow, JsonValue, Section};
 
-#[cfg(test)]
 mod tests;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -73,7 +72,8 @@ impl SettingsStore {
         let section = self.section;
         values.retain(|key, _| !section.is_resource_list(key));
         self.yaml_values = values;
-        self.runtime_values.retain(|key, _| section.is_resource_list(key));
+        self.runtime_values
+            .retain(|key, _| section.is_resource_list(key));
         self.deleted_runtime_keys.clear();
     }
 
@@ -101,7 +101,9 @@ impl SettingsStore {
 
     #[must_use]
     pub fn resolution(&self, key: &str) -> Resolution<'_> {
-        let stored = self.stored_value(key).filter(|value| **value != JsonValue::Null);
+        let stored = self
+            .stored_value(key)
+            .filter(|value| **value != JsonValue::Null);
         self.yaml_values
             .get(key)
             .map(Resolution::Config)
@@ -151,7 +153,8 @@ impl SettingsStore {
             .map(str::to_owned)
             .collect();
         let yaml_values = &self.yaml_values;
-        self.runtime_values.retain(|key, _| yaml_values.contains_key(key));
+        self.runtime_values
+            .retain(|key, _| yaml_values.contains_key(key));
         self.deleted_runtime_keys = removable;
     }
 
@@ -209,7 +212,11 @@ impl SettingsStore {
 
     fn ownership_error(&self, key: &str) -> ConfigOwnedKeyError {
         let shadows_db_value = self.shadows_db_value(key);
-        ConfigOwnedKeyError { section: self.section, key: key.to_owned(), shadows_db_value }
+        ConfigOwnedKeyError {
+            section: self.section,
+            key: key.to_owned(),
+            shadows_db_value,
+        }
     }
 
     fn stored_value(&self, key: &str) -> Option<&JsonValue> {
@@ -220,7 +227,11 @@ impl SettingsStore {
 
     fn candidate_keys(&self) -> BTreeSet<&str> {
         let stored = self.database_rows.values().flat_map(BTreeMap::keys);
-        let keys = self.yaml_values.keys().chain(stored).chain(self.runtime_values.keys());
+        let keys = self
+            .yaml_values
+            .keys()
+            .chain(stored)
+            .chain(self.runtime_values.keys());
         keys.map(String::as_str).collect()
     }
 }

@@ -8,7 +8,6 @@ use super::settings_store::SettingsStore;
 
 pub mod alerting;
 
-#[cfg(test)]
 mod tests;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -81,17 +80,29 @@ fn resolve_field(
         .is_empty()
     };
     let stored_text = match (stored.get(descriptor.db_key), empty) {
-        (Some(JsonValue::Text(text)), EmptyDbValue::Absent) if !is_blank(text) => Some(text.clone()),
+        (Some(JsonValue::Text(text)), EmptyDbValue::Absent) if !is_blank(text) => {
+            Some(text.clone())
+        }
         (None | Some(JsonValue::Null), _) | (Some(_), EmptyDbValue::Absent) => None,
         (Some(value), EmptyDbValue::Cleared) => Some(python_text(value, descriptor.field_name)?),
     };
-    let environment_text = environment.get(descriptor.env_var).filter(|text| !is_blank(text));
+    let environment_text = environment
+        .get(descriptor.env_var)
+        .filter(|text| !is_blank(text));
     let resolved = stored_text
         .map(|text| (Some(text), FieldSource::Db))
         .or_else(|| environment_text.map(|text| (Some(text.clone()), FieldSource::Env)))
-        .or_else(|| descriptor.default.map(|default| (Some(default.to_owned()), FieldSource::Default)));
+        .or_else(|| {
+            descriptor
+                .default
+                .map(|default| (Some(default.to_owned()), FieldSource::Default))
+        });
     let (value, source) = resolved.unwrap_or((None, FieldSource::Unset));
-    Ok(ResolvedField { field_name: descriptor.field_name, value, source })
+    Ok(ResolvedField {
+        field_name: descriptor.field_name,
+        value,
+        source,
+    })
 }
 
 // LiteLLM hands the stored value to str(), so booleans read True and False

@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::settings_rules::JsonValue;
 
-#[cfg(test)]
 mod tests;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

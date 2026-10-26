@@ -25,7 +25,13 @@ fn reports_changed_and_removed_keys(
 ) {
     let expected = SectionChanges {
         changed: section(changed),
-        removed: removed.iter().map(|key| (*key).to_owned()).collect::<BTreeSet<String>>(),
+        removed: removed
+            .iter()
+            .map(|key| (*key).to_owned())
+            .collect::<BTreeSet<String>>(),
     };
-    assert_eq!(changed_section_keys(&section(baseline), &section(new)), expected);
+    assert_eq!(
+        changed_section_keys(&section(baseline), &section(new)),
+        expected
+    );
 }
