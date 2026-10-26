@@ -25,14 +25,23 @@ pub struct ProblemDocument {
 impl ProblemDetail {
     #[must_use]
     pub fn problem_document(&self) -> ProblemDocument {
-        let document = ProblemDocument {
-            r#type: self.r#type.clone(),
-            title: self.title.clone(),
-            status: self.status,
-            detail: self.detail.clone(),
-            allowed: self.allowed.clone(),
-        };
-        document
+        if self.allowed.is_some() {
+            ProblemDocument {
+                r#type: self.r#type.clone(),
+                title: self.title.clone(),
+                status: self.status,
+                detail: self.detail.clone(),
+                allowed: self.allowed.clone(),
+            }
+        } else {
+            ProblemDocument {
+                r#type: self.r#type.clone(),
+                title: self.title.clone(),
+                status: self.status,
+                detail: self.detail.clone(),
+                allowed: None,
+            }
+        }
     }
 }
 
