@@ -149,6 +149,7 @@ fn agentic_followup_snapshot() {
     assert_eq!(result.as_ref().get("options"), Some(&nested));
     let mut owned_copy = result.as_ref().clone();
     owned_copy.clear();
+    assert!(owned_copy.is_empty());
     assert_eq!(result.as_ref().len(), 4);
 }
 
