@@ -1,0 +1,8 @@
+kind: helper
+name: anthropic-thinking-in-plan
+call:
+  anthropic_cache_plan:
+    function: cache_plan
+    body: '{"thinking":{"type":"enabled","budget_tokens":16},"output_config":{"effort":"low"},"speed":"fast","tool_choice":{"type":"auto"},"tools":[{"name":"lookup","input_schema":{"type":"object","properties":{"x":{"minimum":1e-05,"maximum":1.5e16,"default":0.5,"big":1E2,"wide":1e15}}}}],"system":"x \u00e9 \u001c\"\\","messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"t","signature":"s"},{"input":{"b":1,"a":-0.0},"name":"lookup","id":"call","type":"tool_use","cache_control":{"type":"ephemeral"}}]}]}'
+env: {}
+compare: {ignore: []}

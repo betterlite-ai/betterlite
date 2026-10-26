@@ -1,7 +1,7 @@
 id: B4500
 milestone: M8 platform
 title: Lens records, job transitions and finding identity
-status: todo
+status: done
 depends_on: []
 file: tasks/B4500-lens-state.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/lens/state.py"
 parent: B132
 split_from: B132
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 157

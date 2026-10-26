@@ -2,6 +2,7 @@ pub mod anthropic_capability_catalog;
 pub mod anthropic_http_stream;
 pub mod api;
 pub mod batches;
+pub mod cache_plan;
 pub mod capabilities;
 pub mod chat_call;
 pub mod completion;
