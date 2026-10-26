@@ -50,12 +50,12 @@ pub fn extract_exchange_spans(messages: &[Value]) -> (Vec<Vec<usize>>, Option<&'
     while index < messages.len() {
         let current = &messages[index];
         if current.get("role") != Some(&Value::String("assistant".to_owned())) {
-            index += 1;
+            index = index.saturating_add(1);
             continue;
         }
         let tool_ids = extract_tool_use_ids(current.get("content").unwrap_or(&Value::Null));
         if tool_ids.is_empty() {
-            index += 1;
+            index = index.saturating_add(1);
             continue;
         }
         let Some(next) = messages.get(index + 1) else {
@@ -69,7 +69,7 @@ pub fn extract_exchange_spans(messages: &[Value]) -> (Vec<Vec<usize>>, Option<&'
             return (Vec::new(), Some("invalid_anthropic_tool_sequence"));
         }
         spans.push(vec![index, index + 1]);
-        index += 2;
+        index = index.saturating_add(2);
     }
     (spans, None)
 }
