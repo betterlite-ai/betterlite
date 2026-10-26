@@ -1,0 +1,23 @@
+[package]
+name = "betterlite-deepagents-harness"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = "0.23.1"
+betterlite-harness = { path = "../betterlite-harness" }
+glob = "0.3.4"
+regex.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+rstest = "=0.27.0"
+tempfile = "3.27.0"
+tokio = { workspace = true, features = ["time"] }
+
+[lints]
+workspace = true

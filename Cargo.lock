@@ -509,6 +509,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-deepagents-harness"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "betterlite-harness",
+ "glob",
+ "regex",
+ "rstest",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "betterlite-error"
 version = "0.1.0"
 
