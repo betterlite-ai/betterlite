@@ -1,57 +1,112 @@
 #![cfg(test)]
 
-use rstest::rstest;
+#[path = "tests/admin_viewer/tests.rs"]
+mod admin_viewer;
+#[path = "tests/global_spend_tracking/tests.rs"]
+mod global_spend_tracking;
+#[path = "tests/internal_user/tests.rs"]
+mod internal_user;
+#[path = "tests/internal_user_view_only/tests.rs"]
+mod internal_user_view_only;
+#[path = "tests/key_management/tests.rs"]
+mod key_management;
+#[path = "tests/management/tests.rs"]
+mod management;
+#[path = "tests/master_key_only/tests.rs"]
+mod master_key_only;
+#[path = "tests/org_admin_only/tests.rs"]
+mod org_admin_only;
+#[path = "tests/service_account/tests.rs"]
+mod service_account;
+#[path = "tests/spend_tracking/tests.rs"]
+mod spend_tracking;
+
+#[path = "tests/key_enum/tests.rs"]
+mod key_enum;
 
 use super::{
     ADMIN_VIEWER_BASE_ROUTES, GLOBAL_SPEND_TRACKING_ROUTES, INTERNAL_USER_BASE_ROUTES,
-    INTERNAL_USER_VIEW_ONLY_ROUTES, KEY_MANAGEMENT_ROUTES, MASTER_KEY_ONLY_ROUTES,
-    ORG_ADMIN_ONLY_ROUTES, SPEND_TRACKING_ROUTES, TEAM_SERVICE_ACCOUNT_ROUTES, admin_viewer_routes,
-    internal_user_routes, management_routes, org_admin_allowed_routes,
+    INTERNAL_USER_VIEW_ONLY_ROUTES, KEY_MANAGEMENT_ROUTES, MANAGEMENT_BASE_ROUTES,
+    ORG_ADMIN_ONLY_ROUTES, SPEND_TRACKING_ROUTES, admin_viewer_routes, internal_user_routes,
+    management_routes, org_admin_allowed_routes,
 };
 
-#[rstest]
-#[case::key_generate(KEY_MANAGEMENT_ROUTES, 0, "/key/generate")]
-#[case::admin_member_delete(ORG_ADMIN_ONLY_ROUTES, 4, "/organization/member_delete")]
-fn route_literal_is_pinned(#[case] routes: &[&str], #[case] index: usize, #[case] literal: &str) {
-    assert_eq!(routes.get(index), Some(&literal));
+#[test]
+fn group_expansion() {
+    assert_eq!(
+        management_routes(),
+        [
+            MANAGEMENT_BASE_ROUTES,
+            KEY_MANAGEMENT_ROUTES,
+            super::MCP_MANAGEMENT_ROUTES,
+            super::AGENT_MANAGEMENT_ROUTES
+        ]
+        .concat()
+    );
+    assert_eq!(
+        internal_user_routes(),
+        [
+            INTERNAL_USER_BASE_ROUTES,
+            SPEND_TRACKING_ROUTES,
+            KEY_MANAGEMENT_ROUTES,
+            super::COMPLIANCE_CHECK_ROUTES
+        ]
+        .concat()
+    );
+    assert_eq!(
+        admin_viewer_routes(),
+        [
+            ADMIN_VIEWER_BASE_ROUTES,
+            SPEND_TRACKING_ROUTES,
+            super::INFO_ROUTES
+        ]
+        .concat()
+    );
+    assert_eq!(
+        org_admin_allowed_routes(),
+        [
+            ORG_ADMIN_ONLY_ROUTES,
+            &management_routes(),
+            super::SELF_MANAGED_ROUTES,
+            &admin_viewer_routes()
+        ]
+        .concat()
+    );
 }
 
 #[test]
-fn whole_tables_match_litellm_shape() {
-    assert_eq!(MASTER_KEY_ONLY_ROUTES.len(), 3);
-    assert_eq!(KEY_MANAGEMENT_ROUTES.len(), 24);
-    assert_eq!(TEAM_SERVICE_ACCOUNT_ROUTES.len(), 2);
-    assert_eq!(super::MANAGEMENT_BASE_ROUTES.len(), 46);
-    assert_eq!(SPEND_TRACKING_ROUTES.len(), 16);
-    assert_eq!(GLOBAL_SPEND_TRACKING_ROUTES.len(), 12);
-    assert_eq!(INTERNAL_USER_BASE_ROUTES.len(), 18);
-    assert_eq!(INTERNAL_USER_VIEW_ONLY_ROUTES.len(), 25);
-    assert_eq!(ORG_ADMIN_ONLY_ROUTES.len(), 5);
-    assert_eq!(ADMIN_VIEWER_BASE_ROUTES.len(), 53);
-}
-
-#[test]
-fn group_expansion_keeps_order_and_duplicates() {
-    assert_eq!(management_routes().len(), 46 + 24 + 3 + 5);
-    assert_eq!(internal_user_routes().len(), 18 + 16 + 24 + 2);
+fn internal_viewer_expansion() {
+    let tag_routes = [
+        "/tag/daily/activity",
+        "/tag/daily/activity/aggregated",
+        "/tag/daily/activity/aggregated/keys",
+        "/tag/daily/activity/aggregated/search",
+        "/tag/daily/activity/aggregated/model_top_keys",
+        "/tag/daily/activity/export",
+        "/tag/list",
+    ];
     assert_eq!(
-        admin_viewer_routes().len(),
-        53 + 16 + super::INFO_ROUTES.len()
+        INTERNAL_USER_VIEW_ONLY_ROUTES,
+        [
+            SPEND_TRACKING_ROUTES,
+            super::COMPLIANCE_CHECK_ROUTES,
+            &tag_routes
+        ]
+        .concat()
     );
-    assert_eq!(
-        org_admin_allowed_routes().len(),
-        5 + management_routes().len() + 69 + admin_viewer_routes().len()
-    );
-    assert_eq!(
-        management_routes().last(),
-        super::AGENT_MANAGEMENT_ROUTES.last(),
-    );
+    assert!(!INTERNAL_USER_VIEW_ONLY_ROUTES.contains(&"/key/generate"));
+    assert!(!INTERNAL_USER_VIEW_ONLY_ROUTES.contains(&"/key/update"));
 }
 
 #[test]
 fn internal_roles_exclude_global_spend() {
     assert!(
         internal_user_routes()
+            .iter()
+            .all(|route| !GLOBAL_SPEND_TRACKING_ROUTES.contains(route))
+    );
+    assert!(
+        INTERNAL_USER_VIEW_ONLY_ROUTES
             .iter()
             .all(|route| !GLOBAL_SPEND_TRACKING_ROUTES.contains(route))
     );

@@ -1,4 +1,5 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum KeyManagementRoute {
     KeyGenerate,
     KeyUpdate,

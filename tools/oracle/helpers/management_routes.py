@@ -7,7 +7,6 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 RouteTable: TypeAlias = Sequence[str] | tuple[str, ...]
 
 GROUPS: dict[str, RouteTable] = {
-    "key_enum": tuple(route.value for route in KeyManagementRoutes),
     "master_key_only_routes": LiteLLMRoutes.master_key_only_routes.value,
     "key_management_routes": LiteLLMRoutes.key_management_routes.value,
     "team_service_account_key_routes": LiteLLMRoutes.team_service_account_key_routes.value,
@@ -26,6 +25,8 @@ def run(input_value: dict[str, Json]) -> list[Json]:
     if set(input_value) != {"group"}:
         raise ValueError("management routes input must contain only group")
     group = input_value["group"]
+    if group == "key_enum":
+        return cast(list[Json], [[route.name, route.value] for route in KeyManagementRoutes])
     if not isinstance(group, str) or group not in GROUPS:
         raise ValueError(f"unknown management route group: {group}")
     return cast(list[Json], list(GROUPS[group]))

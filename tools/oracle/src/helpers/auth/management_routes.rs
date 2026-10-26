@@ -25,29 +25,53 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-fn values(group: &Group) -> Vec<&'static str> {
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+enum Output {
+    Keys(
+        Vec<(
+            management_routes::key_routes::KeyManagementRoute,
+            &'static str,
+        )>,
+    ),
+    Routes(Vec<&'static str>),
+}
+
+fn values(group: &Group) -> Output {
     match group {
-        Group::KeyEnum => management_routes::key_routes::KEY_ENUM
-            .iter()
-            .map(|route| route.value())
-            .collect(),
-        Group::MasterKeyOnlyRoutes => management_routes::MASTER_KEY_ONLY_ROUTES.to_vec(),
-        Group::KeyManagementRoutes => management_routes::KEY_MANAGEMENT_ROUTES.to_vec(),
+        Group::KeyEnum => Output::Keys(
+            management_routes::key_routes::KEY_ENUM
+                .iter()
+                .map(|route| (*route, route.value()))
+                .collect(),
+        ),
+        Group::MasterKeyOnlyRoutes => {
+            Output::Routes(management_routes::MASTER_KEY_ONLY_ROUTES.to_vec())
+        }
+        Group::KeyManagementRoutes => {
+            Output::Routes(management_routes::KEY_MANAGEMENT_ROUTES.to_vec())
+        }
         Group::TeamServiceAccountKeyRoutes => {
-            management_routes::TEAM_SERVICE_ACCOUNT_ROUTES.to_vec()
+            Output::Routes(management_routes::TEAM_SERVICE_ACCOUNT_ROUTES.to_vec())
         }
-        Group::ManagementRoutes => management_routes::management_routes(),
-        Group::SpendTrackingRoutes => management_routes::SPEND_TRACKING_ROUTES.to_vec(),
+        Group::ManagementRoutes => Output::Routes(management_routes::management_routes()),
+        Group::SpendTrackingRoutes => {
+            Output::Routes(management_routes::SPEND_TRACKING_ROUTES.to_vec())
+        }
         Group::GlobalSpendTrackingRoutes => {
-            management_routes::GLOBAL_SPEND_TRACKING_ROUTES.to_vec()
+            Output::Routes(management_routes::GLOBAL_SPEND_TRACKING_ROUTES.to_vec())
         }
-        Group::InternalUserRoutes => management_routes::internal_user_routes(),
+        Group::InternalUserRoutes => Output::Routes(management_routes::internal_user_routes()),
         Group::InternalUserViewOnlyRoutes => {
-            management_routes::INTERNAL_USER_VIEW_ONLY_ROUTES.to_vec()
+            Output::Routes(management_routes::INTERNAL_USER_VIEW_ONLY_ROUTES.to_vec())
         }
-        Group::OrgAdminOnlyRoutes => management_routes::ORG_ADMIN_ONLY_ROUTES.to_vec(),
-        Group::AdminViewerRoutes => management_routes::admin_viewer_routes(),
-        Group::OrgAdminAllowedRoutes => management_routes::org_admin_allowed_routes(),
+        Group::OrgAdminOnlyRoutes => {
+            Output::Routes(management_routes::ORG_ADMIN_ONLY_ROUTES.to_vec())
+        }
+        Group::AdminViewerRoutes => Output::Routes(management_routes::admin_viewer_routes()),
+        Group::OrgAdminAllowedRoutes => {
+            Output::Routes(management_routes::org_admin_allowed_routes())
+        }
     }
 }
 
