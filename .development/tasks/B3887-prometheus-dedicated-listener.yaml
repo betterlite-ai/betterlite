@@ -30,6 +30,9 @@ scope:
     - crates/betterlite-http/src/metrics_server/tests.rs
     - crates/betterlite/src/metrics_listener.rs
     - crates/betterlite/src/metrics_listener/tests.rs
+    - crates/betterlite-logging/src/metrics_cleanup/tests/**
+    - crates/betterlite-http/src/metrics_server/tests/**
+    - crates/betterlite/src/metrics_listener/tests/**
   lint_tables: false
 
 references:
@@ -145,5 +148,5 @@ pitfalls:
 
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1

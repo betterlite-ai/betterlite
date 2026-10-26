@@ -343,6 +343,6 @@ pitfalls:
 - Response pricing rereads the connection setting, so the fixture must keep the same configured mode during request
   and reply.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

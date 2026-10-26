@@ -115,6 +115,6 @@ pitfalls:
   - The poison budget resets per 1000-row outer group, not per SQL statement and not once for the entire 10000-row pass.
   - An external spend writer returning HTTP 500 does not trigger the source's retry branch unless the HTTP client itself raises.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

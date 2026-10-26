@@ -128,6 +128,6 @@ pitfalls:
   - These deletes use raw ids and synchronous UserApiKeyCache routing, not broadcast invalidation keys.
   - The wrapper docstring mentions audit logging, but its executable code makes no audit persistence call.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

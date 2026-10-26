@@ -76,6 +76,6 @@ pitfalls:
   - Clearing models in /tag/update does not undo tags previously attached to deployment parameters.
   - Model-name lookup errors are logged and return an empty model_info map, not a failed tag creation.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

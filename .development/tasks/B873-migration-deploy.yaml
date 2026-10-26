@@ -102,6 +102,6 @@ pitfalls:
   - A health index created inside BEGIN fails with SQLSTATE 25001 even though every preceding ledger write succeeds.
   - Finishing the ledger before persisting applied_steps_count=1 destroys the evidence B716 uses after interruption.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

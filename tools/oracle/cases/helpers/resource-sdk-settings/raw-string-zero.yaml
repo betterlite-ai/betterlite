@@ -1,0 +1,9 @@
+kind: helper
+name: raw-string-zero
+call:
+  resource_sdk_settings:
+    provider: "openai"
+    timeout: "0"
+env: {}
+compare:
+  ignore: []

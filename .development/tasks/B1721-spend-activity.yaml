@@ -77,6 +77,6 @@ pitfalls:
   - February labels sort before January labels because this API sorts formatted text, not timestamps.
   - Historical spend for a deleted deployment disappears from the provider report instead of entering Unknown.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

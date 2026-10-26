@@ -115,6 +115,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as combined_key_read in the db group. Replace the stub Op in tools/oracle/src/helpers/db/combined_key_read.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/combined_key_read.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Returning the recursive typed grace result through dictionary normalization crashes a valid deprecated key.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

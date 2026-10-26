@@ -284,6 +284,6 @@ pitfalls:
   - enforced_model_allowlists omits organizations while attribution includes them and omits users; sharing one list builder changes behavior.
   - An empty matched result does not clear an earlier token stamp, even after a swallowed lookup error.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

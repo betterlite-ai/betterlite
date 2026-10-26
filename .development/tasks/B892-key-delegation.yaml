@@ -224,6 +224,6 @@ pitfalls:
   - A safe-preset transition can widen to full access; only an existing info_routes-only set is sticky.
   - Finiteness is checked before admin and UI exemptions, but finite negative windows are not rejected here.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -13,6 +13,7 @@ scope:
   paths:
   - crates/betterlite-server/src/roi_evidence.rs
   - crates/betterlite-server/src/roi_evidence/tests.rs
+  - crates/betterlite-server/src/roi_evidence/tests/**
   lint_tables: false
 
 references:
@@ -74,5 +75,5 @@ pitfalls:
 review_level: standard
 
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1

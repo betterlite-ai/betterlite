@@ -68,6 +68,6 @@ pitfalls:
   - A cached team_id with missing team_models is unknown authority and must not be repaired into an empty unrestricted grant.
   - The ready response for several teams has requires_team_selection=true and no key until a team is selected.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

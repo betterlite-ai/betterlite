@@ -291,6 +291,6 @@ pitfalls:
   - Reusing the scheduled calendar reset boundary would include old spend in a manually reset window.
   - A Redis write failure is a warning, while a subsequent broadcast failure can fail an already persisted reset.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

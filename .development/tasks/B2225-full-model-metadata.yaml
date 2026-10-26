@@ -355,6 +355,6 @@ pitfalls:
 - An empty explicit API key bypasses the cache because the guard is is not None.
 - Full metadata overlays provider defaults after helper lookup, unlike the authoritative flags used by B688.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

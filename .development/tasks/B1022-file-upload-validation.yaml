@@ -162,5 +162,5 @@ pitfalls:
 - The batch shape validator permits null body; guardrail scanning later rejects it as unparseable.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1

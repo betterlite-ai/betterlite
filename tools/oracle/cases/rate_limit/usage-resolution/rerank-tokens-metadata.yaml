@@ -1,0 +1,9 @@
+kind: helper
+name: rerank-tokens-metadata
+call:
+  b3044:
+    rate_limit_type: output
+    rerank_tokens: {input_tokens: 8, output_tokens: 2}
+env: {}
+compare:
+  ignore: []

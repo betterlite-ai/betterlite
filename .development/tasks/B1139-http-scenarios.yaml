@@ -251,5 +251,5 @@ pitfalls:
 - 'The 120-second deadline includes teardown, so a gateway that answers `/health/liveliness` at 119 seconds but takes two seconds to reap still returns `scenario exceeded 120 seconds`.'
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
