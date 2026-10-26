@@ -58,6 +58,7 @@ pub enum ListValue {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct A2aRecord {
     #[serde(default)]
     pub kind: Field<Shape>,
