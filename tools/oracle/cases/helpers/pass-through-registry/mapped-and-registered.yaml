@@ -4,7 +4,7 @@ call:
   pass_through_registry:
     root_path: ''
     registrations:
-      - {key: first:exact:/registered, endpoint_id: first, route_type: exact, path: /registered, methods: [], auth: false}
+      - {key: 'first:exact:/registered', endpoint_id: first, route_type: exact, path: /registered, methods: [], auth: false}
     queries:
       - {route: /openai/chat/completions, method: GET}
       - {route: /registered, method: null}

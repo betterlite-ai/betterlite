@@ -19,58 +19,43 @@ pub struct PassThroughMetadata {
 
 #[derive(Debug, Clone)]
 pub struct PassThroughRegistry {
-    root_path: String,
-    registrations: Vec<(String, PassThroughMetadata)>,
+    pub root_path: String,
+    pub registrations: Vec<(String, PassThroughMetadata)>,
 }
 
 impl PassThroughRegistry {
     #[must_use]
-    pub fn new(root_path: String, registrations: Vec<(String, PassThroughMetadata)>) -> Self {
-        Self {
-            root_path,
-            registrations,
-        }
+    pub fn lookup_route(&self, route: &str) -> String {
+        let normalized = self.normalize_route(route);
+        normalized.unwrap_or_else(|| route.to_owned())
     }
 
     #[must_use]
-    pub fn route_for_registry_lookup(&self, route: &str) -> String {
-        self.normalize_route(route)
-            .unwrap_or_else(|| route.to_owned())
-    }
-
-    #[must_use]
-    pub fn is_registered_pass_through_route(&self, route: &str) -> bool {
-        if let Some(normalized) = self.normalize_route(route) {
-            if MAPPED_PASS_THROUGH_ROUTES
+    pub fn is_registered(&self, route: &str) -> bool {
+        if let Some(normalized) = self.normalize_route(route)
+            && MAPPED_PASS_THROUGH_ROUTES
                 .iter()
                 .any(|prefix| normalized.starts_with(prefix))
-            {
-                return true;
-            }
+        {
+            return true;
         }
-        let comparison_route = self.route_for_registry_lookup(route);
-        self.registrations
-            .iter()
-            .any(|(key, _)| key_matches(key, &comparison_route))
+        let comparison_route = self.lookup_route(route);
+        !self.matching_registrations(&comparison_route).is_empty()
     }
 
     #[must_use]
-    pub fn get_registered_pass_through_route(
+    pub fn get_registered(
         &self,
         route: &str,
         method: Option<&str>,
     ) -> Option<&PassThroughMetadata> {
-        let comparison_route = self.route_for_registry_lookup(route);
-        self.registrations.iter().find_map(|(key, metadata)| {
-            let parts = key.splitn(4, ':').collect::<Vec<_>>();
-            let (route_type, registered_path) = parts.get(1).zip(parts.get(2))?;
-            if !matches_path(route_type, registered_path, &comparison_route)
-                || !method_allowed(parts.get(3).copied(), metadata, method)
-            {
-                return None;
-            }
-            Some(metadata)
-        })
+        let comparison_route = self.lookup_route(route);
+        self.matching_registrations(&comparison_route)
+            .into_iter()
+            .find_map(|(key, metadata)| {
+                let parts = key.splitn(4, ':').collect::<Vec<_>>();
+                method_allowed(parts.get(3).copied(), metadata, method).then_some(metadata)
+            })
     }
 
     fn normalize_route(&self, route: &str) -> Option<String> {
@@ -78,18 +63,26 @@ impl PassThroughRegistry {
             return Some(route.to_owned());
         }
         let prefix = format!("{}/", self.root_path);
-        route
-            .starts_with(&prefix)
-            .then(|| route[self.root_path.len()..].to_owned())
+        route.starts_with(&prefix).then(|| {
+            route
+                .get(self.root_path.len()..)
+                .map(str::to_owned)
+                .unwrap_or_default()
+        })
     }
-}
 
-fn key_matches(key: &str, route: &str) -> bool {
-    let parts = key.splitn(4, ':').collect::<Vec<_>>();
-    let Some((route_type, registered_path)) = parts.get(1).zip(parts.get(2)) else {
-        return false;
-    };
-    matches_path(route_type, registered_path, route)
+    fn matching_registrations(&self, route: &str) -> Vec<(&str, &PassThroughMetadata)> {
+        let mut matches = Vec::new();
+        for (key, metadata) in &self.registrations {
+            let parts = key.splitn(4, ':').collect::<Vec<_>>();
+            if let Some((route_type, registered_path)) = parts.get(1).zip(parts.get(2))
+                && matches_path(route_type, registered_path, route)
+            {
+                matches.push((key.as_str(), metadata));
+            }
+        }
+        matches
+    }
 }
 
 fn matches_path(route_type: &str, registered_path: &str, route: &str) -> bool {
@@ -114,10 +107,9 @@ fn method_allowed(
             .iter()
             .any(|value| Some(value.as_str()) == method);
     }
-    key_methods.is_none()
-        || key_methods.is_some_and(|value| {
-            value
-                .split(',')
-                .any(|key_method| Some(key_method) == method)
-        })
+    key_methods.is_none_or(|value| {
+        value
+            .split(',')
+            .any(|key_method| Some(key_method) == method)
+    })
 }
