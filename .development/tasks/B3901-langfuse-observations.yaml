@@ -113,5 +113,5 @@ pitfalls:
   while existing_trace hangs under a synthetic parent to signal append-only to the server.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 2

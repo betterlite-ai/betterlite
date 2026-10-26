@@ -138,6 +138,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as master_key_boot in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/master_key_boot.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/master_key_boot.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Only the stripped known default sk-1234 is specially refused; do not invent minimum entropy rules.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

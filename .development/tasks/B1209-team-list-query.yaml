@@ -221,6 +221,6 @@ pitfalls:
   - Legacy own queries filter members_with_roles, while V2 membership filters read user.teams; stale data can make their answers differ.
   - Keep the organization/member OR under AND when search already contributes an OR.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

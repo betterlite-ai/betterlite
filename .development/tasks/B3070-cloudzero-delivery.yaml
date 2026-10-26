@@ -91,5 +91,5 @@ pitfalls:
   - 'The endpoint URL is https://api.cloudzero.com/v2/connections/billing/anycost/{connection_id}/billing_drops, not a typo or variant.'
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 2

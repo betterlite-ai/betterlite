@@ -98,5 +98,5 @@ pitfalls:
   - "ONYX_TIMEOUT is parsed with int(os.getenv(...)); the default 10.0 becomes 10, and non-integer strings like '7.5' raise ValueError, not a parse error message."
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

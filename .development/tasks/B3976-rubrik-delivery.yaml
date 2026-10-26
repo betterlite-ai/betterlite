@@ -174,5 +174,5 @@ pitfalls:
   the lock is created by CustomBatchLogger.__init__ and passed through super().__init__(..., flush_lock=...).
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

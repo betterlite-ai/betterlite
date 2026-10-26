@@ -281,6 +281,6 @@ pitfalls:
   - An unusable registry means perform per-ID lookup; conflating it with an empty set bypasses every end-user restriction.
   - The overflow path is silent and uses the normal management TTL; only a failed fetch uses the 30-second warning path.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

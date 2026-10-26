@@ -160,6 +160,6 @@ pitfalls:
   - "Service hooks fire after the operation completes, not before. They are asyncio.create_task calls, so the main request does not wait for them; the logger must be prepared for concurrent hook firings."
   - "RPUSH and LPOP errors propagate directly without retry. Do not add exponential backoff or retry loops; the circuit breaker handles repeated failures at a higher level."
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

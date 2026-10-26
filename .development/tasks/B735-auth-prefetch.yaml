@@ -504,6 +504,6 @@ pitfalls:
   - Identity memory writes sit outside the best-effort catch and can fail the caller.
   - Owner prefetch uses ordinary memory even for a bare user ID that resembles a key hash.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

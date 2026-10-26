@@ -215,6 +215,6 @@ pitfalls:
 - A truthy images list suppresses provider error fields before falsey image entries are filtered.
 - The provider decoder wraps errors using the upstream status even when that status is 200.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

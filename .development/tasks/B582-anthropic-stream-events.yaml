@@ -326,6 +326,6 @@ pitfalls:
 - message_stop is an empty chunk; message_delta supplies finish_reason and EOF ends iteration.
 - Container id is stored only when tool results already exist.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

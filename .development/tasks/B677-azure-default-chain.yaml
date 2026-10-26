@@ -487,6 +487,6 @@ pitfalls:
 - AZURE_CERTIFICATE_PATH drives explicit LiteLLM inference; DefaultAzureCredential reads the different AZURE_CLIENT_CERTIFICATE_PATH.
 - DeploymentIdentityCredential is a ChainedTokenCredential, whose authentication failure stops before later identities.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

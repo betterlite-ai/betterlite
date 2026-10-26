@@ -107,6 +107,6 @@ pitfalls:
   - The form action uses literal concatenation while the banner URL uses join_paths, so slash behavior differs.
   - A present but empty UI_PASSWORD must still display the default-credential hint.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -221,6 +221,6 @@ pitfalls:
   - Popping token from a temporary key dictionary does not redact the original returned collection.
   - A failed budget-table read is logged and dropped, whereas a failed member hydration reaches the route's 400 auth_error catch.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

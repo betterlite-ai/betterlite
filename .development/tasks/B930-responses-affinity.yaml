@@ -119,5 +119,5 @@ pitfalls:
 - Missing origins strip and dispatch instead of returning distinguishable existence errors.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1

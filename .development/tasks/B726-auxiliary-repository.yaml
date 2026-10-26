@@ -188,6 +188,6 @@ pitfalls:
   - File store always inserts a new row; idempotent deletion does not imply content replacement.
   - load_status can succeed even when file_object is invalid and load_batch would fail.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security
