@@ -1,0 +1,8 @@
+kind: helper
+name: upload-filename-dotenv
+call:
+  upload_filename:
+    filename: .env
+env: {}
+compare:
+  ignore: []
