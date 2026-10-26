@@ -1,8 +1,8 @@
 task: B4506
 deviations:
-  - what: Zero partition limits and oversized items or catalog rows return errors.
-    why: Enforces the task's bounded-page requirement instead of emitting an oversized page.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L164-L181
+  - what: Zero concurrency or partition limits and oversized items or catalog rows return errors.
+    why: Rejects silent no-work execution and enforces bounded pages instead of emitting an oversized page.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L143-L181
   - what: Content, catalog and feedback limits account for UTF-8 bytes and conservatively reserve JSON framing.
     why: The task requires byte bounds; Python counts characters for content and omits outer framing for catalog and feedback pages.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/trace_store.py#L64-L80
