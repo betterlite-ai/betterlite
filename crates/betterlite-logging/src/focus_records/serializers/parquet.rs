@@ -1,15 +1,15 @@
 use std::io::Cursor;
 
-use polars::prelude::{DataFrame, ParquetCompression, ParquetWriter, PolarsError};
+use polars::prelude::{DataFrame, ParquetCompression, ParquetWriter};
 
-use super::FocusSerializer;
+use super::{FocusSerializer, SerializationError};
 
 pub struct FocusParquetSerializer;
 
 impl FocusSerializer for FocusParquetSerializer {
     const EXTENSION: &'static str = "parquet";
 
-    fn serialize(&self, frame: &DataFrame) -> Result<Vec<u8>, PolarsError> {
+    fn serialize(&self, frame: &DataFrame) -> Result<Vec<u8>> {
         let mut bytes = Cursor::new(Vec::new());
         ParquetWriter::new(&mut bytes)
             .with_compression(ParquetCompression::Snappy)

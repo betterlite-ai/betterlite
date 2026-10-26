@@ -1,105 +1,66 @@
 use polars::prelude::{DataType, PlSmallStr, Schema, TimeUnit};
 
-pub fn focus_normalized_schema() -> Schema {
-    let names = [
-        "BilledCost",
-        "BillingAccountId",
-        "BillingAccountName",
-        "BillingCurrency",
-        "BillingPeriodStart",
-        "BillingPeriodEnd",
-        "ChargeCategory",
-        "ChargeClass",
-        "ChargeDescription",
-        "ChargeFrequency",
-        "ChargePeriodStart",
-        "ChargePeriodEnd",
-        "ConsumedQuantity",
-        "ConsumedUnit",
-        "ContractedCost",
-        "ContractedUnitPrice",
-        "EffectiveCost",
-        "InvoiceIssuerName",
-        "ListCost",
-        "ListUnitPrice",
-        "PricingCategory",
-        "PricingQuantity",
-        "PricingUnit",
-        "ProviderName",
-        "PublisherName",
-        "RegionId",
-        "RegionName",
-        "ResourceId",
-        "ResourceName",
-        "ResourceType",
-        "ServiceCategory",
-        "ServiceSubcategory",
-        "ServiceName",
-        "SubAccountId",
-        "SubAccountName",
-        "SubAccountType",
-        "Tags",
-    ];
-    let decimal = DataType::Decimal(Some(18), Some(6));
-    let datetime = DataType::Datetime(TimeUnit::Microseconds, None);
-    let types = [
-        decimal.clone(),
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        datetime.clone(),
-        datetime.clone(),
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        datetime.clone(),
-        datetime.clone(),
-        decimal.clone(),
-        DataType::String,
-        decimal.clone(),
-        decimal.clone(),
-        decimal.clone(),
-        DataType::String,
-        decimal.clone(),
-        decimal.clone(),
-        DataType::String,
-        decimal.clone(),
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        DataType::String,
-        DataType::String,
-    ];
-    Schema::from_iter(
-        names
-            .into_iter()
-            .zip(types)
-            .map(|(name, dtype)| (PlSmallStr::from(name), dtype)),
-    )
-}
-
+pub const DECIMAL: DataType = DataType::Decimal(Some(18), Some(6));
 pub const FOCUS_COLUMN_COUNT: usize = 37;
 
-#[cfg(test)]
-mod tests {
-    use super::{focus_normalized_schema, FOCUS_COLUMN_COUNT};
-    use polars::prelude::{DataType, SchemaExt};
+const COLUMNS: [(&str, DataType); FOCUS_COLUMN_COUNT] = [
+    ("BilledCost", DECIMAL),
+    ("BillingAccountId", DataType::String),
+    ("BillingAccountName", DataType::String),
+    ("BillingCurrency", DataType::String),
+    (
+        "BillingPeriodStart",
+        DataType::Datetime(TimeUnit::Microseconds, None),
+    ),
+    (
+        "BillingPeriodEnd",
+        DataType::Datetime(TimeUnit::Microseconds, None),
+    ),
+    ("ChargeCategory", DataType::String),
+    ("ChargeClass", DataType::String),
+    ("ChargeDescription", DataType::String),
+    ("ChargeFrequency", DataType::String),
+    (
+        "ChargePeriodStart",
+        DataType::Datetime(TimeUnit::Microseconds, None),
+    ),
+    (
+        "ChargePeriodEnd",
+        DataType::Datetime(TimeUnit::Microseconds, None),
+    ),
+    ("ConsumedQuantity", DECIMAL),
+    ("ConsumedUnit", DataType::String),
+    ("ContractedCost", DECIMAL),
+    ("ContractedUnitPrice", DECIMAL),
+    ("EffectiveCost", DECIMAL),
+    ("InvoiceIssuerName", DataType::String),
+    ("ListCost", DECIMAL),
+    ("ListUnitPrice", DECIMAL),
+    ("PricingCategory", DataType::String),
+    ("PricingQuantity", DECIMAL),
+    ("PricingUnit", DataType::String),
+    ("ProviderName", DataType::String),
+    ("PublisherName", DataType::String),
+    ("RegionId", DataType::String),
+    ("RegionName", DataType::String),
+    ("ResourceId", DataType::String),
+    ("ResourceName", DataType::String),
+    ("ResourceType", DataType::String),
+    ("ServiceCategory", DataType::String),
+    ("ServiceSubcategory", DataType::String),
+    ("ServiceName", DataType::String),
+    ("SubAccountId", DataType::String),
+    ("SubAccountName", DataType::String),
+    ("SubAccountType", DataType::String),
+    ("Tags", DataType::String),
+];
 
-    #[test]
-    fn schema_has_all_focus_columns() {
-        let schema = focus_normalized_schema();
-        assert_eq!(schema.len(), FOCUS_COLUMN_COUNT);
-        assert_eq!(schema.get_field("Tags").map(|field| field.dtype()), Some(&DataType::String));
-    }
+#[must_use]
+pub fn focus_normalized_schema() -> Schema {
+    let fields = COLUMNS
+        .into_iter()
+        .map(|(name, dtype)| (PlSmallStr::from(name), dtype));
+    Schema::from_iter(fields)
 }
+
+mod tests;

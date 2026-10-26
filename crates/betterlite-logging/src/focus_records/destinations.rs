@@ -11,10 +11,12 @@ pub struct FocusTimeWindow {
 pub trait FocusDestination {
     type Error;
 
-    fn deliver<'a>(
-        &'a self,
-        content: &'a [u8],
-        time_window: &'a FocusTimeWindow,
-        filename: &'a str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a;
+    fn deliver<'delivery>(
+        &'delivery self,
+        content: &'delivery [u8],
+        time_window: &'delivery FocusTimeWindow,
+        filename: &'delivery str,
+    ) -> impl Future<Output = Result<(), Self::Error>> + 'delivery;
 }
+
+mod tests;

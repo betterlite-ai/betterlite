@@ -1,22 +1,20 @@
 use std::io::Cursor;
 
-use polars::prelude::{CsvWriter, DataFrame, DataType, PolarsError, SchemaExt, SerWriter};
+use polars::prelude::{CsvWriter, DataFrame, DataType, SchemaExt as _, SerWriter as _};
 
-use super::FocusSerializer;
+use super::{FocusSerializer, SerializationError};
 
 pub struct FocusCsvSerializer;
 
 impl FocusSerializer for FocusCsvSerializer {
     const EXTENSION: &'static str = "csv";
 
-    fn serialize(&self, frame: &DataFrame) -> Result<Vec<u8>, PolarsError> {
+    fn serialize(&self, frame: &DataFrame) -> Result<Vec<u8>, SerializationError> {
         let decimal_columns: Vec<String> = frame
             .schema()
             .iter_fields()
-            .filter_map(|field| match field.dtype() {
-                DataType::Decimal(_, _) => Some(field.name().to_string()),
-                _ => None,
-            })
+            .filter(|field| field.dtype().is_decimal())
+            .map(|field| field.name().to_string())
             .collect();
         let mut output = frame.clone();
         for name in decimal_columns {
