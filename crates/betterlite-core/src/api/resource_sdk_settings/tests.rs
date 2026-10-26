@@ -65,10 +65,6 @@ fn resource_precedence_ignores_empty_values() {
     settings.openai_api_base = Some("legacy-base".to_owned());
     settings.api_key = Some(secrecy::SecretString::from(""));
     settings.openai_key = Some(secrecy::SecretString::from("openai-key"));
-    settings.openai_api_key = Some(secrecy::SecretString::from("environment-key"));
-    settings.azure_key = Some(secrecy::SecretString::from("azure-key"));
-    settings.azure_openai_api_key = Some(secrecy::SecretString::from("azure-openai-key"));
-    settings.azure_api_key = Some(secrecy::SecretString::from("azure-environment-key"));
     settings.azure_api_version = Some("azure-version".to_owned());
     settings.organization = Some(String::new());
     settings.openai_organization = Some("openai-organization".to_owned());
@@ -85,12 +81,6 @@ fn resource_precedence_ignores_empty_values() {
             .map(secrecy::ExposeSecret::expose_secret),
         Some("openai-key")
     );
-    assert_eq!(
-        settings
-            .azure_api_key()
-            .map(secrecy::ExposeSecret::expose_secret),
-        Some("azure-key")
-    );
     assert_eq!(settings.azure_base(), None);
     assert_eq!(settings.azure_version(), Some("azure-version"));
     assert_eq!(settings.organization(), Some("openai-organization"));
@@ -102,6 +92,30 @@ fn resource_precedence_ignores_empty_values() {
             .vertex_credentials()
             .map(secrecy::ExposeSecret::expose_secret),
         Some("vertex-credentials")
+    );
+}
+
+#[test]
+fn secret_precedence_ignores_empty_values() {
+    let mut settings = test_settings();
+    settings.api_key = Some(secrecy::SecretString::from(""));
+    settings.openai_key = Some(secrecy::SecretString::from(""));
+    settings.openai_api_key = Some(secrecy::SecretString::from("environment-key"));
+    settings.azure_key = Some(secrecy::SecretString::from(""));
+    settings.azure_openai_api_key = Some(secrecy::SecretString::from(""));
+    settings.azure_api_key = Some(secrecy::SecretString::from("environment-azure-key"));
+
+    assert_eq!(
+        settings
+            .openai_api_key()
+            .map(secrecy::ExposeSecret::expose_secret),
+        Some("environment-key")
+    );
+    assert_eq!(
+        settings
+            .azure_api_key()
+            .map(secrecy::ExposeSecret::expose_secret),
+        Some("environment-azure-key")
     );
 }
 
