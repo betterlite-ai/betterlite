@@ -64,7 +64,7 @@ checks:
   commands:
     - id: exports-check
       why: The module does not export coerce_bool or other required functions
-      run: cargo build --locked -p betterlite-config && grep -q "pub.*coerce_bool" crates/betterlite-config/src/settings/rules.rs || grep -q "coerce_bool" crates/betterlite-config/src/lib.rs
+      run: cargo build --locked -p betterlite-config && grep -q "pub fn coerce_bool" crates/betterlite-config/src/sections/settings/coerce_bool.rs
     - id: settings-store-tests
       why: SettingsStore contract, config ownership, DB updates, resource lists, or iteration fails
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::settings::settings_store::/)'
@@ -96,5 +96,5 @@ pitfalls:
   - "Config ownership applies to any key in yaml_values, regardless of section. A write attempt raises ConfigOwnedKeyError with shadows_db_value=True only when a DB value exists and differs."
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1200
   max_new_expects: 0

@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-text-shapes-seed
+call: {a2a_text: {function: message, message: {parts: bad}, depth: 0, max_depth: 10}}
+env: {}
+compare: {ignore: [{pointer: /error/message, why: betterlite uses typed malformed-record wording}]}

@@ -1,0 +1,5 @@
+kind: helper
+name: cloud_storage-double_encoding
+call: {cloud_storage: {function: encoded_traversal_order, file_id: gs://bucket/%252e/x, scheme: gs://, bucket: bucket, legacy: true}}
+env: {}
+compare: {ignore: []}

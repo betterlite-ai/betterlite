@@ -1,0 +1,5 @@
+kind: helper
+name: legacy-trusted-policy
+call: {cloud_storage: {function: legacy_trusted_policy, value: " YeS ", trusted: true}}
+env: {}
+compare: {ignore: []}
