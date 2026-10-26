@@ -119,9 +119,7 @@ fn format_account(alias: Option<&str>, api_key: &str) -> String {
 }
 
 fn add_tags(record: &mut CbfRecord, row: &UsageRecord) {
-    for (key, value) in source_dimensions(row) {
-        add_tag(record, key, Some(value.as_str()));
-    }
+    add_source_dimensions(record, row);
     add_tag(
         record,
         "prompt_tokens",
@@ -138,52 +136,58 @@ fn add_tags(record: &mut CbfRecord, row: &UsageRecord) {
     );
 }
 
-fn source_dimensions(row: &UsageRecord) -> [(&'static str, String); 17] {
+fn add_source_dimensions(record: &mut CbfRecord, row: &UsageRecord) {
     let api_key_prefix: String = row.api_key.chars().take(8).collect();
-    let dimensions = [
-        ("entity_type", "team".to_owned()),
-        (
-            "entity_id",
-            row.team_alias.as_deref().unwrap_or(&row.team_id).to_owned(),
-        ),
-        (
-            "team_alias",
-            row.team_alias.as_deref().unwrap_or("unknown").to_owned(),
-        ),
-        ("model", row.model.clone()),
-        ("model_group", row.model_group.clone()),
-        ("provider", row.custom_llm_provider.clone()),
-        ("api_key_prefix", api_key_prefix),
-        (
-            "api_key_alias",
-            row.api_key_alias.as_deref().unwrap_or("").to_owned(),
-        ),
-        (
-            "user_email",
-            row.user_email.as_deref().unwrap_or("").to_owned(),
-        ),
-        ("api_requests", row.api_requests.to_string()),
-        ("successful_requests", row.successful_requests.to_string()),
-        ("failed_requests", row.failed_requests.to_string()),
-        (
-            "cache_creation_tokens",
-            row.cache_creation_input_tokens.to_string(),
-        ),
-        ("cache_read_tokens", row.cache_read_input_tokens.to_string()),
-        (
-            "organization_alias",
-            row.organization_alias.as_deref().unwrap_or("").to_owned(),
-        ),
-        (
-            "project_alias",
-            row.project_alias.as_deref().unwrap_or("").to_owned(),
-        ),
-        (
-            "user_alias",
-            row.user_alias.as_deref().unwrap_or("").to_owned(),
-        ),
-    ];
-    dimensions
+    add_identity_tags(record, row, api_key_prefix.as_str());
+    add_usage_tags(record, row);
+}
+
+fn add_identity_tags(record: &mut CbfRecord, row: &UsageRecord, api_key_prefix: &str) {
+    add_tag(record, "entity_type", Some("team"));
+    add_tag(
+        record,
+        "entity_id",
+        Some(row.team_alias.as_deref().unwrap_or(&row.team_id)),
+    );
+    add_tag(
+        record,
+        "team_alias",
+        Some(row.team_alias.as_deref().unwrap_or("unknown")),
+    );
+    add_tag(record, "model", Some(row.model.as_str()));
+    add_tag(record, "model_group", Some(row.model_group.as_str()));
+    add_tag(record, "provider", Some(row.custom_llm_provider.as_str()));
+    add_tag(record, "api_key_prefix", Some(api_key_prefix));
+    add_tag(record, "api_key_alias", row.api_key_alias.as_deref());
+    add_tag(record, "user_email", row.user_email.as_deref());
+}
+
+fn add_usage_tags(record: &mut CbfRecord, row: &UsageRecord) {
+    let api_requests = row.api_requests.to_string();
+    add_tag(record, "api_requests", Some(api_requests.as_str()));
+    let successful_requests = row.successful_requests.to_string();
+    add_tag(
+        record,
+        "successful_requests",
+        Some(successful_requests.as_str()),
+    );
+    let failed_requests = row.failed_requests.to_string();
+    add_tag(record, "failed_requests", Some(failed_requests.as_str()));
+    let cache_creation = row.cache_creation_input_tokens.to_string();
+    add_tag(
+        record,
+        "cache_creation_tokens",
+        Some(cache_creation.as_str()),
+    );
+    let cache_read = row.cache_read_input_tokens.to_string();
+    add_tag(record, "cache_read_tokens", Some(cache_read.as_str()));
+    add_tag(
+        record,
+        "organization_alias",
+        row.organization_alias.as_deref(),
+    );
+    add_tag(record, "project_alias", row.project_alias.as_deref());
+    add_tag(record, "user_alias", row.user_alias.as_deref());
 }
 
 fn add_tag(record: &mut CbfRecord, key: &str, tag_value: Option<&str>) {
