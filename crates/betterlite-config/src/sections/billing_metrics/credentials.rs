@@ -1,11 +1,9 @@
-use std::fs::{File, OpenOptions, Permissions};
+use std::fs::{OpenOptions, Permissions};
 use std::io::{self, Write as _};
 use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
-
-use super::{CA_CERT_ENV, CLIENT_CERT_ENV, CLIENT_KEY_ENV};
 
 pub(super) const PEM_PREFIX: &str = "-----BEGIN";
 const PEM_DIRECTORY_PREFIX: &str = "betterlite-billing-mtls-";
@@ -27,22 +25,6 @@ pub(super) struct CredentialPaths {
     pub(super) client_cert: PathBuf,
     pub(super) client_key: PathBuf,
     pub(super) ca_cert: Option<PathBuf>,
-}
-
-impl CredentialPaths {
-    pub(super) fn unreadable(&self) -> Vec<&'static str> {
-        [
-            (CLIENT_CERT_ENV, Some(&self.client_cert)),
-            (CLIENT_KEY_ENV, Some(&self.client_key)),
-            (CA_CERT_ENV, self.ca_cert.as_ref()),
-        ]
-        .into_iter()
-        .filter_map(|(variable, path)| {
-            path.filter(|candidate| !(candidate.is_file() && File::open(candidate).is_ok()))
-                .map(|_unreadable| variable)
-        })
-        .collect()
-    }
 }
 
 pub(super) fn resolve_paths(

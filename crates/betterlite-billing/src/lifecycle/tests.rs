@@ -128,7 +128,7 @@ fn meter_one_request(user_id: Option<&str>, model_id: Option<&str>) -> Metered {
         .unwrap()
         .record(BillableCategory::Llm, "/v1/chat/completions", 200, model_id);
     let ((), shutdown) = logged(|| shutdown_recorder(&registry));
-    let received = exports.recv_timeout(Duration::from_secs(20)).unwrap();
+    let received = exports.recv_timeout(Duration::from_secs(5)).unwrap();
     Metered {
         endpoint,
         startup,
@@ -172,7 +172,7 @@ fn missing_configuration_disables_metering() {
         logged(|| build_recorder(true, None, "1.105.1", &Settings::default(), &registry));
     assert!(recorder.is_none() && registry.pop().is_none());
     assert!(
-        output.contains("LITELLM_BILLING_METRICS_ENDPOINT"),
+        output.contains("(LITELLM_BILLING_METRICS_ENDPOINT, "),
         "{output}"
     );
 }

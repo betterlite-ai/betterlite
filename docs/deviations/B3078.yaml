@@ -12,7 +12,7 @@ deviations:
   - what: A credential path counts as readable only when it is a regular file the proxy can open; LiteLLM checks os.path.isfile alone.
     why: The task asks for paths that do not exist or are not readable to be named, and an unopenable file only fails later at export.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L232-L249
-  - what: Without LITELLM_BILLING_METRICS_CA_CERT the collector is verified against the operating system trust store, and the OTEL_EXPORTER_OTLP_CERTIFICATE fallback and OTLP timeout variables are not read; LiteLLM's requests session uses certifi's bundle and those variables. The client timeout is fixed at the OTLP default of 10 seconds.
+  - what: Without LITELLM_BILLING_METRICS_CA_CERT the collector is verified against the operating system trust store, and the OTEL_EXPORTER_OTLP_CERTIFICATE fallback and OTLP timeout variables are not read; LiteLLM's requests session uses the Mozilla CA bundle that ships with requests, and reads those variables. The client timeout is fixed at the OTLP default of 10 seconds.
     why: The task specifies the system trust store, and environment reads belong to the config crate.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L95-L113
   - what: Inline PEM goes to a directory named betterlite-billing-mtls-* instead of litellm-billing-mtls-*, and setting a second active recorder logs a warning instead of replacing the first silently.

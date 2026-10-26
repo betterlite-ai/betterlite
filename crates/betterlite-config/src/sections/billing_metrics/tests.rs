@@ -7,13 +7,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rstest::rstest;
-use secrecy::ExposeSecret;
+use secrecy::ExposeSecret as _;
 use tempfile::NamedTempFile;
 use tracing::subscriber::with_default;
 
 use super::{
-    CA_CERT_ENV, CLIENT_CERT_ENV, CLIENT_KEY_ENV, ENDPOINT_ENV, EXPORT_INTERVAL_ENV, Metering,
-    Raw, Settings,
+    CA_CERT_ENV, CLIENT_CERT_ENV, CLIENT_KEY_ENV, ENDPOINT_ENV, EXPORT_INTERVAL_ENV, Metering, Raw,
+    Settings,
 };
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::Section as _;
@@ -43,13 +43,16 @@ fn settings(pairs: &[(&str, &str)]) -> Settings {
 }
 
 fn credential_files(directory: &Path) -> [String; 3] {
-    [("client.pem", CERT_PEM), ("client-key.pem", KEY_PEM), ("ca.pem", CERT_PEM)].map(
-        |(name, pem)| {
-            let path = directory.join(name);
-            fs::write(&path, pem).unwrap();
-            path.to_str().unwrap().to_owned()
-        },
-    )
+    [
+        ("client.pem", CERT_PEM),
+        ("client-key.pem", KEY_PEM),
+        ("ca.pem", CERT_PEM),
+    ]
+    .map(|(name, pem)| {
+        let path = directory.join(name);
+        fs::write(&path, pem).unwrap();
+        path.to_str().unwrap().to_owned()
+    })
 }
 
 fn mode(path: &Path) -> u32 {
@@ -68,16 +71,21 @@ fn billing_metrics_config_reads_every_variable() {
     ]);
     assert_eq!(configured.endpoint.as_deref(), Some("https://collector"));
     assert_eq!(configured.client_cert.as_deref(), Some("/cert"));
-    let key = configured.client_key.as_ref().map(ExposeSecret::expose_secret);
-    assert_eq!(key, Some("/key"));
     assert_eq!(configured.ca_cert.as_deref(), Some("/ca"));
     assert_eq!(configured.export_interval_ms, 1234);
     assert_eq!(configured.temp_root, PathBuf::from("/scratch"));
+    assert!(configured.client_key.is_some_and(|key| key.expose_secret() == "/key"));
 }
 
 #[test]
 fn billing_metrics_config_treats_empty_values_as_unset() {
-    let names = [ENDPOINT_ENV, CLIENT_CERT_ENV, CLIENT_KEY_ENV, CA_CERT_ENV, "TMPDIR"];
+    let names = [
+        ENDPOINT_ENV,
+        CLIENT_CERT_ENV,
+        CLIENT_KEY_ENV,
+        CA_CERT_ENV,
+        "TMPDIR",
+    ];
     let configured = settings(&names.map(|name| (name, "")));
     assert_eq!((configured.endpoint, configured.client_cert), (None, None));
     assert!(configured.client_key.is_none() && configured.ca_cert.is_none());
@@ -99,7 +107,10 @@ fn billing_metrics_config_parses_the_export_interval(
     #[case] expected: i64,
     #[case] warns: bool,
 ) {
-    let pairs: Vec<(&str, &str)> = raw.map(|value| (EXPORT_INTERVAL_ENV, value)).into_iter().collect();
+    let pairs: Vec<(&str, &str)> = raw
+        .map(|value| (EXPORT_INTERVAL_ENV, value))
+        .into_iter()
+        .collect();
     let (configured, output) = logged(|| settings(&pairs));
     assert_eq!(configured.export_interval_ms, expected);
     let warning = format!(
@@ -131,7 +142,10 @@ fn billing_metrics_config_names_missing_variables(
     let configured = settings(pairs);
     let (metering, output) = logged(|| configured.resolve());
     assert_eq!(metering, None);
-    assert!(output.contains("WARN") && output.contains(missing), "{output}");
+    assert!(
+        output.contains("WARN") && output.contains(missing),
+        "{output}"
+    );
     assert!(!output.contains("/k") && !output.contains("https://c"));
 }
 
@@ -163,49 +177,30 @@ fn billing_metrics_config_keeps_file_paths() {
 
 #[test]
 fn billing_metrics_config_writes_inline_pem_privately() {
-    let scratch = tempfile::tempdir().unwrap();
-    let indented_cert = format!("\n  {CERT_PEM}");
-    let configured = settings(&[
-        (ENDPOINT_ENV, "https://collector"),
-        (CLIENT_CERT_ENV, &indented_cert),
-        (CLIENT_KEY_ENV, KEY_PEM),
-        (CA_CERT_ENV, CERT_PEM),
-        ("TMPDIR", scratch.path().to_str().unwrap()),
-    ]);
-    let metering = configured.resolve().unwrap();
-    let directory = metering.client_cert.parent().unwrap().to_path_buf();
-    assert_eq!(directory.parent().unwrap(), scratch.path());
-    let name = directory.file_name().unwrap().to_str().unwrap();
-    assert!(name.starts_with("betterlite-billing-mtls-"), "{name}");
-    assert_eq!(mode(&directory), 0o700);
-    assert_eq!(metering.client_cert, directory.join("client.crt"));
-    assert_eq!(metering.client_key, directory.join("client.key"));
-    assert_eq!(metering.ca_cert, Some(directory.join("ca.crt")));
-    assert_eq!((mode(&metering.client_cert), mode(&metering.client_key)), (0o600, 0o600));
-    let cert_content = fs::read_to_string(&metering.client_cert).unwrap();
-    assert_eq!(cert_content, format!("{indented_cert}\n"));
-    assert_eq!(fs::read_to_string(&metering.client_key).unwrap(), KEY_PEM);
-    let authority_content = fs::read_to_string(directory.join("ca.crt")).unwrap();
-    assert_eq!(authority_content, format!("{CERT_PEM}\n"));
-    assert_eq!(fs::read_dir(scratch.path()).unwrap().count(), 1);
-}
-
-#[test]
-fn billing_metrics_config_writes_only_the_inline_values() {
     let directory = tempfile::tempdir().unwrap();
     let scratch = tempfile::tempdir().unwrap();
     let [cert, _key, _authority] = credential_files(directory.path());
+    let indented_authority = format!("\n  {CERT_PEM}");
     let configured = settings(&[
         (ENDPOINT_ENV, "https://collector"),
         (CLIENT_CERT_ENV, &cert),
         (CLIENT_KEY_ENV, KEY_PEM),
+        (CA_CERT_ENV, &indented_authority),
         ("TMPDIR", scratch.path().to_str().unwrap()),
     ]);
     let metering = configured.resolve().unwrap();
-    assert_eq!((metering.client_cert, metering.ca_cert), (PathBuf::from(cert), None));
-    assert!(metering.client_key.starts_with(scratch.path()));
-    let written = metering.client_key.parent().unwrap();
-    assert_eq!(fs::read_dir(written).unwrap().count(), 1);
+    let written = metering.client_key.parent().unwrap().to_path_buf();
+    assert_eq!(written.parent().unwrap(), scratch.path());
+    let name = written.file_name().unwrap().to_str().unwrap();
+    assert!(name.starts_with("betterlite-billing-mtls-"), "{name}");
+    assert_eq!(metering.client_cert, PathBuf::from(cert));
+    assert_eq!(metering.client_key, written.join("client.key"));
+    assert_eq!(metering.ca_cert, Some(written.join("ca.crt")));
+    assert_eq!((mode(&written), mode(&metering.client_key)), (0o700, 0o600));
+    assert_eq!(fs::read_to_string(&metering.client_key).unwrap(), KEY_PEM);
+    let authority = fs::read_to_string(written.join("ca.crt")).unwrap();
+    assert_eq!(authority, format!("{indented_authority}\n"));
+    assert_eq!(fs::read_dir(&written).unwrap().count(), 2);
 }
 
 #[test]
@@ -238,10 +233,15 @@ fn billing_metrics_config_reports_write_failures() {
     ]);
     let (metering, output) = logged(|| configured.resolve());
     assert_eq!(metering, None);
-    assert!(output.contains("WARN") && output.contains("Not a directory"), "{output}");
+    assert!(
+        output.contains("WARN") && output.contains("Not a directory"),
+        "{output}"
+    );
     let failure = "Billing metrics disabled: could not write inline certificate content to disk";
     assert!(output.contains(failure), "{output}");
-    assert!(!output.contains("MIIBsecretkey") && !format!("{configured:?}").contains("MIIBsecretkey"));
+    assert!(
+        !output.contains("MIIBsecretkey") && !format!("{configured:?}").contains("MIIBsecretkey")
+    );
 }
 
 #[rstest]
@@ -253,7 +253,11 @@ fn billing_metrics_config_reports_write_failures() {
 fn billing_metrics_config_suffixes_the_endpoint(#[case] endpoint: &str, #[case] expected: &str) {
     let directory = tempfile::tempdir().unwrap();
     let [cert, key, _authority] = credential_files(directory.path());
-    let configured = settings(&[(ENDPOINT_ENV, endpoint), (CLIENT_CERT_ENV, &cert), (CLIENT_KEY_ENV, &key)]);
+    let configured = settings(&[
+        (ENDPOINT_ENV, endpoint),
+        (CLIENT_CERT_ENV, &cert),
+        (CLIENT_KEY_ENV, &key),
+    ]);
     assert_eq!(configured.resolve().unwrap().endpoint, expected);
 }
 
@@ -262,6 +266,8 @@ fn billing_metrics_config_has_no_yaml_keys() {
     let loader = ConfigLoader {
         lookup: BTreeMap::new(),
     };
-    let error = loader.load("billing_metrics:\n  unexpected: true\n").unwrap_err();
+    let error = loader
+        .load("billing_metrics:\n  unexpected: true\n")
+        .unwrap_err();
     assert!(matches!(error, ConfigError::Unsupported { .. }));
 }

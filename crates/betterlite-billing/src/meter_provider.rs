@@ -7,8 +7,7 @@ use std::time::Duration;
 use betterlite_config::sections::billing_metrics::Metering;
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::{
-    ExporterBuildError, MetricExporter, OTEL_EXPORTER_OTLP_TIMEOUT_DEFAULT, WithExportConfig as _,
-    WithHttpConfig as _,
+    ExporterBuildError, MetricExporter, WithExportConfig as _, WithHttpConfig as _,
 };
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
@@ -22,6 +21,8 @@ use thiserror::Error;
 mod tests;
 
 pub const SERVICE_NAME: &str = "litellm-proxy";
+// the OTLP exporter's default request timeout, which it does not apply to a client passed in
+const EXPORT_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BillingMetricsConfig {
@@ -182,7 +183,7 @@ fn http_client(tls: ClientConfig) -> Result<Client, ExporterError> {
             .spawn_scoped(scope, move || {
                 Client::builder()
                     .tls_backend_preconfigured(tls)
-                    .timeout(OTEL_EXPORTER_OTLP_TIMEOUT_DEFAULT)
+                    .timeout(EXPORT_TIMEOUT)
                     .build()
             })
             .map_err(|source| ExporterError::Thread { source })?;

@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::path::PathBuf;
 
 use secrecy::{ExposeSecret as _, SecretString};
@@ -140,7 +141,17 @@ impl Settings {
                 return None;
             }
         };
-        let unreadable = paths.unreadable();
+        let unreadable: Vec<&str> = [
+            (CLIENT_CERT_ENV, Some(&paths.client_cert)),
+            (CLIENT_KEY_ENV, Some(&paths.client_key)),
+            (CA_CERT_ENV, paths.ca_cert.as_ref()),
+        ]
+        .into_iter()
+        .filter_map(|(variable, path)| {
+            path.filter(|candidate| !(candidate.is_file() && File::open(candidate).is_ok()))
+                .map(|_unreadable| variable)
+        })
+        .collect();
         if !unreadable.is_empty() {
             tracing::warn!(
                 "Billing metrics disabled: {} did not resolve to a readable certificate file. Set each to a file path, or to inline PEM content beginning with '{}'.",
