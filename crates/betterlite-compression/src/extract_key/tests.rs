@@ -4,6 +4,16 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn samples_unicode_characters() {
+    let message = json!({"content": format!("{}\nFile: src/unicode.rs", "\u{754c}".repeat(1000))});
+    let mut used = Vec::new();
+    assert_eq!(extract_key(&message, 0, &mut used), "unicode.rs");
+    let beyond_limit =
+        json!({"content": format!("{}\nFile: src/hidden.rs", "\u{754c}".repeat(2000))});
+    assert_eq!(extract_key(&beyond_limit, 1, &mut used), "message_1");
+}
+
+#[test]
 fn extracts_filename_and_suffixes_duplicates() {
     let message = json!({"content":"# src/main.rs\ncode"});
     let mut used = Vec::new();

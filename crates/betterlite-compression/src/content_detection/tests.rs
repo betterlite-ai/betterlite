@@ -3,6 +3,14 @@
 use super::*;
 
 #[test]
+fn samples_unicode_characters() {
+    let content = format!("{} fn main let name const value", "\u{754c}".repeat(2000));
+    assert_eq!(detect_content_type(&content), "code");
+    let beyond_limit = format!("{} fn main let name const value", "\u{754c}".repeat(5000));
+    assert_eq!(detect_content_type(&beyond_limit), "text");
+}
+
+#[test]
 fn detects_json_code_and_text() {
     assert_eq!(detect_content_type("{\"a\": 1}"), "json");
     assert_eq!(

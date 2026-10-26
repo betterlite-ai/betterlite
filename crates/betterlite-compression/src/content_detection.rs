@@ -19,7 +19,11 @@ pub fn detect_content_type(content: &str) -> &'static str {
     {
         return "json";
     }
-    let sample = &stripped[..stripped.len().min(5000)];
+    let end = stripped
+        .char_indices()
+        .nth(5000)
+        .map_or(stripped.len(), |(index, _)| index);
+    let sample = &stripped[..end];
     let keyword_matches = code_keywords().map_or(0, |regex| regex.find_iter(sample).count());
     let lines: Vec<&str> = sample.split('\n').collect();
     let indented = lines

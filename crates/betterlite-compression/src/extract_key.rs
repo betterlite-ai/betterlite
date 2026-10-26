@@ -23,7 +23,11 @@ pub fn extract_key(message: &Value, fallback_index: usize, used_keys: &mut Vec<S
         .get("content")
         .map(content_to_string)
         .unwrap_or_default();
-    let sample = &content[..content.len().min(2000)];
+    let end = content
+        .char_indices()
+        .nth(2000)
+        .map_or(content.len(), |(index, _)| index);
+    let sample = &content[..end];
     let mut key = patterns()
         .iter()
         .find_map(|pattern| pattern.captures(sample).and_then(|capture| capture.get(1)))

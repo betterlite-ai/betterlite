@@ -7,11 +7,12 @@ pub fn truncate_message(message: &Value, max_tokens: usize) -> Value {
         .map(content_to_string)
         .unwrap_or_default();
     let target_chars = max_tokens.saturating_mul(3).max(100);
-    if content.len() <= target_chars {
+    let characters = content.chars().count();
+    if characters <= target_chars {
         return replace_content(message, content);
     }
     let lines: Vec<&str> = content.split('\n').collect();
-    let average = content.len().checked_div(lines.len()).unwrap_or(0).max(1);
+    let average = characters.checked_div(lines.len()).unwrap_or(0).max(1);
     let target_lines = target_chars.checked_div(average).unwrap_or(0).max(2);
     if lines.len() <= target_lines {
         return replace_content(message, content);
