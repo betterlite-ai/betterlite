@@ -125,6 +125,7 @@ fn malformed_and_unknown_keys_do_not_match() {
 
 #[rstest]
 #[case::mapped_prefix_without_boundary("", "/openai-other", true)]
+#[case::mapped_slash_root("/", "/openai-other", true)]
 #[case::mapped_requires_normalization("/proxy", "/openai-other", false)]
 #[case::mapped_prefixed("/proxy", "/proxy/openai-other", true)]
 fn mapped_routes(#[case] root: &str, #[case] route: &str, #[case] expected: bool) {
