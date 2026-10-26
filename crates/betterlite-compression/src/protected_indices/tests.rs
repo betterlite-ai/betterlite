@@ -15,6 +15,17 @@ fn combines_and_deduplicates_protection_in_order() {
 }
 
 #[test]
+fn protects_roles_without_cache_prefix_overlap() {
+    let messages = vec![
+        json!({"role":"system"}),
+        json!({"role":"user"}),
+        json!({"role":"assistant"}),
+        json!({"role":"tool"}),
+    ];
+    assert_eq!(get_protected_indices(&messages), vec![0, 1, 2]);
+}
+
+#[test]
 fn cache_control_on_block_protects_prefix() {
     let messages = vec![
         json!({"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral"}}]}),

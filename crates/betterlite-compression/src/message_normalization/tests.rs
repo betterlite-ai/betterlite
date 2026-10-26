@@ -16,6 +16,19 @@ fn rejects_unknown_call_type() {
 }
 
 #[test]
+fn normalizes_call_shapes_and_finds_latest_user() {
+    assert_eq!(normalize_call_type("acompletion"), "acompletion");
+    assert!(is_anthropic_call_type("anthropic_messages"));
+    assert!(!is_anthropic_call_type("completion"));
+    let messages = vec![
+        json!({"role":"user","content":"old"}),
+        json!({"role":"assistant","content":"answer"}),
+        json!({"role":"user","content":[{"type":"text","text":"new"}]}),
+    ];
+    assert_eq!(extract_last_user_message(&messages), "new");
+}
+
+#[test]
 fn preserves_original_and_shallow_message_fields() {
     let messages = vec![json!({"role":"user","content":[{"type":"text","text":"hi"}],"name":"n"})];
     let (normalized, original) = normalize_messages(&messages, "completion").unwrap();
