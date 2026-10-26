@@ -1,0 +1,10 @@
+kind: helper
+name: io-reconcile-dict
+call:
+  b3044:
+    rate_limit_type: output
+    usage_kind: mapping
+    usage: {prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, cache_read_input_tokens: 25}
+env: {}
+compare:
+  ignore: []
