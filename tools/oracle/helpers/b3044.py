@@ -3,7 +3,9 @@ from typing import TypeAlias
 from unittest.mock import patch
 
 from litellm.proxy import proxy_server
-from litellm.proxy.hooks.parallel_request_limiter_v3 import ParallelRequestLimiter
+from litellm.proxy.hooks.parallel_request_limiter_v3 import (
+    _PROXY_MaxParallelRequestsHandler_v3 as ParallelRequestLimiter,
+)
 from litellm.types.llms.openai import ResponseAPIUsage
 from litellm.types.rerank import RerankResponse
 from litellm.types.utils import Usage
