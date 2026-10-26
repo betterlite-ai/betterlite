@@ -34,9 +34,11 @@ fn loads_resource_sdk_settings() {
 fn preserves_empty_environment_values() {
     let mut environment = BTreeMap::new();
     environment.insert("OPENAI_API_KEY".to_owned(), String::new());
-    let config = ConfigLoader { lookup: environment }
-        .load("litellm_settings: {}\n")
-        .expect("settings load");
+    let config = ConfigLoader {
+        lookup: environment,
+    }
+    .load("litellm_settings: {}\n")
+    .expect("settings load");
     let key = config
         .sections
         .resource_sdk_settings

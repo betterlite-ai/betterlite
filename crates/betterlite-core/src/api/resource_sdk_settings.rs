@@ -41,23 +41,30 @@ impl ResourceSdkSettings {
 
     #[must_use]
     pub fn openai_api_key(&self) -> Option<&SecretString> {
-        let key = first_secret([
-            self.api_key.as_ref(),
-            self.openai_key.as_ref(),
-            self.openai_api_key.as_ref(),
-        ]);
-        key
+        if let Some(key) = self.api_key.as_ref() {
+            if !key.expose_secret().is_empty() {
+                return Some(key);
+            }
+        }
+        if let Some(key) = self.openai_key.as_ref() {
+            if !key.expose_secret().is_empty() {
+                return Some(key);
+            }
+        }
+        self.openai_api_key
+            .as_ref()
+            .filter(|key| !key.expose_secret().is_empty())
     }
 
     #[must_use]
     pub fn azure_api_key(&self) -> Option<&SecretString> {
-        let key = first_secret([
+        let candidates = [
             self.api_key.as_ref(),
             self.azure_key.as_ref(),
             self.azure_openai_api_key.as_ref(),
             self.azure_api_key.as_ref(),
-        ]);
-        key
+        ];
+        first_secret(candidates)
     }
 
     #[must_use]
@@ -133,11 +140,12 @@ fn first_truthy_ref<const N: usize>(values: [Option<&str>; N]) -> Option<&str> {
 }
 
 fn first_secret<const N: usize>(values: [Option<&SecretString>; N]) -> Option<&SecretString> {
-    let secret = values
-        .into_iter()
-        .flatten()
-        .find(|value| !value.expose_secret().is_empty());
-    secret
+    for value in values.into_iter().flatten() {
+        if !value.expose_secret().is_empty() {
+            return Some(value);
+        }
+    }
+    None
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
