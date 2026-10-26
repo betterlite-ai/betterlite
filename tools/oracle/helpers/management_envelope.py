@@ -14,22 +14,22 @@ from litellm.types.proxy.management_endpoints.management_v1 import (
 
 class ProblemInput(TypedDict):
     function: Literal["problem"]
-    problem: ProblemDetail
+    problem: dict[str, object]
     document: NotRequired[bool]
 
 
 class FacetInput(TypedDict):
     function: Literal["facet"]
     data: list[str]
-    meta: PageMeta
-    links: PageLinks
+    meta: dict[str, object]
+    links: dict[str, object]
 
 
 class ListInput(TypedDict):
     function: Literal["list"]
     data: list[object]
-    meta: ListMeta
-    links: ListLinks
+    meta: dict[str, object]
+    links: dict[str, object]
 
 
 class ResourceInput(TypedDict):
