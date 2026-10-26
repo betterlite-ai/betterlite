@@ -48,6 +48,8 @@ fn write_parts(
     Ok(())
 }
 
+const READS_INSERT: &str = "INSERT OR IGNORE INTO reads VALUES (?, ?)";
+
 impl TraceStore {
     pub fn new(connection: Connection) -> Result<Self, TraceStoreError> {
         connection.execute(
@@ -64,12 +66,23 @@ impl TraceStore {
         })
     }
     pub fn add(&self, parts: &[TracePart]) -> Result<(), TraceStoreError> {
-        let statement = "INSERT OR REPLACE INTO spans VALUES (?, ?)";
-        write_parts(self.connection()?, parts, statement)
+        let connection = self
+            .connection
+            .as_ref()
+            .ok_or(TraceStoreError::Unavailable)?;
+        parts.iter().try_for_each(|part| {
+            connection.execute(
+                "INSERT OR REPLACE INTO spans VALUES (?, ?)",
+                params![part.span_id, serde_json::to_string(part)?],
+            )?;
+            Ok::<(), TraceStoreError>(())
+        })
     }
     pub fn add_reads(&self, parts: &[TracePart]) -> Result<(), TraceStoreError> {
-        let statement = "INSERT OR IGNORE INTO reads VALUES (?, ?)";
-        write_parts(self.connection()?, parts, statement)
+        match self.connection.as_ref() {
+            Some(connection) => write_parts(connection, parts, READS_INSERT),
+            None => Err(TraceStoreError::Unavailable),
+        }
     }
 
     pub async fn add_async(&mut self, parts: &[TracePart]) -> Result<(), TraceStoreError> {
@@ -93,12 +106,12 @@ impl TraceStore {
         result.1
     }
 
-    fn connection(&self) -> Result<&Connection, TraceStoreError> {
-        self.connection.as_ref().ok_or(TraceStoreError::Unavailable)
-    }
-
     pub fn evidence(&self, evidence: &Evidence) -> Result<Option<TracePart>, TraceStoreError> {
-        let mut statement = self.connection()?.prepare("SELECT body FROM spans WHERE span_id=? UNION ALL SELECT body FROM reads WHERE span_id=?")?;
+        let mut statement = self
+            .connection
+            .as_ref()
+            .ok_or(TraceStoreError::Unavailable)?
+            .prepare("SELECT body FROM spans WHERE span_id=? UNION ALL SELECT body FROM reads WHERE span_id=?")?;
         let rows = statement.query_map(params![evidence.span_id, evidence.span_id], |row| {
             row.get::<_, String>(0)
         })?;
@@ -159,16 +172,19 @@ impl TraceStore {
         statement: &str,
         span_id: &str,
     ) -> Result<Option<String>, TraceStoreError> {
-        let value = OptionalExtension::optional(self.connection()?.query_row(
-            statement,
-            params![span_id],
-            |row| row.get(0),
-        ))?;
+        let value = OptionalExtension::optional(
+            self.connection
+                .as_ref()
+                .ok_or(TraceStoreError::Unavailable)?
+                .query_row(statement, params![span_id], |row| row.get(0)),
+        )?;
         Ok(value)
     }
     pub fn count(&self) -> Result<usize, TraceStoreError> {
         let count = self
-            .connection()?
+            .connection
+            .as_ref()
+            .ok_or(TraceStoreError::Unavailable)?
             .query_row("SELECT count(*) FROM spans", [], |row| row.get::<_, i64>(0))?;
         Ok(usize::try_from(count)?)
     }
