@@ -1,74 +1,155 @@
-use super::{decimal, formatted_datetime};
-use crate::focus_records::schema::DECIMAL;
-use polars::prelude::{Column, DataFrame, DataType, PlSmallStr, PolarsError};
+use super::{Charge, UsageRow};
+use crate::focus_records::table::ColumnValues;
 
 pub(super) const COLUMNS: [(&str, Source); 44] = [
-    ("BilledCost", Source::Money),
-    ("BillingAccountId", Source::Field("api_key")),
-    ("BillingAccountName", Source::Field("api_key_alias")),
-    ("BillingAccountType", Source::Text("API Key")),
-    ("BillingCurrency", Source::Text("USD")),
-    ("BillingPeriodEnd", Source::Period("ChargePeriodEnd")),
-    ("BillingPeriodStart", Source::Period("ChargePeriodStart")),
-    ("ChargeCategory", Source::Text("Usage")),
-    ("ChargeClass", Source::Null(DataType::String)),
-    ("ChargeDescription", Source::Field("model")),
-    ("ChargeFrequency", Source::Text("Usage-Based")),
-    ("ChargePeriodEnd", Source::Period("ChargePeriodEnd")),
-    ("ChargePeriodStart", Source::Period("ChargePeriodStart")),
+    ("BilledCost", Source::Cost),
+    ("BillingAccountId", Source::Field(Field::ApiKey)),
+    ("BillingAccountName", Source::Field(Field::ApiKeyAlias)),
+    ("BillingAccountType", Source::Label(Label::ApiKey)),
+    ("BillingCurrency", Source::Label(Label::Usd)),
+    ("BillingPeriodEnd", Source::PeriodEnd),
+    ("BillingPeriodStart", Source::PeriodStart),
+    ("ChargeCategory", Source::Label(Label::Usage)),
+    ("ChargeClass", Source::NullText),
+    ("ChargeDescription", Source::Field(Field::Model)),
+    ("ChargeFrequency", Source::Label(Label::UsageBased)),
+    ("ChargePeriodEnd", Source::PeriodEnd),
+    ("ChargePeriodStart", Source::PeriodStart),
     ("ConsumedQuantity", Source::Quantity),
-    ("ConsumedUnit", Source::Text("Requests")),
-    ("ContractedCost", Source::Money),
-    ("ContractedUnitPrice", Source::Null(DataType::String)),
-    ("EffectiveCost", Source::Money),
-    ("InvoiceIssuerName", Source::Field("custom_llm_provider")),
-    ("InvoiceId", Source::Null(DataType::String)),
-    ("ListCost", Source::Money),
-    ("ListUnitPrice", Source::Null(DECIMAL)),
-    ("AvailabilityZone", Source::Null(DataType::String)),
-    ("PricingCurrency", Source::Text("USD")),
-    ("PricingCategory", Source::Null(DataType::String)),
+    ("ConsumedUnit", Source::Label(Label::Requests)),
+    ("ContractedCost", Source::Cost),
+    // LiteLLM fills this one with a null string, not the schema's Decimal
+    ("ContractedUnitPrice", Source::NullText),
+    ("EffectiveCost", Source::Cost),
+    ("InvoiceIssuerName", Source::Field(Field::Provider)),
+    ("InvoiceId", Source::NullText),
+    ("ListCost", Source::Cost),
+    ("ListUnitPrice", Source::NullDecimal),
+    ("AvailabilityZone", Source::NullText),
+    ("PricingCurrency", Source::Label(Label::Usd)),
+    ("PricingCategory", Source::NullText),
     ("PricingQuantity", Source::Quantity),
-    ("PricingCurrencyContractedUnitPrice", Source::Null(DECIMAL)),
-    ("PricingCurrencyEffectiveCost", Source::Money),
-    ("PricingCurrencyListUnitPrice", Source::Null(DECIMAL)),
-    ("PricingUnit", Source::Text("Requests")),
-    ("ProviderName", Source::Field("custom_llm_provider")),
-    ("PublisherName", Source::Field("custom_llm_provider")),
-    ("RegionId", Source::Null(DataType::String)),
-    ("RegionName", Source::Null(DataType::String)),
-    ("ResourceId", Source::Field("model")),
-    ("ResourceName", Source::Field("model")),
-    ("ResourceType", Source::Field("model")),
-    ("ServiceCategory", Source::Text("AI and Machine Learning")),
-    ("ServiceSubcategory", Source::Text("Generative AI")),
-    ("ServiceName", Source::Field("model_group")),
-    ("SubAccountId", Source::Field("team_id")),
-    ("SubAccountName", Source::Field("team_alias")),
-    ("SubAccountType", Source::Null(DataType::String)),
+    ("PricingCurrencyContractedUnitPrice", Source::NullDecimal),
+    ("PricingCurrencyEffectiveCost", Source::Cost),
+    ("PricingCurrencyListUnitPrice", Source::NullDecimal),
+    ("PricingUnit", Source::Label(Label::Requests)),
+    ("ProviderName", Source::Field(Field::Provider)),
+    ("PublisherName", Source::Field(Field::Provider)),
+    ("RegionId", Source::NullText),
+    ("RegionName", Source::NullText),
+    ("ResourceId", Source::Field(Field::Model)),
+    ("ResourceName", Source::Field(Field::Model)),
+    ("ResourceType", Source::Field(Field::Model)),
+    ("ServiceCategory", Source::Label(Label::MachineLearning)),
+    ("ServiceSubcategory", Source::Label(Label::GenerativeAi)),
+    ("ServiceName", Source::Field(Field::ModelGroup)),
+    ("SubAccountId", Source::Field(Field::TeamId)),
+    ("SubAccountName", Source::Field(Field::TeamAlias)),
+    ("SubAccountType", Source::NullText),
     ("Tags", Source::Tags),
 ];
 
+#[derive(Clone, Copy)]
+pub(super) enum Field {
+    ApiKey,
+    ApiKeyAlias,
+    Model,
+    ModelGroup,
+    Provider,
+    TeamId,
+    TeamAlias,
+}
+
+impl Field {
+    fn value(self, row: &UsageRow) -> Option<String> {
+        match self {
+            Self::ApiKey => Some(row.api_key.clone()),
+            Self::ApiKeyAlias => row.api_key_alias.clone(),
+            Self::Model => row.model.clone(),
+            Self::ModelGroup => row.model_group.clone(),
+            Self::Provider => row.custom_llm_provider.clone(),
+            Self::TeamId => row.team_id.clone(),
+            Self::TeamAlias => row.team_alias.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Label {
+    ApiKey,
+    Usd,
+    Usage,
+    UsageBased,
+    Requests,
+    MachineLearning,
+    GenerativeAi,
+}
+
+impl Label {
+    const fn text(self) -> &'static str {
+        match self {
+            Self::ApiKey => "API Key",
+            Self::Usd => "USD",
+            Self::Usage => "Usage",
+            Self::UsageBased => "Usage-Based",
+            Self::Requests => "Requests",
+            Self::MachineLearning => "AI and Machine Learning",
+            Self::GenerativeAi => "Generative AI",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub(super) enum Source {
-    Field(&'static str),
-    Text(&'static str),
-    Null(DataType),
-    Money,
+    Field(Field),
+    Label(Label),
+    NullText,
+    NullDecimal,
+    Cost,
     Quantity,
-    Period(&'static str),
+    PeriodStart,
+    PeriodEnd,
     Tags,
 }
 
 impl Source {
-    pub(super) fn project(&self, frame: &DataFrame) -> Result<Column, PolarsError> {
+    pub(super) fn project(self, charges: &[Charge<'_>]) -> ColumnValues {
         match self {
-            Self::Field(field) => frame.column(field)?.cast(&DataType::String),
-            Self::Text(text) => Ok(Column::new(PlSmallStr::EMPTY, vec![*text; frame.height()])),
-            Self::Null(dtype) => Ok(Column::full_null(PlSmallStr::EMPTY, frame.height(), dtype)),
-            Self::Money => decimal(frame, "spend"),
-            Self::Quantity => decimal(frame, "api_requests"),
-            Self::Period(source) => formatted_datetime(frame, source),
-            Self::Tags => frame.column("Tags")?.cast(&DataType::String),
+            Self::Field(field) => ColumnValues::Text(
+                charges
+                    .iter()
+                    .map(|charge| field.value(charge.row))
+                    .collect(),
+            ),
+            Self::Label(label) => {
+                ColumnValues::Text(vec![Some(label.text().to_owned()); charges.len()])
+            }
+            Self::NullText => ColumnValues::Text(vec![None; charges.len()]),
+            Self::NullDecimal => ColumnValues::Decimal(vec![None; charges.len()]),
+            Self::Cost => {
+                ColumnValues::Decimal(charges.iter().map(|charge| Some(charge.cost)).collect())
+            }
+            Self::Quantity => {
+                ColumnValues::Decimal(charges.iter().map(|charge| Some(charge.quantity)).collect())
+            }
+            Self::PeriodStart => ColumnValues::Text(
+                charges
+                    .iter()
+                    .map(|charge| charge.period_start.clone())
+                    .collect(),
+            ),
+            Self::PeriodEnd => ColumnValues::Text(
+                charges
+                    .iter()
+                    .map(|charge| charge.period_end.clone())
+                    .collect(),
+            ),
+            Self::Tags => ColumnValues::Text(
+                charges
+                    .iter()
+                    .map(|charge| Some(charge.tags.clone()))
+                    .collect(),
+            ),
         }
     }
 }

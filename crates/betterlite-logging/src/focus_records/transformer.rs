@@ -1,107 +1,109 @@
-use polars::error::ErrString;
-use std::collections::BTreeMap;
+use chrono::{Days, NaiveDate, NaiveTime};
+use rust_decimal::{Decimal, RoundingStrategy};
 
-use super::schema::focus_normalized_schema;
-use polars::prelude::{
-    Column, DataFrame, DataType, IntoSeries as _, NamedFrom as _, PlSmallStr, PolarsError, Series,
-    TimeUnit,
-};
+use super::schema::{DECIMAL_SCALE, FOCUS_NORMALIZED_SCHEMA};
+use super::table::{ColumnValues, FocusColumn, FocusTable};
 
 mod projection;
+mod tags;
 
-const TAG_KEYS: [&str; 10] = [
-    "team_id",
-    "team_alias",
-    "organization_id",
-    "organization_alias",
-    "user_id",
-    "user_email",
-    "api_key_alias",
-    "model",
-    "model_group",
-    "custom_llm_provider",
-];
+const TIMESTAMP_FORMAT: &str = "%Y-%m-%dT%H:%M:%SZ";
 
-pub struct FocusTransformer;
+#[derive(Clone, Debug, PartialEq)]
+pub struct UsageRow {
+    pub date: String,
+    pub api_key: String,
+    pub spend: f64,
+    pub api_requests: i64,
+    pub user_id: Option<String>,
+    pub model: Option<String>,
+    pub model_group: Option<String>,
+    pub custom_llm_provider: Option<String>,
+    pub team_id: Option<String>,
+    pub team_alias: Option<String>,
+    pub organization_id: Option<String>,
+    pub organization_alias: Option<String>,
+    pub user_email: Option<String>,
+    pub api_key_alias: Option<String>,
+}
 
-impl FocusTransformer {
-    pub fn transform(&self, mut frame: DataFrame) -> Result<DataFrame, PolarsError> {
-        if frame.is_empty() {
-            return Ok(DataFrame::empty_with_schema(&focus_normalized_schema()));
-        }
-        let tags = build_tags(&frame)?;
-        frame.with_column(tags)?;
-        let usage_date = frame
-            .column("date")?
-            .cast(&DataType::Date)?
-            .cast(&DataType::Datetime(TimeUnit::Microseconds, None))?;
-        let charge_end = next_day(&usage_date)?;
-        frame.with_column(usage_date.with_name(PlSmallStr::from("ChargePeriodStart")))?;
-        frame.with_column(charge_end)?;
-        let columns = projection::COLUMNS
-            .into_iter()
-            .map(|(name, source)| {
-                source
-                    .project(&frame)
-                    .map(|column| column.with_name(PlSmallStr::from(name)))
+#[derive(Debug, thiserror::Error)]
+pub enum TransformError {
+    #[error("spend {value} is not a finite number")]
+    Spend {
+        value: f64,
+        #[source]
+        source: rust_decimal::Error,
+    },
+    #[error("{field} value {value} does not fit Decimal(18, 6)")]
+    Overflow { field: &'static str, value: Decimal },
+}
+
+struct Charge<'row> {
+    row: &'row UsageRow,
+    cost: Decimal,
+    quantity: Decimal,
+    period_start: Option<String>,
+    period_end: Option<String>,
+    tags: String,
+}
+
+pub fn transform(rows: &[UsageRow]) -> Result<FocusTable, TransformError> {
+    if rows.is_empty() {
+        let columns = FOCUS_NORMALIZED_SCHEMA
+            .iter()
+            .map(|&(name, kind)| FocusColumn {
+                name,
+                values: ColumnValues::empty(kind),
             })
-            .collect::<Result<Vec<_>, _>>()?;
-        DataFrame::new(columns)
+            .collect();
+        return Ok(FocusTable { rows: 0, columns });
     }
-}
-
-fn next_day(dates: &Column) -> Result<Column, PolarsError> {
-    let values = dates
-        .datetime()?
-        .physical()
-        .into_iter()
-        .map(|value| {
-            value
-                .map(|micros| {
-                    micros.checked_add(86_400_000_000_i64).ok_or_else(|| {
-                        PolarsError::ComputeError(ErrString::from("FOCUS period overflow"))
-                    })
-                })
-                .transpose()
+    let charges = rows.iter().map(charge).collect::<Result<Vec<_>, _>>()?;
+    let columns = projection::COLUMNS
+        .iter()
+        .map(|&(name, source)| FocusColumn {
+            name,
+            values: source.project(&charges),
         })
-        .collect::<Result<Vec<_>, _>>()?;
-    let series = Series::new(PlSmallStr::from("ChargePeriodEnd"), values);
-    Ok(Column::from(series.cast(dates.dtype())?))
+        .collect();
+    Ok(FocusTable {
+        rows: rows.len(),
+        columns,
+    })
 }
 
-fn build_tags(frame: &DataFrame) -> Result<Series, PolarsError> {
-    let mut values = Vec::with_capacity(frame.height());
-    for row in 0..frame.height() {
-        let mut tags = BTreeMap::new();
-        for key in TAG_KEYS {
-            let Ok(column) = frame.column(key) else {
-                continue;
-            };
-            if let Some(value) = column
-                .get(row)
-                .ok()
-                .and_then(|value| value.extract_str().map(str::to_owned))
-            {
-                tags.insert(key, value);
-            }
-        }
-        values.push(
-            serde_json::to_string(&tags)
-                .map_err(|error| PolarsError::ComputeError(ErrString::from(error.to_string())))?,
-        );
+fn charge(row: &UsageRow) -> Result<Charge<'_>, TransformError> {
+    let spend = Decimal::try_from(row.spend).map_err(|source| TransformError::Spend {
+        value: row.spend,
+        source,
+    })?;
+    // LiteLLM parses the date with strict=False, so a date it cannot read becomes a null period
+    let start = NaiveDate::parse_from_str(&row.date, "%Y-%m-%d")
+        .ok()
+        .map(|date| date.and_time(NaiveTime::MIN));
+    let end = start.and_then(|time| time.checked_add_days(Days::new(1)));
+    Ok(Charge {
+        row,
+        cost: fit(spend, "spend")?,
+        quantity: fit(Decimal::from(row.api_requests), "api_requests")?,
+        period_start: start.map(|time| time.format(TIMESTAMP_FORMAT).to_string()),
+        period_end: end.map(|time| time.format(TIMESTAMP_FORMAT).to_string()),
+        tags: tags::json(row),
+    })
+}
+
+fn fit(value: Decimal, field: &'static str) -> Result<Decimal, TransformError> {
+    let rounded = value.round_dp_with_strategy(
+        u32::from(DECIMAL_SCALE),
+        RoundingStrategy::MidpointNearestEven,
+    );
+    // Decimal(18, 6) leaves twelve digits before the point
+    if rounded.abs() < Decimal::new(1_000_000_000_000, 0) {
+        Ok(rounded)
+    } else {
+        Err(TransformError::Overflow { field, value })
     }
-    Ok(Series::new(PlSmallStr::from("Tags"), values))
 }
 
-fn decimal(frame: &DataFrame, source: &str) -> Result<Column, PolarsError> {
-    let values = frame.column(source)?.cast(&DataType::Float64)?;
-    values.cast(&DataType::Decimal(Some(18), Some(6)))
-}
-
-fn formatted_datetime(frame: &DataFrame, source: &str) -> Result<Column, PolarsError> {
-    let values = frame
-        .column(source)?
-        .datetime()?
-        .strftime("%Y-%m-%dT%H:%M:%SZ")?;
-    Ok(Column::from(values.into_series()))
-}
+mod tests;

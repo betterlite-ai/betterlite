@@ -16,7 +16,7 @@ pub trait FocusDestination {
         content: &'delivery [u8],
         time_window: &'delivery FocusTimeWindow,
         filename: &'delivery str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'delivery;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'delivery;
 }
 
 mod tests;

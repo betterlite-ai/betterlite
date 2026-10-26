@@ -1,27 +1,58 @@
-use std::io::Cursor;
+use std::str::FromStr as _;
 
-use polars::prelude::{CsvWriter, DataFrame, DataType, SchemaExt as _, SerWriter as _};
+use super::SerializeError;
+use crate::focus_records::table::{ColumnValues, FocusTable};
 
-use super::{FocusSerializer, SerializationError};
+pub(super) fn encode(table: &FocusTable) -> Result<Vec<u8>, SerializeError> {
+    let header: Vec<String> = table
+        .columns
+        .iter()
+        .map(|column| quoted(column.name))
+        .collect();
+    let mut output = header.join(",").into_bytes();
+    output.push(b'\n');
+    for row in 0..table.rows {
+        let fields = table
+            .columns
+            .iter()
+            .map(|column| field(&column.values, row))
+            .collect::<Result<Vec<_>, _>>()?;
+        output.extend_from_slice(fields.join(",").as_bytes());
+        output.push(b'\n');
+    }
+    Ok(output)
+}
 
-pub struct FocusCsvSerializer;
+fn field(values: &ColumnValues, row: usize) -> Result<String, SerializeError> {
+    match values {
+        ColumnValues::Text(texts) => Ok(texts
+            .get(row)
+            .and_then(Option::as_deref)
+            .map_or_else(String::new, quoted)),
+        ColumnValues::Decimal(decimals) => decimals.get(row).copied().flatten().map_or_else(
+            || Ok(String::new()),
+            // LiteLLM casts Decimal to Float64 and polars prints the shortest float with ryu
+            |value| {
+                f64::from_str(&value.to_string())
+                    .map(|float| ryu::Buffer::new().format(float).to_owned())
+                    .map_err(|source| SerializeError::Float { value, source })
+            },
+        ),
+        ColumnValues::Timestamp(times) => Ok(times
+            .get(row)
+            .copied()
+            .flatten()
+            .map_or_else(String::new, |time| {
+                time.format("%Y-%m-%dT%H:%M:%S%.6f").to_string()
+            })),
+    }
+}
 
-impl FocusSerializer for FocusCsvSerializer {
-    const EXTENSION: &'static str = "csv";
-
-    fn encode(&self, frame: &DataFrame) -> Result<Vec<u8>, SerializationError> {
-        let decimal_columns: Vec<String> = frame
-            .schema()
-            .iter_fields()
-            .filter(|field| field.dtype().is_decimal())
-            .map(|field| field.name().to_string())
-            .collect();
-        let mut output = frame.clone();
-        for name in decimal_columns {
-            output.try_apply(name.as_str(), |column| column.cast(&DataType::Float64))?;
-        }
-        let mut bytes = Cursor::new(Vec::new());
-        CsvWriter::new(&mut bytes).finish(&mut output)?;
-        Ok(bytes.into_inner())
+// polars quotes only an empty string or one holding a comma, a quote or a line break, so null stays bare
+fn quoted(text: &str) -> String {
+    if text.is_empty() || text.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", text.replace('"', "\"\""))
+    } else {
+        text.to_owned()
     }
 }

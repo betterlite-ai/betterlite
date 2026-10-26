@@ -18,7 +18,7 @@ impl FocusDestination for Destination {
         content: &'request [u8],
         time_window: &'request FocusTimeWindow,
         filename: &'request str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'request {
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'request {
         assert_eq!(content, b"payload");
         assert!(time_window.start_time < time_window.end_time);
         assert_eq!(filename, "usage.parquet");
