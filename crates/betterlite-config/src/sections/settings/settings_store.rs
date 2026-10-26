@@ -157,6 +157,23 @@ impl SettingsStore {
         }
     }
 
+    #[must_use]
+    pub fn source(&self, key: &str) -> FieldSource {
+        self.resolution(key).source()
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        let count = self.iter().count();
+        count
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        let empty = self.len() == 0;
+        empty
+    }
+
     pub fn insert(&mut self, key: &str, value: JsonValue) -> Result<(), ConfigOwnedKeyError> {
         if self.yaml_values.contains_key(key) && self.get(key) != Some(&value) {
             return Err(self.ownership_error(key));

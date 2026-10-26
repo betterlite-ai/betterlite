@@ -11,6 +11,7 @@ pub enum Section {
     RouterSettings,
     LitellmSettings,
     EnvironmentVariables,
+    UiSettings,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -43,6 +44,7 @@ impl Section {
             Self::RouterSettings => "router_settings",
             Self::LitellmSettings => "litellm_settings",
             Self::EnvironmentVariables => "environment_variables",
+            Self::UiSettings => "ui_settings",
         }
     }
 
@@ -54,6 +56,7 @@ impl Section {
             Self::RouterSettings => DbRow::RouterSettings,
             Self::LitellmSettings => DbRow::LitellmSettings,
             Self::EnvironmentVariables => DbRow::EnvironmentVariables,
+            Self::UiSettings => DbRow::UiSettings,
         }
     }
 
@@ -62,7 +65,10 @@ impl Section {
     pub fn is_resource_list(self, key: &str) -> bool {
         match self {
             Self::GeneralSettings => key == "pass_through_endpoints",
-            Self::RouterSettings | Self::LitellmSettings | Self::EnvironmentVariables => false,
+            Self::RouterSettings
+            | Self::LitellmSettings
+            | Self::EnvironmentVariables
+            | Self::UiSettings => false,
         }
     }
 }
