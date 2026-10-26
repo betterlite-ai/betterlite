@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/*", "tools/*"]
+exclude = ["tools/management-cli"]
 resolver = "3"
 
 [workspace.package]
@@ -15,6 +16,7 @@ chrono = { version = "0.4.45", default-features = false, features = ["now", "ser
 hex = "0.4.3"
 hyper-util = "0.1.21"
 percent-encoding = "2.3.2"
+phf = { version = "0.13.1", features = ["macros"] }
 regex = "1.13.1"
 rust_decimal = { version = "1.43.0", features = ["serde-with-arbitrary-precision"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring"] }

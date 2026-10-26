@@ -1,0 +1,12 @@
+kind: helper
+name: timeout-capability-and-conversion
+call:
+  resource_sdk_settings:
+    provider: openai
+    timeout: "1_000"
+    request_timeout: 0
+    global_request_timeout: 9
+    structured: null
+env: {}
+compare:
+  ignore: []

@@ -1,7 +1,7 @@
 id: B2487
 milestone: M5 API families
 title: Fine-tuning and assistant SDK settings and timeout policy
-status: todo
+status: done
 depends_on: [B002, B171]
 file: tasks/B2487-resource-sdk-settings.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/utils.py"
 parent: B014
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 204

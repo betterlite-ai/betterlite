@@ -1,0 +1,8 @@
+kind: helper
+name: provider-empty
+call:
+  resource_sdk_settings:
+    provider: ""
+env: {}
+compare:
+  ignore: []

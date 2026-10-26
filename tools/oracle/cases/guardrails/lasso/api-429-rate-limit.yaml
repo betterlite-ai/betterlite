@@ -1,0 +1,9 @@
+kind: helper
+name: api-429-rate-limit
+call:
+  b3778:
+    call:
+      settings: {api_key: key, api_base: "http://lasso.test"}
+      answer: {status: 429, headers: {}, body: {detail: slow down}}
+env: {}
+compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}
