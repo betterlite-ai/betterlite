@@ -1,24 +1,20 @@
-use std::fs;
-use std::path::Path;
-
-use aws_lc_rs::hmac;
-use base64::Engine as _;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use chrono::{DateTime, TimeDelta, Utc};
-use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
-
 use self::Keys::{Hs256, OtherHs256, OtherRs256, Previous, Rotated, Rs256};
 use crate::errors::SessionOpenError::{BadSignature, Expired, Malformed, NotASessionToken};
 use crate::errors::{SessionKeyError, SessionOpenError};
 use crate::session_tokens::{
-    JtiSource, OsJti, SessionPrefix as _, mint_session_token, open_session_token,
+    SessionPrefix as _, mint_session_token as mint_token, open_session_token as open_token,
 };
 use crate::types::SessionTokenKind::{Refresh, Session};
 use crate::types::{
-    AsymmetricSessionKeys, OpenedSessionToken, SessionAudience, SessionKeys, SessionPrincipal,
+    AsymmetricSessionKeys, OpenedSessionToken, SessionKeys, SessionPrincipal,
     SessionRotatedPublicKey, SessionSigningKeys, SessionTokenKind,
 };
+use aws_lc_rs::{hmac, rand};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use chrono::{DateTime, TimeDelta, Utc};
+use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
+use std::{fs, path::Path};
 
 const SECRET: &str = "0123456789abcdef0123456789abcdef";
 const PRIVATE: &str = include_str!("../../fixtures/session-private.pem");
@@ -28,19 +24,11 @@ const PREVIOUS: &str = include_str!("../../fixtures/session-previous.pem");
 const PREVIOUS_PUBLIC: &str = include_str!("../../fixtures/session-previous-public.pem");
 const WEAK: &str = include_str!("../../fixtures/session-weak.pem");
 const WEAK_PUBLIC: &str = include_str!("../../fixtures/session-weak-public.pem");
+const ENTROPY: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 const NOW: i64 = 1_767_225_600;
 const HS256: &str = r#"{"alg":"HS256"}"#;
 // LiteLLM 1.105.1 mints this for principal() at NOW with jti bytes 0..16, as the oracle case symmetric-hs256-access shows
 const LITELLM_HS256: &str = "llm_session_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJsaXRlbGxtLW1jcC1nYXRld2F5IiwiaWF0IjoxNzY3MjI1NjAwLCJleHAiOjE3NjcyMjkyMDAsImp0aSI6IkFBRUNBd1FGQmdjSUNRb0xEQTBPRHciLCJraW5kIjoic2Vzc2lvbiIsInVzZXJfaWQiOiJcdTAwZmNzZXItMSIsImNsaWVudF9pZCI6ImNsaWVudC0xIiwicmVzb3VyY2Vfc2VydmVyX2lkIjoic2VydmVyLTEiLCJhdWRpZW5jZSI6InByb3h5X2FwaSIsInRlYW1faWQiOiJ0ZWFtLTEifQ.cDBqeejUJNbkdpbcKXkSYFte9nqUrT1rQ4QajEW9w4A";
-
-struct FixedJti;
-
-impl JtiSource for FixedJti {
-    fn fill(&self, jti: &mut [u8; 16]) -> Result<(), getrandom::Error> {
-        *jti = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-        Ok(())
-    }
-}
 
 #[derive(Clone, Copy)]
 enum Keys {
@@ -84,13 +72,8 @@ fn keys(choice: Keys) -> SessionSigningKeys {
 }
 
 fn principal() -> SessionPrincipal {
-    SessionPrincipal {
-        user_id: "\u{fc}ser-1".to_owned(),
-        client_id: "client-1".to_owned(),
-        resource_server_id: Some("server-1".to_owned()),
-        audience: Some(SessionAudience::ProxyApi),
-        team_id: Some("team-1".to_owned()),
-    }
+    let fixture = include_str!("../../fixtures/session-principal.json");
+    serde_json::from_str(fixture).unwrap()
 }
 
 fn at(seconds_later: i64) -> DateTime<Utc> {
@@ -98,7 +81,7 @@ fn at(seconds_later: i64) -> DateTime<Utc> {
 }
 
 fn mint(choice: Keys, kind: SessionTokenKind) -> String {
-    let minted = mint_session_token(&principal(), kind, &keys(choice), at(0), &FixedJti).unwrap();
+    let minted = mint_token(&principal(), kind, &keys(choice), at(0), || Ok(ENTROPY)).unwrap();
     minted.token.expose_secret().to_owned()
 }
 
@@ -136,7 +119,7 @@ fn opens_what_it_mints(
     #[case] lifetime: Result<i64, SessionOpenError>,
 ) {
     let token = mint(minted.0, minted.1);
-    let opened = open_session_token(&token, opened_as.1, &keys(opened_as.0), at(seconds_later));
+    let opened = open_token(&token, opened_as.1, &keys(opened_as.0), at(seconds_later));
     let expected = lifetime.map(|seconds| OpenedSessionToken {
         principal: principal(),
         jti: "AAECAwQFBgcICQoLDA0ODw".to_owned(),
@@ -166,7 +149,7 @@ fn checks_signed_claims(
     #[case] payload: &str,
     #[case] expected: Result<(), SessionOpenError>,
 ) {
-    let opened = open_session_token(&forge(header, payload), Session, &keys(Hs256), at(0));
+    let opened = open_token(&forge(header, payload), Session, &keys(Hs256), at(0));
     assert_eq!(opened.map(drop), expected);
 }
 
@@ -181,7 +164,7 @@ fn checks_signed_claims(
 #[case::multibyte_over(format!("llm_session_{}", "\u{e9}".repeat(2_043)), Malformed)]
 fn rejects_hostile_candidates(#[case] candidate: String, #[case] expected: SessionOpenError) {
     assert_eq!(
-        open_session_token(&candidate, Session, &keys(Hs256), at(0)),
+        open_token(&candidate, Session, &keys(Hs256), at(0)),
         Err(expected)
     );
 }
@@ -197,7 +180,7 @@ fn replays_the_session_token_corpus() {
     let opened = seeds
         .iter()
         .flat_map(|seed| keys.iter().map(move |signing| (seed, signing)))
-        .filter(|(seed, signing)| open_session_token(seed, Session, signing, at(0)).is_ok())
+        .filter(|(seed, signing)| open_token(seed, Session, signing, at(0)).is_ok())
         .count();
     assert_eq!((seeds.len() > 100, opened), (true, 1));
 }
@@ -215,22 +198,20 @@ fn refuses_to_mint(#[case] client_id: String, #[case] expected: &str) {
         client_id,
         ..principal()
     };
-    let minted = mint_session_token(&principal, Session, &keys(Hs256), at(0), &FixedJti);
-    assert_eq!(
-        format!("{:?}", minted.map(drop)),
-        format!("Err({expected})")
-    );
+    let minted = mint_token(&principal, Session, &keys(Hs256), at(0), || Ok(ENTROPY));
+    assert_eq!(format!("{:?}", minted.unwrap_err()), expected);
 }
 
 #[test]
 fn keeps_sub_second_expiry_and_fresh_jti() {
     let now = DateTime::from_timestamp(NOW, 500_000_000).unwrap();
     let keys = keys(Hs256);
-    let first = mint_session_token(&principal(), Session, &keys, now, &OsJti).unwrap();
-    let second = mint_session_token(&principal(), Session, &keys, now, &OsJti).unwrap();
+    let random = || rand::generate(&rand::SystemRandom::new()).map(rand::Random::expose);
+    let first = mint_token(&principal(), Session, &keys, now, random).unwrap();
+    let second = mint_token(&principal(), Session, &keys, now, random).unwrap();
     assert_eq!(first.expires_at, now + TimeDelta::seconds(3_600));
     assert_ne!(first.token.expose_secret(), second.token.expose_secret());
-    let opened = open_session_token(first.token.expose_secret(), Session, &keys, now).unwrap();
+    let opened = open_token(first.token.expose_secret(), Session, &keys, now).unwrap();
     assert_eq!(
         (opened.iat, opened.exp, opened.jti.len()),
         (NOW, NOW + 3_600, 22)

@@ -8,14 +8,10 @@ use chrono::DateTime;
 use libfuzzer_sys::fuzz_target;
 use secrecy::SecretString;
 
-fuzz_target!(|bytes: &[u8]| {
-    let Ok(candidate) = std::str::from_utf8(bytes) else {
-        return;
-    };
-    let secret = SecretString::from("0123456789abcdef0123456789abcdef");
+fuzz_target!(|candidate: &str| {
     let private = SecretString::from(include_str!("../../src/fixtures/session-private.pem"));
     let (Ok(symmetric), Ok(asymmetric), Some(now)) = (
-        SessionKeys::new(secret),
+        SessionKeys::new(SecretString::from("0123456789abcdef0123456789abcdef")),
         AsymmetricSessionKeys::new(&private, "current".to_owned(), Vec::new()),
         DateTime::from_timestamp(1_767_225_600, 0),
     ) else {

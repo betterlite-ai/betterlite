@@ -1,22 +1,19 @@
 mod tests;
-
-use std::io::{self, Write};
-
-use aws_lc_rs::hmac;
+use crate::errors::SessionOpenError::{BadSignature, Expired, Malformed, NotASessionToken};
+use crate::errors::{SessionMintError as MintError, SessionOpenError as OpenError};
+use crate::types::{
+    MintedSessionToken, OpenedSessionToken, SessionAudience, SessionPrincipal,
+    SessionSigningKeys as SigningKeys, SessionTokenKind,
+};
 use aws_lc_rs::rand::SystemRandom;
 use aws_lc_rs::signature::{RSA_PKCS1_2048_8192_SHA256, RSA_PKCS1_SHA256, UnparsedPublicKey};
-use base64::Engine as _;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use aws_lc_rs::{error::Unspecified, hmac};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, TimeDelta, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::ser::{Formatter, Serializer};
-
-use crate::errors::{SessionMintError, SessionOpenError};
-use crate::types::{
-    MintedSessionToken, OpenedSessionToken, SessionAudience, SessionPrincipal, SessionSigningKeys,
-    SessionTokenKind,
-};
+use std::io::{self, Write};
 
 pub const SESSION_TOKEN_PREFIX: &str = "llm_session_";
 pub const SESSION_REFRESH_PREFIX: &str = "llm_srefresh_";
@@ -24,18 +21,6 @@ pub const SESSION_ISSUER: &str = "litellm-mcp-gateway";
 pub const SESSION_TTL_SECONDS: i64 = 3_600;
 pub const SESSION_REFRESH_TTL_SECONDS: i64 = 1_209_600;
 pub const MAX_SESSION_TOKEN_BYTES: usize = 4_096;
-
-pub trait JtiSource {
-    fn fill(&self, jti: &mut [u8; 16]) -> Result<(), getrandom::Error>;
-}
-
-pub struct OsJti;
-
-impl JtiSource for OsJti {
-    fn fill(&self, jti: &mut [u8; 16]) -> Result<(), getrandom::Error> {
-        getrandom::fill(jti)
-    }
-}
 
 pub trait SessionPrefix {
     fn is_session_token(&self) -> bool;
@@ -80,18 +65,13 @@ struct Claims {
 }
 
 // PyJWT sorts header keys before signing, so LiteLLM's signatures cover them in this order
-#[derive(Serialize)]
-struct SignedHeader<'kid> {
-    alg: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    kid: Option<&'kid str>,
-    typ: &'static str,
-}
-
-#[derive(Deserialize)]
-struct PresentedHeader {
+#[derive(Serialize, Deserialize)]
+struct Header {
     alg: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     kid: Option<String>,
+    #[serde(skip_deserializing)]
+    typ: &'static str,
 }
 
 // Python's json.dumps escapes everything outside printable ASCII, and the signature covers those bytes
@@ -115,24 +95,21 @@ impl Formatter for AsciiFormatter {
 pub fn mint_session_token<R>(
     principal: &SessionPrincipal,
     kind: SessionTokenKind,
-    keys: &SessionSigningKeys,
+    keys: &SigningKeys,
     now: DateTime<Utc>,
-    random: &R,
-) -> Result<MintedSessionToken, SessionMintError>
+    random: R,
+) -> Result<MintedSessionToken, MintError>
 where
-    R: JtiSource,
+    R: FnOnce() -> Result<[u8; 16], Unspecified>,
 {
     if principal.user_id.is_empty() || principal.client_id.is_empty() {
-        return Err(SessionMintError::EmptyIdentity);
+        return Err(MintError::EmptyIdentity);
     }
     let (prefix, ttl_seconds) = kind.wire_shape();
     let expires_at = TimeDelta::new(ttl_seconds, 0)
         .and_then(|ttl| now.checked_add_signed(ttl))
-        .ok_or(SessionMintError::ExpiryOutOfRange)?;
-    let mut entropy = [0_u8; 16];
-    random
-        .fill(&mut entropy)
-        .map_err(|source| SessionMintError::Random { source })?;
+        .ok_or(MintError::ExpiryOutOfRange)?;
+    let entropy = random().map_err(MintError::Random)?;
     let claims = Claims {
         iss: SESSION_ISSUER.to_owned(),
         iat: now.timestamp(),
@@ -147,7 +124,7 @@ where
     };
     let token = format!("{prefix}{}", sign(&claims, keys)?);
     if token.len() > MAX_SESSION_TOKEN_BYTES {
-        return Err(SessionMintError::TooLarge {
+        return Err(MintError::TooLarge {
             size_bytes: token.len(),
             max_bytes: MAX_SESSION_TOKEN_BYTES,
         });
@@ -158,64 +135,57 @@ where
     })
 }
 
-fn python_json_segment<T>(value: &T) -> Result<String, SessionMintError>
+fn python_json_segment<T>(value: &T) -> Result<String, MintError>
 where
     T: Serialize,
 {
     let mut serializer = Serializer::with_formatter(Vec::new(), AsciiFormatter);
-    value
-        .serialize(&mut serializer)
-        .map_err(|source| SessionMintError::Claims { source })?;
+    value.serialize(&mut serializer)?;
     Ok(URL_SAFE_NO_PAD.encode(serializer.into_inner()))
 }
 
-fn sign(claims: &Claims, keys: &SessionSigningKeys) -> Result<String, SessionMintError> {
+fn sign(claims: &Claims, keys: &SigningKeys) -> Result<String, MintError> {
     let (alg, kid) = match keys {
-        SessionSigningKeys::Symmetric(_) => ("HS256", None),
-        SessionSigningKeys::Asymmetric(asymmetric) => ("RS256", Some(asymmetric.kid.as_str())),
+        SigningKeys::Symmetric(_) => ("HS256", None),
+        SigningKeys::Asymmetric(asymmetric) => ("RS256", Some(asymmetric.kid.as_str())),
     };
-    let header = python_json_segment(&SignedHeader {
-        alg,
-        kid,
+    let header = python_json_segment(&Header {
+        alg: Some(alg.to_owned()),
+        kid: kid.map(str::to_owned),
         typ: "JWT",
     })?;
     let signing_input = format!("{header}.{}", python_json_segment(claims)?);
     let message = signing_input.as_bytes();
     let signature = match keys {
-        SessionSigningKeys::Symmetric(symmetric) => {
+        SigningKeys::Symmetric(symmetric) => {
             let secret = symmetric.signing_key.expose_secret().as_bytes();
             let tag = hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, secret), message);
-            tag.as_ref().to_vec()
+            URL_SAFE_NO_PAD.encode(tag)
         }
-        SessionSigningKeys::Asymmetric(asymmetric) => {
+        SigningKeys::Asymmetric(asymmetric) => {
             let signer = &asymmetric.signer;
             let mut signature = vec![0; signer.public_modulus_len()];
             // aws-lc ignores the random source for PKCS#1 v1.5, which is deterministic
             let random = SystemRandom::new();
             signer
                 .sign(&RSA_PKCS1_SHA256, &random, message, &mut signature)
-                .map_err(|source| SessionMintError::Signature { source })?;
-            signature
+                .map_err(MintError::Signature)?;
+            URL_SAFE_NO_PAD.encode(signature)
         }
     };
-    Ok(format!(
-        "{signing_input}.{}",
-        URL_SAFE_NO_PAD.encode(signature)
-    ))
+    Ok(format!("{signing_input}.{signature}"))
 }
 
 pub fn open_session_token(
     candidate: &str,
     kind: SessionTokenKind,
-    keys: &SessionSigningKeys,
+    keys: &SigningKeys,
     now: DateTime<Utc>,
-) -> Result<OpenedSessionToken, SessionOpenError> {
+) -> Result<OpenedSessionToken, OpenError> {
     let (prefix, _) = kind.wire_shape();
-    let compact = candidate
-        .strip_prefix(prefix)
-        .ok_or(SessionOpenError::NotASessionToken)?;
+    let compact = candidate.strip_prefix(prefix).ok_or(NotASessionToken)?;
     if candidate.len() > MAX_SESSION_TOKEN_BYTES {
-        return Err(SessionOpenError::Malformed);
+        return Err(Malformed);
     }
     let claims = verified_claims(compact, keys)?;
     if claims.iss != SESSION_ISSUER
@@ -224,10 +194,10 @@ pub fn open_session_token(
         || claims.client_id.is_empty()
         || claims.kind != kind
     {
-        return Err(SessionOpenError::Malformed);
+        return Err(Malformed);
     }
     if now.timestamp() >= claims.exp {
-        return Err(SessionOpenError::Expired);
+        return Err(Expired);
     }
     Ok(OpenedSessionToken {
         principal: SessionPrincipal {
@@ -244,40 +214,32 @@ pub fn open_session_token(
     })
 }
 
-fn verified_claims(compact: &str, keys: &SessionSigningKeys) -> Result<Claims, SessionOpenError> {
-    let decode = |segment: &str| {
-        URL_SAFE_NO_PAD
-            .decode(segment)
-            .map_err(|_source| SessionOpenError::Malformed)
-    };
-    let (signing_input, signature_segment) = compact
-        .rsplit_once('.')
-        .ok_or(SessionOpenError::Malformed)?;
-    let (header_segment, payload_segment) = signing_input
-        .split_once('.')
-        .ok_or(SessionOpenError::Malformed)?;
-    let header: PresentedHeader = serde_json::from_slice(&decode(header_segment)?)
-        .map_err(|_source| SessionOpenError::Malformed)?;
+fn verified_claims(compact: &str, keys: &SigningKeys) -> Result<Claims, OpenError> {
+    let decode = |segment: &str| URL_SAFE_NO_PAD.decode(segment).map_err(|_source| Malformed);
+    let (signing_input, signature_segment) = compact.rsplit_once('.').ok_or(Malformed)?;
+    let (header_segment, payload_segment) = signing_input.split_once('.').ok_or(Malformed)?;
+    let header: Header =
+        serde_json::from_slice(&decode(header_segment)?).map_err(|_source| Malformed)?;
     let payload = decode(payload_segment)?;
     let signature = decode(signature_segment)?;
     let message = signing_input.as_bytes();
     let (algorithm, verified) = match keys {
-        SessionSigningKeys::Symmetric(symmetric) => {
+        SigningKeys::Symmetric(symmetric) => {
             let secret = symmetric.signing_key.expose_secret().as_bytes();
             let key = hmac::Key::new(hmac::HMAC_SHA256, secret);
             ("HS256", hmac::verify(&key, message, &signature).is_ok())
         }
-        SessionSigningKeys::Asymmetric(asymmetric) => {
+        SigningKeys::Asymmetric(asymmetric) => {
             let public = asymmetric.verification_key(header.kid.as_deref())?;
             let key = UnparsedPublicKey::new(&RSA_PKCS1_2048_8192_SHA256, public);
             ("RS256", key.verify(message, &signature).is_ok())
         }
     };
     if header.alg.as_deref() != Some(algorithm) {
-        return Err(SessionOpenError::Malformed);
+        return Err(Malformed);
     }
     if !verified {
-        return Err(SessionOpenError::BadSignature);
+        return Err(BadSignature);
     }
-    serde_json::from_slice(&payload).map_err(|_source| SessionOpenError::Malformed)
+    serde_json::from_slice(&payload).map_err(|_source| Malformed)
 }

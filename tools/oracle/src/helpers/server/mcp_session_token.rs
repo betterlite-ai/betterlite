@@ -1,14 +1,16 @@
-use betterlite_mcp::errors::{SessionKeyError, SessionMintError};
-use betterlite_mcp::session_tokens::{JtiSource, mint_session_token, open_session_token};
+use crate::helpers::{HelperError, HelperResult};
+use betterlite_mcp::errors::SessionKeyError as KeyError;
+use betterlite_mcp::errors::SessionMintError::TooLarge;
+use betterlite_mcp::session_tokens::{
+    mint_session_token as mint_token, open_session_token as open_token,
+};
 use betterlite_mcp::types::{
     AsymmetricSessionKeys, SessionKeys, SessionPrincipal, SessionRotatedPublicKey,
-    SessionSigningKeys, SessionTokenKind,
+    SessionSigningKeys as SigningKeys, SessionTokenKind,
 };
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
-
-use crate::helpers::{HelperError, HelperResult};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -16,26 +18,26 @@ pub(crate) struct Input {
     mint: Option<MintStep>,
     open: Option<OpenStep>,
 }
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MintStep {
     keys: Keys,
     kind: SessionTokenKind,
     principal: SessionPrincipal,
-    now: i64,
-    entropy: String,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    now: DateTime<Utc>,
+    #[serde(deserialize_with = "hex::deserialize")]
+    entropy: [u8; 16],
 }
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OpenStep {
     keys: Keys,
     kind: SessionTokenKind,
-    now: i64,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    now: DateTime<Utc>,
     candidate: Option<String>,
 }
-
 #[derive(Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
 enum Keys {
@@ -49,7 +51,6 @@ enum Keys {
         previous_public_keys: Vec<RotatedKey>,
     },
 }
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RotatedKey {
@@ -57,68 +58,52 @@ struct RotatedKey {
     public_key_pem: String,
 }
 
-struct FixedJti([u8; 16]);
-
-impl JtiSource for FixedJti {
-    fn fill(&self, jti: &mut [u8; 16]) -> Result<(), getrandom::Error> {
-        *jti = self.0;
-        Ok(())
-    }
-}
-
 pub(crate) struct Op;
-
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
         let minted = input.mint.as_ref().map(mint).transpose()?;
-        let token = minted
-            .as_ref()
-            .and_then(|value| value.get("token")?.as_str());
         let opened = input
             .open
             .as_ref()
-            .map(|step| open(step, token))
+            .map(|step| -> HelperResult {
+                let candidate = step
+                    .candidate
+                    .as_deref()
+                    .or_else(|| minted.as_ref()?.get("token")?.as_str())
+                    .unwrap_or_default();
+                let keys = signing_keys(&step.keys)?;
+                let encoded = match open_token(candidate, step.kind, &keys, step.now) {
+                    Ok(opened) => serde_json::to_value(opened),
+                    Err(error) => serde_json::to_value(error),
+                };
+                encoded.map_err(|error| failure("Output", &error.to_string()))
+            })
             .transpose()?;
         Ok(serde_json::json!({"mint": minted, "open": opened}))
     }
 }
 
-fn open(step: &OpenStep, minted: Option<&str>) -> HelperResult {
-    let candidate = step.candidate.as_deref().or(minted).unwrap_or_default();
-    let now =
-        DateTime::from_timestamp(step.now, 0).ok_or_else(|| failure("now", "out of range"))?;
-    let keys = signing_keys(&step.keys)?;
-    let encoded = match open_session_token(candidate, step.kind, &keys, now) {
-        Ok(opened) => serde_json::to_value(opened),
-        Err(error) => serde_json::to_value(error),
-    };
-    encoded.map_err(|error| failure("Output", &error.to_string()))
-}
-
 fn mint(step: &MintStep) -> HelperResult {
-    let mut entropy = [0_u8; 16];
-    hex::decode_to_slice(&step.entropy, &mut entropy)
-        .map_err(|error| failure("entropy", &error.to_string()))?;
-    let now =
-        DateTime::from_timestamp(step.now, 0).ok_or_else(|| failure("now", "out of range"))?;
     let keys = signing_keys(&step.keys)?;
     let public_key_pem = match &keys {
-        SessionSigningKeys::Symmetric(_) => None,
-        SessionSigningKeys::Asymmetric(asymmetric) => Some(
+        SigningKeys::Symmetric(_) => None,
+        SigningKeys::Asymmetric(asymmetric) => Some(
             asymmetric
                 .public_key_pem()
                 .map_err(|error| failure("SessionKeyError", &error.to_string()))?,
         ),
     };
-    match mint_session_token(&step.principal, step.kind, &keys, now, &FixedJti(entropy)) {
+    match mint_token(&step.principal, step.kind, &keys, step.now, || {
+        Ok(step.entropy)
+    }) {
         Ok(minted) => Ok(serde_json::json!({
             "token": minted.token.expose_secret(),
             "expires_at": minted.expires_at.timestamp(),
             "public_key_pem": public_key_pem,
         })),
-        Err(SessionMintError::TooLarge {
+        Err(TooLarge {
             size_bytes,
             max_bytes,
         }) => Ok(serde_json::json!({
@@ -130,11 +115,11 @@ fn mint(step: &MintStep) -> HelperResult {
     }
 }
 
-fn signing_keys(keys: &Keys) -> Result<SessionSigningKeys, Box<HelperError>> {
+fn signing_keys(keys: &Keys) -> Result<SigningKeys, Box<HelperError>> {
     let built = match keys {
         Keys::Symmetric { signing_key } => {
             let secret = SecretString::from(signing_key.as_str());
-            SessionKeys::new(secret).map(SessionSigningKeys::Symmetric)
+            SessionKeys::new(secret).map(SigningKeys::Symmetric)
         }
         Keys::Asymmetric {
             private_key_pem,
@@ -143,12 +128,12 @@ fn signing_keys(keys: &Keys) -> Result<SessionSigningKeys, Box<HelperError>> {
         } => previous_public_keys
             .iter()
             .map(|key| SessionRotatedPublicKey::new(key.kid.clone(), &key.public_key_pem))
-            .collect::<Result<Vec<_>, SessionKeyError>>()
+            .collect::<Result<Vec<_>, KeyError>>()
             .and_then(|previous| {
                 let private = SecretString::from(private_key_pem.as_str());
                 AsymmetricSessionKeys::new(&private, kid.clone(), previous)
             })
-            .map(SessionSigningKeys::Asymmetric),
+            .map(SigningKeys::Asymmetric),
     };
     built.map_err(|error| failure("ValidationError", &error.to_string()))
 }

@@ -11,27 +11,14 @@ pub enum SessionKeyError {
     #[error("every kid must be unique across the current and previous keys; duplicated: {kids}")]
     DuplicateKid { kids: String },
     #[error("the key is not a PEM document")]
-    Pem {
-        #[source]
-        source: pem::PemError,
-    },
+    Pem(#[from] pem::PemError),
     #[error("private_key_pem must be an unencrypted RSA private key of 2048 to 8192 bits")]
-    PrivateKey {
-        #[source]
-        source: KeyRejected,
-    },
+    PrivateKey(#[source] KeyRejected),
     #[error("public_key_pem must be an RSA public key of 2048 to 8192 bits")]
-    PublicKey {
-        #[source]
-        source: KeyRejected,
-    },
+    PublicKey(#[source] KeyRejected),
     #[error("the RSA public key cannot be encoded")]
-    PublicEncoding {
-        #[source]
-        source: Unspecified,
-    },
+    PublicEncoding(#[from] Unspecified),
 }
-
 #[derive(Debug, Error)]
 pub enum SessionMintError {
     #[error("session token is too large: {size_bytes} bytes, maximum {max_bytes}")]
@@ -41,22 +28,12 @@ pub enum SessionMintError {
     #[error("the session token expiry is out of range")]
     ExpiryOutOfRange,
     #[error("the jti random source failed")]
-    Random {
-        #[source]
-        source: getrandom::Error,
-    },
+    Random(#[source] Unspecified),
     #[error("the session claims cannot be serialized")]
-    Claims {
-        #[source]
-        source: serde_json::Error,
-    },
+    Claims(#[from] serde_json::Error),
     #[error("the RSA signature failed")]
-    Signature {
-        #[source]
-        source: Unspecified,
-    },
+    Signature(#[source] Unspecified),
 }
-
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq, Serialize)]
 #[serde(tag = "tag", rename_all = "snake_case")]
 pub enum SessionOpenError {
