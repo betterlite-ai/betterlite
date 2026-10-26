@@ -5,7 +5,7 @@ use serde_json::json;
 
 #[test]
 fn keeps_line_based_head_and_tail() {
-    let content = (0..20).map(|index| format!("line {index:02} 123456789"));
+    let content = (0_usize..20_usize).map(|index| format!("line {index:02} 123456789"));
     let result = truncate_message(
         &json!({"role":"user","content":content.collect::<Vec<_>>().join("\n")}),
         40,
