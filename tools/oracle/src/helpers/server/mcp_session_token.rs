@@ -66,8 +66,8 @@ impl crate::helpers::Helper for Op {
         let Some(step) = &input.open else {
             return Ok(serde_json::json!({"mint": minted, "open": null}));
         };
-        let minted_token = minted.as_ref().and_then(|output| output.get("token")?.as_str());
-        let candidate = step.candidate.as_deref().or(minted_token).unwrap_or_default();
+        let token = minted.as_ref().and_then(|json| json.get("token")?.as_str());
+        let candidate = step.candidate.as_deref().or(token).unwrap_or_default();
         let keys = signing_keys(&step.keys)?;
         let opened = match open_token(candidate, step.kind, &keys, step.now) {
             Ok(opened) => serde_json::to_value(opened),
