@@ -19,8 +19,26 @@ pub struct OpenAiTool {
 pub struct OpenAiFunction {
     pub name: Option<String>,
     pub description: Option<String>,
-    pub parameters: Option<Box<RawValue>>,
+    pub parameters: Option<BTreeMap<String, Box<RawValue>>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ToolCall {
+    pub id: Option<String>,
+    pub function: Option<ToolCallFunction>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ToolCallFunction {
+    pub name: Option<String>,
     pub arguments: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolCallFields {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub input: Option<ToolArguments>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -29,7 +47,7 @@ pub struct ToolDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parameters: Option<Box<RawValue>>,
+    pub parameters: Option<BTreeMap<String, Box<RawValue>>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -64,6 +82,8 @@ pub enum MessageType {
 pub struct LassoResponse {
     #[serde(default)]
     pub violations_detected: bool,
+    #[serde(default)]
+    pub deputies: BTreeMap<String, bool>,
     #[serde(default)]
     pub findings: BTreeMap<String, Vec<Finding>>,
 }

@@ -1,109 +1,82 @@
-use std::collections::BTreeMap;
-use std::fmt::{self, Debug, Formatter};
+use std::error::Error as StdError;
 use std::time::Duration;
 
+use betterlite_config::sections::lasso_classification::Configured;
+use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
-use thiserror::Error;
-use uuid::Uuid;
+use ulid::Ulid;
 
-const DEFAULT_API_BASE: &str = "https://server.lasso.security/gateway/v3";
-const CACHE_TTL_SECONDS: u64 = 3_600;
-
+pub mod error;
 pub mod wire;
+use error::LassoError;
 use wire::{
-    LassoPayload, LassoRequestData, LassoResponse, MessageType, OpenAiTool, Source, ToolArguments,
-    ToolDefinition,
+    LassoPayload, LassoRequestData, LassoResponse, MessageType, Source, ToolArguments, ToolCall,
+    ToolCallFields, ToolDefinition,
 };
 
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+const CONVERSATION_TTL: Duration = Duration::from_secs(3_600);
+const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+
 pub trait ConversationCache {
-    fn get_cache(&self, key: &str) -> Result<Option<String>, String>;
-    fn set_cache(&self, key: &str, value: &str, ttl_seconds: u64) -> Result<(), String>;
+    type Error: StdError;
+
+    fn get_cache(&self, key: &str) -> Result<Option<String>, Self::Error>;
+    fn set_cache(&self, key: &str, value: &str, ttl: Duration) -> Result<(), Self::Error>;
 }
 
-#[derive(Debug, Error)]
-pub enum LassoError {
-    #[error("Lasso API key is required")]
-    MissingSecrets,
-    #[error("Lasso cache error: {message}")]
-    Cache { message: String },
-    #[error("Lasso request failed: {source}")]
-    Request { source: reqwest::Error },
-    #[error("Lasso returned HTTP status {status}")]
-    HttpStatus {
-        status: reqwest::StatusCode,
-        body: String,
-    },
-    #[error("Lasso response JSON is invalid: {source}")]
-    ResponseJson { source: serde_json::Error },
-    #[error("Lasso blocked the request: {deputies:?}")]
-    Blocked {
-        deputies: Vec<String>,
-        response: LassoResponse,
-    },
-}
-
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LassoGuardrail {
-    api_key: String,
+    api_key: SecretString,
     api_base: String,
     user_id: Option<String>,
     conversation_id: Option<String>,
-    mask: bool,
     client: reqwest::Client,
-}
-
-impl Debug for LassoGuardrail {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LassoGuardrail")
-            .field("api_base", &self.api_base)
-            .field("user_id", &self.user_id)
-            .field("conversation_id", &self.conversation_id)
-            .field("mask", &self.mask)
-            .finish_non_exhaustive()
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct LassoSettings {
-    pub api_key: Option<String>,
-    pub api_base: Option<String>,
-    pub user_id: Option<String>,
-    pub conversation_id: Option<String>,
-    pub mask: bool,
+    timeout: Duration,
+    new_id: fn() -> Ulid,
 }
 
 impl LassoGuardrail {
-    pub fn new(settings: LassoSettings, client: reqwest::Client) -> Result<Self, LassoError> {
-        let resolved_api_key = settings.api_key.ok_or(LassoError::MissingSecrets)?;
-        Ok(Self {
-            api_key: resolved_api_key,
-            api_base: settings
-                .api_base
-                .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
-            user_id: settings.user_id,
-            conversation_id: settings.conversation_id,
-            mask: settings.mask,
+    #[must_use]
+    pub fn new(
+        settings: &Configured,
+        client: reqwest::Client,
+        timeout: Duration,
+        new_id: fn() -> Ulid,
+    ) -> Self {
+        Self {
+            api_key: settings.api_key.clone(),
+            api_base: settings.api_base.clone(),
+            user_id: settings.user_id.clone(),
+            conversation_id: settings.conversation_id.clone(),
             client,
-        })
+            timeout,
+            new_id,
+        }
     }
 
     pub fn conversation_id<C>(&self, litellm_call_id: Option<&str>, cache: &C) -> String
     where
         C: ConversationCache,
     {
-        if let Some(conversation_id) = self.conversation_id.as_deref() {
-            return conversation_id.to_owned();
+        if let Some(configured) = self.conversation_id.as_deref() {
+            return configured.to_owned();
         }
-        let Some(call_id) = litellm_call_id.filter(|value| !value.is_empty()) else {
-            return Uuid::new_v4().to_string();
+        let Some(call_id) = litellm_call_id.filter(|id| !id.is_empty()) else {
+            return (self.new_id)().to_string();
         };
         let key = format!("lasso_conversation_id:{call_id}");
-        if let Ok(Some(value)) = cache.get_cache(&key) {
-            return value;
+        match cache.get_cache(&key) {
+            Ok(Some(cached)) if !cached.is_empty() => return cached,
+            Ok(_) => {}
+            Err(error) => tracing::warn!(%error, "Lasso conversation ID cache read failed"),
         }
-        let generated = Uuid::new_v4().to_string();
-        drop(cache.set_cache(&key, &generated, CACHE_TTL_SECONDS));
+        let generated = (self.new_id)().to_string();
+        if let Err(error) = cache.set_cache(&key, &generated, CONVERSATION_TTL) {
+            tracing::warn!(%error, "Lasso conversation ID cache write failed");
+        }
         generated
     }
 
@@ -115,28 +88,36 @@ impl LassoGuardrail {
     where
         C: ConversationCache,
     {
-        let conversation_id = self.conversation_id(litellm_call_id, cache);
-        let api_key =
-            HeaderValue::from_str(&self.api_key).map_err(|invalid| LassoError::Cache {
-                message: format!("invalid API key header: {invalid}"),
-            })?;
-        let conversation =
-            HeaderValue::from_str(&conversation_id).map_err(|invalid| LassoError::Cache {
-                message: format!("invalid conversation ID header: {invalid}"),
-            })?;
         let mut headers = HeaderMap::new();
+        let mut api_key =
+            HeaderValue::from_str(self.api_key.expose_secret()).map_err(|source| {
+                LassoError::InvalidHeader {
+                    name: "lasso-api-key",
+                    source,
+                }
+            })?;
+        api_key.set_sensitive(true);
         headers.insert(HeaderName::from_static("lasso-api-key"), api_key);
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        if let Some(user_id) = self.user_id.as_deref() {
+            let value =
+                HeaderValue::from_str(user_id).map_err(|source| LassoError::InvalidHeader {
+                    name: "lasso-user-id",
+                    source,
+                })?;
+            headers.insert(HeaderName::from_static("lasso-user-id"), value);
+        }
+        let conversation_id = self.conversation_id(litellm_call_id, cache);
+        let conversation = HeaderValue::from_str(&conversation_id).map_err(|source| {
+            LassoError::InvalidHeader {
+                name: "lasso-conversation-id",
+                source,
+            }
+        })?;
         headers.insert(
             HeaderName::from_static("lasso-conversation-id"),
             conversation,
         );
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        if let Some(user_id) = self.user_id.as_deref() {
-            let value = HeaderValue::from_str(user_id).map_err(|invalid| LassoError::Cache {
-                message: format!("invalid user ID header: {invalid}"),
-            })?;
-            headers.insert(HeaderName::from_static("lasso-user-id"), value);
-        }
         Ok(headers)
     }
 
@@ -150,25 +131,27 @@ impl LassoGuardrail {
     where
         C: ConversationCache,
     {
-        let session_id = self.conversation_id(data.litellm_call_id.as_deref(), cache);
+        let tools = data
+            .tools
+            .iter()
+            .filter_map(|tool| {
+                let function = tool.function.as_ref()?;
+                Some(ToolDefinition {
+                    name: function.name.clone().filter(|name| !name.is_empty())?,
+                    description: function.description.clone().filter(|text| !text.is_empty()),
+                    parameters: function
+                        .parameters
+                        .clone()
+                        .filter(|schema| !schema.is_empty()),
+                })
+            })
+            .collect();
         LassoPayload {
             messages,
             message_type,
-            session_id,
+            session_id: self.conversation_id(data.litellm_call_id.as_deref(), cache),
             user_id: self.user_id.clone(),
-            tools: data
-                .tools
-                .iter()
-                .filter_map(|tool| {
-                    let function = tool.function.as_ref()?;
-                    let name = function.name.clone()?;
-                    Some(ToolDefinition {
-                        name,
-                        description: function.description.clone(),
-                        parameters: function.parameters.clone(),
-                    })
-                })
-                .collect(),
+            tools,
             source: Source {
                 source_type: "litellm".to_owned(),
             },
@@ -181,40 +164,44 @@ impl LassoGuardrail {
         payload: &LassoPayload,
         api_url: Option<&str>,
     ) -> Result<LassoResponse, LassoError> {
-        let endpoint = api_url.map_or_else(
-            || {
-                format!(
-                    "{}/{}",
-                    self.api_base.trim_end_matches('/'),
-                    if self.mask { "classifix" } else { "classify" }
-                )
-            },
-            ToOwned::to_owned,
-        );
-        let response = self
+        let endpoint =
+            api_url.map_or_else(|| format!("{}/classify", self.api_base), ToOwned::to_owned);
+        let mut response = self
             .client
             .post(endpoint)
             .headers(headers)
             .json(payload)
-            .timeout(Duration::from_secs(10))
+            .timeout(self.timeout)
             .send()
             .await
-            .map_err(|source| LassoError::Request { source })?;
+            .map_err(request_error)?;
         let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|source| LassoError::Request { source })?;
         if !status.is_success() {
-            return Err(LassoError::HttpStatus { status, body });
+            return Err(status_error(status));
         }
-        serde_json::from_str(&body).map_err(|source| LassoError::ResponseJson { source })
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(request_error)? {
+            if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+                return Err(LassoError::ResponseTooLarge {
+                    limit: MAX_RESPONSE_BYTES,
+                });
+            }
+            body.extend_from_slice(&chunk);
+        }
+        serde_json::from_slice(&body).map_err(|source| LassoError::ResponseJson { source })
     }
 
     pub fn process_response(&self, response: LassoResponse) -> Result<(), LassoError> {
         if !response.violations_detected {
             return Ok(());
         }
+        let violated: Vec<&str> = response
+            .deputies
+            .iter()
+            .filter(|(_, violated)| **violated)
+            .map(|(deputy, _)| deputy.as_str())
+            .collect();
+        tracing::warn!(?violated, "Lasso guardrail detected violations");
         let deputies: Vec<String> = response
             .findings
             .iter()
@@ -226,26 +213,56 @@ impl LassoGuardrail {
             .map(|(deputy, _)| deputy.clone())
             .collect();
         if deputies.is_empty() {
+            tracing::info!(?violated, "Lasso violations do not block, continuing");
             return Ok(());
         }
         Err(LassoError::Blocked { deputies, response })
     }
 }
 
-#[must_use]
-pub fn extract_tool_arguments(tool_call: &OpenAiTool) -> Option<ToolArguments> {
-    let raw = tool_call.function.as_ref()?.arguments.as_deref()?;
-    if raw.is_empty() {
-        return None;
+fn request_error(source: reqwest::Error) -> LassoError {
+    if source.is_timeout() {
+        LassoError::Timeout { source }
+    } else {
+        LassoError::Request { source }
     }
-    serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(raw).map_or_else(
-        |_| {
-            Some(ToolArguments::Malformed {
-                arguments: raw.to_owned(),
-            })
-        },
-        |parsed| Some(ToolArguments::Parsed(parsed)),
-    )
+}
+
+fn status_error(status: StatusCode) -> LassoError {
+    match status {
+        StatusCode::UNAUTHORIZED => LassoError::InvalidApiKey,
+        StatusCode::TOO_MANY_REQUESTS => LassoError::RateLimited,
+        _ => LassoError::HttpStatus { status },
+    }
+}
+
+#[must_use]
+pub fn extract_tool_call_fields(call: &ToolCall) -> ToolCallFields {
+    let Some(function) = call.function.as_ref() else {
+        return ToolCallFields {
+            id: call.id.clone(),
+            name: None,
+            input: None,
+        };
+    };
+    // a call that smuggles content as malformed JSON still reaches Lasso as the raw string
+    let input = function
+        .arguments
+        .as_deref()
+        .filter(|raw| !raw.is_empty())
+        .map(|raw| {
+            serde_json::from_str(raw).map_or_else(
+                |_| ToolArguments::Malformed {
+                    arguments: raw.to_owned(),
+                },
+                ToolArguments::Parsed,
+            )
+        });
+    ToolCallFields {
+        id: call.id.clone(),
+        name: function.name.clone(),
+        input,
+    }
 }
 
 #[path = "lasso/tests.rs"]

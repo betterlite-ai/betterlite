@@ -1,6 +1,9 @@
 kind: helper
 name: constructor-api-base-env
 call:
-  b3778: {operation: extract_tool_arguments, value: {function: {arguments: "{\"x\":1}"}}}
-env: {}
+  b3778:
+    construct:
+      settings: {}
+      environment: {LASSO_API_KEY: env-key, LASSO_API_BASE: "https://lasso.example/v3", LASSO_USER_ID: env-user, LASSO_CONVERSATION_ID: env-session}
+env: {LASSO_API_KEY: env-key, LASSO_API_BASE: "https://lasso.example/v3", LASSO_USER_ID: env-user, LASSO_CONVERSATION_ID: env-session}
 compare: {ignore: []}

@@ -1,6 +1,9 @@
 kind: helper
 name: api-401-invalid-key
 call:
-  b3778: {operation: extract_tool_arguments, value: {function: {arguments: "401"}}}
+  b3778:
+    call:
+      settings: {api_key: key, api_base: "http://lasso.test"}
+      answer: {status: 401, headers: {}, body: {detail: invalid key}}
 env: {}
-compare: {ignore: []}
+compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}

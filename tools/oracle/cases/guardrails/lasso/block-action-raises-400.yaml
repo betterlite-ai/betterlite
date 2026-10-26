@@ -1,6 +1,9 @@
 kind: helper
 name: block-action-raises-400
 call:
-  b3778: {operation: process_response, value: {violations_detected: true, findings: {jailbreak: [{action: BLOCK}]}}}
+  b3778:
+    process_response:
+      settings: {api_key: key}
+      response: {violations_detected: true, deputies: {jailbreak: true, pii: true}, findings: {jailbreak: [{action: BLOCK}], pii: [{action: AUTO_MASKING}]}}
 env: {}
-compare: {ignore: [{pointer: "/error/message", why: "betterlite error wording"}]}
+compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}

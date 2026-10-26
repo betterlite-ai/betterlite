@@ -1,6 +1,9 @@
 kind: helper
 name: non-block-action-continues
 call:
-  b3778: {operation: process_response, value: {violations_detected: true, findings: {pii: [{action: AUTO_MASKING}]}}}
+  b3778:
+    process_response:
+      settings: {api_key: key}
+      response: {violations_detected: true, deputies: {pii: true}, findings: {pii: [{action: AUTO_MASKING}], custom: [{severity: HIGH}]}}
 env: {}
-compare: {ignore: [{pointer: "/value", why: "continuation has no stable value"}]}
+compare: {ignore: []}

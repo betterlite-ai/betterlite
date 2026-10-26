@@ -1,6 +1,6 @@
 kind: helper
 name: headers-with-user-id
 call:
-  b3778: {operation: extract_tool_arguments, value: {function: {arguments: "{\"user\":\"x\"}"}}}
+  b3778: {headers: {settings: {api_key: key, lasso_user_id: user-7, lasso_conversation_id: session-7}, data: {litellm_call_id: call-1}}}
 env: {}
 compare: {ignore: []}

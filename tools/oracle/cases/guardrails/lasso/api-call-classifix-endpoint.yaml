@@ -1,6 +1,10 @@
 kind: helper
 name: api-call-classifix-endpoint
 call:
-  b3778: {operation: extract_tool_arguments, value: {function: {arguments: "true"}}}
+  b3778:
+    call:
+      settings: {api_key: key, api_base: "http://lasso.test"}
+      api_path: /classifix
+      answer: {status: 200, headers: {}, body: {violations_detected: true, deputies: {pii: true}, findings: {pii: [{action: AUTO_MASKING}]}}}
 env: {}
 compare: {ignore: []}

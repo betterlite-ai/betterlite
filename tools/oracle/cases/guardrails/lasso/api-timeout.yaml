@@ -1,6 +1,6 @@
 kind: helper
 name: api-timeout
 call:
-  b3778: {operation: extract_tool_arguments, value: {function: {arguments: "timeout"}}}
+  b3778: {call: {settings: {api_key: key, api_base: "http://lasso.test"}}}
 env: {}
-compare: {ignore: []}
+compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}
