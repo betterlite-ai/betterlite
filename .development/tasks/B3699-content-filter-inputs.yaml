@@ -1,0 +1,145 @@
+id: B3699
+title: Content filtering for images and tool arguments
+description: >-
+  Build image-description scanning, competitor policy effects and recursive tool/MCP argument filtering
+  over the same text evaluator. Images are processed concurrently through an LLM; their ordered descriptions
+  are scanned through the content filter. Competitor intent results apply policy: refuse blocks the request
+  with HTTP 400, reframe returns a passthrough exception, log_only/allow continues without intervening.
+  Tool call arguments are JSON strings parsed and recursively filtered; numeric values and object keys cannot
+  be rewritten by masking rules, while string values can. Malformed JSON falls back to treating the entire
+  string as text. MCP tool arguments are already-parsed dicts filtered in place. Both recursion paths respect
+  DEFAULT_MAX_RECURSE_DEPTH (default 100), blocking requests that exceed it with HTTP 400.
+
+  Owned functions come from CF:1456-1872. _process_images fetches concurrent LLM descriptions and filters
+  them, appending image-description context to exceptions. _apply_competitor_intent_policy constructs a
+  CompetitorIntentDetection from the result, appends it to detections, then acts on the action_hint: refuse
+  raises HTTP 400 with the configured message and confidence, reframe calls raise_passthrough_exception with
+  the template message, and log_only/allow returns normally (detection already recorded). Tool-call functions
+  parse arguments strings to JSON dicts, filter recursively with _filter_single_text for leaf strings/numbers/keys,
+  preserve non-string/non-dict/non-list values unchanged, and reconstruct JSON on write-back. MCP functions
+  use the same filter logic on dict-valued arguments, skipping when mcp_tool_name is absent and gating on
+  the pre_mcp_call event hook. Both paths use a domain-specific context label in error messages and respect
+  the masking behavior of the text evaluator (BLOCK raises, MASK redacts).
+
+  B3695 supplies _filter_single_text; B3696 configures the text and templates; B3690 defines the typed
+  detections. B002 extends the config loader for DEFAULT_MAX_RECURSE_DEPTH. Router.acompletion and
+  CustomGuardrail.raise_passthrough_exception/_event_hook_is_event_type are unresolved B104 callees.
+scope:
+  paths:
+  - crates/betterlite-guardrails/src/content_filter_inputs.rs
+  - crates/betterlite-guardrails/src/content_filter_inputs/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/guardrail-depth-*
+  - tools/oracle/cases/helpers/content-filter-inputs/**
+  - tools/oracle/fuzz/corpus/helper_case/content-filter-inputs-*
+  - crates/betterlite-config/src/sections/content_filter_inputs.rs
+  - crates/betterlite-config/src/sections/content_filter_inputs/**
+  - tools/oracle/helpers/b3699.py
+  - tools/oracle/helpers/b3699/**
+  - tools/oracle/src/helpers/guardrails/b3699.rs
+  - tools/oracle/src/helpers/guardrails/b3699/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1456-L1522
+  why: _process_images and _describe_image_response_content; concurrent image description fetching and filtering.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1640-L1700
+  why: _apply_competitor_intent_policy; refuse/reframe/log_only dispatch and template message construction.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1756-L1825
+  why: _get_mcp_tool_name, _assert_argument_label_clean, _filter_argument_value and _scan_mcp_tool_call_arguments; MCP argument filtering with depth control.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1827-L1872
+  why: Tool call argument getters/setters and filtering; JSON parsing with text fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85
+  why: DEFAULT_MAX_RECURSE_DEPTH is a constants-level config setting, read from environment or config defaults.
+dod:
+- text: >-
+    image_description_fetching exercises concurrent LLM calls to describe images, ordered appending of
+    descriptions to the detections list, filtering each description through _filter_single_text, and appending
+    the raw description to HTTP 400 error detail when BLOCK is triggered. A missing/empty image list, no
+    configured image_model, or no LLM router skips processing without error. Exception detail includes
+    original description text alongside the guardrail error message.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    competitor_intent_detection adds a typed CompetitorIntentDetection record to detections with intent,
+    confidence, action_hint, entities, signals and evidence fields from the result. Refuse action raises
+    HTTP 400 with status_code/detail error containing the configured refuse_message_template (or a default),
+    intent and confidence. Reframe calls the passthrough exception method with the reframe_message_template
+    (or a default), supplying request_data and the result as detection_info. Log_only and allow actions
+    return normally after appending the detection. Verbose logging records the intent, confidence and
+    action_hint for all outcomes.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    mcp_tool_argument_filtering checks _event_hook_is_event_type for pre_mcp_call, calls _get_mcp_tool_name
+    to locate mcp_tool_name in request_data, skips if absent, and filters mcp_arguments recursively. Depth
+    bound is enforced: passing DEFAULT_MAX_RECURSE_DEPTH to _filter_argument_value, which raises HTTP 400
+    with context_label "MCP tool call" when depth is exceeded. Filtered arguments are written back to
+    request_data["mcp_arguments"] and request_data["modified_arguments"]. Dict keys are checked for masking
+    violations; object keys that match a masking rule raise HTTP 400 with context_label "MCP tool call
+    argument" in the error message.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    tool_call_argument_filtering iterates every tool_call in inputs["tool_calls"], extracts the function.arguments
+    string, parses it as JSON, and recursively filters the parsed value with _filter_argument_value. Depth
+    starts at 0; exceeding DEFAULT_MAX_RECURSE_DEPTH raises HTTP 400 with context_label "tool call" and
+    detail containing the depth error. If parsing fails or the result is not dict/list, the arguments string
+    is treated as plain text and filtered through _filter_single_text. Filtered arguments are written back
+    to tool_call["function"]["arguments"] if the value changed. String values in dicts/lists are masked;
+    numeric values and object keys are verified to match no masking patterns (raise HTTP 400 if they do),
+    and non-string/non-dict/non-list leaves are passed through unchanged.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    depth_limit_and_config exercises DEFAULT_MAX_RECURSE_DEPTH loading through the production config loader,
+    verifies that a depth of N arguments deep raises when N > DEFAULT_MAX_RECURSE_DEPTH, and that N <= DEFAULT_MAX_RECURSE_DEPTH
+    succeeds. Config tests invoke the loader for the default (100), overrides and invalid types. JSON
+    recursion with lists and dicts is tested. A non-numeric, non-null value in the config fails at consumer
+    time, not at load time.
+  proof: [config-tests, config-corpus, behavior-tests, oracle]
+- text: Config loader, helper adapter and oracle helper match the implementation and new corpus seeds are added.
+  proof: [config-tests, helper-python, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+  - id: behavior-tests
+    why: Image description fetching, competitor policy application, and recursive argument filtering must work without side effects.
+    run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/^(sections::)?content_filter_inputs::tests::/) - test(/::replays_corpus$/)'
+  - id: helper-python
+    why: The referenced helper adapter is missing or strict Python checking fails.
+    run: test -f tools/oracle/helpers/b3699.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/content-filter-inputs-*")" && grep -rlq "content_filter_inputs" tools/oracle/fuzz/corpus/helper_case/content-filter-inputs-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: config-tests
+    why: The DEFAULT_MAX_RECURSE_DEPTH configuration loader rejects, ignores or misresolves the setting.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::content_filter_inputs::tests::/) - test(/replays_the_/)'
+  - id: config-corpus
+    why: The task added no new configuration seed or production config replay fails.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/guardrail-depth-*")" && grep -rlq "default_max_recurse_depth" crates/betterlite-config/fuzz/corpus/config_yaml/guardrail-depth-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/content-filter-inputs/image-description-concurrent.yaml
+- tools/oracle/cases/helpers/content-filter-inputs/image-description-filtering.yaml
+- tools/oracle/cases/helpers/content-filter-inputs/competitor-intent-refuse.yaml
+- tools/oracle/cases/helpers/content-filter-inputs/competitor-intent-reframe.yaml
+- tools/oracle/cases/helpers/content-filter-inputs/competitor-intent-log-only.yaml
+- tools/oracle/cases/helpers/content-filter-inputs/tool-call-json-parsing.yaml
+- tools/oracle/cases/helpers/content-filter-inputs/tool-call-text-fallback.yaml
+- tools/oracle/cases/helpers/content-filter-inputs/tool-call-depth-limit.yaml
+- tools/oracle/cases/helpers/content-filter-inputs/mcp-tool-filtering.yaml
+- tools/oracle/cases/helpers/content-filter-inputs/mcp-tool-missing.yaml
+- tools/oracle/cases/helpers/content-filter-inputs/recursion-depth-exceeded.yaml
+- tools/oracle/cases/helpers/content-filter-inputs/numeric-values-pass-through.yaml
+- tools/oracle/cases/helpers/content-filter-inputs/object-keys-checked.yaml
+deviations: []
+out_of_scope:
+- B3695 owns _filter_single_text, which is called for descriptions, scalar values and keys; this task uses it, does not reimplement it.
+- B3696 owns the competitor configuration and text_for_entity_matching; this task accesses prepared refuse/reframe templates and calls the competitor checker's run method.
+- B3690 owns typed detection records (ContentFilterDetection, CompetitorIntentDetection, etc.) and the DEFAULT_MAX_RECURSE_DEPTH constant through B002's config section.
+- B104 owns CustomGuardrail.raise_passthrough_exception, _event_hook_is_event_type and Router.acompletion; these are unresolved B104 callees available through the parent guardrail class.
+- litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py lines outside CF:1456-1872 (e.g., apply_guardrail orchestration, category/pattern compilation, single-text filtering, streaming) are owned by other tasks.
+pitfalls:
+- Image descriptions are gathered concurrently with asyncio.gather but filtered sequentially in the order they were requested, preserving deterministic ordering. Appending the description to the error detail is necessary for debugging image-based blocks; the description text itself is not masked in the error.
+- CompetitorIntentDetection must include all fields (intent, confidence, action_hint, entities, signals, evidence) for tracing and logging to work correctly. Omitting a field changes the action_hint behavior.
+- The _filter_argument_value recursion tracks depth starting from 0, not 1. A depth check at the entry point (depth > DEFAULT_MAX_RECURSE_DEPTH) occurs before filtering nested values; an argument at exactly DEFAULT_MAX_RECURSE_DEPTH succeeds, but the first child at DEFAULT_MAX_RECURSE_DEPTH+1 fails.
+- JSON parsing failure does not swallow the exception; malformed JSON arguments fall back to text filtering, which may raise a BLOCK exception. This is the pinned behavior and must be preserved.
+- Object keys are always checked for masking violations, even if the value is not a string. A numeric key that matches a pattern raises HTTP 400 with the masking error message and the context_label.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

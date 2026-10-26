@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Headroom retrieval plans and HiddenLayer authentication
 status: todo
 depends_on: [B3773, B3774, B226]
-file: null
+file: tasks/B3775-headroom-hiddenlayer-support.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py"
   - "litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py"

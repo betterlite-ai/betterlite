@@ -88,6 +88,7 @@ pub mod vertex_messages;
 pub mod vertex_rag_ingest;
 pub mod vertex_rag_store;
 pub mod vertex_recognition;
+pub mod vertex_relay_metadata;
 pub mod vertex_rerank;
 pub mod vertex_schema;
 pub mod vertex_speech;

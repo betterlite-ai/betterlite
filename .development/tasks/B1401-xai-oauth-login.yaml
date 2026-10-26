@@ -36,6 +36,7 @@ scope:
   paths:
     - crates/betterlite-openai/Cargo.toml
     - crates/betterlite-openai/src/{lib,error,xai_login}.rs
+    - crates/betterlite-openai/src/xai_login.rs
     - crates/betterlite-openai/src/xai_login/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/xai_callback.rs

@@ -1,0 +1,127 @@
+id: B4291
+title: Persistent disk cache and typed cache coordination
+description: >-
+  Build DiskCache to persist cache entries with `.litellm_cache` as the default directory, TTL support via
+  diskcache library, truthy-only reads (returns None for any falsy value), and transaction-protected
+  increments. Implement CacheCodec for Pydantic model serialization: serialize validates with model_type
+  when provided, skips re-validation for pre-typed instances, and returns model_dump(mode="json") for
+  JSON-safe Redis storage; deserialize handles None, pre-typed instances, dicts (validates on schema drift,
+  logging warnings), and non-dict untyped values as cache misses. Build EventDrivenCacheCoordinator to
+  prevent cache stampede: when many requests miss the same key, only the first performs the load while
+  others wait for a signal, then read from cache. Preserve per-instance coordination state and always
+  signal in finally blocks.
+
+  DiskCache.set_cache stores values with optional TTL, get_cache reads and returns None for any falsy
+  result or exception, batch_get_cache returns a list preserving input key order. Async variants delegate
+  to sync operations with no retry or fallback. increment_cache uses diskcache.transact() for atomic
+  read-modify-write. CacheCodec.serialize and deserialize are symmetric utilities; deserialize logs
+  warnings for ValidationError but treats them as cache miss (returns None), not fatal. EventDrivenCacheCoordinator
+  uses asyncio.Lock for brief claim/signal operations and asyncio.Event for waiter signaling; its get_or_load
+  orchestrates the pattern through _claim_role, _load_and_cache, _wait_for_signal_and_get and _signal_done,
+  with _signal_done guaranteed to run in finally even if load_fn raises.
+
+  Blocking disk I/O must use an owned blocking facility; tokio::task::block_in_place or sync code in async
+  context is not allowed. Library choice (diskcache or equivalent), bounded wait timeouts and latency
+  assumptions are explicit compatibility decisions, not inherited LiteLLM guarantees.
+
+scope:
+  paths:
+    - crates/betterlite-cache/src/disk.rs
+    - crates/betterlite-cache/src/disk/**
+    - crates/betterlite-cache/src/codec.rs
+    - crates/betterlite-cache/src/coordinator.rs
+    - crates/betterlite-cache/src/coordinator/**
+    - crates/betterlite-cache/Cargo.toml
+    - tools/oracle/cases/disk_cache/**
+    - tools/oracle/cases/cache_coordination/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/helpers/b4291.py
+    - tools/oracle/helpers/b4291/**
+    - tools/oracle/src/helpers/cache/b4291.rs
+    - tools/oracle/src/helpers/cache/b4291/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/disk_cache.py#L14-L89
+    why: DiskCache __init__ (default directory), set_cache with TTL, get_cache with truthy-only reads, batch_get_cache preserving order, increment_cache with transact(), async variants and delete_cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_pydantic_utils.py#L28-L91
+    why: CacheCodec.serialize validates dicts/models with model_type, skips copy for pre-typed values, model_dump(mode="json"); deserialize returns None on ValidationError, handles pre-typed instances and dicts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_coordinator.py#L23-L196
+    why: AsyncCacheProtocol protocol, EventDrivenCacheCoordinator constructor, get_or_load orchestration, _claim_role, _load_and_cache, _wait_for_signal_and_get, _signal_done with finally guarantee.
+  - url: https://grantjenks.com/docs/diskcache/
+    why: diskcache.Cache API for set/get/delete/clear/transact and default directory constructor.
+
+dod:
+  - text: DiskCache implements the AsyncCacheProtocol with .litellm_cache as default directory, TTL on writes, truthy-only reads and transaction-protected increments.
+    proof: [disk-cache-behavior, disk-cache-tests]
+  - text: CacheCodec.serialize validates dicts/models with model_type, dumps to json mode, skips copy for pre-typed values, and passes through untyped values unchanged.
+    proof: [codec-tests]
+  - text: CacheCodec.deserialize returns None for None, pre-typed instances unchanged, validates dicts, logs warnings for schema mismatches, and returns None for non-dict untyped values.
+    proof: [codec-tests]
+  - text: EventDrivenCacheCoordinator prevents cache stampede by claiming a single loader role, waiting on a signal, or loading and signalling others in the same AsyncCacheProtocol.
+    proof: [coordination-tests, coordinator-behavior]
+  - text: The coordinator's _claim_role, _load_and_cache, _wait_for_signal_and_get and _signal_done all use asyncio primitives without blocking; finally blocks guarantee _signal_done runs.
+    proof: [coordination-tests]
+  - text: Every oracle case for disk cache and coordination matches LiteLLM behavior on reads, writes, increments and the coordinator load pattern.
+    proof: [oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: disk-cache-tests
+      why: disk cache unit tests fail, do not exist, or do not cover all operations
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/disk_cache/)'
+    - id: codec-tests
+      why: codec serialization/deserialization tests fail or do not cover validation, type preservation and schema drift
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/codec/)'
+    - id: coordination-tests
+      why: coordinator tests fail or do not cover role claiming, loader execution, signal waiting and state reset
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/coordinator/)' -E 'test(/cache_coordination/)'
+    - id: disk-cache-behavior
+      why: a disk cache oracle case fails or does not match LiteLLM
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/disk_cache)" && cargo gate run B4291 --only oracle
+    - id: coordinator-behavior
+      why: a coordinator oracle case fails or does not match LiteLLM
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/cache_coordination)" && cargo gate run B4291 --only oracle
+
+oracle_cases:
+  - tools/oracle/cases/disk_cache/set-and-get.yaml
+  - tools/oracle/cases/disk_cache/ttl-expiry.yaml
+  - tools/oracle/cases/disk_cache/truthy-reads.yaml
+  - tools/oracle/cases/disk_cache/batch-get.yaml
+  - tools/oracle/cases/disk_cache/increment-transaction.yaml
+  - tools/oracle/cases/disk_cache/delete-key.yaml
+  - tools/oracle/cases/cache_coordination/single-loader.yaml
+  - tools/oracle/cases/cache_coordination/waiters-get-cached.yaml
+  - tools/oracle/cases/cache_coordination/loader-failure-signals.yaml
+
+deviations:
+  - what: DiskCache uses a blocking sync library via a tokio blocking pool, not direct async file I/O.
+    why: LiteLLM uses diskcache (synchronous Python library); betterlite binds it or uses a compatible Rust library, executing blocking calls in a blocking task to avoid freezing the async loop.
+  - what: CacheCodec.deserialize logs warnings for schema drift (ValidationError) but returns None to treat as cache miss, not a fatal error.
+    why: LiteLLM's codec catches ValidationError and returns None to let callers treat stale entries as cache misses without crashing the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_pydantic_utils.py#L82-L90
+  - what: EventDrivenCacheCoordinator has no explicit timeout on asyncio.Event.wait(); unbounded waits are possible if the loader hangs.
+    why: LiteLLM's coordinator does not timeout; betterlite must decide whether to add explicit timeouts or require the caller to bound the load_fn via context.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_coordinator.py#L163-L196
+
+out_of_scope:
+  - B4290 owns AsyncCacheProtocol contract definition and cache type enums; they are reused as-is.
+  - Redis backend, cluster/semantic/object-store cache factories and their error handling belong to later cache orchestration tasks (B4293-B4299, B126-B128).
+  - The load_fn implementation and its error handling. EventDrivenCacheCoordinator passes exceptions to waiters unchanged; the caller supplies the load function and handles failures.
+  - Configuration of disk cache directory or TTL defaults. B4299 settles backend construction and namespace assignment.
+  - Network requests and remote cache backends; disk cache is local-only persistence.
+
+pitfalls:
+  - DiskCache.get_cache returns truthy values only; LiteLLM checks `if original_cached_response:` before json.loads, so any falsy payload (0, empty list, False, empty string) is treated as cache miss, not as cached falsy data.
+  - diskcache.Cache.get returns None when a key is absent or the value itself is None/falsy; json.loads exception is caught and the value is returned unchanged, so distinguish between missing keys and falsy values.
+  - CacheCodec.deserialize logs a warning but returns None on ValidationError; this is not a fatal failure, so callers must handle None as cache miss, not as a hard error stopping the request.
+  - The coordinator's _event is None outside _claim_role-claimed/loading state; waiters check a temporary event captured before the lock is released, so read-after-signal races are prevented by the lock semantics.
+  - EventDrivenCacheCoordinator has no explicit timeout on asyncio.Event.wait(); if the load_fn hangs, all waiting tasks block indefinitely. Callers must ensure load_fn is bounded (e.g., with asyncio.wait_for).
+  - The coordinator's log_prefix is a string; when empty or None, verbose logging is skipped. Tests that verify logging behavior must pass a non-empty prefix and enable verbose logging.
+  - diskcache.Cache.transact() is synchronous, so increment_cache cannot be truly async. LiteLLM's async_increment wraps the sync version; betterlite must run disk transacts in a blocking pool.
+
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

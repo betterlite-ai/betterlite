@@ -35,10 +35,10 @@ description: >-
   110 adapters and 70 fuzz/wiring lines.
 scope:
   paths:
-    - crates/betterlite-openai/src/lib.rs
     - crates/betterlite-openai/src/copilot.rs
     - crates/betterlite-openai/src/copilot/**
     - crates/betterlite-openai/src/copilot/{device_auth,headers}.rs
+    - crates/betterlite-openai/src/copilot/device_auth.rs
     - crates/betterlite-openai/src/copilot/device_auth/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/device_reply.rs

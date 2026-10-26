@@ -1,0 +1,186 @@
+id: B4740
+title: MCP tool schemas and paginated session helpers
+description: >-
+  Build MCP-to-chat, Responses and Anthropic tool conversion helpers, plus the client-facing list/call
+  session-level helpers with pagination support. Preserve partial tool catalogs on repeated cursors, page
+  exhaustion or listing deadline; handle the different OpenAI and non-OpenAI function argument parsing.
+
+  Implement tool schema transformers: mcp_tool_to_openai, mcp_tool_to_responses_api, mcp_tool_to_anthropic,
+  and mcp_input_schema_normalized. The normalizer ensures every schema has type: object, properties dict,
+  and defaults additionalProperties: false where missing, matching OpenAI requirements.
+
+  Implement paginated listing: list_tools_with_pagination runs the session.list_tools() call in a loop,
+  following nextCursor through each page, with a 1,000-page cap and cursor-loop detection. Track a
+  listing deadline that is max(client_timeout, listing_timeout); a single page slower than listing_timeout
+  but within client_timeout still succeeds. Stop and return partial results on repeated cursors,
+  page exhaustion, or deadline expiration, always with a warning log.
+
+  Implement load_mcp_tools which calls list_tools_with_pagination and optionally converts each tool
+  to OpenAI format (format="mcp" or format="openai"). A separate standalone function mcp_tool_to_responses_api
+  handles conversion to Responses API format outside load_mcp_tools.
+
+  Implement tool calling helpers: call_mcp_tool invokes a session.call_tool. Transform OpenAI tool calls
+  (ChatCompletionMessageToolCall) to MCP CallToolRequestParams, handling the different argument parsing
+  (OpenAI accepts JSON strings; MCP expects dicts). A missing or empty arguments field becomes {}.
+  Invalid JSON strings return empty dict rather than raising.
+
+  Provide call_openai_tool as the public helper that converts an OpenAI tool call through transformation
+  and invokes call_mcp_tool.
+
+  Load LITELLM_MCP_CLIENT_TIMEOUT (default 60.0 seconds) and LITELLM_MCP_TOOL_LISTING_TIMEOUT
+  (default 30.0 seconds) from B002 configuration. The exported session helpers load_mcp_tools and
+  call_openai_tool carry the timeout settings injected by the calling code.
+
+  Sanitize schemas for Anthropic through the B217 callable imported at module build time, never at
+  each tool conversion.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/tools.rs
+    - crates/betterlite-mcp/src/tools/**
+    - tools/oracle/cases/helpers/mcp-pagination/**
+    - tools/oracle/cases/helpers/mcp-tool-calls/**
+    - tools/oracle/fuzz/corpus/helper_case/**
+    - crates/betterlite-config/src/sections/mcp_tool_helpers.rs
+    - crates/betterlite-config/src/sections/mcp_tool_helpers/**
+    - tools/oracle/helpers/b4740.py
+    - tools/oracle/helpers/b4740/**
+    - tools/oracle/src/helpers/mcp/b4740.rs
+    - tools/oracle/src/helpers/mcp/b4740/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py
+    why: Complete tool conversion and pagination implementation; all ten functions are owned by this task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/__init__.py#L1-8
+    why: Package exports and optional-import error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py
+    why: MCP_CLIENT_TIMEOUT, MCP_TOOL_LISTING_TIMEOUT and MCP_TOOL_LISTING_MAX_PAGES constants.
+dod:
+  - text: >-
+      The four schema converters (mcp_tool_to_openai, mcp_tool_to_responses_api, mcp_tool_to_anthropic)
+      and the normalizer produce the same output shape as the pinned LiteLLM functions on a diverse set
+      of MCP tool inputs, including tools with no description, no input_schema, and partial schema fields.
+    proof: [oracle-converters, helper-python]
+  - text: >-
+      list_tools_with_pagination pages through results by following nextCursor, stops on repeated
+      cursors with a warning, stops at the 1,000-page limit with a warning, returns partial results
+      on deadline expiration with a warning, and succeeds when a single page succeeds even if slower
+      than the listing timeout.
+    proof: [pagination-behavior-tests, oracle-pagination]
+  - text: >-
+      load_mcp_tools with format="mcp" returns the same tools; with format="openai" applies the
+      OpenAI converter; with an invalid format it does not panic or return silently.
+    proof: [behavior-tests]
+  - text: >-
+      call_mcp_tool invokes session.call_tool with the name and arguments; call_openai_tool converts
+      an OpenAI tool and calls call_mcp_tool. Argument parsing handles JSON strings, dicts, missing
+      arguments, and invalid JSON (returns empty dict, not a panic or error).
+    proof: [tool-call-behavior-tests, oracle-tool-calls]
+  - text: >-
+      Configuration loads LITELLM_MCP_CLIENT_TIMEOUT and LITELLM_MCP_TOOL_LISTING_TIMEOUT from
+      environment or config with correct defaults (60.0 and 30.0 seconds).
+    proof: [config-tests]
+  - text: Every mutant in the converters and pagination logic is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: oracle-converters
+      why: schema converters do not match the pinned LiteLLM implementation
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+        grep -rlq 'mcp_tool_schema' tools/oracle/fuzz/corpus/helper_case &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(^oracle_helpers::mcp::schema.*)'
+    - id: helper-python
+      why: helper converters or adapters fail type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4740.py &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: pagination-behavior-tests
+      why: pagination behavior tests are missing or fail
+      run: >-
+        cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/::pagination_behavior_tests($|::)/)
+        - test(/replays_the_/)'
+    - id: tool-call-behavior-tests
+      why: tool call behavior tests are missing or fail
+      run: >-
+        cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/::tool_call_behavior_tests($|::)/)
+        - test(/replays_the_/)'
+    - id: oracle-pagination
+      why: pagination behavior does not match pinned LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-pagination)" &&
+        test -f tools/oracle/cases/helpers/mcp-pagination/*.yaml &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: oracle-tool-calls
+      why: tool call behavior does not match pinned LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-tool-calls)" &&
+        test -f tools/oracle/cases/helpers/mcp-tool-calls/*.yaml &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: MCP timeout configuration tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/mcp::)'
+    - id: behavior-tests
+      why: new behavior tests are missing or fail
+      run: >-
+        cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/::mcp_tool_helpers_behavior_tests($|::)/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-pagination/cursor-loop.yaml
+  - tools/oracle/cases/helpers/mcp-pagination/page-exhaustion.yaml
+  - tools/oracle/cases/helpers/mcp-pagination/deadline-expiration.yaml
+  - tools/oracle/cases/helpers/mcp-pagination/empty-tools.yaml
+  - tools/oracle/cases/helpers/mcp-tool-calls/openai-json-string-args.yaml
+  - tools/oracle/cases/helpers/mcp-tool-calls/openai-dict-args.yaml
+  - tools/oracle/cases/helpers/mcp-tool-calls/openai-invalid-json-args.yaml
+deviations:
+  - what: >-
+      Repeated cursors return partial results with a warning instead of raising an error. LiteLLM
+      logs and returns, preserving buggy server behavior gracefully on the client side.
+    why: Partial results are more useful than a hard failure when a server loops or is slow.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py#L135-L140
+  - what: >-
+      Page exhaustion (reaching 1,000 pages) returns partial results with a warning instead of raising.
+      LiteLLM logs and returns.
+    why: A complete catalog later than 1,000 pages is rare; returning what arrived avoids cascading failures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py#L144-L149
+  - what: >-
+      Deadline expiration returns partial results with a warning. LiteLLM logs and returns what arrived.
+    why: >-
+      A slow MCP server returning partial results is better than a timeout error stalling the chat.
+      The effective_deadline is max(client_timeout, listing_timeout) to preserve the pre-pagination
+      guarantee that a single page slower than listing_timeout but within client_timeout succeeds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py#L119-L156
+  - what: >-
+      Invalid JSON in OpenAI tool arguments returns an empty dict instead of raising. LiteLLM does
+      the same: arguments not a dict becomes {}.
+    why: >-
+      OpenAI sometimes sends invalid JSON; an empty dict allows the call to proceed and the MCP
+      server can report the error if the tool actually needs the arguments.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py#L195-L203
+out_of_scope:
+  - All upper composition and gateway routing. B140 will orchestrate these helpers with the wider session and request flow.
+  - HTTP client construction and credential headers. B4741 handles the client settings and prepared auth; B4744 handles the session and transport lifecycle.
+  - MCP SDK invocation itself; the helpers consume an already-open ClientSession from the calling code.
+pitfalls:
+  - >-
+      The effective_deadline for list_tools_with_pagination is max(client_timeout, listing_timeout),
+      not listing_timeout alone. This preserves the guarantee that a single page slower than listing_timeout
+      but within client_timeout will succeed. A helper oracle case should test this specifically.
+  - >-
+      OpenAI function arguments can be a JSON string or a dict. Do not assume arguments is always
+      a dict; parse strings and return {} on invalid JSON without raising.
+  - >-
+      additionalProperties is not always present in the input schema. Insert it only when missing;
+      do not overwrite an explicit value.
+  - >-
+      The Anthropic schema sanitizer is called once when building the converters, not on each tool.
+      Import it at module build time from B217.
+  - >-
+      Repeated cursors and page exhaustion are normal server behaviors (bugs, timeouts, or just slow
+      responses), not errors. Log them as warnings and return the tools collected so far.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 2

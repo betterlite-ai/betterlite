@@ -3,7 +3,7 @@ milestone: M7 observability
 title: DeepEval trace records and Confident API delivery
 status: todo
 depends_on: [B002, B173, B189]
-file: null
+file: tasks/B3972-deepeval-logging.yaml
 covers:
   - "litellm/integrations/deepeval/**"
 parent: B114

@@ -1,0 +1,78 @@
+id: B3073
+title: Encode PointFive batches and upload presigned objects
+description: >-
+  Add PointFive batch encoding and upload in betterlite-logging::finops::pointfive.
+  Implement NDJSON/gzip framing with byte-count sizing (oversized-single-record handling),
+  presigned-URL request/response parsing, ping heartbeat, exponential-backoff retry with
+  per-attempt presigning, validated PUT upload with credential-free headers and redirect
+  refusal, and configuration/response types with retryable status codes {429,500,502,503,504}.
+  Reuse B009's validate_url and B189's StandardCustomLoggerInitParams, call B173's
+  AsyncHTTPHandler.post/put and B192's safe_dumps, and read PointFive api_key/api_url
+  through B002 environment lookup.
+scope:
+  paths:
+    - crates/betterlite-logging/src/finops/pointfive.rs
+    - crates/betterlite-logging/src/finops/pointfive/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/payload.py#L14-L53
+    why: NDJSON serialization, line sizing, chunking and gzip encoding functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/upload_client.py#L28-L195
+    why: Constants UPLOAD_KIND and PUT_HEADERS, inner Pydantic models (_PresignRequest, _PingRequest, _TargetPayload, _ErrorPayload), PointFiveUploadError exception, and PointFiveUploadClient class with presigning, POST/PUT semantics, error handling and retry logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/pointfive.py
+    why: PointFiveInitParams configuration, PointFiveUploadTarget and PointFiveUploadFailure types, retryable status codes.
+dod:
+  - text: Serialized records are encoded as NDJSON one line per record, gzip compressed off the event loop.
+    proof: [pointfive-payload-tests]
+  - text: Lines chunk into objects bounded by max_bytes, with oversized single lines as their own object.
+    proof: [pointfive-payload-tests]
+  - text: PointFiveUploadClient presigns each batch, uploads with PUT, retries on {429,500,502,503,504}, and refuses redirects.
+    proof: [pointfive-upload-tests]
+  - text: The presigned upload PUT carries only Content-Type and Content-Encoding headers, plus an optional Host header.
+    proof: [pointfive-upload-tests]
+  - text: Presigned URLs are validated against SSRF checks via B009's validate_url, as user_url_validation opt-outs are unavailable under current rules.
+    proof: [pointfive-upload-tests]
+  - text: Configuration types match LiteLLM's PointFiveInitParams, with api_key, api_url, batch_size, flush_interval, max_batch_bytes and max_upload_retries.
+    proof: [pointfive-types-tests]
+  - text: Upload response parsing handles both valid presigned targets and malformed/error responses gracefully.
+    proof: [pointfive-upload-tests]
+  - text: A ping request with LITELLM upload kind verifies connectivity without uploading data.
+    proof: [pointfive-upload-tests]
+checks:
+  optional: []
+  commands:
+    - id: pointfive-payload-tests
+      why: serialization, sizing or chunking tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::payload_tests_behavior($|::)/)'
+    - id: pointfive-upload-tests
+      why: upload client tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::upload_tests_behavior($|::)/)'
+    - id: pointfive-types-tests
+      why: type validation tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::types_tests_behavior($|::)/)'
+oracle_cases: []
+deviations:
+  - what: Retry logic presigns on every attempt instead of reusing an expired presigned URL.
+    why: LiteLLM presigns once per batch and retries with the same URL; betterlite presigns fresh to survive expiry during retry delays.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/upload_client.py#L99-L116
+  - what: SSRF validation of presigned URLs is always enabled, without conditional opt-out via user_url_validation.
+    why: B009 declares user_url_validation opt-outs unavailable under current rules; betterlite always validates presigned-URL destinations against configured allowlists via B009's validate_url.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/upload_client.py#L189-L194
+out_of_scope:
+  - Callback-queue buffering and event redaction (B3074 owns PointFiveLogger).
+  - General secret lookup beyond environment variables (get_secret_str is an unresolved external owner).
+  - Batch routing to PointFive callback registration (B189 owns callback registry).
+  - Configuration storage and retrieval from database (B3075 owns finops config).
+  - Scheduling and periodic flush orchestration (B3074 owns that lifecycle).
+pitfalls:
+  - asyncify(gzip.compress) is a runtime async operation, not a synchronous blocking call in a spawn_blocking wrapper; bench it under realistic batch sizes.
+  - SSRFError from validate_url must be caught and converted to PointFiveUploadFailure with retryable=false; never panic on validation.
+  - The presigned upload PUT must set follow_redirects=False and catch e.response.is_redirect() separately to refuse 3xx with a specific message.
+  - Response parsing with Pydantic's model_validate_json must catch ValidationError and return a non-retryable failure, not crash.
+  - A line larger than max_bytes becomes its own object; the code must not block or hold it back, or buffered events after it stall forever.
+  - _NEWLINE_BYTES is 1, not 2; use len(line.encode("utf-8")) + 1 for NDJSON size, where the +1 is the \n separator between lines.
+  - PointFiveUploadError is imported by B3074's PointFiveLogger.async_send_batch to represent non-retryable failures; it must be in scope as a public type.
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

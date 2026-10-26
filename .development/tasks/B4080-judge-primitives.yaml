@@ -1,0 +1,161 @@
+id: B4080
+title: Parse judge verdicts and resolve team-scoped judge targets
+description: >-
+  Build shared text and verdict parsing in betterlite-models, and judge target resolution
+  and dispatch in betterlite-server. The judge target identifies where a model name resolves
+  for a given caller and team, and dispatch routes the call through the proxy's router
+  (for configured deployments) or through the SDK (for provider-qualified names) with zero
+  retries and empty fallbacks.
+
+  In betterlite-models, add parse_json_verdict (tolerates markdown fences and surrounding
+  prose, extracts JSON from fences or falls back to outermost braces, rejects non-object results),
+  extract_text_from_content (returns plain text from a string or multimodal content list),
+  and _provider_qualified with an LRU cache of 512 entries (calls get_llm_provider from B174
+  and normalizes a model name to its provider-qualified form, returning None if unmapped).
+  Add the JudgeTarget dataclass with via (literal "router", "sdk", or "nothing") and models
+  (a frozenset of resolved model names).
+
+  In betterlite-server, add judge_target (queries the router's resolved models or falls back
+  to _provider_qualified, returns JudgeTarget with the dispatch path) and judge_acompletion
+  (dispatches through router or SDK with drop_params=True, num_retries=0 and fallbacks=[]).
+  The router handle is injected, not global. Preserve team-aware identity resolution: a team
+  name resolves only for its own team, and a team's own deployment resolves for nobody else.
+  When judge_target returns "nothing", dispatch declines the call without marking it failed.
+  Dispatch remains distinct from target resolution: do not invent a top-level team_id argument
+  on completion calls where the source supplies identity through metadata.
+
+  parse_json_verdict is an outside-text parser; preserve the first-fence extraction, outermost-brace
+  fallback and rejection of non-object JSON. Add a fuzz target and replay tests.
+
+scope:
+  paths:
+    - crates/betterlite-models/src/judge_primitives.rs
+    - crates/betterlite-models/src/judge_primitives/**
+    - crates/betterlite-models/fuzz/Cargo.toml
+    - crates/betterlite-models/fuzz/fuzz_targets/judge_verdict_parser.rs
+    - crates/betterlite-models/fuzz/corpus/judge_verdict_parser/**
+    - crates/betterlite-server/src/judge_targets.rs
+    - crates/betterlite-server/src/judge_targets/**
+    - tools/oracle/cases/helpers/judge-verdicts/**
+    - tools/oracle/helpers/b4080.py
+    - tools/oracle/helpers/b4080/**
+    - tools/oracle/src/helpers/models/b4080.rs
+    - tools/oracle/src/helpers/models/b4080/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L1-L18
+    why: Module docstring, imports and JSON_FENCE_RE pattern for markdown fences.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L21-L27
+    why: default_router_provider retrieves the global proxy router handle.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L30-L47
+    why: "parse_json_verdict: fence extraction, outermost-brace fallback, non-object rejection."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L50-L58
+    why: extract_text_from_content handles string and multimodal content.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L61-L76
+    why: "_provider_qualified: LRU cache at maxsize 512, calls get_llm_provider, normalizes and caches the result."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L79-L90
+    why: JudgeTarget dataclass with via and models fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L93-L109
+    why: "judge_target: routes through router.resolved_litellm_models or falls back to _provider_qualified."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L112-L138
+    why: "judge_acompletion: dispatches through router or SDK with fixed params (num_retries=0, fallbacks=[], drop_params=True)."
+
+dod:
+  - text: parse_json_verdict extracts JSON from markdown fences with optional ```json marker and whitespace.
+    proof: [verdict-parser-tests, verdict-parse-fuzz]
+  - text: parse_json_verdict falls back to extracting text between outermost braces when no fence is found.
+    proof: [verdict-parser-tests, verdict-parse-fuzz]
+  - text: parse_json_verdict rejects parsed JSON that is not a dict and raises ValueError.
+    proof: [verdict-parser-tests, verdict-parse-fuzz]
+  - text: extract_text_from_content returns the input string unchanged if content is a str.
+    proof: [content-text-tests]
+  - text: extract_text_from_content extracts and joins text fields from multimodal content lists.
+    proof: [content-text-tests]
+  - text: extract_text_from_content returns empty string for unrecognized content types.
+    proof: [content-text-tests]
+  - text: _provider_qualified caches results up to 512 entries and returns None for unmapped names.
+    proof: [provider-qualified-tests]
+  - text: _provider_qualified normalizes mapped names to provider-qualified form (provider/model).
+    proof: [provider-qualified-tests]
+  - text: JudgeTarget is a frozen dataclass with via (literal "router"/"sdk"/"nothing") and models (frozenset).
+    proof: [judge-target-tests]
+  - text: judge_target returns "router" when router.resolved_litellm_models yields results for the model and team.
+    proof: [oracle]
+  - text: judge_target returns "sdk" when _provider_qualified resolves the model to a provider-qualified name.
+    proof: [oracle]
+  - text: judge_target returns "nothing" when both router and SDK paths fail to resolve the model.
+    proof: [oracle]
+  - text: judge_acompletion dispatches through router.acompletion when judge_target.via is "router" with num_retries=0 and drop_params=True.
+    proof: [oracle]
+  - text: judge_acompletion dispatches through litellm.acompletion when judge_target.via is "sdk" with num_retries=0 and drop_params=True.
+    proof: [oracle]
+  - text: judge_acompletion forwards the team_id to judge_target to preserve team-scoped resolution.
+    proof: [oracle]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: verdict-parser-tests
+      why: parse_json_verdict tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^judge_verdict_parsing::/)'
+    - id: content-text-tests
+      why: extract_text_from_content tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^content_text_extraction::/)'
+    - id: provider-qualified-tests
+      why: _provider_qualified tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^provider_qualified::/)'
+    - id: judge-target-tests
+      why: judge_target and JudgeTarget tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^judge_target::/)'
+    - id: verdict-parse-fuzz
+      why: verdict parser fuzz corpus is missing or does not replay
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/judge_verdict_parser)" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_judge_verdict_parser_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/judge-verdicts/fence-with-marker.yaml
+  - tools/oracle/cases/helpers/judge-verdicts/fence-without-marker.yaml
+  - tools/oracle/cases/helpers/judge-verdicts/prose-with-fence.yaml
+  - tools/oracle/cases/helpers/judge-verdicts/no-fence-outermost-braces.yaml
+  - tools/oracle/cases/helpers/judge-verdicts/non-object-json-rejected.yaml
+  - tools/oracle/cases/helpers/judge-verdicts/malformed-json-rejected.yaml
+  - tools/oracle/cases/helpers/judge-verdicts/empty-fence-rejected.yaml
+  - tools/oracle/cases/helpers/judge-verdicts/target-router-deployment.yaml
+  - tools/oracle/cases/helpers/judge-verdicts/target-sdk-qualified.yaml
+  - tools/oracle/cases/helpers/judge-verdicts/target-nothing.yaml
+  - tools/oracle/cases/helpers/judge-verdicts/target-team-scoped.yaml
+
+deviations:
+  - what: The router handle is injected through betterlite-server rather than read from a global proxy_server import.
+    why: betterlite isolates mutable shared state into the server crate; judge primitives in betterlite-models remain pure functions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L21-L27
+  - what: _provider_qualified is built in Rust with lru crate instead of Python's @lru_cache decorator.
+    why: betterlite is Rust; the cache semantics are equivalent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L61-L76
+  - what: JudgeTarget.models field is immutable (frozenset) and accessed through methods rather than direct mutation.
+    why: betterlite values immutability for concurrent dispatch; the API remains the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L79-L90
+
+out_of_scope:
+  - "`default_router_provider`: owned by B118 as part of the shadow eval logger callback setup; B4080 owns only the judge primitives and dispatch."
+  - "`litellm.Router.acompletion` (question 1): this native operation awaits resolution of which task owns it."
+  - "`litellm.Router.resolved_litellm_models` (question 1): this native operation awaits resolution of which task owns it."
+  - "`litellm.acompletion` fallback path (question 2): the SDK completion executor awaits resolution of which task owns it."
+  - "LLM-as-a-judge guardrails and decision-model guardrails: they call judge_target and judge_acompletion but are owned elsewhere; they must depend on B4080 rather than B118."
+  - "proxy/management_endpoints/auto_router_endpoints.py:20 caller: it will depend on B4080 when that endpoint task is assigned."
+
+pitfalls:
+  - "JSON fence extraction must accept optional ```json marker; preserve first fence found even if followed by prose."
+  - "Outermost-brace fallback requires rfind(\"}\") to find the closing brace; do not use a greedy regex that may skip to a later object."
+  - "parse_json_verdict must reject non-object JSON (arrays, scalars, null); check isinstance(parsed, dict) after json.loads."
+  - "extract_text_from_content on multimodal lists iterates over all parts and joins text fields; skip dict parts without type==\"text\" or missing text."
+  - "_provider_qualified returns None for unmapped names, not an error; a None result means the model is unresolvable and should not be used."
+  - "judge_target with no router must not panic; the None router is valid and falls back to SDK-only resolution."
+  - "team_id is part of the question (passed to judge_target), not a refinement; a team-public name resolves only for its own team."
+  - "judge_acompletion preserves num_retries=0 and fallbacks=[] to prevent judge failures from multiplying spend; drop_params=True filters unsupported optional arguments."
+  - "Cache size for _provider_qualified is exactly 512 entries; do not scale it with configuration or runtime state."
+
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 2

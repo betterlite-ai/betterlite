@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,error,compatible_line_stream}.rs
+    - crates/betterlite-openai/src/compatible_line_stream.rs
     - crates/betterlite-openai/src/compatible_line_stream/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/compatible_line.rs

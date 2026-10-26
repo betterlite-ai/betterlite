@@ -82,8 +82,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/text_completion_transport.rs
   - crates/betterlite-openai/src/text_completion_transport/**
   - tools/oracle/Cargo.toml

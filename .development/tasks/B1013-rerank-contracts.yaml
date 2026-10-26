@@ -32,7 +32,6 @@ scope:
   - crates/betterlite-openai/src/api/**
   - crates/betterlite-openai/src/api/rerank_contracts.rs
   - crates/betterlite-openai/src/api/rerank_contracts/**
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-provider/src/api.rs
   - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/rerank_contracts.rs

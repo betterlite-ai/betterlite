@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Send CloudZero daily billing drops
 status: todo
 depends_on: [B173]
-file: null
+file: tasks/B3070-cloudzero-delivery.yaml
 covers:
   - "litellm/integrations/cloudzero/cz_stream_api.py"
 parent: B073
