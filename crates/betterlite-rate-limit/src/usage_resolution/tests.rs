@@ -14,6 +14,7 @@ fn usage() -> Usage {
         output_tokens: 0,
         total_tokens: 120,
         prompt_tokens_details: None,
+        input_tokens_details: None,
         cached_tokens: Some(30),
         cache_read_input_tokens: None,
     }
@@ -61,6 +62,7 @@ fn usage_filtering_behaviors() {
         output_tokens: 0,
         total_tokens: 120,
         prompt_tokens_details: None,
+        input_tokens_details: None,
         cached_tokens: None,
         cache_read_input_tokens: None,
     };
@@ -109,6 +111,7 @@ fn io_reconcile_behaviors() {
         completion_tokens: 0,
         total_tokens: 0,
         prompt_tokens_details: None,
+        input_tokens_details: None,
         cached_tokens: Some(25),
         cache_read_input_tokens: None,
     };

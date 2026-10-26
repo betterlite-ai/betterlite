@@ -21,8 +21,8 @@ def usage_values(input_value: dict[str, Json]) -> tuple[int, int, int, int]:
     if not isinstance(usage, dict):
         return 0, 0, 0, 0
     response_api = input_value.get("usage_kind") in ("response_api", "mapping")
-    input_tokens = integer(usage.get("input_tokens" if response_api else "prompt_tokens"))
-    output_tokens = integer(usage.get("output_tokens" if response_api else "completion_tokens"))
+    input_tokens = integer(usage.get("input_tokens")) or integer(usage.get("prompt_tokens"))
+    output_tokens = integer(usage.get("output_tokens")) or integer(usage.get("completion_tokens"))
     total_tokens = integer(usage.get("total_tokens"))
     return input_tokens, output_tokens, total_tokens, cached(usage)
 

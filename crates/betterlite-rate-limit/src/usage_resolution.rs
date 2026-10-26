@@ -53,6 +53,8 @@ pub struct Usage {
     #[serde(default)]
     pub prompt_tokens_details: Option<TokenDetails>,
     #[serde(default)]
+    pub input_tokens_details: Option<TokenDetails>,
+    #[serde(default)]
     pub cached_tokens: Option<u64>,
     #[serde(default)]
     pub cache_read_input_tokens: Option<u64>,
@@ -113,6 +115,12 @@ fn cached_tokens(usage: &Usage) -> u64 {
                 .as_ref()
                 .map(|details| details.cached_tokens)
         })
+        .or_else(|| {
+            usage
+                .input_tokens_details
+                .as_ref()
+                .map(|details| details.cached_tokens)
+        })
         .or(usage.cache_read_input_tokens)
         .unwrap_or(0);
     if cached == 0 { 0 } else { cached }
@@ -151,8 +159,8 @@ pub fn get_total_tokens_from_usage(
         }
         ResponseUsage::Mapping(usage) => {
             let count = match rate_limit_type {
-                TokenRateLimitType::Output => usage.output_tokens,
-                TokenRateLimitType::Input => usage.input_tokens,
+                TokenRateLimitType::Output => usage.output_tokens.max(usage.completion_tokens),
+                TokenRateLimitType::Input => usage.input_tokens.max(usage.prompt_tokens),
                 TokenRateLimitType::Total => usage.total_tokens,
             };
             (count, cached_tokens(usage))
