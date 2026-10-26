@@ -1,0 +1,5 @@
+task: B3890
+deviations:
+  - what: OrgBudgetSnapshot.spend and all max_budget fields use rust_decimal::Decimal rather than LiteLLM float fields, and deserialize JSON numbers with arbitrary precision.
+    why: The money-is-decimal rule requires exact monetary values at deserialization.
+    link: https://docs.rs/rust_decimal/1.35/rust_decimal/struct.Decimal.html
