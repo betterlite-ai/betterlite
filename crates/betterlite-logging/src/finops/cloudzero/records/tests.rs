@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 
 use rstest::rstest;
 
-use super::super::{CbfValue, CzbEntityType, CzrnComponents, CzrnGenerator, UsageRecord};
+use super::super::{CbfValue, CzEntityType, CzrnComponents, CzrnGenerator, UsageRecord};
 use super::CbfTransformer;
 
 fn row() -> UsageRecord {
@@ -36,7 +36,7 @@ fn row() -> UsageRecord {
 #[test]
 fn cloudzero_czrn_validates_and_extracts_components() {
     let generator = CzrnGenerator;
-    assert_eq!(CzbEntityType::Team.as_str(), "team");
+    assert_eq!(CzEntityType::Team.as_str(), "team");
     let value = generator
         .create_from_litellm_data(&row())
         .expect("valid CZRN");
@@ -46,6 +46,7 @@ fn cloudzero_czrn_validates_and_extracts_components() {
     );
     assert!(generator.is_valid(&value));
     assert!(!generator.is_valid("czrn:bad:format"));
+    assert!(!generator.is_valid("czrn:litellm:anthropic:cross-region:team:llm-usage:model\n"));
     assert_eq!(
         generator.extract_components(&value).expect("components")[1],
         "anthropic"

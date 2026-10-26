@@ -1,3 +1,17 @@
+// Copyright 2025 CloudZero
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
@@ -5,11 +19,11 @@ use rust_decimal::Decimal;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CzbEntityType {
+pub enum CzEntityType {
     Team,
 }
 
-impl CzbEntityType {
+impl CzEntityType {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -17,6 +31,8 @@ impl CzbEntityType {
         }
     }
 }
+
+pub type CzbEntityType = CzEntityType;
 
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum CzrnError {
@@ -124,7 +140,9 @@ impl CzrnGenerator {
             && parts
                 .next()
                 .is_some_and(|part| valid_component(part, false))
-            && parts.next().is_some_and(|part| !part.is_empty())
+            && parts.next().is_some_and(|part| {
+                !part.is_empty() && part.chars().all(valid_cloud_local_character)
+            })
     }
 
     pub fn extract_components(&self, value: &str) -> Result<[String; 6], CzrnError> {
@@ -194,6 +212,10 @@ fn valid_component(value: &str, uppercase: bool) -> bool {
             || character == '-'
             || (uppercase && character.is_ascii_uppercase())
     })
+}
+
+const fn valid_cloud_local_character(character: char) -> bool {
+    character != '\n' && character != '\r'
 }
 
 pub mod cbf;
