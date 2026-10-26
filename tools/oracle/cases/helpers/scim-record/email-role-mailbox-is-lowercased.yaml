@@ -1,0 +1,9 @@
+kind: helper
+name: email-role-mailbox-is-lowercased
+call:
+  scim_record:
+    kind: user
+    value: {schemas: [u], emails: [{value: POSTMASTER@example.com}, {value: Ada@BÜCHER.de}]}
+env: {}
+compare:
+  ignore: []

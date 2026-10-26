@@ -1,0 +1,11 @@
+kind: helper
+name: email-quoted-local-part
+call:
+  scim_record:
+    kind: user
+    value: {schemas: [u], emails: [{value: '"ada lovelace"@example.com'}]}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message
