@@ -1,0 +1,8 @@
+kind: helper
+name: anthropic-complete-ordered-table
+call:
+  inference_routes:
+    group: anthropic_routes
+env: {}
+compare:
+  ignore: []
