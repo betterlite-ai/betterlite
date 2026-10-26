@@ -48,6 +48,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,gdc_policy}.rs
+    - crates/betterlite-openai/src/gdc_policy.rs
     - crates/betterlite-openai/src/gdc_policy/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,gdc}.rs

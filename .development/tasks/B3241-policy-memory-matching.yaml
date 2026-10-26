@@ -1,0 +1,238 @@
+id: B3241
+title: Policy memory, attachment matching and request resolution
+description: >-
+  Build in-memory policy registry, attachment registry, and matching logic to
+  resolve guardrails and pipelines for a request. Policies define what guardrails
+  to apply; attachments define where they apply. Load policies and attachments
+  from config, track provenance (config vs database), restore config policies when
+  database overrides are removed, and match requests against attached policies with
+  inheritance-condition filtering.
+
+  PolicyRegistry loads policies from config.yaml and tracks per-policy source (config
+  or db). add_policy and remove_policy maintain in-memory state; remove_policy falls
+  back to config-stored policies when a database policy is deleted. Policies are indexed
+  by name and by uuid for per-version lookups. load_policies reads a dict mapping policy
+  names to raw dicts, parses each as a Policy via _parse_policy, and stores results with
+  source=config. _parse_policy extracts inherit, guardrails dict (add/remove lists),
+  condition dict (model field only), and optional pipeline dict, preserving legacy
+  guardrail-list parsing where an old single-list is treated as add. _parse_pipeline
+  reads steps list and mode (defaulting to pre_call), and validates via GuardrailPipeline;
+  raw _RawPipelineStep records with guardrail field alone are converted to full PipelineStep.
+  POLICY_VERSION_ID_PREFIX ("policy_") prefixes version IDs in request bodies.
+
+  AttachmentRegistry loads attachments from config and stores them in memory. Each
+  attachment couples a policy name to a scope (teams, keys, models, tags, or global "*")
+  with optional priority and default marker. load_attachments reads a list of dicts
+  and parses each via _parse_attachment. get_attached_policies returns a list of
+  matching policy names; get_attached_policies_with_reasons returns PolicyAttachmentMatch
+  dicts with policy_name and matched_via reason. Matching filters by scope_matches,
+  policy_applies predicate (when provided), then drops defaults unless all non-default
+  matches are filtered. Attachments are sorted by _attachment_sort_key: explicit priority
+  first (0, priority, specificity), then by specificity alone (1, 0, specificity).
+  Specificity ranks 1..4 per dimension (teams=1, keys=2, tags=3, models=4), with
+  global scope (0, 0). When multiple attachments match the same policy, only the
+  broadest is returned to avoid duplicate execution.
+
+  PolicyMatcher.matches_pattern tests a value against a list of trailing-star and
+  exact patterns using B882's route_matches_wildcard_pattern; a None value matches
+  only "*". scope_matches checks that context.team_alias, key_alias, and model each
+  match their respective scope fields; tags differ: scope.tags present requires
+  context.tags to be present and at least one context tag to match a scope pattern.
+  get_matching_policies calls the global attachment registry with policy_applies
+  predicate. policy_applies returns a callable testing whether a policy exists and
+  any member of its inheritance chain applies to the context; when a policy's own
+  condition fails but ancestors apply, log an INFO message once per attachment scan.
+  _applying_chain_members walks the inheritance chain, evaluates each policy's
+  condition (if present), and returns tuple of chain members whose condition is absent
+  or true. get_policies_with_matching_conditions filters a list of policy names to
+  those that apply via their inheritance chains.
+
+  PolicyResolver.resolve_guardrails_for_context finds all policies matching the
+  context (via attachment matching or an explicit policy_names list), resolves each
+  via resolve_policy_guardrails from B3240, and returns the union of guardrails.
+  resolve_pipelines_for_context returns a list of (policy_name, GuardrailPipeline)
+  tuples from policies that match the context and have pipelines; skip policies
+  whose condition fails. get_pipeline_managed_guardrails returns a set of guardrail
+  names that appear in any pipeline step, for exclusion from independent execution.
+
+  Build the memory and matching layer in betterlite-policy; implement get_policy_registry
+  and get_attachment_registry as injected global singletons returned by the Rust side.
+  Every observable behavior listed in LiteLLM source (config/db source tracking, policy
+  fallback on removal, attachment sorting and specificity rules, condition evaluation
+  in chains, inheritance walk order, pipeline default mode, legacy list parsing) is
+  tested. Every accessor, parser and matcher function for registries and matching is
+  an oracle case, preserving exact specificity/priority precedence, config restoration
+  logic, and scope matching dimension semantics.
+scope:
+  paths:
+    - crates/betterlite-policy/src/registry.rs
+    - crates/betterlite-policy/src/registry/**
+    - crates/betterlite-policy/src/attachment.rs
+    - crates/betterlite-policy/src/attachment/**
+    - crates/betterlite-policy/src/matcher.rs
+    - crates/betterlite-policy/src/matcher/**
+    - crates/betterlite-policy/src/resolver.rs
+    - crates/betterlite-policy/src/resolver/**
+    - crates/betterlite-policy/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/policy-registry/**
+    - tools/oracle/cases/helpers/policy-attachment/**
+    - tools/oracle/cases/helpers/policy-matcher/**
+    - tools/oracle/cases/helpers/policy-resolver/**
+    - tools/oracle/fuzz/corpus/helper_case/policy-registry-*
+    - tools/oracle/fuzz/corpus/helper_case/policy-attachment-*
+    - tools/oracle/fuzz/corpus/helper_case/policy-matcher-*
+    - tools/oracle/fuzz/corpus/helper_case/policy-resolver-*
+    - tools/oracle/helpers/b3241.py
+    - tools/oracle/helpers/b3241/**
+    - tools/oracle/src/helpers/policy/b3241.rs
+    - tools/oracle/src/helpers/policy/b3241/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L45-L55
+    why: Own POLICY_VERSION_ID_PREFIX constant and _RawPipelineStep/config TypedDicts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L176-L284
+    why: Own PolicyRegistry.__init__, load_policies, _parse_policy, _parse_pipeline, get_policy, get_all_policies; preserve legacy list parsing and pre_call default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L295-L314
+    why: Own has_policy and is_initialized; strict initialization check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L325-L375
+    why: Own get_source, list_config_policies, add_policy, remove_policy; preserve config fallback on db removal and provenance tracking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L590-L604
+    why: Own get_policy_by_id_for_request request-version lookup (behavior only, B3242 owns database lookup).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L1071-L1081
+    why: Own get_policy_registry global singleton accessor; injected from Rust.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L30-L56
+    why: Own PolicyAttachmentMatch TypedDict, _attachment_specificity and _attachment_sort_key; preserve priority/specificity precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L78-L209
+    why: Own AttachmentRegistry.__init__, load_attachments, _parse_attachment, get_attached_policies, get_attached_policies_with_reasons, _describe_match_reason, _describe_scope_match; preserve default handling and broadest-attachment deduplication.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L225-L241
+    why: Own get_all_attachments and get_config_attachments; config-only list access.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L255-L262
+    why: Own is_initialized; strict initialization check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L272-L281
+    why: Own add_attachment; in-memory insertion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L551-L561
+    why: Own get_attachment_registry global singleton accessor; injected from Rust.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_matcher.py#L96-L118
+    why: Own get_matching_policies via attachment matching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_matcher.py#L135-L218
+    why: Own policy_applies, _applying_chain_members, _registry_policies, get_policies_with_matching_conditions; preserve condition evaluation in chains and INFO logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolver.py#L129-L260
+    why: Own resolve_guardrails_for_context, resolve_pipelines_for_context, get_pipeline_managed_guardrails; union guardrails across policies, pipeline extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L558-L584
+    why: Reuse RouteChecks.route_matches_wildcard_pattern for trailing-star and exact matching via B882.
+dod:
+  - text: Policy registry loads from config, tracks provenance per policy, and restores config policies when database policies are removed.
+    proof: [behavior-tests]
+  - text: Policy parsing handles legacy single-list guardrails as add, extracts inherit/condition/pipeline, and defaults pipeline mode to pre_call.
+    proof: [behavior-tests]
+  - text: Attachment registry loads from config, sorts by priority/specificity, deduplicates by broadest match, and filters defaults when non-defaults exist.
+    proof: [behavior-tests]
+  - text: Policy matcher uses route_matches_wildcard_pattern for trailing-star and exact patterns; scope matching checks all four dimensions with tags requiring presence.
+    proof: [behavior-tests]
+  - text: Policy condition evaluation walks inheritance chains, logs INFO when ancestor applies despite child condition failure, and filters policy lists accordingly.
+    proof: [behavior-tests]
+  - text: Request resolution returns union of guardrails across matching policies and pipelines with inherited steps.
+    proof: [behavior-tests]
+  - text: The independent helper operations policy_memory_matching_registry, policy_memory_matching_attachment, policy_memory_matching_matcher, policy_memory_matching_resolver match the production implementation in every case.
+    proof: [oracle, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Policy load/match/resolve missing behavior or incorrect specificity/inheritance logic.
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^registry::tests::/) + test(/^attachment::tests::/) + test(/^matcher::tests::/) + test(/^resolver::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: Helper adapters missing or Python checks fail.
+      run: test -f tools/oracle/helpers/b3241.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No seed corpus or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/policy-registry-*")" && grep -rlq '"b3241' tools/oracle/fuzz/corpus/helper_case/policy-{registry,attachment,matcher,resolver}-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/policy-registry/load-policies-from-config.yaml
+  - tools/oracle/cases/helpers/policy-registry/parse-policy-with-inheritance.yaml
+  - tools/oracle/cases/helpers/policy-registry/parse-policy-legacy-list.yaml
+  - tools/oracle/cases/helpers/policy-registry/parse-pipeline-default-mode.yaml
+  - tools/oracle/cases/helpers/policy-registry/get-policy-by-name.yaml
+  - tools/oracle/cases/helpers/policy-registry/has-policy-true-false.yaml
+  - tools/oracle/cases/helpers/policy-registry/source-tracking-config-vs-db.yaml
+  - tools/oracle/cases/helpers/policy-registry/list-config-policies-snapshot.yaml
+  - tools/oracle/cases/helpers/policy-registry/add-policy-and-update.yaml
+  - tools/oracle/cases/helpers/policy-registry/remove-policy-restore-config.yaml
+  - tools/oracle/cases/helpers/policy-registry/remove-nonexistent-policy.yaml
+  - tools/oracle/cases/helpers/policy-attachment/load-attachments-from-config.yaml
+  - tools/oracle/cases/helpers/policy-attachment/parse-attachment-all-fields.yaml
+  - tools/oracle/cases/helpers/policy-attachment/specificity-ranking.yaml
+  - tools/oracle/cases/helpers/policy-attachment/sort-key-priority-explicit.yaml
+  - tools/oracle/cases/helpers/policy-attachment/sort-key-priority-absent.yaml
+  - tools/oracle/cases/helpers/policy-attachment/global-scope-lowest-specificity.yaml
+  - tools/oracle/cases/helpers/policy-attachment/get-attached-policies-filter-scope.yaml
+  - tools/oracle/cases/helpers/policy-attachment/get-attached-policies-with-reasons.yaml
+  - tools/oracle/cases/helpers/policy-attachment/match-reason-default-prefix.yaml
+  - tools/oracle/cases/helpers/policy-attachment/deduplication-broadest-match.yaml
+  - tools/oracle/cases/helpers/policy-attachment/default-handling-nonempty-nondefault.yaml
+  - tools/oracle/cases/helpers/policy-attachment/default-handling-all-default-fallback.yaml
+  - tools/oracle/cases/helpers/policy-matcher/matches-pattern-wildcard.yaml
+  - tools/oracle/cases/helpers/policy-matcher/matches-pattern-exact.yaml
+  - tools/oracle/cases/helpers/policy-matcher/matches-pattern-none-value.yaml
+  - tools/oracle/cases/helpers/policy-matcher/matches-pattern-no-match.yaml
+  - tools/oracle/cases/helpers/policy-matcher/scope-matches-all-true.yaml
+  - tools/oracle/cases/helpers/policy-matcher/scope-matches-one-false.yaml
+  - tools/oracle/cases/helpers/policy-matcher/scope-tags-present-match.yaml
+  - tools/oracle/cases/helpers/policy-matcher/scope-tags-required-none-present.yaml
+  - tools/oracle/cases/helpers/policy-matcher/scope-tags-absent-check-skipped.yaml
+  - tools/oracle/cases/helpers/policy-matcher/policy-applies-with-predicate.yaml
+  - tools/oracle/cases/helpers/policy-matcher/applying-chain-members-condition-match.yaml
+  - tools/oracle/cases/helpers/policy-matcher/applying-chain-members-ancestor-applies.yaml
+  - tools/oracle/cases/helpers/policy-matcher/get-policies-with-matching-conditions.yaml
+  - tools/oracle/cases/helpers/policy-resolver/resolve-guardrails-via-attachment-matching.yaml
+  - tools/oracle/cases/helpers/policy-resolver/resolve-guardrails-union-across-policies.yaml
+  - tools/oracle/cases/helpers/policy-resolver/resolve-guardrails-explicit-policy-names.yaml
+  - tools/oracle/cases/helpers/policy-resolver/resolve-pipelines-matching-context.yaml
+  - tools/oracle/cases/helpers/policy-resolver/resolve-pipelines-condition-skip.yaml
+  - tools/oracle/cases/helpers/policy-resolver/pipeline-managed-guardrails-extract.yaml
+deviations: []
+out_of_scope:
+  - "B3240 owns policy value types, condition evaluation, scope matching helpers, resolve_inheritance_chain and resolve_policy_guardrails; this task reuses them via public API."
+  - "B882 owns route_matches_wildcard_pattern in betterlite-auth::route_match; this task reuses it for pattern matching."
+  - "B3242 owns database row types and single-version lookup; this task does not use database interfaces."
+  - "PolicyRegistry.get_policy_names (L286-293): no caller at the pin; not used by active code."
+  - "PolicyRegistry.clear() (L316-323): no caller at the pin; test/reset convenience only."
+  - "PolicyMatcher.get_matching_policies_from_registry (L120-133): no caller at the pin; wraps get_matching_policies without additional behavior."
+  - "AttachmentRegistry.is_policy_attached (L211-223): no caller at the pin; not used by active attachment code."
+  - "AttachmentRegistry.get_attachments_for_policy (L243-253): no caller at the pin; not used by active code."
+  - "AttachmentRegistry.clear() (L264-270): no caller at the pin; test/reset convenience only."
+  - "AttachmentRegistry.remove_attachments_for_policy (L283-298): no caller at the pin; active deletion uses sync instead."
+  - "AttachmentRegistry.remove_attachment_by_id (L300-312): no caller at the pin; active deletion uses sync instead."
+  - "PolicyResolver.get_all_resolved_policies (L262-296): owned by B3250, provides singular inspection over all policies."
+  - "attachment_registry.py DB CRUD methods (add_attachment_to_db, delete_attachment_from_db, get_attachment_by_id_from_db, get_all_attachments_from_db, sync_attachments_from_db, L318-545): owned by B3243, implements database persistence and refresh."
+pitfalls:
+  - >-
+    PolicyRegistry tracks source per policy (config vs db); when a db policy is removed
+    but a config policy exists with the same name, remove_policy restores the config
+    version instead of leaving the slot empty.
+  - >-
+    Legacy guardrail parsing converts a single-item guardrails list or dict with only
+    an add key to a PolicyGuardrails.add; _parse_policy does not validate list/dict
+    type, so empty guardrails (None or {}) produces empty add/remove.
+  - >-
+    Attachment deduplication returns only the broadest (highest-specificity) instance
+    of each policy when multiple attachments match it; multiple attachments for the same
+    policy with lower specificity are dropped.
+  - >-
+    Scope.get_teams(), get_keys(), get_models() return empty list as "match all";
+    scope.get_tags() returns empty list as "do not check tags". PolicyMatcher.scope_matches
+    treats these differently: missing dimensions match all, but tags present requires
+    context.tags present and at least one matching tag.
+  - >-
+    policy_applies returns a callable predicate; its applies function logs INFO once
+    per attachment scan when a policy's own condition failed but an ancestor's applies,
+    naming the first applying ancestor.
+  - >-
+    resolve_pipelines_for_context skips policies whose condition fails the context,
+    while resolve_guardrails_for_context uses get_policies_with_matching_conditions which
+    includes policies where ancestors apply despite child condition failure.
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0
+review_level: standard

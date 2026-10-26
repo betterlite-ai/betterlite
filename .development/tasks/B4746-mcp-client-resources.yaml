@@ -1,0 +1,229 @@
+id: B4746
+title: MCP client prompts and resources
+description: >-
+  Build optional prompt and resource operations over the initialized session runner.
+  Preserve unsupported-capability empty lists, first-page method-not-found fallback,
+  strict later-page pagination failure, and raised get/read errors.
+
+  Implement MCPClient._list_optional_pages to handle pagination with capability absence,
+  cursor-loop detection, page-limit enforcement, and deadline exhaustion. Accept a fetch_page
+  callable and an items_of callable that extracts items from a page result. Return partial
+  results with a warning on repeated cursors, page exhaustion at the 1,000-page limit, or
+  deadline expiration; raise RuntimeError on method-not-found only after the first page.
+  The effective deadline is max(self.timeout, MCP_TOOL_LISTING_TIMEOUT) matching the B4740
+  pagination deadline. Store stripped initialization instructions and use run_with_session
+  (owned by B4744) to manage session lifecycle.
+
+  Implement MCPClient.list_prompts with capability checking: if server_capabilities exists
+  and prompts capability is None, return an empty list without calling the server. Otherwise
+  use _list_optional_pages with the session.list_prompts call. On MCPError with code
+  METHOD_NOT_FOUND on the first page, return an empty list; on later pages, let the error
+  propagate from _list_optional_pages. When raise_on_error is False, catch exceptions,
+  log at error level with broken-stream detection, and return an empty list. When True,
+  re-raise immediately with no logging.
+
+  Implement MCPClient.get_prompt with a nested _get_prompt_operation that calls
+  session.get_prompt with the name and arguments from GetPromptRequestParams. Always raise
+  on error. Log the full traceback at debug level and the failure message with broken-stream
+  detection at verbose_logger.error level when an exception occurs.
+
+  Implement MCPClient.list_resources and MCPClient.list_resource_templates with the same
+  capability checking and error handling as list_prompts, using session.list_resources
+  and session.list_resource_templates respectively. Both use _list_optional_pages and
+  respect raise_on_error.
+
+  Implement MCPClient.read_resource with a nested _read_resource_operation that calls
+  session.read_resource with the URL. Always raise on error. Log the full traceback at debug
+  level and the failure message with broken-stream detection at verbose_logger.error level.
+
+  Load LITELLM_MCP_TOOL_LISTING_TIMEOUT (default 30.0 seconds) from B002 configuration
+  for the _list_optional_pages deadline calculation. CancelledError and timeout always
+  propagate without recovery; broken-stream detection uses exception type substring matching
+  on exception type names from the MCP SDK.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/mcp_client_resources.rs
+    - crates/betterlite-core/src/api/mcp_client_resources/**
+    - tools/oracle/helpers/b4746.py
+    - tools/oracle/helpers/b4746/**
+    - tools/oracle/src/helpers/core_ops/b4746.rs
+    - tools/oracle/src/helpers/core_ops/b4746/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L960-L983
+    why: _list_optional_pages pagination with capability checking, cursor-loop detection, page-limit and deadline exhaustion, first-page method-not-found fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L985-L1036
+    why: list_prompts implementation with capability checking, raise_on_error behavior, broken-stream detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L1038-L1077
+    why: get_prompt implementation, exception handling, broken-stream detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L1079-L1130
+    why: list_resources implementation with capability checking and error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L1132-L1187
+    why: list_resource_templates implementation with capability checking and error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L1189-L1225
+    why: read_resource implementation, exception handling, broken-stream detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L202
+    why: "LITELLM_MCP_TOOL_LISTING_TIMEOUT: Final = float(os.getenv(\"LITELLM_MCP_TOOL_LISTING_TIMEOUT\", \"30.0\"))"
+
+dod:
+  - text: >-
+      _list_optional_pages pages through results by following nextCursor, stops on
+      repeated cursors with a warning, stops at the 1,000-page limit with a warning,
+      returns partial results on deadline expiration with a warning, and succeeds when
+      a single page succeeds even if slower than the listing timeout. Raises on
+      method-not-found only after the first page.
+    proof: [list-prompts-behavior-tests, oracle-mcp-resources]
+
+  - text: >-
+      list_prompts and list_resources check server_capabilities for their respective
+      capability field; if absent, return an empty list. If present, use _list_optional_pages.
+      On first-page method-not-found, return an empty list. On later-page method-not-found,
+      let _list_optional_pages raise. When raise_on_error=False, catch exceptions and
+      return an empty list with error-level logging. When True, re-raise immediately with no logging.
+    proof: [list-prompts-behavior-tests, list-resources-behavior-tests, oracle-mcp-resources]
+
+  - text: >-
+      list_resource_templates checks the resources capability (same field as list_resources)
+      and uses _list_optional_pages with the same error handling as list_resources.
+    proof: [list-templates-behavior-tests, oracle-mcp-resources]
+
+  - text: >-
+      get_prompt and read_resource always raise on error. Log the full traceback at debug level
+      and the failure message with broken-stream detection at verbose_logger.error level.
+      Propagate cancellation without recovery.
+    proof: [get-prompt-behavior-tests, read-resource-behavior-tests, oracle-mcp-resources]
+
+  - text: >-
+      All operations use run_with_session to establish and cleanup the session. The
+      _list_optional_pages deadline is max(self.timeout, MCP_TOOL_LISTING_TIMEOUT)
+      matching the B4740 pagination deadline.
+    proof: [deadline-tests, cancellation-tests]
+
+  - text: Every mutant in the capability checking and pagination logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: list-prompts-behavior-tests
+      why: list_prompts capability checking, raise_on_error behavior, and broken-stream detection are missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::mcp_client_resources::list_prompts_tests::/)
+        - test(/replays_the_/)'
+    - id: list-resources-behavior-tests
+      why: list_resources capability checking, error handling, and pagination are missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::mcp_client_resources::list_resources_tests::/)
+        - test(/replays_the_/)'
+    - id: list-templates-behavior-tests
+      why: list_resource_templates capability checking and error handling are missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::mcp_client_resources::list_templates_tests::/)
+        - test(/replays_the_/)'
+    - id: get-prompt-behavior-tests
+      why: get_prompt exception handling and broken-stream detection are missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::mcp_client_resources::get_prompt_tests::/)
+        - test(/replays_the_/)'
+    - id: read-resource-behavior-tests
+      why: read_resource exception handling and broken-stream detection are missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::mcp_client_resources::read_resource_tests::/)
+        - test(/replays_the_/)'
+    - id: deadline-tests
+      why: deadline calculation and the max(timeout, listing_timeout) behavior are missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::mcp_client_resources::deadline_tests::/)
+        - test(/replays_the_/)'
+    - id: cancellation-tests
+      why: Cancellation and timeout handling do not propagate correctly or log unexpectedly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::mcp_client_resources::cancellation_tests::/)
+        - test(/replays_the_/)'
+    - id: oracle-mcp-resources
+      why: The HTTP oracle does not replay prompts and resources behavior with real or scripted MCP peers.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-client-resources)" &&
+        ls tools/oracle/cases/helpers/mcp-client-resources/*.yaml >/dev/null &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-client-resources/list-prompts-unsupported.yaml
+  - tools/oracle/cases/helpers/mcp-client-resources/list-prompts-method-not-found.yaml
+  - tools/oracle/cases/helpers/mcp-client-resources/list-prompts-cursor-exhaustion.yaml
+  - tools/oracle/cases/helpers/mcp-client-resources/list-prompts-deadline-expiration.yaml
+  - tools/oracle/cases/helpers/mcp-client-resources/list-resources-unsupported.yaml
+  - tools/oracle/cases/helpers/mcp-client-resources/list-resources-method-not-found.yaml
+  - tools/oracle/cases/helpers/mcp-client-resources/list-resources-cursor-exhaustion.yaml
+  - tools/oracle/cases/helpers/mcp-client-resources/list-resource-templates-unsupported.yaml
+  - tools/oracle/cases/helpers/mcp-client-resources/list-resource-templates-method-not-found.yaml
+  - tools/oracle/cases/helpers/mcp-client-resources/get-prompt-success.yaml
+  - tools/oracle/cases/helpers/mcp-client-resources/get-prompt-error.yaml
+  - tools/oracle/cases/helpers/mcp-client-resources/read-resource-success.yaml
+  - tools/oracle/cases/helpers/mcp-client-resources/read-resource-error.yaml
+
+deviations:
+  - what: >-
+      Repeated cursors in pagination return partial results with a warning instead
+      of raising an error. LiteLLM logs and returns, preserving buggy server behavior
+      gracefully on the client side.
+    why: Partial results are more useful than a hard failure when a server loops.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L976-L977
+  - what: >-
+      Page exhaustion (reaching 1,000 pages) returns partial results with a warning
+      instead of raising. LiteLLM logs and returns.
+    why: A complete catalog later than 1,000 pages is rare; returning what arrived avoids cascading failures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L980-L982
+  - what: >-
+      Deadline expiration in pagination returns partial results with a warning.
+      LiteLLM logs and returns what arrived.
+    why: >-
+      A slow MCP server returning partial results is better than a timeout error
+      stalling the chat. The effective_deadline is max(client_timeout, listing_timeout)
+      to preserve the guarantee that a single page slower than listing_timeout but
+      within client_timeout succeeds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L963-L967
+  - what: >-
+      Method-not-found errors on the first page of a list operation return an empty
+      list instead of raising. LiteLLM treats unsupported operations gracefully. On
+      later pages, method-not-found errors propagate as a hard failure.
+    why: >-
+      Treating missing methods as empty results on first page avoids blocking a chat
+      when the server lacks an optional operation. Hard failure on later pages detects
+      when the server capabilities changed during pagination.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L1000-L1007
+
+out_of_scope:
+  - All upper composition and gateway routing. B140 will orchestrate these operations with the wider session and request flow.
+  - HTTP client construction and credential headers. B4741 handles client settings and prepared auth; B4744 handles the session and transport lifecycle.
+  - Tool conversion and pagination helpers. B4740 handles schema conversion and the paginated listing framework that _list_optional_pages builds on.
+  - Session initialization and transport management. B4744 handles run_with_session and transport lifecycle.
+
+pitfalls:
+  - >-
+      The effective_deadline for _list_optional_pages is max(self.timeout, MCP_TOOL_LISTING_TIMEOUT),
+      not listing_timeout alone. This preserves the guarantee that a single page slower than
+      listing_timeout but within client_timeout will succeed.
+  - >-
+      Capability checking compares the exact field name in server_capabilities: prompts for
+      list_prompts, resources for both list_resources and list_resource_templates. A capability
+      that is None means the feature is unsupported; an absent capability field means the server
+      did not advertise support, which is also treated as None.
+  - >-
+      Method-not-found errors are only handled gracefully (as empty list) on the first page.
+      A method-not-found on page 2 or later means the server capabilities changed mid-pagination
+      and should propagate as an error.
+  - >-
+      CancelledError always propagates without recovery or logging the full traceback, only
+      the timeout context. This is expected control flow, not a failure to surface with a stack
+      trace.
+  - >-
+      Broken-stream detection uses substring matching on exception type names from the MCP SDK.
+      Types like BrokenResourceError or connection-related exceptions should be caught and logged
+      separately. Verify the pinned SDK exception types match the patterns used in list_prompts
+      and other list operations.
+  - >-
+      raise_on_error distinguishes two failure paths for list operations: when True, re-raise
+      immediately with no logging; when False, log at error because this is the only error surface.
+      get_prompt and read_resource always raise. They log the traceback at debug level but log
+      the failure message and broken-stream detection at error level.
+
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 1

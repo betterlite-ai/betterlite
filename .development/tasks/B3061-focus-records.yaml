@@ -93,6 +93,6 @@ pitfalls:
   - FocusTimeWindow.frequency is an unconstrained string field; observed values in the codebase are "hourly", "daily", "interval" and "all". Do not model it as a two-variant enum or restrict it to a fixed set.
   - Timestamp formatting uses %Y-%m-%dT%H:%M:%SZ format with microsecond precision cast to microseconds, not seconds.
 budget:
-  max_changed_lines: 300
+  max_changed_lines: 1250
   max_new_expects: 0
 review_level: standard

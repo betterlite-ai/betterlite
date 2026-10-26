@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Galileo authentication health and buffered delivery
 status: todo
 depends_on: [B3963, B002, B173]
-file: null
+file: tasks/B3964-galileo-delivery.yaml
 covers:
   - "litellm/integrations/galileo.py"
 parent: B114

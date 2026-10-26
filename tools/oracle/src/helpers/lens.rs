@@ -1,3 +1,3 @@
 helper_group! {
-    "lens_state" => state,
+    "b4507" => b4507, "lens_state" => state,
 }

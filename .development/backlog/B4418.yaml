@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Authenticate Conjur and manage secret policies and values
 status: todo
 depends_on: [B002, B173, B2226, B4410]
-file: null
+file: tasks/B4418-cyberark-secrets.yaml
 covers:
   - "litellm/secret_managers/cyberark_secret_manager.py"
 parent: B129

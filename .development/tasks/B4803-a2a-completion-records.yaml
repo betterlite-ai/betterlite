@@ -1,0 +1,101 @@
+id: B4803
+title: A2A completion messages, metadata and streaming events
+description: >-
+  Build the A2A protocol message transformation and provider abstraction for the completion bridge.
+  Implement A2AStreamingContext to track streaming state across request, task, and context identifiers.
+  Implement CompletionBridgeTransformation with static methods to transform between A2A and OpenAI
+  message formats, extract text from A2A parts, apply forward metadata to completion parameters, convert
+  OpenAI responses to A2A format, and create streaming events (task, status update, artifact update).
+  Implement BaseA2AProviderConfig as a trait defining the non-streaming and streaming handler contracts
+  for A2A providers. Create crates/betterlite-a2a to hold the a2a protocol module structure.
+
+  The transformation methods are synchronous and never call external services. A2AStreamingContext
+  holds request_id, task_id, context_id, input_message and accumulation state (accumulated_text,
+  has_emitted_task, has_emitted_working) for use by callers managing the streaming lifecycle. Metadata
+  forwarding merges params and message metadata without collision, placing it under extra_body.metadata
+  for provider bridges. OpenAI response conversion assumes the first choice in a ModelResponse and
+  creates an A2A message with message kind, agent role, and one text part. Streaming events include
+  the full context shape: contextId, taskId, original message parts and history. Timestamps on status
+  updates use UTC ISO format. Every event carries request_id, jsonrpc "2.0" and result with event-specific
+  fields. UUIDs for artifact and message IDs are generated fresh per call. Part extraction handles
+  lists with missing or malformed entries, skipping them and joining non-empty text parts with newline.
+
+  All types and functions are deterministic; no randomness, no environment lookups, no file I/O.
+  Use uuid::Uuid for ID generation at the trait boundary. Reuse types from serde for JSON
+  serialization. A test deserializes fixture A2A messages and OpenAI responses to verify shape
+  transformation. Oracle cases drive transformation against LiteLLM to verify behavior on every
+  input pattern the bridge encounters.
+scope:
+  paths:
+    - crates/betterlite-a2a/**
+    - tools/oracle/helpers/b4803.py
+    - tools/oracle/helpers/b4803/**
+    - tools/oracle/src/helpers/oracle/b4803.rs
+    - tools/oracle/src/helpers/oracle/b4803/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/litellm_completion_bridge/transformation.py
+    why: The A2A message transformation implementation and streaming event creation, lines 1-314.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/base.py
+    why: The abstract provider config interface, lines 1-63.
+dod:
+  - text: A2AStreamingContext holds request_id, task_id, context_id, input_message and state (accumulated_text, has_emitted_task, has_emitted_working), initialized when constructed.
+    proof: [a2a-tests]
+  - text: CompletionBridgeTransformation extracts text from A2A parts, handling missing or non-text parts by skipping them and joining results with newline.
+    proof: [a2a-tests]
+  - text: get_forward_metadata merges metadata from params and message without collision, returning None when both are absent or empty.
+    proof: [a2a-tests]
+  - text: apply_forward_metadata places merged metadata under extra_body.metadata, preserving any existing extra_body fields.
+    proof: [a2a-tests]
+  - text: a2a_message_to_openai_messages transforms an A2A message to a one-item list with OpenAI role and extracted text content.
+    proof: [a2a-tests]
+  - text: a2a_message_to_openai_messages passes through unrecognized roles unchanged (e.g., "developer"), mapping only "user", "assistant", "system".
+    proof: [a2a-oracle-cases]
+  - text: response_to_a2a converts a ModelResponse to A2A SendMessageResponse with jsonrpc "2.0", agent role, one text part and fresh messageId.
+    proof: [a2a-tests]
+  - text: create_task_event returns the initial task event with status "submitted", full history, contextId, taskId and original message parts.
+    proof: [a2a-tests]
+  - text: create_status_update_event builds status events with state ("working", "completed"), UTC ISO timestamp, optional message for working state, and contextId/taskId.
+    proof: [a2a-tests]
+  - text: create_artifact_update_event builds artifact events with artifact fields (artifactId, name, parts), contextId and taskId.
+    proof: [a2a-tests]
+  - text: BaseA2AProviderConfig defines async handle_non_streaming and handle_streaming methods with request_id, params, optional api_base and kwargs.
+    proof: [a2a-tests]
+  - text: Every oracle case for transformation matches LiteLLM on message shape, metadata placement, event fields and UUID generation.
+    proof: [a2a-oracle-cases]
+checks:
+  optional: []
+  commands:
+    - id: a2a-tests
+      why: the A2A completion transformation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^a2a_completion_bridge::/) | test(/^a2a_provider_base::/)'
+    - id: a2a-oracle-cases
+      why: the oracle cases fail or do not exist
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/a2a/*.yaml)" && cargo nextest run --locked --no-tests=fail --package betterlite-oracle -E 'test(a2a_completion_bridge)'
+oracle_cases:
+  - tools/oracle/cases/a2a/message-text-extraction.yaml
+  - tools/oracle/cases/a2a/metadata-forward.yaml
+  - tools/oracle/cases/a2a/role-passthrough.yaml
+  - tools/oracle/cases/a2a/openai-to-a2a-response.yaml
+  - tools/oracle/cases/a2a/task-event.yaml
+  - tools/oracle/cases/a2a/status-working-event.yaml
+  - tools/oracle/cases/a2a/status-completed-event.yaml
+  - tools/oracle/cases/a2a/artifact-event.yaml
+deviations: []
+out_of_scope:
+  - BaseA2AProviderConfig implementations for specific providers (OpenAI, Anthropic, etc); those belong to their provider tasks.
+  - Handler invocation and error propagation; the trait defines the contract, not its runtime use.
+  - LangGraph integration and streaming response assembly; that belongs to B4802 (handler.py).
+  - Agent discovery and card resolution; those belong to B4800.
+pitfalls:
+  - A2A message parts are not guaranteed to be dictionaries; skip non-dict parts and empty text values.
+  - Part extraction joins text with newline, not space, to preserve formatting when multiple parts contain text.
+  - Metadata forwarding places merged metadata under extra_body.metadata specifically; betterlite's spend-log uses a different metadata kwarg.
+  - Streaming events always use UTC ISO format from datetime.now(timezone.utc).isoformat(), not local time.
+  - UUIDs for messageId, artifactId are fresh per event, not reused from the context.
+  - A2A role mapping defaults to the input role if it is not "user", "assistant" or "system"; do not invent new roles.
+  - BaseA2AProviderConfig is an abstract interface; the trait's async methods have no default implementation.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

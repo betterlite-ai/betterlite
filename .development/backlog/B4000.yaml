@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Upload Azure Data Lake logs with account keys or Entra tokens
 status: todo
 depends_on: [B002, B256, B173, B192, B673, B677]
-file: null
+file: tasks/B4000-azure-storage-logging.yaml
 covers:
   - "litellm/integrations/azure_storage/**"
 parent: B115

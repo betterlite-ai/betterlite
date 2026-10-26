@@ -1,0 +1,141 @@
+id: B3903
+title: Langfuse export channel leases and shutdown
+description: >-
+  Build the credential/environment/release-specific export-channel cache and its lease, retirement and
+  deadline-bounded flush lifecycle in crates/betterlite-logging. The channel manages a private OTel
+  provider, 100,000-span queue, and delivery-aware flush accounting. Implement cache keying on
+  public_key, secret_key, base_url, environment, release, sample_rate, flush_at, flush_interval_millis
+  and mock_mode with automatic cleanup through a 60-second reacquisition grace period. The grace allows
+  callbacks that fetch the logger from the cache just before entry expiry, and a logger rebuilt for the same
+  credentials picks the channel back up instead of creating new background tasks. Implement the _ExportLedger
+  wrapper to track failed-batch counts and distinguish flush success (queue drained and no batches failed)
+  from queue-empty. Use owned async/background tasks instead of detached Python threads for flush,
+  retirement and span export, retaining thread-safe reference counting and deadline-bounded shutdown across
+  all acquired channels. Retain the LangfuseTracing handle (provider, tracer, ledger) as an immutable data
+  structure returned on acquire and passed to release. Preserve the _TRACER_NAME constant "langfuse-sdk"
+  to match the SDK's scope key used by Langfuse for span attribution. The _SPAN_LIMITS record
+  max_attributes=UNSET, max_events=128, max_links=128, max_span_attributes=UNSET, max_event_attributes=128,
+  max_link_attributes=128 and length limits UNSET.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/langfuse_channels.rs
+    - crates/betterlite-logging/src/langfuse_channels/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L76-L76
+    why: "_TRACER_NAME constant 'langfuse-sdk' used by Langfuse to key spans"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L94-L94
+    why: "_CHANNEL_RETIRE_GRACE_SECONDS = 60.0 reacquisition grace period"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L113-L122
+    why: "_SPAN_LIMITS configuration with explicit event/link/attribute counts"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L812-L863
+    why: "_resource factory, _ExportLedger wrapper, and LangfuseTracing immutable data structure"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L865-L936
+    why: "_TracingKey, _Lease dataclasses and acquire_langfuse_tracing cache acquisition with holder counting"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L938-L973
+    why: "release_langfuse_tracing grace-period retirement and _retire_unless_reacquired timer callback"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L975-L1003
+    why: "_FlushWorker daemon thread and flush_langfuse_tracing deadline-bounded parallel flush across all channels"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1005-L1040
+    why: "build_langfuse_tracing TracerProvider factory with OTel SDK setup, batch processor and resource"
+
+dod:
+  - text: "_TRACER_NAME is defined as \"langfuse-sdk\" and returned by provider.get_tracer in build_langfuse_tracing."
+    proof: [channels-constants]
+  - text: "_CHANNEL_RETIRE_GRACE_SECONDS is 60.0 seconds."
+    proof: [channels-constants]
+  - text: "_SPAN_LIMITS is configured with max_events=128, max_links=128, max_event_attributes=128, max_link_attributes=128, and UNSET for length limits."
+    proof: [channels-constants]
+  - text: "LangfuseTracing is an immutable structure containing provider, tracer and ledger with flush and shutdown methods."
+    proof: [channels-types]
+  - text: "_ExportLedger wraps a SpanExporter and tracks failed_batches count; export increments the counter on non-SUCCESS result."
+    proof: [channels-types]
+  - text: "acquire_langfuse_tracing accepts public_key, secret_key, base_url, environment, release, flush_interval and mock_mode; returns a LangfuseTracing handle."
+    proof: [channels-acquire]
+  - text: "The acquisition cache keys on all parameters (public_key, secret_key, base_url, environment, release, sample_rate, flush_at, flush_interval_millis, mock_mode) and holder-counts multiple loggers."
+    proof: [channels-acquire]
+  - text: "Reacquisition of the same credentials cancels a pending retirement timer and increments the holder count."
+    proof: [channels-acquire]
+  - text: "release_langfuse_tracing decrements the holder count and schedules a 60-second retirement timer if the count reaches zero."
+    proof: [channels-release]
+  - text: "The retirement timer is cancelled if the channel is reacquired before it fires."
+    proof: [channels-release]
+  - text: "flush_langfuse_tracing spawns a parallel worker per channel, waits with a shared deadline across all workers, and returns true only if all completed and flushed successfully."
+    proof: [channels-flush]
+  - text: "build_langfuse_tracing creates a TracerProvider with a private Resource, sampler (ALWAYS_ON or TraceIdHashSampler), _RequestedIdGenerator, _SPAN_LIMITS, and BatchSpanProcessor with the _ExportLedger wrapper."
+    proof: [channels-build]
+  - text: "The batch processor is configured with max_queue_size=100000, max_export_batch_size=flush_at, and schedule_delay_millis from flush_interval_millis."
+    proof: [channels-build]
+  - text: "All cache, holder-counting and timer state is protected by a process-wide lock."
+    proof: [channels-sync]
+  - text: "OTEL_SDK_DISABLED=true triggers a warning via verbose_logger while the provider is still built."
+    proof: [channels-otel-disabled]
+  - text: "LANGFUSE_DEBUG parses truthy calls enable_langfuse_debug_logging at acquisition time."
+    proof: [channels-debug]
+
+checks:
+  optional: []
+  commands:
+    - id: channels-constants
+      why: "tracer name, retirement grace and span limits constants are missing or incorrect"
+      run: grep -q '"langfuse-sdk"' crates/betterlite-logging/src/langfuse_channels.rs && grep -q '60.0' crates/betterlite-logging/src/langfuse_channels.rs && grep -q 'max_events.*128' crates/betterlite-logging/src/langfuse_channels.rs
+    - id: channels-types
+      why: "LangfuseTracing or _ExportLedger types are missing or incomplete"
+      run: grep -q 'struct LangfuseTracing' crates/betterlite-logging/src/langfuse_channels.rs && grep -q '_ExportLedger' crates/betterlite-logging/src/langfuse_channels.rs && grep -q 'failed_batches' crates/betterlite-logging/src/langfuse_channels.rs
+    - id: channels-acquire
+      why: "acquire_langfuse_tracing function or cache implementation is missing or incorrect"
+      run: grep -q 'pub.*fn acquire_langfuse_tracing' crates/betterlite-logging/src/langfuse_channels.rs && grep -q '_TracingKey' crates/betterlite-logging/src/langfuse_channels.rs && grep -q 'holders' crates/betterlite-logging/src/langfuse_channels.rs
+    - id: channels-release
+      why: "release_langfuse_tracing function or retirement grace logic is missing or incorrect"
+      run: grep -q 'pub.*fn release_langfuse_tracing' crates/betterlite-logging/src/langfuse_channels.rs && grep -q 'retire' crates/betterlite-logging/src/langfuse_channels.rs
+    - id: channels-flush
+      why: "flush_langfuse_tracing function or deadline-bounded flush logic is missing or incorrect"
+      run: grep -q 'pub.*fn flush_langfuse_tracing' crates/betterlite-logging/src/langfuse_channels.rs && grep -q '_FlushWorker' crates/betterlite-logging/src/langfuse_channels.rs
+    - id: channels-build
+      why: "build_langfuse_tracing function or TracerProvider factory is missing or incomplete"
+      run: grep -q 'pub.*fn build_langfuse_tracing' crates/betterlite-logging/src/langfuse_channels.rs && grep -q 'TracerProvider' crates/betterlite-logging/src/langfuse_channels.rs && grep -q 'BatchSpanProcessor' crates/betterlite-logging/src/langfuse_channels.rs
+    - id: channels-sync
+      why: "cache and lease management tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_channels::/) - test(/replays_the_/)'
+    - id: channels-otel-disabled
+      why: "OTEL_SDK_DISABLED warning is not logged or the provider is not built"
+      run: grep -q 'OTEL_SDK_DISABLED' crates/betterlite-logging/src/langfuse_channels.rs && grep -q 'verbose_logger' crates/betterlite-logging/src/langfuse_channels.rs
+    - id: channels-debug
+      why: "LANGFUSE_DEBUG handling or enable_langfuse_debug_logging call is missing"
+      run: grep -q 'LANGFUSE_DEBUG' crates/betterlite-logging/src/langfuse_channels.rs && grep -q 'enable_langfuse_debug_logging' crates/betterlite-logging/src/langfuse_channels.rs
+
+oracle_cases: []
+
+deviations:
+  - what: "Async/background task ownership replaces Python's detached thread model; Rust cannot match Python's `threading.Timer.daemon=True` exactly, so Tokio background tasks are used with explicit lifetime ownership and graceful shutdown."
+    why: "Rust requires explicit ownership; daemon threads have no direct equivalent. The semantics are preserved: background work does not block interpreter shutdown, but with cleaner cancellation semantics."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L956-L960"
+  - what: "The flush deadline is a wall-clock deadline shared across workers rather than a per-worker join timeout, ensuring all workers respect the same timeout floor."
+    why: "LiteLLM's _FlushWorker uses monotonic time relative to a shared deadline; this preserves the original semantics of not pushing the deadline out for later channels."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L997-L1002"
+
+out_of_scope:
+  - "SpanExporter implementation and export logic; owned by B3902."
+  - "RequestedIdGenerator and TraceIdHashSampler samplers; owned by B3901."
+  - "Credential resolution and configuration; owned by B3900."
+  - "Logger construction and event dispatch; owned by B3907."
+  - "Prompt client creation; owned by B3904."
+  - "Span attribute projection; owned by B3905 and B3909."
+
+pitfalls:
+  - "The _TRACER_NAME constant must match the SDK's scope string exactly; Langfuse uses it to key span attribution, and foreign spans from any other scope get their attributes echoed into metadata."
+  - "The 60-second grace period is checked on reacquisition: _TRACING_LOCK must protect both timer cancellation and holder-count increment to avoid a use-after-shutdown race."
+  - "The flush deadline must be enforced as a wall-clock deadline relative to monotonic time, not a per-worker timeout; a worker still blocked at deadline is abandoned rather than pushing the deadline out."
+  - "LangfuseTracing is immutable (frozen dataclass in Python); any modifications to its contained objects must go through the lease or exporter, not direct mutation of the returned handle."
+  - "The _SPAN_LIMITS record uses OpenTelemetry's SpanLimits.UNSET sentinel for length limits to disable truncation; do not substitute a large number or zero."
+  - "The sample_rate and flush_at values in the cache key come from configured_sample_rate() and configured_flush_at(), not the constructor parameters; verify that the key reflects what build_langfuse_tracing actually uses."
+  - "Release the channel before shutdown if possible; the grace period is not a guaranteed cleanup path, only a fallback for loggers that linger."
+  - "The BatchSpanProcessor must use schedule_delay_millis (not seconds) to configure the flush interval from the float parameter."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

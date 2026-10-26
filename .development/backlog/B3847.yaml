@@ -3,7 +3,7 @@ milestone: M7 observability
 title: OTel request context and span emission
 status: todo
 depends_on: [B198, B3840, B3842, B3843, B3845, B3846, B3848]
-file: null
+file: tasks/B3847-otel-context-emission.yaml
 covers:
   - "litellm/integrations/otel/emitter.py"
   - "litellm/integrations/otel/plumbing/context.py"

@@ -46,6 +46,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,compatible_image_hosts}.rs
+    - crates/betterlite-openai/src/compatible_image_hosts.rs
     - crates/betterlite-openai/src/compatible_image_hosts/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/compatible_image_reply.rs
