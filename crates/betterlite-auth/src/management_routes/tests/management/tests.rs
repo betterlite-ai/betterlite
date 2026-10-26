@@ -1,0 +1,60 @@
+#![cfg(test)]
+
+use crate::management_routes::MANAGEMENT_BASE_ROUTES;
+use rstest::rstest;
+
+#[rstest]
+#[case::user_new(0, "/user/new")]
+#[case::management_v1_users_bulk(1, "/management/v1/users/bulk")]
+#[case::user_update(2, "/user/update")]
+#[case::user_bulk_update(3, "/user/bulk_update")]
+#[case::user_delete(4, "/user/delete")]
+#[case::users_bulk_delete(5, "/management/v1/users/bulk_delete")]
+#[case::user_info(6, "/user/info")]
+#[case::user_list(7, "/user/list")]
+#[case::user_daily_activity(8, "/user/daily/activity")]
+#[case::user_daily_activity_aggregated(9, "/user/daily/activity/aggregated")]
+#[case::user_keys(10, "/user/daily/activity/aggregated/keys")]
+#[case::user_search(11, "/user/daily/activity/aggregated/search")]
+#[case::user_model_top_keys(12, "/user/daily/activity/aggregated/model_top_keys")]
+#[case::user_daily_activity_export(13, "/user/daily/activity/export")]
+#[case::user_cache_leakage_keys(14, "/user/daily/activity/aggregated/cache_leakage_keys")]
+#[case::team_new(15, "/team/new")]
+#[case::team_update(16, "/team/update")]
+#[case::team_team_id(17, "/team/{team_id}")]
+#[case::team_delete(18, "/team/delete")]
+#[case::team_list(19, "/team/list")]
+#[case::v2_team_list(20, "/v2/team/list")]
+#[case::team_info(21, "/team/info")]
+#[case::team_block(22, "/team/block")]
+#[case::team_unblock(23, "/team/unblock")]
+#[case::team_available(24, "/team/available")]
+#[case::team_metadata_schema(25, "/team/metadata_schema")]
+#[case::team_permissions_list(26, "/team/permissions_list")]
+#[case::team_permissions_update(27, "/team/permissions_update")]
+#[case::team_permissions_bulk_update(28, "/team/permissions_bulk_update")]
+#[case::team_daily_activity(29, "/team/daily/activity")]
+#[case::team_daily_activity_aggregated(30, "/team/daily/activity/aggregated")]
+#[case::team_keys(31, "/team/daily/activity/aggregated/keys")]
+#[case::team_search(32, "/team/daily/activity/aggregated/search")]
+#[case::team_model_top_keys(33, "/team/daily/activity/aggregated/model_top_keys")]
+#[case::team_daily_activity_export(34, "/team/daily/activity/export")]
+#[case::team_spend_by_user(35, "/team/spend/by_user")]
+#[case::gateway_daily_activity(36, "/gateway/daily/activity")]
+#[case::model_new(37, "/model/new")]
+#[case::model_update(38, "/model/update")]
+#[case::model_delete(39, "/model/delete")]
+#[case::model_info(40, "/model/info")]
+#[case::jwt_key_mapping_new(41, "/jwt/key/mapping/new")]
+#[case::jwt_key_mapping_update(42, "/jwt/key/mapping/update")]
+#[case::jwt_key_mapping_delete(43, "/jwt/key/mapping/delete")]
+#[case::jwt_key_mapping_list(44, "/jwt/key/mapping/list")]
+#[case::jwt_key_mapping_info(45, "/jwt/key/mapping/info")]
+fn literal_cases(#[case] index: usize, #[case] literal: &str) {
+    assert_eq!(MANAGEMENT_BASE_ROUTES.get(index), Some(&literal));
+}
+
+#[test]
+fn complete_table_length() {
+    assert_eq!(MANAGEMENT_BASE_ROUTES.len(), 46);
+}
