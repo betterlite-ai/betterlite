@@ -1,5 +1,8 @@
 task: B4831
 deviations:
+  - what: There is no normalize_tool_name function. A harness that maps a native tool name back to the normalized one writes mapping.get(name).map_or(name, String::as_str) where it needs it, with the same pass-through for unmapped names.
+    why: LiteLLM's helper is one expression, and rule no-one-line-functions (enforced by .ast-grep/rules/no-one-line-functions.yml in the hooks check) rejects a function whose body is a single expression.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/utils.py#L21-L23
   - what: unified_diff aligns lines with the Myers algorithm from the similar crate instead of difflib's SequenceMatcher. Headers, hunk ranges, three lines of context and the "\ No newline at end of file" marker match, but an edit with several equally short alignments can pair its lines differently, and only \n ends a line (difflib's splitlines also splits on \r, \v, \f, \x1c to \x1e, \x85,   and  ).
     why: No maintained Rust port of SequenceMatcher exists; the difflib crate 0.4.0 inverts the popular-element filter for inputs of 200 lines or more, so its hunks are wrong where they differ.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/snapshot.py#L111-L121
