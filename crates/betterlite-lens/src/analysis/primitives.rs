@@ -1,91 +1,121 @@
-use tokio::{sync::Semaphore, task::JoinSet};
+use std::convert::identity;
+use std::vec::IntoIter;
+use tokio::task::JoinSet;
 
+use crate::models::finding::FindingStatus;
 use crate::models::messages::Claim;
 
-pub async fn structured_response<T, F, Fut>(
+pub async fn structured_response<T, F, Fut, V>(
     request: ModelRequest,
     model: F,
+    validate: V,
 ) -> Result<T, AnalysisError>
 where
     T: Record + Validate<Context = ()>,
+    V: Fn(&T) -> Option<String>,
     F: Fn(ModelRequest) -> Fut,
     Fut: Future<Output = Result<ModelResult, AnalysisError>>,
 {
     let first = model(request.clone()).await?;
-    match parse_record::<T>(&first.content) {
+    match parse_record::<T, V>(&first.content, &validate) {
         Ok(value) => Ok(value),
         Err(problem) => {
             let repair = ModelRequest {
                 prompt: format!(
-                    "{}\nYour previous response was invalid: {problem}",
+                    "{}\nYour previous response did not match the required response contract. Generate a new response from the original evidence, correcting these validation errors: {problem}",
                     request.prompt
                 ),
                 purpose: request.purpose,
             };
-            parse_record::<T>(&model(repair).await?.content)
+            parse_record::<T, V>(&model(repair).await?.content, &validate)
         }
     }
 }
 
-fn parse_record<T>(content: &str) -> Result<T, AnalysisError>
+fn parse_record<T, V>(content: &str, validate: &V) -> Result<T, AnalysisError>
 where
     T: Record + Validate<Context = ()>,
+    V: Fn(&T) -> Option<String>,
 {
-    let value: T = serde_json::from_str(content)?;
-    value
-        .validate()
-        .map_err(|error| AnalysisError::Validation(error.to_string()))?;
+    let value = T::model_validate_json(content.as_bytes())?;
+    if let Some(problem) = validate(&value) {
+        return Err(AnalysisError::Validation(problem));
+    }
     Ok(value)
 }
 
 #[must_use]
 pub fn evidence_valid(evidence: &Evidence, parts: &[TracePart]) -> bool {
-    let valid = parts.iter().any(|part| {
-        part.execution_id == evidence.execution_id
+    for part in parts {
+        if part.execution_id == evidence.execution_id
             && part.span_id == evidence.span_id
             && part
                 .content
                 .split("\n[... content omitted ...]\n")
                 .any(|segment| segment.contains(&evidence.quote))
-    });
-    valid
+        {
+            return true;
+        }
+    }
+    false
 }
 
-pub async fn concurrent_results<Item, ResultValue, Operation, FutureValue>(
-    items: Vec<Item>,
+pub struct ConcurrentResults<Item, Output, Operation> {
+    remaining: IntoIter<Item>,
     operation: Operation,
     concurrency: usize,
-) -> Result<Vec<ResultValue>, AnalysisError>
+    tasks: JoinSet<Result<Output, AnalysisError>>,
+}
+
+pub fn concurrent_results<Item, Output, Operation, Work>(
+    items: Vec<Item>,
+    operation: Operation,
+    concurrency: Option<usize>,
+) -> Result<ConcurrentResults<Item, Output, Operation>, AnalysisError>
 where
-    Item: Send + 'static,
-    ResultValue: Send + 'static,
-    Operation: Fn(Item) -> FutureValue + Send + Sync + Copy + 'static,
-    FutureValue: Future<Output = Result<ResultValue, AnalysisError>> + Send + 'static,
+    Operation: Fn(Item) -> Work,
+    Work: Future<Output = Result<Output, AnalysisError>> + Send + 'static,
+    Output: Send + 'static,
 {
-    if concurrency == 0 {
+    let limit = concurrency.unwrap_or(ANALYSIS_CONCURRENCY);
+    if limit == 0 {
         return Err(AnalysisError::Validation(String::from(
             "concurrency must be positive",
         )));
     }
-    let result_capacity = items.len();
-    let semaphore = Arc::new(Semaphore::new(concurrency));
-    let mut tasks = JoinSet::new();
-    for item in items {
-        let permit = Arc::clone(&semaphore)
-            .acquire_owned()
-            .await
-            .map_err(|error| AnalysisError::Callback(error.to_string()))?;
-        tasks.spawn(async move {
-            let result = operation(item).await;
-            drop(permit);
-            result
-        });
+    Ok(ConcurrentResults {
+        remaining: items.into_iter(),
+        operation,
+        concurrency: limit,
+        tasks: JoinSet::new(),
+    })
+}
+
+impl<Item, Output, Operation> ConcurrentResults<Item, Output, Operation>
+where
+    Output: Send + 'static,
+{
+    pub async fn next<Work>(&mut self) -> Option<Result<Output, AnalysisError>>
+    where
+        Operation: Fn(Item) -> Work,
+        Work: Future<Output = Result<Output, AnalysisError>> + Send + 'static,
+    {
+        while self.tasks.len() < self.concurrency {
+            match self.remaining.next() {
+                Some(item) => {
+                    self.tasks.spawn((self.operation)(item));
+                }
+                None => break,
+            }
+        }
+        let completed = self.tasks.join_next().await?;
+        let result = completed.map_err(AnalysisError::Join).and_then(identity);
+        if result.is_err() {
+            self.tasks.shutdown().await;
+            self.remaining = Vec::new().into_iter();
+        }
+        Some(result)
     }
-    let mut results = Vec::with_capacity(result_capacity);
-    while let Some(task) = tasks.join_next().await {
-        results.push(task.map_err(|error| AnalysisError::Callback(error.to_string()))??);
-    }
-    Ok(results)
 }
 
 pub fn partition_items<T, S>(
@@ -131,12 +161,14 @@ pub fn partition_content(
     parts: &[TracePart],
     limit: usize,
 ) -> Result<Vec<Vec<TracePart>>, AnalysisError> {
-    let batches = partition_items(
-        parts,
-        |part| serde_json::to_vec(part).map_or(usize::MAX, |json| json.len().saturating_add(20)),
-        limit,
-    )?;
-    Ok(batches)
+    let sized = parts
+        .iter()
+        .map(|part| Ok((part, serde_json::to_vec(part)?.len().saturating_add(20))))
+        .collect::<Result<Vec<_>, AnalysisError>>()?;
+    Ok(partition_items(&sized, |(_, size)| *size, limit)?
+        .into_iter()
+        .map(|batch| batch.into_iter().map(|(part, _)| part.clone()).collect())
+        .collect())
 }
 
 pub async fn read_execution(
@@ -147,27 +179,16 @@ pub async fn read_execution(
     let mut cursor = String::new();
     let mut partial = false;
     loop {
-        let page = read(execution.id.clone(), cursor.clone(), 0).await?;
+        let mut page = read(execution.id.clone(), cursor.clone(), 0).await?;
         store.add(&page.parts)?;
         partial |= page.partial;
-        match page.next_cursor {
-            None => {
-                return Ok(ExecutionContent {
-                    execution,
-                    parts: Vec::new(),
-                    next_cursor: None,
-                    partial,
-                });
+        match &page.next_cursor {
+            Some(next) if !next.is_empty() && next != &cursor => cursor.clone_from(next),
+            Some(_) | None => {
+                page.parts.clear();
+                page.partial = partial;
+                return Ok(page);
             }
-            Some(next) if next == cursor => {
-                return Ok(ExecutionContent {
-                    execution,
-                    parts: Vec::new(),
-                    next_cursor: None,
-                    partial: true,
-                });
-            }
-            Some(next) => cursor = next,
         }
     }
 }
@@ -186,14 +207,18 @@ pub fn feedback_pages(
                 finding.id.clone(),
                 finding.check_id.clone(),
                 finding.title.clone(),
-                format!("{:?}", finding.status),
+                String::from(match finding.status {
+                    FindingStatus::Open => "open",
+                    FindingStatus::Resolved => "resolved",
+                    FindingStatus::Dismissed => "dismissed",
+                }),
                 finding.reason.clone(),
             )
         })
         .collect();
     partition_items(
         &entries,
-        |row| serde_json::to_vec(row).map_or(usize::MAX, |json| json.len()),
-        8000,
+        |row| serde_json::to_vec(row).map_or(usize::MAX, |json| json.len().saturating_add(1)),
+        7998,
     )
 }

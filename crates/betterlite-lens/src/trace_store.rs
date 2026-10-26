@@ -1,7 +1,11 @@
 use std::io::Error;
+use std::iter::from_fn;
+use std::num::TryFromIntError;
 use std::path::Path;
 
-use rusqlite::{Connection, params};
+use self::catalogs::Catalogs;
+use rusqlite::{Connection, OptionalExtension, params};
+mod catalogs;
 use tempfile::TempDir;
 use thiserror::Error;
 
@@ -10,6 +14,10 @@ use crate::models::finding::Evidence;
 
 #[derive(Debug, Error)]
 pub enum TraceStoreError {
+    #[error("span count exceeds platform limits: {0}")]
+    Count(#[from] TryFromIntError),
+    #[error("catalog row exceeds 24000 bytes")]
+    Oversized,
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
     #[error("stored trace part is invalid: {0}")]
@@ -78,12 +86,32 @@ impl TraceStore {
         }
         Ok(None)
     }
-    pub fn parts(&self) -> Result<Vec<TracePart>, TraceStoreError> {
-        let mut statement = self
-            .connection
-            .prepare("SELECT body FROM spans ORDER BY span_id")?;
-        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
-        rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect()
+    pub fn parts(&self) -> impl Iterator<Item = Result<TracePart, TraceStoreError>> + '_ {
+        let mut cursor: Option<String> = None;
+        let mut exhausted = false;
+        from_fn(move || {
+            if exhausted {
+                return None;
+            }
+            let result = OptionalExtension::optional(self.connection.query_row(
+                "SELECT span_id, body FROM spans WHERE ?1 IS NULL OR span_id > ?1 ORDER BY span_id LIMIT 1",
+                params![cursor], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            ));
+            match result {
+                Ok(Some((id, body))) => {
+                    cursor = Some(id);
+                    Some(serde_json::from_str(&body).map_err(TraceStoreError::Json))
+                }
+                Ok(None) => {
+                    exhausted = true;
+                    None
+                }
+                Err(error) => {
+                    exhausted = true;
+                    Some(Err(TraceStoreError::Sqlite(error)))
+                }
+            }
+        })
     }
     pub fn get(&self, span_id: &str) -> Result<Option<TracePart>, TraceStoreError> {
         let body = self.optional_string("SELECT body FROM spans WHERE span_id=?", span_id)?;
@@ -102,46 +130,29 @@ impl TraceStore {
         statement: &str,
         span_id: &str,
     ) -> Result<Option<String>, TraceStoreError> {
-        let value = self
-            .connection
-            .query_row(statement, params![span_id], |row| row.get(0))
-            .optional()?;
+        let value = OptionalExtension::optional(self.connection.query_row(
+            statement,
+            params![span_id],
+            |row| row.get(0),
+        ))?;
         Ok(value)
     }
     pub fn count(&self) -> Result<usize, TraceStoreError> {
         let count = self
             .connection
-            .query_row("SELECT count(*) FROM spans", [], |row| row.get::<_, i64>(0))?
-            .try_into()
-            .unwrap_or(0);
-        Ok(count)
+            .query_row("SELECT count(*) FROM spans", [], |row| row.get::<_, i64>(0))?;
+        Ok(usize::try_from(count)?)
     }
-    pub fn catalogs(&self, root_count: usize) -> Result<Vec<Vec<CatalogRow>>, TraceStoreError> {
-        let mut pages = Vec::new();
-        let mut page = Vec::new();
-        let mut size: usize = 0;
-        for part in self.parts()? {
-            let preview = overview_content(&part, root_count);
-            let row = (
-                part.span_id,
-                part.parent_span_id,
-                part.name,
-                part.kind,
-                preview,
-            );
-            let width = serde_json::to_vec(&row)?.len();
-            if !page.is_empty() && size.saturating_add(width) > 24_000 {
-                pages.push(page);
-                page = Vec::new();
-                size = 0;
-            }
-            page.push(row);
-            size = size.saturating_add(width);
+    pub fn catalogs(
+        &self,
+        root_count: usize,
+    ) -> impl Iterator<Item = Result<Vec<CatalogRow>, TraceStoreError>> + '_ {
+        let parts = self.parts();
+        Catalogs {
+            parts,
+            pending: None,
+            root_count,
         }
-        if !page.is_empty() {
-            pages.push(page);
-        }
-        Ok(pages)
     }
 }
 
@@ -155,19 +166,16 @@ pub fn overview_content(part: &TracePart, root_count: usize) -> String {
     } else {
         160
     };
-    let characters: Vec<char> = part.content.chars().collect();
-    if characters.len() <= limit {
+    let length = part.content.chars().count();
+    if length <= limit {
         return part.content.clone();
     }
     let first = limit.checked_div(3).unwrap_or(0);
-    let prefix: String = characters.iter().take(first).collect();
-    let suffix: String = characters
-        .iter()
-        .skip(
-            characters
-                .len()
-                .saturating_sub(limit.saturating_mul(2).checked_div(3).unwrap_or(0)),
-        )
+    let prefix: String = part.content.chars().take(first).collect();
+    let suffix: String = part
+        .content
+        .chars()
+        .skip(length.saturating_sub(limit.saturating_mul(2).checked_div(3).unwrap_or(0)))
         .collect();
     format!("{prefix}\n[... preview omitted; read this span for evidence ...]\n{suffix}")
 }
@@ -182,23 +190,6 @@ pub fn trace_store() -> Result<TraceStore, TraceStoreError> {
 }
 
 pub type CatalogRow = (String, String, String, String, String);
-
-trait OptionalRow {
-    fn optional(self) -> Result<Option<Self::Output>, rusqlite::Error>
-    where
-        Self: Sized;
-    type Output;
-}
-impl<T> OptionalRow for Result<T, rusqlite::Error> {
-    type Output = T;
-    fn optional(self) -> Result<Option<T>, rusqlite::Error> {
-        match self {
-            Ok(value) => Ok(Some(value)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(error) => Err(error),
-        }
-    }
-}
 
 #[path = "trace_store/tests/overview_content.rs"]
 mod overview_content;

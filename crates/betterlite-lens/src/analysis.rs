@@ -1,6 +1,8 @@
+use crate::models::decode::{DecodeError, decode};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::task::JoinError;
 
 use crate::models::execution::{Coverage, Execution, ExecutionContent, TracePart};
 use crate::models::finding::{Evidence, FindingDraft};
@@ -11,7 +13,14 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
 pub const ANALYSIS_CONCURRENCY: usize = 8;
-pub trait Record: Serialize + DeserializeOwned + Send + Sync {}
+pub trait Record: Serialize + DeserializeOwned + Send + Sync {
+    fn model_validate_json(bytes: &[u8]) -> Result<Self, DecodeError>
+    where
+        Self: Validate<Context = ()>,
+    {
+        decode(bytes)
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[serde(deny_unknown_fields)]
@@ -62,6 +71,8 @@ impl Record for SpanRead {}
 #[serde(deny_unknown_fields)]
 #[garde(allow_unvalidated)]
 pub struct TraceReview {
+    #[serde(default)]
+    pub cannot_assess: bool,
     #[serde(default)]
     #[garde(dive)]
     pub observations: Vec<Observation>,
@@ -181,6 +192,10 @@ pub type ProgressFuture = Pin<Box<dyn Future<Output = Result<(), AnalysisError>>
 
 #[derive(Debug, Error)]
 pub enum AnalysisError {
+    #[error("model response is invalid: {0}")]
+    Decode(#[from] DecodeError),
+    #[error("analysis operation failed: {0}")]
+    Join(#[from] JoinError),
     #[error("model response is not valid JSON: {0}")]
     Json(#[from] serde_json::Error),
     #[error("structured response failed validation: {0}")]
