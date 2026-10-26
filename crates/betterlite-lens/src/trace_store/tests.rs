@@ -29,6 +29,13 @@ fn stores_and_reads_spans() {
     assert_eq!(store.previous("b").unwrap(), "");
 }
 
+#[tokio::test]
+async fn async_add_keeps_store_usable_after_blocking_write() {
+    let mut store = TraceStore::new(Connection::open_in_memory().unwrap()).unwrap();
+    store.add_async(&[part("async", "", "body")]).await.unwrap();
+    assert_eq!(store.count().unwrap(), 1);
+}
+
 #[rstest]
 #[case::prefix("e", "s", "left", true)]
 #[case::suffix("e", "s", "right", true)]
@@ -85,6 +92,8 @@ fn replaces_spans_and_keeps_unique_reads() {
     assert_eq!(
         store
             .connection
+            .as_ref()
+            .unwrap()
             .query_row("SELECT count(*) FROM reads", [], |row| row.get::<_, i64>(0))
             .unwrap(),
         1

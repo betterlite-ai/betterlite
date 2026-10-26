@@ -187,7 +187,7 @@ pub async fn read_execution(
     let mut partial = false;
     loop {
         let mut page = read(execution.id.clone(), cursor.clone(), 0).await?;
-        store.add(&page.parts)?;
+        store.add_async(&page.parts).await?;
         partial |= page.partial;
         match &page.next_cursor {
             Some(next) if !next.is_empty() && next != &cursor => cursor.clone_from(next),

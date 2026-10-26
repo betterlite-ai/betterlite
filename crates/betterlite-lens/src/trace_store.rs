@@ -5,6 +5,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 mod catalogs;
 use tempfile::TempDir;
 use thiserror::Error;
+use tokio::task::{JoinError, JoinSet};
 
 use crate::analysis::primitives::evidence_valid;
 use crate::models::execution::TracePart;
@@ -22,11 +23,29 @@ pub enum TraceStoreError {
     Json(#[from] serde_json::Error),
     #[error("temporary trace directory failed: {0}")]
     Temp(#[from] Error),
+    #[error("trace store connection is unavailable")]
+    Unavailable,
+    #[error("blocking trace store task failed: {0}")]
+    BlockingJoin(#[from] JoinError),
 }
 
 pub struct TraceStore {
-    connection: Connection,
+    connection: Option<Connection>,
     directory: Option<TempDir>,
+}
+
+fn write_parts(
+    connection: &Connection,
+    parts: &[TracePart],
+    statement: &str,
+) -> Result<(), TraceStoreError> {
+    for part in parts {
+        connection.execute(
+            statement,
+            params![part.span_id, serde_json::to_string(part)?],
+        )?;
+    }
+    Ok(())
 }
 
 impl TraceStore {
@@ -40,29 +59,46 @@ impl TraceStore {
             [],
         )?;
         Ok(Self {
-            connection,
+            connection: Some(connection),
             directory: None,
         })
     }
     pub fn add(&self, parts: &[TracePart]) -> Result<(), TraceStoreError> {
         let statement = "INSERT OR REPLACE INTO spans VALUES (?, ?)";
-        self.write_parts(parts, statement)
+        write_parts(self.connection()?, parts, statement)
     }
     pub fn add_reads(&self, parts: &[TracePart]) -> Result<(), TraceStoreError> {
         let statement = "INSERT OR IGNORE INTO reads VALUES (?, ?)";
-        self.write_parts(parts, statement)
+        write_parts(self.connection()?, parts, statement)
     }
-    fn write_parts(&self, parts: &[TracePart], statement: &str) -> Result<(), TraceStoreError> {
-        for part in parts {
-            self.connection.execute(
-                statement,
-                params![part.span_id, serde_json::to_string(part)?],
-            )?;
-        }
-        Ok(())
+
+    pub async fn add_async(&mut self, parts: &[TracePart]) -> Result<(), TraceStoreError> {
+        let connection = self.connection.take().ok_or(TraceStoreError::Unavailable)?;
+        let parts_copy = parts.to_vec();
+        let mut tasks = JoinSet::new();
+        tasks.spawn_blocking(move || {
+            let result = write_parts(
+                &connection,
+                &parts_copy,
+                "INSERT OR REPLACE INTO spans VALUES (?, ?)",
+            );
+            (connection, result)
+        });
+        let joined = tasks
+            .join_next()
+            .await
+            .ok_or(TraceStoreError::Unavailable)?;
+        let result = joined?;
+        self.connection = Some(result.0);
+        result.1
     }
+
+    fn connection(&self) -> Result<&Connection, TraceStoreError> {
+        self.connection.as_ref().ok_or(TraceStoreError::Unavailable)
+    }
+
     pub fn evidence(&self, evidence: &Evidence) -> Result<Option<TracePart>, TraceStoreError> {
-        let mut statement = self.connection.prepare("SELECT body FROM spans WHERE span_id=? UNION ALL SELECT body FROM reads WHERE span_id=?")?;
+        let mut statement = self.connection()?.prepare("SELECT body FROM spans WHERE span_id=? UNION ALL SELECT body FROM reads WHERE span_id=?")?;
         let rows = statement.query_map(params![evidence.span_id, evidence.span_id], |row| {
             row.get::<_, String>(0)
         })?;
@@ -75,13 +111,18 @@ impl TraceStore {
         Ok(None)
     }
     pub fn parts(&self) -> impl Iterator<Item = Result<TracePart, TraceStoreError>> + '_ {
+        let stored_connection = self.connection.as_ref();
         let mut cursor: Option<String> = None;
         let mut exhausted = false;
         from_fn(move || {
             if exhausted {
                 return None;
             }
-            let result = OptionalExtension::optional(self.connection.query_row(
+            let Some(connection) = stored_connection else {
+                exhausted = true;
+                return Some(Err(TraceStoreError::Unavailable));
+            };
+            let result = OptionalExtension::optional(connection.query_row(
                 "SELECT span_id, body FROM spans WHERE ?1 IS NULL OR span_id > ?1 ORDER BY span_id LIMIT 1",
                 params![cursor], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             ));
@@ -118,7 +159,7 @@ impl TraceStore {
         statement: &str,
         span_id: &str,
     ) -> Result<Option<String>, TraceStoreError> {
-        let value = OptionalExtension::optional(self.connection.query_row(
+        let value = OptionalExtension::optional(self.connection()?.query_row(
             statement,
             params![span_id],
             |row| row.get(0),
@@ -127,7 +168,7 @@ impl TraceStore {
     }
     pub fn count(&self) -> Result<usize, TraceStoreError> {
         let count = self
-            .connection
+            .connection()?
             .query_row("SELECT count(*) FROM spans", [], |row| row.get::<_, i64>(0))?;
         Ok(usize::try_from(count)?)
     }
