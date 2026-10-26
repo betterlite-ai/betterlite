@@ -7,8 +7,6 @@ pub struct UserApiKeyAuth {
 
 #[must_use]
 pub fn user_api_key_has_admin_view(api_key: &UserApiKeyAuth) -> bool {
-    matches!(
-        api_key.user_role.as_deref(),
-        Some("proxy_admin" | "proxy_admin_viewer")
-    )
+    let role = api_key.user_role.as_deref();
+    role.is_some_and(|value| value == "proxy_admin" || value == "proxy_admin_viewer")
 }

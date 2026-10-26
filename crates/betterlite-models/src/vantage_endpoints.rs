@@ -28,41 +28,17 @@ pub struct VantageExportRequest {
     pub end_time_utc: Option<DateTime<Utc>>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, default)]
 pub struct VantageDryRunRequest {
-    pub limit: Option<i64>,
+    pub limit: i64,
 }
 
-impl<'de> Deserialize<'de> for VantageDryRunRequest {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct RawDryRunRequest {
-            #[serde(default)]
-            limit: DryRunLimit,
-        }
-
-        let raw = RawDryRunRequest::deserialize(deserializer)?;
-        Ok(Self {
-            limit: match raw.limit {
-                DryRunLimit::Missing => Some(500),
-                DryRunLimit::Null => None,
-                DryRunLimit::Number(limit) => Some(limit),
-            },
-        })
+impl Default for VantageDryRunRequest {
+    fn default() -> Self {
+        let limit = 500;
+        Self { limit }
     }
-}
-
-#[derive(Default, Deserialize)]
-#[serde(untagged)]
-enum DryRunLimit {
-    Null,
-    Number(i64),
-    #[default]
-    Missing,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -104,17 +80,7 @@ impl TryFrom<VantageInitRequestRaw> for VantageInitRequest {
     type Error = String;
 
     fn try_from(raw: VantageInitRequestRaw) -> Result<Self, Self::Error> {
-        if raw.api_key.trim().is_empty() {
-            return Err(String::from("api_key must be a non-empty string"));
-        }
-        if raw.integration_token.trim().is_empty() {
-            return Err(String::from("integration_token must be a non-empty string"));
-        }
-        Ok(Self {
-            api_key: raw.api_key,
-            integration_token: raw.integration_token,
-            base_url: raw.base_url,
-        })
+        convert_init_request(raw)
     }
 }
 
@@ -130,26 +96,57 @@ impl TryFrom<VantageSettingsUpdateRaw> for VantageSettingsUpdate {
     type Error = String;
 
     fn try_from(raw: VantageSettingsUpdateRaw) -> Result<Self, Self::Error> {
-        if raw.api_key.as_deref().is_some_and(str_trim_is_empty)
-            || raw
-                .integration_token
-                .as_deref()
-                .is_some_and(str_trim_is_empty)
-        {
-            return Err(String::from("credentials must be non-empty strings"));
-        }
-        Ok(Self {
-            api_key: raw.api_key,
-            integration_token: raw.integration_token,
-            base_url: raw.base_url,
-        })
+        convert_settings_update(raw)
     }
 }
 
 fn default_base_url() -> String {
-    String::from("https://api.vantage.sh")
+    let mut base_url = String::new();
+    base_url.push_str("https://api.vantage.sh");
+    base_url
+}
+
+fn validate_required_credentials(api_key: &str, integration_token: &str) -> Result<(), String> {
+    if api_key.trim().is_empty() {
+        return Err(String::from("api_key must be a non-empty string"));
+    }
+    if integration_token.trim().is_empty() {
+        return Err(String::from("integration_token must be a non-empty string"));
+    }
+    Ok(())
+}
+
+fn convert_init_request(raw: VantageInitRequestRaw) -> Result<VantageInitRequest, String> {
+    validate_required_credentials(&raw.api_key, &raw.integration_token)?;
+    let request = VantageInitRequest {
+        api_key: raw.api_key,
+        integration_token: raw.integration_token,
+        base_url: raw.base_url,
+    };
+    Ok(request)
+}
+
+fn validate_optional_credentials(
+    api_key: Option<&str>,
+    integration_token: Option<&str>,
+) -> Result<(), String> {
+    if api_key.is_some_and(str_trim_is_empty) || integration_token.is_some_and(str_trim_is_empty) {
+        return Err(String::from("credentials must be non-empty strings"));
+    }
+    Ok(())
+}
+
+fn convert_settings_update(raw: VantageSettingsUpdateRaw) -> Result<VantageSettingsUpdate, String> {
+    validate_optional_credentials(raw.api_key.as_deref(), raw.integration_token.as_deref())?;
+    let update = VantageSettingsUpdate {
+        api_key: raw.api_key,
+        integration_token: raw.integration_token,
+        base_url: raw.base_url,
+    };
+    Ok(update)
 }
 
 fn str_trim_is_empty(value: &str) -> bool {
-    value.trim().is_empty()
+    let trimmed = value.trim();
+    trimmed.is_empty()
 }

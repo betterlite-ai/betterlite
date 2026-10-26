@@ -58,9 +58,13 @@ pub struct CloudZeroSettingsUpdate {
 }
 
 fn default_timezone() -> String {
-    String::from("UTC")
+    let mut timezone = String::new();
+    timezone.push_str("UTC");
+    timezone
 }
 
 fn default_operation() -> String {
-    String::from("replace_hourly")
+    let mut operation = String::new();
+    operation.push_str("replace_hourly");
+    operation
 }
