@@ -2,11 +2,10 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 
 pub fn extract_tool_use_ids(content: &Value) -> Vec<String> {
-    let ids: Vec<String> = extract_ids(content, "tool_use", "id")
+    extract_ids(content, "tool_use", "id")
         .into_iter()
         .map(str::to_owned)
-        .collect();
-    if ids.is_empty() { Vec::new() } else { ids }
+        .collect()
 }
 
 fn extract_ids<'content>(
@@ -14,7 +13,7 @@ fn extract_ids<'content>(
     block_type: &str,
     id_field: &str,
 ) -> Vec<&'content str> {
-    let ids: Vec<&str> = content
+    content
         .as_array()
         .map(|parts| {
             parts
@@ -24,12 +23,11 @@ fn extract_ids<'content>(
                 .filter(|id| !id.is_empty())
                 .collect()
         })
-        .unwrap_or_default();
-    if ids.is_empty() { Vec::new() } else { ids }
+        .unwrap_or_default()
 }
 
 pub fn extract_tool_result_ids(content: &Value) -> BTreeSet<String> {
-    let ids: BTreeSet<String> = content
+    content
         .as_array()
         .map(|parts| {
             parts
@@ -40,8 +38,7 @@ pub fn extract_tool_result_ids(content: &Value) -> BTreeSet<String> {
                 .map(str::to_owned)
                 .collect()
         })
-        .unwrap_or_default();
-    if ids.is_empty() { BTreeSet::new() } else { ids }
+        .unwrap_or_default()
 }
 
 pub fn extract_exchange_spans(messages: &[Value]) -> (Vec<Vec<usize>>, Option<&'static str>) {

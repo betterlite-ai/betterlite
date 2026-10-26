@@ -12,7 +12,14 @@ fn extracts_nested_tool_result_text_and_ignores_media() {
 #[test]
 fn rejects_unknown_call_type() {
     let error = normalize_messages(&[], "chat").unwrap_err();
-    assert!(error.contains("completion"));
+    assert!(matches!(
+        &error,
+        CompressionError::UnsupportedCallType { call_type } if call_type == "chat"
+    ));
+    assert_eq!(
+        error.to_string(),
+        "Unsupported call_type=\"chat\" for compression. Expected one of: [\"completion\", \"acompletion\", \"anthropic_messages\"]."
+    );
 }
 
 #[test]

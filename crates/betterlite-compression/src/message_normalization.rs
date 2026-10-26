@@ -1,22 +1,23 @@
 use serde_json::{Map, Value};
+use thiserror::Error;
 
 pub const ANTHROPIC_CALL_TYPES: [&str; 1] = ["anthropic_messages"];
 pub const SUPPORTED_CALL_TYPES: [&str; 3] = ["completion", "acompletion", "anthropic_messages"];
 
+#[derive(Debug, Error)]
+pub enum CompressionError {
+    #[error(
+        "Unsupported call_type={call_type:?} for compression. Expected one of: {SUPPORTED_CALL_TYPES:?}."
+    )]
+    UnsupportedCallType { call_type: String },
+}
+
 pub fn normalize_call_type(call_type: &str) -> String {
-    if call_type.is_empty() {
-        String::new()
-    } else {
-        call_type.to_owned()
-    }
+    call_type.to_owned()
 }
 
 pub fn is_anthropic_call_type(call_type: &str) -> bool {
-    let is_anthropic = matches!(call_type, "anthropic_messages");
-    if is_anthropic {
-        return true;
-    }
-    false
+    matches!(call_type, "anthropic_messages")
 }
 
 pub fn content_to_text(content: &Value) -> String {
@@ -46,12 +47,11 @@ pub fn content_to_text(content: &Value) -> String {
 pub fn normalize_messages(
     messages: &[Value],
     call_type: &str,
-) -> Result<(Vec<Value>, Vec<Value>), String> {
+) -> Result<(Vec<Value>, Vec<Value>), CompressionError> {
     if !SUPPORTED_CALL_TYPES.contains(&call_type) {
-        return Err(format!(
-            "Unsupported call_type={call_type:?} for compression. Expected one of: {:?}.",
-            SUPPORTED_CALL_TYPES
-        ));
+        return Err(CompressionError::UnsupportedCallType {
+            call_type: call_type.to_owned(),
+        });
     }
     let original = messages.to_vec();
     let normalized = original
@@ -70,17 +70,12 @@ pub fn normalize_messages(
 }
 
 pub fn extract_last_user_message(messages: &[Value]) -> String {
-    let last_user = messages
+    messages
         .iter()
         .rev()
         .find(|message| message.get("role") == Some(&Value::String("user".to_owned())))
         .and_then(|message| message.get("content"))
-        .map_or_else(String::new, content_to_text);
-    if last_user.is_empty() {
-        String::new()
-    } else {
-        last_user
-    }
+        .map_or_else(String::new, content_to_text)
 }
 
 mod tests;
