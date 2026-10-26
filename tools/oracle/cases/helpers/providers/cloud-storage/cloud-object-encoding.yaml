@@ -1,0 +1,5 @@
+kind: helper
+name: cloud-object-encoding
+call: {cloud_storage: {function: cloud_object_encoding, value: a/b}}
+env: {}
+compare: {ignore: []}

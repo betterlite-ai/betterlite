@@ -1,0 +1,13 @@
+kind: helper
+name: proxy-span-tagging
+call:
+  datadog_tags:
+    function: spans
+    current: {trace_id: 12, span_id: 34, set_tag_str: false, set_tag: true}
+    root: {trace_id: 56, span_id: 78, set_tag_str: true, set_tag: false}
+    call_id: call-123
+    key_alias: ""
+    key_hash: 88dc28d0f030c55ed5a2a1e0a6e3b1c1
+    requested_model: gpt-4o
+env: {}
+compare: {ignore: []}

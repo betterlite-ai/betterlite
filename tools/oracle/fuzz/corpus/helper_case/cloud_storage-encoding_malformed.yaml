@@ -1,0 +1,5 @@
+kind: helper
+name: cloud_storage-encoding_malformed
+call: {cloud_storage: {function: cloud_object_encoding, value: "%FF/%252e/~._-"}}
+env: {}
+compare: {ignore: []}

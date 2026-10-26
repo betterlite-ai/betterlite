@@ -1,0 +1,1 @@
+{kind: helper, name: cloud-storage-basic, call: {cloud_storage: {function: cloud_uri_detection, value: s3://bucket/object}}, env: {}, compare: {ignore: []}}
