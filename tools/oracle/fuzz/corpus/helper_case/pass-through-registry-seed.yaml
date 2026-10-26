@@ -1,3 +1,4 @@
+# pass_through_registry_lookup
 kind: helper
 name: pass-through-registry-seed
 call:
