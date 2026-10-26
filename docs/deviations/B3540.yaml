@@ -1,0 +1,32 @@
+task: B3540
+deviations:
+  - what: >-
+      Content detection regex matches code if 3+ code keywords are found or
+      >30% of lines are indented, sampled from the first 5000 characters.
+    why: >-
+      LiteLLM uses the same heuristic for code vs. text classification; the
+      exact numbers and sampling limit are preserved from the pinned commit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/content_detection.py#L32-L41
+  - what: >-
+      Message key extraction searches for file paths in the first 2000 chars:
+      patterns are "# filename", "// filename", "File: path", "--- filename",
+      and backtick-quoted filenames.
+    why: >-
+      LiteLLM limits the search to avoid expensive regex on very large content;
+      this preserves that optimization.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/message_stubbing.py#L32-L37
+  - what: >-
+      Anthropic tool exchange validation detects an invalid_anthropic_tool_sequence
+      error only; it returns empty spans and the error string, never panicking on
+      malformed content blocks.
+    why: >-
+      Malformed input is classified as invalid, allowing the caller to decide
+      whether to fail the request or pass through. LiteLLM does the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L187-L200
+  - what: >-
+      Message stub content hardcodes the retrieval tool name 'litellm_content_retrieve'
+      in the stub text.
+    why: >-
+      This is a model-visible reference that must match the tool definition
+      in B3542, preserving LiteLLM compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/message_stubbing.py#L68-L71
