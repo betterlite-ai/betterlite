@@ -11,7 +11,7 @@ fn usage() -> UsageRow {
     UsageRow {
         date: "2024-03-05".to_owned(),
         api_key: "key".to_owned(),
-        spend: 0.25,
+        spend: Decimal::new(25, 2),
         api_requests: 2,
         user_id: Some("user-1".to_owned()),
         model: Some("m".to_owned()),
@@ -148,7 +148,10 @@ fn unparsable_date_leaves_periods_null() {
 #[case::largest_fit(999_999_999_999.5_f64, Decimal::new(999_999_999_999_500_000, 6))]
 #[case::largest_negative(-999_999_999_999.5_f64, Decimal::new(-999_999_999_999_500_000, 6))]
 fn spend_rounds_to_six_places(#[case] spend: f64, #[case] expected: Decimal) {
-    let row = UsageRow { spend, ..usage() };
+    let row = UsageRow {
+        spend: Decimal::try_from(spend).unwrap(),
+        ..usage()
+    };
     assert_eq!(
         column(row, "BilledCost"),
         ColumnValues::Decimal(vec![Some(expected)])
@@ -161,7 +164,7 @@ fn spend_rounds_to_six_places(#[case] spend: f64, #[case] expected: Decimal) {
 #[case::requests_overflow(0.0_f64, 1_000_000_000_000_i64)]
 fn values_past_decimal_18_6_fail(#[case] spend: f64, #[case] api_requests: i64) {
     let row = UsageRow {
-        spend,
+        spend: Decimal::try_from(spend).unwrap(),
         api_requests,
         ..usage()
     };
@@ -170,14 +173,4 @@ fn values_past_decimal_18_6_fail(#[case] spend: f64, #[case] api_requests: i64) 
         matches!(error, TransformError::Overflow { .. }),
         "{error:?}"
     );
-}
-
-#[test]
-fn spend_that_is_not_a_number_fails() {
-    let row = UsageRow {
-        spend: f64::NAN,
-        ..usage()
-    };
-    let error = transform(&[row]).unwrap_err();
-    assert!(matches!(error, TransformError::Spend { .. }), "{error:?}");
 }
