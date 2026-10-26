@@ -32,10 +32,16 @@ pub fn normalize_protocol_version(raw_version: &AgentJson) -> Option<&'static st
     }
 }
 
-pub fn resolve_served_protocol_version(card: Option<&AgentCard>) -> &'static str {
-    card.and_then(|agent_card| agent_card.get("protocolVersion"))
+pub fn resolve_served_version(card: Option<&AgentCard>) -> &'static str {
+    let served = card
+        .and_then(|agent_card| agent_card.get("protocolVersion"))
         .and_then(normalize_protocol_version)
-        .unwrap_or(DEFAULT_VERSION)
+        .map_or(DEFAULT_VERSION, |version| version);
+    if served.is_empty() {
+        DEFAULT_VERSION
+    } else {
+        served
+    }
 }
 
 #[must_use]
@@ -47,7 +53,7 @@ pub fn merge_agent_card(
     caller_description: Option<&str>,
 ) -> AgentCard {
     let mut card = upstream_card.cloned().unwrap_or_default();
-    let served_version = resolve_served_protocol_version(upstream_card);
+    let served_version = resolve_served_version(upstream_card);
     card.insert(
         "protocolVersion".to_owned(),
         AgentJson::String(served_version.to_owned()),
@@ -84,8 +90,16 @@ fn apply_defaults(card: &mut AgentCard, proxy_base_url: &str) {
     let capabilities = filtered_capabilities(card.get("capabilities"));
     card.insert("capabilities".to_owned(), capabilities);
     insert_default(card, "skills", default_skills());
-    insert_default(card, "defaultInputModes", default_modes());
-    insert_default(card, "defaultOutputModes", default_modes());
+    insert_default(
+        card,
+        "defaultInputModes",
+        AgentJson::Array(vec![AgentJson::String("text".to_owned())]),
+    );
+    insert_default(
+        card,
+        "defaultOutputModes",
+        AgentJson::Array(vec![AgentJson::String("text".to_owned())]),
+    );
     insert_default(card, "provider", provider(proxy_base_url));
 }
 
@@ -99,14 +113,22 @@ fn apply_proxy_fields(card: &mut AgentCard, proxy_url: &str, served_version: &st
 }
 
 fn is_numeric_component(component: &str) -> bool {
-    !component.is_empty() && component.bytes().all(|byte| byte.is_ascii_digit())
+    if component.is_empty() {
+        false
+    } else {
+        component.bytes().all(|byte| byte.is_ascii_digit())
+    }
 }
 
 fn split_patch_suffix(rest: &str) -> (&str, Option<&str>) {
-    rest.find(['-', '+']).map_or((rest, None), |index| {
+    let parts = rest.find(['-', '+']).map_or((rest, None), |index| {
         let (patch, suffix) = rest.split_at(index);
         (patch, Some(suffix))
-    })
+    });
+    if parts.1.is_none() {
+        return parts;
+    }
+    parts
 }
 
 fn valid_suffix(raw_suffix: Option<&str>) -> bool {
@@ -125,7 +147,7 @@ fn valid_suffix(raw_suffix: Option<&str>) -> bool {
 }
 
 fn valid_identifiers(raw_value: Option<&str>) -> bool {
-    raw_value.is_none_or(|identifier_text| {
+    let valid = raw_value.is_none_or(|identifier_text| {
         !identifier_text.is_empty()
             && identifier_text.split('.').all(|part| {
                 !part.is_empty()
@@ -133,7 +155,11 @@ fn valid_identifiers(raw_value: Option<&str>) -> bool {
                         .bytes()
                         .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
             })
-    })
+    });
+    if valid {
+        return true;
+    }
+    false
 }
 
 fn insert_default(card: &mut AgentCard, key: &str, value: AgentJson) {
@@ -180,10 +206,6 @@ fn default_skills() -> AgentJson {
         AgentJson::Array(vec![AgentJson::String("chat".to_owned())]),
     );
     AgentJson::Array(vec![AgentJson::Object(skill.into_iter().collect())])
-}
-
-fn default_modes() -> AgentJson {
-    AgentJson::Array(vec![AgentJson::String("text".to_owned())])
 }
 
 fn provider(proxy_base_url: &str) -> AgentJson {
@@ -236,7 +258,7 @@ fn security_requirements() -> AgentJson {
 }
 
 fn allowed_top_level(key: &str) -> bool {
-    matches!(
+    let allowed = matches!(
         key,
         "protocolVersion"
             | "name"
@@ -256,8 +278,8 @@ fn allowed_top_level(key: &str) -> bool {
             | "supportsAuthenticatedExtendedCard"
             | "signatures"
             | "url"
-    )
+    );
+    allowed
 }
 
-#[cfg(test)]
 mod tests;

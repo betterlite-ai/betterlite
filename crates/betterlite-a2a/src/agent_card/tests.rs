@@ -1,8 +1,10 @@
+#![cfg(test)]
+
 use betterlite_core::agents::json::AgentJson;
 use serde_json::from_str;
 use std::collections::BTreeMap;
 
-use super::{merge_agent_card, normalize_protocol_version, resolve_served_protocol_version};
+use super::{merge_agent_card, normalize_protocol_version, resolve_served_version};
 
 type AgentCard = BTreeMap<String, AgentJson>;
 
@@ -28,9 +30,9 @@ fn agent_card_normalizes_supported_semver_forms() {
 fn agent_card_resolves_pinned_or_default_version() {
     let pinned = card(r#"{"protocolVersion":"0.3.4"}"#);
     let invalid = card(r#"{"protocolVersion":"not-a-version"}"#);
-    assert_eq!(resolve_served_protocol_version(Some(&pinned)), "0.3");
-    assert_eq!(resolve_served_protocol_version(Some(&invalid)), "1.0");
-    assert_eq!(resolve_served_protocol_version(None), "1.0");
+    assert_eq!(resolve_served_version(Some(&pinned)), "0.3");
+    assert_eq!(resolve_served_version(Some(&invalid)), "1.0");
+    assert_eq!(resolve_served_version(None), "1.0");
 }
 
 #[test]
