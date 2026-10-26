@@ -1,16 +1,11 @@
-from typing import TypedDict
-from urllib.parse import unquote
+import uuid
+from types import MappingProxyType
+from typing import TypedDict, cast
+from unittest.mock import patch
 
+from litellm.litellm_core_utils import cloud_storage_security as cloud
 from litellm.litellm_core_utils.cloud_storage_security import (
-    _validate_cloud_object_path,  # pyright: ignore[reportPrivateUsage] # adapter captures the pinned validator
-    encode_gcs_object_name_for_url,
-    encode_s3_object_key_for_url,
-    is_managed_cloud_storage_uri,
-    sanitize_cloud_object_component,
-    sanitize_cloud_object_path,
-    should_allow_legacy_cloud_file_ids,
-    split_configured_cloud_bucket_name,
-    validate_managed_cloud_file_id,
+    _validate_cloud_object_path,  # pyright: ignore[reportPrivateUsage] # owned validator
 )
 
 Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -18,9 +13,9 @@ Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 class Input(TypedDict):
     function: str
-    value: str
+    value: Json
     fallback: str
-    params: dict[str, Json]
+    trusted: bool
     file_id: str
     scheme: str
     bucket: str
@@ -28,57 +23,55 @@ class Input(TypedDict):
     legacy: bool
 
 
-def failure(error: ValueError) -> Json:
-    return {"class": type(error).__name__, "type": type(error).__name__, "message": str(error)}
-
-
-def run(input_value: Input) -> Json:  # noqa: C901, PLR0911 # each named oracle operation captures a separate pinned seam
-    function = input_value.get("function", "")
-    try:
-        if function == "cloud_uri_detection":
-            return {"value": is_managed_cloud_storage_uri(input_value["value"])}
-        if function == "object_component_sanitization":
-            return {
-                "value": sanitize_cloud_object_component(
-                    input_value.get("value"), input_value.get("fallback", "file")
-                )
-            }
-        if function == "object_path_sanitization":
-            return {
-                "value": sanitize_cloud_object_path(
-                    input_value.get("value"), input_value.get("fallback", "file")
-                )
-            }
-        if function == "cloud_object_encoding":
-            value = input_value["value"]
-            return {
-                "gcs": encode_gcs_object_name_for_url(value),
-                "s3": encode_s3_object_key_for_url(value),
-            }
-        if function == "configured_bucket_split":
-            bucket, prefix = split_configured_cloud_bucket_name(input_value["value"])
+def run(data: Input) -> Json:  # noqa: PLR0911 # the fixture dispatches the pinned helper functions
+    value = data.get("value")
+    fallback = data.get("fallback", "file")
+    match data["function"]:
+        case "cloud_uri_detection":
+            return {"value": cloud.is_managed_cloud_storage_uri(cast(str, value))}
+        case "object_component_sanitization":
+            return {"value": cloud.sanitize_cloud_object_component(cast(str, value), fallback)}
+        case "object_path_sanitization":
+            with patch(
+                "litellm.litellm_core_utils.cloud_storage_security.uuid.uuid4",
+                return_value=uuid.UUID(int=0),
+            ):
+                return {
+                    "value": cloud.sanitize_cloud_object_path(cast(str, value), fallback),
+                    "name": cloud.build_managed_cloud_object_name(
+                        "raw/", cast(str, value), fallback
+                    ),
+                }
+        case "configured_bucket_split":
+            bucket, prefix = cloud.split_configured_cloud_bucket_name(cast(str, value))
             return {"bucket": bucket, "prefix": prefix}
-        if function == "object_path_validation":
-            _validate_cloud_object_path(input_value["value"])
+        case "object_path_validation":
+            _validate_cloud_object_path(cast(str, value))
             return {"ok": True}
-        if function == "legacy_trusted_policy":
-            return {"value": should_allow_legacy_cloud_file_ids(input_value.get("params"))}
-        if function in {"managed_id_authorization", "legacy_prefix_boundary"}:
-            bucket, object_name = validate_managed_cloud_file_id(
-                input_value["file_id"],
-                input_value["scheme"],
-                input_value["bucket"],
-                input_value.get("prefixes", []),
-                input_value.get("legacy", False),
+        case "cloud_object_encoding":
+            return {
+                "gcs": cloud.encode_gcs_object_name_for_url(cast(str, value)),
+                "s3": cloud.encode_s3_object_key_for_url(cast(str, value)),
+            }
+        case "legacy_trusted_policy":
+            settings = {"allow_legacy_cloud_file_ids": value}
+            snapshot = MappingProxyType(settings) if data.get("trusted", False) else settings
+            return {
+                "value": cloud.should_allow_legacy_cloud_file_ids(
+                    {
+                        "_litellm_internal_model_credentials": snapshot,
+                        "allow_legacy_cloud_file_ids": value,
+                    }
+                )
+            }
+        case "managed_id_authorization" | "legacy_prefix_boundary" | "encoded_traversal_order":
+            bucket, name = cloud.validate_managed_cloud_file_id(
+                data["file_id"],
+                data["scheme"],
+                data["bucket"],
+                data.get("prefixes", []),
+                data.get("legacy", False),
             )
-            return {"bucket": bucket, "object": object_name}
-        if function == "encoded_traversal_order":
-            decoded = unquote(input_value["value"])
-            scheme, path = (
-                ("s3://", decoded[5:]) if decoded.startswith("s3://") else ("gs://", decoded[5:])
-            )
-            bucket, object_name = path.split("/", 1)
-            return {"bucket": f"{scheme}{bucket}", "object": object_name}
-        raise ValueError(f"unknown cloud storage function: {function}")
-    except ValueError as error:
-        return failure(error)
+            return {"bucket": bucket, "object": name}
+        case _:
+            raise ValueError("unknown cloud storage function")

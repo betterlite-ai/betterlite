@@ -1,0 +1,17 @@
+[package]
+name = "betterlite-context-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+[package.metadata]
+cargo-fuzz = true
+[dependencies]
+betterlite-context = { path = ".." }
+libfuzzer-sys = "0.4.9"
+[[bin]]
+name = "cloud_object_path"
+path = "fuzz_targets/cloud_object_path.rs"
+test = false
+doc = false
+bench = false
+[workspace]

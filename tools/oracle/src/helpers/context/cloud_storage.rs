@@ -1,136 +1,125 @@
 use betterlite_context::cloud_storage::{
-    self,
+    self, Encoding,
     policy::{self, LegacyCloudSetting, TrustedCloudCredentials},
 };
-use serde_json::{Value, json};
-
+use serde::{Deserialize, de::IgnoredAny};
+use serde_json::json;
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub(crate) enum Scalar {
+    Text(String),
+    Boolean(bool),
+    Other(IgnoredAny),
+}
+#[derive(Deserialize)]
+#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Input {
+    CloudUriDetection {
+        value: Scalar,
+    },
+    ObjectComponentSanitization {
+        value: Option<Scalar>,
+        fallback: Option<String>,
+    },
+    ObjectPathSanitization {
+        value: Option<Scalar>,
+        fallback: Option<String>,
+    },
+    ConfiguredBucketSplit {
+        value: Scalar,
+    },
+    ObjectPathValidation {
+        value: String,
+    },
+    CloudObjectEncoding {
+        value: String,
+    },
+    LegacyTrustedPolicy {
+        value: Scalar,
+        #[serde(default)]
+        trusted: bool,
+    },
+    #[serde(alias = "legacy_prefix_boundary", alias = "encoded_traversal_order")]
+    ManagedIdAuthorization {
+        file_id: String,
+        scheme: String,
+        bucket: String,
+        #[serde(default)]
+        prefixes: Vec<String>,
+        #[serde(default)]
+        legacy: bool,
+    },
+}
 pub(crate) struct Op;
-
 impl crate::helpers::Helper for Op {
-    type Input = Value;
-
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let function = input
-            .get("function")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let result = match function {
-            "cloud_uri_detection" => {
-                json!({"value": cloud_storage::is_managed_cloud_storage_uri(string(input, "value")?)})
+    type Input = Input;
+    fn run(input: &Input) -> crate::helpers::HelperResult {
+        match input {
+            Input::CloudUriDetection { value } => Ok(
+                json!({"value": cloud_storage::is_managed_cloud_storage_uri(text(Some(value)).unwrap_or(""))}),
+            ),
+            Input::ObjectComponentSanitization { value, fallback } => Ok(
+                json!({"value": cloud_storage::sanitize_component(text(value.as_ref()), fallback.as_deref().unwrap_or("file"))}),
+            ),
+            Input::ObjectPathSanitization { value, fallback } => Ok(
+                json!({"value": cloud_storage::sanitize_path(text(value.as_ref()), fallback.as_deref().unwrap_or("file")), "name": cloud_storage::build_object_name("raw/", text(value.as_ref()), fallback.as_deref().unwrap_or("file"), uuid::Uuid::nil())}),
+            ),
+            Input::ConfiguredBucketSplit { value } => {
+                cloud_storage::split_bucket_name(text(Some(value)).unwrap_or(""))
+                    .map(|(bucket, prefix)| json!({"bucket": bucket, "prefix": prefix}))
+                    .map_err(Box::from)
             }
-            "object_component_sanitization" => sanitize_component(input),
-            "object_path_sanitization" => sanitize_path(input),
-            "cloud_object_encoding" => {
-                json!({"gcs": cloud_storage::encode_gcs_object_name_for_url(string(input, "value")?), "s3": cloud_storage::encode_s3_object_key_for_url(string(input, "value")?)})
+            Input::ObjectPathValidation { value } => {
+                cloud_storage::validate_cloud_object_path(value)
+                    .map(|()| json!({"ok": true}))
+                    .map_err(Box::from)
             }
-            "configured_bucket_split" => split_bucket(input)?,
-            "object_path_validation" => validate_path(input)?,
-            "legacy_trusted_policy" => {
-                let credentials = trusted_credentials(input.get("params"));
-                json!({"value": policy::allow_legacy(credentials.as_ref())})
+            Input::CloudObjectEncoding { value } => Ok(
+                json!({"gcs": cloud_storage::encode_object_name(value, Encoding::Gcs), "s3": cloud_storage::encode_object_name(value, Encoding::S3)}),
+            ),
+            Input::LegacyTrustedPolicy { value, trusted } => Ok(legacy(value, *trusted)),
+            Input::ManagedIdAuthorization {
+                file_id,
+                scheme,
+                bucket,
+                prefixes,
+                legacy,
+            } => {
+                let allowed: Vec<&str> = prefixes.iter().map(String::as_str).collect();
+                cloud_storage::decode_cloud_object_reference(
+                    file_id, scheme, bucket, &allowed, *legacy,
+                )
+                .map(|(found, object)| json!({"bucket": found, "object": object}))
+                .map_err(Box::from)
             }
-            "managed_id_authorization" | "legacy_prefix_boundary" => authorize(input)?,
-            "encoded_traversal_order" => {
-                match cloud_storage::decode_cloud_object_reference(string(input, "value")?) {
-                    Ok((bucket, object)) => json!({"bucket": bucket, "object": object}),
-                    Err(error) => return failure(error.to_string()),
-                }
-            }
-            _ => return Self::not_built("cloud_storage"),
-        };
-        Ok(result)
+        }
     }
 }
-
-fn string<'input>(
-    input: &'input Value,
-    name: &str,
-) -> Result<&'input str, Box<crate::helpers::HelperError>> {
-    let required = name.to_owned();
-    input.get(name).and_then(Value::as_str).ok_or_else(|| {
-        Box::new(crate::helpers::HelperError {
-            class: "InvalidInput".to_owned(),
+fn legacy(value: &Scalar, trusted: bool) -> serde_json::Value {
+    let setting = match value {
+        Scalar::Text(setting) => LegacyCloudSetting::Text(setting.clone()),
+        Scalar::Boolean(setting) => LegacyCloudSetting::Boolean(*setting),
+        Scalar::Other(_) => LegacyCloudSetting::Other,
+    };
+    let credentials = trusted.then(|| TrustedCloudCredentials::from(setting));
+    json!({"value": policy::allow_legacy(credentials.as_ref())})
+}
+fn text(value: Option<&Scalar>) -> Option<&str> {
+    match value {
+        Some(Scalar::Text(text)) => Some(text),
+        Some(Scalar::Boolean(_) | Scalar::Other(_)) | None => None,
+    }
+}
+impl From<cloud_storage::CloudStorageError> for Box<crate::helpers::HelperError> {
+    fn from(value: cloud_storage::CloudStorageError) -> Self {
+        Self::new(crate::helpers::HelperError {
+            class: "ValueError".to_owned(),
             status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: format!("{required} must be a string"),
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: value.to_string(),
         })
-    })
-}
-
-fn sanitize_component(input: &Value) -> Value {
-    let result = json!({"value": cloud_storage::sanitize_component(input.get("value").and_then(Value::as_str), input.get("fallback").and_then(Value::as_str).unwrap_or("file"))});
-    result
-}
-
-fn sanitize_path(input: &Value) -> Value {
-    let result = json!({"value": cloud_storage::sanitize_path(input.get("value").and_then(Value::as_str), input.get("fallback").and_then(Value::as_str).unwrap_or("file"))});
-    result
-}
-
-fn split_bucket(input: &Value) -> Result<Value, Box<crate::helpers::HelperError>> {
-    match cloud_storage::split_bucket_name(string(input, "value")?) {
-        Ok((bucket, prefix)) => Ok(json!({"bucket": bucket, "prefix": prefix})),
-        Err(error) => failure(error.to_string()),
     }
 }
-
-fn validate_path(input: &Value) -> Result<Value, Box<crate::helpers::HelperError>> {
-    match cloud_storage::validate_cloud_object_path(string(input, "value")?) {
-        Ok(()) => Ok(json!({"ok": true})),
-        Err(error) => failure(error.to_string()),
-    }
-}
-
-fn authorize(input: &Value) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let prefixes = input
-        .get("prefixes")
-        .and_then(Value::as_array)
-        .map(|values| values.iter().filter_map(Value::as_str).collect::<Vec<_>>())
-        .unwrap_or_default();
-    match cloud_storage::validate_managed_cloud_file_id(
-        string(input, "file_id")?,
-        string(input, "scheme")?,
-        string(input, "bucket")?,
-        &prefixes,
-        input
-            .get("legacy")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-    ) {
-        Ok((bucket, object)) => Ok(json!({"bucket": bucket, "object": object})),
-        Err(error) => failure(error.to_string()),
-    }
-}
-
-fn failure(message: String) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let error_type = Some(Some("ValueError".to_owned()));
-    Err(Box::new(crate::helpers::HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type,
-        param: None,
-        code: None,
-        message,
-    }))
-}
-
-fn trusted_credentials(value: Option<&Value>) -> Option<TrustedCloudCredentials> {
-    let Value::Object(params) = value? else {
-        return None;
-    };
-    let Value::Object(credentials) = params.get("_litellm_internal_model_credentials")? else {
-        return None;
-    };
-    let setting = match credentials.get("allow_legacy_cloud_file_ids") {
-        Some(Value::Bool(setting)) => LegacyCloudSetting::Boolean(*setting),
-        Some(Value::String(setting)) => LegacyCloudSetting::Text(setting.clone()),
-        _ => LegacyCloudSetting::Other,
-    };
-    Some(TrustedCloudCredentials {
-        allow_legacy_cloud_file_ids: setting,
-    })
-}
-
 mod tests;
