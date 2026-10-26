@@ -78,6 +78,6 @@ pitfalls:
   - A supplier captured as a frozen access-key tuple loses later aws_session_token rotations.
   - The universe_domain field is a federation option, not a replacement inference api_base.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

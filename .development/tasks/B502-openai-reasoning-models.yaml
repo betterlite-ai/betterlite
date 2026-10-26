@@ -352,6 +352,6 @@ pitfalls:
 - Search variants return before regular reasoning and temperature guards, so a shared final guard would add rejections
   the source never makes.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

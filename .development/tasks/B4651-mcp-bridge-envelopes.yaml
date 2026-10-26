@@ -76,6 +76,6 @@ pitfalls:
   - Refresh envelopes cap the upstream refresh lifetime at MAX_REFRESH_TTL_SECONDS even when the upstream reports a longer one; a test against a real upstream response proves the cap is applied.
   - The now parameter is injected and compared directly against claims.exp, so tests that use different now values (mint with one, open with another) prove the expiry gate works without relying on system time.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

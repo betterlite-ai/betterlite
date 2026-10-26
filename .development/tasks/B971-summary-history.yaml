@@ -143,5 +143,5 @@ pitfalls:
 - A successful summary needs one eligible user turn; slice-only forwarding must keep the entire recent tail.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

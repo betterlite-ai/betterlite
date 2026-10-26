@@ -164,6 +164,6 @@ pitfalls:
   - A placeholder with any key is excluded even when that key is expired or blocked.
   - Billable-user counting uses two reads, so concurrent changes can exercise the explicit zero floor.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

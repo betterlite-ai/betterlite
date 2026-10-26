@@ -378,6 +378,6 @@ pitfalls:
 - A preexisting optional metadata.user_id is preserved without the validation applied to litellm_params.metadata.user_id.
 - The structured-output beta enum name mentions September but its literal is structured-outputs-2025-11-13.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

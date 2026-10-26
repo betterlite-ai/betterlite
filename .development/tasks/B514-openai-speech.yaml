@@ -237,6 +237,6 @@ pitfalls:
 - The create call uses explicit model/voice/input keywords, so duplicate entries in optional_params fail instead
   of overriding those fields.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

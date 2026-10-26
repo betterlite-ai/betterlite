@@ -348,6 +348,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as auth_model_patterns in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_model_patterns.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_model_patterns.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - all-team-models is a scoped sentinel, not a global model wildcard.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

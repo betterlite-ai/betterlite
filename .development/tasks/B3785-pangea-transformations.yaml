@@ -32,6 +32,7 @@ scope:
     - tools/oracle/helpers/b3785/**
     - tools/oracle/src/helpers/guardrails/b3785.rs
     - tools/oracle/src/helpers/guardrails/b3785/**
+    - crates/betterlite-guardrails/src/pangea/tests/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pangea/pangea.py#L38-L48
@@ -139,5 +140,5 @@ pitfalls:
   - "Environment variables are read in __init__ using or chains with defaults; the config loader from B002 supplies these values when not hardcoded in the guardrail config."
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

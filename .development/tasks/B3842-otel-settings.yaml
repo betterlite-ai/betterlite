@@ -76,6 +76,6 @@ pitfalls:
   - "CSV parsing for list env vars must not strip away values that contain colons or other special characters. Use split(',') followed by .strip() on each item, not regex splitting."
   - "The feature flag is cached with lru_cache. Tests that toggle LITELLM_OTEL_V2 must call is_otel_v2_enabled.cache_clear() before each test or the env-var change will not be read."
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 2
 review_level: standard

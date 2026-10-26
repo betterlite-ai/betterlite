@@ -127,5 +127,5 @@ pitfalls:
 - Root and packaged price assets happen to match at this pin; do not assume that for provider capability assets.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

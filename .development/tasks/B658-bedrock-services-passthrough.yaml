@@ -338,6 +338,6 @@ pitfalls:
   change that result.
 - Text-run coalescing keeps the first chunk metadata even when subsequent text chunks carry different ids or roles.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

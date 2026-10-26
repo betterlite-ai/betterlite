@@ -111,6 +111,6 @@ pitfalls:
   - An arbitrary model containing bge routes before the Gemma and Model Garden checks.
   - metadata and litellm_metadata can each contain a hidden_params copy that needs removal.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

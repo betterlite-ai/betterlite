@@ -116,5 +116,5 @@ pitfalls:
   - The fuzz crate is its own workspace and runs on nightly. The replay test runs on the pinned stable toolchain and calls the parser directly.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 2
