@@ -1,0 +1,5 @@
+kind: helper
+name: object-path-validation
+call: {cloud_storage: {function: object_path_validation, value: object}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: object-path-sanitization
+call: {cloud_storage: {function: object_path_sanitization, value: a/b}}
+env: {}
+compare: {ignore: []}

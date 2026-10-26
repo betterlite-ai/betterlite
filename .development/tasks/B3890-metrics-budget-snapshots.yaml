@@ -57,7 +57,7 @@ checks:
   commands:
     - id: behavior-tests
       why: Snapshot construction, aliasing, freezing, Decimal handling, and from_metadata validation tests fail or are missing.
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^carried_budget_state::tests::/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/carried_budget_state::tests::/) - test(/replays_the_/)'
 
 oracle_cases: []
 

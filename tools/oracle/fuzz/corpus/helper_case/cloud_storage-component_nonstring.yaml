@@ -1,0 +1,5 @@
+kind: helper
+name: cloud_storage-component_nonstring
+call: {cloud_storage: {function: object_component_sanitization, value: 1, fallback: ../fallback}}
+env: {}
+compare: {ignore: []}

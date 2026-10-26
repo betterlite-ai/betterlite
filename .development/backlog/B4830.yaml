@@ -1,7 +1,7 @@
 id: B4830
 milestone: M9 agents and mcp
 title: Define harness events, state, options and execution contracts
-status: todo
+status: done
 depends_on: []
 file: tasks/B4830-harness-contracts.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/llms/base_llm/harness/{__init__,transformation}.py"
 parent: B143
 split_from: B143
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 151
