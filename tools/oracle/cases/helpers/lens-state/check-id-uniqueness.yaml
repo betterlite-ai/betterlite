@@ -1,0 +1,16 @@
+kind: helper
+name: check-id-uniqueness
+call:
+  lens_state:
+    decode_settings:
+      json:
+        name: Support replies
+        model: gpt-4o-mini
+        checks:
+          - {id: tone, instruction: Keep a calm tone.}
+          - {id: tone, instruction: Keep a kind tone.}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message

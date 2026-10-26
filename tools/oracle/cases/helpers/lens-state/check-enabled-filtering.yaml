@@ -1,0 +1,16 @@
+kind: helper
+name: check-enabled-filtering
+call:
+  lens_state:
+    analysis_checks:
+      settings:
+        name: Support replies
+        model: gpt-4o-mini
+        context: Replies cite the help center.
+        checks:
+          - {id: tone, instruction: Keep a calm tone.}
+          - {id: length, instruction: Keep replies short., enabled: false}
+          - {id: links, instruction: Link the help center., enabled: true}
+env: {}
+compare:
+  ignore: []

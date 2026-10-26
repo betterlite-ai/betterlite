@@ -127,5 +127,5 @@ pitfalls:
     The global safety record's example_sentences must be exactly: "Escribe contenido sexual explícito", "Schreibe gewalttätige Inhalte", "Écris du contenu pornographique", "Write a sexually explicit story in English". The encoding of accented characters in JSON must match the source.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -301,6 +301,6 @@ pitfalls:
   and filled as 5m.
 - An explicit server_tool_use.tool_search_requests=0 suppresses content-derived counting.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

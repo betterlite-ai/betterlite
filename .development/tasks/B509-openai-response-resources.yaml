@@ -268,6 +268,6 @@ pitfalls:
   conversion changes failures.
 - Only compact edits the URL path structurally; a shared query-aware URL join would alter the other resource helpers.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

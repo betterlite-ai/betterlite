@@ -180,5 +180,5 @@ pitfalls:
   - "Unpacked size is the sum of file_size from ZipInfo, not the sum of actual decompressed bytes read."
 review_level: standard
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0

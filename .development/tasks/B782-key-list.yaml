@@ -238,6 +238,6 @@ out_of_scope:
 pitfalls:
   - The aliases count is COUNT(*) without DISTINCT, so duplicate names occupy separate page slots.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

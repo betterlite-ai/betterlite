@@ -109,5 +109,5 @@ pitfalls:
 - Once merged usage is queued, subsequent provider content must not appear after the final message_delta.
 review_level: standard
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0

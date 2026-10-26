@@ -1,0 +1,8 @@
+kind: helper
+name: anthropic-conflicting-ttl
+call:
+  anthropic_cache_plan:
+    function: cache_plan
+    body: '{"model":"claude","max_tokens":32,"cache_control":{"type":"ephemeral","ttl":"5m"},"messages":[{"role":"user","content":[{"type":"text","text":"hello","cache_control":{"type":"ephemeral","ttl":"1h"}}]}]}'
+env: {}
+compare: {ignore: []}

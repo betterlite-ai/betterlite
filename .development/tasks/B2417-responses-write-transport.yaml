@@ -115,5 +115,5 @@ pitfalls:
 - Cancel does not call sign_request, unlike create and compact.
 review_level: security
 budget:
-  max_changed_lines: 620
+  max_changed_lines: 1000
   max_new_expects: 0

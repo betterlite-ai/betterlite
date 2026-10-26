@@ -79,6 +79,6 @@ pitfalls:
   - PKCE_STRICT_CACHE_MISS does not turn a callback with no state parameter into a local 401.
   - A legacy plain-string verifier remains usable and emits a warning rather than being classified as corrupt.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

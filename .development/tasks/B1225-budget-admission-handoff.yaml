@@ -253,6 +253,6 @@ pitfalls:
   - An existing end-user with no budget relation prevents a fallback budget lookup; an absent end-user does not.
   - Reservation failure leaves request.state untouched although token.budget_reservation was already cleared.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

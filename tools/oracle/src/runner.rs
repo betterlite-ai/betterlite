@@ -1,9 +1,11 @@
 use reqwest::blocking::Client;
+use secrecy::SecretString;
 use std::collections::BTreeMap;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use super::gateway::{GatewayInput, start as start_gateway};
 use crate::OracleError;
 use crate::artifacts;
 use crate::case::{Case, LoadedCase};
@@ -16,7 +18,14 @@ use crate::paths::artifact_root;
 use crate::process::Gateway;
 use crate::routing_mock_scripts::MockScript;
 
-use super::gateway::{GatewayInput, start as start_gateway};
+mod config;
+mod fixtures;
+
+#[derive(Debug, clap::Parser)]
+pub(crate) struct DatabaseEnvironment {
+    #[arg(long, hide = true, env = "POSTGRES_TEST_URL")]
+    pub(crate) postgres_test_url: Option<SecretString>,
+}
 
 pub(crate) fn run_cases(
     options: &Options,
@@ -65,6 +74,20 @@ pub(crate) fn run_group(
     root: &Path,
     cases: &[Case],
 ) -> Result<Vec<bool>, OracleError> {
+    let environment =
+        <DatabaseEnvironment as clap::Parser>::try_parse_from([env!("CARGO_PKG_NAME")])?;
+    run_group_with_url(options, root, cases, environment.postgres_test_url.as_ref())
+}
+
+pub(crate) fn run_group_with_url(
+    options: &Options,
+    root: &Path,
+    cases: &[Case],
+    configured_url: Option<&SecretString>,
+) -> Result<Vec<bool>, OracleError> {
+    if cases.is_empty() {
+        return Err(OracleError::MissingCapture(0));
+    }
     let upstream_answers = cases
         .iter()
         .flat_map(|case| case.upstream.iter())
@@ -72,34 +95,91 @@ pub(crate) fn run_group(
         .collect::<Vec<_>>();
     let mock = MockProvider::start(MockScript::try_from(upstream_answers.as_slice())?)?;
     let first_case = cases.first().ok_or(OracleError::MissingCapture(0))?;
-    let (group_dir, config_path) = artifacts::prepare(root, first_case, &mock.base_url)?;
-    let client = http::client()?;
-    let input = GatewayInput {
+    let fixtures = fixtures::provision(cases, configured_url)?;
+    let operation_result = run_group_capture(GroupCaptureInput {
+        options,
+        root,
+        cases,
+        first_case,
+        fixtures: &fixtures,
+        mock,
+    });
+    let cleanup_result = fixtures.close();
+    match (operation_result, cleanup_result) {
+        (Ok(outcomes), Ok(())) => Ok(outcomes),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(cleanup_error)) => Err(OracleError::DatabaseCleanup(cleanup_error)),
+        (Err(error), Err(cleanup_error)) => Err(OracleError::OperationCleanup {
+            operation: Box::new(error),
+            cleanup: cleanup_error,
+        }),
+    }
+}
+
+struct GroupCaptureInput<'input> {
+    options: &'input Options,
+    root: &'input Path,
+    cases: &'input [Case],
+    first_case: &'input Case,
+    fixtures: &'input fixtures::FixtureGuard,
+    mock: MockProvider,
+}
+
+fn run_group_capture(input: GroupCaptureInput<'_>) -> Result<Vec<bool>, OracleError> {
+    let GroupCaptureInput {
+        options,
+        root,
+        cases,
+        first_case,
+        fixtures,
+        mock,
+    } = input;
+    let (group_dir, first_config, second_config) =
+        config::prepare_gateway_configs(root, first_case, fixtures, &mock.base_url)?;
+    let first_input = GatewayInput {
         options,
         group_dir: &group_dir,
-        config_path: &config_path,
+        config_path: &first_config,
         case_env: &first_case.env,
     };
-    let first = start_gateway(&input, true)?;
+    let second_input = GatewayInput {
+        options,
+        group_dir: &group_dir,
+        config_path: &second_config,
+        case_env: &first_case.env,
+    };
+    let client = http::client()?;
+    let captures = capture_gateways(&first_input, &second_input, cases, &client, mock)?;
+    compare_group(root, cases, &captures)
+}
+
+fn capture_gateways(
+    first_input: &GatewayInput<'_>,
+    second_input: &GatewayInput<'_>,
+    cases: &[Case],
+    client: &Client,
+    mock: MockProvider,
+) -> Result<GroupCapture, OracleError> {
+    let first = start_gateway(first_input, true)?;
     let first_log = first.log_path.clone();
-    let first_results = capture_gateway(&client, first, cases)?;
+    let first_results = capture_gateway(client, first, cases)?;
     let first_trace = mock.finish_run()?;
-    let second = start_gateway(&input, false)?;
+    let second = start_gateway(second_input, false)?;
     let second_log = second.log_path.clone();
-    let second_results = capture_gateway(&client, second, cases)?;
-    let captures = GroupCapture {
+    let second_results = capture_gateway(client, second, cases)?;
+    let second_requests = mock
+        .finish()?
+        .into_iter()
+        .map(|call| call.request)
+        .collect();
+    Ok(GroupCapture {
         first: first_results,
         second: second_results,
         first_log,
         second_log,
         first_requests: first_trace.into_iter().map(|call| call.request).collect(),
-        second_requests: mock
-            .finish()?
-            .into_iter()
-            .map(|call| call.request)
-            .collect(),
-    };
-    compare_group(root, cases, &captures)
+        second_requests,
+    })
 }
 
 pub(crate) struct GroupCapture {

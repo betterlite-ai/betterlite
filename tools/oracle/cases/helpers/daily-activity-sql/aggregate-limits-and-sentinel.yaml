@@ -1,0 +1,57 @@
+kind: helper
+name: aggregate-limits-and-sentinel
+call:
+  daily_activity_sql:
+    cases:
+      aggregate_limit_one_and_thousand:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "aggregate"
+        limit: 1
+      aggregate_limit_thousand:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "aggregate"
+        limit: 1000
+      aggregate_limit_zero_and_excess:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "aggregate"
+        limit: 0
+      aggregate_limit_excess:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "aggregate"
+        limit: 1001
+      top_keys_global_not_per_day:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "aggregate"
+        limit: 1
+      sentinel_in_totals_not_keys:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "aggregate"
+        limit: 1
+      top_key_spend_tie_order:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "aggregate"
+        limit: 1
+      distinct_count_before_limit:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "aggregate"
+        limit: 1
+      aggregate_where_before_limit:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": 9223372036854775807, "include_current_utc_day": true}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "aggregate"
+        limit: 0
+      aggregate_clock_injected:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": ["same", "same"], "exclude_entity_ids": ["x", "x"], "api_keys": ["key", "key"], "start_date": "2026-08-01", "end_date": "2026-08-05", "model": "model' OR TRUE", "timezone_offset_minutes": 60, "include_current_utc_day": true}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "aggregate"
+        limit: 1
+env: {}
+compare: {ignore: []}

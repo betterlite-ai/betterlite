@@ -100,5 +100,5 @@ pitfalls:
   - The published catalog preserves the eu-ai-act-article5 record with category-based detection (category_file references) while the baseline uses pattern arrays; respect both methods in the published root catalog without alteration.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

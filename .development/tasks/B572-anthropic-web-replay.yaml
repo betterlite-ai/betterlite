@@ -283,6 +283,6 @@ pitfalls:
 - A parseable server_tool_use is correlated by id without checking its name is web_search.
 - One encrypted item protects the entire result tuple from flattening.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard
