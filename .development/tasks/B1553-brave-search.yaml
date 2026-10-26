@@ -102,5 +102,5 @@ pitfalls:
   - A timezone-bearing date string retains its own calendar day while numeric timestamps use UTC.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

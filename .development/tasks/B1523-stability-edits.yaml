@@ -81,5 +81,5 @@ pitfalls:
   - Catalog price is attached even when the provider response contains no image.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

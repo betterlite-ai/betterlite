@@ -105,5 +105,5 @@ pitfalls:
 - stream in a Responses batch body is filtered into options but never passed as the bridge's explicit stream argument.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -100,5 +100,5 @@ pitfalls:
   - Mounting an additional copy of an API family route would panic before any subscription request can run.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

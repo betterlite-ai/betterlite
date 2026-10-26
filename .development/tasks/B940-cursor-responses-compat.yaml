@@ -205,5 +205,5 @@ pitfalls:
 - 'The stream branch checks __anext__ rather than a concrete iterator class because router wrappers are async iterables; class-only detection leaks response events instead of chat chunks.'
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

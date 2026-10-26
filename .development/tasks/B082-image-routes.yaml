@@ -147,5 +147,5 @@ pitfalls:
 - A post-success-hook failure can follow a scheduled success status; the source does not make those effects atomic.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

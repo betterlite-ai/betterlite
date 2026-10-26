@@ -34,7 +34,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/microsoft_graph.rs
     - crates/betterlite-server/fuzz/corpus/microsoft_graph/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/microsoft_group_sync.rs
     - crates/betterlite-config/src/microsoft_group_sync/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/microsoft-groups-*
@@ -94,6 +93,6 @@ pitfalls:
   - An empty service-principal assignment list disables filtering; it does not deny all group membership.
   - A failure on a later membership page discards accumulated group IDs but cannot undo teams already created from assignments.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

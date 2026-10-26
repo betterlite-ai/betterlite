@@ -405,6 +405,6 @@ pitfalls:
   query.
 - Invoke uses stream truthiness, while the shared base Invoke helper checks literal True.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

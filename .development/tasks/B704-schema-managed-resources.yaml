@@ -203,6 +203,6 @@ pitfalls:
   - The alias migration recreates alias after renaming it, so rerunning it attempts to rename onto an existing server_name.
   - spec_version is intentionally dropped; copying its value into mcp_info would change the pinned migration.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

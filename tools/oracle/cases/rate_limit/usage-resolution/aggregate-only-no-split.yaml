@@ -1,0 +1,9 @@
+kind: helper
+name: aggregate-only-no-split
+call:
+  b3044:
+    rate_limit_type: total
+    usage: {total_tokens: 120}
+env: {}
+compare:
+  ignore: []

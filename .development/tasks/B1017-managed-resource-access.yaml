@@ -106,5 +106,5 @@ pitfalls:
 - A filter of None means skip the repository query, whereas {} deliberately permits an unscoped admin query.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

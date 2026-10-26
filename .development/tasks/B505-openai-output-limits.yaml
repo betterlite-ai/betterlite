@@ -332,6 +332,6 @@ pitfalls:
 - Recovery is based on the complete message marker, with no GPT-5 model-name guard despite its motivating example.
 - Streaming recovery still calls token_counter before returning its one chunk, although that chunk contains no usage.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

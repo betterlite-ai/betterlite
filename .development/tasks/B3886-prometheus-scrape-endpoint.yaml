@@ -67,6 +67,9 @@ scope:
     - tools/oracle/helpers/b3886/**
     - tools/oracle/src/helpers/prometheus/b3886.rs
     - tools/oracle/src/helpers/prometheus/b3886/**
+    - crates/betterlite-prometheus/src/scrape_endpoint/tests/**
+    - crates/betterlite-server/src/prometheus_auth_middleware/tests/**
+    - crates/betterlite/src/prometheus_mount/**
   lint_tables: false
 
 references:
@@ -196,5 +199,5 @@ pitfalls:
 
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1

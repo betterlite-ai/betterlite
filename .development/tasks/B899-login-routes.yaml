@@ -422,6 +422,6 @@ pitfalls:
   - The code exchange reads and then deletes; do not promise atomic single-use redemption under concurrency.
   - Retry-After's default 30 changes the HTML text only, because the handler forwards the original headers.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

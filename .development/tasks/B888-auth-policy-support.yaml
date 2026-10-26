@@ -370,6 +370,6 @@ pitfalls:
   - Any populated organization field suppresses filling all the remaining fields.
   - Empty key allowed_tools inherits the team list rather than imposing an empty grant.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

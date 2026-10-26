@@ -135,5 +135,5 @@ pitfalls:
 - Dot-path reads and deletes use different grammars in LiteLLM; do not silently treat them as the same operation.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1
