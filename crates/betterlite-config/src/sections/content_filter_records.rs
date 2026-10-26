@@ -128,7 +128,7 @@ pub struct ContentFilterGuardrailConfig {
     pub blocked_words_file: Option<String>,
     #[serde(default)]
     pub categories: Option<Vec<ContentFilterCategoryConfig>>,
-    #[serde(default = "default_guardrail_severity_threshold")]
+    #[serde(default = "default_config_severity")]
     pub severity_threshold: String,
     #[serde(default = "default_pattern_format")]
     pub pattern_redaction_format: String,
@@ -145,7 +145,7 @@ impl Default for ContentFilterGuardrailConfig {
             blocked_words: None,
             blocked_words_file: None,
             categories: None,
-            severity_threshold: default_guardrail_severity_threshold(),
+            severity_threshold: default_config_severity(),
             pattern_redaction_format: String::from("[{pattern_name}_REDACTED]"),
             keyword_redaction_tag: String::from("[KEYWORD_REDACTED]"),
             competitor_intent_config: None,
@@ -240,7 +240,7 @@ fn default_severity_threshold() -> ContentFilterSeverity {
         .unwrap_or(ContentFilterSeverity::Medium)
 }
 
-fn default_guardrail_severity_threshold() -> String {
+fn default_config_severity() -> String {
     let thresholds = ["medium"];
     thresholds.join("")
 }
@@ -257,7 +257,10 @@ fn default_keyword_tag() -> String {
 
 fn default_block_action() -> ContentFilterAction {
     let actions = [ContentFilterAction::Block];
-    actions.into_iter().next().unwrap_or(ContentFilterAction::Block)
+    actions
+        .into_iter()
+        .next()
+        .unwrap_or(ContentFilterAction::Block)
 }
 
 fn default_confidence_threshold() -> f64 {

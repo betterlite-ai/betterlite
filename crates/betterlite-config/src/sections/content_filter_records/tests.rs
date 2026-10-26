@@ -32,8 +32,7 @@ fn config_records_load_litellm_fields() {
     assert!(category.enabled);
     assert_eq!(category.severity_threshold, ContentFilterSeverity::High);
 
-    let code: BlockCodeExecGuardrailConfig =
-        serde_json::from_str(r#"{"action":"mask"}"#).unwrap();
+    let code: BlockCodeExecGuardrailConfig = serde_json::from_str(r#"{"action":"mask"}"#).unwrap();
     assert_eq!(code.action, ContentFilterAction::Mask);
 
     let secrets: HideSecretsGuardrailConfig =
