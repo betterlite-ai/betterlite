@@ -1,0 +1,9 @@
+kind: helper
+name: api-call-classify-endpoint
+call:
+  b3778:
+    call:
+      settings: {api_key: key, api_base: "http://lasso.test"}
+      answer: {status: 200, headers: {}, body: {violations_detected: false, deputies: {}, findings: {}}}
+env: {}
+compare: {ignore: []}
