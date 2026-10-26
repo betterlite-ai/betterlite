@@ -115,11 +115,13 @@ fn cloudzero_provider_and_component_normalization_preserve_lookup_order() {
 fn cloudzero_zero_request_cbf_record_account_formatting_token_tags() {
     let mut zero = row();
     zero.successful_requests = 0;
+    let mut multiple = row();
+    multiple.successful_requests = 2;
     let transformer = CbfTransformer {
         czrn_generator: CzrnGenerator,
     };
-    let output = transformer.transform(&[zero, row()]);
-    assert_eq!(output.len(), 1);
+    let output = transformer.transform(&[zero, row(), multiple]);
+    assert_eq!(output.len(), 2);
     assert_eq!(
         output[0].get("resource/account"),
         Some(&CbfValue::Text("prod|12345678".to_owned()))
@@ -142,6 +144,22 @@ fn cloudzero_zero_request_cbf_record_account_formatting_token_tags() {
         }
         value => panic!("unexpected date: {value:?}"),
     }
+}
+
+#[test]
+fn cloudzero_token_tags_skip_zero_and_unknown_values() {
+    let mut source = row();
+    source.prompt_tokens = 0;
+    source.completion_tokens = 0;
+    source.team_alias = None;
+
+    let record = CbfTransformer::default()
+        .create_cbf_record(&source)
+        .expect("valid CBF record");
+
+    assert!(!record.contains_key("resource/tag:prompt_tokens"));
+    assert!(!record.contains_key("resource/tag:completion_tokens"));
+    assert!(!record.contains_key("resource/tag:team_alias"));
 }
 
 #[test]

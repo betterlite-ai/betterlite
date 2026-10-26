@@ -13,6 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License."#;
 
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use tracing::warn;
@@ -31,9 +32,9 @@ impl CbfTransformer {
             .filter(|row| row.successful_requests > 0)
             .collect();
         let zero_dropped = rows.len().saturating_sub(filtered.len());
-        if zero_dropped > 0 {
+        if let Some(dropped) = NonZeroUsize::new(zero_dropped) {
             warn!(
-                dropped = zero_dropped,
+                dropped = dropped.get(),
                 total = rows.len(),
                 "dropped records with zero successful_requests"
             );
@@ -46,9 +47,9 @@ impl CbfTransformer {
                 Err(_) => invalid = invalid.saturating_add(1),
             }
         }
-        if invalid > 0 {
+        if let Some(dropped) = NonZeroUsize::new(invalid) {
             warn!(
-                dropped = invalid,
+                dropped = dropped.get(),
                 filtered = result.len(),
                 "dropped records with invalid CZRNs"
             );
