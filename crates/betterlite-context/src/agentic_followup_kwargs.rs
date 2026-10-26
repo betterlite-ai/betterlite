@@ -48,13 +48,15 @@ pub fn build_agentic_followup_kwargs(
         .depth
         .checked_add(1)
         .ok_or(AgenticFollowupKwargsError::DepthOverflow)?;
-    let mut values = input
+    let mut values = BTreeMap::new();
+    for (key, value) in input
         .request_kwargs
         .iter()
         .chain(input.patch_kwargs)
         .filter(|(key, _)| !input.request_params.contains(*key))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect::<BTreeMap<_, _>>();
+    {
+        values.insert(key.clone(), value.clone());
+    }
     let mut seen = input.fingerprints.to_vec();
     seen.push(input.fingerprint.to_owned());
     values.insert(
