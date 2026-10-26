@@ -1,0 +1,10 @@
+kind: helper
+name: datadog-tags-environment-seed
+call:
+  datadog_tags:
+    function: environment
+    env: {DD_SOURCE: source, DD_ENV: production, USE_DDTRACE: "true"}
+    request_tags: [null, true, 123]
+    metadata: {user_api_key_team_alias: null, team_alias: null, user_api_key_team_id: null, team_id: null}
+env: {}
+compare: {ignore: []}
