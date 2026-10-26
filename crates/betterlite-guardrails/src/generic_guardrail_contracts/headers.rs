@@ -195,17 +195,25 @@ fn format_python_value(value: &GuardrailExtraValue) -> String {
 }
 
 fn quote_python_string(value: &str) -> String {
-    let mut quoted = String::from("'");
+    let quote = if value.contains('\'') && !value.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut quoted = String::from(quote);
     for character in value.chars() {
         match character {
             '\\' => quoted.push_str("\\\\"),
-            '\'' => quoted.push_str("\\'"),
+            delimiter if delimiter == quote => {
+                quoted.push('\\');
+                quoted.push(delimiter);
+            }
             '\n' => quoted.push_str("\\n"),
             '\r' => quoted.push_str("\\r"),
             '\t' => quoted.push_str("\\t"),
             other => quoted.push(other),
         }
     }
-    quoted.push('\'');
+    quoted.push(quote);
     quoted
 }

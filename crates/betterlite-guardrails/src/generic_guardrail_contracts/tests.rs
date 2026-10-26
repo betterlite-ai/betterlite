@@ -68,18 +68,18 @@ fn generic_guardrail_header_extraction_uses_nested_extra_allowlist() {
 fn generic_guardrail_header_extraction_coerces_json_values() {
     let request_data: InboundRequestContext =
         from_str(
-            r#"{"metadata":{"headers":{"Host":false,"X-Stainless-Raw":[1,2,3],"X-LiteLLM-Meta":{"region":"eu"},"X-Request-Id":"request-123"}}}"#,
+            r#"{"metadata":{"headers":{"Host":false,"X-Stainless-Raw":[1,2,3,"it's","say \"hi\"","it's \"quoted\"","it's\\here\n\r\t"],"X-LiteLLM-Meta":{"a":"it's","it's":"eu","region":"eu"},"X-Request-Id":"request-123"}}}"#,
         )
         .expect("request context");
     let headers = extract_inbound_headers(&request_data, None).expect("headers");
     assert_eq!(headers.get("Host"), Some(&"False".to_owned()));
     assert_eq!(
         headers.get("X-Stainless-Raw"),
-        Some(&"[1, 2, 3]".to_owned())
+        Some(&r#"[1, 2, 3, "it's", 'say "hi"', 'it\'s "quoted"', "it's\\here\n\r\t"]"#.to_owned())
     );
     assert_eq!(
         headers.get("X-LiteLLM-Meta"),
-        Some(&"{'region': 'eu'}".to_owned())
+        Some(&r#"{'a': "it's", "it's": 'eu', 'region': 'eu'}"#.to_owned())
     );
     assert_eq!(headers.get("X-Request-Id"), Some(&"[present]".to_owned()));
 }
