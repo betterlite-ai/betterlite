@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::{BACKEND_PATH_PREFIXES, GATEWAY_PATH_PREFIXES};
 
 #[test]
