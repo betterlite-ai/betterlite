@@ -1,3 +1,1 @@
-{kind: helper, name: gateway-injection-bucket}
-call: {request_records: {function: gateway_injection, record: {litellm_metadata: {}, metadata: {litellm_gateway_injected_cache: old}, model_info: {id: null}}, steps: [{added: 1, every_deployment: false, model_info: {id: null}}, {added: 1, every_deployment: false, model_info: {id: 0}}]}}
-env: {}, compare: {ignore: []}
+{kind: helper, name: gateway-injection-bucket, call: {request_records: {function: gateway_injection, record: {litellm_metadata: {}, metadata: {litellm_gateway_injected_cache: old}, model_info: {id: null}}, steps: [{added: 1, every_deployment: false, model_info: {id: null}}, {added: 1, every_deployment: false, model_info: {id: 0}}]}}, env: {}, compare: {ignore: []}}

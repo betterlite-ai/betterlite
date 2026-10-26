@@ -1,3 +1,1 @@
-{kind: helper, name: parameter-filter-null-and-depth}
-call: {request_records: {function: filter_parameters, record: {keep: 1, drop: null, nested: [true, null, 3]}, max_depth: 20}}
-env: {}, compare: {ignore: []}
+{kind: helper, name: parameter-filter-null-and-depth, call: {request_records: {function: filter_parameters, record: {keep: 1, drop: null, nested: [true, null, 3]}, max_depth: 20}}, env: {}, compare: {ignore: []}}

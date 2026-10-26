@@ -1,3 +1,1 @@
-{kind: helper, name: safe-copy-span-order}
-call: {request_records: {function: safe_copy, record: {metadata: {litellm_parent_otel_span: first}, litellm_metadata: {litellm_parent_otel_span: last}}, safe_memory_mode: false}}
-env: {}, compare: {ignore: []}
+{kind: helper, name: safe-copy-span-order, call: {request_records: {function: safe_copy, record: {metadata: {litellm_parent_otel_span: first}, litellm_metadata: {litellm_parent_otel_span: last}}, safe_memory_mode: false}}, env: {}, compare: {ignore: []}}
