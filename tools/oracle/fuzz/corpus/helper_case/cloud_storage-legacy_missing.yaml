@@ -1,0 +1,5 @@
+kind: helper
+name: cloud_storage-legacy_missing
+call: {cloud_storage: {function: legacy_trusted_policy, value: null, trusted: false}}
+env: {}
+compare: {ignore: []}

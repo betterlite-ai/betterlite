@@ -1,14 +1,14 @@
 id: B3000
 milestone: M4 keys, spend and management
 title: Budget counter descriptors and numeric coercion helpers
-status: todo
+status: done
 depends_on: [B002]
 file: tasks/B3000-budget-values.yaml
 covers:
   - "litellm/proxy/spend_tracking/budget_reservation.py"
 parent: B071
 split_from: B071
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 159

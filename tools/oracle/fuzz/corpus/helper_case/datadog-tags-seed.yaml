@@ -1,0 +1,13 @@
+kind: helper
+name: datadog-tags-seed
+call:
+  datadog_tags:
+    function: spans
+    current: {trace_id: 123, span_id: 456, set_tag_str: true, set_tag: false}
+    root: null
+    call_id: call
+    key_alias: alias
+    key_hash: hash
+    requested_model: model
+env: {}
+compare: {ignore: []}

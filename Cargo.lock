@@ -422,8 +422,10 @@ dependencies = [
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
+ "percent-encoding",
  "rstest",
  "serde",
+ "serde_json",
  "thiserror",
  "tracing",
  "tracing-subscriber",
@@ -532,10 +534,13 @@ dependencies = [
 name = "betterlite-logging"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "rstest",
+ "serde",
  "strum",
  "thiserror",
  "tracing",
+ "unicode-properties",
 ]
 
 [[package]]
