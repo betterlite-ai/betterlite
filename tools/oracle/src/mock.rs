@@ -124,11 +124,19 @@ async fn handle(
     if parts.method == "GET" && parts.uri.path() == "/v1/models" {
         return Ok(Response::new(Body::from(r#"{"object":"list","data":[]}"#)));
     }
-    let bytes = time::timeout(Duration::from_secs(30), to_bytes(body, MAX_BODY))
-        .await
-        .map_err(|_source| StatusCode::REQUEST_TIMEOUT)?
-        .map_err(|_source| StatusCode::PAYLOAD_TOO_LARGE)?;
-    let body_text = str::from_utf8(&bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
+    let bytes = time::timeout(
+        Duration::from_secs(30),
+        to_bytes(body, MAX_BODY.saturating_add(1)),
+    )
+    .await
+    .map_err(|_source| StatusCode::REQUEST_TIMEOUT)?
+    .map_err(|_source| StatusCode::PAYLOAD_TOO_LARGE)?;
+    if bytes.len() > MAX_BODY {
+        return Err(fail(
+            &state,
+            Error::other("captured body exceeds 16777216 bytes"),
+        ));
+    }
     let mut headers = parts
         .headers
         .iter()
@@ -141,12 +149,20 @@ async fn handle(
         .collect::<Result<BTreeMap<_, _>, str::Utf8Error>>()
         .map_err(|_source| StatusCode::BAD_REQUEST)?;
     redact(&mut headers);
+    let raw_body = headers.get("content-type").is_some_and(|value| {
+        value.starts_with("multipart/form-data") || value.starts_with("application/octet-stream")
+    });
     let captured = ProviderRequest {
         method: parts.method.to_string(),
         path: parts.uri.to_string(),
         headers,
-        body: serde_json::from_str(body_text)
-            .unwrap_or_else(|_source| Value::String(body_text.to_owned())),
+        body: if raw_body {
+            Value::Array(bytes.iter().map(|byte| Value::from(*byte)).collect())
+        } else {
+            let body_text = str::from_utf8(&bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
+            serde_json::from_str(body_text)
+                .unwrap_or_else(|_source| Value::String(body_text.to_owned()))
+        },
     };
     let admitted = state
         .lock()

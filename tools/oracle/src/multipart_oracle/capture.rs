@@ -42,6 +42,11 @@ pub fn decode_multipart_capture(content_type: &str, body: &[u8]) -> Result<Vec<P
         }
         cursor = next;
     }
+    if parts.is_empty() && !body.ends_with(format!("--{boundary}--\r\n").as_bytes()) {
+        return Err(OracleError::Multipart(
+            "multipart capture has no valid boundary",
+        ));
+    }
     Ok(parts)
 }
 
@@ -176,13 +181,18 @@ fn boundary(content_type: &str) -> Option<String> {
         .split(';')
         .find_map(|item| item.trim().strip_prefix("boundary="))?
         .trim();
-    let unquoted_boundary = boundary_value
-        .strip_prefix('"')
-        .and_then(|quoted| quoted.strip_suffix('"'))
-        .unwrap_or(boundary_value);
+    let unquoted_boundary = if let Some(quoted) = boundary_value.strip_prefix('"') {
+        quoted.strip_suffix('"')?
+    } else {
+        boundary_value
+    };
     (!unquoted_boundary.is_empty()
-        && !unquoted_boundary
-            .bytes()
-            .any(|byte| byte.is_ascii_whitespace() || byte == b'\r' || byte == b'\n'))
+        && !unquoted_boundary.bytes().any(|byte| {
+            byte.is_ascii_whitespace()
+                || byte == b'\r'
+                || byte == b'\n'
+                || byte == b'"'
+                || byte == b';'
+        }))
     .then(|| unquoted_boundary.to_owned())
 }

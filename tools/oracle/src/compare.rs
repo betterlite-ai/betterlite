@@ -116,7 +116,15 @@ pub(crate) fn compare(
         remove_pointer(&mut right_body, &ignored.pointer);
     }
     if let Some(body_pointer) = first_difference(&left_body, &right_body, "") {
-        let response_pointer = if left_body.is_array() && right_body.is_array() {
+        let binary_response = left
+            .headers
+            .get("content-type")
+            .is_some_and(|value| value.starts_with("application/octet-stream"))
+            && right
+                .headers
+                .get("content-type")
+                .is_some_and(|value| value.starts_with("application/octet-stream"));
+        let response_pointer = if binary_response {
             "/response/bytes"
         } else {
             &body_pointer
@@ -208,8 +216,8 @@ fn multipart_difference(
     {
         return None;
     }
-    let left_bytes = left.as_str()?.as_bytes();
-    let right_bytes = right.as_str()?.as_bytes();
+    let left_bytes = value_bytes(left)?;
+    let right_bytes = value_bytes(right)?;
     let left_parts =
         multipart_oracle::capture::decode_multipart_capture(left_content_type, left_bytes).ok()?;
     let right_parts =
@@ -237,6 +245,21 @@ fn multipart_difference(
         }
     }
     None
+}
+
+fn value_bytes(value: &Value) -> Option<Vec<u8>> {
+    match value {
+        Value::String(text) => Some(text.as_bytes().to_vec()),
+        Value::Array(bytes) => bytes
+            .iter()
+            .map(Value::as_u64)
+            .collect::<Option<Vec<_>>>()?
+            .into_iter()
+            .map(u8::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .ok(),
+        _ => None,
+    }
 }
 
 fn remove_pointer(value: &mut Value, pointer: &str) {
