@@ -170,19 +170,21 @@ impl SettingsStore {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, &JsonValue)> {
-        self.candidate_keys()
-            .into_iter()
+        let keys = self.candidate_keys();
+        keys.into_iter()
             .filter_map(|key| self.get(key).map(|value| (key, value)))
     }
 
     #[must_use]
     pub fn len(&self) -> usize {
-        self.iter().count()
+        let entries = self.iter();
+        entries.count()
     }
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.iter().next().is_none()
+        let mut entries = self.iter();
+        entries.next().is_none()
     }
 
     #[must_use]
