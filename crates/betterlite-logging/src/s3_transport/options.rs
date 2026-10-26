@@ -71,22 +71,26 @@ pub fn resolve_log_prompts_only(
     configured: Option<&OptionValue>,
     environment: &dyn EnvironmentLookup,
 ) -> bool {
-    let raw = configured.cloned().or_else(|| {
-        environment
-            .lookup(LOG_PROMPTS_ONLY_VARIABLE)
-            .map(OptionValue::Text)
-    });
-    match raw {
-        None => false,
-        Some(OptionValue::Text(text)) if text.is_empty() => false,
-        Some(value) => value.as_bool().unwrap_or_else(|| {
-            tracing::warn!(
-                ?value,
-                "s3 logging: s3_log_prompts_only is not a boolean, logging prompts only"
-            );
-            true
-        }),
+    let value = configured.map_or_else(
+        || {
+            OptionValue::Text(
+                environment
+                    .lookup(LOG_PROMPTS_ONLY_VARIABLE)
+                    .unwrap_or_default(),
+            )
+        },
+        OptionValue::clone,
+    );
+    if value == OptionValue::Text(String::new()) {
+        return false;
     }
+    value.as_bool().unwrap_or_else(|| {
+        tracing::warn!(
+            ?value,
+            "s3 logging: s3_log_prompts_only is not a boolean, logging prompts only"
+        );
+        true
+    })
 }
 
 #[must_use]
@@ -94,20 +98,18 @@ pub fn resolve_partition_granularity(
     configured: Option<&OptionValue>,
     environment: &dyn EnvironmentLookup,
 ) -> PartitionGranularity {
-    let raw = configured.cloned().or_else(|| {
-        environment
-            .lookup(PARTITION_GRANULARITY_VARIABLE)
-            .map(OptionValue::Text)
-    });
-    match raw {
+    let from_environment = environment
+        .lookup(PARTITION_GRANULARITY_VARIABLE)
+        .map(OptionValue::Text);
+    match configured.or(from_environment.as_ref()) {
+        None => PartitionGranularity::Day,
         Some(OptionValue::Text(text)) if text == "hour" => PartitionGranularity::Hour,
         Some(OptionValue::Text(text)) if text.is_empty() || text == "day" => {
             PartitionGranularity::Day
         }
-        None => PartitionGranularity::Day,
-        Some(value) => {
+        Some(unexpected) => {
             tracing::warn!(
-                ?value,
+                ?unexpected,
                 "s3 logging: s3_partition_granularity is not one of day, hour, using day"
             );
             PartitionGranularity::Day
