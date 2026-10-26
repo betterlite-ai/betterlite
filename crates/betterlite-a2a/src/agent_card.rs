@@ -1,38 +1,131 @@
 use betterlite_core::agents::json::AgentJson;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-
-// The merge filters and passes through whatever upstream sent, so the card stays untyped JSON
-pub type AgentCard = BTreeMap<String, AgentJson>;
 
 const DEFAULT_VERSION: &str = "1.0";
 
-// v1.0 AgentCard fields plus supportedInterfaces; additionalInterfaces would let callers bypass the proxy
-const ALLOWED_TOP_LEVEL: [&str; 18] = [
-    "protocolVersion",
-    "name",
-    "description",
-    "version",
-    "capabilities",
-    "defaultInputModes",
-    "defaultOutputModes",
-    "skills",
-    "preferredTransport",
-    "supportedInterfaces",
-    "iconUrl",
-    "provider",
-    "documentationUrl",
-    "securitySchemes",
-    "security",
-    "supportsAuthenticatedExtendedCard",
-    "signatures",
-    // the invoker reads the upstream url from the stored card; the public route rewrites it
-    "url",
-];
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum WireValue<T> {
+    Typed(T),
+    Passthrough(AgentJson),
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AgentCard {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol_version: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<WireValue<Capabilities>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_input_modes: Option<WireValue<Vec<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_output_modes: Option<WireValue<Vec<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skills: Option<WireValue<Vec<Skill>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_transport: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supported_interfaces: Option<WireValue<Vec<Interface>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_url: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<WireValue<Provider>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation_url: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub security_schemes: Option<WireValue<BTreeMap<String, SecurityScheme>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub security: Option<WireValue<SecurityRequirements>>,
+    #[serde(rename = "supportsAuthenticatedExtendedCard")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_authenticated_extended_card: Option<WireValue<bool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signatures: Option<WireValue<Vec<Signature>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<WireValue<String>>,
+    #[serde(flatten)]
+    pub passthrough: BTreeMap<String, AgentJson>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Capabilities {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub streaming: Option<WireValue<bool>>,
+    #[serde(flatten)]
+    pub passthrough: BTreeMap<String, AgentJson>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Skill {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<WireValue<Vec<String>>>,
+    #[serde(flatten)]
+    pub passthrough: BTreeMap<String, AgentJson>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Interface {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol_binding: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol_version: Option<WireValue<String>>,
+    #[serde(flatten)]
+    pub passthrough: BTreeMap<String, AgentJson>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Provider {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub organization: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<WireValue<String>>,
+    #[serde(flatten)]
+    pub passthrough: BTreeMap<String, AgentJson>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SecurityScheme {
+    Http { scheme: String, description: String },
+    Passthrough(AgentJson),
+}
+
+type SecurityRequirements = Vec<BTreeMap<String, Vec<String>>>;
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Signature {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protected: Option<WireValue<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<WireValue<String>>,
+    #[serde(flatten)]
+    pub passthrough: BTreeMap<String, AgentJson>,
+}
 
 #[must_use]
 pub fn normalize_protocol_version(raw_version: &AgentJson) -> Option<&'static str> {
     let raw_text = raw_version.as_str()?;
-    // LiteLLM matches with Python's `$`, which also accepts one trailing newline
     let version = raw_text.strip_suffix('\n').unwrap_or(raw_text);
     let mut components = version.splitn(3, '.');
     let major = components.next()?;
@@ -43,12 +136,13 @@ pub fn normalize_protocol_version(raw_version: &AgentJson) -> Option<&'static st
             .map_or((patch_and_suffix, ""), |index| {
                 patch_and_suffix.split_at(index)
             });
-        let numeric = !patch.is_empty() && patch.bytes().all(|byte| byte.is_ascii_digit());
-        if !numeric || !valid_suffix(suffix) {
+        if patch.is_empty()
+            || !patch.bytes().all(|byte| byte.is_ascii_digit())
+            || !valid_suffix(suffix)
+        {
             return None;
         }
     }
-    // only these exact pairs pass, so a non-numeric major or minor is rejected here too
     match (major, minor) {
         ("0", "3") => Some("0.3"),
         ("1", "0") => Some(DEFAULT_VERSION),
@@ -57,10 +151,19 @@ pub fn normalize_protocol_version(raw_version: &AgentJson) -> Option<&'static st
 }
 
 #[must_use]
+pub fn normalize_protocol_version_bytes(bytes: &[u8]) -> Option<&'static str> {
+    let value = serde_json::from_slice::<AgentJson>(bytes).ok()?;
+    normalize_protocol_version(&value)
+}
+
+#[must_use]
 pub fn resolve_served_version(card: Option<&AgentCard>) -> &'static str {
-    let pinned = card.and_then(|agent_card| agent_card.get("protocolVersion"));
-    pinned
-        .and_then(normalize_protocol_version)
+    card.and_then(|agent_card| agent_card.protocol_version.as_ref())
+        .and_then(|value| match value {
+            WireValue::Typed(text) => Some(text.as_str()),
+            WireValue::Passthrough(_) => None,
+        })
+        .and_then(|version| normalize_protocol_version(&AgentJson::String(version.to_owned())))
         .unwrap_or(DEFAULT_VERSION)
 }
 
@@ -74,101 +177,116 @@ pub fn merge_agent_card(
 ) -> AgentCard {
     let mut card = upstream_card.cloned().unwrap_or_default();
     let served_version = resolve_served_version(upstream_card);
-    card.insert(
-        "protocolVersion".to_owned(),
-        AgentJson::from(served_version),
-    );
-    if let Some(caller_name) = name.filter(|text| !text.is_empty()) {
-        card.insert("name".to_owned(), AgentJson::from(caller_name));
+    card.protocol_version = Some(WireValue::Typed(served_version.to_owned()));
+    if let Some(value) = name.filter(|text| !text.is_empty()) {
+        card.name = Some(WireValue::Typed(value.to_owned()));
     }
-    if let Some(caller_description) = description.filter(|text| !text.is_empty()) {
-        card.insert(
-            "description".to_owned(),
-            AgentJson::from(caller_description),
-        );
+    if let Some(value) = description.filter(|text| !text.is_empty()) {
+        card.description = Some(WireValue::Typed(value.to_owned()));
     }
-    // streaming is the only capability the proxy can deliver today
-    let streaming = card
-        .get("capabilities")
-        .and_then(|capabilities| capabilities.get("streaming"))
-        .filter(|value| is_truthy(value))
-        .map(|value| ("streaming", value.clone()));
-    card.insert("capabilities".to_owned(), AgentJson::from_iter(streaming));
+    card.capabilities = Some(filtered_capabilities(card.capabilities.take()));
     fill_defaults(&mut card, proxy_base_url);
     insert_proxy_fields(&mut card, proxy_url, served_version);
-    card.retain(|key, _| ALLOWED_TOP_LEVEL.contains(&key.as_str()));
+    card.passthrough.clear();
     card
 }
 
+fn filtered_capabilities(value: Option<WireValue<Capabilities>>) -> WireValue<Capabilities> {
+    let streaming = match value {
+        Some(WireValue::Typed(capabilities)) => capabilities.streaming.and_then(truthy_wire),
+        _ => None,
+    };
+    WireValue::Typed(Capabilities {
+        streaming,
+        passthrough: BTreeMap::new(),
+    })
+}
+
 fn insert_proxy_fields(card: &mut AgentCard, proxy_url: &str, served_version: &str) {
-    let interface = AgentJson::from_iter([
-        ("url", AgentJson::from(proxy_url)),
-        ("protocolBinding", AgentJson::from("JSONRPC")),
-        ("protocolVersion", AgentJson::from(served_version)),
-    ]);
-    card.insert(
-        "supportedInterfaces".to_owned(),
-        AgentJson::Array(vec![interface]),
+    let interface = Interface {
+        url: Some(WireValue::Typed(proxy_url.to_owned())),
+        protocol_binding: Some(WireValue::Typed("JSONRPC".to_owned())),
+        protocol_version: Some(WireValue::Typed(served_version.to_owned())),
+        passthrough: BTreeMap::new(),
+    };
+    card.supported_interfaces = Some(WireValue::Typed(vec![interface]));
+    let mut schemes = BTreeMap::new();
+    schemes.insert(
+        "LiteLLMKey".to_owned(),
+        SecurityScheme::Http {
+            scheme: "bearer".to_owned(),
+            description: "LiteLLM virtual key".to_owned(),
+        },
     );
-    let scheme = AgentJson::from_iter([
-        ("type", AgentJson::from("http")),
-        ("scheme", AgentJson::from("bearer")),
-        ("description", AgentJson::from("LiteLLM virtual key")),
-    ]);
-    let schemes = AgentJson::from_iter([("LiteLLMKey", scheme)]);
-    card.insert("securitySchemes".to_owned(), schemes);
-    let requirement = AgentJson::from_iter([("LiteLLMKey", AgentJson::Array(Vec::new()))]);
-    card.insert("security".to_owned(), AgentJson::Array(vec![requirement]));
+    card.security_schemes = Some(WireValue::Typed(schemes));
+    let mut requirement = BTreeMap::new();
+    requirement.insert("LiteLLMKey".to_owned(), Vec::new());
+    card.security = Some(WireValue::Typed(vec![requirement]));
 }
 
 fn fill_defaults(card: &mut AgentCard, proxy_base_url: &str) {
-    fill_if_falsy(card, "version", AgentJson::from("1.0.0"));
-    let chat_skill = AgentJson::from_iter([
-        ("id", AgentJson::from("chat")),
-        ("name", AgentJson::from("Chat")),
-        (
-            "description",
-            AgentJson::from("Conversational interaction with the agent."),
-        ),
-        ("tags", AgentJson::from_iter(["chat"])),
-    ]);
-    fill_if_falsy(card, "skills", AgentJson::Array(vec![chat_skill]));
-    fill_if_falsy(card, "defaultInputModes", AgentJson::from_iter(["text"]));
-    fill_if_falsy(card, "defaultOutputModes", AgentJson::from_iter(["text"]));
-    let provider = AgentJson::from_iter([
-        ("organization", AgentJson::from("LiteLLM Proxy")),
-        ("url", AgentJson::from(proxy_base_url)),
-    ]);
-    fill_if_falsy(card, "provider", provider);
+    if !is_truthy_option(card.version.as_ref()) {
+        card.version = Some(WireValue::Typed("1.0.0".to_owned()));
+    }
+    if !is_truthy_option(card.skills.as_ref()) {
+        card.skills = Some(WireValue::Typed(vec![Skill {
+            id: Some(WireValue::Typed("chat".to_owned())),
+            name: Some(WireValue::Typed("Chat".to_owned())),
+            description: Some(WireValue::Typed(
+                "Conversational interaction with the agent.".to_owned(),
+            )),
+            tags: Some(WireValue::Typed(vec!["chat".to_owned()])),
+            passthrough: BTreeMap::new(),
+        }]));
+    }
+    if !is_truthy_option(card.default_input_modes.as_ref()) {
+        card.default_input_modes = Some(WireValue::Typed(vec!["text".to_owned()]));
+    }
+    if !is_truthy_option(card.default_output_modes.as_ref()) {
+        card.default_output_modes = Some(WireValue::Typed(vec!["text".to_owned()]));
+    }
+    if !is_truthy_option(card.provider.as_ref()) {
+        card.provider = Some(WireValue::Typed(Provider {
+            organization: Some(WireValue::Typed("LiteLLM Proxy".to_owned())),
+            url: Some(WireValue::Typed(proxy_base_url.to_owned())),
+            passthrough: BTreeMap::new(),
+        }));
+    }
 }
 
+fn is_truthy_option<T>(field: Option<&WireValue<T>>) -> bool
+where
+    T: Serialize,
+{
+    field
+        .and_then(|value| serde_json::to_value(value).ok())
+        .is_some_and(|value| is_truthy(&value))
+}
+fn truthy_wire(value: WireValue<bool>) -> Option<WireValue<bool>> {
+    let json = serde_json::to_value(&value).ok()?;
+    is_truthy(&json).then_some(value)
+}
 fn valid_suffix(suffix: &str) -> bool {
     let (prerelease, build) = suffix
         .split_once('+')
         .map_or((suffix, None), |(head, tail)| (head, Some(tail)));
-    let valid_identifiers = |dotted: &str| {
-        dotted.split('.').all(|identifier| {
-            !identifier.is_empty()
-                && identifier
+    let valid = |text: &str| {
+        text.split('.').all(|part| {
+            !part.is_empty()
+                && part
                     .bytes()
                     .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
         })
     };
-    prerelease.strip_prefix('-').is_none_or(valid_identifiers)
-        && build.is_none_or(valid_identifiers)
+    prerelease.strip_prefix('-').is_none_or(valid) && build.is_none_or(valid)
 }
-
-fn fill_if_falsy(card: &mut AgentCard, key: &str, default: AgentJson) {
-    if !card.get(key).is_some_and(is_truthy) {
-        card.insert(key.to_owned(), default);
-    }
-}
-
 fn is_truthy(value: &AgentJson) -> bool {
     match value {
         AgentJson::Null => false,
         AgentJson::Bool(flag) => *flag,
-        AgentJson::Number(number) => number.as_f64().is_some_and(|numeric| numeric != 0.0_f64),
+        AgentJson::Number(number) => {
+            number.as_i64() != Some(0) && number.as_u64() != Some(0) && number.as_f64() != Some(0.0)
+        }
         AgentJson::String(text) => !text.is_empty(),
         AgentJson::Array(items) => !items.is_empty(),
         AgentJson::Object(fields) => !fields.is_empty(),

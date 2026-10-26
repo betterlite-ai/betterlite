@@ -10,7 +10,8 @@ workspace = true
 
 [dependencies]
 betterlite-core = { path = "../betterlite-core" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.154"
 
 [dev-dependencies]
 rstest = "=0.27.0"
-serde_json = "1.0.154"
