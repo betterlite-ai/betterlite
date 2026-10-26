@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use super::headers::{InboundRequestContext, extract_inbound_headers, sanitize_inbound_headers};
 use super::*;
 use serde_json::from_str;
 use std::collections::BTreeMap;
