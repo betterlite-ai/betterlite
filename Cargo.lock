@@ -558,6 +558,7 @@ dependencies = [
  "fancy-regex",
  "indexmap 2.14.2",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
  "thiserror",

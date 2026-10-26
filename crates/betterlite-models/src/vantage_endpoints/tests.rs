@@ -3,6 +3,7 @@
 use super::{
     VantageDryRunRequest, VantageExportRequest, VantageInitRequest, VantageSettingsUpdate,
 };
+use rstest::rstest;
 
 #[test]
 fn finops_management_vantage_defaults() {
@@ -33,7 +34,7 @@ fn finops_management_vantage_rejects_blank_credentials() {
 fn finops_management_vantage_allows_null_update_credentials() {
     let update: VantageSettingsUpdate = serde_json::from_str(r#"{"api_key":null}"#)
         .expect("null means leave the stored credential unchanged");
-    assert_eq!(update.api_key, None);
+    assert!(update.api_key.is_none());
 }
 
 #[test]
@@ -41,6 +42,35 @@ fn finops_management_vantage_accepts_non_empty_update_credentials() {
     let update: VantageSettingsUpdate =
         serde_json::from_str(r#"{"api_key":"new-key","integration_token":"new-token"}"#)
             .expect("non-empty credentials are valid");
-    assert_eq!(update.api_key.as_deref(), Some("new-key"));
-    assert_eq!(update.integration_token.as_deref(), Some("new-token"));
+    assert_eq!(
+        update
+            .api_key
+            .as_ref()
+            .map(secrecy::ExposeSecret::expose_secret),
+        Some("new-key")
+    );
+    assert_eq!(
+        update
+            .integration_token
+            .as_ref()
+            .map(secrecy::ExposeSecret::expose_secret),
+        Some("new-token")
+    );
+}
+
+#[rstest]
+#[case::rfc3339(r#""2024-01-15T00:00:00Z""#, 1_705_276_800)]
+#[case::naive(r#""2024-01-15T00:00:00""#, 1_705_276_800)]
+#[case::unix_timestamp("1705276800", 1_705_276_800)]
+fn finops_management_vantage_accepts_supported_datetime_forms(
+    #[case] value: &str,
+    #[case] expected_timestamp: i64,
+) {
+    let request: VantageExportRequest =
+        serde_json::from_str(&format!(r#"{{"start_time_utc":{value}}}"#))
+            .expect("supported datetime form");
+    assert_eq!(
+        request.start_time_utc.expect("start time").timestamp(),
+        expected_timestamp
+    );
 }
