@@ -23,14 +23,16 @@ pub struct ProblemDocument {
 }
 
 impl ProblemDetail {
+    #[must_use]
     pub fn problem_document(&self) -> ProblemDocument {
-        ProblemDocument {
+        let document = ProblemDocument {
             r#type: self.r#type.clone(),
             title: self.title.clone(),
             status: self.status,
             detail: self.detail.clone(),
             allowed: self.allowed.clone(),
-        }
+        };
+        document
     }
 }
 
