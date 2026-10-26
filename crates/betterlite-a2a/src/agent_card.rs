@@ -1,27 +1,55 @@
 use betterlite_core::agents::json::AgentJson;
 use std::collections::BTreeMap;
 
+// The merge filters and passes through whatever upstream sent, so the card stays untyped JSON
 pub type AgentCard = BTreeMap<String, AgentJson>;
 
 const DEFAULT_VERSION: &str = "1.0";
-const DEFAULT_AGENT_VERSION: &str = "1.0.0";
+
+// v1.0 AgentCard fields plus supportedInterfaces; additionalInterfaces would let callers bypass the proxy
+const ALLOWED_TOP_LEVEL: [&str; 18] = [
+    "protocolVersion",
+    "name",
+    "description",
+    "version",
+    "capabilities",
+    "defaultInputModes",
+    "defaultOutputModes",
+    "skills",
+    "preferredTransport",
+    "supportedInterfaces",
+    "iconUrl",
+    "provider",
+    "documentationUrl",
+    "securitySchemes",
+    "security",
+    "supportsAuthenticatedExtendedCard",
+    "signatures",
+    // the invoker reads the upstream url from the stored card; the public route rewrites it
+    "url",
+];
 
 #[must_use]
 pub fn normalize_protocol_version(raw_version: &AgentJson) -> Option<&'static str> {
-    let version_text = raw_version.as_str()?;
-    let (major, minor_and_rest) = version_text.split_once('.')?;
-    if !is_numeric_component(major) {
+    let raw_text = raw_version.as_str()?;
+    // LiteLLM matches with Python's `$`, which also accepts one trailing newline
+    let version = raw_text.strip_suffix('\n').unwrap_or(raw_text);
+    let is_number = |component: &str| {
+        !component.is_empty() && component.bytes().all(|byte| byte.is_ascii_digit())
+    };
+    let mut components = version.splitn(3, '.');
+    let major = components.next()?;
+    let minor = components.next()?;
+    if !is_number(major) || !is_number(minor) {
         return None;
     }
-    let (minor, patch_part) = minor_and_rest
-        .split_once('.')
-        .map_or((minor_and_rest, None), |(minor, rest)| (minor, Some(rest)));
-    if !is_numeric_component(minor) {
-        return None;
-    }
-    if let Some(patch_and_suffix) = patch_part {
-        let (patch, suffix) = split_patch_suffix(patch_and_suffix);
-        if !is_numeric_component(patch) || !valid_suffix(suffix) {
+    if let Some(patch_and_suffix) = components.next() {
+        let (patch, suffix) = patch_and_suffix
+            .find(['-', '+'])
+            .map_or((patch_and_suffix, ""), |index| {
+                patch_and_suffix.split_at(index)
+            });
+        if !is_number(patch) || !valid_suffix(suffix) {
             return None;
         }
     }
@@ -32,16 +60,12 @@ pub fn normalize_protocol_version(raw_version: &AgentJson) -> Option<&'static st
     }
 }
 
+#[must_use]
 pub fn resolve_served_version(card: Option<&AgentCard>) -> &'static str {
-    let served = card
-        .and_then(|agent_card| agent_card.get("protocolVersion"))
+    let pinned = card.and_then(|agent_card| agent_card.get("protocolVersion"));
+    pinned
         .and_then(normalize_protocol_version)
-        .map_or(DEFAULT_VERSION, |version| version);
-    if served.is_empty() {
-        DEFAULT_VERSION
-    } else {
-        served
-    }
+        .unwrap_or(DEFAULT_VERSION)
 }
 
 #[must_use]
@@ -49,237 +73,110 @@ pub fn merge_agent_card(
     upstream_card: Option<&AgentCard>,
     proxy_url: &str,
     proxy_base_url: &str,
-    caller_name: Option<&str>,
-    caller_description: Option<&str>,
+    name: Option<&str>,
+    description: Option<&str>,
 ) -> AgentCard {
     let mut card = upstream_card.cloned().unwrap_or_default();
     let served_version = resolve_served_version(upstream_card);
     card.insert(
         "protocolVersion".to_owned(),
-        AgentJson::String(served_version.to_owned()),
+        AgentJson::from(served_version),
     );
-    apply_overrides(&mut card, caller_name, caller_description);
-    apply_defaults(&mut card, proxy_base_url);
-    apply_proxy_fields(&mut card, proxy_url, served_version);
-    card.retain(|key, _| allowed_top_level(key));
+    if let Some(caller_name) = name.filter(|text| !text.is_empty()) {
+        card.insert("name".to_owned(), AgentJson::from(caller_name));
+    }
+    if let Some(caller_description) = description.filter(|text| !text.is_empty()) {
+        card.insert(
+            "description".to_owned(),
+            AgentJson::from(caller_description),
+        );
+    }
+    // streaming is the only capability the proxy can deliver today
+    let streaming = card
+        .get("capabilities")
+        .and_then(|capabilities| capabilities.get("streaming"))
+        .filter(|value| is_truthy(value))
+        .map(|value| ("streaming", value.clone()));
+    card.insert("capabilities".to_owned(), AgentJson::from_iter(streaming));
+    fill_defaults(&mut card, proxy_base_url);
+    insert_proxy_fields(&mut card, proxy_url, served_version);
+    card.retain(|key, _| ALLOWED_TOP_LEVEL.contains(&key.as_str()));
     card
 }
 
-fn apply_overrides(
-    card: &mut AgentCard,
-    caller_name: Option<&str>,
-    caller_description: Option<&str>,
-) {
-    if let Some(name) = caller_name {
-        card.insert("name".to_owned(), AgentJson::String(name.to_owned()));
-    }
-    if let Some(description) = caller_description {
-        card.insert(
-            "description".to_owned(),
-            AgentJson::String(description.to_owned()),
-        );
-    }
-}
-
-fn apply_defaults(card: &mut AgentCard, proxy_base_url: &str) {
-    insert_default(
-        card,
-        "version",
-        AgentJson::String(DEFAULT_AGENT_VERSION.to_owned()),
-    );
-    let capabilities = filtered_capabilities(card.get("capabilities"));
-    card.insert("capabilities".to_owned(), capabilities);
-    insert_default(card, "skills", default_skills());
-    insert_default(
-        card,
-        "defaultInputModes",
-        AgentJson::Array(vec![AgentJson::String("text".to_owned())]),
-    );
-    insert_default(
-        card,
-        "defaultOutputModes",
-        AgentJson::Array(vec![AgentJson::String("text".to_owned())]),
-    );
-    insert_default(card, "provider", provider(proxy_base_url));
-}
-
-fn apply_proxy_fields(card: &mut AgentCard, proxy_url: &str, served_version: &str) {
+fn insert_proxy_fields(card: &mut AgentCard, proxy_url: &str, served_version: &str) {
+    let interface = AgentJson::from_iter([
+        ("url", AgentJson::from(proxy_url)),
+        ("protocolBinding", AgentJson::from("JSONRPC")),
+        ("protocolVersion", AgentJson::from(served_version)),
+    ]);
     card.insert(
         "supportedInterfaces".to_owned(),
-        supported_interface(proxy_url, served_version),
+        AgentJson::Array(vec![interface]),
     );
-    card.insert("securitySchemes".to_owned(), security_schemes());
-    card.insert("security".to_owned(), security_requirements());
+    let scheme = AgentJson::from_iter([
+        ("type", AgentJson::from("http")),
+        ("scheme", AgentJson::from("bearer")),
+        ("description", AgentJson::from("LiteLLM virtual key")),
+    ]);
+    let schemes = AgentJson::from_iter([("LiteLLMKey", scheme)]);
+    card.insert("securitySchemes".to_owned(), schemes);
+    let requirement = AgentJson::from_iter([("LiteLLMKey", AgentJson::Array(Vec::new()))]);
+    card.insert("security".to_owned(), AgentJson::Array(vec![requirement]));
 }
 
-fn is_numeric_component(component: &str) -> bool {
-    if component.is_empty() {
-        false
-    } else {
-        component.bytes().all(|byte| byte.is_ascii_digit())
-    }
+fn fill_defaults(card: &mut AgentCard, proxy_base_url: &str) {
+    fill_if_falsy(card, "version", AgentJson::from("1.0.0"));
+    let chat_skill = AgentJson::from_iter([
+        ("id", AgentJson::from("chat")),
+        ("name", AgentJson::from("Chat")),
+        (
+            "description",
+            AgentJson::from("Conversational interaction with the agent."),
+        ),
+        ("tags", AgentJson::from_iter(["chat"])),
+    ]);
+    fill_if_falsy(card, "skills", AgentJson::Array(vec![chat_skill]));
+    fill_if_falsy(card, "defaultInputModes", AgentJson::from_iter(["text"]));
+    fill_if_falsy(card, "defaultOutputModes", AgentJson::from_iter(["text"]));
+    let provider = AgentJson::from_iter([
+        ("organization", AgentJson::from("LiteLLM Proxy")),
+        ("url", AgentJson::from(proxy_base_url)),
+    ]);
+    fill_if_falsy(card, "provider", provider);
 }
 
-fn split_patch_suffix(rest: &str) -> (&str, Option<&str>) {
-    let parts = rest.find(['-', '+']).map_or((rest, None), |index| {
-        let (patch, suffix) = rest.split_at(index);
-        (patch, Some(suffix))
-    });
-    if parts.1.is_none() {
-        return parts;
-    }
-    parts
-}
-
-fn valid_suffix(raw_suffix: Option<&str>) -> bool {
-    let Some(suffix_text) = raw_suffix else {
-        return true;
+fn valid_suffix(suffix: &str) -> bool {
+    let (prerelease, build) = suffix
+        .split_once('+')
+        .map_or((suffix, None), |(head, tail)| (head, Some(tail)));
+    let valid_identifiers = |dotted: &str| {
+        dotted.split('.').all(|identifier| {
+            !identifier.is_empty()
+                && identifier
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
     };
-    let (prerelease, build) = suffix_text.strip_prefix('-').map_or_else(
-        || (None, suffix_text.strip_prefix('+')),
-        |suffix| {
-            suffix
-                .split_once('+')
-                .map_or((Some(suffix), None), |parts| (Some(parts.0), Some(parts.1)))
-        },
-    );
-    valid_identifiers(prerelease) && valid_identifiers(build)
+    prerelease.strip_prefix('-').is_none_or(valid_identifiers)
+        && build.is_none_or(valid_identifiers)
 }
 
-fn valid_identifiers(raw_value: Option<&str>) -> bool {
-    let valid = raw_value.is_none_or(|identifier_text| {
-        !identifier_text.is_empty()
-            && identifier_text.split('.').all(|part| {
-                !part.is_empty()
-                    && part
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-            })
-    });
-    if valid {
-        return true;
-    }
-    false
-}
-
-fn insert_default(card: &mut AgentCard, key: &str, value: AgentJson) {
-    if card.get(key).is_none_or(is_falsey) {
-        card.insert(key.to_owned(), value);
+fn fill_if_falsy(card: &mut AgentCard, key: &str, default: AgentJson) {
+    if !card.get(key).is_some_and(is_truthy) {
+        card.insert(key.to_owned(), default);
     }
 }
 
-fn is_falsey(raw_value: &AgentJson) -> bool {
-    match raw_value {
-        AgentJson::Null | AgentJson::Bool(false) => true,
-        AgentJson::Number(number) => number
-            .as_f64()
-            .is_some_and(|numeric_value| numeric_value == 0.0_f64),
-        AgentJson::String(text) => text.is_empty(),
-        AgentJson::Array(items) => items.is_empty(),
-        AgentJson::Object(object) => object.is_empty(),
-        AgentJson::Bool(true) => false,
+fn is_truthy(value: &AgentJson) -> bool {
+    match value {
+        AgentJson::Null => false,
+        AgentJson::Bool(flag) => *flag,
+        AgentJson::Number(number) => number.as_f64().is_some_and(|numeric| numeric != 0.0_f64),
+        AgentJson::String(text) => !text.is_empty(),
+        AgentJson::Array(items) => !items.is_empty(),
+        AgentJson::Object(fields) => !fields.is_empty(),
     }
-}
-
-fn filtered_capabilities(raw_value: Option<&AgentJson>) -> AgentJson {
-    let mut capabilities = BTreeMap::new();
-    if let Some(AgentJson::Object(upstream)) = raw_value
-        && upstream
-            .get("streaming")
-            .is_some_and(|streaming| !is_falsey(streaming))
-    {
-        capabilities.insert("streaming".to_owned(), AgentJson::Bool(true));
-    }
-    AgentJson::Object(capabilities.into_iter().collect())
-}
-
-fn default_skills() -> AgentJson {
-    let mut skill = BTreeMap::new();
-    skill.insert("id".to_owned(), AgentJson::String("chat".to_owned()));
-    skill.insert("name".to_owned(), AgentJson::String("Chat".to_owned()));
-    skill.insert(
-        "description".to_owned(),
-        AgentJson::String("Conversational interaction with the agent.".to_owned()),
-    );
-    skill.insert(
-        "tags".to_owned(),
-        AgentJson::Array(vec![AgentJson::String("chat".to_owned())]),
-    );
-    AgentJson::Array(vec![AgentJson::Object(skill.into_iter().collect())])
-}
-
-fn provider(proxy_base_url: &str) -> AgentJson {
-    let mut provider = BTreeMap::new();
-    provider.insert(
-        "organization".to_owned(),
-        AgentJson::String("LiteLLM Proxy".to_owned()),
-    );
-    provider.insert(
-        "url".to_owned(),
-        AgentJson::String(proxy_base_url.to_owned()),
-    );
-    AgentJson::Object(provider.into_iter().collect())
-}
-
-fn supported_interface(proxy_url: &str, served_version: &str) -> AgentJson {
-    let mut interface = BTreeMap::new();
-    interface.insert("url".to_owned(), AgentJson::String(proxy_url.to_owned()));
-    interface.insert(
-        "protocolBinding".to_owned(),
-        AgentJson::String("JSONRPC".to_owned()),
-    );
-    interface.insert(
-        "protocolVersion".to_owned(),
-        AgentJson::String(served_version.to_owned()),
-    );
-    AgentJson::Array(vec![AgentJson::Object(interface.into_iter().collect())])
-}
-
-fn security_schemes() -> AgentJson {
-    let mut scheme = BTreeMap::new();
-    scheme.insert("type".to_owned(), AgentJson::String("http".to_owned()));
-    scheme.insert("scheme".to_owned(), AgentJson::String("bearer".to_owned()));
-    scheme.insert(
-        "description".to_owned(),
-        AgentJson::String("LiteLLM virtual key".to_owned()),
-    );
-    let mut schemes = BTreeMap::new();
-    schemes.insert(
-        "LiteLLMKey".to_owned(),
-        AgentJson::Object(scheme.into_iter().collect()),
-    );
-    AgentJson::Object(schemes.into_iter().collect())
-}
-
-fn security_requirements() -> AgentJson {
-    let mut requirement = BTreeMap::new();
-    requirement.insert("LiteLLMKey".to_owned(), AgentJson::Array(Vec::new()));
-    AgentJson::Array(vec![AgentJson::Object(requirement.into_iter().collect())])
-}
-
-fn allowed_top_level(key: &str) -> bool {
-    let allowed = matches!(
-        key,
-        "protocolVersion"
-            | "name"
-            | "description"
-            | "version"
-            | "capabilities"
-            | "defaultInputModes"
-            | "defaultOutputModes"
-            | "skills"
-            | "preferredTransport"
-            | "supportedInterfaces"
-            | "iconUrl"
-            | "provider"
-            | "documentationUrl"
-            | "securitySchemes"
-            | "security"
-            | "supportsAuthenticatedExtendedCard"
-            | "signatures"
-            | "url"
-    );
-    allowed
 }
 
 mod tests;
