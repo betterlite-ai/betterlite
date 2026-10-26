@@ -135,7 +135,7 @@ oracle_cases: []
 deviations:
   - what: Replaced database connections are identified by native pool generation in diagnostics; no
       prisma-query-engine PID, signal escalation, orphan reaper or expected-process-death set exists.
-    why: SQLx has no subprocess. Preserve stop-first recovery, connect-first rotation and the 90-second
+    why: tokio-postgres has no subprocess. Preserve stop-first recovery, connect-first rotation and the 90-second
       old-work drain deadline through owned native tasks and connections.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L262-L347
 out_of_scope:

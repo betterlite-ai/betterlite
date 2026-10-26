@@ -1,7 +1,7 @@
 id: B700
 title: Native Postgres sessions and repository result semantics
 description: >-
-  Create betterlite-db::postgres_store with SQLx PostgresStore, an explicit DbSession transaction
+  Create betterlite-db::postgres_store with a PostgresStore over tokio-postgres and a deadpool-postgres pool, an explicit DbSession transaction
   handle, DbError and a typed RowCodec contract. Replace the live BaseRepository operations at
   repositories/base_repository.py L30-L134 and the structural protocols in prisma_protocols.py.
   Concrete SQL statements and row fields belong to their table repositories; this foundation binds
@@ -16,7 +16,7 @@ description: >-
   key/value iteration with last duplicate key winning. _to_model(None) returns None; otherwise its
   concrete codec validates the record and propagates errors. _to_model_list skips null records and
   null conversion results, preserving the remaining order; it does not skip invalid records. The
-  Python protocol adapters are test-only; native production uses typed SQLx rows and RowCodec.
+  Python protocol adapters are test-only; native production uses typed tokio-postgres rows and RowCodec.
 
   find_by_id/update/delete default the key column to id, with a typed alternate-column selection by
   each repository. find_many leaves skip/take/order unset by default and normalizes empty where/order
@@ -38,7 +38,7 @@ description: >-
 
   is_unique_violation's live Prisma path recognizes UniqueViolationError or code P2002. Its import-
   failure fallback searches case-sensitive P2002 or case-insensitive unique constraint in the message.
-  Native SQLx errors instead classify PostgreSQL SQLSTATE 23505 as unique violation and retain a
+  Native tokio-postgres errors (SqlState) instead classify PostgreSQL SQLSTATE 23505 as unique violation and retain a
   separate category for every other SQLSTATE; no matching of database text is needed. Keep constraint
   identifiers available to route policy without logging SQL parameter values or connection credentials.
   P2002 is a compatibility classification here, not a new public response code. B061 and agent routes
@@ -83,10 +83,10 @@ references:
     why: Read defaults, stable deduplication, sequential chunks and empty-input behavior being replaced.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/base.py#L11-L38
     why: DomainModel is unused by production; its separate conversion rules must not be mistaken for BaseRepository behavior.
-  - url: https://docs.rs/sqlx/latest/sqlx/postgres/index.html
-    why: Native Postgres pool, parameter arrays and SQLSTATE access.
+  - url: https://docs.rs/deadpool-postgres/latest/deadpool_postgres/
+    why: The pool over tokio-postgres; transactions run on a pooled client.
   - url: https://docs.rs/tokio-postgres/latest/tokio_postgres/
-    why: Compare the alternative driver before adding SQLx dependencies.
+    why: The driver itself, with Client, Transaction, parameter arrays and SqlState codes. deny.toml bans sqlx.
 dod:
   - text: 'repository_record covers model_dump_before_dict, dict_before_mapping, mapping_unchanged,
       sequence_last_duplicate_wins, null_record_returns_none, null_list_entries_dropped,

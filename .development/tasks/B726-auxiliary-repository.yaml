@@ -56,7 +56,7 @@ description: >-
 
   ManagedFileContentRepository uses litellm_managedfilecontenttable. store always creates a new
   row and returns its generated id, even for empty bytes; it does not replace an existing file.
-  The pinned Prisma Base64 adapter transports bytes to PostgreSQL BYTEA; native SQLx binds/reads
+  The pinned Prisma Base64 adapter transports bytes to PostgreSQL BYTEA; native tokio-postgres binds/reads
   the same bytes directly, with no extra base64 layer in storage. load by id returns None if absent
   or the exact bytes otherwise, distinguishing b'' from missing. delete is idempotent only for
   RecordNotFoundError: native zero deleted rows is success, while constraint/permission/connection

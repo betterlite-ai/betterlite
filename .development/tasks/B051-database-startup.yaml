@@ -356,9 +356,9 @@ out_of_scope:
   - 'litellm/proxy/db/prisma_client.py::PrismaManager._get_prisma_dir: Prisma filesystem/tool discovery
     is absent from the native runner.'
   - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._get_engine_pid: Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
+    has no equivalent process in native tokio-postgres; owned pool tasks replace it.'
   - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._kill_engine_process: Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
+    has no equivalent process in native tokio-postgres; owned pool tasks replace it.'
   - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._create_baseline_migration
     (L261-L320): v1 only; native v2 recovery does not call it.'
   - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::prisma_bootstrap_timeout (L114-L118):
