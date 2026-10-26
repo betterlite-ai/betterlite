@@ -2,7 +2,7 @@ id: B711
 title: Database TLS and external pooler configuration
 description: >-
   Implement betterlite-db::database_tls as the native mapping from LiteLLM's Prisma/libpq URL dialects
-  to SQLx/rustls connection options. Own translate_libpq_ssl_params and extras/utils.py's
+  to tokio-postgres connection options with the tokio-postgres-rustls-improved connector. Own translate_libpq_ssl_params and extras/utils.py's
   _strip_prisma_query_params/_libpq_tls_params, plus the existing native replacement of embedded
   PgBouncer configuration. There is no native_pool_policy function in the pinned Python file:
   pgbouncer.py L99-L119 contains settings/plan declarations, and the Rust writer-pool policy is the
@@ -54,14 +54,14 @@ description: >-
   loopback endpoint, userlist credential file or private random PgBouncer password is created. Keep
   the original writer URL/credential and B854's native refresh. An operator-provided external pooler
   URL still honors pgbouncer=true by disabling persistent prepared statements, independent of the
-  embedded-pooler toggle. Do not claim a cross-process or cross-pod limit from one SQLx pool.
+  embedded-pooler toggle. Do not claim a cross-process or cross-pod limit from one deadpool-postgres pool.
 
   Pure helper oracle cases invoke the actual translate/strip/TLS projection functions; inject an
   identity root resolver only to avoid the reference helper's preflight network/file work, and assert
   its resolver arguments in the case. Native pool behavior and full-bundle loading are deviation
   tests outside equality cases. B860 supplies a real locally controlled Postgres TLS endpoint through
   POSTGRES_TEST_URL when set, otherwise testcontainers; accepted/rejected connections must use the
-  actual SQLx connector. A valid root chain, wrong hostname, unknown root, multiple-root bundle whose
+  actual tokio-postgres rustls connector. A valid root chain, wrong hostname, unknown root, multiple-root bundle whose
   first root is unrelated, unreadable root and plaintext-server cases are separate tests. Fixture
   setup failure fails the tests, not an ignored result. Config tests load every named env setting and
   consume its resolved value. Extend the existing config_yaml and HelperCase corpora only.
@@ -126,7 +126,7 @@ checks:
       why: TLS projection and native connection/pool behavior must pass beyond corpus replay.
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::/) - test(/replays_the_/)'
     - id: tls-tests
-      why: An actual SQLx connection must enforce root and hostname verification.
+      why: An actual tokio-postgres connection must enforce root and hostname verification.
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::tls_valid_chain$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::tls_hostname_mismatch$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::tls_unknown_root$/)'
     - id: config-tests
       why: Invalid env settings must fail the real loader and valid ones must drive the native pool policy.
@@ -179,6 +179,6 @@ pitfalls:
   - sslkey changes the meaning of sslcert in the reverse translation and bypasses Prisma CA handling.
   - Source verify-ca becomes strict hostname verification through the Prisma dialect.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

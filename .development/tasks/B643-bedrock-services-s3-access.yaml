@@ -586,6 +586,6 @@ pitfalls:
   400 path as a rejected file ID.
 - The plain CommonBatchFilesUtils S3 parser accepts empty bucket/key components and must not substitute for authorization.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

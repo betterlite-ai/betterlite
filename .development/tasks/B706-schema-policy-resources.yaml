@@ -228,6 +228,6 @@ pitfalls:
   - SET DEFAULT true changes new MCP rows without rewriting existing available_on_public_internet=false.
   - Policy is_latest=true is not uniquely constrained, and plugin files_json is TEXT despite its JSON-looking default.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

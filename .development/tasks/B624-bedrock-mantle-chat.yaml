@@ -314,6 +314,6 @@ pitfalls:
 - Chat calls only the parent body builder, so the parent's document conversion and automatic beta construction do
   not run.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

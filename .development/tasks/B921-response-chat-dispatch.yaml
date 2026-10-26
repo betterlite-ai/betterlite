@@ -113,5 +113,5 @@ pitfalls:
 - Completed Responses objects bypass stream wrapping even when the caller requested streaming.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 1

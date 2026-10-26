@@ -92,6 +92,6 @@ pitfalls:
   - Credential-looking keys inside function arguments are user content, but nested secret_fields must still disappear.
   - A malformed echoed prompt must redact the remaining string rather than leave its unterminated body visible.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

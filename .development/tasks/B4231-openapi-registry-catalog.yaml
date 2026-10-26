@@ -51,5 +51,5 @@ pitfalls:
   - A consumer that caches the catalog should do so at the application level, not here.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -334,5 +334,5 @@ pitfalls:
 - 'The service-success hook is scheduled with asyncio.create_task after _enforced_params_check and is not awaited; treating it as an inline database write changes the return/error timing.'
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

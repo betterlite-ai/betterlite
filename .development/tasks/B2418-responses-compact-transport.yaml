@@ -109,5 +109,5 @@ pitfalls:
 - An empty signed byte string is a deliberate body, not an absent signature result.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

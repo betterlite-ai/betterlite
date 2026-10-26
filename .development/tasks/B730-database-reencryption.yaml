@@ -203,6 +203,6 @@ pitfalls:
   - A failed later update leaves earlier ciphertexts migrated, so remaining old-key values need a restart with the previous key retained.
   - Salt-variable presence skips migration even for an empty string, while an empty new-key override in the codec falls back.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

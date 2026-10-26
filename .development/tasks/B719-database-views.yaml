@@ -153,6 +153,6 @@ pitfalls:
   - Runtime bootstrap accepts an existing offline verification view without adding its missing columns.
   - DailyTagSpend has no thirty-day bound and counts repeated tags more than once per request.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

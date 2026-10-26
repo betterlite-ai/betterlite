@@ -299,6 +299,6 @@ pitfalls:
   - A team-member HTTPException is always swallowed here, while an unrelated ordinary exception is rethrown.
   - Removing a password from a bare model is outside _strip_password_from_response's actual dict-only behavior.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

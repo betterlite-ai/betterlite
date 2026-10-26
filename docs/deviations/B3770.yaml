@@ -1,0 +1,5 @@
+task: B3770
+deviations:
+  - what: betterlite constructs the guardrail HTTP handler per instance through dependency injection rather than LiteLLM's global client helper.
+    why: Dependency injection avoids global state and lets tests control HTTP behavior without side effects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L209

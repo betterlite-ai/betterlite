@@ -323,6 +323,6 @@ pitfalls:
   - Only TeamNotFoundError on the provisional ID path permits alias lookup; a generic HTTP failure becomes a membership denial.
   - Candidate selection swallows exceptions, including permission errors, before deciding which final denial wins.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

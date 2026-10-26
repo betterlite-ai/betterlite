@@ -230,6 +230,6 @@ pitfalls:
   - The fast path bypasses per-user preparation; metadata and object permissions are direct database payloads.
   - Its fallback copies lack user_email, so the first row can persist before result construction raises 500.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

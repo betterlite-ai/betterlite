@@ -106,7 +106,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::concurrency/)'
     - id: cluster-batches-tests
       why: cluster_batches two-phase grouping or candidate accumulation is incorrect
-      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::cluster_batches::/) and test(!candidate_partitioning)'
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::cluster_batches::/) and not test(candidate_partitioning)'
     - id: candidate-partitioning-tests
       why: candidate partitioning with candidate_size or partition limits is incorrect
       run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::candidate_partitioning/)'
@@ -115,7 +115,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::consolidate/)'
     - id: merge-candidates-tests
       why: merge_candidates model invocation or response processing is missing or incorrect
-      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::merge_candidates::/) and test(!active_settled_) and test(!invalid_grouping_) and test(!duplicate_reference_)'
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::merge_candidates::/) and not test(active_settled_) and not test(invalid_grouping_) and not test(duplicate_reference_)'
     - id: duplicate-reference-tests
       why: validate_groups duplicate-reference detection or structured_response repair triggering is missing
       run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::duplicate_reference/)'
@@ -159,5 +159,5 @@ pitfalls:
   - progress callback is invoked with a Coverage snapshot; mutations to coverage between calls show cumulative progress, not incremental state changes.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -84,6 +84,6 @@ pitfalls:
   - Adding a search value disables session grouping even when group_by_session=true remains in the query.
   - Wildcards are escaped for session_id but intentionally remain active in metadata substring filters.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

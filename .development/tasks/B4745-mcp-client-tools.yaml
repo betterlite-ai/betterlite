@@ -46,6 +46,7 @@ scope:
     - tools/oracle/helpers/b4745/**
     - tools/oracle/src/helpers/mcp/b4745.rs
     - tools/oracle/src/helpers/mcp/b4745/**
+    - crates/betterlite-mcp/src/client/tools/tests/**
   lint_tables: false
 
 references:
@@ -152,6 +153,6 @@ pitfalls:
   - InputRequiredResult acceptance depends on allow_input_required=True and the upstream MCP protocol version; it is not retried as a separate tool invocation.
 
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

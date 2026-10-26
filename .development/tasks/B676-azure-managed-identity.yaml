@@ -383,6 +383,6 @@ pitfalls:
 - The SDK outer selector tests truthiness, but MSAL protocol selection tests environment-key presence.
 - A configured pod authority skips the availability probe even when its value is empty.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

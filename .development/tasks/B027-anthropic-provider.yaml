@@ -434,6 +434,6 @@ pitfalls:
   map.
 - The batch-results selector tests substrings anywhere in the URL, not an endpoint suffix.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

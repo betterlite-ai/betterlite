@@ -63,6 +63,7 @@ scope:
   paths:
     - crates/betterlite-prometheus/src/collector_factory.rs
     - crates/betterlite-prometheus/src/collector_factory/tests.rs
+    - crates/betterlite-prometheus/src/collector_factory/tests/**
   lint_tables: false
 
 references:
@@ -199,5 +200,5 @@ pitfalls:
 review_level: standard
 
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
