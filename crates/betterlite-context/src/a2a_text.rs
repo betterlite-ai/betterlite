@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
-use serde::de::{Deserializer, IgnoredAny};
+use serde::de::IgnoredAny;
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -38,11 +38,8 @@ pub enum Shape {
     Number(f64),
     Text(String),
     List(Vec<IgnoredAny>),
-    Object(KeyCount),
+    Object(BTreeMap<String, IgnoredAny>),
 }
-
-#[derive(Debug, Default)]
-pub struct KeyCount(pub usize);
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -61,13 +58,15 @@ pub enum ListValue {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(default)]
 pub struct A2aRecord {
+    #[serde(default)]
     pub kind: Field<Shape>,
+    #[serde(default)]
     pub text: Field<Shape>,
+    #[serde(default)]
     pub parts: Field<ListValue>,
     #[serde(flatten)]
-    pub other_keys: KeyCount,
+    pub other_keys: BTreeMap<String, IgnoredAny>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,41 +89,31 @@ pub struct A2aStatus {
     pub message: Option<RecordValue>,
 }
 
-impl<'de> Deserialize<'de> for KeyCount {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let keys = BTreeMap::<String, IgnoredAny>::deserialize(deserializer)?;
-        Ok(Self(keys.len()))
-    }
-}
-
-impl Shape {
-    fn is_truthy(&self) -> bool {
-        match self {
-            Self::Null => false,
-            Self::Flag(flag) => *flag,
-            Self::Number(number) => *number != 0.0_f64,
-            Self::Text(text) => !text.is_empty(),
-            Self::List(items) => !items.is_empty(),
-            Self::Object(keys) => keys.0 > 0,
-        }
+fn shape_is_truthy(shape: &Shape) -> bool {
+    match shape {
+        Shape::Null => false,
+        Shape::Flag(flag) => *flag,
+        Shape::Number(number) => *number != 0.0_f64,
+        Shape::Text(text) => !text.is_empty(),
+        Shape::List(items) => !items.is_empty(),
+        Shape::Object(keys) => !keys.is_empty(),
     }
 }
 
 impl RecordValue {
     fn is_truthy(&self) -> bool {
         match self {
-            Self::Record(record) => {
-                matches!(record.kind, Field::Present(_))
-                    || matches!(record.text, Field::Present(_))
-                    || matches!(record.parts, Field::Present(_))
-                    || record.other_keys.0 > 0
-            }
-            Self::Other(shape) => shape.is_truthy(),
+            Self::Record(record) => record_has_content(record),
+            Self::Other(shape) => shape_is_truthy(shape),
         }
     }
+}
+
+fn record_has_content(record: &A2aRecord) -> bool {
+    matches!(record.kind, Field::Present(_))
+        || matches!(record.text, Field::Present(_))
+        || matches!(record.parts, Field::Present(_))
+        || !record.other_keys.is_empty()
 }
 
 pub fn extract_text_from_a2a_message(
@@ -152,7 +141,7 @@ fn parts_text(
             return Err(A2aTextError::PartsNotIterable);
         }
         // Python iterates a string or object, so only an empty one gets past the first part
-        Field::Present(ListValue::Other(shape)) if shape.is_truthy() => {
+        Field::Present(ListValue::Other(shape)) if shape_is_truthy(shape) => {
             return Err(A2aTextError::PartNotObject);
         }
         Field::Absent | Field::Present(ListValue::Other(_)) => return Ok(String::new()),
@@ -208,7 +197,7 @@ pub fn extract_text_from_a2a_response(
     }
     match &result.artifacts {
         Some(ListValue::List(items)) => extract_text_from_a2a_message(items.first(), 0, max_depth),
-        Some(ListValue::Other(shape)) if shape.is_truthy() => match shape {
+        Some(ListValue::Other(shape)) if shape_is_truthy(shape) => match shape {
             Shape::Text(_) if max_depth > 0 => Err(A2aTextError::MessageNotObject),
             Shape::Text(_) | Shape::List(_) => Ok(String::new()),
             Shape::Object(_) => Err(A2aTextError::ArtifactsNotIndexed),
