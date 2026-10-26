@@ -1,23 +1,24 @@
 use serde_json::{Map, Value};
+use std::str::FromStr as _;
 use thiserror::Error;
-
-pub const ANTHROPIC_CALL_TYPES: [&str; 1] = ["anthropic_messages"];
-pub const SUPPORTED_CALL_TYPES: [&str; 3] = ["completion", "acompletion", "anthropic_messages"];
 
 #[derive(Debug, Error)]
 pub enum CompressionError {
     #[error(
-        "Unsupported call_type={call_type:?} for compression. Expected one of: {SUPPORTED_CALL_TYPES:?}."
+        "Unsupported call_type='{call_type}' for compression. Expected one of: ['acompletion', 'anthropic_messages', 'completion']."
     )]
-    UnsupportedCallType { call_type: String },
+    UnsupportedCallType {
+        call_type: String,
+        source: strum::ParseError,
+    },
 }
 
-pub fn normalize_call_type(call_type: &str) -> String {
-    call_type.to_owned()
-}
-
-pub fn is_anthropic_call_type(call_type: &str) -> bool {
-    matches!(call_type, "anthropic_messages")
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::EnumString)]
+#[strum(serialize_all = "snake_case")]
+pub enum CallType {
+    Completion,
+    Acompletion,
+    AnthropicMessages,
 }
 
 pub fn content_to_text(content: &Value) -> String {
@@ -47,12 +48,12 @@ pub fn content_to_text(content: &Value) -> String {
 pub fn normalize_messages(
     messages: &[Value],
     call_type: &str,
-) -> Result<(Vec<Value>, Vec<Value>), CompressionError> {
-    if !SUPPORTED_CALL_TYPES.contains(&call_type) {
-        return Err(CompressionError::UnsupportedCallType {
+) -> Result<(CallType, Vec<Value>, Vec<Value>), CompressionError> {
+    let parsed =
+        CallType::from_str(call_type).map_err(|source| CompressionError::UnsupportedCallType {
             call_type: call_type.to_owned(),
-        });
-    }
+            source,
+        })?;
     let original = messages.to_vec();
     let normalized = original
         .iter()
@@ -66,16 +67,16 @@ pub fn normalize_messages(
             Value::Object(copy)
         })
         .collect();
-    Ok((normalized, original))
+    Ok((parsed, normalized, original))
 }
 
 pub fn extract_last_user_message(messages: &[Value]) -> String {
-    messages
-        .iter()
-        .rev()
-        .find(|message| message.get("role") == Some(&Value::String("user".to_owned())))
-        .and_then(|message| message.get("content"))
-        .map_or_else(String::new, content_to_text)
+    for message in messages.iter().rev() {
+        if message.get("role") == Some(&Value::String("user".to_owned())) {
+            return content_to_text(message.get("content").unwrap_or(&Value::Null));
+        }
+    }
+    String::new()
 }
 
 mod tests;

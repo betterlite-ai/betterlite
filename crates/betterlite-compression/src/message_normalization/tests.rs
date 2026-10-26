@@ -14,31 +14,46 @@ fn rejects_unknown_call_type() {
     let error = normalize_messages(&[], "chat").unwrap_err();
     assert!(matches!(
         &error,
-        CompressionError::UnsupportedCallType { call_type } if call_type == "chat"
+        CompressionError::UnsupportedCallType { call_type, .. } if call_type == "chat"
     ));
     assert_eq!(
         error.to_string(),
-        "Unsupported call_type=\"chat\" for compression. Expected one of: [\"completion\", \"acompletion\", \"anthropic_messages\"]."
+        "Unsupported call_type='chat' for compression. Expected one of: ['acompletion', 'anthropic_messages', 'completion']."
     );
 }
 
 #[test]
-fn normalizes_call_shapes_and_finds_latest_user() {
-    assert_eq!(normalize_call_type("acompletion"), "acompletion");
-    assert!(is_anthropic_call_type("anthropic_messages"));
-    assert!(!is_anthropic_call_type("completion"));
+fn parses_supported_call_types() {
+    assert_eq!(
+        normalize_messages(&[], "completion").unwrap().0,
+        CallType::Completion
+    );
+    assert_eq!(
+        normalize_messages(&[], "acompletion").unwrap().0,
+        CallType::Acompletion
+    );
+    assert_eq!(
+        normalize_messages(&[], "anthropic_messages").unwrap().0,
+        CallType::AnthropicMessages
+    );
+}
+
+#[test]
+fn finds_latest_user_message() {
     let messages = vec![
         json!({"role":"user","content":"old"}),
-        json!({"role":"assistant","content":"answer"}),
         json!({"role":"user","content":[{"type":"text","text":"new"}]}),
+        json!({"role":"assistant","content":"answer"}),
     ];
     assert_eq!(extract_last_user_message(&messages), "new");
+    let without_user = vec![json!({"role":"assistant","content":"answer"})];
+    assert_eq!(extract_last_user_message(&without_user), "");
 }
 
 #[test]
 fn preserves_original_and_shallow_message_fields() {
     let messages = vec![json!({"role":"user","content":[{"type":"text","text":"hi"}],"name":"n"})];
-    let (normalized, original) = normalize_messages(&messages, "completion").unwrap();
+    let (_, normalized, original) = normalize_messages(&messages, "completion").unwrap();
     assert_eq!(normalized[0]["content"], "hi");
     assert_eq!(normalized[0]["name"], "n");
     assert_eq!(original, messages);
