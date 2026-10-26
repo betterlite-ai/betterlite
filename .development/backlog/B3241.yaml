@@ -2,8 +2,8 @@ id: B3241
 milestone: M6 guardrails
 title: Policy memory, attachment matching and request resolution
 status: todo
-depends_on: [B3240]
-file: null
+depends_on: [B3240, B882]
+file: tasks/B3241-policy-memory-matching.yaml
 covers:
   - "litellm/proxy/policy_engine/policy_registry.py"
   - "litellm/proxy/policy_engine/attachment_registry.py"

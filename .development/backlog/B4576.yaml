@@ -3,7 +3,7 @@ milestone: M8 platform
 title: CLI SSO polling and team selection
 status: todo
 depends_on: [B4574]
-file: null
+file: tasks/B4576-cli-sso-polling.yaml
 covers:
   - "litellm/proxy/client/cli/commands/auth.py"
 parent: B134

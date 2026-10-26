@@ -1,0 +1,103 @@
+id: B3063
+title: Deliver Mavvrik exports through resumable GCS uploads
+description: >-
+  Build the Mavvrik registration, upload and marker client in betterlite-logging with separate validated
+  Mavvrik and GCS destinations. Preserve the 8 MiB gzip chunk protocol, per-step deadlines (30s for API
+  calls, 120s for chunk uploads), cancellation attempt after chunk failure, registration reset on 410 Gone,
+  marker advancement only after upload succeeds, and empty-content advancement via marker update.
+  FocusMavvrikDestination calls three Mavvrik endpoints (POST to register, GET for signed URL, PATCH to
+  advance marker), validates HTTPS Mavvrik domains (.mavvrik.dev/.mavvrik.ai/.mavvrik.app) and GCS URLs,
+  and uploads CSV via GCS resumable upload with 8 MB chunks. The destination operates on FocusTimeWindow
+  contracts (start_time, end_time, frequency) and CSV bytes; registration state (_registered flag) caches
+  API calls per instance. Chunk failures trigger session cancellation with timeouts. Config keys are
+  MAVVRIK_API_KEY, MAVVRIK_API_ENDPOINT, MAVVRIK_CONNECTION_ID (all required); environment fallback
+  through betterlite-config. The GCS mock for testing supports stubbed signed URLs and multi-chunk uploads
+  with 308/200 responses.
+scope:
+  paths:
+    - "crates/betterlite-logging/src/mavvrik_delivery.rs"
+    - "crates/betterlite-logging/src/mavvrik_delivery/**"
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/mavvrik_destination.py
+    why: "Complete Mavvrik destination implementation: registration, signed URL retrieval, chunked GCS upload, marker updates, error handling, validation and state management."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/base.py#L10-L30
+    why: "FocusTimeWindow dataclass and FocusDestination protocol defining the async deliver contract."
+  - url: https://github.com/google.com/cloud/gcs/resumable-upload
+    why: "GCS resumable upload protocol with 308 intermediate status and 200/201 final status."
+  - url: https://cloud.google.com/storage/docs/xml-api/post-object#client_libraries
+    why: "GCS session initiation and content encoding metadata."
+dod:
+  - text: "FocusMavvrikDestination validates api_endpoint as HTTPS with Mavvrik suffix (.mavvrik.dev, .mavvrik.ai, .mavvrik.app) on construction; invalid endpoints reject with ValueError."
+    proof: [mavvrik-validation-tests]
+  - text: "All signed URLs and session URIs validate as HTTPS with storage.googleapis.com hostname; invalid GCS URLs reject with ValueError at parse time."
+    proof: [mavvrik-validation-tests]
+  - text: "API calls (register POST, upload-url GET, marker PATCH) timeout at 30 seconds; GCS session init POST times out at 30 seconds; chunk PUT timeout is 120 seconds. Transport-level timeouts raise httpx.TimeoutException with no response body."
+    proof: [mavvrik-http-behavior-tests]
+  - text: "HTTP error responses (4xx/5xx) from Mavvrik API calls (register, upload-url, marker) raise RuntimeError with the first 200 bytes of response text; GCS session init and chunk PUT failures raise RuntimeError with the first 400 bytes of response text."
+    proof: [mavvrik-http-behavior-tests, mavvrik-chunk-upload-tests]
+  - text: "Registration (POST /metrics/agent/ai/{connection_id}) caches success in _registered flag; subsequent deliver() calls skip re-registration. A 410 Gone response resets _registered and raises RuntimeError mentioning reconnection."
+    proof: [mavvrik-http-behavior-tests]
+  - text: "Empty content (zero bytes) advances the marker without uploading; deliver() returns after _update_metrics_marker() succeeds."
+    proof: [mavvrik-empty-delivery-tests]
+  - text: "CSV content gzip-compresses, initiates GCS session with POST (x-goog-resumable: start, metadata JSON), uploads chunks with Content-Range headers (308 intermediate, 200/201 final), and advances marker after final chunk succeeds."
+    proof: [mavvrik-chunk-upload-tests]
+  - text: "GCS session cancellation (DELETE to session_uri) runs after any chunk failure; partial chunk success does not cancel the session."
+    proof: [mavvrik-error-handling-tests]
+  - text: "get_metrics_marker() always calls POST /metrics/agent/ai/{connection_id}, returns the response metricsMarker value and sets _registered true; unlike deliver(), it does not cache and skip the call."
+    proof: [mavvrik-marker-contract-tests]
+checks:
+  optional: []
+  commands:
+    - id: mavvrik-validation-tests
+      why: "API endpoint, GCS URL or signed URL validation fails or is missing."
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^mavvrik_delivery::validation::/)'
+    - id: mavvrik-http-behavior-tests
+      why: "HTTP requests, transport-level timeouts (no response body), Mavvrik API error responses (200-byte truncation), or response parsing fails."
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^mavvrik_delivery::http_behavior::/)'
+    - id: mavvrik-empty-delivery-tests
+      why: "Empty content handling or marker advancement without upload fails."
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^mavvrik_delivery::empty_delivery::/)'
+    - id: mavvrik-chunk-upload-tests
+      why: "GCS resumable upload, chunking, Content-Range headers, session initialization, or GCS error responses (400-byte truncation) fail."
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^mavvrik_delivery::chunk_upload::/)'
+    - id: mavvrik-error-handling-tests
+      why: "Error cancellation, 410 handling, timeouts or response status checking fails."
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^mavvrik_delivery::error_handling::/)'
+    - id: mavvrik-marker-contract-tests
+      why: "get_metrics_marker() contract or metricsMarker field handling fails."
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^mavvrik_delivery::marker_contract::/)'
+oracle_cases: []
+deviations:
+  - what: "Empty CSV content advances the metrics marker without calling the GCS upload flow (POST session init, PUT chunks, final marker update)."
+    why: "LiteLLM checks content truthiness and returns early after advancing the marker, avoiding unnecessary GCS operations for zero-byte exports. This preserves marker continuity when a date has no data."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/mavvrik_destination.py#L341-L347"
+  - what: "Registration failure with HTTP 410 Gone raises RuntimeError and resets the _registered flag; subsequent deliver() calls will attempt re-registration."
+    why: "LiteLLM interprets 410 as connector disconnection in Mavvrik's dashboard and forces retry on the next call to detect reconnection."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/mavvrik_destination.py#L152-L157"
+  - what: "GCS chunk failures trigger a cancellation attempt (DELETE session_uri) with a separate 10-second timeout; cancellation failures are silently caught and do not mask the original error."
+    why: "LiteLLM avoids lingering GCS sessions that remain open for ~1 week by explicitly cancelling on failure, even if the cancellation itself times out or fails."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/mavvrik_destination.py#L268-L275"
+  - what: "The gzip compression step runs inside _upload_to_gcs after signed URL retrieval; betterlite reuses the same order and does not compress at serialization time."
+    why: "LiteLLM gzip-compresses only when uploading, avoiding two different serialization paths (CSV for Vantage, gzip for Mavvrik) and allowing compression to fail independently of CSV generation."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/mavvrik_destination.py#L204-L205"
+out_of_scope:
+  - "litellm/integrations/focus/database.py: Usage queries owned by B3060."
+  - "litellm/integrations/focus/transformer.py, serializers/*.py: FOCUS record transformation and serialization owned by B3061."
+  - "litellm/integrations/focus/destinations/s3_destination.py, gcs_destination.py, vantage_destination.py: Other destination implementations owned by B3062, B3064."
+  - "litellm/integrations/focus/export_engine.py: Engine composition and delivery orchestration owned by B3065."
+  - "litellm/integrations/focus/focus_logger.py: Scheduling and entry points owned by B3066."
+  - "litellm/integrations/mavvrik_focus/**: Mavvrik scheduling and catch-up owned by B3068."
+pitfalls:
+  - "The _registered flag only caches within a single FocusMavvrikDestination instance. Different instances do not share registration state, so create one destination instance per export engine or accept multiple POST registrations."
+  - "gzip.compress() is synchronous in the asyncio context. A very large CSV (>1 GB) will block the runtime. Measure and test with realistic data sizes; if compression becomes a bottleneck, move it to a thread executor."
+  - "The session URI returned from GCS init is a Location header value, not a JSON field. Validate it is non-empty and a valid GCS HTTPS URL immediately after the POST response."
+  - "Content-Range headers must include total size (/total) only on the final chunk; intermediate chunks use /* (open-ended). Forgetting this difference causes 400 from GCS."
+  - "GCS resumable upload expects 200 or 201 on final chunk; intermediate chunks expect exactly 308. Accept no other status codes."
+  - "A cancelled GCS session DELETE may fail (timeout, auth, network) but must not raise and stop the original exception from propagating. The cancellation is best-effort cleanup."
+  - "Configuration keys MAVVRIK_API_KEY, MAVVRIK_API_ENDPOINT, MAVVRIK_CONNECTION_ID are required; the constructor must raise ValueError with the exact key name for each missing value, matching LiteLLM's error messages."
+  - "The metricsMarker field in Mavvrik responses is optional (NotRequired); default to 0 if missing, not null or empty string."
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 3

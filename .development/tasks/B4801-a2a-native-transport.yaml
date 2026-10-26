@@ -1,0 +1,90 @@
+id: B4801
+title: Native A2A client transport and bounded localhost retry
+description: >-
+  Build the native A2A client handle with protocol record conversion, final-message selection and two-attempt send loops. Keep HTTP client ownership and per-agent headers attached to the handle so recovery can recreate the protocol client without exchanging credentials between requests. The task reuses the SDK's native client and conversion boundary, calling create_client and conversions.to_core_send_message_request without reimplementing the A2A wire format.
+
+  The client handle wraps a2a.client.Client with three attached fields: the configured HTTP client (_litellm_httpx_client), a ClientCallContext with extra_headers scoped to the principal (_litellm_call_context), and the resolved agent card (_litellm_agent_card). Provide functions to access these fields and construct the protocol request from the compat-v0.3 SendMessageRequest. Non-streaming send requires the last event to be a Message or Task and fails on an empty stream; streaming accepts empty streams and retries only before the first chunk is yielded. Timeout defaults to DEFAULT_A2A_AGENT_TIMEOUT from litellm.constants (6000 seconds). Both send and stream loops make up to two attempts: the original request and one retry after detecting a localhost URL in a connection error.
+
+  The task builds pure Rust functions that call the injected HTTP pool to resolve the agent card, construct the a2a SDK client with retained handles, and implement the retry loops. Error classification (connection vs localhost vs other) is delegated to B4813. Configuration injection comes through B002. The completion bridge dispatcher (B4809) and recovery logic (B4813) depend on the created client and its attached state.
+scope:
+  paths:
+    - crates/betterlite-a2a/src/client.rs
+    - crates/betterlite-a2a/src/client/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L147-L153
+    why: Extra headers and agent card path extraction from configuration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L211-L218
+    why: Agent card field access from client handles.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L252-L267
+    why: Call context extraction and protocol conversion delegation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L270-L296
+    why: Non-streaming send with final-message selection and error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L299-L337
+    why: Non-streaming send with retry logic for localhost URL errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L340-L352
+    why: Streaming iteration and protocol conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L355-L400
+    why: Streaming send with retry logic, response-started guard and localhost retry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L767-L845
+    why: Client creation, card resolution, SDK client initialization and handle attachment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L578-L589
+    why: DEFAULT_A2A_AGENT_TIMEOUT configuration default.
+dod:
+  - text: A native A2A client is created with resolved agent card and retained HTTP client.
+    proof: [client-creation-tests]
+  - text: Extra headers are extracted from configuration and attached to the client call context.
+    proof: [client-creation-tests]
+  - text: Non-streaming send requires the final event to be a Message or Task and fails on an empty stream.
+    proof: [send-tests]
+  - text: Non-streaming send retries up to two times on localhost URL errors without propagating them to the caller.
+    proof: [retry-tests]
+  - text: Streaming retries only before the first chunk is yielded; after the first chunk, all errors propagate.
+    proof: [retry-tests]
+  - text: Streaming accepts empty event streams without error.
+    proof: [send-tests]
+  - text: Timeout defaults to DEFAULT_A2A_AGENT_TIMEOUT (6000 seconds) and is configurable per client.
+    proof: [config-tests]
+  - text: Both send and stream maintain the HTTP client and call context across retry attempts without reconstructing credentials.
+    proof: [client-creation-tests]
+checks:
+  optional: []
+  commands:
+    - id: client-creation-tests
+      why: client creation and handle attachment tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^a2a_client_creation($|::)/)'
+    - id: send-tests
+      why: non-streaming send and final-message validation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^native_send_behavior($|::)/)'
+    - id: retry-tests
+      why: retry logic and localhost detection tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^native_send_retry($|::)/)'
+    - id: config-tests
+      why: timeout configuration tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^client_timeout($|::)/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      The default timeout is 6000 seconds despite the LiteLLM constant's "10 minutes" comment being stale.
+    why: The comment in litellm/constants.py:578 is incorrect; the actual default value is 6000 seconds (100 minutes), which is preserved here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L578-L589
+  - what: >-
+      Streaming retries only before any chunk escapes; after the first chunk is yielded, all errors propagate immediately.
+    why: Clients cannot restart a partially-consumed stream without retransmitting chunks already sent; LiteLLM enforces this boundary at line 374.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L355-L400
+out_of_scope:
+  - a2a_protocol/main.py:555-582 (send_message), owned by no caller at the pin; the async function asend_message is the canonical entry point.
+  - a2a_protocol/main.py:848-890 (aget_agent_card), owned by no caller at the pin outside unused examples; card resolution is built into create_a2a_client.
+  - a2a_protocol/client.py (unused class), owned by no caller at the pin; the native client export and entry points are never invoked.
+  - A2A SDK creation, protobuf conversion, and transport, sourced from the a2a crate at its pinned version.
+  - Request retry and backoff policies beyond the two-attempt localhost retry; B017 owns general request retry semantics.
+pitfalls:
+  - The SDK's to_core_send_message_request and to_compat_stream_response are pure protocol conversions that require the SDK at the exact pinned version; confirm the API matches before calling.
+  - Attaching the HTTP client to the A2A client requires raw field assignment or similar mechanism; the SDK does not provide a public API for injecting a pre-configured client.
+  - Localhost retry reconstruction must reuse the same HTTP client and call context without clearing headers or credentials; a fresh client defeats the purpose of recovery.
+  - The response_started flag must be set before yielding the first chunk, not after; once a chunk escapes, retries cannot hide the error.
+  - An empty non-streaming response (zero events) is an error; an empty streaming response (no chunks) is success.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

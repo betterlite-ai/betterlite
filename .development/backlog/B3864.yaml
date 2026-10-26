@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Phoenix prompt retrieval and compilation
 status: todo
 depends_on: [B002, B173]
-file: null
+file: tasks/B3864-phoenix-prompts.yaml
 covers:
   - "litellm/integrations/arize/{__init__,arize_phoenix_client,arize_phoenix_prompt_manager}.py"
 parent: B110

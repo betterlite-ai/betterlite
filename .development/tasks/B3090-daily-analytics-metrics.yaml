@@ -1,0 +1,82 @@
+id: B3090
+title: Define daily analytics metrics and canonical date errors
+description: >-
+  Port the LiteLLM types and date parsing for daily spend analytics. Add crates/betterlite-analytics
+  with the SpendMetrics, BreakdownMetrics, KeyMetadata, MetricWithMetadata and related types that
+  model daily activity records. Each metric tracks spend, token counts (prompt, completion, cached,
+  compressed), savings categories (compression, prompt caching, gateway-injected caching, autorouter),
+  API request counts (total, successful, failed), and response time totals.
+
+  The daily spend rollup defines BreakdownMetrics: breakdowns by model, model_group, provider,
+  endpoint, mcp_server and api_key, each with an optional api_key_breakdown and metadata dict.
+
+  Implement canonical date parsing: YYYY-MM-DD strings only. Dates like 2026-9-24, 20260924 or
+  full-width digits are rejected; the parser does not normalize. An invalid date range (missing,
+  non-canonical or out-of-order dates) raises an HTTPException with status 400. Export the parse
+  result as an opaque CanonicalDateRange with start and end date fields, or an InvalidDateRange
+  error, and a public function raise_public that lifts it to an HTTP 400 or maps errors to
+  ScopeDenied (403 or 404 for access denials).
+
+  Both read paths that follow this task (paginated daily rows in B3091 and aggregated rollups in
+  B3092) will import the types from this crate and pass CanonicalDateRange to the repository layer.
+scope:
+  paths:
+    - crates/betterlite-analytics/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/common_daily_activity.py#L1-L126
+    why: >-
+      SpendMetrics (lines 19-36), MetricBase (39-40), KeyMetadata (43-50),
+      KeyMetricWithMetadata (53-56), MetricWithMetadata (59-62), BreakdownMetrics (65-74),
+      DailySpendData (77-80), DailySpendMetadata (83-119), and SpendAnalyticsPaginatedResponse
+      (122-124) that define the metrics payload schema. Lines 127-201 are owned by B3096.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L48-L93
+    why: >-
+      ScopeDenied, InvalidDateRange, CanonicalDateRange, parse_canonical_date and
+      parse_canonical_date_range functions that implement date validation and error lifting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L59-L66
+    why: raise_public function that converts internal date/scope errors to HTTP exceptions.
+dod:
+  - text: SpendMetrics has exactly the fields from LiteLLM (spend, flat_cost, prompt_tokens, completion_tokens, cache_read_input_tokens, cache_creation_input_tokens, compression_saved_tokens, compression_savings_spend, prompt_caching_savings_spend, gateway_injected_caching_savings_spend, autorouter_savings_spend, total_tokens, successful_requests, failed_requests, api_requests, total_response_time_ms, timed_requests), with correct integer and floating-point types. Defaults match LiteLLM's 0 for integers and 0.0 for floats.
+    proof: [metrics-tests]
+  - text: BreakdownMetrics contains mcp_servers, models, model_groups, providers, endpoints, api_keys and entities breakdowns, each with nested api_key_breakdown and metadata dicts (or empty defaults).
+    proof: [metrics-tests]
+  - text: KeyMetadata and KeyMetricWithMetadata models match LiteLLM's schema (key_alias, team_id, user_id, user_email, key_exists all optional) with default KeyMetadata factory.
+    proof: [metrics-tests]
+  - text: DailySpendMetadata and DailySpendPage match LiteLLM's wire format, including all 20 fields with defaults (total_spend, total_flat_cost, total_prompt_tokens, total_completion_tokens, total_tokens, total_api_requests, total_successful_requests, total_failed_requests, total_cache_read_input_tokens, total_cache_creation_input_tokens, total_compression_saved_tokens, total_compression_savings_spend, total_prompt_caching_savings_spend, total_gateway_injected_caching_savings_spend, total_autorouter_savings_spend, total_response_time_ms, total_timed_requests, page=1, total_pages=1, has_more=false, api_key_limit=None, total_api_keys=None, entity_total_api_keys=None).
+    proof: [metrics-tests]
+  - text: parse_canonical_date rejects non-YYYY-MM-DD spellings like "2026-9-24", "20260924" and full-width digits, returning None.
+    proof: [date-parsing-tests]
+  - text: parse_canonical_date_range requires both start_date and end_date, rejects non-canonical dates, and returns CanonicalDateRange with start and end fields or InvalidDateRange.
+    proof: [date-parsing-tests]
+  - text: raise_public lifts ScopeDenied to HTTP 403 or 404 and InvalidDateRange to HTTP 400, using the error detail message and assert_never for exhaustiveness.
+    proof: [date-parsing-tests]
+checks:
+  optional: []
+  commands:
+    - id: metrics-tests
+      why: SpendMetrics, BreakdownMetrics, KeyMetadata or DailySpendPage tests fail, do not exist, or do not match LiteLLM's field schema and defaults.
+      run: cargo nextest run --locked -p betterlite-analytics --no-tests=fail -E 'test(/^daily_metrics::/)'
+    - id: date-parsing-tests
+      why: parse_canonical_date, parse_canonical_date_range or raise_public tests fail, do not exist, or do not handle canonical format correctly.
+      run: cargo nextest run --locked -p betterlite-analytics --no-tests=fail -E 'test(/^canonical_date::/)'
+oracle_cases: []
+deviations:
+  - what: DailySpendPage is a 15-character type alias for LiteLLM's SpendAnalyticsPaginatedResponse (31 characters, over the 30-char limit outside tests).
+    why: Rust struct names must not exceed 30 characters per linter rules, but the wire format must match LiteLLM exactly. Use serde(rename = "SpendAnalyticsPaginatedResponse") to preserve API compatibility while staying under the name length limit.
+  - what: BreakdownMetrics holds mutable nested structures (api_key_breakdown, metadata dicts) that are populated by other tasks building records from the database.
+    why: This task defines the schema; tasks B3091 and B3092 implement the logic that fills in breakdown details. The schema must be complete and usable for both paginated and aggregated reads.
+out_of_scope:
+  - B3096 owns KeyActivityRow, KeySpendMetrics, KeySpendActivityRow, DailyActivityKeySearchResponse, DailyActivityKeyPageResponse, ModelTopKeysResponse, CacheLeakageKeysResponse, LiteLLM_DailyUserSpend and GroupedData (lines 127-201 of common_daily_activity.py), which are imported by daily_activity_routes.py for key activity endpoints.
+  - Key metadata recovery, PTU feature flags, or spend log window calculations. These are built in B727 and B1664.
+  - Database schema, Prisma client, or repository queries. The repository layer (B727) provides raw records.
+  - The GroupByDimension enum from LiteLLM; betterlite owns breakdowns directly without a dispatch enum.
+pitfalls:
+  - 'LiteLLM''s date fields are stored as text in the database and compared against the exact request string. The canonical check is strict: isoformat() must roundtrip perfectly, so the input must already be YYYY-MM-DD or it becomes None.'
+  - SpendMetrics fields default to 0 and 0.0, matching LiteLLM exactly. An uninitialized sum in tests will report 0 instead of panicking.
+  - BreakdownMetrics uses nested dicts for api_key_breakdown and metadata. The Python code initializes them as field defaults; Rust struct literals must do the same to match.
+  - raise_public pattern matches on error variants with assert_never. If a new error type is added to the union, the match will fail to compile until all arms are handled.
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0
+review_level: security

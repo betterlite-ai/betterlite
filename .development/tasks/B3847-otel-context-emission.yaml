@@ -1,0 +1,113 @@
+id: B3847
+title: OTel request context and span emission
+description: >-
+  Implement W3C context propagation and request/MCP anchors, plus the span emitter with attribute budgets, deduplication, error stamping and explicit span closure.
+
+  The emitter is the low-level span start-and-stamp engine used by inference and service callbacks: it deduplicates on (call_id, role), maps attributes through the configured mapper chain, reserves budget for error attributes, fits indexed messages within span attribute limits, stamps error status and exception events, and closes spans. A bounded LRU cache (10k entries) tracks emitted span keys to coalesce sync+async firing in the same request window.
+
+  Request context slots anchor the request's root SERVER span for explicit child parenting (avoiding nesting under `auth` phase spans or fire-and-forget detached tasks), store the MCP message's transport span and its W3C trace-context carrier for span linking, manage request Baggage through OpenTelemetry's baggage API, and record the request's resolved OTLP destinations and destination-mode override (additive or override).
+
+  W3C context extraction and injection work on incoming HTTP headers and MCP params._meta, detecting trace parent via traceparent+tracestate, extracting remote client context as span links (never parents), and injecting outgoing context through the anchored request root. The post-response detection reads both a span's recorded end time and the injected clock's phase-marker to decide whether to emit a span with a parent link (work started after the parent ended) or as a nested child.
+
+  The span emitter and context helpers are the boundary where V2 schema payloads become OTel SDK spans with explicit parenting, deduplication, attribute limits and budget management.
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/emitter.rs
+    - crates/betterlite-logging/src/otel/plumbing/context.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/emitter.py#L42-L304
+    why: Span emitter with name builders, dedup cache, error resolution, attribute budgets and span lifecycle.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L30-L197
+    why: Request root span anchor, MCP message carrier and transport span context slots.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L205-L448
+    why: W3C context extraction/injection, post-response span linking, destination resolution and tenant mode.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2967-L3030
+    why: Header-based traceparent extraction and span context resolution from metadata/headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L429-L450
+    why: Extract parent OTel span from kwargs metadata.
+  - url: https://docs.rs/opentelemetry/latest/opentelemetry/
+    why: SDK Span, SpanContext, Link and span lifecycle APIs.
+  - url: https://docs.rs/opentelemetry/latest/opentelemetry/trace/propagation/tracecontext/struct.TraceContextTextMapPropagator.html
+    why: W3C traceparent extraction and injection.
+dod:
+  - text: SpanEmitter deduplicates same (dedup_key, role) pairs in a bounded 10k-entry LRU cache, returning None on the second emit.
+    proof: [emitter-dedup]
+  - text: SpanEmitter.emit runs the configured mapper chain, reserves budget for error attributes, and fits indexed messages.
+    proof: [emitter-attributes]
+  - text: SpanEmitter.finish_span stamps error attributes, records an exception event, and records operation exceptions to the event recorder.
+    proof: [emitter-errors]
+  - text: Request root span is anchored once at auth resolution and explicit child parenting uses the anchor, never ambient span.
+    proof: [context-anchor]
+  - text: MCP message span links the W3C trace context (traceparent/tracestate) from params._meta as a link, never as parent.
+    proof: [mcp-linking]
+  - text: Post-response spans carry a span link to the parent when work started after the parent ended, using both span end time and phase marker.
+    proof: [post-response-links]
+  - text: W3C traceparent/tracestate extraction from headers preserves trace ID match detection and respects upstream override.
+    proof: [context-propagation]
+  - text: Tenant destination resolution reads ADDITIVE_DESTINATION_MODE and provides suppressed backend list for override mode.
+    proof: [destination-mode]
+  - text: Request Baggage is set through set_request_baggage and persists across context propagation.
+    proof: [baggage-context]
+  - text: set_mcp_message_transport_span re-anchors the request root span so subsequent spans point to that message's transport, not the session's initial request.
+    proof: [mcp-transport-re-anchor]
+checks:
+  optional: []
+  commands:
+    - id: emitter-dedup
+      why: SpanEmitter deduplication is missing, broken or exceeds the 10k cache limit
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^span_emission::/)' -- --nocapture
+    - id: emitter-attributes
+      why: SpanEmitter attribute mapping, budgeting or message fitting is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^span_emission::/)' -- --nocapture
+    - id: emitter-errors
+      why: SpanEmitter error stamping or event recording is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^span_emission::/)' -- --nocapture
+    - id: context-anchor
+      why: Request root span anchoring or child parenting fails
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^context_slots::/)' -- --nocapture
+    - id: mcp-linking
+      why: MCP message span linking is missing or incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^mcp_context::/)' -- --nocapture
+    - id: post-response-links
+      why: Post-response span linking logic is missing or incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^post_response::/)' -- --nocapture
+    - id: context-propagation
+      why: W3C context extraction or injection logic is broken
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^w3c_propagation::/)' -- --nocapture
+    - id: destination-mode
+      why: Tenant destination mode or suppressed backends logic is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^destination_routing::/)' -- --nocapture
+    - id: baggage-context
+      why: Request baggage setting or persistence is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^baggage_context::/)' -- --nocapture
+    - id: mcp-transport-re-anchor
+      why: Test validating MCP transport span re-anchors request root is missing or fails
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^mcp_context::.*re_anchor/)'
+oracle_cases: []
+deviations:
+  - what: On attribute count overflow, betterlite uses `fit_indexed_messages` to reduce indexed message payloads rather than dropping attributes wholesale.
+    why: Fits more information in bounded attribute spaces while preserving the index ordering that consumers depend on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/emitter.py#L287
+  - what: MCP message span links are always W3C trace context only; remote Baggage is never inherited from params._meta.
+    why: Caller-controlled params could spoof identity baggage (team.id, metadata.*) if the remote carrier were honored as ambient context.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L309-L315
+out_of_scope:
+  - "get_baggage_attributes — no caller at the pin."
+  - "Request/service/DB/guardrail payload construction (owned by B3843, B3844, B3845)."
+  - "Mapper attribute mapping logic (owned by B3845, B3846)."
+  - "Exporter transport and provider factories (owned by B3848, B3849)."
+  - "HTTP instrumentation mount points (owned by B110)."
+  - "Request task lifecycle and ContextVar initialization (the betterlite-context crate boundary)."
+pitfalls:
+  - The dedup cache key is (call_id, SpanRole), not just call_id; service spans without a call_id check dedup_key == None and never deduplicate.
+  - MCP context resolution takes the _current_ message's transport span from the context slot, not the one from the session's initialize POST, so every tool call in a multi-message session parents to its own request, not to the first.
+  - set_mcp_message_transport_span also re-anchors the request root span as a side effect, so every later span in a multi-message MCP session points identity/failure writes at the current message's transport, not the session's first request. The re-anchor only occurs when the transport is still recording (open for writes).
+  - Post-response span links are built only when end_time_ns > parent.end_time or in_post_response_phase() is true, not unconditionally; work that runs after the parent can still nest under it if the phase marker says it is inline.
+  - Inject and extract use TraceContextTextMapPropagator; standard OTel libs provide this, and header keys are case-insensitive on read but lowercase on write.
+  - The request root span anchor is never reset (the ContextVar dies with the task), so it is safe to re-anchor the same request multiple times; do not add reset logic.
+  - suppressed_backends returns the tenant destination callback names only in override mode; in additive mode the operator's copy is never suppressed.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

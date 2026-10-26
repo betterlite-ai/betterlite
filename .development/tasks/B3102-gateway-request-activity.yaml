@@ -1,0 +1,197 @@
+id: B3102
+title: Persist gateway request counts and expose deployment activity
+description: >-
+  Build the gateway request tracking system for deployment-wide analytics. This covers
+  the accumulator that records request counts at the ASGI edge, database persistence
+  with upsert logic, Redis-backed buffering for distributed deployments, and the HTTP
+  endpoint that exposes activity by date and route.
+
+  Define GatewayRequestKey (date, category, route) and GatewayRequestCounts (successful_requests,
+  failed_requests) with a plus() method to fold counts. Create GatewayRequestSnapshot
+  as a mapping of keys to counts, and response types GatewayRequestDailyEntry,
+  GatewayRequestBreakdownEntry and GatewayRequestActivityResponse that mirror LiteLLM's
+  wire format exactly.
+
+  Implement GatewayRequestAccumulator to track in-memory counts from the request-metrics
+  middleware: record() accepts a category, route and status code; drain() returns the
+  snapshot and resets; restore() merges un-committed counts back on flush failure. The
+  fold_counts() function sums counts key-wise, staying bounded by (date x category x route).
+
+  Build build_gateway_requests_upsert() that generates a single INSERT ... ON CONFLICT DO UPDATE
+  statement; rows are ordered by conflict key so concurrent writers lock in the same order
+  and never deadlock. commit_gateway_requests_to_db() executes it.
+
+  The GatewayRequestRedisBuffer distributes counts through Redis for multi-pod deployments.
+  push() sends a worker's snapshot as JSON rows to a Redis list; pop() dequeues and folds
+  them; commit_if_leader() acquires the job lock, pops, and writes if holding the lease.
+  Failures re-queue to Redis; if re-queue fails, rows go back to the caller's accumulator.
+  This mirrors the spend queue's at-least-once semantics: a dropped flush acknowledgement
+  will recount, but availability wins over dedup.
+
+  Implement flush_gateway_requests() as the scheduler entrypoint that drains the accumulator,
+  pushes to Redis if buffering is on, and handles failures by restoring the snapshot. On
+  shutdown (when redis_buffer is None) a departing worker writes its own counts directly.
+
+  Expose GET /gateway/daily/activity as an admin-only endpoint (PROXY_ADMIN or
+  PROXY_ADMIN_VIEW_ONLY roles required). Accept optional start_date and end_date query
+  parameters in YYYY-MM-DD format; default to a 30-day lookback. Aggregate the
+  LiteLLM_DailyGatewayRequests table by (date, category, route), fold into daily and
+  route breakdowns, and return the activity response. Non-admin callers get HTTP 403.
+scope:
+  paths:
+    - crates/betterlite-db/src/gateway_request_tracking.rs
+    - crates/betterlite-db/src/gateway_request_tracking/**
+    - crates/betterlite-db/src/gateway_requests.rs
+    - crates/betterlite-server/src/management/gateway_request_activity.rs
+    - crates/betterlite-server/src/management/gateway_request_activity/**
+    - tools/oracle/helpers/b3102.py
+    - tools/oracle/helpers/b3102/**
+    - tools/oracle/src/helpers/db/b3102.rs
+    - tools/oracle/src/helpers/db/b3102/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/gateway_requests.py#L1-L52
+    why: >-
+      GatewayRequestKey (lines 11-14), GatewayRequestCounts (17-26), GatewayRequestSnapshot
+      (29), GatewayRequestBreakdownEntry (32-36), GatewayRequestDailyEntry (39-42),
+      and GatewayRequestActivityResponse (45-51) defining the complete request count model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L57-L106
+    why: >-
+      GatewayRequestAccumulator class (lines 61-94), fold_counts function (97-106),
+      _utc_date, _EMPTY and related constants for in-memory aggregation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L109-L150
+    why: >-
+      build_gateway_requests_upsert and commit_gateway_requests_to_db functions that
+      generate and execute the upsert statement with correct row ordering for deadlock safety.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L153-L241
+    why: >-
+      GatewayRequestRedisBuffer class (lines 153-240) with push, pop, and commit_if_leader
+      methods for distributed deployments, and exception handling for re-queueing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L243-L282
+    why: >-
+      flush_gateway_requests scheduler entrypoint with at-least-once semantics, snapshot
+      restore on failure, and conditional Redis buffering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/gateway_request_endpoints.py#L1-L140
+    why: >-
+      Complete GET /gateway/daily/activity endpoint: auth check (lines 99-119), SQL aggregation
+      (lines 34-44), helper functions _fold_by_date and _fold_by_route (66-91), and response
+      aggregation (134-139).
+dod:
+  - text: GatewayRequestKey is a hashable, comparable type with date, category and route fields (all strings).
+    proof: [types-compile]
+  - text: GatewayRequestCounts has successful_requests and failed_requests integer fields (both default to 0) and a plus() method that increments one field based on a success boolean.
+    proof: [types-compile, counts-tests]
+  - text: GatewayRequestBreakdownEntry has category, route, successful_requests (default 0) and failed_requests (default 0) fields matching LiteLLM's Pydantic model.
+    proof: [types-compile, types-tests]
+  - text: GatewayRequestDailyEntry has date, successful_requests (default 0) and failed_requests (default 0) fields and serializes to the wire format exactly.
+    proof: [types-compile, types-tests]
+  - text: GatewayRequestActivityResponse has total_successful_requests (0), total_failed_requests (0), by_date (empty tuple) and by_route (empty tuple) fields with correct Pydantic defaults.
+    proof: [types-compile, types-tests]
+  - text: GatewayRequestAccumulator.record() updates the in-memory counts for a (date, category, route) key, incrementing successful or failed based on status code 200-299.
+    proof: [accumulator-tests]
+  - text: GatewayRequestAccumulator.drain() returns the snapshot and resets the internal map to empty.
+    proof: [accumulator-tests]
+  - text: GatewayRequestAccumulator.restore() merges a snapshot's counts back into the map using fold_counts, with keys collapsing on collision.
+    proof: [accumulator-tests]
+  - text: fold_counts sums GatewayRequestCounts key-wise and returns a snapshot with entries bounded by the count of unique keys.
+    proof: [fold-tests]
+  - text: build_gateway_requests_upsert generates SQL with rows ordered by (date, category, route) to prevent deadlock, with numbered placeholders and correct type casts (::text, ::bigint).
+    proof: [upsert-tests]
+  - text: commit_gateway_requests_to_db executes the upsert and logs the number of rows committed.
+    proof: [db-tests]
+  - text: GatewayRequestRedisBuffer.push() serializes the snapshot to JSON rows and appends to the Redis buffer key; returns early if snapshot is empty.
+    proof: [redis-tests]
+  - text: GatewayRequestRedisBuffer.pop() dequeues entries from Redis in batches, deserializes JSON rows and folds them into one snapshot.
+    proof: [redis-tests]
+  - text: GatewayRequestRedisBuffer.commit_if_leader() acquires the job lock, pops buffered rows, commits them, and returns empty on success or un-committed rows on failure or lock loss.
+    proof: [redis-tests]
+  - text: GatewayRequestRedisBuffer handles push failure by re-queueing; handles re-queue failure by returning rows to the caller.
+    proof: [redis-tests]
+  - text: flush_gateway_requests drains the accumulator, pushes (or commits directly if no buffer), restores on exception, and never raises.
+    proof: [flush-tests]
+  - text: GET /gateway/daily/activity requires PROXY_ADMIN or PROXY_ADMIN_VIEW_ONLY role; non-admin returns 403 Forbidden.
+    proof: [endpoint-auth]
+  - text: GET /gateway/daily/activity defaults to 30 days of lookback from today; accepts optional start_date and end_date query params (YYYY-MM-DD format).
+    proof: [endpoint-date-range]
+  - text: GET /gateway/daily/activity aggregates by (date, category, route) from LiteLLM_DailyGatewayRequests, folds by date and route, and returns the activity response.
+    proof: [endpoint-aggregation]
+checks:
+  optional: []
+  commands:
+    - id: types-compile
+      why: Type definitions do not compile or have incorrect fields.
+      run: cargo build --locked -p betterlite-db
+    - id: types-tests
+      why: Type fields, defaults or serialization do not match LiteLLM's wire format.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^gateway_requests::/)'
+    - id: counts-tests
+      why: GatewayRequestCounts.plus() does not correctly increment based on success status.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^gateway_request_counts::/)'
+    - id: accumulator-tests
+      why: GatewayRequestAccumulator record, drain or restore methods do not work correctly.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^gateway_request_accumulator::/)'
+    - id: fold-tests
+      why: fold_counts does not correctly sum counts key-wise.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^fold_gateway_counts::/)'
+    - id: upsert-tests
+      why: build_gateway_requests_upsert generates incorrect SQL, wrong row order, or bad placeholders.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^gateway_requests_upsert::/)'
+    - id: db-tests
+      why: commit_gateway_requests_to_db does not execute the upsert or fails on empty snapshot.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^commit_gateway_requests::/)'
+    - id: redis-tests
+      why: GatewayRequestRedisBuffer push, pop, or commit_if_leader do not work or handle failures correctly.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^gateway_request_redis::/)'
+    - id: flush-tests
+      why: flush_gateway_requests does not drain, restore on failure, or handle None buffer correctly.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^flush_gateway_requests::/)'
+    - id: endpoint-auth
+      why: GET /gateway/daily/activity does not enforce admin roles or returns wrong status code.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management::gateway_request_activity::.*auth/)'
+    - id: endpoint-date-range
+      why: GET /gateway/daily/activity does not default to 30 days or does not parse date params.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management::gateway_request_activity::.*date/)'
+    - id: endpoint-aggregation
+      why: GET /gateway/daily/activity does not aggregate by date and route or returns wrong format.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management::gateway_request_activity::.*aggreg/)'
+oracle_cases:
+  - tools/oracle/cases/gateway_activity/admin-default-range.yaml
+  - tools/oracle/cases/gateway_activity/admin-view-only.yaml
+  - tools/oracle/cases/gateway_activity/non-admin-denied.yaml
+  - tools/oracle/cases/gateway_activity/custom-date-range.yaml
+  - tools/oracle/cases/gateway_activity/missing-database.yaml
+deviations:
+  - what: >-
+      GatewayRequestSnapshot is a type alias for a trait object (Mapping or HashMap)
+      that acts like a mapping but is not the exact type from Python.
+    why: >-
+      Rust does not have Python's duck typing; the snapshot uses a concrete HashMap or
+      BTreeMap and implements the same interface.
+  - what: >-
+      At-least-once semantics mean a dropped flush acknowledgement will recount rows
+      that are already persisted, causing a small overcount on rare connection failures.
+    why: >-
+      This mirrors LiteLLM's deliberate trade-off: availability matters more than dedup
+      for a traffic metric, and the count is a gauge not a billing record.
+out_of_scope:
+  - Billing logic or spend tracking; gateway request counts are independent metrics for deployment activity only.
+  - BillableCategory enum and the BillableRequestMetricsMiddleware that records status codes and routes; owned by B3889 (gateway_request_metrics middleware).
+  - The LiteLLM_DailyGatewayRequests database schema; pre-existing from LiteLLM and handled by schema/migration tasks.
+  - PodLockManager.acquire_lock and lease semantics; owned by B1690 (pod lock manager in queues).
+  - RedisCache initialization and async_rpush/async_lpop transport; owned by B4329 (redis list operations).
+  - Request routing, path classification beyond what the middleware provides; this task uses routes and categories as inputs from the caller.
+  - Admin UI or web dashboard to visualize gateway activity; the endpoint returns JSON for programmatic consumption.
+pitfalls:
+  - 'UTC date formatting must match exactly: "%Y-%m-%d" (two-digit month and day, four-digit year). A date like "2026-9-24" will not match database rows stored as "2026-09-24".'
+  - 'Status code success range is [200, 300) inclusive. Redirect codes 3xx and client error 4xx are both failures. Status 304 NOT_MODIFIED is a failure, not a success.'
+  - 'GatewayRequestKey must be hashable and comparable for use in a HashMap or BTreeMap; it must derive Hash, Eq and Ord or manually implement them.'
+  - 'The upsert SQL uses conflict key ("date", "category", "route") in the same order everywhere: row sort order, conflict clause, and group-by logic. A mismatch leaves gaps or causes deadlock.'
+  - 'Concurrent writers lock rows in the same order: sorted by (date, category, route). If writers skip this order, N concurrent flushes can deadlock on a full table.'
+  - 'On Redis re-queue failure, rows are returned to the accumulator, not dropped. The caller restores them on the next flush, so no counts vanish but availability wins.'
+  - 'flush_gateway_requests never raises; all exceptions are caught, logged and restored. A log message is the only signal that persistence failed; the response path is not blocked.'
+  - 'GatewayRequestRedisBuffer acquires a lease that is never released, just renewed on every flush. This is a lock with a TTL that lapses if the holder crashes, releasing it to the next pod.'
+  - 'The endpoint date range defaults are inclusive: a 30-day lookback from today includes today. start_date and end_date are inclusive on both ends of the WHERE clause.'
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0
+review_level: standard

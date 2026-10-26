@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: A2A request, response and card version conversion
 status: todo
 depends_on: [B4800, B4801, B4811]
-file: null
+file: tasks/B4812-a2a-version-conversion.yaml
 covers:
   - "litellm/proxy/a2a/version_convert.py"
 parent: B142

@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Watsonx Orchestrate runs, polling and stream fallback
 status: todo
 depends_on: [B173, B4803, B4807]
-file: null
+file: tasks/B4808-watsonx-a2a-runs.yaml
 covers:
   - "litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py"
   - "litellm/a2a_protocol/providers/watsonx_orchestrate/config.py"

@@ -51,6 +51,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,json_provider_policy}.rs
+    - crates/betterlite-openai/src/json_provider_policy.rs
     - crates/betterlite-openai/src/json_provider_policy/**
     - crates/betterlite-core/src/{lib,json_messages_policy}.rs
     - crates/betterlite-core/src/json_messages_policy.rs

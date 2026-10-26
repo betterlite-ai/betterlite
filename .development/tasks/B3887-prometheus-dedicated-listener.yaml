@@ -1,0 +1,149 @@
+id: B3887
+title: Prometheus dedicated listener and worker cleanup
+description: >-
+  Build a separate metrics listener that aggregates per-worker Prometheus samples
+  in a subprocess so large scrapes do not block inference tasks. The listener runs
+  on a configurable port, answers /metrics with no auth (unlike the main port), and
+  exposes its process ID in the x-litellm-metrics-pid response header so clients
+  can detect a process restart.
+
+  When PROMETHEUS_MULTIPROC_DIR is set, wipe all .db files at startup so workers
+  start with a clean slate. After each worker dies (via gunicorn child_exit hook or
+  uvicorn replacement), mark it as dead so its live-gauge series are dropped from
+  the aggregate; a replacement worker calls mark_dead_workers at startup to clean
+  up crashed workers without exit hooks.
+
+  The metrics server is a subprocess that runs the separate listener. start_metrics_server_process
+  spawns it with sys.executable -m litellm.proxy.prometheus_metrics_server,
+  waits up to 30 seconds for it to answer on its port, and raises MetricsServerStartupError
+  if startup fails or the port is already in use. The subprocess runs _exit_when_parent_dies
+  in a daemon thread so it exits when the proxy dies.
+
+  Owned ranges are prometheus_cleanup.py (cleanup utilities), prometheus_metrics_server.py
+  (app builder, subprocess launcher and CLI), tested by cleanup-tests and listener-tests cargo tests.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/metrics_cleanup.rs
+    - crates/betterlite-logging/src/metrics_cleanup/tests.rs
+    - crates/betterlite-http/src/metrics_server.rs
+    - crates/betterlite-http/src/metrics_server/tests.rs
+    - crates/betterlite/src/metrics_listener.rs
+    - crates/betterlite/src/metrics_listener/tests.rs
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_cleanup.py#L19-L30
+    why: wipe_directory removes all .db files at startup, logging warnings for individual failures
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_cleanup.py#L33-L43
+    why: mark_worker_exit is a no-op when PROMETHEUS_MULTIPROC_DIR is unset, calls mark_process_dead when set, and logs warnings on exception
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_cleanup.py#L46-L75
+    why: _is_running uses os.kill with signal 0; mark_dead_workers finds crashed workers by PID in gauge_live*_*.db file names
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L54-L72
+    why: _add_pid_header wraps the ASGI app to include x-litellm-metrics-pid in response headers
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L75-L85
+    why: build_metrics_app mounts make_metrics_asgi_app and adds GET /health endpoint
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L88-L101
+    why: _exit_when_parent_dies spawns a daemon thread that polls os.getppid(), and run_metrics_server sets up the watchdog and starts uvicorn
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L104-L117
+    why: metrics_url translates wildcard hosts to loopback and formats IPv6 with brackets; _answered_by checks response status and x-litellm-metrics-pid header
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L119-L135
+    why: _wait_until_serving polls metrics_url with 100ms interval and 30-second deadline, detecting process exit and timeout separately
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L138-L155
+    why: start_metrics_server_process spawns subprocess with -m litellm.proxy.prometheus_metrics_server and registers atexit cleanup
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L158-L168
+    why: main CLI parses --host (default 0.0.0.0), --port (required) and --multiproc_dir (from env or argument)
+
+dod:
+  - text: wipe_directory removes all .db files in PROMETHEUS_MULTIPROC_DIR at startup and logs a count of removed files.
+    proof: [cleanup-tests]
+  - text: wipe_directory warns and continues when an individual os.remove fails, rather than aborting the deletion of remaining files.
+    proof: [cleanup-tests]
+  - text: mark_worker_exit is a no-op when PROMETHEUS_MULTIPROC_DIR is unset and returns without calling any cleanup utilities.
+    proof: [cleanup-tests]
+  - text: mark_worker_exit calls multiprocess.mark_process_dead when PROMETHEUS_MULTIPROC_DIR is set and logs success.
+    proof: [cleanup-tests]
+  - text: mark_worker_exit warns and continues when prometheus_client is unavailable or mark_process_dead raises an exception.
+    proof: [cleanup-tests]
+  - text: mark_dead_workers finds processes that no longer exist by PID in gauge_live*_*.db file names and calls multiprocess.mark_process_dead on them as a batch.
+    proof: [cleanup-tests]
+  - text: mark_dead_workers returns a tuple of dead PIDs in sorted order.
+    proof: [cleanup-tests]
+  - text: _is_running returns true only when os.kill(pid, 0) succeeds or raises PermissionError, and false on ProcessLookupError.
+    proof: [cleanup-tests]
+  - text: build_metrics_app mounts make_metrics_asgi_app at /metrics with a MultiProcessCollector reading the multiproc_dir, and adds a GET /health endpoint that returns status and multiproc_dir.
+    proof: [listener-tests]
+  - text: _add_pid_header adds x-litellm-metrics-pid set to the current process ID on http.response.start messages.
+    proof: [listener-tests]
+  - text: "metrics_url translates 0.0.0.0 to 127.0.0.1 and :: to ::1, and wraps IPv6 addresses in brackets."
+    proof: [listener-tests]
+  - text: _answered_by returns true only when response status is 200 and x-litellm-metrics-pid matches the child process ID.
+    proof: [listener-tests]
+  - text: _wait_until_serving polls metrics_url every 100ms until it answers with the correct pid or 30 seconds elapse, raising MetricsServerStartupError on timeout.
+    proof: [listener-tests]
+  - text: _wait_until_serving raises MetricsServerStartupError with the child exit code when the process terminates before answering.
+    proof: [listener-tests]
+  - text: start_metrics_server_process spawns a subprocess with sys.executable -m litellm.proxy.prometheus_metrics_server and waits until serving, registering atexit to terminate it.
+    proof: [listener-tests]
+  - text: The metrics server subprocess exits when the parent proxy dies, detected by a daemon thread polling os.getppid() and calling os._exit(0).
+    proof: [listener-tests]
+  - text: The metrics server CLI parses --host (default 0.0.0.0), --port (required) and --multiproc_dir (from env or argument), and errors if --multiproc_dir is missing.
+    proof: [listener-tests]
+  - text: GET /metrics on the separate listener answers without authentication, returning aggregated samples from all workers with x-litellm-metrics-pid in the response.
+    proof: [listener-tests]
+  - text: GET /health on the separate listener answers with status 200, returns the multiproc_dir in the response body, and includes x-litellm-metrics-pid.
+    proof: [listener-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: cleanup-tests
+      why: prometheus cleanup functions fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^metrics_cleanup::/)'
+    - id: listener-tests
+      why: metrics listener and server builder tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-http -p betterlite --no-tests=fail -E 'test(/^metrics_server::/) - test(/^metrics_server_process::/) - test(/^prometheus_listener::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The separate metrics listener has no authentication middleware, unlike the main
+      port /metrics endpoint which requires the master key by default.
+    why: The metrics listener is designed to aggregate worker samples without contention,
+      and exposing it to the network is a deployment choice, not a gateway security boundary.
+      Deploy network policy or a firewall if the metrics endpoint should not be public.
+  - what: An external PROMETHEUS_MULTIPROC_DIR that cannot be consumed (e.g., permission denied
+      or invalid format) is an explicit startup error, not a warning or fallback.
+    why: Failing silently would cause metrics to be lost or duplicated, with no visibility
+      into the broken configuration. A loud error at startup is the right behavior.
+  - what: The metrics server subprocess uses the same HTTPHandler.get polling as the main
+      gateway, with a 1-second timeout and 0.1-second poll interval.
+    why: Match LiteLLM's simple sync polling instead of waiting for the async runtime.
+
+out_of_scope:
+  - Multiprocess collector internals and .db file format. That is prometheus_client's responsibility.
+  - Gunicorn worker hooks or uvicorn configuration. Those are caller responsibilities.
+  - Hot reload of PROMETHEUS_MULTIPROC_DIR. Changing it at runtime requires a restart.
+  - Metrics aggregation strategy or deduplication. MultiProcessCollector handles that.
+  - Oracle cases for the separate metrics listener endpoints. The oracle harness cannot spawn a second process or probe a second port; listener-tests exercises the separate listener directly as a subprocess.
+
+pitfalls:
+  - wipe_directory logs a warning for each file it cannot delete but continues; do not
+    raise or abort on individual failures.
+  - mark_dead_workers uses glob.glob to find gauge_live*_*.db files; an empty multiproc_dir
+    returns an empty list, not an error.
+  - _is_running uses os.kill(pid, 0) which is POSIX-only; on Windows, PermissionError means
+    the process exists. Treat both success and PermissionError as running.
+  - metrics_url must handle IPv6 addresses with colons by wrapping them in brackets,
+    e.g., [::1]:9090, so the result parses as a valid URL.
+  - _wait_until_serving must check both process.poll() (exit code) and _answered_by (ready
+    on port), and give up cleanly with process.terminate() if either fails.
+  - The subprocess receives no stdin, stdout or stderr redirection; uvicorn writes logs to
+    the proxy's stderr. Do not assume it is silent.
+  - The parent-exit watchdog must use os.getppid() not a stored parent PID, since the proxy
+    process can be reparented.
+
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 1

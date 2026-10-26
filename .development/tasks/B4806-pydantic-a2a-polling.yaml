@@ -1,0 +1,125 @@
+id: B4806
+title: Pydantic AI submission, polling and provider entry points
+description: >-
+  Build Pydantic AI agent request submission, polling for task completion, and provider entry points.
+  Pydantic AI agents follow the A2A protocol but do not support streaming natively, so implement polling
+  for non-streaming requests and delegate fake streaming through B4805's response projection.
+  Remove None values recursively from request dictionaries before sending; force message.kind="message"
+  in the A2A message object. Send JSON-RPC requests to message/send at the configured api_base URL
+  after stripping trailing slashes. If the initial response is not completed and contains a truthy task ID,
+  poll tasks/get up to 30 times at 0.5-second intervals, using request IDs of form {request_id}-poll-{attempt}.
+  Return completed tasks; fail on failed or canceled states. If a response lacks a task ID, return it raw
+  even when not completed. The default transport timeout is 60 seconds. Preserve forwarded headers on every
+  poll. Implement PydanticAITransformation (request cleanup, submission, polling, result projection),
+  PydanticAIHandler (non-streaming and streaming entry points), and PydanticAIProviderConfig (provider
+  contract implementation). Non-streaming returns a transformed A2A response; streaming delegates to B4805's
+  fake_streaming_from_response. Typing uses the same Pydantic protocol checks as the source (model_dump
+  and dict methods) and maintains distinction between raw task data for streaming and projected Message
+  data for non-streaming.
+
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-a2a/**
+  - tools/oracle/cases/a2a/**
+  - tools/oracle/helpers/b4806.py
+  - tools/oracle/helpers/b4806/**
+  - tools/oracle/src/helpers/oracle/b4806.rs
+  - tools/oracle/src/helpers/oracle/b4806/**
+  lint_tables: false
+
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L47-L93
+  why: Request cleanup and parameter conversion functions handling Pydantic model serialization and None removal
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L95-L151
+  why: Polling loop for task completion with configurable attempts and intervals
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L153-L237
+  why: Core send and poll workflow handling message kind enforcement and endpoint construction
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L239-L304
+  why: Non-streaming and raw response entry points for the transformation layer
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/handler.py#L26-L113
+  why: Handler class implementing both non-streaming and streaming request delegation
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/config.py#L20-L57
+  why: Provider configuration contract implementation for A2A provider dispatch
+
+dod:
+- text: Non-streaming requests remove all None values recursively from parameters and enforce message.kind="message"
+    before sending to message/send.
+  proof:
+  - oracle
+- text: Polling loops run up to 30 times at 0.5-second intervals using {request_id}-poll-{attempt} request IDs,
+    returning on completed state and failing on failed or canceled states.
+  proof:
+  - oracle
+- text: If polling exhausts all 30 attempts without completion, raise TimeoutError with message "Task {task_id}
+    did not complete within 15.0 seconds".
+  proof:
+  - oracle
+- text: Responses lacking a task ID return immediately as raw data without polling, even when not completed.
+  proof:
+  - oracle
+- text: Streamed requests receive raw task responses from submission/polling and project them through B4805's
+    fake_streaming_from_response without additional transformation.
+  proof:
+  - oracle
+- text: Forwarded headers from the initial request are preserved on every poll.
+  proof:
+  - oracle
+- text: The default transport timeout is 60 seconds and is configurable per request.
+  proof:
+  - oracle
+- text: Pydantic models using model_dump or dict protocols are detected and converted to dictionaries without
+    panics on type mismatches.
+  proof:
+  - a2a-pydantic-tests
+- text: Every listed pydantic_ai_agents case matches LiteLLM on the client response and polling behavior.
+  proof:
+  - oracle
+
+checks:
+  optional: []
+  commands:
+  - id: a2a-pydantic-tests
+    why: provider or integration tests fail or do not exist
+    run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^pydantic_ai_(handler|provider|submit)/) - test(/replays_the_.*_corpus/)'
+
+oracle_cases:
+- tools/oracle/cases/a2a/pydantic-ai-submit.yaml
+- tools/oracle/cases/a2a/pydantic-ai-polling.yaml
+- tools/oracle/cases/a2a/pydantic-ai-poll-exhaustion.yaml
+- tools/oracle/cases/a2a/pydantic-ai-no-task-id.yaml
+- tools/oracle/cases/a2a/pydantic-ai-failed-task.yaml
+- tools/oracle/cases/a2a/pydantic-ai-streaming.yaml
+- tools/oracle/cases/a2a/pydantic-ai-transport-timeout.yaml
+- tools/oracle/cases/a2a/pydantic-ai-none-removal.yaml
+
+deviations:
+- what: Pydantic model detection uses Rust's type system instead of isinstance checks; models implementing
+    the expected serialization protocol are accepted without runtime protocol checking.
+  why: Rust requires explicit trait bounds at compile time rather than runtime duck typing.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L83-L93
+
+out_of_scope:
+- The handler entry point registration or routing logic (B4809 composes this provider config).
+- Session ID scoping and principal handling (B4802).
+- Response metadata and event construction (B4805).
+- Request header merging and agent parameter filtering (B4809).
+
+pitfalls:
+- Recursive None removal must handle both dict and list values without panics on non-JSON types.
+  Validate at the boundary using serde_json types where the source comes from untrusted input.
+- Poll request IDs use the format {request_id}-poll-{attempt}, where attempt is 0-indexed and goes to 29.
+  A misformatted ID breaks oracle matching.
+- The message kind enforcement must happen after None removal, since it modifies the nested message object
+  in place. A stale reference breaks the transformation chain.
+- message/send is the fixed method name; no variant like message_send or MessageSend.
+- The api_base.rstrip('/') call removes all trailing slashes, not just one. An endpoint with query params
+  still works because rstrip operates on the trailing suffix.
+- A response with state=completed but no result or invalid task structure still counts as completed and exits
+  the polling loop. Do not add secondary validation beyond state comparison.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

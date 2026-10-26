@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Pass-through config reads and team visibility
 status: todo
 depends_on: [B002, B052, B724]
-file: null
+file: tasks/B3617-passthrough-config-reads.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
 parent: B102

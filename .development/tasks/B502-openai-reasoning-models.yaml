@@ -104,8 +104,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/reasoning_models.rs
   - crates/betterlite-openai/src/reasoning_models/**
   - tools/oracle/Cargo.toml

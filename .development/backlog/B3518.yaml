@@ -3,7 +3,7 @@ milestone: M5 api families
 title: OpenSandbox create run and delete lifecycle
 status: todo
 depends_on: [B3516, B3517, B173]
-file: null
+file: tasks/B3518-opensandbox-lifecycle.yaml
 covers:
   - "litellm/llms/opensandbox/**"
 parent: B099

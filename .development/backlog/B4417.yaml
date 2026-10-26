@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Read, write, delete and verify Vault secret rotations
 status: todo
 depends_on: [B173, B2226, B4416]
-file: null
+file: tasks/B4417-vault-secret-operations.yaml
 covers:
   - "litellm/secret_managers/hashicorp_secret_manager.py"
 parent: B129

@@ -25,6 +25,7 @@ description: >-
 
 scope:
   paths:
+    - crates/betterlite-logging/src/analytics.rs
     - crates/betterlite-logging/src/analytics/**
   lint_tables: false
 

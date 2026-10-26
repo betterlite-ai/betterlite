@@ -26,7 +26,6 @@ description: >-
   lines, with a 650-line ceiling.
 scope:
   paths:
-    - crates/betterlite-openai/src/lib.rs
     - crates/betterlite-openai/src/proxy.rs
     - crates/betterlite-openai/src/proxy/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/proxy_options*

@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Cisco verdict enforcement and audit metadata
 status: todo
 depends_on: [B3757, B3758, B3759, B3761]
-file: null
+file: tasks/B3760-cisco-verdict-enforcement.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py"
 parent: B107
