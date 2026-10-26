@@ -1,4 +1,4 @@
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::decisions::Json;
@@ -88,19 +88,23 @@ impl TryFrom<VantageInitRequestRaw> for VantageInitRequest {
     type Error = VantageValidationError;
 
     fn try_from(raw: VantageInitRequestRaw) -> Result<Self, Self::Error> {
-        validate_credential(
-            Some(raw.api_key.expose_secret()),
-            VantageValidationError::EmptyApiKey,
-        )?;
-        validate_credential(
-            Some(raw.integration_token.expose_secret()),
-            VantageValidationError::EmptyIntegrationToken,
-        )?;
-        Ok(Self {
-            api_key: raw.api_key,
-            integration_token: raw.integration_token,
-            base_url: raw.base_url,
-        })
+        let VantageInitRequestRaw {
+            api_key,
+            integration_token,
+            base_url,
+        } = raw;
+        match (
+            api_key.expose_secret().trim().is_empty(),
+            integration_token.expose_secret().trim().is_empty(),
+        ) {
+            (true, _) => Err(VantageValidationError::EmptyApiKey),
+            (false, true) => Err(VantageValidationError::EmptyIntegrationToken),
+            (false, false) => Ok(Self {
+                api_key,
+                integration_token,
+                base_url,
+            }),
+        }
     }
 }
 
@@ -116,20 +120,13 @@ impl TryFrom<VantageSettingsUpdateRaw> for VantageSettingsUpdate {
     type Error = VantageValidationError;
 
     fn try_from(raw: VantageSettingsUpdateRaw) -> Result<Self, Self::Error> {
-        validate_credential(
-            raw.api_key.as_ref().map(ExposeSecret::expose_secret),
-            VantageValidationError::EmptyApiKey,
-        )?;
-        validate_credential(
-            raw.integration_token
-                .as_ref()
-                .map(ExposeSecret::expose_secret),
-            VantageValidationError::EmptyIntegrationToken,
-        )?;
+        validate_credentials(raw.api_key.as_ref(), raw.integration_token.as_ref())?;
+        let (api_key, integration_token, base_url) =
+            (raw.api_key, raw.integration_token, raw.base_url);
         Ok(Self {
-            api_key: raw.api_key,
-            integration_token: raw.integration_token,
-            base_url: raw.base_url,
+            api_key,
+            integration_token,
+            base_url,
         })
     }
 }
@@ -148,12 +145,15 @@ pub enum VantageValidationError {
     EmptyIntegrationToken,
 }
 
-fn validate_credential(
-    value: Option<&str>,
-    error: VantageValidationError,
+fn validate_credentials(
+    api_key: Option<&SecretString>,
+    integration_token: Option<&SecretString>,
 ) -> Result<(), VantageValidationError> {
-    if value.is_some_and(|text| text.trim().is_empty()) {
-        return Err(error);
+    if api_key.is_some_and(|value| value.expose_secret().trim().is_empty()) {
+        return Err(VantageValidationError::EmptyApiKey);
+    }
+    if integration_token.is_some_and(|value| value.expose_secret().trim().is_empty()) {
+        return Err(VantageValidationError::EmptyIntegrationToken);
     }
     Ok(())
 }
