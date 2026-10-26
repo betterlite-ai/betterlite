@@ -66,33 +66,65 @@ fn facet_and_counted_envelopes_have_distinct_metadata() {
     assert_eq!(facet.data, Vec::<String>::new());
     assert_eq!(list.data.len(), 1);
     assert_eq!(list.data[0].id, "nested");
+}
+
+#[test]
+fn resource_serialization_remains_flat() {
     assert_eq!(
-        serde_json::to_value(ResourceResponse {
+        serde_json::to_string(&ResourceResponse {
             data: NestedResource {
                 id: "nested".to_owned(),
             },
         })
         .expect("resource encode"),
-        serde_json::json!({"data": {"id": "nested"}})
+        r#"{"data":{"id":"nested"}}"#
     );
+}
+
+#[test]
+fn facet_serialization_keeps_page_metadata() {
+    let facet = FacetListResponse {
+        data: Vec::new(),
+        meta: PageMeta {
+            page: 1,
+            page_size: 10,
+            has_more: false,
+        },
+        links: PageLinks {
+            self_link: "/facets".to_owned(),
+            prev: None,
+            next: None,
+        },
+    };
     assert_eq!(
-        serde_json::to_value(facet).expect("facet encode"),
-        serde_json::json!({
-            "data": [],
-            "meta": {"page": 1, "page_size": 10, "has_more": false},
-            "links": {"self": "/facets", "prev": null, "next": null}
-        })
+        serde_json::to_string(&facet).expect("facet encode"),
+        r#"{"data":[],"meta":{"page":1,"page_size":10,"has_more":false},"links":{"self":"/facets","prev":null,"next":null}}"#
     );
+}
+
+#[test]
+fn counted_list_serialization_keeps_count_metadata() {
+    let list = ListResponse {
+        data: vec![NestedResource {
+            id: "nested".to_owned(),
+        }],
+        meta: super::ListMeta {
+            total_count: 1,
+            page: 1,
+            page_size: 10,
+            total_pages: 1,
+        },
+        links: super::ListLinks {
+            self_link: "/items".to_owned(),
+            first: "/items".to_owned(),
+            prev: None,
+            next: None,
+            last: "/items".to_owned(),
+        },
+    };
     assert_eq!(
-        serde_json::to_value(list).expect("list encode"),
-        serde_json::json!({
-            "data": [{"id": "nested"}],
-            "meta": {"total_count": 1, "page": 1, "page_size": 10, "total_pages": 1},
-            "links": {
-                "self": "/items", "first": "/items", "prev": null,
-                "next": null, "last": "/items"
-            }
-        })
+        serde_json::to_string(&list).expect("list encode"),
+        r#"{"data":[{"id":"nested"}],"meta":{"total_count":1,"page":1,"page_size":10,"total_pages":1},"links":{"self":"/items","first":"/items","prev":null,"next":null,"last":"/items"}}"#
     );
 }
 
