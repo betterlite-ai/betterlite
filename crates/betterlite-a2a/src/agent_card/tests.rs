@@ -35,6 +35,13 @@ fn merged(text: &str) -> AgentJson {
 #[case("\"1.0\\n\\n\"", None)]
 #[case("\"01.0\"", None)]
 #[case("\"1.0-rc1\"", None)]
+#[case("\"1.0.0-\"", None)]
+#[case("\"1.0.0+\"", None)]
+#[case("\"1.0.0-rc_1\"", None)]
+#[case("\"1.0.0+a+b\"", None)]
+#[case("\"1.0.x\"", None)]
+#[case("\"1.0.0-rc_1+build\"", None)]
+#[case("\"1.0.0-rc+bad_1\"", None)]
 #[case("1.0", None)]
 fn normalizes_versions(#[case] raw: &str, #[case] expected: Option<&str>) {
     assert_eq!(normalize_protocol_version(&value(raw)), expected);
@@ -123,6 +130,13 @@ fn large_nonzero_numbers_are_truthy_without_f64_narrowing() {
 }
 
 #[test]
+fn falsy_numbers_are_replaced_in_version_and_streaming() {
+    let result = merged(r#"{"version":0.0,"capabilities":{"streaming":0.0}}"#);
+    assert_eq!(result["version"], value(r#""1.0.0""#));
+    assert_eq!(result["capabilities"], value(r#"{}"#));
+}
+
+#[test]
 fn card_input_is_not_mutated() {
     let input =
         card(r#"{"url":"upstream","skills":[{"id":"custom"}],"capabilities":{"streaming":false}}"#);
@@ -140,5 +154,8 @@ fn card_input_is_not_mutated() {
 #[test]
 fn replays_protocol_version_fuzz_corpus() {
     let corpus = include_bytes!("../../fuzz/corpus/normalize_protocol_version/semver");
-    assert!(super::version_parser::normalize_version_bytes(corpus).is_some());
+    assert_eq!(
+        super::version_parser::normalize_version_bytes(corpus),
+        Some("0.3")
+    );
 }
