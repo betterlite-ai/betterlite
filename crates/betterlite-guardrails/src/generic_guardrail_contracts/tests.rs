@@ -8,9 +8,18 @@ use std::collections::BTreeMap;
 #[test]
 fn generic_guardrail_header_allowlist_and_globs() {
     let headers = BTreeMap::from([
-        ("Host".to_owned(), "guardrail.example".to_owned()),
-        ("X-Stainless-Raw".to_owned(), "safe-value".to_owned()),
-        ("Authorization".to_owned(), "secret".to_owned()),
+        (
+            "Host".to_owned(),
+            GuardrailExtraValue::Text("guardrail.example".to_owned()),
+        ),
+        (
+            "X-Stainless-Raw".to_owned(),
+            GuardrailExtraValue::Text("safe-value".to_owned()),
+        ),
+        (
+            "Authorization".to_owned(),
+            GuardrailExtraValue::Text("secret".to_owned()),
+        ),
     ]);
     let sanitized = sanitize_inbound_headers(&headers, None);
     assert_eq!(sanitized.get("Host"), Some(&"guardrail.example".to_owned()));
@@ -56,6 +65,19 @@ fn generic_guardrail_header_extraction_uses_nested_extra_allowlist() {
 }
 
 #[test]
+fn generic_guardrail_header_extraction_skips_only_uncoercible_values() {
+    let request_data: InboundRequestContext =
+        from_str(
+            r#"{"metadata":{"headers":{"Host":false,"X-Stainless-Raw":[],"X-Request-Id":"request-123"}}}"#,
+        )
+        .expect("request context");
+    let headers = extract_inbound_headers(&request_data, None).expect("headers");
+    assert_eq!(headers.get("Host"), Some(&"False".to_owned()));
+    assert!(!headers.contains_key("X-Stainless-Raw"));
+    assert_eq!(headers.get("X-Request-Id"), Some(&"[present]".to_owned()));
+}
+
+#[test]
 fn generic_guardrail_constructor_defaults() {
     let settings = GenericGuardrailAPISettings::from_optional(None);
     assert_eq!(
@@ -81,6 +103,19 @@ fn generic_guardrail_response_coerces_holdback_values() {
     let response: GenericGuardrailAPIResponse =
         from_str(r#"{"stream_holdback_chars":[null,-2,"3",false,"bad"]}"#).expect("response");
     assert_eq!(response.stream_holdback_chars, Some(vec![0, 0, 3, 0, 0]));
+}
+
+#[test]
+fn generic_guardrail_response_defaults_and_types_action() {
+    let default_response: GenericGuardrailAPIResponse = from_str("{}").expect("response");
+    assert_eq!(default_response.action, GuardrailResponseAction::None);
+    let intervened_response: GenericGuardrailAPIResponse =
+        from_str(r#"{"action":"GUARDRAIL_INTERVENED"}"#).expect("response");
+    assert_eq!(
+        intervened_response.action,
+        GuardrailResponseAction::GuardrailIntervened
+    );
+    drop(from_str::<GenericGuardrailAPIResponse>(r#"{"action":"UNKNOWN"}"#).unwrap_err());
 }
 
 #[test]

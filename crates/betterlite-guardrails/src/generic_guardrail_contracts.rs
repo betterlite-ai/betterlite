@@ -31,6 +31,17 @@ pub enum StreamingTransformMode {
     IncrementalDiff,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GuardrailResponseAction {
+    #[serde(rename = "BLOCKED")]
+    Blocked,
+    #[default]
+    #[serde(rename = "NONE")]
+    None,
+    #[serde(rename = "GUARDRAIL_INTERVENED")]
+    GuardrailIntervened,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct GuardrailMessage {
     pub role: String,
@@ -127,7 +138,7 @@ pub struct GenericGuardrailAPIRequest {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(from = "RawGenericGuardrailAPIResponse")]
 pub struct GenericGuardrailAPIResponse {
-    pub action: String,
+    pub action: GuardrailResponseAction,
     pub texts: Option<Vec<String>>,
     pub images: Option<Vec<String>>,
     pub tools: Option<Vec<GuardrailToolParam>>,

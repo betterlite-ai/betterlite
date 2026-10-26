@@ -1,10 +1,10 @@
-use super::{GuardrailExtraValue, GuardrailMessage, GuardrailToolParam};
+use super::{GuardrailExtraValue, GuardrailMessage, GuardrailResponseAction, GuardrailToolParam};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(super) struct RawGenericGuardrailAPIResponse {
-    #[serde(default = "default_action")]
-    pub action: String,
+    #[serde(default)]
+    pub action: GuardrailResponseAction,
     pub texts: Option<Vec<String>>,
     pub images: Option<Vec<String>>,
     pub tools: Option<Vec<GuardrailToolParam>>,
@@ -52,9 +52,4 @@ fn decimal_to_u64(value: f64) -> Option<u64> {
         return format!("{truncated:.0}").parse::<u64>().ok();
     }
     None
-}
-
-fn default_action() -> String {
-    let action_name = "NONE";
-    action_name.to_owned()
 }

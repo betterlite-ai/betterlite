@@ -1,9 +1,10 @@
+use super::GuardrailExtraValue;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct HeaderContext {
-    pub headers: Option<BTreeMap<String, String>>,
+    pub headers: Option<BTreeMap<String, GuardrailExtraValue>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -26,7 +27,7 @@ pub struct LoggingObjectContext {
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct InboundRequestContext {
     pub proxy_server_request: Option<HeaderContext>,
-    pub headers: Option<BTreeMap<String, String>>,
+    pub headers: Option<BTreeMap<String, GuardrailExtraValue>>,
     pub metadata: Option<HeaderContext>,
     pub litellm_metadata: Option<HeaderContext>,
     pub litellm_params: Option<LiteParamsContext>,
@@ -35,17 +36,18 @@ pub struct InboundRequestContext {
 
 #[must_use]
 pub fn sanitize_inbound_headers(
-    headers: &BTreeMap<String, String>,
+    headers: &BTreeMap<String, GuardrailExtraValue>,
     extra_allowlist: Option<&[String]>,
 ) -> BTreeMap<String, String> {
     let mut sanitized = BTreeMap::new();
-    for (name, value) in headers {
-        let sanitized_value = if header_value_allowed(name, extra_allowlist) {
-            value.clone()
+    for (name, raw_value) in headers {
+        if header_value_allowed(name, extra_allowlist) {
+            if let Some(coerced_value) = coerce_header_value(raw_value) {
+                sanitized.insert(name.clone(), coerced_value);
+            }
         } else {
-            "[present]".to_owned()
-        };
-        sanitized.insert(name.clone(), sanitized_value);
+            sanitized.insert(name.clone(), "[present]".to_owned());
+        }
     }
     sanitized
 }
@@ -135,7 +137,9 @@ fn combined_extra_allowlist(
     combined
 }
 
-fn logging_headers(request_data: &InboundRequestContext) -> Option<&BTreeMap<String, String>> {
+fn logging_headers(
+    request_data: &InboundRequestContext,
+) -> Option<&BTreeMap<String, GuardrailExtraValue>> {
     let context = request_data
         .logging_obj
         .as_ref()
@@ -143,4 +147,23 @@ fn logging_headers(request_data: &InboundRequestContext) -> Option<&BTreeMap<Str
         .and_then(|details| details.litellm_params.as_ref())
         .and_then(|params| params.metadata.as_ref())?;
     context.headers.as_ref()
+}
+
+fn coerce_header_value(raw_value: &GuardrailExtraValue) -> Option<String> {
+    let text = match raw_value {
+        GuardrailExtraValue::Null => "None".to_owned(),
+        GuardrailExtraValue::Boolean(boolean) => {
+            if *boolean {
+                "True".to_owned()
+            } else {
+                "False".to_owned()
+            }
+        }
+        GuardrailExtraValue::SignedInteger(number) => number.to_string(),
+        GuardrailExtraValue::UnsignedInteger(number) => number.to_string(),
+        GuardrailExtraValue::Decimal(number) => number.to_string(),
+        GuardrailExtraValue::Text(text) => text.clone(),
+        GuardrailExtraValue::Array(_) | GuardrailExtraValue::Object(_) => return None,
+    };
+    Some(text)
 }
