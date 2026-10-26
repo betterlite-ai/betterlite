@@ -1,7 +1,7 @@
 id: B3079
 milestone: M4 keys, spend and management
 title: Define FinOps management contracts and the admin read predicate
-status: todo
+status: done
 depends_on: []
 file: tasks/B3079-finops-management-contracts.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/_types.py"
 parent: B073
 split_from: B073
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 211
