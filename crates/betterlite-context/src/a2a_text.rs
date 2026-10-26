@@ -38,7 +38,7 @@ pub enum Shape {
     Number(f64),
     Text(String),
     List(Vec<IgnoredAny>),
-    Object(BTreeMap<String, Self>),
+    Object(BTreeMap<String, Option<Self>>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,7 +66,7 @@ pub struct A2aRecord {
     #[serde(default)]
     pub parts: Field<ListValue>,
     #[serde(flatten)]
-    pub other_keys: BTreeMap<String, Shape>,
+    pub other_keys: BTreeMap<String, Option<Shape>>,
 }
 
 #[derive(Debug, Deserialize)]
