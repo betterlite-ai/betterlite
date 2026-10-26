@@ -79,10 +79,11 @@ impl TraceStore {
         })
     }
     pub fn add_reads(&self, parts: &[TracePart]) -> Result<(), TraceStoreError> {
-        match self.connection.as_ref() {
-            Some(connection) => write_parts(connection, parts, READS_INSERT),
-            None => Err(TraceStoreError::Unavailable),
-        }
+        let connection = self.connection.as_ref();
+        connection.map_or_else(
+            || Err(TraceStoreError::Unavailable),
+            |stored_connection| write_parts(stored_connection, parts, READS_INSERT),
+        )
     }
 
     pub async fn add_async(&mut self, parts: &[TracePart]) -> Result<(), TraceStoreError> {
