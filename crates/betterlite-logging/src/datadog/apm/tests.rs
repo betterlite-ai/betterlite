@@ -79,3 +79,11 @@ fn datadog_proxy_span_tagging_behavior() {
     let tagged = span.tags.into_inner().unwrap().join(" ");
     assert_eq!(tagged, format!("{expected} litellm.key_hash=hash"));
 }
+
+#[test]
+fn datadog_proxy_span_tagging_reports_success_for_an_empty_value() {
+    let span = RecordingSpan::default();
+    let tracer = TestTracer(Some(&span), None);
+    assert!(tracer.tag_active_span("custom", ""));
+    assert_eq!(span.tags.into_inner().unwrap(), vec!["custom="]);
+}

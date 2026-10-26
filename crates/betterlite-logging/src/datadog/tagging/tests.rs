@@ -12,6 +12,11 @@ use super::{Environment, RequestTagValue, TeamMetadata, normalize_value, tags};
 #[case::keeps_passthrough("x-y:z/w.v", "x-y:z/w.v")]
 #[case::keeps_unicode_letters("__\u{c4}__", "\u{e4}")]
 #[case::replaces_combining_marks("a\u{345}b", "a_b")]
+#[case::replaces_bengali_vowel("a\u{9be}b", "a_b")]
+#[case::replaces_circled_letters("a\u{24d0}b", "a_b")]
+#[case::keeps_numeric_categories("1\u{2160}\u{b2}", "1\u{2170}\u{b2}")]
+#[case::keeps_modifier_letters("a\u{2b0}b", "a\u{2b0}b")]
+#[case::keeps_uncased_letters("a\u{4e00}b", "a\u{4e00}b")]
 #[case::replaces_symbols("a!@b", "a_b")]
 fn datadog_tag_normalization_behavior(#[case] value: &str, #[case] expected: &str) {
     assert_eq!(normalize_value(value), expected);
