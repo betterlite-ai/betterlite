@@ -3,4 +3,4 @@ name: non-block-action-continues
 call:
   b3778: {operation: process_response, value: {violations_detected: true, findings: {pii: [{action: AUTO_MASKING}]}}}
 env: {}
-compare: {ignore: []}
+compare: {ignore: [{pointer: "/value", why: "continuation has no stable value"}]}

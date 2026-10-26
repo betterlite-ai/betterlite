@@ -1,5 +1,6 @@
 use betterlite_guardrails::lasso::{
-    LassoError, LassoGuardrail, LassoResponse, LassoSettings, OpenAiTool, extract_tool_arguments,
+    LassoError, LassoGuardrail, LassoSettings, extract_tool_arguments,
+    wire::{LassoResponse, OpenAiTool},
 };
 
 pub(crate) struct Op;

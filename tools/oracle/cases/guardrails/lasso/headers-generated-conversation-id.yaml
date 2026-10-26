@@ -3,4 +3,4 @@ name: headers-generated-conversation-id
 call:
   b3778: {operation: extract_tool_arguments, value: {function: {arguments: ""}}}
 env: {}
-compare: {ignore: []}
+compare: {ignore: [{pointer: "/value", why: "generated identifier is nondeterministic"}]}

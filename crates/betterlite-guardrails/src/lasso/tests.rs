@@ -1,9 +1,10 @@
 #![cfg(test)]
 
-use super::{
-    ConversationCache, Finding, LassoError, LassoGuardrail, LassoRequestData, LassoResponse,
-    LassoSettings, MessageType, OpenAiFunction, OpenAiTool, ToolArguments,
+use super::wire::{
+    Finding, LassoRequestData, LassoResponse, MessageType, OpenAiFunction, OpenAiTool,
+    ToolArguments,
 };
+use super::{ConversationCache, LassoError, LassoGuardrail, LassoSettings};
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 use std::sync::Mutex;

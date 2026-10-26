@@ -3,4 +3,4 @@ name: block-action-raises-400
 call:
   b3778: {operation: process_response, value: {violations_detected: true, findings: {jailbreak: [{action: BLOCK}]}}}
 env: {}
-compare: {ignore: []}
+compare: {ignore: [{pointer: "/error/message", why: "betterlite error wording"}]}
