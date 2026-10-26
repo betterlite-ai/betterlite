@@ -1,9 +1,10 @@
 #![cfg(test)]
 
 use super::{
-    BlockCodeExecGuardrailConfig, CodeBlockActionTaken, CodeBlockDetection, ContentFilterAction,
-    ContentFilterCategoryConfig, ContentFilterDetection, ContentFilterGuardrailConfig,
-    ContentFilterSeverity, HideSecretsGuardrailConfig, category_types::CategoryFileData,
+    BlockCodeAction, BlockCodeExecGuardrailConfig, CodeBlockActionTaken, CodeBlockDetection,
+    ContentFilterAction, ContentFilterCategoryConfig, ContentFilterDetection,
+    ContentFilterGuardrailConfig, ContentFilterSeverity, HideSecretsGuardrailConfig,
+    category_types::CategoryFileData,
 };
 
 #[test]
@@ -17,7 +18,7 @@ fn config_defaults_match_litellm() {
     assert_eq!(content.keyword_redaction_tag, "[KEYWORD_REDACTED]");
 
     let code: BlockCodeExecGuardrailConfig = serde_json::from_str("{}").unwrap();
-    assert_eq!(code.action, ContentFilterAction::Block);
+    assert_eq!(code.action, BlockCodeAction::Block);
     assert!((code.confidence_threshold - 0.5_f64).abs() < f64::EPSILON);
     assert!(code.detect_execution_intent);
 }
@@ -33,7 +34,11 @@ fn config_records_load_litellm_fields() {
     assert_eq!(category.severity_threshold, ContentFilterSeverity::High);
 
     let code: BlockCodeExecGuardrailConfig = serde_json::from_str(r#"{"action":"mask"}"#).unwrap();
-    assert_eq!(code.action, ContentFilterAction::Mask);
+    assert_eq!(code.action, BlockCodeAction::Mask);
+    assert_eq!(
+        serde_json::to_string(&code).unwrap(),
+        r#"{"blocked_languages":null,"action":"mask","confidence_threshold":0.5,"detect_execution_intent":true}"#
+    );
 
     let secrets: HideSecretsGuardrailConfig =
         serde_json::from_str(r#"{"detect_secrets_config":{"plugins_used":[]}}"#).unwrap();

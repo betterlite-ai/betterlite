@@ -8,18 +8,20 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentFilterAction {
     #[serde(rename = "BLOCK", alias = "block")]
+    #[default]
     Block,
     #[serde(rename = "MASK", alias = "mask")]
     Mask,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ContentFilterSeverity {
     High,
+    #[default]
     Medium,
     Low,
 }
@@ -106,49 +108,58 @@ pub enum ContentFilterDetection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ContentFilterCategoryConfig {
     pub category: String,
-    #[serde(default = "default_enabled")]
     pub enabled: bool,
     pub action: ContentFilterAction,
-    #[serde(default = "default_severity_threshold")]
     pub severity_threshold: ContentFilterSeverity,
-    #[serde(default)]
     pub category_file: Option<String>,
+}
+
+impl Default for ContentFilterCategoryConfig {
+    fn default() -> Self {
+        let category = String::default();
+        let category_file = Option::<String>::default();
+        Self {
+            category_file,
+            severity_threshold: ContentFilterSeverity::default(),
+            action: ContentFilterAction::default(),
+            enabled: true,
+            category,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ContentFilterGuardrailConfig {
-    #[serde(default)]
     pub patterns: Option<Vec<ContentFilterPattern>>,
-    #[serde(default)]
     pub blocked_words: Option<Vec<BlockedWord>>,
-    #[serde(default)]
     pub blocked_words_file: Option<String>,
-    #[serde(default)]
     pub categories: Option<Vec<ContentFilterCategoryConfig>>,
-    #[serde(default = "default_config_severity")]
     pub severity_threshold: String,
-    #[serde(default = "default_pattern_format")]
     pub pattern_redaction_format: String,
-    #[serde(default = "default_keyword_tag")]
     pub keyword_redaction_tag: String,
-    #[serde(default)]
     pub competitor_intent_config: Option<overrides::CompetitorIntentConfig>,
 }
 
 impl Default for ContentFilterGuardrailConfig {
     fn default() -> Self {
+        let patterns = Option::<Vec<ContentFilterPattern>>::default();
+        let blocked_words = Option::<Vec<BlockedWord>>::default();
+        let blocked_words_file = Option::<String>::default();
+        let categories = Option::<Vec<ContentFilterCategoryConfig>>::default();
+        let competitor_intent_config = Option::<overrides::CompetitorIntentConfig>::default();
         Self {
-            patterns: None,
-            blocked_words: None,
-            blocked_words_file: None,
-            categories: None,
-            severity_threshold: default_config_severity(),
+            patterns,
+            blocked_words,
+            blocked_words_file,
+            categories,
+            severity_threshold: String::from("medium"),
             pattern_redaction_format: String::from("[{pattern_name}_REDACTED]"),
             keyword_redaction_tag: String::from("[KEYWORD_REDACTED]"),
-            competitor_intent_config: None,
+            competitor_intent_config,
         }
     }
 }
@@ -158,10 +169,8 @@ impl ContentFilterGuardrailConfig {
 
     #[must_use]
     pub const fn ui_friendly_name() -> &'static str {
-        match Self::UI_FRIENDLY_NAME.as_bytes().first() {
-            Some(_) => Self::UI_FRIENDLY_NAME,
-            None => "",
-        }
+        const NAME: &str = ContentFilterGuardrailConfig::UI_FRIENDLY_NAME;
+        NAME
     }
 }
 
@@ -185,27 +194,49 @@ pub enum CodeBlockActionTaken {
     LogOnly,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockCodeAction {
+    #[default]
+    Block,
+    Mask,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct BlockCodeExecGuardrailConfig {
-    #[serde(default)]
     pub blocked_languages: Option<Vec<String>>,
-    #[serde(default = "default_block_action")]
-    pub action: ContentFilterAction,
-    #[serde(default = "default_confidence_threshold")]
+    pub action: BlockCodeAction,
     pub confidence_threshold: f64,
-    #[serde(default = "default_enabled")]
     pub detect_execution_intent: bool,
 }
 
+impl Default for BlockCodeExecGuardrailConfig {
+    fn default() -> Self {
+        Self::from(())
+    }
+}
+
+impl From<()> for BlockCodeExecGuardrailConfig {
+    fn from((): ()) -> Self {
+        Self {
+            blocked_languages: Option::default(),
+            action: BlockCodeAction::default(),
+            confidence_threshold: Self::CONFIDENCE_THRESHOLD,
+            detect_execution_intent: Self::DETECT_EXECUTION_INTENT,
+        }
+    }
+}
+
 impl BlockCodeExecGuardrailConfig {
+    const CONFIDENCE_THRESHOLD: f64 = 0.5;
+    const DETECT_EXECUTION_INTENT: bool = true;
     pub const UI_FRIENDLY_NAME: &'static str = "Block Code Execution";
 
     #[must_use]
     pub const fn ui_friendly_name() -> &'static str {
-        match Self::UI_FRIENDLY_NAME.as_bytes().first() {
-            Some(_) => Self::UI_FRIENDLY_NAME,
-            None => "",
-        }
+        const NAME: &str = BlockCodeExecGuardrailConfig::UI_FRIENDLY_NAME;
+        NAME
     }
 }
 
@@ -220,50 +251,7 @@ impl HideSecretsGuardrailConfig {
 
     #[must_use]
     pub const fn ui_friendly_name() -> &'static str {
-        match Self::UI_FRIENDLY_NAME.as_bytes().first() {
-            Some(_) => Self::UI_FRIENDLY_NAME,
-            None => "",
-        }
+        const NAME: &str = HideSecretsGuardrailConfig::UI_FRIENDLY_NAME;
+        NAME
     }
-}
-
-fn default_enabled() -> bool {
-    let enabled_values = [true];
-    enabled_values.into_iter().next().unwrap_or(false)
-}
-
-fn default_severity_threshold() -> ContentFilterSeverity {
-    let thresholds = [ContentFilterSeverity::Medium];
-    thresholds
-        .into_iter()
-        .next()
-        .unwrap_or(ContentFilterSeverity::Medium)
-}
-
-fn default_config_severity() -> String {
-    let thresholds = ["medium"];
-    thresholds.join("")
-}
-
-fn default_pattern_format() -> String {
-    let formats = ["[{pattern_name}_REDACTED]"];
-    formats.join("")
-}
-
-fn default_keyword_tag() -> String {
-    let tags = ["[KEYWORD_REDACTED]"];
-    tags.join("")
-}
-
-fn default_block_action() -> ContentFilterAction {
-    let actions = [ContentFilterAction::Block];
-    actions
-        .into_iter()
-        .next()
-        .unwrap_or(ContentFilterAction::Block)
-}
-
-fn default_confidence_threshold() -> f64 {
-    let thresholds = [0.5_f64];
-    thresholds.into_iter().next().unwrap_or(0.5_f64)
 }
