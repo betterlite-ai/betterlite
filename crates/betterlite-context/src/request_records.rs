@@ -10,6 +10,8 @@ pub enum RequestRecordError {
     MetadataMembership { bucket: String },
     #[error("{bucket} metadata cannot remove a parent span")]
     MetadataMutation { bucket: String },
+    #[error("{bucket} metadata cannot remove a parent span by index")]
+    MetadataRemoval { bucket: String },
 }
 
 pub struct RequestRecordProjection;
@@ -47,13 +49,10 @@ impl RequestRecordProjection {
             }
             RequestRecord::Array(values)
                 if values.iter().any(|candidate| {
-                    matches!(
-                        candidate,
-                        RequestRecord::String(text) if text == "litellm_parent_otel_span"
-                    )
+                    matches!(candidate, RequestRecord::String(text) if text == "litellm_parent_otel_span")
                 }) =>
             {
-                Err(RequestRecordError::MetadataMutation {
+                Err(RequestRecordError::MetadataRemoval {
                     bucket: name.to_owned(),
                 })
             }
@@ -122,16 +121,29 @@ impl RequestRecordProjection {
         };
         let mut snapshot = BTreeMap::new();
         for (key, value) in fields {
-            let copied = if matches!(key.as_str(), "metadata" | "litellm_metadata")
-                && let Some(bucket) = value.object()
-            {
-                RequestRecord::Object(bucket.clone())
-            } else {
-                value.clone()
-            };
+            let copied = Self::snapshot_value(key, value);
             snapshot.insert(key.clone(), copied);
         }
         RequestRecord::Object(snapshot)
+    }
+
+    fn snapshot_value(key: &str, value: &RequestRecord) -> RequestRecord {
+        if !matches!(key, "metadata" | "litellm_metadata") {
+            return value.clone();
+        }
+        let Some(bucket) = value.object() else {
+            return value.clone();
+        };
+        let mut copied = bucket.clone();
+        let Some(original_span) = bucket.get("litellm_parent_otel_span") else {
+            return RequestRecord::Object(copied);
+        };
+        copied.insert(
+            "litellm_parent_otel_span".to_owned(),
+            RequestRecord::String("placeholder".to_owned()),
+        );
+        copied.insert("litellm_parent_otel_span".to_owned(), original_span.clone());
+        RequestRecord::Object(copied)
     }
 
     #[must_use]

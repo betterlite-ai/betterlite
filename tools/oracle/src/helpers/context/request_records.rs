@@ -43,7 +43,8 @@ impl crate::helpers::Helper for Op {
                 RequestRecordProjection::safe_copy(&mut changed, *safe_memory_mode)
                     .map_err(|error| {
                         let class = match &error {
-                            betterlite_context::request_records::RequestRecordError::MetadataMembership { .. } => "TypeError",
+                            betterlite_context::request_records::RequestRecordError::MetadataMembership { .. }
+                            | betterlite_context::request_records::RequestRecordError::MetadataRemoval { .. } => "TypeError",
                             betterlite_context::request_records::RequestRecordError::MetadataMutation { .. } => "AttributeError",
                         };
                         Box::new(crate::helpers::HelperError {

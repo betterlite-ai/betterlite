@@ -2,6 +2,7 @@
 
 use super::{GatewayCacheAttribution, RequestRecord, RequestRecordProjection};
 use rstest::rstest;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 fn record(value: &str) -> RequestRecord {
@@ -32,6 +33,7 @@ fn request_records_cases(#[case] name: &str) {
             let borrowed = RequestRecordProjection::safe_copy(&mut value, true).unwrap();
             let borrowed_pointer: *const RequestRecord = borrowed.as_ref();
             assert_eq!(borrowed_pointer, original);
+            assert!(matches!(borrowed, Cow::Borrowed(_)));
             assert_eq!(
                 text(
                     RequestRecordProjection::safe_copy(&mut value, false)
@@ -76,10 +78,16 @@ fn request_records_cases(#[case] name: &str) {
                 RequestRecordProjection::safe_copy(&mut string_with_span, false),
                 Err(super::RequestRecordError::MetadataMutation { .. })
             ));
+            let mut string_containing_span =
+                record(r#"{"metadata":"prefix-litellm_parent_otel_span"}"#);
+            assert!(matches!(
+                RequestRecordProjection::safe_copy(&mut string_containing_span, false),
+                Err(super::RequestRecordError::MetadataMutation { .. })
+            ));
             let mut array_with_span = record(r#"{"metadata":["litellm_parent_otel_span"]}"#);
             assert!(matches!(
                 RequestRecordProjection::safe_copy(&mut array_with_span, false),
-                Err(super::RequestRecordError::MetadataMutation { .. })
+                Err(super::RequestRecordError::MetadataRemoval { .. })
             ));
             let mut array_without_span = record(r#"{"metadata":["ordinary"]}"#);
             if let Err(copy_error) =
@@ -87,6 +95,8 @@ fn request_records_cases(#[case] name: &str) {
             {
                 panic!("ordinary array metadata should copy: {copy_error}");
             }
+            let mut empty_metadata = record(r#"{"metadata":[],"litellm_metadata":""}"#);
+            RequestRecordProjection::safe_copy(&mut empty_metadata, false).unwrap();
         }
         "independent_snapshot" => {
             let input =
@@ -101,6 +111,12 @@ fn request_records_cases(#[case] name: &str) {
                     r#"{"metadata":{"other":true}}"#
                 )),
                 record(r#"{"metadata":{"other":true}}"#)
+            );
+            assert_eq!(
+                RequestRecordProjection::independent_snapshot(&record(
+                    r#"{"metadata":{},"litellm_metadata":{"other":true}}"#
+                )),
+                record(r#"{"metadata":{},"litellm_metadata":{"other":true}}"#)
             );
         }
         "parameter_filter_null_and_depth" => {
@@ -150,6 +166,14 @@ fn request_records_cases(#[case] name: &str) {
                     "opaque".to_owned(),
                     handle(super::HandleKind::Opaque, 5)
                 )]))
+            );
+            let direct_logging = RequestRecord::Object(BTreeMap::from([(
+                "logging".to_owned(),
+                handle(super::HandleKind::Logging, 3),
+            )]));
+            assert_eq!(
+                RequestRecordProjection::filter_parameters(direct_logging.clone(), 1_i32),
+                direct_logging
             );
         }
         "gateway_injection_bucket" => {
