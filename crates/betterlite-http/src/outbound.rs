@@ -1,9 +1,15 @@
 use std::time::Duration;
 
 use reqwest::{Client, RequestBuilder, Response, Url};
+use rustls::crypto::aws_lc_rs::default_provider;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::error::HttpError;
+
+pub fn install_crypto_provider() {
+    let provider = default_provider();
+    let _result = provider.install_default();
+}
 
 #[derive(Clone, Debug)]
 pub struct OutboundClient {
@@ -12,6 +18,7 @@ pub struct OutboundClient {
 
 impl OutboundClient {
     pub fn new() -> Result<Self, HttpError> {
+        install_crypto_provider();
         #[expect(
             clippy::disallowed_methods,
             reason = "outbound clients are centralized here so TLS and pooling are configured once"
@@ -42,6 +49,7 @@ impl OutboundClient {
     }
 
     pub async fn send(&self, request: RequestBuilder) -> Result<Response, HttpError> {
-        request.send().await.map_err(HttpError::Request)
+        let response = request.send().await;
+        response.map_err(HttpError::Request)
     }
 }

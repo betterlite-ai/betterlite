@@ -5,6 +5,7 @@ use reqwest::{Client, ClientBuilder, Proxy, Request, Response};
 use secrecy::ExposeSecret as _;
 
 use crate::error::HttpError;
+use crate::outbound::install_crypto_provider;
 
 #[derive(Debug)]
 pub struct ProxiedClient {
@@ -14,6 +15,7 @@ pub struct ProxiedClient {
 
 impl ProxiedClient {
     pub fn build(builder: ClientBuilder, policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {
+        install_crypto_provider();
         for warning in &policy.warnings {
             tracing::warn!(?warning, "proxy setting ignored");
         }

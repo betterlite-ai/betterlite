@@ -1,0 +1,9 @@
+name: chat-openai-env-api-key
+config: |
+  model_list:
+    - model_name: oracle-model
+      litellm_params: {model: openai/oracle-model, api_base: "{{upstream}}"}
+env: {OPENAI_API_KEY: oracle-key}
+request: {method: POST, path: /v1/chat/completions, headers: {content-type: application/json, authorization: Bearer oracle-master}, body: {model: oracle-model, messages: [{role: user, content: hi}]}}
+upstream: [{status: 200, headers: {content-type: application/json}, body: {id: chatcmpl-oracle, object: chat.completion, created: 1700000000, model: oracle-model, choices: [{index: 0, message: {role: assistant, content: Hello!}, finish_reason: stop}]}}]
+compare: {headers: [content-type], headers_present: [x-litellm-call-id], upstream_headers: [authorization, content-type], ignore: [{pointer: /id, why: generated}, {pointer: /created, why: generated}]}

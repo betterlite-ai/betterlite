@@ -15,13 +15,8 @@ fn parses_chat_requests(#[case] body: &str) {
     assert!(!request.model.is_empty());
 }
 
-#[test]
-fn replays_the_chat_request_corpus() {
-    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/chat_request");
-    let entries = fs::read_dir(corpus).expect("corpus exists");
-    for entry in entries {
-        let path = entry.expect("corpus entry").path();
-        let bytes = fs::read(path).expect("corpus file");
-        let _request = serde_json::from_slice::<ChatRequest>(&bytes);
-    }
+#[rstest]
+fn replays_the_chat_request_corpus(#[files("fuzz/corpus/chat_request/*")] path: PathBuf) {
+    let bytes = fs::read(path).expect("corpus file");
+    let _request = serde_json::from_slice::<ChatRequest>(&bytes);
 }

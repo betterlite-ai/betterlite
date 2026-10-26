@@ -1,0 +1,9 @@
+name: chat-upstream-401
+config: |
+  model_list:
+    - model_name: oracle-model
+      litellm_params: {model: openai/oracle-model, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request: {method: POST, path: /v1/chat/completions, headers: {content-type: application/json, authorization: Bearer oracle-master}, body: {model: oracle-model, messages: [{role: user, content: hi}]}}
+upstream: [{status: 401, headers: {content-type: application/json}, body: {error: {message: unauthorized, type: invalid_request_error, code: invalid_api_key}}}]
+compare: {headers: [content-type], headers_present: [x-litellm-call-id], upstream_headers: [authorization, content-type], ignore: [{pointer: /error/message, why: generated}]}

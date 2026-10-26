@@ -1,0 +1,9 @@
+name: chat-unknown-model
+config: |
+  model_list:
+    - model_name: oracle-model
+      litellm_params: {model: openai/oracle-model, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request: {method: POST, path: /v1/chat/completions, headers: {content-type: application/json, authorization: Bearer oracle-master}, body: {model: missing-model, messages: [{role: user, content: hi}]}}
+upstream: [{status: 200, headers: {content-type: application/json}, body: {id: unused}}]
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

@@ -27,12 +27,9 @@ pub struct SystemRandom;
 impl RandomSource for SystemRandom {
     fn next(&self, upper_bound: usize) -> usize {
         let sample = Uuid::new_v4().as_u128();
-        #[expect(
-            clippy::arithmetic_side_effects,
-            clippy::integer_division_remainder_used,
-            reason = "deployment selection needs a uniform bounded sample"
-        )]
-        usize::try_from(sample % u128::try_from(upper_bound).unwrap_or(1)).unwrap_or(0)
+        let bound = u128::try_from(upper_bound).unwrap_or(1);
+        let bounded = sample.checked_rem(bound).unwrap_or(0);
+        usize::try_from(bounded).unwrap_or(0)
     }
 }
 
@@ -137,11 +134,12 @@ impl ChatExecutor {
         environment_key: Option<SecretString>,
         catalog: CatalogCapabilities,
     ) -> Self {
+        let random = Arc::new(SystemRandom);
         Self {
             client,
             environment_key,
             catalog,
-            random: Arc::new(SystemRandom),
+            random,
         }
     }
 
@@ -185,7 +183,9 @@ impl ChatExecutor {
             .as_deref()
             .unwrap_or("https://api.openai.com/v1");
         let url = endpoint(base)?;
-        let timeout = duration(params.timeout.or(request_timeout).unwrap_or(6_000.0_f64));
+        let seconds = params.timeout.or(request_timeout).unwrap_or(6_000.0_f64);
+        let timeout =
+            Duration::try_from_secs_f64(seconds.max(0.001)).unwrap_or(Duration::from_mins(100));
         let body = self.body(request, model);
         self.send(url, api_key, timeout, body).await
     }
@@ -260,13 +260,9 @@ fn endpoint(base: &str) -> Result<Url, ChatError> {
     Ok(url)
 }
 
-fn duration(seconds: f64) -> Duration {
-    Duration::try_from_secs_f64(seconds.max(0.001)).unwrap_or(Duration::from_mins(100))
-}
-
 fn is_timeout(error: &HttpError) -> bool {
-    matches!(error, HttpError::Request(source) if source.is_timeout())
+    let timed_out = matches!(error, HttpError::Request(source) if source.is_timeout());
+    timed_out
 }
 
-#[cfg(test)]
 mod tests;
