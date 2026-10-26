@@ -1,0 +1,5 @@
+kind: helper
+name: configured-bucket-split
+call: {cloud_storage: {function: configured_bucket_split, value: bucket/prefix}}
+env: {}
+compare: {ignore: []}

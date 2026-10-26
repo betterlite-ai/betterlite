@@ -1,14 +1,14 @@
 id: B2210
 milestone: M3 providers
 title: Shared A2A text projection
-status: todo
+status: done
 depends_on: [B171]
 file: tasks/B2210-a2a-text.yaml
 covers:
   - "litellm/llms/a2a/common_utils.py"
 parent: B050
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 184
