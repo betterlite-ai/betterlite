@@ -124,6 +124,17 @@ async fn handle(
     if parts.method == "GET" && parts.uri.path() == "/v1/models" {
         return Ok(Response::new(Body::from(r#"{"object":"list","data":[]}"#)));
     }
+    let bytes = read_body(&state, body).await?;
+    let captured = capture_request(&parts, &bytes)?;
+    let admitted = state
+        .lock()
+        .map_err(|_source| StatusCode::INTERNAL_SERVER_ERROR)?
+        .admit(captured);
+    let ticket = admitted.map_err(|error| fail(&state, error))?;
+    play(state, ticket).await
+}
+
+async fn read_body(state: &Arc<Mutex<Recording>>, body: Body) -> Result<Vec<u8>, StatusCode> {
     let bytes = time::timeout(
         Duration::from_secs(30),
         to_bytes(body, MAX_BODY.saturating_add(1)),
@@ -133,10 +144,17 @@ async fn handle(
     .map_err(|_source| StatusCode::PAYLOAD_TOO_LARGE)?;
     if bytes.len() > MAX_BODY {
         return Err(fail(
-            &state,
+            state,
             Error::other("captured body exceeds 16777216 bytes"),
         ));
     }
+    Ok(bytes.to_vec())
+}
+
+fn capture_request(
+    parts: &axum::http::request::Parts,
+    bytes: &[u8],
+) -> Result<ProviderRequest, StatusCode> {
     let mut headers = parts
         .headers
         .iter()
@@ -152,24 +170,19 @@ async fn handle(
     let raw_body = headers.get("content-type").is_some_and(|value| {
         value.starts_with("multipart/form-data") || value.starts_with("application/octet-stream")
     });
-    let captured = ProviderRequest {
+    let body = if raw_body {
+        Value::Array(bytes.iter().map(|byte| Value::from(*byte)).collect())
+    } else {
+        let body_text = str::from_utf8(bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
+        serde_json::from_str(body_text)
+            .unwrap_or_else(|_source| Value::String(body_text.to_owned()))
+    };
+    Ok(ProviderRequest {
         method: parts.method.to_string(),
         path: parts.uri.to_string(),
         headers,
-        body: if raw_body {
-            Value::Array(bytes.iter().map(|byte| Value::from(*byte)).collect())
-        } else {
-            let body_text = str::from_utf8(&bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
-            serde_json::from_str(body_text)
-                .unwrap_or_else(|_source| Value::String(body_text.to_owned()))
-        },
-    };
-    let admitted = state
-        .lock()
-        .map_err(|_source| StatusCode::INTERNAL_SERVER_ERROR)?
-        .admit(captured);
-    let ticket = admitted.map_err(|error| fail(&state, error))?;
-    play(state, ticket).await
+        body,
+    })
 }
 
 async fn play(state: Arc<Mutex<Recording>>, ticket: Ticket) -> Result<Response<Body>, StatusCode> {

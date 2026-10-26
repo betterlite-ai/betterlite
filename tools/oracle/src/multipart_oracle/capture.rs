@@ -9,6 +9,10 @@ pub fn decode_multipart_capture(content_type: &str, body: &[u8]) -> Result<Vec<P
         "multipart capture has no valid boundary",
     ))?;
     let marker = format!("--{boundary}").into_bytes();
+    decode_parts(body, &marker, &boundary)
+}
+
+fn decode_parts(body: &[u8], marker: &[u8], boundary: &str) -> Result<Vec<Part>, OracleError> {
     let mut parts = Vec::new();
     let mut cursor = 0;
     while let Some(start) = find_marker(body, cursor, &marker) {
