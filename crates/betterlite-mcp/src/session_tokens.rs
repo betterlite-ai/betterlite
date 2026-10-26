@@ -261,6 +261,9 @@ fn verified_claims(compact: &str, keys: &SigningKeys) -> Result<Claims, OpenErro
             ("RS256", key.verify(message, &signature).is_ok())
         }
     };
+    if matches!(header.b64, PayloadEncoding::Boolean(false)) {
+        return Err(Malformed);
+    }
     if header.alg.as_deref() != Some(algorithm) {
         return Err(Malformed);
     }

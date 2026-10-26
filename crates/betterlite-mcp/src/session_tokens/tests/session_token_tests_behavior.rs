@@ -164,6 +164,22 @@ fn preserves_rsa_key_selection_for_empty_detached_payload() {
 }
 
 #[rstest]
+#[case::hs256(hs256(SECRET), r#"{"alg":"HS256","crit":["b64"],"b64":false}"#)]
+#[case::rs256(
+    rs256(PRIVATE, "current"),
+    r#"{"alg":"RS256","kid":"current","crit":["b64"],"b64":false}"#
+)]
+fn rejects_empty_detached_payload_as_malformed(
+    #[case] keys: SessionSigningKeys,
+    #[case] header_json: &str,
+) {
+    let header_segment = URL_SAFE_NO_PAD.encode(header_json);
+    let candidate = format!("llm_session_{header_segment}..AA");
+    let opened = open_token(&candidate, Session, &keys, at(0));
+    assert_eq!(opened, Err(Malformed));
+}
+
+#[rstest]
 #[case::empty(String::new(), NotASessionToken)]
 #[case::refresh_prefix("llm_srefresh_a.b.c".to_owned(), NotASessionToken)]
 #[case::not_a_jwt("llm_session_not-a-jwt".to_owned(), Malformed)]

@@ -1,6 +1,6 @@
 use crate::helpers::{HelperError, HelperResult};
 use betterlite_mcp::errors::SessionKeyError as KeyError;
-use betterlite_mcp::errors::SessionMintError::TooLarge;
+use betterlite_mcp::errors::{SessionMintError::TooLarge, SessionOpenError};
 use betterlite_mcp::session_tokens::{
     mint_session_token as mint_token, open_session_token as open_token,
 };
@@ -10,7 +10,7 @@ use betterlite_mcp::types::{
 };
 use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -57,6 +57,34 @@ struct RotatedKey {
     public_key_pem: String,
 }
 
+#[derive(Serialize)]
+#[serde(untagged)]
+enum MintOutput {
+    Minted {
+        token: String,
+        expires_at: i64,
+        public_key_pem: Option<String>,
+    },
+    TooLarge {
+        tag: &'static str,
+        size_bytes: usize,
+        max_bytes: usize,
+    },
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum OpenOutput {
+    Opened(betterlite_mcp::types::OpenedSessionToken),
+    Error(SessionOpenError),
+}
+
+#[derive(Serialize)]
+struct Output {
+    mint: Option<MintOutput>,
+    open: Option<OpenOutput>,
+}
+
 pub(crate) struct Op;
 impl crate::helpers::Helper for Op {
     type Input = Input;
@@ -64,43 +92,87 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let minted = input.mint.as_ref().map(mint).transpose()?;
         let Some(step) = &input.open else {
-            return Ok(serde_json::json!({"mint": minted, "open": null}));
+            return serde_json::to_value(Output {
+                mint: minted,
+                open: None,
+            })
+            .map_err(|error| {
+                Box::new(HelperError {
+                    class: "Output".to_owned(),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: error.to_string(),
+                })
+            });
         };
-        let token = minted.as_ref().and_then(|json| json.get("token")?.as_str());
+        let token = minted.as_ref().and_then(|output| match output {
+            MintOutput::Minted { token, .. } => Some(token.as_str()),
+            MintOutput::TooLarge { .. } => None,
+        });
         let candidate = step.candidate.as_deref().or(token).unwrap_or_default();
         let keys = signing_keys(&step.keys)?;
         let opened = match open_token(candidate, step.kind, &keys, step.now) {
-            Ok(opened) => serde_json::to_value(opened),
-            Err(error) => serde_json::to_value(error),
-        }
-        .map_err(|error| failure("Output", &error.to_string()))?;
-        Ok(serde_json::json!({"mint": minted, "open": opened}))
+            Ok(opened) => OpenOutput::Opened(opened),
+            Err(error) => OpenOutput::Error(error),
+        };
+        serde_json::to_value(Output {
+            mint: minted,
+            open: Some(opened),
+        })
+        .map_err(|error| {
+            Box::new(HelperError {
+                class: "Output".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })
     }
 }
 
-fn mint(step: &MintStep) -> HelperResult {
+fn mint(step: &MintStep) -> Result<MintOutput, Box<HelperError>> {
     let keys = signing_keys(&step.keys)?;
     let public_key_pem = match &keys {
         SigningKeys::Symmetric(_) => Ok(None),
         SigningKeys::Asymmetric(asymmetric) => asymmetric.public_key_pem().map(Some),
     }
-    .map_err(|error| failure("SessionKeyError", &error.to_string()))?;
+    .map_err(|error| {
+        Box::new(HelperError {
+            class: "SessionKeyError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })?;
     let entropy = step.entropy;
     match mint_token(&step.principal, step.kind, &keys, step.now, || Ok(entropy)) {
-        Ok(minted) => Ok(serde_json::json!({
-            "token": minted.token.expose_secret(),
-            "expires_at": minted.expires_at.timestamp(),
-            "public_key_pem": public_key_pem,
-        })),
+        Ok(minted) => Ok(MintOutput::Minted {
+            token: minted.token.expose_secret().to_owned(),
+            expires_at: minted.expires_at.timestamp(),
+            public_key_pem,
+        }),
         Err(TooLarge {
             size_bytes,
             max_bytes,
-        }) => Ok(serde_json::json!({
-            "tag": "session_token_too_large",
-            "size_bytes": size_bytes,
-            "max_bytes": max_bytes,
+        }) => Ok(MintOutput::TooLarge {
+            tag: "session_token_too_large",
+            size_bytes,
+            max_bytes,
+        }),
+        Err(error) => Err(Box::new(HelperError {
+            class: "SessionMintError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
         })),
-        Err(error) => Err(failure("SessionMintError", &error.to_string())),
     }
 }
 
@@ -123,17 +195,14 @@ fn signing_keys(keys: &Keys) -> Result<SigningKeys, Box<HelperError>> {
             })
             .map(SigningKeys::Asymmetric),
     };
-    built.map_err(|error| failure("ValidationError", &error.to_string()))
-}
-
-fn failure(class: &str, message: &str) -> Box<HelperError> {
-    let error = HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_owned(),
-    };
-    Box::new(error)
+    built.map_err(|error| {
+        Box::new(HelperError {
+            class: "ValidationError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })
 }
