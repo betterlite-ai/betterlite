@@ -46,7 +46,7 @@ pub struct AgentCard {
     pub security: Option<WireValue<SecurityRequirements>>,
     #[serde(rename = "supportsAuthenticatedExtendedCard")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub supports_authenticated_extended_card: Option<WireValue<bool>>,
+    pub supports_auth_extended_card: Option<WireValue<bool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signatures: Option<WireValue<Vec<Signature>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -151,20 +151,22 @@ pub fn normalize_protocol_version(raw_version: &AgentJson) -> Option<&'static st
 }
 
 #[must_use]
-pub fn normalize_protocol_version_bytes(bytes: &[u8]) -> Option<&'static str> {
+pub fn normalize_version_bytes(bytes: &[u8]) -> Option<&'static str> {
     let value = serde_json::from_slice::<AgentJson>(bytes).ok()?;
     normalize_protocol_version(&value)
 }
 
 #[must_use]
 pub fn resolve_served_version(card: Option<&AgentCard>) -> &'static str {
-    card.and_then(|agent_card| agent_card.protocol_version.as_ref())
+    let result = card
+        .and_then(|agent_card| agent_card.protocol_version.as_ref())
         .and_then(|value| match value {
             WireValue::Typed(text) => Some(text.as_str()),
             WireValue::Passthrough(_) => None,
         })
         .and_then(|version| normalize_protocol_version(&AgentJson::String(version.to_owned())))
-        .unwrap_or(DEFAULT_VERSION)
+        .unwrap_or(DEFAULT_VERSION);
+    result
 }
 
 #[must_use]
@@ -258,9 +260,10 @@ fn is_truthy_option<T>(field: Option<&WireValue<T>>) -> bool
 where
     T: Serialize,
 {
-    field
+    let result = field
         .and_then(|value| serde_json::to_value(value).ok())
-        .is_some_and(|value| is_truthy(&value))
+        .is_some_and(|value| is_truthy(&value));
+    result
 }
 fn truthy_wire(value: WireValue<bool>) -> Option<WireValue<bool>> {
     let json = serde_json::to_value(&value).ok()?;

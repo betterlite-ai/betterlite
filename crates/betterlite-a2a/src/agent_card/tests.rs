@@ -5,7 +5,7 @@ use rstest::rstest;
 use serde_json::{from_str, to_value};
 
 use super::{
-    AgentCard, merge_agent_card, normalize_protocol_version, normalize_protocol_version_bytes,
+    AgentCard, merge_agent_card, normalize_protocol_version, normalize_version_bytes,
     resolve_served_version,
 };
 
@@ -143,5 +143,5 @@ fn card_input_is_not_mutated() {
 #[test]
 fn replays_protocol_version_fuzz_corpus() {
     let corpus = include_bytes!("../../fuzz/corpus/normalize_protocol_version/semver");
-    assert!(normalize_protocol_version_bytes(corpus).is_some());
+    assert!(normalize_version_bytes(corpus).is_some());
 }
