@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Sandbox reuse eviction execution and cleanup
 status: todo
 depends_on: [B4120]
-file: null
+file: tasks/B4121-interception-sandbox-lifecycle.yaml
 covers:
   - "litellm/integrations/code_interpreter_interception/handler.py"
 parent: B119

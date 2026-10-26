@@ -49,6 +49,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,cometapi_wire}.rs
+    - crates/betterlite-openai/src/cometapi_wire.rs
     - crates/betterlite-openai/src/cometapi_wire/**
     - crates/betterlite-provider/src/{lib,cometapi_iterator}.rs
     - crates/betterlite-provider/src/cometapi_iterator.rs

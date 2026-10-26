@@ -1,0 +1,162 @@
+id: B3791
+title: Prompt Security file sanitization
+description: >-
+  Implement the Prompt Security file sanitization integration for betterlite:
+  image and document upload, polling for completion, content replacement, and
+  header/log redaction. Sanitize standalone data URLs embedded in requests and
+  multimodal content within structured messages. Config keys:
+  `file_sanitization_timeout` (defaults to 30 seconds),
+  `file_sanitization_fail_open` (defaults to true),
+  `block_on_file_modify` (defaults to true). Environment variables:
+  `PROMPT_SECURITY_API_KEY` (required, no default),
+  `PROMPT_SECURITY_API_BASE` (required, no default). HTTP upload and poll
+  endpoints timeout at 30 seconds by default and fail open on timeout when
+  fail_open is true, distinct from exhausted polling retries that raise 408.
+  Sanitization wraps base64 content and binary files; modified images and
+  documents are re-encoded and replaced in the request. API key is redacted
+  from debug logs via _redact_headers.
+
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-guardrails/**
+    - tools/oracle/cases/prompt_security_files/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L1-L40
+    why: "Module imports, timeout constants (_SANITIZE_FILE_FAIL_OPEN_TIMEOUT_SECONDS, _SANITIZE_FILE_QUEUED_STATUSES)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L88-L109
+    why: "Sanitize records (_SanitizeUploadResponse, _SanitizeStatusResponse, _SanitizeResult, _SanitizeMetadata) and PromptSecurityGuardrailMissingSecrets exception."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L426-L444
+    why: "Core B3791 ownership: _process_standalone_images parses data URLs, extracts base64 content, calls sanitize_file_content, raises on block."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L465-L501
+    why: "sanitize_file_content wraps _sanitize_file_content with asyncio.wait_for timeout, catches TimeoutError/httpx.TimeoutException/LiteLLMTimeout, returns fail_open result on timeout."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L502-L592
+    why: "Core B3791 ownership: _sanitize_file_content uploads file, polls for completion, returns sanitized content and metadata."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L594-L603
+    why: "_raise_if_file_blocked block/modify-to-400 logic: raises 400 on block action or modify action when block_on_file_modify is true."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L605-L642
+    why: "Core B3791 ownership: _process_image_url_item parses data: URLs, sanitizes base64-decoded content, re-encodes modified content, replaces in request."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L644-L709
+    why: "Core B3791 ownership: _process_document_item parses data: URLs and base64-encoded document fields, sanitizes content, infers MIME type, re-encodes and replaces."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L711-L737
+    why: "Core B3791 ownership: process_message_files iterates messages, applies _process_image_url_item and _process_document_item to multimodal content."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L797-L827
+    why: "Core B3791 ownership: _redact_headers masks APP-ID as REDACTED, _log_api_request and _log_api_response debug logging with redacted headers."
+dod:
+  - text: "_process_standalone_images decodes data: URLs with base64.b64decode, extracts mime_type from Content-Type header, infers image extension, calls sanitize_file_content, calls _raise_if_file_blocked on result, logs errors with verbose_proxy_logger."
+    proof: [standalone-images-cases]
+  - text: "sanitize_file_content wraps _sanitize_file_content with asyncio.wait_for using self.file_sanitization_timeout, catches TimeoutError/httpx.TimeoutException/LiteLLMTimeout, raises HTTPException(408) when fail_open is false, returns fail_open_result with action='allow' and content=None when fail_open is true (default)."
+    proof: [timeout-wrapper-cases]
+  - text: "_sanitize_file_content uploads file with POST to {api_base}/api/sanitizeFile, builds headers with APP-ID={api_key} and X-LiteLLM-Key-Alias when present, parses jobId from upload response, polls with GET and jobId param."
+    proof: [upload-poll-cases]
+  - text: "_sanitize_file_content raises HTTPException(500) with 'Failed to get jobId from Prompt Security' when jobId is absent from upload response."
+    proof: [missing-jobid-cases]
+  - text: "_sanitize_file_content polls {api_base}/api/sanitizeFile up to max_poll_attempts (30) with poll_interval (2 seconds) between attempts, returning result when status='done'."
+    proof: [polling-cases]
+  - text: "_sanitize_file_content raises HTTPException(500) with 'Unexpected sanitization status: {status}' when poll response status is neither 'done' nor in _SANITIZE_FILE_QUEUED_STATUSES (created/in progress)."
+    proof: [unexpected-status-cases]
+  - text: "_sanitize_file_content raises HTTPException(408) with 'File sanitization timeout' when max_poll_attempts is exhausted without receiving 'done' status."
+    proof: [poll-exhausted-timeout-cases]
+  - text: "_raise_if_file_blocked checks action against 'block' and 'modify' with block_on_file_modify flag, raises HTTPException(400) with {resource_name} blocked message and violations list when condition is met."
+    proof: [block-raise-cases]
+  - text: "_process_image_url_item parses data: {mime_type};{encoding},{content}, decodes base64 content, extracts extension from mime_type, calls sanitize_file_content, calls _raise_if_file_blocked, re-encodes and replaces URL on modify action."
+    proof: [image-url-cases]
+  - text: "_process_image_url_item raises HTTPException(500) with 'File sanitization failed: {exception}' when base64 decode fails, mime_type parsing fails, or content replacement fails."
+    proof: [image-exception-cases]
+  - text: "_process_document_item detects data: URL or base64-encoded document field, decodes content, infers extension from mime_type (defaults to application/pdf), calls sanitize_file_content, calls _raise_if_file_blocked, re-encodes and replaces data or url field on modify."
+    proof: [document-item-cases]
+  - text: "_process_document_item raises HTTPException(500) with 'Document sanitization failed: {exception}' when base64 operations or content replacement fails."
+    proof: [document-exception-cases]
+  - text: "process_message_files iterates message content list, applies _process_image_url_item for type='image_url' items, applies _process_document_item for type='document' or type='file' items, returns modified messages."
+    proof: [message-files-cases]
+  - text: "_redact_headers returns dict with APP-ID value masked as 'REDACTED', all other headers unchanged."
+    proof: [redact-headers-cases]
+  - text: "_log_api_request logs method, url, redacted headers and payload via verbose_proxy_logger.debug; _log_api_response logs url, status_code and payload."
+    proof: [logging-cases]
+checks:
+  optional: []
+  commands:
+    - id: standalone-images-cases
+      why: "_process_standalone_images data URL parsing, base64 decoding, and file sanitization tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::standalone_images/)'
+    - id: timeout-wrapper-cases
+      why: "sanitize_file_content timeout wrapper and fail_open behavior tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::timeout_wrapper/)'
+    - id: upload-poll-cases
+      why: "File upload, polling sequence, and response parsing tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::upload_poll/)'
+    - id: missing-jobid-cases
+      why: "HTTPException(500) for missing jobId after upload tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::missing_jobid/)'
+    - id: polling-cases
+      why: "Polling with max_poll_attempts, poll_interval, and status checking tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::polling/)'
+    - id: unexpected-status-cases
+      why: "HTTPException(500) for unexpected/unknown poll status tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::unexpected_status/)'
+    - id: poll-exhausted-timeout-cases
+      why: "HTTPException(408) for exhausted polling retries tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::poll_exhausted/)'
+    - id: block-raise-cases
+      why: "_raise_if_file_blocked block and modify-with-flag checks and 400 exception tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::block_raise/)'
+    - id: image-url-cases
+      why: "_process_image_url_item data URL parsing, encoding, sanitization and replacement tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::image_url/)'
+    - id: image-exception-cases
+      why: "_process_image_url_item HTTPException(500) for decode/mime/replacement failures tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::image_exception/)'
+    - id: document-item-cases
+      why: "_process_document_item data URL and base64 field detection, MIME type inference, sanitization and replacement tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::document_item/)'
+    - id: document-exception-cases
+      why: "_process_document_item HTTPException(500) for base64/replacement failures tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::document_exception/)'
+    - id: message-files-cases
+      why: "process_message_files message iteration and item type dispatch tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::message_files/)'
+    - id: redact-headers-cases
+      why: "_redact_headers APP-ID masking tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::redact_headers/)'
+    - id: logging-cases
+      why: "_log_api_request and _log_api_response debug logging tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_files::(log_request|log_response)/)'
+
+oracle_cases: []
+deviations:
+  - what: "HTTP timeout for upload and poll requests uses self.timeout from the CustomGuardrail base class when set; requests default to client timeout if not overridden."
+    why: "File upload and polling require completion guarantees within the configured timeout window. betterlite inherits CustomGuardrail's timeout field for consistency with other guardrails."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L465-L592"
+  - what: "When file_sanitization_fail_open is true (default), timeout or exception in sanitize_file_content returns a fail_open_result with action='allow' and content=None, distinct from exhausted polling which raises HTTPException(408)."
+    why: "A timeout after valid polling responses are received indicates the polling window expired, which is a retriable client error (408). A timeout before polling completes is treated as vendor unavailability and fails open to preserve availability."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L465-L501"
+  - what: "block_on_file_modify defaults to true, so 'modify' action sanitization results raise HTTPException(400) unless explicitly disabled in config."
+    why: "File modification indicates content redaction was applied; the default is to block rather than silently return modified content, consistent with LiteLLM's block-first guardrail pattern."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L594-L603"
+
+out_of_scope:
+  - "CustomGuardrail base class, @log_guardrail_information decorator, and config initialization: owned by the guardrail framework."
+  - "httpxSpecialProvider and get_async_httpx_client: owned by the HTTP client crate."
+  - "get_config_model and get_supported_event_hooks implementations for config model discovery: owned by the guardrail framework."
+  - "verbose_proxy_logger and debug logging infrastructure: owned by the logging layer."
+  - "message_slot_texts and message_with_slot_texts from message translation utilities: owned by the guardrail framework."
+  - "Protection verdict and request/response guardrail apply_guardrail calls: owned by B3792 (Prompt Security conversation protection)."
+
+pitfalls:
+  - "APP-ID header is the Prompt Security vendor API key; it must be redacted in all debug logs via _redact_headers to prevent key leakage."
+  - "_SANITIZE_FILE_QUEUED_STATUSES = {'created', 'in progress'}; any other status value raises HTTPException(500), not 408 timeout."
+  - "sanitize_file_content wraps _sanitize_file_content timeout but HTTP client timeout is inherited from CustomGuardrail.timeout; two separate timeout windows apply."
+  - "Missing jobId from upload response raises 500, not 408, because the upload itself succeeded but the response was malformed."
+  - "Exhausted polling after max_poll_attempts iterations raises HTTPException(408) with 'File sanitization timeout', distinct from asyncio.TimeoutError in the wrapper which returns fail_open_result."
+  - "_process_image_url_item and _process_document_item catch HTTPException and re-raise it; other exceptions are caught and re-raised as HTTPException(500) with the exception message."
+  - "Image and document content is re-encoded with base64.b64encode().decode() after sanitization; sanitized_content may be bytes or string and must be handled accordingly."
+  - "Document MIME type inference defaults to application/pdf when mime_type is absent; extension matching checks for 'pdf', 'word', 'docx', 'excel', 'xlsx' substrings."
+  - "process_message_files returns a new list of messages with modified content; original message structure (role, content type) is preserved, only content URLs/data are replaced."
+  - "X-LiteLLM-Key-Alias header is included in both upload and poll requests when user_api_key_alias is present; it is not redacted in logs."
+
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 2

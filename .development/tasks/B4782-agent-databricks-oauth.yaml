@@ -1,0 +1,148 @@
+id: B4782
+title: Fetch and cache Databricks agent OAuth tokens
+description: >-
+  Implement client-credentials token fetching and per-credential request coalescing using
+  the pooled HTTP client and local TTL cache. Agents registered with a databricks_oauth block
+  in litellm_params fetch workspace OIDC tokens, cache them until 60 seconds before expiry,
+  and attach them as Bearer authorization on every call to the agent.
+
+  _resolve_secret expands os.environ/ references through B002's environment lookup, returning
+  the plaintext string or None. _token_url_from_workspace strips the workspace URL, removes
+  /serving-endpoints suffix, and returns the /oidc/v1/token endpoint. parse_databricks_oauth_config
+  reads client_id, client_secret, and workspace_url from the databricks_oauth block in litellm_params,
+  validates that all three are present, resolves their os.environ/ references, and builds DatabricksAppOAuthConfig
+  with token_url computed from workspace_url and scope defaulting to all-apis. Raise ValueError
+  with the list of missing required fields if any are absent after resolution.
+
+  DatabricksAppOAuthConfig is a frozen dataclass with client_id, client_secret, token_url and scope
+  fields. Its cache_key property includes a SHA256 digest of the client_secret (first 16 hex chars)
+  so a rotated secret yields a new cache entry and prevents serving stale tokens. DatabricksAppOAuthTokenCache
+  extends InMemoryCache with a default TTL of 3600 seconds and maintains a dict of asyncio.Lock
+  instances keyed by cache_key. __init__ calls super().__init__(default_ttl=3600) and initializes
+  _locks. _get_lock returns the lock for a cache_key, creating it if absent. _remove_key calls
+  super()._remove_key and pops the lock for that key so the locks dict stays bounded by live keys.
+  flush_cache clears both the cache and the locks dict at once, used by tests to reset state between cases.
+
+  async_get_token takes a DatabricksAppOAuthConfig, checks the cache and returns a cached token
+  immediately. If not cached, acquires the per-key lock, checks the cache again inside the lock,
+  fetches the token if still not cached, and handles short-lived tokens: if the token's TTL
+  (expires_in minus 60 seconds, minimum 0) is greater than zero, cache it; otherwise skip caching
+  and pop the lock since no _remove_key call will clean it up. _fetch_token calls get_async_httpx_client
+  with llm_provider=httpxSpecialProvider.A2A, constructs a Basic auth header by base64-encoding
+  client_id:client_secret, POSTs to the token endpoint with grant_type=client_credentials and
+  scope in the form data, and parses the JSON response.
+
+  On HTTP success, extract access_token and expires_in from the response body. If access_token
+  is missing or falsy, raise ValueError. If expires_in is present, int() parses it: any value int()
+  accepts (numeric string, float, integer) converts successfully; only values int() cannot parse
+  (non-numeric strings, non-scalars) default to 3600 seconds. Compute TTL as max(expires_in - 60, 0).
+  On HTTP error, raise ValueError with the status code. On any other httpx exception, raise ValueError
+  with the message. Return the tuple (access_token, ttl).
+
+  resolve_oauth_header takes litellm_params, calls parse_databricks_oauth_config,
+  and returns None if no databricks_oauth block is present. Otherwise, gets a token from oauth_token_cache,
+  and returns {"Authorization": "Bearer <token>"}. This function is the entry point called by A2A
+  forwarding (B4788) before sending an outbound request to the agent.
+
+  A module-level oauth_token_cache singleton holds the shared in-memory cache across
+  all agents. Every fetch that would repeat the same client_credentials request within the lock window
+  coalesces into a single network request through the asyncio.Lock, and every unique credential
+  rotates its cache independently through the secret digest in the cache key.
+
+  Write the behavior rstest functions databricks_oauth_tests_behavior in adjacent tests.rs files,
+  with a named case for each behavior and failure in the DoD.
+scope:
+  paths:
+    - crates/betterlite-proxy/src/agent_endpoints/databricks_oauth.rs
+    - crates/betterlite-proxy/src/agent_endpoints/databricks_oauth/**
+    - tools/oracle/cases/agents/**
+    - tools/oracle/helpers/b4782.py
+    - tools/oracle/helpers/b4782/**
+    - tools/oracle/src/helpers/proxy/b4782.rs
+    - tools/oracle/src/helpers/proxy/b4782/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L47-L60
+    why: _resolve_secret and _token_url_from_workspace helper functions with os.environ/ expansion and workspace URL normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L63-L119
+    why: DatabricksAppOAuthConfig dataclass with cache_key property and parse_databricks_oauth_config parsing logic including field validation and scope defaulting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L122-L146
+    why: DatabricksAppOAuthTokenCache class with asyncio.Lock management, _get_lock, _remove_key, flush_cache and cache initialization with default TTL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L147-L212
+    why: async_get_token and _fetch_token including double-check locking, Databricks token endpoint POST with Basic auth, response parsing, TTL computation with 60-second buffer, and error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L218-L230
+    why: resolve_oauth_header entry point and module-level oauth_token_cache singleton.
+dod:
+  - text: _resolve_secret expands os.environ/ string values through B002 environment lookup and returns None for non-string or non-matching values.
+    proof: [oracle, helper-python, databricks-oauth-tests]
+  - text: _token_url_from_workspace normalizes workspace URLs by stripping trailing slashes and removing /serving-endpoints suffix before building the token endpoint.
+    proof: [oracle, helper-python, databricks-oauth-tests]
+  - text: parse_databricks_oauth_config validates presence of client_id, client_secret and workspace_url after resolution, raising ValueError with the missing field names.
+    proof: [oracle, helper-python, databricks-oauth-tests]
+  - text: DatabricksAppOAuthConfig.cache_key includes a 16-character SHA256 digest of the client_secret so rotated secrets yield distinct cache entries.
+    proof: [oracle, helper-python, databricks-oauth-tests]
+  - text: DatabricksAppOAuthTokenCache holds per-key asyncio.Lock instances and cleans them up when tokens are removed, keeping the locks dict bounded.
+    proof: [oracle, databricks-oauth-tests]
+  - text: async_get_token uses double-check locking to coalesce concurrent token requests for the same credential into a single network fetch.
+    proof: [oracle, databricks-oauth-tests]
+  - text: _fetch_token POSTs to the token endpoint with grant_type=client_credentials and scope, using a Basic auth header and the pooled HTTP client.
+    proof: [oracle, databricks-oauth-tests]
+  - text: _fetch_token parses the response JSON for access_token and expires_in, accepting any value int() parses and defaulting unparseable values to 3600 seconds, computing TTL as max(expires_in - 60, 0).
+    proof: [oracle, helper-python, databricks-oauth-tests]
+  - text: _fetch_token raises ValueError for missing access_token, HTTP errors, non-dict JSON and any other httpx exception.
+    proof: [oracle, databricks-oauth-tests]
+  - text: async_get_token skips caching and removes the lock when TTL is zero, preventing stale short-lived tokens from being served.
+    proof: [oracle, databricks-oauth-tests]
+  - text: resolve_oauth_header returns None when no databricks_oauth block is present, or a dict with Authorization header set to "Bearer <token>" when OAuth is configured.
+    proof: [oracle, databricks-oauth-tests]
+checks:
+  optional: []
+  commands:
+    - id: databricks-oauth-tests
+      why: Required databricks_oauth module tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-proxy --no-tests=fail -E 'test(/^databricks_oauth_tests_behavior($|::)/) - test(/replays_the_/)'
+    - id: helper-python
+      why: the oracle adapters fail strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/agents/databricks-oauth-resolve-secret-environ.yaml
+  - tools/oracle/cases/agents/databricks-oauth-resolve-secret-literal.yaml
+  - tools/oracle/cases/agents/databricks-oauth-workspace-url-normalization.yaml
+  - tools/oracle/cases/agents/databricks-oauth-cache-key-secret-rotation.yaml
+  - tools/oracle/cases/agents/databricks-oauth-parse-valid-config.yaml
+  - tools/oracle/cases/agents/databricks-oauth-parse-missing-client-id.yaml
+  - tools/oracle/cases/agents/databricks-oauth-parse-missing-client-secret.yaml
+  - tools/oracle/cases/agents/databricks-oauth-parse-missing-workspace-url.yaml
+  - tools/oracle/cases/agents/databricks-oauth-parse-invalid-block-type.yaml
+  - tools/oracle/cases/agents/databricks-oauth-token-fetch-success.yaml
+  - tools/oracle/cases/agents/databricks-oauth-token-fetch-http-error.yaml
+  - tools/oracle/cases/agents/databricks-oauth-token-fetch-missing-access-token.yaml
+  - tools/oracle/cases/agents/databricks-oauth-token-fetch-missing-expires-in.yaml
+  - tools/oracle/cases/agents/databricks-oauth-token-fetch-numeric-string-expires-in.yaml
+  - tools/oracle/cases/agents/databricks-oauth-token-fetch-non-dict-response.yaml
+  - tools/oracle/cases/agents/databricks-oauth-token-cache-hit.yaml
+  - tools/oracle/cases/agents/databricks-oauth-token-cache-expired.yaml
+  - tools/oracle/cases/agents/databricks-oauth-request-coalescing.yaml
+  - tools/oracle/cases/agents/databricks-oauth-short-lived-token-not-cached.yaml
+  - tools/oracle/cases/agents/databricks-oauth-resolver-entry-point.yaml
+deviations: []
+out_of_scope:
+  - Environment-reference resolution beyond os.environ/ expansion (get_secret_str with secret-manager dispatch) is owned by B002; this task handles environment lookups only.
+  - B173 provides the pooled asyncio HTTP client and POST transport; this task calls it without implementing transport logic.
+  - B2226 provides InMemoryCache with default TTL and get_cache/set_cache/_remove_key; this task extends it with per-key locking and adds flush_cache for test cleanup.
+  - Databricks workspace OIDC and OAuth specifications are implemented as documented in the source comments; no provider-specific overrides.
+pitfalls:
+  - The double-check locking pattern must check the cache again inside the lock; the first check avoids lock contention on cache hits.
+  - The secret digest in cache_key must use base64-decoded bytes for hashing, not the string representation, so secret rotations are properly detected.
+  - Expires_in values are parsed with int(), which accepts numeric strings ("120"), floats (120.5), and integers; only values int() cannot parse (non-numeric strings like "abc", dicts) default to 3600 seconds.
+  - TTL must never go negative; max(expires_in - 60, 0) ensures uncached short-lived tokens do not fail.
+  - The per-key lock must be popped from _locks when a token is not cached (ttl=0), or _locks grows unbounded with short-lived token keys.
+  - os.environ/ references that fail resolution must return None, not raise; missing required fields are caught by parse_databricks_oauth_config.
+  - The module-level singleton oauth_token_cache must be initialized once at import time, not per-request, to maintain the shared lock dict.
+  - flush_cache clears both the cache and the locks dict; test cases that share the singleton must call flush_cache between cases to reset lock state.
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

@@ -31,6 +31,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,error,mistral_options}.rs
+    - crates/betterlite-openai/src/mistral_options.rs
     - crates/betterlite-openai/src/mistral_options/**
     - crates/betterlite-openai/fixtures/mistral_reasoning.txt
     - crates/betterlite-config/src/{lib,config,settings,model,env,providers,tests}.rs

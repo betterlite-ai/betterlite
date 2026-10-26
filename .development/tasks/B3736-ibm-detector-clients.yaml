@@ -1,0 +1,163 @@
+id: B3736
+title: IBM detector clients and detection decisions
+description: >-
+  Build IBM configuration, detector-server/orchestrator HTTP clients, score filtering,
+  status projection and violation-message construction. Preserve extra-header overwrite
+  semantics, the SSL verification option, environment fallback and different response
+  shapes for the two APIs.
+
+  Configuration combines base URL, detector ID, authentication token (from IBM_GUARDRAILS_AUTH_TOKEN
+  environment variable when unset), SSL verification flag, score threshold, and detector
+  parameters as a dict. Construct API URLs: /api/v1/text/contents for detector server,
+  /api/v2/text/detection/content for FMS Guardrails Orchestrator.
+
+  Detector-server client batches multiple texts in one request, returning nested lists
+  (one list per input text with its detections). Orchestrator client scans individual
+  texts one at a time, each returning a flat list of detections. Both apply score
+  thresholds (absent threshold accepts all detections) to filter violations.
+
+  Status projection classifies responses: "success" (no violations after filtering),
+  "guardrail_intervened" (violations found), or "guardrail_failed_to_respond" (HTTP
+  error or malformed response). Construct violation messages from detection dicts,
+  including detection type/score/text and optionally detector ID (orchestrator only),
+  with message format depending on whether calling detector server (per-message grouping)
+  or orchestrator (flat list).
+
+  Direct dependency: B173 for pooled client acquisition with ssl_verify and AsyncHTTPHandler.post.
+  Unresolved calls: CustomGuardrail.__init__ and standard guardrail logging (U1);
+  configuration environment resolution for IBM_GUARDRAILS_AUTH_TOKEN (U4). A nonblocking
+  configured detector can still log guardrail_intervened; enforcement is the caller's
+  decision in B3737.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/ibm_detector_client.rs
+    - crates/betterlite-guardrails/src/ibm_detector_client/**
+    - tools/oracle/cases/helpers/ibm-detector-client/**
+    - tools/oracle/fuzz/corpus/helper_case/ibm-detector-client-*
+    - tools/oracle/helpers/b3736.py
+    - tools/oracle/helpers/b3736/**
+    - tools/oracle/src/helpers/guardrails/b3736.rs
+    - tools/oracle/src/helpers/guardrails/b3736/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L1-L99
+    why: Imports, class declaration, __init__ configuration parsing, API URL construction, SSL/header setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L101-L190
+    why: _call_detector_server async HTTP client, request payload construction, bearer token and extra header handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L192-L278
+    why: _call_orchestrator async HTTP client, request payload construction, error handling and response extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L280-L293
+    why: _filter_detections_by_threshold score filtering logic, threshold absent vs explicit zero.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L295-L327
+    why: _determine_guardrail_status_detector_server status projection from nested list response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L329-L355
+    why: _determine_guardrail_status_orchestrator status projection from flat detection list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L357-L386
+    why: _create_error_message_detector_server violation message construction from nested detections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L388-L411
+    why: _create_error_message_orchestrator violation message construction from flat detections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L663-L677
+    why: get_config_model and get_supported_event_hooks class methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/ibm/base.py#L1-L30
+    why: IBMGuardrailsBaseConfigModel fields and descriptions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/ibm/ibm_detector.py#L1-L92
+    why: TypedDicts for request/response shapes and IBMDetectorGuardrailConfigModel with ui_friendly_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/ibm/__init__.py#L1-L21
+    why: Type exports and __all__.
+
+dod:
+  - text: >-
+      Configuration is parsed from init parameters and environment, with API URLs
+      constructed correctly for both detector server and orchestrator modes,
+      and SSL verification and extra headers applied to requests.
+    proof: [config-tests, oracle]
+  - text: >-
+      Initialization raises ValueError when auth_token (no parameter and no IBM_GUARDRAILS_AUTH_TOKEN env var),
+      base_url, or detector_id are missing.
+    proof: [missing-required-field-tests, oracle]
+  - text: >-
+      Detector server client batches multiple texts in one request and returns
+      nested lists; orchestrator client calls once per text and returns flat lists;
+      both use bearer token authorization and apply extra header overwrites.
+    proof: [client-tests, oracle, ibm-detector-corpus]
+  - text: >-
+      Score thresholds filter detections correctly, with absent threshold accepting
+      all detections and explicit zero treating all detections as violations.
+    proof: [threshold-tests, oracle, ibm-detector-corpus]
+  - text: >-
+      Status projection classifies responses as success, guardrail_intervened or
+      guardrail_failed_to_respond based on detection results and malformed responses.
+    proof: [status-tests, oracle, ibm-detector-corpus]
+  - text: >-
+      Violation messages construct from detection dicts with detection type, score,
+      matched text and optional detector ID, formatted differently for detector
+      server (per-message grouping) and orchestrator (flat list).
+    proof: [message-tests, oracle, ibm-detector-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: config-tests
+      why: Configuration parsing, URL construction, SSL/header application or environment resolution absent or wrong.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_detector_client::config::tests::/) - test(/replays_the_/)'
+    - id: missing-required-field-tests
+      why: ValueError for missing auth_token, base_url or detector_id absent or wrong error type/message.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_detector_client::initialization::tests::missing_required_field/)'
+    - id: client-tests
+      why: Detector server or orchestrator HTTP client, request payload, authorization header, or response parsing absent or wrong.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_detector_client::client::tests::/) - test(/replays_the_/)'
+    - id: threshold-tests
+      why: Score threshold filtering logic, absent threshold behavior, or zero threshold handling absent or wrong.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_detector_client::threshold::tests::/) - test(/replays_the_/)'
+    - id: status-tests
+      why: Status projection for detector server, orchestrator, HTTP errors or malformed responses absent or wrong.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_detector_client::status::tests::/) - test(/replays_the_/)'
+    - id: message-tests
+      why: Violation message construction from detector server or orchestrator detections absent or wrong.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_detector_client::message::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b3736.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: ibm-detector-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/ibm-detector-client-*")" && grep -rlq "ibm_detector_client" tools/oracle/fuzz/corpus/helper_case/ibm-detector-client-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/ibm-detector-client/missing-auth-token.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/missing-base-url.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/missing-detector-id.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/config-api-url-detector-server.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/config-api-url-orchestrator.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/detector-server-batches-texts.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/orchestrator-calls-once-per-text.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/bearer-token-and-extra-headers.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/threshold-absent-accepts-all.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/threshold-zero-violation.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/status-no-violations-success.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/status-violations-intervened.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/status-http-error-failed.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/message-detector-server-format.yaml
+  - tools/oracle/cases/helpers/ibm-detector-client/message-orchestrator-format.yaml
+
+deviations: []
+
+out_of_scope:
+  - "Request/during-call/response hooks and streaming iterator: owned by B3737 (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook, async_post_call_streaming_iterator_hook)."
+  - "CustomGuardrail base class and decorator contract: not built here, owned by framework (U1)."
+  - "Standard guardrail logging helpers and intervention classification: owned by framework (U1)."
+  - "Configuration environment resolution and secret retrieval: owned by configuration crate and U4."
+  - "Message text extraction from different content formats: inherited from framework utility iter_message_text (U1)."
+
+pitfalls:
+  - "The orchestrator client calls once per input text, while detector server batches all texts in one request and returns nested lists; status and message constructors must handle both response shapes correctly."
+  - "Score threshold behavior requires special attention: an absent/None threshold accepts all detections, while an explicit 0.0 threshold still filters (detections with score < 0.0 excluded), but 0 in Python truthiness evaluates false so use is None check."
+  - "Extra headers dict overwrites default headers (Authorization, content-type) when keys match, and the order of merge matters: extra_headers values override defaults."
+  - "Bearer token comes from auth_token parameter or IBM_GUARDRAILS_AUTH_TOKEN environment variable (in that precedence); missing auth token raises ValueError at initialization, not deferred to API call."
+  - "The orchestrator client detector params are passed as values in a detectors dict keyed by detector_id, while detector server detector params are passed directly; URL construction depends on is_detector_server flag and must not be confused between the two modes."
+
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0
+review_level: security

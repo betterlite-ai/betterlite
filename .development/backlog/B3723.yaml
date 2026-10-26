@@ -2,8 +2,8 @@ id: B3723
 milestone: M6 guardrails
 title: Bedrock guardrail settings and signed transport
 status: todo
-depends_on: [B3720, B173, B590, B591, B594, B595]
-file: null
+depends_on: [B3720, B173, B591, B594]
+file: tasks/B3723-bedrock-guardrail-transport.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py"
 parent: B106

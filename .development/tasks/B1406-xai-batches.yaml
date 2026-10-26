@@ -31,6 +31,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,error,xai_batches}.rs
+    - crates/betterlite-openai/src/xai_batches.rs
     - crates/betterlite-openai/src/xai_batches/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/xai_batch.rs

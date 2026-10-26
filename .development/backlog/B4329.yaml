@@ -2,8 +2,8 @@ id: B4329
 milestone: M8 platform
 title: Push and drain Redis lists across Redis and Valkey versions
 status: todo
-depends_on: [B393, B4324, B4325]
-file: null
+depends_on: [B012, B393, B4290, B4324, B4325]
+file: tasks/B4329-redis-list-operations.yaml
 covers:
   - "litellm/caching/redis_cache.py"
 parent: B126

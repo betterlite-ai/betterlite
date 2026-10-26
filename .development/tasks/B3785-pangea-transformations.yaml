@@ -1,0 +1,143 @@
+id: B3785
+title: Pangea input and output transformations
+description: >-
+  Build Pangea `v1beta/guard` calls and apply returned transformations to requests and responses,
+  including text completions.
+  The guardrail accepts requests with chat messages or text completions, calls the Pangea AI Guard service,
+  and applies transformations to messages or choices based on the returned output.
+
+  The guardrail reads PANGEA_API_KEY (required), PANGEA_API_BASE (default https://ai-guard.aws.us.pangea.cloud),
+  PANGEA_INPUT_RECIPE (optional, used in pre_call hook), and PANGEA_OUTPUT_RECIPE (optional, used in post_call hook)
+  from the environment or the guardrail config.
+
+  For requests, the guardrail detects text_completion vs chat calls and extracts messages accordingly.
+  Text completions are transformed to a single user message containing the prompt.
+  The guardrail calls Pangea at `{api_base}/v1beta/guard` with event_type="input" for requests.
+  If the response includes `result.transformed=true` and `result.output.messages`, the guardrail updates
+  the request messages or text completion prompt and returns the modified data.
+
+  For responses, the guardrail extracts input messages and response choices, calls Pangea with event_type="output",
+  and if `result.transformed=true` and `result.output.choices` are present, updates response.choices.
+
+  On blocked responses, Pangea returns `result.blocked=true`, and the guardrail raises HTTPException with status 400
+  and error detail including "Violated Pangea guardrail policy" and the guardrail name.
+  On other backend errors or exceptions, the guardrail raises HTTPException with status 500.
+
+  Applied-guardrail headers are added via add_guardrail_to_applied_guardrails_header.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/pangea.rs
+    - crates/betterlite-guardrails/src/pangea/tests.rs
+    - tools/oracle/helpers/b3785.py
+    - tools/oracle/helpers/b3785/**
+    - tools/oracle/src/helpers/guardrails/b3785.rs
+    - tools/oracle/src/helpers/guardrails/b3785/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pangea/pangea.py#L38-L48
+    why: _TextCompletionRequest class with __init__, get_messages, and update_original_body methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pangea/pangea.py#L59-L219
+    why: PangeaHandler.__init__, _call_pangea_ai_guard, _async_pre_call_hook, async_pre_call_hook methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pangea/pangea.py#L221-L324
+    why: _async_post_call_success_hook, async_post_call_success_hook, get_config_model, get_supported_event_hooks methods (entire file).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pangea/__init__.py#L11-L30
+    why: initialize_guardrail function that creates PangeaHandler and registers it with the callback manager (entire file).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/pangea.py
+    why: PangeaGuardrailConfigModel and optional params with api_key, api_base, pangea_input_recipe, pangea_output_recipe fields, and ui_friendly_name method (entire file).
+dod:
+  - text: The guardrail reads PANGEA_API_KEY, PANGEA_API_BASE, PANGEA_INPUT_RECIPE, and PANGEA_OUTPUT_RECIPE from the environment or config, with api_key required and api_base defaulting to https://ai-guard.aws.us.pangea.cloud.
+    proof: [pangea-env-resolution]
+  - text: When PANGEA_API_KEY is not found in the environment or config, the guardrail raises PangeaGuardrailMissingSecrets with the message "Pangea API Key not found. Set PANGEA_API_KEY environment variable or pass it in litellm_params."
+    proof: [pangea-missing-api-key]
+  - text: For text completions, the guardrail transforms the prompt to a user message, sends it to Pangea, and updates the prompt if result.transformed=true.
+    proof: [pangea-text-completion-transform, oracle-text-completion-input-transform]
+  - text: For chat messages, the guardrail sends input messages to Pangea with event_type="input" and updates them if result.transformed=true.
+    proof: [oracle-request-input-transform]
+  - text: For responses, the guardrail sends input messages and choices to Pangea with event_type="output" and updates response.choices if result.transformed=true.
+    proof: [oracle-response-output-transform]
+  - text: When Pangea returns result.blocked=true, the guardrail raises HTTPException with status 400 and error detail including "Violated Pangea guardrail policy".
+    proof: [oracle-request-blocked, oracle-response-blocked]
+  - text: On other backend exceptions, the guardrail raises HTTPException with status 500.
+    proof: [oracle-backend-error]
+  - text: The guardrail supports pre_call and post_call event hooks.
+    proof: [oracle-event-hooks]
+  - text: Applied-guardrail headers are added for both input and output hooks.
+    proof: [pangea-unit-tests]
+  - text: The configuration model has api_key, api_base, pangea_input_recipe, and pangea_output_recipe fields with the documented defaults and description.
+    proof: [pangea-config-model]
+checks:
+  optional: []
+  commands:
+    - id: pangea-env-resolution
+      why: environment variable reading or default values differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^pangea::environment/)'
+    - id: pangea-missing-api-key
+      why: missing PANGEA_API_KEY error handling differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^pangea::missing_api_key/)' || grep -q 'PangeaGuardrailMissingSecrets' crates/betterlite-guardrails/src/pangea.rs
+    - id: pangea-text-completion-transform
+      why: text completion transformation differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^pangea::text_completion/)'
+    - id: pangea-config-model
+      why: the config model structure or defaults do not match LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^pangea::config_model/)'
+    - id: pangea-unit-tests
+      why: unit tests for payload construction or transformation handling fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^pangea::/)'
+    - id: oracle-text-completion-input-transform
+      why: the oracle comparison fails for a text completion input transformation
+      run: cargo gate run B3785 --only oracle
+    - id: oracle-request-input-transform
+      why: the oracle comparison fails for a request input transformation
+      run: cargo gate run B3785 --only oracle
+    - id: oracle-response-output-transform
+      why: the oracle comparison fails for a response output transformation
+      run: cargo gate run B3785 --only oracle
+    - id: oracle-request-blocked
+      why: the oracle comparison fails for a blocked request
+      run: cargo gate run B3785 --only oracle
+    - id: oracle-response-blocked
+      why: the oracle comparison fails for a blocked response
+      run: cargo gate run B3785 --only oracle
+    - id: oracle-backend-error
+      why: the oracle comparison fails for backend error handling
+      run: cargo gate run B3785 --only oracle
+    - id: oracle-event-hooks
+      why: the oracle comparison fails for any event hook type
+      run: cargo gate run B3785 --only oracle
+oracle_cases:
+  - tools/oracle/cases/guardrails/pangea-text-completion-input-allowed.yaml
+  - tools/oracle/cases/guardrails/pangea-text-completion-input-transformed.yaml
+  - tools/oracle/cases/guardrails/pangea-request-input-allowed.yaml
+  - tools/oracle/cases/guardrails/pangea-request-input-transformed.yaml
+  - tools/oracle/cases/guardrails/pangea-request-blocked.yaml
+  - tools/oracle/cases/guardrails/pangea-response-output-allowed.yaml
+  - tools/oracle/cases/guardrails/pangea-response-output-transformed.yaml
+  - tools/oracle/cases/guardrails/pangea-response-blocked.yaml
+  - tools/oracle/cases/guardrails/pangea-backend-timeout.yaml
+deviations:
+  - what: On backend errors other than HTTPException, the guardrail raises HTTPException with status 500 and includes error details.
+    why: LiteLLM wraps non-HTTPException backend errors and propagates them; betterlite preserves this behavior.
+  - what: Text completions are wrapped in a single user message for Pangea and the response is extracted back to the prompt field.
+    why: LiteLLM uses the same wrapping pattern to make text completions compatible with the chat-based Pangea API.
+  - what: Response choices are serialized from Choices objects to dicts before sending to Pangea.
+    why: LiteLLM serializes Choices to dicts before sending to Pangea; betterlite preserves this behavior for API compatibility.
+out_of_scope:
+  - The CustomGuardrail base class and its __init__, framework event hook registration, and the log_guardrail_information decorator are owned elsewhere (U1).
+  - The observation and logging framework that interfaces with the callback manager is owned elsewhere (U1).
+  - Message/response type conversions beyond what is shown in the apply_guardrail methods (U1).
+  - Applied-guardrail header bookkeeping beyond calling add_guardrail_to_applied_guardrails_header (U3).
+pitfalls:
+  - "The api_key is read from the config parameter or PANGEA_API_KEY environment variable in __init__; it must never be logged or placed in error details to prevent secret leakage."
+  - "PangeaGuardrailMissingSecrets is raised when api_key is missing; test both paths when api_key comes from config vs environment."
+  - "Text completion requests are wrapped in a single user message for Pangea, but the prompt is extracted from messages[0]['content']; test both wrapping and unwrapping."
+  - "Response choices must be serialized to dicts if they are Choices objects; test both Choices and dict input types."
+  - "HTTPException with status 400 is raised for blocked responses; status 500 is raised for other exceptions; ensure both paths propagate correctly."
+  - "The api_base endpoint is constructed as {api_base}/v1beta/guard for all calls; preserve the trailing slash handling from the configured base URL."
+  - "event_type must be set to 'input' for pre_call hooks and 'output' for post_call hooks in the payload."
+  - "applied-guardrail headers are added after successful Pangea calls; ensure the header addition does not fail silently."
+  - "async_handler is obtained via get_async_httpx_client; it already has the timeout configured as a dependency from B173."
+  - "Environment variables are read in __init__ using or chains with defaults; the config loader from B002 supplies these values when not hardcoded in the guardrail config."
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

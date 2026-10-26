@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Custom guardrail results and rejection detection
 status: todo
 depends_on: [B3802, B189]
-file: null
+file: tasks/B3803-custom-guardrail-results.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/custom_code/{custom_code_guardrail,response_rejection_code,__init__}.py"
 parent: B108

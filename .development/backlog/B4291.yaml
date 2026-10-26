@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Persistent disk cache and typed cache coordination
 status: todo
 depends_on: [B4290]
-file: null
+file: tasks/B4291-disk-cache-coordination.yaml
 covers:
   - "litellm/caching/disk_cache.py"
   - "litellm/proxy/common_utils/{cache_coordinator,cache_pydantic_utils}.py"

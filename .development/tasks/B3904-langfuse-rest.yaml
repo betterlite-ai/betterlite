@@ -1,0 +1,82 @@
+id: B3904
+title: Langfuse REST prompts and project lookups
+description: >-
+  Build the typed Langfuse REST client in crates/betterlite-logging, implementing project/auth checks, prompt fetching
+  with name/version/label caching, and stale-serve-with-background-refresh. Use the pooled httpx client from B173 and
+  configured timeout/prompt-TTL from B3900. Preserve one immediate retry for transport and 5xx failures only, with
+  header-free error projection: wrap API errors in a typed LangfusePromptError that exposes status_code and body but
+  not response headers. Cache prompts by (name, version, label) key for up to prompt_cache_ttl_seconds, returning stale
+  entries immediately and spawning one background refresh per key if the cached entry is stale. Auth check against
+  /projects returns None on success or a reason string on any failure (including 200 with empty projects), mirroring
+  the SDK's behavior. Project ID lookup retrieves the first project's ID or returns None. Prompt name escaping uses
+  urllib.parse.quote(name, safe="") from the pinned commit (percent-encode everything except unreserved characters).
+  All REST calls use request_options with max_retries=0 to prevent the SDK from sleeping; implement the single retry
+  at the function level with immediate backoff (no delay). Injected httpx_client can be None; handle gracefully.
+scope:
+  paths:
+    - crates/betterlite-logging/src/langfuse_rest.rs
+    - crates/betterlite-logging/src/langfuse_rest/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L79-L79
+    why: "The _NO_REST_RETRIES constant with max_retries=0"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1043-L1091
+    why: "_CachedPrompt, _PromptKey, _prompt_client, AuthCheckFailure, _auth_check_failure, _ApiErrorDetail, _api_error_reason, LangfusePromptError, and _is_server_error"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1093-L1187
+    why: "LangfuseApiClient: __init__, auth_check, project_id, get_prompt, _fetch, _request_prompt with single retry, _refresh_in_background, _refresh"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1189-L1214
+    why: "build_langfuse_client factory function with SDK client initialization and BasicAuth header setup"
+dod:
+  - text: "auth_check returns None when keys reach a project, and a reason string on any failure (bad credentials, no project, server error, transport error)."
+    proof: [langfuse-rest-tests]
+  - text: "project_id returns the first project's ID on success, None only when projects is empty, and otherwise propagates whatever self.api.projects.get raises (ApiError or transport exception)."
+    proof: [langfuse-rest-tests]
+  - text: "Prompt caching by (name, version, label) serves stale cached entries immediately and spawns one background refresh per key when TTL expires."
+    proof: [langfuse-rest-tests]
+  - text: "Prompt name is percent-encoded with urllib.parse.quote(name, safe=''), escaping everything except unreserved characters."
+    proof: [langfuse-rest-tests]
+  - text: "Prompt fetch retries once on 5xx status or httpx transport error, with no delay between attempts; client-side errors, 429 included, are not retried and raise LangfusePromptError immediately."
+    proof: [langfuse-rest-tests]
+  - text: "API errors are wrapped in LangfusePromptError with status_code and body fields; response headers are never exposed."
+    proof: [langfuse-rest-tests]
+  - text: "All REST calls use request_options with max_retries=0 to prevent SDK-level sleeping."
+    proof: [langfuse-rest-tests]
+  - text: "Background refresh failures keep the stale prompt in service and are logged at warning level."
+    proof: [langfuse-rest-tests]
+  - text: "Stale prompt refresh spawns one background task per key; concurrent requests for the same key do not spawn multiple refresh tasks."
+    proof: [langfuse-rest-tests]
+  - text: "configured_timeout and configured_prompt_cache_ttl from B3900 are used as constructor parameters."
+    proof: [langfuse-rest-tests]
+checks:
+  optional: []
+  commands:
+    - id: langfuse-rest-tests
+      why: "the required tests fail, do not exist, or prompt caching/retry/error handling is missing"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_rest::/) - test(/replays_the_/)'
+oracle_cases: []
+deviations:
+  - what: "Prompt refresh is background task-based rather than Python threading; the stale-serve behavior and single-task-per-key constraint are preserved."
+    why: "Rust native async is the standard concurrency model; the observable behavior (serve stale, refresh once per key) matches the pin."
+  - what: "Header-free error projection means LangfusePromptError exposes only status_code and body; raw HTTP response headers never leave the API client."
+    why: "Response headers can leak infrastructure detail; the proxy redacts them at the error boundary, and the prompter sees only the structured error fields."
+  - what: "The Langfuse SDK's generated client type (from langfuse Python package) is simulated with typed bindings; native Rust prompt deserialization is built here."
+    why: "The external SDK's data contract (Prompt shape, fields) is stable; building it here avoids a Python FFI boundary and lets B3908 consume native Rust types."
+  - what: "Monotonic time measurement for TTL expiry uses std::time::Instant rather than system clock, skipping backward-clock issues."
+    why: "Thread::sleep uses std::thread::sleep which uses Instant internally; the cache TTL is a relative duration, not an absolute deadline."
+out_of_scope:
+  - "Prompt client compilation (ChatPromptClient, TextPromptClient) depends on the external Langfuse SDK; B3908 receives compiled prompt objects, not raw API responses."
+  - "Logger construction and request-specific logger selection; owned by B3907."
+  - "Callback wrapping and trace ID caching; owned by B3908."
+  - "OTLP export configuration and destination; owned by B3910."
+  - "Health endpoint setup; the auth check is imported by health_endpoints but is not constructed here."
+pitfalls:
+  - "The prompt key is (name, version, label) as a tuple; label and version can both be None, so the key type is tuple[String, Option<i64>, Option<String>] or a Rust equivalent."
+  - "refresh_in_background must only spawn a task if the key is not already refreshing; use a set to track in-flight keys under a lock."
+  - "All REST calls (auth_check, get_prompt, projects lookup) use _NO_REST_RETRIES to prevent the SDK from sleeping; the single retry is implemented at the function level."
+  - "_is_server_error checks status >= 500; 429 (rate limit) is a client error and should not trigger retry."
+  - "monotonic() time never goes backward; use it for TTL comparisons instead of Instant::now() to avoid clock-skew issues."
+  - "The SDK's PromptClient variants (ChatPromptClient, TextPromptClient) are not built here; _prompt_client selects a variant based on the Prompt type and returns the SDK's compiled client."
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

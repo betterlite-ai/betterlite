@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Credential-scoped logger cache and eviction hooks
 status: todo
 depends_on: [B2226]
-file: null
+file: tasks/B3945-dynamic-logger-cache.yaml
 covers:
   - "litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py"
 parent: B113

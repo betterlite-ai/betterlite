@@ -1,0 +1,137 @@
+id: B3190
+title: Public provider forms and endpoint support metadata
+description: >-
+  Build betterlite-server::public_endpoints::providers for GET `/public/providers`,
+  `/public/providers/fields` and `/public/endpoints`, exposing provider forms and
+  endpoint discovery. The `/public/providers` endpoint returns a sorted list of all
+  provider names from the LlmProviders enum. The `/public/providers/fields` endpoint
+  returns the assembled provider catalog with credential field specifications, sourced
+  from a bundled JSON file assembled from B3180–B3189 fragments in source order.
+  The `/public/endpoints` endpoint returns the full endpoint support metadata:
+  endpoint keys with human-readable labels, canonical paths, and which providers
+  support each endpoint.
+
+  Implement _clean_display_name to strip display-name suffixes like "(provider_slug)"
+  from provider names. Build _build_endpoints to transform the raw provider_endpoints_support_backup.json
+  into response records with endpoint keys in insertion order, deriving labels and paths
+  from the _ENDPOINT_METADATA table for known endpoints or auto-generating from the key.
+  Preserve provider names as they appear in the source, including duplicates. Load
+  the endpoints file once and cache the result for the server's lifetime; endpoint
+  support does not change during execution.
+
+  The provider_create_fields.json file contains records assembled from B3180–B3189,
+  with B3190 providing the outer array delimiters and the final four provider
+  definitions (WATSONX_TEXT, xAI, XINFERENCE, CURSOR). Expose a raw catalog read
+  function for B3191 to inherit provider credential fields without making a local
+  HTTP request to the handler; use bounded decoding for the catalog file. Register
+  the three GET handlers through B003. Preserve every LiteLLM behavior: enum-based
+  sorted provider iteration, endpoint discovery insertion order, display-name suffix
+  cleanup, unknown endpoint label/path derivation, and process-lifetime caching
+  for endpoint support only.
+scope:
+  paths:
+    - crates/betterlite-server/src/public_endpoints.rs
+    - crates/betterlite-server/src/public_endpoints/**
+    - crates/betterlite-server/src/public_endpoints/providers.rs
+    - crates/betterlite-server/src/public_endpoints/providers/**
+    - crates/betterlite-server/data/**
+    - tools/oracle/cases/helpers/public-endpoints/**
+    - tools/oracle/cases/public-endpoints/**
+    - tools/oracle/helpers/b3190.py
+    - tools/oracle/helpers/b3190/**
+    - tools/oracle/src/helpers/server/b3190.rs
+    - tools/oracle/src/helpers/server/b3190/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L48-L66
+    why: TypedDicts for _ProviderSupportEntry, _ProvidersFile, _EndpointProviderEntry and _EndpointEntry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L101-L158
+    why: "_ENDPOINT_METADATA table: keyed by endpoint type, containing label and endpoint path for known types."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L160-L163
+    why: "_SLUG_SUFFIX_RE regex and _cached_endpoints global for process-lifetime caching."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L166-L167
+    why: "_clean_display_name removes trailing ' (`provider_slug`) ' suffix."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L170-L199
+    why: "_build_endpoints iterates provider data in insertion order, collecting endpoint keys and building response with display names cleaned and labels/paths derived."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L202-L210
+    why: "_PROVIDERS_FILE_ADAPTER TypeAdapter and _load_endpoints function validate and transform the raw JSON."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L386-L396
+    why: "get_supported_providers returns a sorted list of provider values from LlmProviders enum."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L399-L419
+    why: "get_provider_fields loads provider_create_fields.json from the file system and validates with TypeAdapter."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L575-L590
+    why: "get_supported_endpoints loads and caches endpoints result, returning SupportedEndpointsResponse."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/public_endpoints/public_endpoints.py#L17-L33
+    why: "ProviderCreateInfo and ProviderCredentialField response records."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/public_endpoints/public_endpoints.py#L60-L73
+    why: "EndpointProvider, SupportedEndpoint and SupportedEndpointsResponse records."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/public_endpoints/public_endpoints.py#L1-L5
+    why: "Imports from pydantic and typing."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L3642-L3743
+    why: "Final four provider records: WATSONX_TEXT, xAI, XINFERENCE, CURSOR."
+dod:
+  - text: GET /public/providers returns a sorted array of string provider names from LlmProviders enum metadata.
+    proof: [behavior-tests, provider-metadata-oracle]
+  - text: GET /public/providers/fields returns the assembled ProviderCreateInfo array in source order with all B3180–B3189 fragments, ending with WATSONX_TEXT, xAI, XINFERENCE, CURSOR.
+    proof: [behavior-tests, provider-metadata-oracle]
+  - text: GET /public/endpoints returns SupportedEndpointsResponse with endpoints in insertion order (union across all providers), each with key, label, endpoint path and providers array.
+    proof: [behavior-tests, provider-metadata-oracle]
+  - text: _clean_display_name removes trailing " (`provider_slug`) " suffix from display names using the _SLUG_SUFFIX_RE regex pattern.
+    proof: [behavior-tests]
+  - text: _build_endpoints transforms raw provider_endpoints_support_backup.json to collect endpoint keys in insertion order, deriving labels and paths from _ENDPOINT_METADATA or auto-generating from the key.
+    proof: [behavior-tests]
+  - text: _load_endpoints validates the raw JSON file with TypeAdapter and calls _build_endpoints to transform to response shape.
+    proof: [behavior-tests]
+  - text: get_supported_endpoints caches the result in-process for the server lifetime; a subsequent call returns the same cached object.
+    proof: [behavior-tests]
+  - text: get_provider_fields reads and validates provider_create_fields.json from disk on every call, returning the full ProviderCreateInfo array.
+    proof: [behavior-tests]
+  - text: ProviderCreateInfo and ProviderCredentialField records match LiteLLM's shape with required and optional fields, field_type enum and defaults.
+    proof: [behavior-tests]
+  - text: SupportedEndpoint records include providers array with slug and cleaned display_name for each provider supporting that endpoint.
+    proof: [behavior-tests]
+  - text: Unknown endpoints (not in _ENDPOINT_METADATA) auto-generate labels by replacing underscores with spaces and title-casing, and paths by replacing underscores with slashes and prefixing with /.
+    proof: [behavior-tests]
+  - text: A raw catalog read function exposes the validated provider_create_fields array for B3191 without caching or HTTP round-trip.
+    proof: [provider-metadata-oracle]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Provider iteration, endpoint discovery, name cleaning, metadata derivation and caching must preserve LiteLLM behavior exactly.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::providers::/)'
+    - id: provider-metadata-oracle
+      why: Every provider name, credential field, endpoint and display transformation must match LiteLLM on the same requests.
+      run: test -f tools/oracle/helpers/b3190.py && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::server::b3190::/)'
+oracle_cases:
+  - tools/oracle/cases/public-endpoints/providers-list.yaml
+  - tools/oracle/cases/public-endpoints/providers-fields-assembled.yaml
+  - tools/oracle/cases/public-endpoints/endpoints-discovery.yaml
+  - tools/oracle/cases/helpers/public-endpoints/clean-display-name.yaml
+  - tools/oracle/cases/helpers/public-endpoints/unknown-endpoint-label-path.yaml
+  - tools/oracle/cases/helpers/public-endpoints/endpoint-insertion-order.yaml
+  - tools/oracle/cases/helpers/public-endpoints/fragment-source-order.yaml
+  - tools/oracle/cases/helpers/public-endpoints/cache-reuse.yaml
+deviations:
+  - what: Provider catalog is loaded from a bundled file path constructed relative to the module, not through importlib.resources.files.
+    why: Rust crates include data files in the build output directory; runtime path resolution matches the runtime layout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L409-L414
+out_of_scope:
+  - "Integration with routing, retries, fallbacks, provider execution or logging: these tasks call this task but are not called by it."
+  - "B3180–B3189 provider catalog fragments and their parsing: each part owns its data and B3190 assembles the array in source order."
+  - "B209's LlmProviders enum and its generation: this task uses the enum's value set and iteration order at the types boundary."
+  - "B003 Axum router setup and error response translation: this task hands off HTTPException translation to the existing server integration."
+  - "B001 HTTP oracle comparison and request/response capture: the oracle runner handles LiteLLM bridge and case execution."
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as b3190 in the server group. Replace the stub Op in tools/oracle/src/helpers/server/b3190.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b3190.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - "The _ENDPOINT_METADATA table keys must be matched exactly; an unknown endpoint key falls back to auto-generated label and path, not a missing entry."
+  - "_clean_display_name uses a regex substitution with trailing spaces and a strip; the result is empty string if the input is only the suffix."
+  - "Endpoint keys are collected in insertion order across the entire provider set; the order depends on which provider's data appears first for each endpoint, not alphabetical or any other sort."
+  - "The display_name field in provider support data is cleaned for each endpoint independently; the same provider name may appear with or without a suffix in different endpoints if the source data contains both."
+  - "_load_endpoints opens and reads files relative to the module's runtime location; the path construction must match the actual package layout."
+  - "Provider credential fields are sourced from the JSON catalog without modification; every field present in the JSON data survives in the response, including defaults and field_type enums."
+  - "The cached_endpoints global is initialized once and never invalidated; a server restart is required to pick up a new endpoints file."
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

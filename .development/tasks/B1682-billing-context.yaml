@@ -56,7 +56,6 @@ scope:
     - crates/betterlite-core/src/cost/context.rs
     - crates/betterlite-core/src/cost/context/**
     - crates/betterlite-logging/Cargo.toml
-    - crates/betterlite-logging/src/lib.rs
     - crates/betterlite-logging/src/logging_state.rs
     - crates/betterlite-logging/src/cost_breakdown.rs
     - crates/betterlite-logging/src/cost_breakdown/**

@@ -1,0 +1,218 @@
+id: B3846
+title: OTel vendor attribute mapping and tool roles
+description: >-
+  Implement four vendor-specific attribute mappers and the mapper registry to compose them into spans simultaneously.
+
+  Langfuse mapper emits observation and trace attributes keyed to Langfuse's vendor namespace (langfuse.observation.*, langfuse.trace.*),
+  including usage fields broken down by token type (input, cached, output, reasoning) and cost details. Compose alongside GenAI
+  to send both canonical and Langfuse-flavored spans at once. Every LLMCallSpanData attribute is declared as a key → extractor lambda
+  in _LLM_CALL_ATTRS; JSON-payload attributes are in _BLOB_ATTRS; trace attributes are static per trace controls.
+
+  Langtrace mapper emits operation, model, response and token count attributes keyed to Langtrace's vocabulary (gen_ai.operation.name,
+  langtrace.service.name, llm.model, gen_ai.response.model, gen_ai.response_id, llm.stream, llm.token.counts.*), plus scalar
+  request parameters and message blobs in Langtrace shape. No trace controls.
+
+  OpenInference mapper (Arize + Phoenix shared vocabulary) emits LLM family attributes (openinference.span.kind, llm.model_name,
+  llm.provider, llm.token_count.*), per-index message keys (llm.input_messages.{i}.message.role/content, llm.output_messages.{i}.message.role/content),
+  tool definitions bundled per index (llm.tools.{idx}.tool.*), and JSON blobs for invocation parameters and serialized messages (input.value, output.value).
+  Fit indexed messages into the span attribute budget, shedding least-valuable turns first (middle prompts, extra choices) while keeping
+  opener/newest prompts and first choice. Takes a tool_attr_budget in __init__.
+
+  Weave mapper layers on top of OpenInference, adding display_name (operation model), call_id and output (JSON choices) keys
+  for Weave's display. Compose as ["genai", "openinference", "weave"] to feed Weave backends.
+
+  Mapper registry: _TOOL_DEFINITION_MAPPERS is keyed by mapper name and holds callables taking a budget; _PLAIN_MAPPERS holds
+  parameterless callables. resolve_mappers takes an iterable of names, validates against known mappers, splits the tool attribute budget
+  across active tool-definition mappers (one distinct vocabulary per index), and returns mapper instances in order.
+
+  Langtrace integration (litellm/integrations/langtrace.py): a LangtraceAttributes class that saves request/response/usage attributes
+  to an OpenTelemetry span, reading from kwargs dict and response_obj dict. set_langtrace_attributes is the entry point; set_request_attributes,
+  set_response_attributes, set_usage_attributes are helpers that map kwargs and response fields to span attributes using SpanAttributes enum keys.
+
+  OpenInference span kind inference (_infer_open_inference_span_kind in Arize _utils.py) maps call_type strings to OpenInference
+  span kinds: "embed" → embedding, "rerank" → reranker, "search" → retriever, "moderation"/"guardrail" → guardrail, "mcp"/"tool" → tool,
+  "asend_message"/"assistant"/"a2a" → agent, "completion"/"chat"/"image"/"audio"/"speech" and passthrough variants → llm, "batch"/"file"/"fine_tuning" → chain,
+  else unknown. Handles null/empty call_type safely.
+
+  Tool attribute setter (_set_tool_attributes) emits tool name/description/parameters from optional_tools (optional_params.tools)
+  and metadata_tools list, iterating each tool dict to extract function.{name,description,parameters} and writing indexed
+  llm.tools.{idx}.* and llm.invocation_parameters.tools.{idx}.* keys.
+
+scope:
+  lint_tables: false
+  paths:
+    - crates/betterlite-logging/src/otel/mappers/__init__.rs
+    - crates/betterlite-logging/src/otel/mappers/__init__/**
+    - crates/betterlite-logging/src/otel/mappers/langfuse.rs
+    - crates/betterlite-logging/src/otel/mappers/langfuse/**
+    - crates/betterlite-logging/src/otel/mappers/langtrace.rs
+    - crates/betterlite-logging/src/otel/mappers/langtrace/**
+    - crates/betterlite-logging/src/otel/mappers/openinference.rs
+    - crates/betterlite-logging/src/otel/mappers/openinference/**
+    - crates/betterlite-logging/src/otel/mappers/weave.rs
+    - crates/betterlite-logging/src/otel/mappers/weave/**
+    - crates/betterlite-logging/src/otel/integrations/langtrace.rs
+    - crates/betterlite-logging/src/otel/integrations/langtrace/**
+    - crates/betterlite-logging/src/otel/integrations/arize_span_kind.rs
+    - crates/betterlite-logging/src/otel/integrations/arize_span_kind/**
+    - crates/betterlite-logging/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/vendor-mapping/**
+    - tools/oracle/helpers/b3846.py
+    - tools/oracle/helpers/b3846/**
+    - tools/oracle/src/helpers/logging/b3846.rs
+    - tools/oracle/src/helpers/logging/b3846/**
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mappers/__init__.py#L29-L55
+    why: Mapper registry, resolve_mappers function and composition rules for tool budget splitting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mappers/langfuse.py#L32-L108
+    why: LangfuseMapper class; LLM_CALL_ATTRS, BLOB_ATTRS, trace_attributes method and model/usage field decomposition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mappers/langtrace.py#L22-L59
+    why: LangtraceMapper class; LLM_CALL_ATTRS and BLOB_ATTRS tables for operation, model, response and token attributes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mappers/openinference.py#L31-L169
+    why: OpenInferenceMapper class; span kind/model/provider/token tables, message/tool indexing, fit_indexed_messages shedding, and _messages/_tools methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mappers/weave.py#L16-L44
+    why: WeaveMapper class; display_name and call_id attributes, output blob generation from choices.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langtrace.py#L13-L110
+    why: LangtraceAttributes class; set_langtrace_attributes, set_request_attributes, set_response_attributes, set_usage_attributes methods and span attribute setting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L307-L362
+    why: _infer_open_inference_span_kind mapping call_type to OpenInference span kinds with embedded, reranker, retriever, guardrail, tool, agent, llm, chain and unknown branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L365-L410
+    why: _set_tool_attributes emitting tool name/description/parameters from optional_tools and metadata_tools lists.
+
+dod:
+  - text: >-
+      Four vendor-specific mapper classes (Langfuse, Langtrace, OpenInference, Weave) each implement the AttributeMapper trait.
+      Langfuse and Langtrace are plain mappers; OpenInference and Weave take tool_attr_budget in __init__. Each mapper's map method
+      dispatches on span type and applies extractor tables; unknown span types return empty attributes.
+    proof: [vendor-mappers]
+
+  - text: >-
+      Mapper registry is registered with two frozen dicts (tool-definition and plain), resolved by name, validated against known names,
+      and tool budget is split across active tool-definition mappers (distinct vocabularies only). resolve_mappers returns mapper instances
+      in order or raises ValueError for unknown mapper names.
+    proof: [mapper-registry]
+
+  - text: >-
+      Langfuse mapper emits observation/trace attributes from LLMCallSpanData and trace controls, with usage fields decomposed by token type
+      (uncached_input, cache_read_input, cache_creation_input, non_reasoning_output, reasoning, total), cost_details as a single amount,
+      and invocation parameters as a JSON blob.
+    proof: [langfuse-mapper]
+
+  - text: >-
+      Langtrace mapper emits operation name, service name, model, response model/id, system fingerprint, streaming flag, scalar parameters,
+      and message lists; serialization matches Langtrace's wire format exactly.
+    proof: [langtrace-mapper]
+
+  - text: >-
+      OpenInference mapper emits span kind, model, provider, token counts, indexed message attributes with role/content keys per message,
+      indexed tool attributes with per-definition keys (name, description, json_schema), and fits message keys into the budget by shedding
+      least-valuable turns first: middle prompts, extra choices, then opener/newest.
+    proof: [openinference-mapper, message-shedding]
+
+  - text: >-
+      Weave mapper layers display_name (operation model), call_id and output (JSON choices) on top of OpenInference's message/token attributes.
+    proof: [weave-mapper]
+
+  - text: >-
+      Langfuse integration class sets request/response/usage attributes on an OTel span from kwargs and response dicts, using SpanAttributes enum keys,
+      adding events for prompts and completions with structured message/choice lists.
+    proof: [langtrace-integration]
+
+  - text: >-
+      _infer_open_inference_span_kind maps LiteLLM call_type strings to OpenInference span kinds: embed → embedding, rerank → reranker,
+      search → retriever, moderation/guardrail → guardrail, mcp/tool → tool, asend_message/assistant/a2a → agent, completion/chat/image/audio/speech/passthrough variants → llm,
+      batch/file/fine_tuning → chain, else unknown. Null and empty call_type return unknown.
+    proof: [span-kind-mapping]
+
+  - text: >-
+      _set_tool_attributes emits indexed llm.tools.{idx}.name/description/parameters from optional_tools and llm.invocation_parameters.tools.{idx}.name/description
+      from metadata_tools, reading tool dicts and extracting function.{name,description,parameters} fields with None-skipped entries.
+    proof: [tool-attributes]
+
+checks:
+  optional: []
+  commands:
+    - id: vendor-mappers
+      why: Vendor mappers do not implement AttributeMapper or dispatch correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::vendors::(::|$)/) - test(/replays_the_/)'
+
+    - id: mapper-registry
+      why: Mapper registry is missing, not frozen, or resolve_mappers does not validate/budget correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::registry::(::|$)/)'
+
+    - id: langfuse-mapper
+      why: Langfuse mapper attributes, trace controls or cost/usage fields are incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::langfuse::(::|$)/)'
+
+    - id: langtrace-mapper
+      why: Langtrace mapper attributes, operation name or serialization format do not match
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::langtrace::(::|$)/)'
+
+    - id: openinference-mapper
+      why: OpenInference mapper span kind, model, message/tool indexing or invocation parameters are incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::openinference::(::|$)/)'
+
+    - id: message-shedding
+      why: Message shedding does not preserve first/last prompts and first choice while removing least valuable
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::openinference::message_shedding(::|$)/)'
+
+    - id: weave-mapper
+      why: Weave mapper display_name, call_id or output attributes are incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::weave::(::|$)/)'
+
+    - id: langtrace-integration
+      why: Langtrace integration does not set request/response/usage attributes correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_integrations::langtrace::(::|$)/)'
+
+    - id: span-kind-mapping
+      why: _infer_open_inference_span_kind does not map call_type to correct OpenInference span kinds
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_span_kind::infer_kind(::|$)/)'
+
+    - id: tool-attributes
+      why: _set_tool_attributes does not emit correct indexed tool name/description/parameters
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_span_kind::tool_attrs(::|$)/)'
+
+    - id: helper-python
+      why: The independently invoked MIT helper semantics must match the production functions.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3846::/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/vendor-mapping/langfuse-llm-call-attributes.yaml
+  - tools/oracle/cases/helpers/vendor-mapping/langfuse-usage-breakdown.yaml
+  - tools/oracle/cases/helpers/vendor-mapping/langtrace-operation-and-model.yaml
+  - tools/oracle/cases/helpers/vendor-mapping/openinference-message-indexing.yaml
+  - tools/oracle/cases/helpers/vendor-mapping/openinference-tool-definitions-per-index.yaml
+  - tools/oracle/cases/helpers/vendor-mapping/openinference-message-shedding-least-valuable.yaml
+  - tools/oracle/cases/helpers/vendor-mapping/weave-display-name-and-output.yaml
+  - tools/oracle/cases/helpers/vendor-mapping/mapper-registry-resolve-and-budget.yaml
+  - tools/oracle/cases/helpers/vendor-mapping/langtrace-integration-request-attributes.yaml
+  - tools/oracle/cases/helpers/vendor-mapping/span-kind-embed.yaml
+  - tools/oracle/cases/helpers/vendor-mapping/span-kind-llm.yaml
+  - tools/oracle/cases/helpers/vendor-mapping/span-kind-unknown.yaml
+  - tools/oracle/cases/helpers/vendor-mapping/tool-attributes-optional-and-metadata.yaml
+
+deviations: []
+
+out_of_scope:
+  - Mapper protocol and base attribute utility tables; those are in B3845.
+  - Message payload construction and span data projection; those are in B3843 (payloads) and B3844 (inference spans).
+  - Generic message serialization and multimodal content extraction; those belong to B3845's utils.
+  - Arize response attribute projection, message normalization, multimodal content, and cost/session/MCP handling; those are B3860 and B3861.
+
+pitfalls:
+  - Tool attribute budget is split among DISTINCT mappers only (not all configured mappers); if ["genai", "genai"] is given, the budget is not split and the second entry overwrites the first since they write the same keys.
+  - OpenInference message shedding must preserve the first and last prompt messages and the first choice response, shedding middle prompts and extra choices first; the algorithm groups by (family, index) and uses itertools.accumulate to track running totals.
+  - Langfuse usage fields match LiteLLM's token breakdown names exactly (uncached_input_tokens, cache_read_input_tokens, cache_creation_input_tokens, non_reasoning_output_tokens, reasoning_tokens, total_tokens); missing fields are None.
+  - Langtrace integration uses span.add_event for prompts and completions with JSON-serialized message lists, not direct attributes on the span itself for those blobs.
+  - Weave display_name is built as f"{operation} {model}", falling to None if model is None; it layers on OpenInference attributes, so compose order matters.
+  - _infer_open_inference_span_kind handles both "passthrough" (no underscore) and "pass_through" keywords in call_type; either must map to llm span kind.
+  - _infer_open_inference_span_kind is case-insensitive and lowercases the call_type before checking substrings; unknown and null call_types return unknown span kind.
+  - _set_tool_attributes skips non-dict tool entries silently; checks function.get() independently for each tool dict before reading name/description/parameters.
+  - The Oracle helper for this task is pre-registered as b3846 in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/b3846.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b3846.py. The registry files are not this task's to edit.
+
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

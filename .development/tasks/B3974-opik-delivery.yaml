@@ -1,0 +1,155 @@
+id: B3974
+title: Opik callback delivery and native client selection
+description: >-
+  Implement Opik callback construction and delivery, routing requests through the native Opik SDK when available
+  and falling back to HTTP batch delivery otherwise. Preserve trace-before-span ordering and enforce the distinction
+  between synchronous status 204 validation and asynchronous acceptance of 3xx+ status codes.
+
+  The OpikLogger constructor resolves configuration through B3973's get_opik_config_variable, storing project name,
+  API base URL (default https://www.comet.com/opik/api), API key, and workspace name. It initializes HTTP clients
+  from B173 and optionally caches a native Opik SDK client via opik_client.get_client_cached() when the opik Python
+  package is available. Failed async context setup logs a warning and leaves flush_lock as None, allowing sync-only
+  operation.
+
+  Success events call _should_skip_event to return early when standard_logging_object is missing. They then call
+  B3973's build_opik_payload to construct trace and span records. When the native client is present, call its trace()
+  and span() methods in order (trace first if present, span always). When absent, enqueue __dict__ representations
+  to the batch queue and flush on size threshold. Async success uses log_queue for queueing; sync success sends
+  immediately via _sync_send for both trace and span.
+
+  The _sync_send helper sends a POST to the supplied URL with trace/span batch envelope, expecting HTTP 204 and
+  raising on mismatch. _submit_batch handles async POSTs with lenient status code acceptance (any non-error response
+  OK, 3xx+ logged but not raised). async_send_batch calls B3973's get_traces_and_spans_from_payload to classify
+  the queue, sends traces then spans in separate requests, and logs event counts.
+
+  Preserve the three-stage configuration fallback (user value, environment, default) and the distinction between
+  async trace/span method calls requiring opik_client availability. The native client branch is live code, not dead
+  code; preserve opik_client.get_client_cached() calls and reevaluate only when the native Opik task is explicitly
+  scoped.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/opik.rs
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L29-L34
+    why: _should_skip_event checks for missing standard_logging_object and logs debug message on skip.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L54-L109
+    why: OpikLogger.__init__ initializes HTTP clients, resolves configuration, sets up headers and native client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L111-L179
+    why: async_log_success_event builds payloads and either uses native client or queues for batch delivery.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L181-L192
+    why: _sync_send performs immediate HTTP POST with 204 status code enforcement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L194-L263
+    why: log_success_event mirrors async version with synchronous native client and HTTP batch behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L265-L279
+    why: _submit_batch handles async HTTP POST with lenient status code acceptance and event logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L290-L304
+    why: async_send_batch classifies queue into traces and spans, sends in order, logs counts.
+
+dod:
+  - text: >-
+      OpikLogger.__init__ resolves project name, URL, API key and workspace through B3973's get_opik_config_variable,
+      initializes sync and async HTTP clients from B173, constructs trace and span endpoint URLs, builds authorization
+      headers, and attempts to cache a native Opik SDK client via opik_client.get_client_cached().
+    proof: [opik-delivery-tests]
+  - text: >-
+      Failed async context setup in __init__ logs a warning and sets flush_lock to None without raising, allowing
+      synchronous operation in non-async contexts.
+    proof: [opik-delivery-tests]
+  - text: >-
+      _should_skip_event returns true and logs debug when standard_logging_object is missing from kwargs,
+      causing success/failure callbacks to return early without processing.
+    proof: [opik-delivery-tests]
+  - text: >-
+      log_success_event (sync) and async_log_success_event (async) both skip when _should_skip_event returns true,
+      call B3973's build_opik_payload, and route through native client (if present) or HTTP batch based on
+      _opik_client availability.
+    proof: [opik-delivery-tests]
+  - text: >-
+      When native Opik client is present, success events call trace() (if trace_payload is not None) then span()
+      with correctly extracted fields (id, name, start_time, end_time, input, output, metadata, tags, etc.).
+    proof: [opik-delivery-tests]
+  - text: >-
+      When native Opik client is absent, async_log_success_event appends trace_payload.__dict__ and span_payload.__dict__
+      to log_queue, logs a debug message, and calls flush_queue() if queue size meets batch_size threshold.
+    proof: [opik-delivery-tests]
+  - text: >-
+      When native Opik client is absent, log_success_event (sync) calls _sync_send for trace (if present) then span
+      with batch envelopes {"traces": [...]} and {"spans": [...]}.
+    proof: [opik-delivery-tests]
+  - text: >-
+      _sync_send performs HTTP POST to the supplied URL with headers, expecting 204 status code and raising
+      an exception on mismatch.
+    proof: [opik-delivery-tests]
+  - text: >-
+      _submit_batch performs HTTP POST to the supplied URL with headers, does not raise on 3xx+ status codes,
+      and logs error details at error level when status is >=300.
+    proof: [opik-delivery-tests]
+  - text: >-
+      async_send_batch calls B3973's get_traces_and_spans_from_payload to classify the log_queue, sends traces
+      in one request, sends spans in a separate request (both when non-empty), logs counts, and does not clear the
+      queue in the base implementation.
+    proof: [opik-delivery-tests]
+  - text: >-
+      Trace-before-span ordering is preserved: when building payloads in success events, trace methods are called
+      before span methods, and when sending batches, traces are sent before spans.
+    proof: [opik-delivery-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: opik-delivery-tests
+      why: Opik delivery and native client selection tests fail or are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^opik_delivery_tests::/)
+        - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: OpikLogger caches the native Opik SDK client conditionally; when unavailable, HTTP batch delivery is the sole path.
+    why: Allows optional use of the Opik native SDK without making it a required dependency.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L104-L109
+  - what: Async context setup failure logs a warning and allows sync-only operation with flush_lock = None.
+    why: Permits the logger to function in blocking/sync-only contexts without panicking on async task creation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L92-L99
+  - what: Synchronous _sync_send enforces HTTP 204 response code; asynchronous _submit_batch accepts any 3xx+ code.
+    why: Matches LiteLLM's distinction between sync immediate delivery (strict validation) and async batch submission (lenient).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L181-L192
+
+out_of_scope:
+  - _create_opik_headers at litellm/integrations/opik/opik.py:281-288 has no caller at the pinned commit.
+  - Native Opik SDK method implementations (opik_client.trace, opik_client.span) are owned separately; this task calls them but does not implement them.
+  - Async context detection and fallback scheduling are handled by attempted task creation and exception handling, not by explicit context checking.
+
+pitfalls:
+  - >-
+    _should_skip_event returns true only when standard_logging_object is missing; other missing fields do not skip.
+  - >-
+    The native Opik client branch is live code: opik_client.get_client_cached() is called and its result checked;
+    do not silently delete or comment out this branch.
+  - >-
+    Trace-before-span order is mandatory: when the native client is present, trace() must be called before span();
+    when HTTP batching, trace payloads must be sent in a separate batch before span payloads.
+  - >-
+    Synchronous _sync_send expects 204 status code; any other response (including 200) raises an exception.
+  - >-
+    Asynchronous _submit_batch logs errors at error level for 3xx+ codes but does not raise; both sync and async
+    paths catch exceptions and log them without propagating to the caller.
+  - >-
+    Default project name is "Default Project", not "default_project" or empty string; this is the literal fallback.
+  - >-
+    Default Opik URL is https://www.comet.com/opik/api, not https://api.opik.ai or other variant; trace/span
+    endpoints append /v1/private/traces/batch and /v1/private/spans/batch to this base.
+  - >-
+    Workspace and API key are optional; when present, workspace appears in headers as "Comet-Workspace" and
+    api_key appears as "authorization" (without Bearer prefix).
+  - >-
+    Async queue flush on size threshold applies only when native client is absent; native client paths do not queue.
+
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

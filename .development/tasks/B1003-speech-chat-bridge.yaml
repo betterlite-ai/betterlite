@@ -45,7 +45,6 @@ scope:
   - crates/betterlite-openai/src/api/**
   - crates/betterlite-openai/src/api/speech_chat_bridge.rs
   - crates/betterlite-openai/src/api/speech_chat_bridge/**
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/fuzz/Cargo.toml
   - crates/betterlite-openai/fuzz/fuzz_targets/speech_audio.rs
   - crates/betterlite-openai/fuzz/corpus/speech_audio/**

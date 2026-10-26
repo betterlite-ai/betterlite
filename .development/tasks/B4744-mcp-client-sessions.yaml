@@ -1,0 +1,196 @@
+id: B4744
+title: MCP transports and negotiated session lifecycle
+description: >-
+  Build MCPClient session and transport management in betterlite-mcp::client::sessions. Establish
+  stdio, SSE and streamable HTTP transports, forward callbacks to the MCP SDK, negotiate legacy
+  protocol versions, run supplied operations inside initialized sessions, and close sessions,
+  transports and HTTP clients under bounded cleanup with cancellation safety.
+
+  _create_transport_context selects the appropriate transport based on transport_type. For stdio,
+  pass stdio_config (command, args, env dict) to StdioServerParameters and return stdio_client.
+  For SSE, call sse_client with the server URL, client timeout, auth headers and httpx factory.
+  For HTTP (default), call streamable_http_client with the server URL and httpx client; return
+  the HTTP client for cleanup. Pass headers built by _get_auth_headers (owned by B4741) to the
+  transports that use HTTP.
+
+  _get_safe_stdio_env returns a minimal allowlist of environment variables for the stdio subprocess
+  when env is None, preserving PATH, HOME, USER, LOGNAME, TMPDIR, SHELL, LANG, LC_ALL, and system
+  paths (SYSTEMROOT, COMSPEC, etc.) plus Node caches (NPM_CONFIG_CACHE, PNPM_HOME, XDG_*). When
+  provided_env is a dict, return it unchanged. Inject MCP_NPM_CACHE_DIR from config as the default
+  NPM_CONFIG_CACHE when absent from both the environment and the allowlist. A subprocess must die
+  with its owner; enforce the repository process rule.
+
+  _initialize_session sends an InitializeRequest or calls session.initialize based on protocol_version.
+  For "auto" mode, call session.initialize and reject non-legacy versions with MCPError code -32022.
+  For explicit mode, send an InitializeRequest with the configured version, client implementation
+  (name "litellm", version from package), and capabilities (sampling and elicitation callbacks when
+  supplied). Adopt the result, send InitializedNotification and raise -32022 if the server rejected
+  the configured version.
+
+  _execute_session_operation opens the transport context, creates a session with the message handler,
+  runs the supplied operation inside a fresh session, and closes session, transport and HTTP client
+  in the pin's order with bounded cleanup. Store stripped initialization instructions in
+  _last_initialize_instructions (empty string becomes None). Preserve the original stream/operation
+  failure when transport teardown also fails, handling cancellation safely: a cancellation during
+  session setup propagates, but final cancellations during cleanup are shielded and reported as
+  timeout. Normalize only SDK read timeouts via as_mcp_read_timeout (owned by B4743); relay
+  application errors with their original code unchanged. Session cleanup has a 5-second bound;
+  final HTTP close has one second. A message handler called from the stream converts ValueError,
+  httpx.HTTPError and OSError to RuntimeError so the SDK closes pending requests.
+
+  run_with_session opens a transport, runs _execute_session_operation with the provided operation,
+  and closes the HTTP client under a 1-second bound. Propagate cancellation and errors, logging at
+  debug level when quiet_on_error (used by callers that own exceptions like call_tool under
+  raise_on_error) to avoid duplicating error lines, else warning. Normalize MCP SDK read timeouts
+  only, preserving numeric code and relayed application errors.
+
+  _create_httpx_client_factory returns a factory function that builds httpx2.AsyncClient instances
+  with TLS configuration from get_ssl_configuration (owned by B172) and auth precedence: explicit factory
+  auth (passed by the SDK), then _resolved_auth (owned by B4741), then _aws_auth (owned by B4742), then None.
+  Guard redirects with credential_redirect_hook to prevent leaking credentials when following a Location
+  header out of the configured credential slot; hook failure (return None) means deny the redirect.
+  Attach event hooks for response error capture and request redirect guarding. The factory ignores
+  MCP SDK calls that pass auth= (sse_client, streamable_http_client do not), so fallback auth
+  supplies the configured credentials.
+
+  The session message handler installed by _execute_session_operation intercepts stream errors
+  (ValueError, httpx2.HTTPError, OSError), stores them in a future for the operation to see, and
+  raises RuntimeError to close pending requests.
+
+  Use MCP SDK transports/session machinery without rebuilding JSON-RPC/SSE/HTTP handling; task
+  authors comparing Rust SDK support must verify the pinned legacy negotiation and callback behavior
+  work on Rust equivalents. Omit pragma/comment directives the SDK does not emit. Environment
+  lookup comes from B002 (MCP_NPM_CACHE_DIR, stdio allowlist); TLS policy from B172 (get_ssl_configuration);
+  credential headers and resolved auth from B4741 (_get_auth_headers, _credential_slot, _resolved_auth);
+  AWS auth from B4742 (_aws_auth); HTTP cleanup from B4743 (_MCPHTTPClient, send, _first_non_cancelled_cause,
+  as_mcp_read_timeout, _run_bounded_cleanup). Unresolved direct callees are credential_redirect_hook and
+  capture_upstream_error_response; their implementations must be lower than the manager that constructs
+  this client (question 1 in the outline).
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/client/sessions.rs
+    - crates/betterlite-mcp/src/client/sessions/**
+    - crates/betterlite-mcp/src/client/sessions/tests.rs
+    - tools/oracle/helpers/b4744.py
+    - tools/oracle/helpers/b4744/**
+    - tools/oracle/src/helpers/mcp/b4744.rs
+    - tools/oracle/src/helpers/mcp/b4744/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L452-L495
+    why: _create_transport_context selects transport and returns http_client for cleanup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L497-L541
+    why: _get_safe_stdio_env allowlists safe variables and injects NPM_CONFIG_CACHE default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L543-L570
+    why: _initialize_session handles auto and explicit protocol negotiation with error codes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L572-L675
+    why: _execute_session_operation manages transport/session lifecycle with bounded cleanup and error preservation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L677-L718
+    why: run_with_session orchestrates transport, operation and HTTP client cleanup with logging precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L775-L815
+    why: _create_httpx_client_factory builds clients with TLS policy and auth precedence, guarding redirects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L596-L604
+    why: receive_message handler converts stream errors and raises RuntimeError to close pending requests.
+  - url: https://docs.rs/mcp/0.1.0/mcp/client/index.html
+    why: MCP SDK StdioServerParameters, sse_client, streamable_http_client and ClientSession.
+
+dod:
+  - text: >-
+      _create_transport_context, _get_safe_stdio_env, _initialize_session, _execute_session_operation,
+      run_with_session and _create_httpx_client_factory are implemented with correct transport selection,
+      environment filtering, protocol negotiation, session lifecycle, cleanup bounds and auth precedence.
+    proof: [sessions-tests, sessions-clippy]
+  - text: New oracle helper operation for MCP sessions integrates with pinned LiteLLM behavior and replays case corpus.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: sessions-tests
+      why: the required behavior tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^client::sessions::/) - test(/replays_the_/)'
+    - id: sessions-clippy
+      why: clippy catches issues in sessions code
+      run: cargo clippy --locked -p betterlite-mcp --all-targets -- -D warnings
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4744.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/mcp-sessions-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-sessions/stdio-transport.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/sse-transport.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/http-transport.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/stdio-env-provided.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/stdio-env-allowlist.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/stdio-npm-cache.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/init-auto-legacy.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/init-auto-reject.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/init-explicit-version.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/init-capabilities.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/init-version-mismatch.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/execute-error-precedence.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/execute-cleanup-bounds.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/run-with-session.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/factory-tls.yaml
+  - tools/oracle/cases/helpers/mcp-sessions/factory-auth-precedence.yaml
+
+deviations:
+  - what: Subprocess environment only allowlists safe standard variables plus Node caches; credentials and keys never leak to subprocesses.
+    why: Stdio MCPs inherited all parent environment variables in LiteLLM, exposing OPENAI_API_KEY and other secrets. Betterlite protects the subprocess surface via allowlisting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L497-L541
+  - what: credential_redirect_hook (litellm/types/mcp.py:364-380) and capture_upstream_error_response (litellm/proxy/_experimental/mcp_server/mcp_debug.py:579-598) are called by _create_httpx_client_factory but are not owned by any task in depends_on. Their owner is pending resolution of B136 (umbrella, unsplit).
+    why: These functions belong to lower modules not yet assigned; this client code calls them but cannot own them or have them as dependencies without creating a cycle. They must be available by the time the client factory runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L802-L811
+  - what: Protocol negotiation omits pragma and comment directives the SDK does not emit.
+    why: Betterlite builds equivalent MCP client behavior; unnecessary pragmas would accumulate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L543-L570
+
+out_of_scope:
+  - Tool listing, execution and resource operations; those belong to B4745 and B4746.
+  - Credential resolution, AWS signing and header construction; those are B4741 and B4742.
+  - HTTP error propagation and response stream ownership; those are B4743.
+  - MCP wire protocol implementation; the SDK provides transport and session machinery.
+  - Manager construction and credential installation; those come from B140.
+  - Config loading and environment variable resolution; those are B002.
+
+pitfalls:
+  - >-
+    _create_transport_context must return None for http_client when transport is stdio or SSE,
+    so cleanup only closes clients that need it.
+  - >-
+    _get_safe_stdio_env blocks os.environ access; environment lookup comes through the supplied
+    environment parameter or B002's config resolution.
+  - >-
+    StdioServerParameters holds command and args as strings and list; env is a dict or None.
+    Mismatch types cause runtime errors.
+  - >-
+    _initialize_session raises MCPError code -32022 for both auto-reject and explicit version
+    mismatch. A task that routes on -32022 must distinguish the cause using the error message.
+  - >-
+    Session message handler runs inside the SDK's message-reading loop. An exception it raises
+    closes pending requests. Do not log or handle exceptions silently here; let them propagate.
+  - >-
+    _last_initialize_instructions is mutable state; a new session overwrites it. Tests must not
+    assume it persists across runs.
+  - >-
+    Cleanup bounds are strict: session/transport use a 5-second deadline, HTTP close uses 1 second.
+    A process that hangs past 5 seconds is killed (cancellation).
+  - >-
+    The factory receives auth= from sse_client and streamable_http_client only when the SDK has
+    explicit auth (rare); fallback auth is the configured credentials or AWS flow.
+  - >-
+    credential_redirect_hook is an unresolved callee; capture_upstream_error_response is also
+    unresolved. Both must be owned by a lower task before this ships.
+  - >-
+    _execute_session_operation always shields cleanup scopes to prevent cancellation from abandoning
+    teardown; caller cancellation only propagates if cleanup itself times out.
+
+review_level: security
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0
