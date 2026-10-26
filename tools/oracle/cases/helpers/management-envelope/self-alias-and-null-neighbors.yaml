@@ -1,0 +1,17 @@
+kind: helper
+name: management-envelope-self-alias-and-null-neighbors
+call:
+  management_envelope:
+    function: list
+    data: [{id: nested, state: ready}]
+    total_count: 1
+    page: 1
+    page_size: 20
+    total_pages: 1
+    self_link: /management/v1/items
+    first: /management/v1/items
+    prev: null
+    next: null
+    last: /management/v1/items
+env: {}
+compare: {ignore: []}

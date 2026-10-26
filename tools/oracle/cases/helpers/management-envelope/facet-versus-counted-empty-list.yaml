@@ -1,0 +1,14 @@
+kind: helper
+name: management-envelope-facet-versus-counted-empty-list
+call:
+  management_envelope:
+    function: facet
+    data: []
+    page: 1
+    page_size: 20
+    has_more: false
+    self: /management/v1/facets
+    prev: null
+    next: null
+env: {}
+compare: {ignore: []}
