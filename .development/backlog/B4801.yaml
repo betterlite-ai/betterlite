@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Native A2A client transport and bounded localhost retry
 status: todo
 depends_on: [B002, B173, B4800, B4813]
-file: null
+file: tasks/B4801-a2a-native-transport.yaml
 covers:
   - "litellm/a2a_protocol/main.py"
 parent: B142

@@ -30,7 +30,6 @@ scope:
   paths:
     - Cargo.toml
     - crates/betterlite-http/Cargo.toml
-    - crates/betterlite-http/src/lib.rs
     - crates/betterlite-http/src/skill_archive.rs
     - crates/betterlite-http/src/skill_archive/**
     - crates/betterlite-http/fuzz/fuzz_targets/skill_archive_zip.rs

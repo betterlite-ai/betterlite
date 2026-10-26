@@ -39,6 +39,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,error,host_rerank}.rs
+    - crates/betterlite-openai/src/host_rerank.rs
     - crates/betterlite-openai/src/host_rerank/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/host_rerank.rs

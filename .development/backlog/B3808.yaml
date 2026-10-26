@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Semantic guard route loading and templates
 status: todo
 depends_on: [B327]
-file: null
+file: tasks/B3808-semantic-guard-routes.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_loader.py"
   - "litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_templates/**"

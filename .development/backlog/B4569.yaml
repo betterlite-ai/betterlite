@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Persistent Codex provider settings and undo
 status: todo
 depends_on: [B192, B4564]
-file: null
+file: tasks/B4569-codex-settings.yaml
 covers:
   - "litellm/proxy/client/cli/commands/codex_settings.py"
 parent: B134
