@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use thiserror::Error;
 
@@ -28,11 +29,21 @@ pub fn config_ownership_message(section: Section, key: &str, shadows_db_value: b
     )
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Resolution<'store> {
     Config(&'store JsonValue),
     Db(&'store JsonValue),
     Unset,
+}
+
+impl fmt::Debug for Resolution<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Config(_) => f.write_str("Config"),
+            Self::Db(_) => f.write_str("Db"),
+            Self::Unset => f.write_str("Unset"),
+        }
+    }
 }
 
 impl Resolution<'_> {
@@ -46,13 +57,32 @@ impl Resolution<'_> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct SettingsStore {
     section: Section,
     yaml_values: BTreeMap<String, JsonValue>,
     database_rows: BTreeMap<DbRow, BTreeMap<String, JsonValue>>,
     runtime_values: BTreeMap<String, JsonValue>,
     deleted_runtime_keys: BTreeSet<String>,
+}
+
+impl fmt::Debug for SettingsStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SettingsStore")
+            .field("section", &self.section)
+            .field("yaml_keys", &self.yaml_values.keys().collect::<Vec<_>>())
+            .field(
+                "database_keys",
+                &self
+                    .database_rows
+                    .values()
+                    .flat_map(BTreeMap::keys)
+                    .collect::<BTreeSet<_>>(),
+            )
+            .field("runtime_keys", &self.runtime_values.keys().collect::<Vec<_>>())
+            .field("deleted_runtime_keys", &self.deleted_runtime_keys)
+            .finish()
+    }
 }
 
 impl From<Section> for SettingsStore {

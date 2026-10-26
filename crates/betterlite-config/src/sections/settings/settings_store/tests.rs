@@ -23,6 +23,19 @@ fn general(yaml: &str, stored: &str) -> SettingsStore {
     store
 }
 
+#[test]
+fn settings_store_debug_output_is_redacted() {
+    let store = general(
+        r#"{"master_key": "yaml-secret"}"#,
+        r#"{"database_url": "db-secret"}"#,
+    );
+    let output = format!("{store:?}");
+    assert!(output.contains("master_key"));
+    assert!(output.contains("database_url"));
+    assert!(!output.contains("yaml-secret"));
+    assert!(!output.contains("db-secret"));
+}
+
 #[rstest]
 #[case::config_wins_over_db(r#"{"a": 1}"#, r#"{"a": 2}"#, Some("1"), FieldSource::Config)]
 #[case::config_null_is_a_value(r#"{"a": null}"#, r#"{"a": 2}"#, Some("null"), FieldSource::Config)]
