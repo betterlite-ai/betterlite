@@ -1,55 +1,97 @@
+from collections.abc import Mapping
 from typing import TypeAlias
+from unittest.mock import patch
+
+from litellm.proxy import proxy_server
+from litellm.proxy.hooks.parallel_request_limiter_v3 import ParallelRequestLimiter
+from litellm.types.llms.openai import ResponseAPIUsage
+from litellm.types.rerank import RerankResponse
+from litellm.types.utils import Usage
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+Object: TypeAlias = dict[str, Json]
 
 
-def integer(value: Json) -> int:
-    return value if isinstance(value, int) and value >= 0 else 0
+def typed_usage(value: Object) -> Usage:
+    return Usage(**value)
 
 
-def cached(usage: dict[str, Json]) -> int:
-    details = usage.get("prompt_tokens_details") or usage.get("input_tokens_details")
-    if isinstance(details, dict):
-        return integer(details.get("cached_tokens"))
-    return integer(usage.get("cached_tokens")) or integer(usage.get("cache_read_input_tokens"))
+def typed_response_api_usage(value: Object) -> ResponseAPIUsage:
+    return ResponseAPIUsage(**value)
 
 
-def usage_values(input_value: dict[str, Json]) -> tuple[int, int, int, int]:
-    usage = input_value.get("usage")
-    if input_value.get("usage_kind") == "response_api":
-        usage = input_value.get("response_api_usage")
-    if not isinstance(usage, dict):
-        return 0, 0, 0, 0
-    response_api = input_value.get("usage_kind") in ("response_api", "mapping")
-    input_tokens = integer(usage.get("input_tokens")) or integer(usage.get("prompt_tokens"))
-    output_tokens = integer(usage.get("output_tokens")) or integer(usage.get("completion_tokens"))
-    total_tokens = integer(usage.get("total_tokens"))
-    return input_tokens, output_tokens, total_tokens, cached(usage)
+def response_object(input_value: Object) -> object:
+    usage_kind = input_value.get("usage_kind")
+    if usage_kind == "response_api":
+        value = input_value.get("response_api_usage", {})
+        if not isinstance(value, dict):
+            raise TypeError("response_api_usage must be an object")
+        return typed_response_api_usage(value)
+    if usage_kind == "mapping":
+        value = input_value.get("usage", {})
+        if not isinstance(value, dict):
+            raise TypeError("usage must be an object")
+        return {"usage": value}
+    if usage_kind == "missing":
+        return {}
+    value = input_value.get("usage", {})
+    if not isinstance(value, dict):
+        raise TypeError("usage must be an object")
+    return typed_usage(value)
 
 
-def run(input_value: dict[str, Json]) -> dict[str, Json]:
+def rerank_response(input_value: Object) -> RerankResponse:
+    metadata: dict[str, object] = {}
+    tokens = input_value.get("rerank_tokens")
+    if isinstance(tokens, dict):
+        metadata["tokens"] = tokens
+    billed_units = input_value.get("billed_units_total_tokens")
+    if isinstance(billed_units, int):
+        metadata["billed_units"] = {"total_tokens": billed_units}
+    return RerankResponse(meta=metadata or None)
+
+
+def run(input_value: Object) -> dict[str, Json]:
+    limiter = object.__new__(ParallelRequestLimiter)
+    response = response_object(input_value)
+    rerank = rerank_response(input_value)
     configured = input_value.get("rate_limit_type")
-    rate_type = configured if configured in ("input", "output", "total") else "total"
-    input_tokens, output_tokens, total_tokens, cache = usage_values(input_value)
-    rerank_input = integer(input_value.get("rerank_tokens", {}).get("input_tokens")) if isinstance(input_value.get("rerank_tokens"), dict) else 0
-    rerank_output = integer(input_value.get("rerank_tokens", {}).get("output_tokens")) if isinstance(input_value.get("rerank_tokens"), dict) else 0
-    billed = integer(input_value.get("billed_units_total_tokens"))
-    if rerank_input or rerank_output:
-        input_tokens, output_tokens = rerank_input, rerank_output
-        selected = output_tokens if rate_type == "output" else input_tokens if rate_type == "input" else input_tokens + output_tokens
-        resolved = True
-    elif billed:
-        input_tokens, output_tokens, selected, resolved = billed, 0, billed if rate_type != "output" else 0, True
-    else:
-        selected = output_tokens if rate_type == "output" else max(0, input_tokens - cache) if rate_type == "input" else max(0, total_tokens - cache)
-        input_tokens = max(0, input_tokens - cache)
-        resolved = bool(input_tokens or output_tokens)
-    aggregate = total_tokens if not input_tokens and not output_tokens else 0
-    recovered = [0, 0, 0]
-    combined = input_value.get("combined_usage_object")
-    if isinstance(combined, dict) and integer(combined.get("completion_tokens")) + integer(combined.get("output_tokens")) > 0:
-        combined_input = integer(combined.get("prompt_tokens")) or integer(combined.get("input_tokens"))
-        combined_output = integer(combined.get("completion_tokens")) or integer(combined.get("output_tokens"))
-        combined_cache = cached(combined)
-        recovered = [max(0, integer(combined.get("total_tokens")) - combined_cache) if rate_type == "total" else combined_output if rate_type == "output" else max(0, combined_input - combined_cache), max(0, combined_input - combined_cache), combined_output]
-    return {"rate_limit_type": rate_type, "total_tokens": selected, "input_tokens": input_tokens, "output_tokens": output_tokens, "usage_resolved": resolved, "aggregate_only_total_tokens": aggregate, "recovered": recovered}
+    settings = {"token_rate_limit_type": configured} if configured is not None else {}
+    with patch.object(proxy_server, "general_settings", settings):
+        rate_limit_type = limiter.get_rate_limit_type()
+        usage = limiter._response_usage(response)  # pyright: ignore[reportPrivateUsage]
+        rerank_usage = limiter._resolve_rerank_token_usage(rerank)  # pyright: ignore[reportPrivateUsage]
+        if rerank_usage is None:
+            total_tokens = limiter._get_total_tokens_from_usage(  # pyright: ignore[reportPrivateUsage]
+                usage=usage, rate_limit_type=rate_limit_type
+            )
+        elif rate_limit_type == "output":
+            total_tokens = rerank_usage[1]
+        elif rate_limit_type == "input":
+            total_tokens = rerank_usage[0]
+        else:
+            total_tokens = rerank_usage[0] + rerank_usage[1]
+        reconcile_object = (
+            rerank
+            if input_value.get("rerank_tokens") is not None
+            or input_value.get("billed_units_total_tokens") is not None
+            else response
+        )
+        input_tokens, output_tokens, usage_resolved = limiter._resolve_io_token_reconcile_usage(  # pyright: ignore[reportPrivateUsage]
+            reconcile_object
+        )
+        aggregate = limiter._aggregate_only_total_tokens(usage)  # pyright: ignore[reportPrivateUsage]
+        combined = input_value.get("combined_usage_object")
+        recovered = (0, 0, 0)
+        if isinstance(combined, dict):
+            recovered_source: Mapping[str, object] = {"combined_usage_object": typed_usage(combined)}
+            recovered = limiter._recovered_partial_usage_tokens(recovered_source)  # pyright: ignore[reportPrivateUsage]
+    return {
+        "rate_limit_type": rate_limit_type,
+        "total_tokens": total_tokens,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "usage_resolved": usage_resolved,
+        "aggregate_only_total_tokens": aggregate,
+        "recovered": [recovered[0], recovered[1], recovered[2]],
+    }
