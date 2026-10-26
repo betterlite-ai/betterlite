@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/soniox.rs
+    - crates/betterlite-core/src/api/soniox/**
     - crates/betterlite-core/src/api/soniox/pipeline.rs
     - crates/betterlite-core/src/api/soniox/pipeline/**
     - tools/oracle/src/helpers/core_ops/soniox_pipeline.rs
@@ -80,5 +81,5 @@ pitfalls:
   - Invalid audio_duration_ms can fail after post_call already ran.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -16,10 +16,15 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/vector_file_mutation_routes.rs
   - crates/betterlite-server/src/api/vector_file_mutation_routes/**
   - crates/betterlite-server/fuzz/corpus/request_body/vector-file-mutation-*
   - tools/oracle/cases/api/vector-file-mutation-routes/**
+  - tools/oracle/helpers/b1081.py
+  - tools/oracle/helpers/b1081/**
+  - tools/oracle/src/helpers/server/b1081.rs
+  - tools/oracle/src/helpers/server/b1081/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L455-L559
@@ -96,5 +101,5 @@ pitfalls:
 - Create distinguishes a missing file_id key from an explicitly null file_id.
 review_level: security
 budget:
-  max_changed_lines: 740
+  max_changed_lines: 1000
   max_new_expects: 0

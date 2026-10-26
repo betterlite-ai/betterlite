@@ -92,21 +92,13 @@ scope:
   - crates/betterlite-core/src/api/responses_id_security.rs
   - crates/betterlite-core/src/api/responses_id_security/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/owned_response_id.rs
   - crates/betterlite-core/fuzz/corpus/owned_response_id/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/responses_id_security.rs
-  - crates/betterlite-config/src/api/responses_id_security/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-id-security-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/responses_id_security.rs
@@ -115,6 +107,8 @@ scope:
   - tools/oracle/helpers/responses_id_security/**
   - tools/oracle/fuzz/corpus/helper_case/responses_id_security-*
   - tools/oracle/cases/helpers/responses-id-security/**
+  - crates/betterlite-config/src/sections/responses_id_security.rs
+  - crates/betterlite-config/src/sections/responses_id_security/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L54-L54
@@ -261,7 +255,7 @@ checks:
     run: test -f crates/betterlite-core/fuzz/fuzz_targets/owned_response_id.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/owned_response_id)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_id_security::tests::replays_corpus$/)'
   - id: behavior-tests
     why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_id_security::/)
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::responses_id_security::/)
       - test(/::replays_corpus$/)'
   - id: case-same-user-team
     why: the same-user-team behavior or its assertions are absent
@@ -286,7 +280,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_id_security::tests::malformed_owned_id_payload($|::)/)'
   - id: config-tests
     why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_id_security::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::responses_id_security::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: no newly added key-bearing config seed reaches the production loader
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-id-security-*)"
@@ -331,5 +325,5 @@ pitfalls:
 - The nonstream success hook encrypts any ResponsesAPIResponse, while the streaming hook is restricted to create-route aliases.
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 1

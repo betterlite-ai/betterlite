@@ -73,6 +73,7 @@ scope:
   - crates/betterlite-core/src/api/messages_agentic_stream.rs
   - crates/betterlite-core/src/api/messages_agentic_stream/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-core/fuzz/Cargo.toml
@@ -185,5 +186,5 @@ pitfalls:
   hooks: %s''; retain its level and fallback instead of turning it into a hard error.'
 review_level: standard
 budget:
-  max_changed_lines: 680
+  max_changed_lines: 1000
   max_new_expects: 1

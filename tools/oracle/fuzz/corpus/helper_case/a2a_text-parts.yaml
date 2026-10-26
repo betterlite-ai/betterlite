@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-text-parts-seed
+call: {a2a_text: {function: message, message: {parts: [{kind: text, text: seeded}]}, depth: null, max_depth: null}}
+env: {}
+compare: {ignore: []}

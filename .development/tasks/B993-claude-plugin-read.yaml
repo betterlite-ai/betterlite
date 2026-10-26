@@ -88,12 +88,16 @@ scope:
   - crates/betterlite-server/src/api/claude_plugin_read.rs
   - crates/betterlite-server/src/api/claude_plugin_read/**
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/claude_plugin_read.rs
   - crates/betterlite-core/src/api/claude_plugin_read/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-server/fuzz/Cargo.toml
@@ -101,6 +105,10 @@ scope:
   - crates/betterlite-server/fuzz/corpus/claude_plugin_read/**
   - tools/oracle/cases/api/claude-plugin-read/**
   - tools/oracle/fixtures/claude-plugin-read/**
+  - tools/oracle/helpers/b993.py
+  - tools/oracle/helpers/b993/**
+  - tools/oracle/src/helpers/server/b993.rs
+  - tools/oracle/src/helpers/server/b993/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L391-L524
@@ -210,5 +218,5 @@ pitfalls:
   projection.
 review_level: security
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

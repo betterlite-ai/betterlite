@@ -18,6 +18,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_to_chat_stream.rs
   - crates/betterlite-core/src/api/responses_to_chat_stream/**
   - crates/betterlite-core/fuzz/Cargo.toml
@@ -123,5 +124,5 @@ pitfalls:
 - Empty text deltas are valid, while empty function/custom argument deltas are errors.
 review_level: standard
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 1

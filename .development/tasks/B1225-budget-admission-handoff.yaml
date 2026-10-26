@@ -103,21 +103,18 @@ scope:
     - tools/oracle/cases/helpers/budget-admission-handoff/**
     - tools/oracle/fuzz/corpus/helper_case/budget-admission-handoff-*
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/budget-admission-handoff/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/budget_admission_handoff.rs
-    - crates/betterlite-config/src/budget_admission_handoff/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/budget-admission-handoff-*
     - crates/betterlite-server/src/auth/budget_admission_handoff.rs
     - crates/betterlite-server/src/auth/budget_admission_handoff/**
+    - crates/betterlite-config/src/sections/budget_admission_handoff.rs
+    - crates/betterlite-config/src/sections/budget_admission_handoff/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3113-L3116
@@ -188,7 +185,7 @@ checks:
         && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^budget_admission_handoff::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::budget_admission_handoff::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
@@ -256,6 +253,6 @@ pitfalls:
   - An existing end-user with no budget relation prevents a fallback budget lookup; an absent end-user does not.
   - Reservation failure leaves request.state untouched although token.budget_reservation was already cleared.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

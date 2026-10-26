@@ -34,12 +34,14 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_poll_state.rs
   - crates/betterlite-core/src/api/responses_poll_state/**
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/responses_poll_state.rs
   - crates/betterlite-core/fuzz/corpus/responses_poll_state/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/responses_poll_state.rs
   - crates/betterlite-config/src/api/responses_poll_state/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-poll-state-*
@@ -162,5 +164,5 @@ pitfalls:
 - A model containing slash does not fall back to router deployments after its prefix misses the provider list.
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0

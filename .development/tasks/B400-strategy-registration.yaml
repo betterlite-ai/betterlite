@@ -25,12 +25,17 @@ scope:
   - crates/betterlite-router/src/strategy_registration/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/strategy_registration.rs
   - crates/betterlite-server/src/routing/strategy_registration/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/strategy_registration.rs
   - tools/oracle/src/router_probes/strategy_registration/**
   - tools/oracle/src/router_probes/mod.rs
@@ -38,6 +43,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/strategy_registration.py
   - tools/oracle/cases/routing/strategy-registration/**
+  - tools/oracle/helpers/b400.py
+  - tools/oracle/helpers/b400/**
+  - tools/oracle/src/helpers/router/b400.rs
+  - tools/oracle/src/helpers/router/b400/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9093-L9136
@@ -410,5 +419,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

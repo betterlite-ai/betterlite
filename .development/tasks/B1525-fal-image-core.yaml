@@ -36,7 +36,9 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/**
     - crates/betterlite-core/src/api/fal/{images,gpt_image}.rs
     - crates/betterlite-core/src/api/fal/images.rs
     - crates/betterlite-core/src/api/fal/images/**
@@ -46,7 +48,9 @@ scope:
     - crates/betterlite-core/fuzz/fuzz_targets/fal_image_reply.rs
     - crates/betterlite-core/fuzz/corpus/fal_image_reply/**
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/fal.rs
+    - crates/betterlite-config/src/providers/fal/**
     - tools/oracle/src/helpers/core_ops/fal_image_core.rs
     - tools/oracle/src/helpers/core_ops/fal_image_core/**
     - tools/oracle/helpers/fal_image_core.py
@@ -94,5 +98,5 @@ pitfalls:
   - Supported quality discovery compares the entire endpoint suffix, including edit or flare segments.
 review_level: security
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 1

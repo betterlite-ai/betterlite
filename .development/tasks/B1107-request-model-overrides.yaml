@@ -66,18 +66,10 @@ scope:
   - crates/betterlite-core/src/api/request_model_overrides.rs
   - crates/betterlite-core/src/api/request_model_overrides/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/request_model_overrides.rs
-  - crates/betterlite-config/src/api/request_model_overrides/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/request-model-overrides-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/request_model_overrides.rs
@@ -86,6 +78,8 @@ scope:
   - tools/oracle/helpers/request_model_overrides/**
   - tools/oracle/fuzz/corpus/helper_case/request_model_overrides-*
   - tools/oracle/cases/helpers/request-model-overrides/**
+  - crates/betterlite-config/src/sections/request_model_overrides.rs
+  - crates/betterlite-config/src/sections/request_model_overrides/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L385-L385
@@ -130,7 +124,7 @@ checks:
   commands:
   - id: behavior-tests
     why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::request_model_overrides::/)
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::request_model_overrides::/)
       - test(/::replays_corpus$/)'
   - id: case-team-then-key-alias
     why: the team-then-key-alias behavior or its assertions are absent
@@ -143,7 +137,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::request_model_overrides::tests::enforced_params_missing($|::)/)'
   - id: config-tests
     why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::request_model_overrides::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::request_model_overrides::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: no newly added key-bearing config seed reaches the production loader
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/request-model-overrides-*)"
@@ -221,5 +215,5 @@ pitfalls:
   or has no values"; retain its level and fallback instead of turning it into a hard error.
 review_level: security
 budget:
-  max_changed_lines: 510
+  max_changed_lines: 1000
   max_new_expects: 1

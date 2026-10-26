@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/soniox.rs
+    - crates/betterlite-core/src/api/soniox/**
     - crates/betterlite-core/src/api/soniox/remote.rs
     - crates/betterlite-core/src/api/soniox/remote/**
     - tools/oracle/src/helpers/core_ops/soniox_remote.rs
@@ -79,5 +80,5 @@ pitfalls:
   - The allowed 6000 attempts and 60-second interval can exceed the misleading fifty-minute source comment.
 review_level: security
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0

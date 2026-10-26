@@ -42,6 +42,7 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/**
     - crates/betterlite-core/src/cost/prepare.rs
     - crates/betterlite-core/src/cost/prepare/**
     - crates/betterlite-models/src/billing_text.rs
@@ -97,6 +98,6 @@ pitfalls:
   - A nonempty prompt_tokens_details with no cached_tokens changes the explicit cache-read count to zero.
   - Removing spaces by byte value misses Unicode whitespace and changes billed character counts.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -1,0 +1,1 @@
+{"assessments":[{"execution_id":"e1","issue_checks":["tone"]}],"findings":[{"title":"Slow","description":"Replies are slow.","check_id":"tone","evidence":[{"execution_id":"e1","span_id":"s1","quote":"wait"}]}],"coverage":{"eligible":3,"selected":2},"error":""}

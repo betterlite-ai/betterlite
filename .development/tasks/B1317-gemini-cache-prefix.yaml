@@ -31,20 +31,14 @@ scope:
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/cache_ttl.rs
     - crates/betterlite-vertex/fuzz/corpus/cache_ttl/**
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/providers/vertex.rs
-    - crates/betterlite-config/src/providers/vertex/cache.rs
-    - crates/betterlite-config/src/providers/vertex/cache/**
     - tools/oracle/src/helpers/vertex/gemini_cache_prefix.rs
     - tools/oracle/src/helpers/vertex/gemini_cache_prefix/**
     - tools/oracle/helpers/gemini_cache_prefix.py
     - tools/oracle/helpers/gemini_cache_prefix/**
     - tools/oracle/cases/helpers/gemini-cache-prefix/**
     - tools/oracle/fuzz/corpus/helper_case/gemini_cache_prefix*
+    - crates/betterlite-config/src/sections/gemini_cache_prefix.rs
+    - crates/betterlite-config/src/sections/gemini_cache_prefix/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/transformation.py#L24-L202

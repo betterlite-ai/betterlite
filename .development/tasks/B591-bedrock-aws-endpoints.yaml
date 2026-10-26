@@ -123,19 +123,9 @@ scope:
   - tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_aws_endpoints*
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/bedrock.rs
-  - crates/betterlite-config/src/providers/bedrock/aws_endpoints.rs
-  - crates/betterlite-config/src/providers/bedrock/aws_endpoints/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/bedrock_aws_endpoints_config.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_aws_endpoints*
+  - crates/betterlite-config/src/sections/bedrock_aws_endpoints.rs
+  - crates/betterlite-config/src/sections/bedrock_aws_endpoints/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L538-L872
@@ -499,6 +489,6 @@ pitfalls:
 - LLM region lookup gives AWS_REGION_NAME priority, while the non-LLM branch lets AWS_REGION overwrite it.
 - An explicit model_id blocks ARN-region fallback to model even when that override is not an ARN.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

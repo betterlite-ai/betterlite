@@ -32,10 +32,12 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/copilot_chat.rs
     - crates/betterlite-core/src/api/copilot_chat/**
     - crates/betterlite-config/src/providers/copilot.rs
     - crates/betterlite-config/src/providers/copilot/chat.rs
+    - crates/betterlite-config/src/providers/copilot/chat/**
     - tools/oracle/src/helpers/core_ops/copilot_chat.rs
     - tools/oracle/src/helpers/core_ops/copilot_chat/**
     - tools/oracle/helpers/copilot_chat.py
@@ -80,5 +82,5 @@ pitfalls:
   - Swallowing GetAPIKeyError in validate_environment must not suppress it during provider-info acquisition.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0

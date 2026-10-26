@@ -36,7 +36,9 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/polly.rs
+    - crates/betterlite-core/src/api/polly/**
     - crates/betterlite-core/src/api/polly/speech.rs
     - crates/betterlite-core/src/api/polly/speech/**
     - tools/oracle/src/helpers/core_ops/polly_speech.rs
@@ -84,5 +86,5 @@ pitfalls:
   - The ssml_body field carries signed JSON here, not an XML payload.
 review_level: security
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0

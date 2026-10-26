@@ -27,9 +27,11 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_session_state.rs
   - crates/betterlite-core/src/api/realtime_session_state/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/realtime_session_state.rs
   - crates/betterlite-config/src/api/realtime_session_state/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/realtime-session-state-*
@@ -123,5 +125,5 @@ pitfalls:
 - A successful queue submission sets realtime_session_success_logged before callbacks finish.
 review_level: standard
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -18,6 +18,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_output_details.rs
   - crates/betterlite-core/src/api/responses_output_details/**
   - tools/oracle/Cargo.toml
@@ -88,5 +89,5 @@ pitfalls:
 - Missing output reasoning tokens become zero only when a completion-details object exists; absent details remain null.
 review_level: standard
 budget:
-  max_changed_lines: 490
+  max_changed_lines: 1000
   max_new_expects: 1

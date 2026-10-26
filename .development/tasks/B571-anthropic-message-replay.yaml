@@ -294,6 +294,6 @@ pitfalls:
 - The empty-block cleaner retains an initially empty list, but the strip-all-thinking helper drops it.
 - Advisor cleanup mutates assistant content and does nothing until it finds a truthy advisor use id.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

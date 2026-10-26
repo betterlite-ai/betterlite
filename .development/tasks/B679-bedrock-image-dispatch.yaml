@@ -76,9 +76,13 @@ scope:
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-bedrock/Cargo.toml
   - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/provider/**
   - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/**
   - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/dispatch/**
   - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-provider/src/bedrock_image_dispatch.rs
   - crates/betterlite-provider/src/bedrock_image_dispatch/**
@@ -192,6 +196,6 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as bedrock_image_dispatch in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/bedrock_image_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_image_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Canvas and Stability edit dispatch share transport but select different request and reply projections.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

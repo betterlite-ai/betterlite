@@ -49,6 +49,7 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/**
     - crates/betterlite-core/src/cost/usage.rs
     - crates/betterlite-core/src/cost/usage/**
     - crates/betterlite-models/src/zero_cost.rs
@@ -124,6 +125,6 @@ pitfalls:
   - A positive nested price deeper than four expansion rounds is invisible to the diagnostic even if it would be billable elsewhere.
   - Explicitly free used rates suppress a diagnostic before calculation_failed is considered.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

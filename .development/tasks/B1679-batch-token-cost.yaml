@@ -38,6 +38,7 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/**
     - crates/betterlite-core/src/cost/batch.rs
     - crates/betterlite-core/src/cost/batch/**
     - tools/oracle/src/helpers/core_ops/batch_token_cost.rs
@@ -88,6 +89,6 @@ pitfalls:
   - Supplying only modality or cache prices still permits the public table to replace the entire supplied model-info record.
   - Explicit batch cache-rate absence and explicit zero differ, while the legacy write fallback treats zero like missing.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

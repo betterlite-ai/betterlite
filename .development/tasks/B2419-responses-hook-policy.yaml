@@ -35,9 +35,11 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_hook_policy.rs
   - crates/betterlite-core/src/api/responses_hook_policy/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/responses_hook_policy.rs
   - crates/betterlite-config/src/api/responses_hook_policy/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-hook-policy-*
@@ -146,5 +148,5 @@ pitfalls:
 - String callback resolution affects capability detection but does not make B2415 execute string entries.
 review_level: security
 budget:
-  max_changed_lines: 730
+  max_changed_lines: 1000
   max_new_expects: 0

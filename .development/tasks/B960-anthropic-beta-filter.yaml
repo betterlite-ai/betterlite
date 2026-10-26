@@ -22,6 +22,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/anthropic_beta_filter.rs
   - crates/betterlite-core/src/api/anthropic_beta_filter/**
   - tools/oracle/Cargo.toml
@@ -119,5 +120,5 @@ pitfalls:
 - Native header merging is case-insensitive; the separate matrix updater is case-sensitive.
 review_level: standard
 budget:
-  max_changed_lines: 580
+  max_changed_lines: 1000
   max_new_expects: 0

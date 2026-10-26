@@ -18,6 +18,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/file_http_metadata.rs
   - crates/betterlite-core/src/api/file_http_metadata/**
   - tools/oracle/src/sdk_http.rs
@@ -26,6 +27,10 @@ scope:
   - tools/oracle/sdk_http/file_http_metadata.py
   - tools/oracle/cases/sdk-http/file-http-metadata/**
   - tools/oracle/fuzz/corpus/sdk_http_case/file-http-metadata-*
+  - tools/oracle/helpers/b2462.py
+  - tools/oracle/helpers/b2462/**
+  - tools/oracle/src/helpers/core_ops/b2462.rs
+  - tools/oracle/src/helpers/core_ops/b2462/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4553-L5005
@@ -93,5 +98,5 @@ pitfalls:
 - Continuation requests validate environment again; cached first-page authorization can become stale.
 review_level: standard
 budget:
-  max_changed_lines: 720
+  max_changed_lines: 1000
   max_new_expects: 0

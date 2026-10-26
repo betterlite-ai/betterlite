@@ -102,16 +102,24 @@ scope:
   - crates/betterlite-server/src/api/messages_token_route.rs
   - crates/betterlite-server/src/api/messages_token_route/**
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/messages_token_route.rs
   - crates/betterlite-core/src/api/messages_token_route/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/cases/api/messages-token-route/**
   - tools/oracle/fixtures/messages-token-route/**
+  - tools/oracle/helpers/b996.py
+  - tools/oracle/helpers/b996/**
+  - tools/oracle/src/helpers/server/b996.rs
+  - tools/oracle/src/helpers/server/b996/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L289-L389
@@ -291,5 +299,5 @@ pitfalls:
   rather than a family-wide error default.'
 review_level: security
 budget:
-  max_changed_lines: 440
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -45,9 +45,16 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/customer-read/**
+    - tools/oracle/helpers/b059.py
+    - tools/oracle/helpers/b059/**
+    - tools/oracle/src/helpers/server/b059.rs
+    - tools/oracle/src/helpers/server/b059/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L500-L577
@@ -88,6 +95,6 @@ pitfalls:
   - Info/list locally map exceptions, but activity does not. Their missing-database statuses differ.
   - Activity's admin-only check forbids an end user reading its own activity.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

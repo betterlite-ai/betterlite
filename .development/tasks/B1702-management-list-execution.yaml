@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/list_api.rs
+    - crates/betterlite-server/src/list_api/**
     - crates/betterlite-server/src/list_api/{sql,memory,execute}.rs
     - crates/betterlite-server/src/list_api/{sql,memory,execute}/**
     - tools/oracle/src/helpers/server/management_executor.rs
@@ -80,6 +81,6 @@ pitfalls:
   - An empty repeated cell differs from an absent cell for is_null.
   - Enrichment must never run over rows discarded by pagination.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

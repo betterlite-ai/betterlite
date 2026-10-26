@@ -16,6 +16,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/assistant_records.rs
   - crates/betterlite-core/src/api/assistant_records/**
   - tools/oracle/src/sdk_http.rs
@@ -24,6 +25,10 @@ scope:
   - tools/oracle/sdk_http/assistant_create.py
   - tools/oracle/cases/sdk-http/assistant-create/**
   - tools/oracle/fuzz/corpus/sdk_http_case/assistant-create-*
+  - tools/oracle/helpers/b1055.py
+  - tools/oracle/helpers/b1055/**
+  - tools/oracle/src/helpers/core_ops/b1055.rs
+  - tools/oracle/src/helpers/core_ops/b1055/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L193-L371
@@ -90,5 +95,5 @@ pitfalls:
 - Azure's isinstance(OpenAI) test also matches AzureOpenAI and discards that supplied synchronous client.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -85,16 +85,24 @@ scope:
   - crates/betterlite-server/src/api/batch_list_route.rs
   - crates/betterlite-server/src/api/batch_list_route/**
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/batch_list_route.rs
   - crates/betterlite-core/src/api/batch_list_route/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/cases/api/batch-list-route/**
   - tools/oracle/fixtures/batch-list-route/**
+  - tools/oracle/helpers/b1133.py
+  - tools/oracle/helpers/b1133/**
+  - tools/oracle/src/helpers/server/b1133.rs
+  - tools/oracle/src/helpers/server/b1133/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L832-L1014
@@ -169,5 +177,5 @@ pitfalls:
   instead of turning it into a hard error.
 review_level: security
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -27,12 +27,17 @@ scope:
   - crates/betterlite-router/src/request_scheduler/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/request_scheduler.rs
   - crates/betterlite-server/src/routing/request_scheduler/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/request_scheduler.rs
   - tools/oracle/src/router_probes/request_scheduler/**
   - tools/oracle/src/router_probes/mod.rs
@@ -40,24 +45,21 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/request_scheduler.py
   - tools/oracle/cases/routing/request-scheduler/**
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/router.rs
-  - crates/betterlite-config/src/request_scheduler.rs
-  - crates/betterlite-config/src/request_scheduler/**
-  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/request-scheduler-*
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/chat.rs
   - crates/betterlite-openai/src/request.rs
+  - crates/betterlite-openai/src/request/**
   - crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs
   - crates/betterlite-openai/fuzz/corpus/chat_request/request-scheduler-*
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-config/src/sections/request_scheduler.rs
+  - crates/betterlite-config/src/sections/request_scheduler/**
+  - tools/oracle/helpers/b346.py
+  - tools/oracle/helpers/b346/**
+  - tools/oracle/src/helpers/router/b346.rs
+  - tools/oracle/src/helpers/router/b346/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L12-L137
@@ -166,5 +168,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

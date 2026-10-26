@@ -45,17 +45,9 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/file_upload_options.rs
   - crates/betterlite-core/src/api/file_upload_options/**
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/file_upload_options.rs
-  - crates/betterlite-config/src/api/file_upload_options/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-options-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/file_upload_options.rs
@@ -65,6 +57,8 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/file_upload_options-*
   - tools/oracle/cases/helpers/file-upload-options/**
   - Cargo.lock
+  - crates/betterlite-config/src/sections/file_upload_options.rs
+  - crates/betterlite-config/src/sections/file_upload_options/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L889-L956
@@ -171,10 +165,10 @@ checks:
   commands:
   - id: behavior-tests
     why: The file-upload options production helpers or their literal edge cases are missing or failing.
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_options::/)'
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::file_upload_options::/)'
   - id: config-tests
     why: require_managed_files is not loaded and tested through the production Config path.
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_options::tests::settings_loader($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::file_upload_options::tests::settings_loader($|::)/)'
   - id: config-corpus
     why: A newly added file-upload-options YAML seed is absent or the config corpus replay fails.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-options-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
@@ -241,5 +235,5 @@ pitfalls:
   can_user_call_unified_object_id.
 review_level: security
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0

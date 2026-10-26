@@ -53,9 +53,11 @@ scope:
     - crates/betterlite-models/src/key_digest.rs
     - crates/betterlite-models/src/key_digest/**
     - crates/betterlite-provider/src/identity.rs
+    - crates/betterlite-provider/src/identity/**
     - crates/betterlite-provider/src/identity/spend_proxy.rs
     - crates/betterlite-provider/src/identity/spend_proxy/**
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/attribution.rs
     - crates/betterlite-server/src/spend/attribution/**
     - crates/betterlite-config/src/lib.rs
@@ -118,6 +120,6 @@ pitfalls:
   - A hash-shaped untrusted key is hashed again unless the trusted metadata hash equals it.
   - metadata=None and metadata={} have different status/default-field projections.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

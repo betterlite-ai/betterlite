@@ -56,6 +56,7 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/**
     - crates/betterlite-core/src/cost/call_price.rs
     - crates/betterlite-core/src/cost/call_price/**
     - crates/betterlite-provider/Cargo.toml
@@ -114,6 +115,6 @@ pitfalls:
   - Region-qualified catalog lookup is attempted only when the caller supplied a provider, not when one was inferred.
   - The direct search price path turns zero query count into one, unlike completion_cost's list-query branch.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

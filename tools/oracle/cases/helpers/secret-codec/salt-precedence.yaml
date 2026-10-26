@@ -1,0 +1,16 @@
+kind: helper
+name: secret-codec-salt-precedence
+call:
+  secret_codec:
+    salt_key: ""
+    master_key: salt-one
+    general_settings: {encryption_algorithm: [aes-256-gcm]}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
+    steps:
+      - {op: encrypt_value, value: hello, new_key: null}
+      - {op: decrypt_value, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXpRe20oobZi7AwOoQfhXE0GCNqz9X", field: api_key, report: error, keep_original: false}
+      - {op: decrypt_value, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj", field: api_key, report: error, keep_original: false}
+      - {op: encrypt_bearer, value: payload, prefix: litellm_login_}
+env: {}
+compare:
+  ignore: []

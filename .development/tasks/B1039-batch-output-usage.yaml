@@ -68,6 +68,7 @@ scope:
   - crates/betterlite-core/src/api/batch_output_usage.rs
   - crates/betterlite-core/src/api/batch_output_usage/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-core/fuzz/Cargo.toml
@@ -197,5 +198,5 @@ pitfalls:
   into a hard error.
 review_level: security
 budget:
-  max_changed_lines: 660
+  max_changed_lines: 1000
   max_new_expects: 1

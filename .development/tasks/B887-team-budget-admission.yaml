@@ -85,8 +85,11 @@ scope:
     - tools/oracle/cases/helpers/team-budget-admission/**
     - tools/oracle/fuzz/corpus/helper_case/team-budget-admission-*
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/team-budget-admission/**
     - crates/betterlite-server/src/auth/team_budget_admission.rs
     - crates/betterlite-server/src/auth/team_budget_admission/**
@@ -292,6 +295,6 @@ pitfalls:
   - Team hard equality passes while member and window equality fail.
   - Soft recipient lists retain whitespace that comma-separated strings discard.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

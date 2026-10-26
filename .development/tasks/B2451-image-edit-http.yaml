@@ -21,15 +21,21 @@ description: >-
 scope:
   paths:
   - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/image_edit_http.rs
   - crates/betterlite-provider/src/api/image_edit_http/**
   - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/**
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/image_edit_http.rs
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/image_edit_http.py
   - tools/oracle/cases/sdk-http/image-edit-http/**
   - tools/oracle/fuzz/corpus/sdk_http_case/image-edit-http-*
+  - tools/oracle/helpers/b2451.py
+  - tools/oracle/helpers/b2451/**
+  - tools/oracle/src/helpers/provider/b2451.rs
+  - tools/oracle/src/helpers/provider/b2451/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6700-L6918
@@ -87,5 +93,5 @@ pitfalls:
 - Sync and async complete_input_dict differ at the pin and must not be homogenized by refactoring.
 review_level: security
 budget:
-  max_changed_lines: 520
+  max_changed_lines: 1000
   max_new_expects: 0

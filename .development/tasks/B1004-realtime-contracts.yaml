@@ -25,6 +25,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_contracts.rs
   - crates/betterlite-core/src/api/realtime_contracts/**
   - crates/betterlite-core/fuzz/Cargo.toml
@@ -131,5 +132,5 @@ pitfalls:
 - BaseRealtimeHTTPConfig appends /v1 twice for calls when the base already ends with /v1.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0

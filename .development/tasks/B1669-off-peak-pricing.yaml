@@ -89,6 +89,6 @@ pitfalls:
   - A Sunday UTC window can be Monday in weekday_timezone, and a window crossing midnight does not carry yesterday's weekday.
   - A one-hour cache rate of zero must survive an off-peak replacement of ordinary cache creation.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

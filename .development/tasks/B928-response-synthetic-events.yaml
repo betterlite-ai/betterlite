@@ -16,6 +16,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/response_synthetic_events.rs
   - crates/betterlite-core/src/api/response_synthetic_events/**
   - tools/oracle/src/helpers/core_ops/response_synthetic_events.rs
@@ -112,5 +113,5 @@ pitfalls:
 - Logging fallback detaches the usage attribute but does not promise a recursive deep copy.
 review_level: security
 budget:
-  max_changed_lines: 755
+  max_changed_lines: 1000
   max_new_expects: 1

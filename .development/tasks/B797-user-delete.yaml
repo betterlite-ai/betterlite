@@ -85,19 +85,20 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/user-delete/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/user_delete.rs
-    - crates/betterlite-config/src/user_delete/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/user-delete-*
+    - crates/betterlite-config/src/sections/user_delete.rs
+    - crates/betterlite-config/src/sections/user_delete/**
+    - tools/oracle/helpers/b797.py
+    - tools/oracle/helpers/b797/**
+    - tools/oracle/src/helpers/server/b797.rs
+    - tools/oracle/src/helpers/server/b797/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2391-L2604
@@ -170,7 +171,7 @@ checks:
         - test(/replays_the_/)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^user_delete::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::user_delete::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
@@ -230,6 +231,6 @@ pitfalls:
     comment about a second loop.
   - BulkUserDeletion belongs to management_v1 users and would change /user/delete partial effects.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

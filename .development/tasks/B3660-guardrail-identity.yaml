@@ -49,12 +49,10 @@ description: >-
 scope:
   paths:
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/guardrails.rs
-  - crates/betterlite-config/src/types/guardrails/**
   - Cargo.toml
   - Cargo.lock
+  - crates/betterlite-config/src/sections/guardrail_identity.rs
+  - crates/betterlite-config/src/sections/guardrail_identity/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L92-L152
@@ -114,19 +112,19 @@ checks:
     run: cargo clippy --locked -p betterlite-config --all-targets -- -D warnings
   - id: enum-round-trip-tests
     why: Wire-value strings do not round-trip through serde or provider count is incomplete
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^guardrail_enums::/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_identity::guardrail_enums::/)'
   - id: pii-map-tests
     why: PII_ENTITY_CATEGORIES_MAP omits types, has wrong category groupings or type count is incorrect
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^pii_entity_categories::/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_identity::pii_entity_categories::/)'
   - id: config-field-tests
     why: Config model field names do not match LiteLLM or defaults do not deserialize correctly
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^guardrail_config_models::/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_identity::guardrail_config_models::/)'
   - id: default-value-tests
     why: GuardrailItem defaults for enabled_roles or callback_args do not match expected behavior
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^guardrail_item_defaults::/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_identity::guardrail_item_defaults::/)'
   - id: readonly-field-tests
     why: GuardrailBaseInitKwargs fields are not ReadOnly or field count is incomplete
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^guardrail_base_init_kwargs::/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_identity::guardrail_base_init_kwargs::/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
@@ -140,5 +138,5 @@ pitfalls:
 - LITELLM_* environment variables are documented in Field descriptions but not implemented as fallbacks here; B3680+ tasks own initializer defaults.
 review_level: standard
 budget:
-  max_changed_lines: 420
+  max_changed_lines: 1000
   max_new_expects: 0

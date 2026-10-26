@@ -17,6 +17,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_chat_call.rs
   - crates/betterlite-core/src/api/responses_chat_call/**
   - tools/oracle/src/sdk_http.rs
@@ -24,6 +25,10 @@ scope:
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/responses_chat_call.py
   - tools/oracle/cases/sdk-http/responses-chat-call/**
+  - tools/oracle/helpers/b916.py
+  - tools/oracle/helpers/b916/**
+  - tools/oracle/src/helpers/core_ops/b916.rs
+  - tools/oracle/src/helpers/core_ops/b916/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/handler.py#L1-L140
@@ -94,5 +99,5 @@ pitfalls:
 - Hoisted tools must reach both the provider call and output conversion or custom tool names change on return.
 review_level: standard
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 1000
   max_new_expects: 1

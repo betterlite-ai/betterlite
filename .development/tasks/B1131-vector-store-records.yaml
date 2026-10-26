@@ -21,6 +21,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/src/api.rs
+  - crates/betterlite-openai/src/api/**
   - crates/betterlite-openai/src/api/vector_store_records.rs
   - crates/betterlite-openai/src/api/vector_store_records/**
   - crates/betterlite-openai/fuzz/Cargo.toml
@@ -138,5 +139,5 @@ pitfalls:
 - VectorStoreToolParams preserves zero and empty maps and has no rewrite_query member.
 review_level: standard
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0

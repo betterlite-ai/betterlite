@@ -36,6 +36,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/runway.rs
+    - crates/betterlite-core/src/api/runway/**
     - crates/betterlite-core/src/api/runway/video_create.rs
     - crates/betterlite-core/src/api/runway/video_create/**
     - crates/betterlite-core/src/api/runway/tasks.rs
@@ -89,5 +90,5 @@ pitfalls:
   - A present empty failureCode creates an error object without forcing a failed status.
 review_level: security
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 1

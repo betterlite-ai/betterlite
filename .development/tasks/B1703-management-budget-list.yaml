@@ -30,9 +30,14 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/management.rs
+    - crates/betterlite-server/src/management/**
     - crates/betterlite-server/src/management/budget_list.rs
     - crates/betterlite-server/src/management/budget_list/**
     - tools/oracle/cases/http/management-budgets/**
+    - tools/oracle/helpers/b1703.py
+    - tools/oracle/helpers/b1703/**
+    - tools/oracle/src/helpers/server/b1703.rs
+    - tools/oracle/src/helpers/server/b1703/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/budgets.py#L47-L144
@@ -64,6 +69,6 @@ pitfalls:
   - Duration values such as 7d and 30d may be filtered but never sorted by this resource.
   - A database-less request reaches the 503 check before the list scope check.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

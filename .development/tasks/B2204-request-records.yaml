@@ -315,17 +315,7 @@ scope:
   - tools/oracle/cases/helpers/providers/request-records/**
   - tools/oracle/fuzz/corpus/helper_case/request_records*
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/shared.rs
-  - crates/betterlite-config/src/providers/shared/request_records.rs
-  - crates/betterlite-config/src/providers/shared/request_records/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/request_records_config.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/request_records*
+  - crates/betterlite-config/src/sections/request_records.rs
+  - crates/betterlite-config/src/sections/request_records/**
 title: Shared request record filtering and cache attribution

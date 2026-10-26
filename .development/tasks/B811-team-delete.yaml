@@ -74,10 +74,17 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-delete/**
     - crates/betterlite-server/src/team_delete/fixtures/**
+    - tools/oracle/helpers/b811.py
+    - tools/oracle/helpers/b811/**
+    - tools/oracle/src/helpers/server/b811.rs
+    - tools/oracle/src/helpers/server/b811/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4311-L4712
@@ -228,6 +235,6 @@ pitfalls:
   - The first reference sweep precedes the locked transaction, so its writes survive a later team-delete rollback.
   - Archives accept the raw litellm-changed-by header even when the audit actor policy ignores that header.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

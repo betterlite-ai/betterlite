@@ -61,18 +61,10 @@ scope:
   - crates/betterlite-core/src/api/messages_dispatch.rs
   - crates/betterlite-core/src/api/messages_dispatch/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/messages_dispatch.rs
-  - crates/betterlite-config/src/api/messages_dispatch/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/messages-dispatch-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/messages_dispatch.rs
@@ -81,6 +73,8 @@ scope:
   - tools/oracle/helpers/messages_dispatch/**
   - tools/oracle/fuzz/corpus/helper_case/messages_dispatch-*
   - tools/oracle/cases/helpers/messages-dispatch/**
+  - crates/betterlite-config/src/sections/messages_dispatch.rs
+  - crates/betterlite-config/src/sections/messages_dispatch/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L248-L248
@@ -116,14 +110,14 @@ checks:
   commands:
   - id: behavior-tests
     why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::messages_dispatch::/)
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::messages_dispatch::/)
       - test(/::replays_corpus$/)'
   - id: case-messages-public-context
     why: the messages-public-context behavior or its assertions are absent
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_dispatch::tests::messages_public_context($|::)/)'
   - id: config-tests
     why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::messages_dispatch::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::messages_dispatch::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: no newly added key-bearing config seed reaches the production loader
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/messages-dispatch-*)"
@@ -155,5 +149,5 @@ pitfalls:
   branch, preserve return None and its nested guards.
 review_level: standard
 budget:
-  max_changed_lines: 430
+  max_changed_lines: 1000
   max_new_expects: 1

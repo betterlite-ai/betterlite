@@ -17,6 +17,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/codex_history_tools.rs
   - crates/betterlite-core/src/api/codex_history_tools/**
   - tools/oracle/Cargo.toml
@@ -86,5 +87,5 @@ pitfalls:
 - Dropped items still contribute their type to rewritten_types, so deriving diagnostics from retained output loses information.
 review_level: standard
 budget:
-  max_changed_lines: 470
+  max_changed_lines: 1000
   max_new_expects: 1

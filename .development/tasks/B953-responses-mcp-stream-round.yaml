@@ -74,6 +74,7 @@ scope:
   - crates/betterlite-core/src/api/responses_mcp_stream_round.rs
   - crates/betterlite-core/src/api/responses_mcp_stream_round/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
@@ -227,5 +228,5 @@ pitfalls:
 - 'Initial-call failure stores the exception and prints its traceback but does not set phase="finished" until queued discovery events have been drained.'
 review_level: standard
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 1

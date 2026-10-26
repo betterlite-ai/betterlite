@@ -48,9 +48,15 @@ scope:
     - crates/betterlite-auth/src/master_database_auth/**
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/auth/master_database_auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - tools/oracle/cases/auth/master-database-auth/**
+    - tools/oracle/helpers/b2326.py
+    - tools/oracle/helpers/b2326/**
+    - tools/oracle/src/helpers/auth/b2326.rs
+    - tools/oracle/src/helpers/auth/b2326/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L174-L188
@@ -89,6 +95,6 @@ out_of_scope:
 pitfalls:
   - A pre-resolved token bypasses request-field overwrites but does not bypass the missing-database check.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

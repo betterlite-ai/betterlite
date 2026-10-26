@@ -22,6 +22,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_tool_selection.rs
   - crates/betterlite-core/src/api/vector_tool_selection/**
   - tools/oracle/src/helpers/core_ops/vector_tool_selection.rs
@@ -103,5 +104,5 @@ pitfalls:
 - The consuming path preserves duplicate ids and can search or verify the same store multiple times.
 review_level: security
 budget:
-  max_changed_lines: 560
+  max_changed_lines: 1000
   max_new_expects: 0

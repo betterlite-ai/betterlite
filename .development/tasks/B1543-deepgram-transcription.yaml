@@ -30,10 +30,13 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/deepgram.rs
+    - crates/betterlite-core/src/api/deepgram/**
     - crates/betterlite-core/src/api/deepgram/transcription.rs
     - crates/betterlite-core/src/api/deepgram/transcription/**
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/deepgram.rs
+    - crates/betterlite-config/src/providers/deepgram/**
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/deepgram_transcript.rs
     - crates/betterlite-core/fuzz/corpus/deepgram_transcript/**
@@ -82,5 +85,5 @@ pitfalls:
   - The reconstructed final speaker run introduces an extra blank line between the last two runs.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 1

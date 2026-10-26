@@ -30,14 +30,18 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/runway.rs
+    - crates/betterlite-core/src/api/runway/**
     - crates/betterlite-core/src/api/runway/tasks.rs
     - crates/betterlite-core/src/api/runway/tasks/**
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/runway_task.rs
     - crates/betterlite-core/fuzz/corpus/runway_task/**
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/runway.rs
+    - crates/betterlite-config/src/providers/runway/**
     - tools/oracle/src/helpers/core_ops/runway_tasks.rs
     - tools/oracle/src/helpers/core_ops/runway_tasks/**
     - tools/oracle/helpers/runway_tasks.py
@@ -87,5 +91,5 @@ pitfalls:
   - The image failure prefix is RunwayML image generation failed while speech uses RunwayML TTS failed.
 review_level: security
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 1

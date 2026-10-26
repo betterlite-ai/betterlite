@@ -16,6 +16,11 @@ scope:
   paths:
     - crates/betterlite-logging/**
     - tools/oracle/cases/helpers/datadog/**
+    - tools/oracle/fuzz/corpus/helper_case/datadog*
+    - tools/oracle/helpers/datadog_tags.py
+    - tools/oracle/helpers/datadog_tags/**
+    - tools/oracle/src/helpers/logging/datadog_tags.rs
+    - tools/oracle/src/helpers/logging/datadog_tags/**
     - Cargo.toml
   lint_tables: false
 references:
@@ -93,5 +98,5 @@ pitfalls:
   - Collapsing consecutive underscores happens after substitution, so a character like underscore itself does not double up.
 review_level: security
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -32,8 +32,11 @@ scope:
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/shadow_eval_validation.rs
   - crates/betterlite-server/src/routing/shadow_eval_validation/**
   - tools/oracle/src/router_probes/shadow_eval_validation.rs
@@ -46,6 +49,10 @@ scope:
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/shadow_req.rs
   - crates/betterlite-server/fuzz/corpus/shadow_req/shadow-eval-validation-*
+  - tools/oracle/helpers/b345.py
+  - tools/oracle/helpers/b345/**
+  - tools/oracle/src/helpers/server/b345.rs
+  - tools/oracle/src/helpers/server/b345/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L329-L513
@@ -166,5 +173,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

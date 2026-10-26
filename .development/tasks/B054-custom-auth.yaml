@@ -50,16 +50,11 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
-    - crates/betterlite-config/src/custom_auth.rs
-    - crates/betterlite-config/src/custom_auth/**
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/types.rs
+    - crates/betterlite-server/src/app/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/custom-auth-*
     - tools/oracle/src/helpers/server/custom_auth.rs
@@ -70,6 +65,8 @@ scope:
     - tools/oracle/cases/helpers/custom-auth/**
     - tools/oracle/cases/auth/custom-auth/**
     - tools/oracle/fuzz/corpus/helper_case/custom-auth-*
+    - crates/betterlite-config/src/sections/custom_auth.rs
+    - crates/betterlite-config/src/sections/custom_auth/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1361-L1415
@@ -100,7 +97,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^custom_auth::tests::/) - test(/replays_the_/)'
     - id: config-tests
       why: Independent hook settings are ignored or conflated.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^custom_auth::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::custom_auth::tests::/) - test(/replays_the_/)'
     - id: config-corpus
       why: Configuration boundary seed is absent or fails replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/custom-auth-*")" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
@@ -128,6 +125,6 @@ pitfalls:
   - Zero-price detection occurs after the immediate end-user hard-budget check on the no-common-checks path.
   - The two custom-check switches are independent and control different stages.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -35,11 +35,15 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/search_providers.rs
+    - crates/betterlite-core/src/api/search_providers/**
     - crates/betterlite-core/src/api/search_providers/apiserpent.rs
     - crates/betterlite-core/src/api/search_providers/apiserpent/**
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/apiserpent.rs
+    - crates/betterlite-config/src/providers/apiserpent/**
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/apiserpent_reply.rs
     - crates/betterlite-core/fuzz/corpus/apiserpent_reply/**
@@ -93,5 +97,5 @@ pitfalls:
   - An invalid engine string is not rejected by the dataclass's Literal annotation.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 1

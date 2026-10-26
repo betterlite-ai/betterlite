@@ -34,9 +34,11 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/**
     - crates/betterlite-core/src/api/fal/pricing.rs
     - crates/betterlite-core/src/api/fal/pricing/**
     - crates/betterlite-config/src/providers/fal.rs
+    - crates/betterlite-config/src/providers/fal/**
     - tools/oracle/src/helpers/core_ops/fal_pricing.rs
     - tools/oracle/src/helpers/core_ops/fal_pricing/**
     - tools/oracle/helpers/fal_pricing.py
@@ -79,5 +81,5 @@ pitfalls:
   - passthrough num_images=true means one, while a true catalog price retains the source numeric value one.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

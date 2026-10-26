@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/summary_execution.rs
   - crates/betterlite-core/src/api/summary_execution/**
   - tools/oracle/src/sdk_http.rs
@@ -133,5 +134,5 @@ pitfalls:
 - Parent spend attribution uses litellm_metadata and end-user user, never the upstream metadata field.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

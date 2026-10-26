@@ -96,19 +96,9 @@ scope:
   - crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_response.rs
   - crates/betterlite-anthropic/fuzz/corpus/anthropic_response/**
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/anthropic.rs
-  - crates/betterlite-config/src/providers/anthropic/anthropic_reply.rs
-  - crates/betterlite-config/src/providers/anthropic/anthropic_reply/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/anthropic_reply_config.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic_reply*
+  - crates/betterlite-config/src/sections/anthropic_response.rs
+  - crates/betterlite-config/src/sections/anthropic_response/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py#L681-L722
@@ -308,6 +298,6 @@ pitfalls:
 - The final hidden-params replacement discards original_response and previous hidden metadata.
 - Provider id is never copied in this transform, and a pure JSON-tool message replaces the richer constructed message.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

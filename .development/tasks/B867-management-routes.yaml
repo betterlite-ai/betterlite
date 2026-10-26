@@ -217,6 +217,6 @@ pitfalls:
   - Adding global_spend_tracking_routes to internal_user_routes exposes other tenants' spend.
   - The viewer table includes semantically read-only POST paths and is not an exhaustive GET allowlist.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

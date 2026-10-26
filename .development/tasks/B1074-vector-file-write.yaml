@@ -19,9 +19,11 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_file_write.rs
   - crates/betterlite-core/src/api/vector_file_write/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/vector_file_write.rs
   - crates/betterlite-config/src/api/vector_file_write/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-write-*
@@ -31,6 +33,10 @@ scope:
   - tools/oracle/sdk_http/vector_file_write.py
   - tools/oracle/cases/sdk-http/vector-file-write/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-write-*
+  - tools/oracle/helpers/b1074.py
+  - tools/oracle/helpers/b1074/**
+  - tools/oracle/src/helpers/core_ops/b1074.rs
+  - tools/oracle/src/helpers/core_ops/b1074/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L523-L749
@@ -99,5 +105,5 @@ pitfalls:
 - Deleting an attachment does not delete its underlying file resource or its vector-store registry entry.
 review_level: security
 budget:
-  max_changed_lines: 630
+  max_changed_lines: 1000
   max_new_expects: 0

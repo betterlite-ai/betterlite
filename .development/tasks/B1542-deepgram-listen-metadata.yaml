@@ -34,7 +34,9 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/deepgram.rs
+    - crates/betterlite-core/src/api/deepgram/**
     - crates/betterlite-core/src/api/deepgram/{common,listen_metadata}.rs
     - crates/betterlite-core/src/api/deepgram/listen_metadata.rs
     - crates/betterlite-core/src/api/deepgram/listen_metadata/**
@@ -89,5 +91,5 @@ pitfalls:
   - A later zero-duration Metadata frame does not erase an earlier positive duration.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

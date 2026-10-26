@@ -21,9 +21,11 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_store_contracts.rs
   - crates/betterlite-core/src/api/vector_store_contracts/**
   - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/vector_store_contracts.rs
   - crates/betterlite-provider/src/api/vector_store_contracts/**
   - tools/oracle/src/helpers/core_ops/vector_store_contracts.rs
@@ -119,5 +121,5 @@ pitfalls:
 - Router embedding removes configured model/input while the direct embedding executor passes them through and can raise duplicate-argument errors.
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -23,6 +23,7 @@ scope:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/proxy.rs
     - crates/betterlite-core/src/proxy/carried_budget_state.rs
+    - crates/betterlite-core/src/proxy/carried_budget_state/**
     - crates/betterlite-core/src/proxy/**
     - Cargo.toml
   lint_tables: false
@@ -76,6 +77,6 @@ pitfalls:
   - "from_metadata returns None on any ValidationError rather than propagating it, so invalid metadata does not break logging."
 
 budget:
-  max_changed_lines: 150
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

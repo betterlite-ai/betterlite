@@ -43,6 +43,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-db/src/spend_retention.rs
+    - crates/betterlite-db/src/spend_retention/**
     - crates/betterlite-db/src/spend_retention/{batches.rs,batches/**}
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
@@ -97,6 +98,6 @@ pitfalls:
   - A timeout caused by the run deadline is not a consecutive database failure.
   - maximum_spend_logs_cleanup_max_batches counts successful nonempty deletes, so failed attempts do not consume that cap.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

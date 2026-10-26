@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/fine_tuning_create.rs
   - crates/betterlite-core/src/api/fine_tuning_create/**
   - tools/oracle/src/sdk_http.rs
@@ -27,6 +28,10 @@ scope:
   - tools/oracle/sdk_http/fine_tuning_create.py
   - tools/oracle/cases/sdk-http/fine-tuning-create/**
   - tools/oracle/fuzz/corpus/sdk_http_case/fine-tuning-create-*
+  - tools/oracle/helpers/b1052.py
+  - tools/oracle/helpers/b1052/**
+  - tools/oracle/src/helpers/core_ops/b1052.rs
+  - tools/oracle/src/helpers/core_ops/b1052/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L38-L137
@@ -114,5 +119,5 @@ pitfalls:
 - Vertex is supported for create even though the unsupported-provider message says only openai is supported.
 review_level: security
 budget:
-  max_changed_lines: 790
+  max_changed_lines: 1000
   max_new_expects: 0

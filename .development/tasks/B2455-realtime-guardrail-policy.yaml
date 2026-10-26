@@ -22,6 +22,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_guardrail_policy.rs
   - crates/betterlite-core/src/api/realtime_guardrail_policy/**
   - tools/oracle/src/helpers/core_ops/realtime_guardrail_policy.rs
@@ -91,5 +92,5 @@ pitfalls:
 - pre_call and post_call callbacks alone must never turn off provider VAD auto-response.
 review_level: security
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

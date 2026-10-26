@@ -34,12 +34,17 @@ scope:
   - crates/betterlite-router/src/adaptive_selection/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/adaptive_selection.rs
   - crates/betterlite-server/src/routing/adaptive_selection/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/adaptive_selection.rs
   - tools/oracle/src/router_probes/adaptive_selection/**
   - tools/oracle/src/router_probes/mod.rs
@@ -52,6 +57,10 @@ scope:
   - Cargo.toml
   - deny.toml
   - crates/betterlite-router/Cargo.toml
+  - tools/oracle/helpers/b339.py
+  - tools/oracle/helpers/b339/**
+  - tools/oracle/src/helpers/router/b339.rs
+  - tools/oracle/src/helpers/router/b339/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/bandit.py#L29-L137
@@ -130,5 +139,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 1

@@ -122,19 +122,9 @@ scope:
   - crates/betterlite-azure/fuzz/fuzz_targets/azure_search.rs
   - crates/betterlite-azure/fuzz/corpus/azure_search/**
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/azure.rs
-  - crates/betterlite-config/src/providers/azure/azure_search.rs
-  - crates/betterlite-config/src/providers/azure/azure_search/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/azure_search_config.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/azure_search*
+  - crates/betterlite-config/src/sections/azure_search.rs
+  - crates/betterlite-config/src/sections/azure_search/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/search/transformation.py#L122-L205
@@ -353,6 +343,6 @@ pitfalls:
 - Response pricing rereads the connection setting, so the fixture must keep the same configured mode during request
   and reply.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

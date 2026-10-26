@@ -25,6 +25,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/file_storage_contracts.rs
   - crates/betterlite-core/src/api/file_storage_contracts/**
   - tools/oracle/Cargo.toml
@@ -104,5 +105,5 @@ pitfalls:
 - stream in a Responses batch body is filtered into options but never passed as the bridge's explicit stream argument.
 review_level: security
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

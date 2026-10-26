@@ -24,6 +24,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_write_http.rs
   - crates/betterlite-core/src/api/responses_write_http/**
   - tools/oracle/src/sdk_http.rs
@@ -33,6 +34,10 @@ scope:
   - tools/oracle/cases/sdk-http/responses-write-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-write-transport-*
   - Cargo.lock
+  - tools/oracle/helpers/b2417.py
+  - tools/oracle/helpers/b2417/**
+  - tools/oracle/src/helpers/core_ops/b2417.rs
+  - tools/oracle/src/helpers/core_ops/b2417/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2910-L3083
@@ -110,5 +115,5 @@ pitfalls:
 - Cancel does not call sign_request, unlike create and compact.
 review_level: security
 budget:
-  max_changed_lines: 620
+  max_changed_lines: 1000
   max_new_expects: 0

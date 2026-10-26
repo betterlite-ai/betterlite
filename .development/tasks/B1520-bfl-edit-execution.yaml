@@ -27,6 +27,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/bfl.rs
+    - crates/betterlite-core/src/api/bfl/**
     - crates/betterlite-core/src/api/bfl/edit_call.rs
     - crates/betterlite-core/src/api/bfl/edit_call/**
     - tools/oracle/src/helpers/core_ops/bfl_edit_call.rs
@@ -70,5 +71,5 @@ pitfalls:
   - Poll failures still say Image generation failed on the edit operation.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

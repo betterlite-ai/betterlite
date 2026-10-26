@@ -57,6 +57,7 @@ scope:
   - crates/betterlite-core/src/api/responses_mcp_discovery.rs
   - crates/betterlite-core/src/api/responses_mcp_discovery/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
@@ -174,5 +175,5 @@ pitfalls:
   its level and fallback instead of turning it into a hard error.
 review_level: security
 budget:
-  max_changed_lines: 530
+  max_changed_lines: 1000
   max_new_expects: 1

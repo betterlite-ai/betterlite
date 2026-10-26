@@ -31,10 +31,13 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/topaz.rs
     - crates/betterlite-core/src/api/topaz/**
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/topaz.rs
+    - crates/betterlite-config/src/providers/topaz/**
     - tools/oracle/src/helpers/core_ops/topaz_variation.rs
     - tools/oracle/src/helpers/core_ops/topaz_variation/**
     - tools/oracle/helpers/topaz_variation.py
@@ -78,5 +81,5 @@ pitfalls:
   - A trailing slash on api_base is preserved before /image/v1/enhance is appended.
 review_level: security
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0

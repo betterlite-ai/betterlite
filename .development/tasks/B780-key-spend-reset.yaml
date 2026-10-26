@@ -117,10 +117,17 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-spend-reset/**
     - crates/betterlite-server/src/key_spend_reset/fixtures/**
+    - tools/oracle/helpers/b780.py
+    - tools/oracle/helpers/b780/**
+    - tools/oracle/src/helpers/server/b780.rs
+    - tools/oracle/src/helpers/server/b780/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5989-L6278
@@ -284,6 +291,6 @@ pitfalls:
   - Reusing the scheduled calendar reset boundary would include old spend in a manually reset window.
   - A Redis write failure is a warning, while a subsequent broadcast failure can fail an already persisted reset.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

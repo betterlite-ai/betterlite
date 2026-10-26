@@ -41,12 +41,17 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/speech_providers.rs
     - crates/betterlite-core/src/api/speech_providers/**
     - crates/betterlite-provider/src/provider.rs
+    - crates/betterlite-provider/src/provider/**
     - crates/betterlite-provider/src/dispatch.rs
+    - crates/betterlite-provider/src/dispatch/**
     - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/riva.rs
+    - crates/betterlite-config/src/providers/riva/**
     - crates/betterlite-server/src/speech_providers.rs
     - crates/betterlite-server/src/speech_providers/**
     - crates/betterlite-server/src/lib.rs
@@ -111,5 +116,5 @@ pitfalls:
   - Riva has no public-default api_base even when a usable NVIDIA_NIM_API_KEY is present.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

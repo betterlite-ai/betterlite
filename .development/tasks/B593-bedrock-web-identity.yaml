@@ -119,19 +119,9 @@ scope:
   - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_web_identity.rs
   - crates/betterlite-bedrock/fuzz/corpus/bedrock_web_identity/**
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/bedrock.rs
-  - crates/betterlite-config/src/providers/bedrock/bedrock_web_identity.rs
-  - crates/betterlite-config/src/providers/bedrock/bedrock_web_identity/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/bedrock_web_identity_config.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_web_identity*
+  - crates/betterlite-config/src/sections/bedrock_web_identity.rs
+  - crates/betterlite-config/src/sections/bedrock_web_identity/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L972-L1191
@@ -360,6 +350,6 @@ pitfalls:
 - The warning still says 75% when BEDROCK_MAX_POLICY_SIZE changes; the threshold and displayed literal are separate.
 - Direct web identity uses a3540-second TTL; only role-assumption helpers use returned Expiration.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

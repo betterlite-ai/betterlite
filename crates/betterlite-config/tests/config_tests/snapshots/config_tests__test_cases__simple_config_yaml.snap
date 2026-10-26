@@ -1,6 +1,6 @@
 ---
 source: crates/betterlite-config/tests/config_tests/mod.rs
-expression: result
+expression: other
 ---
 Ok(
     Config {
@@ -27,6 +27,10 @@ Ok(
             },
         ],
         general_settings: GeneralSettings {
+            cipher: CipherSettings {
+                signing_key: None,
+                algorithm: XSalsa20Poly1305,
+            },
             master_key: None,
         },
         router_settings: RouterSettings {
@@ -50,5 +54,6 @@ Ok(
             default_max_tokens: 4096,
         },
         environment_variables: {},
+        sections: Sections,
     },
 )

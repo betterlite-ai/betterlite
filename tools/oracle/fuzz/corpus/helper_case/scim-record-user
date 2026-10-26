@@ -1,0 +1,11 @@
+kind: helper
+name: corpus
+call:
+  scim_record:
+    kind: user
+    value:
+      schemas: [u]
+      userName: corpus
+env: {}
+compare:
+  ignore: []

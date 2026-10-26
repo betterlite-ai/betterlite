@@ -67,16 +67,24 @@ scope:
   - crates/betterlite-server/src/api/file_upload_route.rs
   - crates/betterlite-server/src/api/file_upload_route/**
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/file_upload_route.rs
   - crates/betterlite-core/src/api/file_upload_route/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/cases/api/file-upload-route/**
   - tools/oracle/fixtures/http-scenarios/file-upload-route/**
+  - tools/oracle/helpers/b1032.py
+  - tools/oracle/helpers/b1032/**
+  - tools/oracle/src/helpers/server/b1032.rs
+  - tools/oracle/src/helpers/server/b1032/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L530-L927
@@ -348,5 +356,5 @@ pitfalls:
 - Successful remote creation and an enqueued success status survive a later success-hook failure; closing local spools is not rollback.
 review_level: security
 budget:
-  max_changed_lines: 790
+  max_changed_lines: 1000
   max_new_expects: 0

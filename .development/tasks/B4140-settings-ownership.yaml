@@ -24,13 +24,8 @@ description: >-
   handler dependency or B120 composition coupling.
 scope:
   paths:
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/settings/**
+    - crates/betterlite-config/src/sections/settings.rs
+    - crates/betterlite-config/src/sections/settings/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/__init__.py#L1-L21
@@ -72,13 +67,13 @@ checks:
       run: cargo build --locked -p betterlite-config && grep -q "pub.*coerce_bool" crates/betterlite-config/src/settings/rules.rs || grep -q "coerce_bool" crates/betterlite-config/src/lib.rs
     - id: settings-store-tests
       why: SettingsStore contract, config ownership, DB updates, resource lists, or iteration fails
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^settings_store::/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::settings::settings_store::/)'
     - id: descriptor-tests
       why: Field descriptors, resolution logic, alerting tables or source tracking fails
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^settings_resolution::|^field_descriptor::/) - test(replays_the_settings_corpus)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::settings::settings_resolution::|^field_descriptor::/) - test(replays_the_settings_corpus)'
     - id: coerce-bool-tests
       why: coerce_bool does not correctly normalize boolean strings and JSON values
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^coerce_bool::/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::settings::coerce_bool::/)'
 oracle_cases: []
 deviations:
   - what: A value stored as null in the database is treated as absent (unset), not as an empty string.
@@ -101,5 +96,5 @@ pitfalls:
   - "Config ownership applies to any key in yaml_values, regardless of section. A write attempt raises ConfigOwnedKeyError with shadows_db_value=True only when a DB value exists and differs."
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

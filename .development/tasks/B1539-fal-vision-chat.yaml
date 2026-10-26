@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/**
     - crates/betterlite-core/src/api/fal/vision_chat.rs
     - crates/betterlite-core/src/api/fal/vision_chat/**
     - crates/betterlite-core/fuzz/Cargo.toml
@@ -83,5 +84,5 @@ pitfalls:
   - The source validates usage_info even when output is an empty string.
 review_level: security
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0

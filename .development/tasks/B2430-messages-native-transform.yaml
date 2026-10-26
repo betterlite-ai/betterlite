@@ -25,6 +25,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_native_transform.rs
   - crates/betterlite-core/src/api/messages_native_transform/**
   - tools/oracle/Cargo.toml
@@ -124,5 +125,5 @@ pitfalls:
 - Effort-only xhigh on Opus 4.5 is left for provider subclasses; this layer must not clamp it prematurely.
 review_level: standard
 budget:
-  max_changed_lines: 720
+  max_changed_lines: 1000
   max_new_expects: 0

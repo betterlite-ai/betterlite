@@ -79,10 +79,15 @@ scope:
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/Cargo.toml
   - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/provider/**
   - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/**
   - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-provider/src/prepared/**
   - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/dispatch/**
   - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-provider/src/openai_assistant_dispatch.rs
   - crates/betterlite-provider/src/openai_assistant_dispatch/**
@@ -256,6 +261,6 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as openai_assistant_dispatch in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/openai_assistant_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_assistant_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Run streams and realtime sessions retain distinct typed operation variants despite both exposing streaming behavior.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

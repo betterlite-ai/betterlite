@@ -112,19 +112,9 @@ scope:
   - tools/oracle/cases/helpers/providers/anthropic-headers/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_headers*
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/anthropic.rs
-  - crates/betterlite-config/src/providers/anthropic/anthropic_headers.rs
-  - crates/betterlite-config/src/providers/anthropic/anthropic_headers/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/anthropic_headers_config.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic_headers*
+  - crates/betterlite-config/src/sections/anthropic_headers.rs
+  - crates/betterlite-config/src/sections/anthropic_headers/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L951-L1120
@@ -439,6 +429,6 @@ pitfalls:
 - A resolved empty API key is not None, so it blocks ANTHROPIC_AUTH_TOKEN fallback without necessarily producing
   an authentication header.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

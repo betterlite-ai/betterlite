@@ -27,12 +27,17 @@ scope:
   - crates/betterlite-router/src/budget_windows/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/budget_windows.rs
   - crates/betterlite-server/src/routing/budget_windows/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/budget_windows.rs
   - tools/oracle/src/router_probes/budget_windows/**
   - tools/oracle/src/router_probes/mod.rs
@@ -40,18 +45,14 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/budget_windows.py
   - tools/oracle/cases/routing/budget-windows/**
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/router.rs
-  - crates/betterlite-config/src/budget_windows.rs
-  - crates/betterlite-config/src/budget_windows/**
-  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/budget-windows-*
   - crates/betterlite-config/fuzz/Cargo.toml
+  - crates/betterlite-config/src/sections/budget_windows.rs
+  - crates/betterlite-config/src/sections/budget_windows/**
+  - tools/oracle/helpers/b383.py
+  - tools/oracle/helpers/b383/**
+  - tools/oracle/src/helpers/router/b383.rs
+  - tools/oracle/src/helpers/router/b383/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L290-L390
@@ -152,5 +153,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

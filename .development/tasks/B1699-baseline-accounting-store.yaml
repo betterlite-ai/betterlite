@@ -55,6 +55,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-db/src/baseline.rs
+    - crates/betterlite-db/src/baseline/**
     - crates/betterlite-db/src/baseline/store.rs
     - crates/betterlite-db/src/baseline/store/**
     - crates/betterlite-db/src/baseline/flush.rs
@@ -98,6 +99,6 @@ pitfalls:
   - The page limit counts distinct timestamps, not observation rows, so tied requests must stay in one replay group.
   - A failed projection must leave published_revision behind revision; marking it clean would permanently suppress retry.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

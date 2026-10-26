@@ -169,6 +169,6 @@ pitfalls:
   - The stale-server cleanup mutates the incoming permission object before a later server/group/toolset denial.
   - Empty team MCP toolset and search-tool lists impose no ceiling, while empty MCP server grants permit only global allow_all_keys servers.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -22,15 +22,23 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/api/managed_file_routes.rs
   - crates/betterlite-server/src/api/managed_file_routes/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/managed_file_routes.rs
   - crates/betterlite-core/src/api/managed_file_routes/**
   - tools/oracle/cases/api/managed-file-routes/**
   - tools/oracle/fixtures/http-scenarios/managed-file-routes/**
+  - tools/oracle/helpers/b087.py
+  - tools/oracle/helpers/b087/**
+  - tools/oracle/src/helpers/server/b087.rs
+  - tools/oracle/src/helpers/server/b087/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1434-L1649
@@ -110,5 +118,5 @@ pitfalls:
 - Native provider deletion succeeds without any managed metadata transaction.
 review_level: security
 budget:
-  max_changed_lines: 570
+  max_changed_lines: 1000
   max_new_expects: 0

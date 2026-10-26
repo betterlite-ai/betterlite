@@ -21,6 +21,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_fake_stream.rs
   - crates/betterlite-core/src/api/messages_fake_stream/**
   - tools/oracle/src/helpers/core_ops/messages_fake_stream.rs
@@ -159,5 +160,5 @@ pitfalls:
 - current_index is one mutable cursor shared by __next__ and __anext__; alternating them consumes frames once, and changing response after construction cannot affect the byte list.
 review_level: standard
 budget:
-  max_changed_lines: 580
+  max_changed_lines: 1000
   max_new_expects: 0

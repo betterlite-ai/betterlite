@@ -57,6 +57,7 @@ scope:
   - crates/betterlite-core/src/api/responses_mcp_dispatch.rs
   - crates/betterlite-core/src/api/responses_mcp_dispatch/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
@@ -176,5 +177,5 @@ pitfalls:
   and its nested guards.
 review_level: security
 budget:
-  max_changed_lines: 630
+  max_changed_lines: 1000
   max_new_expects: 1

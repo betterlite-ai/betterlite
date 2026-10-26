@@ -1,22 +1,29 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str;
 
 use crate::OracleError;
 use crate::helpers::HelperCall;
+use betterlite_postgres_fixture::seed::DatabaseFixture;
 use serde::Deserialize;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Case {
+pub struct Case {
     pub(crate) name: String,
     pub(crate) config: String,
     pub(crate) env: BTreeMap<String, String>,
-    pub(crate) request: Request,
+    pub(crate) request: Box<Request>,
     pub(crate) upstream: Vec<UpstreamAnswer>,
-    pub(crate) compare: Compare,
+    pub(crate) compare: Box<Compare>,
+    #[serde(default)]
+    #[serde(alias = "database_fixture")]
+    pub(crate) database: Option<DatabaseFixture>,
 }
+
+pub type HttpCase = Case;
 
 #[derive(Debug, Clone)]
 pub(crate) enum LoadedCase {
@@ -38,6 +45,11 @@ pub(crate) struct HelperCase {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum HelperKind {
     Helper,
+}
+
+#[derive(Deserialize)]
+struct CaseKind {
+    kind: Option<HelperKind>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -104,24 +116,34 @@ pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<LoadedCase>, OracleErr
 }
 
 pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleError> {
-    if path
-        .components()
-        .any(|component| component.as_os_str() == "helpers")
-    {
-        let case: HelperCase =
-            serde_saphyr::from_str(text).map_err(|source| OracleError::CaseParse {
-                path: path.to_owned(),
-                source: Box::new(source),
-            })?;
+    let parse_error = |source: serde_saphyr::Error| OracleError::CaseParse {
+        path: path.to_owned(),
+        source: Box::new(source),
+    };
+    // the case says what it is, so its folder never decides
+    let probe: CaseKind = serde_saphyr::from_str(text).map_err(parse_error)?;
+    if probe.kind.is_some() {
+        let case: HelperCase = serde_saphyr::from_str(text).map_err(parse_error)?;
         validate_helper(path, &case)?;
         return Ok(LoadedCase::Helper(case));
     }
+    let case = decode_case(path, text.as_bytes())?;
+    Ok(LoadedCase::Http(case))
+}
+
+pub fn decode_http_case(bytes: &[u8]) -> Result<HttpCase, OracleError> {
+    let path = Path::new("<bytes>");
+    decode_case(path, bytes)
+}
+
+fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
+    let text = str::from_utf8(bytes).map_err(|source| OracleError::CaseUtf8 { source })?;
     let case: Case = serde_saphyr::from_str(text).map_err(|source| OracleError::CaseParse {
         path: path.to_owned(),
         source: Box::new(source),
     })?;
     validate(path, &case)?;
-    Ok(LoadedCase::Http(case))
+    Ok(case)
 }
 
 pub fn parse_helper_case(source: &str) -> Result<(), String> {
@@ -173,6 +195,12 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     };
     if case.name.is_empty() || case.config.is_empty() || case.request.path.is_empty() {
         return Err(invalid("name, config, and request.path cannot be empty"));
+    }
+    if let Some(database) = &case.database {
+        database
+            .seed
+            .validate()
+            .map_err(|source| OracleError::HttpCaseFixture { source })?;
     }
     for answer in &case.upstream {
         if answer.body.is_some() == answer.events.is_some() {

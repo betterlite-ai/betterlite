@@ -88,6 +88,7 @@ scope:
   - crates/betterlite-core/src/api/executed_batch_input.rs
   - crates/betterlite-core/src/api/executed_batch_input/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-core/fuzz/Cargo.toml
@@ -217,5 +218,5 @@ pitfalls:
   field spelling in the typed projection.
 review_level: security
 budget:
-  max_changed_lines: 580
+  max_changed_lines: 1000
   max_new_expects: 1

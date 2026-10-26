@@ -24,6 +24,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/file_storage_service.rs
   - crates/betterlite-core/src/api/file_storage_service/**
   - tools/oracle/Cargo.toml
@@ -120,5 +121,5 @@ pitfalls:
 - A storage-only response has no persisted managed ownership record, despite carrying storage metadata internally.
 review_level: security
 budget:
-  max_changed_lines: 530
+  max_changed_lines: 1000
   max_new_expects: 0

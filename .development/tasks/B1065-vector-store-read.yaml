@@ -16,10 +16,13 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_store_read.rs
   - crates/betterlite-core/src/api/vector_store_read/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/vector_store_read.rs
+  - crates/betterlite-config/src/api/vector_store_read/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-read-*
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/vector_store_read.rs
@@ -27,6 +30,10 @@ scope:
   - tools/oracle/sdk_http/vector_store_read.py
   - tools/oracle/cases/sdk-http/vector-store-read/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-read-*
+  - tools/oracle/helpers/b1065.py
+  - tools/oracle/helpers/b1065/**
+  - tools/oracle/src/helpers/core_ops/b1065.rs
+  - tools/oracle/src/helpers/core_ops/b1065/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L493-L775
@@ -93,5 +100,5 @@ pitfalls:
 - Passing timeout=0 chooses REQUEST_TIMEOUT rather than disabling a timeout.
 review_level: security
 budget:
-  max_changed_lines: 610
+  max_changed_lines: 1000
   max_new_expects: 0

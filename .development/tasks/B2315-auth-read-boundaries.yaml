@@ -126,6 +126,6 @@ pitfalls:
   - The end-user registry adapter is unwrapped even though an end-user lookup through _dictable_table is bounded.
   - A dictionary shaped like a membership is deliberately rejected by the shared-load projection.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

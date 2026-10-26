@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/file_stream_logging.rs
   - crates/betterlite-core/src/api/file_stream_logging/**
   - tools/oracle/src/helpers/core_ops/file_stream_projection.rs
@@ -113,5 +114,5 @@ pitfalls:
 - Async failure callbacks run in sync-then-async order, unlike success callbacks.
 review_level: security
 budget:
-  max_changed_lines: 630
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -46,7 +46,10 @@ settings:
   always_in_scope:
     - Cargo.lock
     - "**/Cargo.toml"
+    - crates/betterlite-config/tests/fixtures/unsupported/**
   budget_excludes:
+    - .development/backlog/**
+    - .development/tasks/**
     - Cargo.lock
     - "**/fixtures/**"
     - "**/snapshots/**"

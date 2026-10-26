@@ -36,6 +36,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/**
     - crates/betterlite-core/src/api/fal/video_prepare.rs
     - crates/betterlite-core/src/api/fal/video_prepare/**
     - crates/betterlite-core/fuzz/Cargo.toml
@@ -90,5 +91,5 @@ pitfalls:
   - A status URL uses the model's queue namespace prefix, while submission uses its full endpoint path.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 1

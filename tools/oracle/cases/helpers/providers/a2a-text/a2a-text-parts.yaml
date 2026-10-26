@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-text-parts
+call: {a2a_text: {function: message, message: {parts: [{kind: text, text: ""}, {kind: text, text: one, parts: [{kind: text, text: hidden}]}, {kind: text}, {kind: data, parts: [{kind: text, text: two}]}, {kind: data, parts: []}, {kind: file}]}}}
+env: {}
+compare: {ignore: []}

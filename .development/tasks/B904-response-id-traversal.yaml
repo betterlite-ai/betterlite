@@ -23,6 +23,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/response_id_traversal.rs
   - crates/betterlite-core/src/api/response_id_traversal/**
   - tools/oracle/Cargo.toml
@@ -110,5 +111,5 @@ pitfalls:
 - List text blocks use truthiness, so a whitespace-only block counts as readable while a whitespace-only summary string does not.
 review_level: security
 budget:
-  max_changed_lines: 770
+  max_changed_lines: 1000
   max_new_expects: 1

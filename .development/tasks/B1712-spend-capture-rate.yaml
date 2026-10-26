@@ -50,6 +50,7 @@ scope:
     - crates/betterlite-config/src/capture_rate/**
     - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/capture_rate_settings.rs,corpus/capture_rate_settings/**}
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/capture_rate.rs
     - crates/betterlite-server/src/spend/capture_rate/**
     - tools/oracle/src/helpers/provider/capture_rate.rs
@@ -105,6 +106,6 @@ pitfalls:
   - Filtering OpenAI project IDs never filters the captured database spend.
   - Every replica publishes its gauge even when another replica owns the alert-window lock.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

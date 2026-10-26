@@ -26,6 +26,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/skills.rs
+    - crates/betterlite-core/src/skills/**
     - crates/betterlite-core/src/skills/search.rs
     - crates/betterlite-core/src/skills/search/**
     - tools/oracle/src/helpers/core_ops/hosted_skill_search.rs
@@ -72,5 +73,5 @@ pitfalls:
   - Equal scores retain repository order because the source sort is stable.
 review_level: security
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 1000
   max_new_expects: 0

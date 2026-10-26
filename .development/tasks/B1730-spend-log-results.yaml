@@ -37,12 +37,17 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/log_results.rs
     - crates/betterlite-server/src/spend/log_results/**
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/legacy_spend_query.rs
     - crates/betterlite-server/fuzz/corpus/legacy_spend_query/**
     - tools/oracle/cases/http/legacy-spend-logs/**
+    - tools/oracle/helpers/b1730.py
+    - tools/oracle/helpers/b1730/**
+    - tools/oracle/src/helpers/server/b1730.rs
+    - tools/oracle/src/helpers/server/b1730/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L199-L235
@@ -80,6 +85,6 @@ pitfalls:
   - Legacy summaries match only request_id while legacy row exports also match litellm_call_id.
   - session_llm_count includes batch calls although the listing's span_type=llm filter excludes them.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

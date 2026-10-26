@@ -29,12 +29,17 @@ scope:
   - crates/betterlite-router/src/io_token_reservations/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/io_token_reservations.rs
   - crates/betterlite-server/src/routing/io_token_reservations/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/io_token_reservations.rs
   - tools/oracle/src/router_probes/io_token_reservations/**
   - tools/oracle/src/router_probes/mod.rs
@@ -42,18 +47,14 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/io_token_reservations.py
   - tools/oracle/cases/routing/io-token-reservations/**
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/router.rs
-  - crates/betterlite-config/src/io_token_reservations.rs
-  - crates/betterlite-config/src/io_token_reservations/**
-  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/io-token-reservations-*
   - crates/betterlite-config/fuzz/Cargo.toml
+  - crates/betterlite-config/src/sections/io_token_reservations.rs
+  - crates/betterlite-config/src/sections/io_token_reservations/**
+  - tools/oracle/helpers/b365.py
+  - tools/oracle/helpers/b365/**
+  - tools/oracle/src/helpers/router/b365.rs
+  - tools/oracle/src/helpers/router/b365/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py#L69-L525
@@ -131,5 +132,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

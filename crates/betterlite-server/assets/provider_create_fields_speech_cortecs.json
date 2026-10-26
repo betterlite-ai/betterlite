@@ -1,0 +1,371 @@
+[
+  {
+    "provider": "Azure_Speech",
+    "provider_display_name": "Azure AI Speech",
+    "litellm_provider": "azure_speech",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "Azure AI Speech Subscription Key",
+        "placeholder": null,
+        "tooltip": "The Ocp-Apim-Subscription-Key for your Azure AI Speech resource. The proxy injects it on every /azure_speech/* pass-through request. Region and API base come from AZURE_SPEECH_REGION / AZURE_SPEECH_API_BASE",
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "azure_speech/short-audio"
+  },
+  {
+    "provider": "AZURE_TEXT",
+    "provider_display_name": "Azure Text",
+    "litellm_provider": "azure_text",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "BASETEN",
+    "provider_display_name": "Baseten",
+    "litellm_provider": "baseten",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "BYTEZ",
+    "provider_display_name": "Bytez",
+    "litellm_provider": "bytez",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "Cerebras",
+    "provider_display_name": "Cerebras",
+    "litellm_provider": "cerebras",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "CHATGPT",
+    "provider_display_name": "ChatGPT Subscription",
+    "litellm_provider": "chatgpt",
+    "credential_fields": [],
+    "default_model_placeholder": "chatgpt/gpt-5.4"
+  },
+  {
+    "provider": "CLARIFAI",
+    "provider_display_name": "Clarifai",
+    "litellm_provider": "clarifai",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "CLOUDFLARE",
+    "provider_display_name": "Cloudflare",
+    "litellm_provider": "cloudflare",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "CODESTRAL",
+    "provider_display_name": "Codestral",
+    "litellm_provider": "codestral",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "Cognition",
+    "provider_display_name": "Cognition",
+    "litellm_provider": "cognition",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.cognition.ai/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "cognition/swe-1.7"
+  },
+  {
+    "provider": "Cohere",
+    "provider_display_name": "Cohere",
+    "litellm_provider": "cohere",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "COHERE_CHAT",
+    "provider_display_name": "Cohere Chat",
+    "litellm_provider": "cohere_chat",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "COMETAPI",
+    "provider_display_name": "Cometapi",
+    "litellm_provider": "cometapi",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "COMPACTIFAI",
+    "provider_display_name": "Compactifai",
+    "litellm_provider": "compactifai",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "CORTECS",
+    "provider_display_name": "Cortecs",
+    "litellm_provider": "cortecs",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.cortecs.ai/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "cortecs/gpt-6-sol"
+  }
+]

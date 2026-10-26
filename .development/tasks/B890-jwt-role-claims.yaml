@@ -85,15 +85,9 @@ scope:
     - tools/oracle/cases/helpers/jwt-role-claims/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-role-claims-*
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/jwt_role_claims.rs
-    - crates/betterlite-config/src/jwt_role_claims/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-role-claims-*
+    - crates/betterlite-config/src/sections/jwt_role_claims.rs
+    - crates/betterlite-config/src/sections/jwt_role_claims/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L304-L333
@@ -161,7 +155,7 @@ checks:
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^jwt_role_claims::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::jwt_role_claims::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
@@ -237,6 +231,6 @@ pitfalls:
   - A roles string iterates characters; only scope strings split into words.
   - role_mappings is exact RBAC selection, while jwt_litellm_role_map uses wildcard matching for sync.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

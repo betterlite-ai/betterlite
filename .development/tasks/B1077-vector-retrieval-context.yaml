@@ -25,15 +25,21 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_retrieval_context.rs
   - crates/betterlite-core/src/api/vector_retrieval_context/**
   - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/dispatch/**
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/vector_retrieval_context.rs
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/vector_retrieval_context.py
   - tools/oracle/cases/sdk-http/vector-retrieval-context/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-retrieval-context-*
+  - tools/oracle/helpers/b1077.py
+  - tools/oracle/helpers/b1077/**
+  - tools/oracle/src/helpers/core_ops/b1077.rs
+  - tools/oracle/src/helpers/core_ops/b1077/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L69-L348
@@ -124,5 +130,5 @@ pitfalls:
 - Guardrail failures occur outside the augmentation catch and must not be swallowed as an optional retrieval failure.
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0

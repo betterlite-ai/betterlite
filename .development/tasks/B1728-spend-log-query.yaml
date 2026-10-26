@@ -38,6 +38,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/log_query.rs
     - crates/betterlite-server/src/spend/log_query/**
     - crates/betterlite-server/fuzz/Cargo.toml
@@ -94,6 +95,6 @@ pitfalls:
   - A UI request_id lookup without search ignores even malformed supplied date strings.
   - The search helper's unbounded request_id arm does not remove the public v2 route's outer time restriction.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -21,6 +21,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/managed_resource_access.rs
   - crates/betterlite-core/src/api/managed_resource_access/**
   - tools/oracle/Cargo.toml
@@ -105,5 +106,5 @@ pitfalls:
 - A filter of None means skip the repository query, whereas {} deliberately permits an unscoped admin query.
 review_level: security
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -19,12 +19,17 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/fine_tuning_routes.rs
   - crates/betterlite-server/src/api/fine_tuning_routes/**
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/fine_tuning_create.rs
   - crates/betterlite-server/fuzz/corpus/fine_tuning_create/**
   - tools/oracle/cases/api/fine-tuning-routes/**
+  - tools/oracle/helpers/b088.py
+  - tools/oracle/helpers/b088/**
+  - tools/oracle/src/helpers/server/b088.rs
+  - tools/oracle/src/helpers/server/b088/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/fine_tuning_endpoints/endpoints.py#L62-L492
@@ -126,5 +131,5 @@ pitfalls:
 - Managed create returns a decoded training-file string, not the incoming encoded id.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

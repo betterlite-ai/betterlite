@@ -1,7 +1,7 @@
 id: B3720
 milestone: M6 guardrails
 title: Bedrock guardrail records and chunk reconstruction
-status: todo
+status: done
 depends_on: []
 file: tasks/B3720-bedrock-guardrail-chunks.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py"
 parent: B106
 split_from: B106
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 132

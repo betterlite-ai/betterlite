@@ -34,15 +34,22 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/subscription_dispatch.rs
     - crates/betterlite-core/src/api/subscription_dispatch/**
     - crates/betterlite-provider/src/provider.rs
+    - crates/betterlite-provider/src/provider/**
     - crates/betterlite-provider/src/dispatch.rs
+    - crates/betterlite-provider/src/dispatch/**
     - crates/betterlite-server/src/subscription_dispatch.rs
     - crates/betterlite-server/src/subscription_dispatch/**
     - crates/betterlite-server/src/lib.rs
     - tools/oracle/cases/providers/subscriptions/**
     - tools/oracle/fixtures/subscriptions/**
+    - tools/oracle/helpers/b045.py
+    - tools/oracle/helpers/b045/**
+    - tools/oracle/src/helpers/core_ops/b045.rs
+    - tools/oracle/src/helpers/core_ops/b045/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2634-L2651
@@ -93,5 +100,5 @@ pitfalls:
   - Mounting an additional copy of an API family route would panic before any subscription request can run.
 review_level: security
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0

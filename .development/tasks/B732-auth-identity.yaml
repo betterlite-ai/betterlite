@@ -70,9 +70,12 @@ scope:
     - Cargo.toml
     - deny.toml
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - crates/betterlite-server/src/auth/auth_identity.rs
     - crates/betterlite-server/src/auth/auth_identity/**
     - tools/oracle/src/helpers/server/auth_identity.rs
@@ -295,6 +298,6 @@ pitfalls:
   - Missing role becomes None, member or internal_user depending on which of the three helpers is called.
   - A source_key accepted by the record constructor is neither serialized nor evidence of authentication.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

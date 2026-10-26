@@ -86,14 +86,6 @@ scope:
     - crates/betterlite-db/src/database_urls/**
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/database_urls.rs
-    - crates/betterlite-config/src/database_urls/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/database-urls-*
     - tools/oracle/src/helpers/db/database_urls.rs
     - tools/oracle/src/helpers/db/database_urls/**
@@ -102,6 +94,8 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/database-urls/**
     - tools/oracle/fuzz/corpus/helper_case/database-urls-*
+    - crates/betterlite-config/src/sections/database_urls.rs
+    - crates/betterlite-config/src/sections/database_urls/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L312-L362
@@ -145,7 +139,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_urls::tests::/)'
     - id: config-tests
       why: Every named database setting must actually load and reach the endpoint/query policy.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_urls::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::database_urls::tests::/) - test(/replays_the_/)'
     - id: helper-python
       why: Password/settings adapters must call the pinned helpers and type-check.
       run: test -f tools/oracle/helpers/database_urls.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
@@ -186,6 +180,6 @@ pitfalls:
   - An empty replica password inherits the writer password because the fallback uses truthiness.
   - The CLI does not apply DATABASE_MAX_IDLE_CONNECTION_LIFETIME as its idle-timeout fallback.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

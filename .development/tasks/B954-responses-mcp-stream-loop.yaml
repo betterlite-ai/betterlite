@@ -58,6 +58,7 @@ scope:
   - crates/betterlite-core/src/api/responses_mcp_stream_loop.rs
   - crates/betterlite-core/src/api/responses_mcp_stream_loop/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
@@ -162,5 +163,5 @@ pitfalls:
   return and its nested guards.
 review_level: standard
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 1

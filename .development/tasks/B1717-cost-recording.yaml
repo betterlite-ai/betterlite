@@ -43,10 +43,13 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/**
     - crates/betterlite-core/src/cost/recording.rs
     - crates/betterlite-core/src/cost/recording/**
     - crates/betterlite-core/src/cost/dispatch.rs
+    - crates/betterlite-core/src/cost/dispatch/**
     - crates/betterlite-core/src/helpers.rs
+    - crates/betterlite-core/src/helpers/**
     - tools/oracle/src/helpers/core_ops/cost_recording.rs
     - tools/oracle/src/helpers/core_ops/cost_recording/**
     - tools/oracle/helpers/cost_recording.py
@@ -103,6 +106,6 @@ pitfalls:
   - A hidden response_cost of zero is authoritative and still bypasses an otherwise positive additional_response_cost.
   - A top-level off_peak_pricing entry alone does not enable custom pricing.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

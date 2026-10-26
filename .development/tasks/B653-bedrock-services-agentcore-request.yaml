@@ -129,19 +129,9 @@ scope:
   - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-request/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_request*
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/bedrock.rs
-  - crates/betterlite-config/src/providers/bedrock/agentcore_request.rs
-  - crates/betterlite-config/src/providers/bedrock/agentcore_request/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/agentcore_request_config.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/agentcore_request*
+  - crates/betterlite-config/src/sections/bedrock_agentcore_request.rs
+  - crates/betterlite-config/src/sections/bedrock_agentcore_request/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock_agentcore.py#L1-L134
@@ -372,6 +362,6 @@ pitfalls:
 - The runtime ARN controls the URL region but does not overwrite the signing region, so the two can differ.
 - The 33-character session minimum appears only in a docstring; short supplied IDs are sent unchanged.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

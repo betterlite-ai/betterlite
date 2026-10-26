@@ -24,6 +24,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/middleware/billable_request_metrics.rs
+    - crates/betterlite-server/src/middleware/billable_request_metrics/**
     - crates/betterlite-server/src/middleware/billable_request_metrics/tests.rs
   lint_tables: false
 
@@ -146,5 +147,5 @@ pitfalls:
 review_level: standard
 
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0

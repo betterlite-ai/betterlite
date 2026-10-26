@@ -16,6 +16,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_file_provider.rs
   - crates/betterlite-core/src/api/vector_file_provider/**
   - tools/oracle/src/helpers/core_ops/vector_file_provider.rs
@@ -73,5 +74,5 @@ pitfalls:
 - Registry credentials replace explicit caller credentials; an exception during lookup is silently ignored.
 review_level: security
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

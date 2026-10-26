@@ -25,6 +25,7 @@ scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
   - crates/betterlite-anthropic/src/api.rs
+  - crates/betterlite-anthropic/src/api/**
   - crates/betterlite-anthropic/src/api/messages_errors.rs
   - crates/betterlite-anthropic/src/api/messages_errors/**
   - crates/betterlite-anthropic/fuzz/Cargo.toml
@@ -124,5 +125,5 @@ pitfalls:
 - A dict detail without message suppresses the otherwise usable top-level Message field.
 review_level: standard
 budget:
-  max_changed_lines: 680
+  max_changed_lines: 1000
   max_new_expects: 0

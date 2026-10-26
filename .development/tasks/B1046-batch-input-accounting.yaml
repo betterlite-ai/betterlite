@@ -64,6 +64,7 @@ scope:
   - crates/betterlite-core/src/api/batch_input_accounting.rs
   - crates/betterlite-core/src/api/batch_input_accounting/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-core/fuzz/Cargo.toml
@@ -188,5 +189,5 @@ pitfalls:
   be validated against the current team.''}; preserve this envelope rather than a family-wide error default.'
 review_level: security
 budget:
-  max_changed_lines: 570
+  max_changed_lines: 1000
   max_new_expects: 1

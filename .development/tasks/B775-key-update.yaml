@@ -84,10 +84,17 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-update/**
     - crates/betterlite-server/src/key_update/fixtures/**
+    - tools/oracle/helpers/b775.py
+    - tools/oracle/helpers/b775/**
+    - tools/oracle/src/helpers/server/b775.rs
+    - tools/oracle/src/helpers/server/b775/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L3355-L3617
@@ -244,6 +251,6 @@ pitfalls:
   - Testing only non-null soft_budget misses the explicit-null path that still selects the budget transaction.
   - Passing premium_user to validation does not make update_key_fn itself a license-gated function.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

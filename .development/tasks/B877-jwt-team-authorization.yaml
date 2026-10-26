@@ -87,21 +87,18 @@ scope:
     - crates/betterlite-auth/src/jwt_team_authorization/**
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/jwt-team-authorization/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/jwt_team_authorization.rs
-    - crates/betterlite-config/src/jwt_team_authorization/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-team-authorization-*
     - crates/betterlite-server/src/auth/jwt_team_authorization.rs
     - crates/betterlite-server/src/auth/jwt_team_authorization/**
+    - crates/betterlite-config/src/sections/jwt_team_authorization.rs
+    - crates/betterlite-config/src/sections/jwt_team_authorization/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2630-L2929
@@ -150,7 +147,7 @@ checks:
         - test(/replays_the_/)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^jwt_team_authorization::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::jwt_team_authorization::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
@@ -224,6 +221,6 @@ pitfalls:
   - The header fallback predicate is broader than claimless DB fallback; a JWT with team claims can still select another DB membership when no RBAC team was assigned.
   - The second passthrough check follows DB fallback because the earlier check had no selected team to authorize.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

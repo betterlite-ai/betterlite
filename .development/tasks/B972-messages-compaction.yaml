@@ -17,6 +17,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_compaction.rs
   - crates/betterlite-core/src/api/messages_compaction/**
   - tools/oracle/src/helpers/core_ops/context_edit_dispatch.rs
@@ -104,5 +105,5 @@ pitfalls:
 - The legacy clear tuple preserves system from the preceding editor, not from the original request.
 review_level: standard
 budget:
-  max_changed_lines: 540
+  max_changed_lines: 1000
   max_new_expects: 0

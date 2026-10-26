@@ -1,0 +1,16 @@
+kind: helper
+name: check-id-reserved-expected-behavior
+call:
+  lens_state:
+    decode_settings:
+      json:
+        name: Support replies
+        model: gpt-4o-mini
+        context: Replies cite the help center.
+        checks:
+          - {id: expected_behavior, instruction: Keep a calm tone.}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message

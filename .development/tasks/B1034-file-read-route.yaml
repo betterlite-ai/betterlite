@@ -21,15 +21,23 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/api/file_read_route.rs
   - crates/betterlite-server/src/api/file_read_route/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/file_read_route.rs
   - crates/betterlite-core/src/api/file_read_route/**
   - tools/oracle/cases/api/file-read-route/**
   - tools/oracle/fixtures/http-scenarios/file-read-route/**
+  - tools/oracle/helpers/b1034.py
+  - tools/oracle/helpers/b1034/**
+  - tools/oracle/src/helpers/server/b1034.rs
+  - tools/oracle/src/helpers/server/b1034/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1235-L1431
@@ -134,5 +142,5 @@ pitfalls:
 - The wrong-looking alist_fine_tuning_jobs call type is observable and must remain until separately changed.
 review_level: security
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0

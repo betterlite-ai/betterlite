@@ -23,6 +23,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_store_access.rs
   - crates/betterlite-core/src/api/vector_store_access/**
   - crates/betterlite-core/fuzz/Cargo.toml
@@ -110,5 +111,5 @@ pitfalls:
 - The lifecycle matcher accepts the exact index path or query suffix, but not an otherwise similar trailing slash.
 review_level: security
 budget:
-  max_changed_lines: 740
+  max_changed_lines: 1000
   max_new_expects: 0

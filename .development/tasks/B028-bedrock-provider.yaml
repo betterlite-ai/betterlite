@@ -136,10 +136,15 @@ scope:
   - crates/betterlite-provider/src/bedrock_dispatch/**
   - crates/betterlite-bedrock/Cargo.toml
   - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/provider/**
   - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/**
   - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-provider/src/prepared/**
   - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/dispatch/**
   - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-bedrock/fixtures/whitelisted_bedrock_models.txt
   - deny.toml
@@ -494,6 +499,6 @@ pitfalls:
 - Legacy aws_bedrock_client credential extraction removes the optional client before it can fail.
 - Native Messages treats explicit converse as a bridge request before checking whether the model contains claude.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

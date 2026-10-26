@@ -105,8 +105,11 @@ scope:
     - tools/oracle/cases/helpers/auth-model-lists/**
     - tools/oracle/fuzz/corpus/helper_case/auth-model-lists-*
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-model-lists/**
     - crates/betterlite-server/src/auth/auth_model_lists.rs
     - crates/betterlite-server/src/auth/auth_model_lists/**
@@ -212,6 +215,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as auth_model_lists in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_model_lists.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_model_lists.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Listing fallback names does not grant permission to call them.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

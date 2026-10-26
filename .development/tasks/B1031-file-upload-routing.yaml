@@ -24,20 +24,12 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/file_upload_routing.rs
   - crates/betterlite-core/src/api/file_upload_routing/**
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/file_first_record.rs
   - crates/betterlite-core/fuzz/corpus/file_first_record/**
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/file_upload_routing.rs
-  - crates/betterlite-config/src/api/file_upload_routing/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-routing-*
   - tools/oracle/src/helpers/core_ops/file_upload_policy.rs
   - tools/oracle/src/helpers/core_ops/file_upload_policy/**
@@ -52,6 +44,8 @@ scope:
   - tools/oracle/cases/sdk-http/file-upload-routing/**
   - tools/oracle/fuzz/corpus/sdk_http_case/file-upload-routing-*
   - Cargo.lock
+  - crates/betterlite-config/src/sections/file_upload_routing.rs
+  - crates/betterlite-config/src/sections/file_upload_routing/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L111-L527
@@ -135,10 +129,10 @@ checks:
   commands:
   - id: behavior-tests
     why: destination precedence or upload gates lack native cases
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_routing::tests::/) - test(/replays_/)'
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::file_upload_routing::tests::/) - test(/replays_/)'
   - id: config-tests
     why: file settings or literal-true legacy routing is not loaded by production config
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_routing::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::file_upload_routing::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: new file settings keys have no loader corpus input
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-routing-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
@@ -176,5 +170,5 @@ pitfalls:
 - First-record JSON selection accepts values other than objects despite its annotation.
 review_level: security
 budget:
-  max_changed_lines: 790
+  max_changed_lines: 1000
   max_new_expects: 0

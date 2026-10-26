@@ -1,7 +1,7 @@
 id: B1128
 milestone: M5 API families
 title: File type and MIME records
-status: todo
+status: done
 depends_on: [B171]
 file: tasks/B1128-file-type-records.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/files/types.py"
 parent: B087
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 144

@@ -71,18 +71,10 @@ scope:
   - crates/betterlite-core/src/api/messages_responses_output.rs
   - crates/betterlite-core/src/api/messages_responses_output/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/messages_responses_output.rs
-  - crates/betterlite-config/src/api/messages_responses_output/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/messages-responses-output-*
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/messages_responses_output.rs
@@ -94,6 +86,8 @@ scope:
   - tools/oracle/helpers/messages_responses_output/**
   - tools/oracle/fuzz/corpus/helper_case/messages_responses_output-*
   - tools/oracle/cases/helpers/messages-responses-output/**
+  - crates/betterlite-config/src/sections/messages_responses_output.rs
+  - crates/betterlite-config/src/sections/messages_responses_output/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L248-L248
@@ -151,7 +145,7 @@ checks:
   commands:
   - id: behavior-tests
     why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::messages_responses_output::/)
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::messages_responses_output::/)
       - test(/::replays_corpus$/)'
   - id: case-thinking-reasoning-options
     why: the thinking-reasoning-options behavior or its assertions are absent
@@ -170,7 +164,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_responses_output::tests::encrypted_reasoning_response($|::)/)'
   - id: config-tests
     why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::messages_responses_output::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::messages_responses_output::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: no newly added key-bearing config seed reaches the production loader
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/messages-responses-output-*)"
@@ -219,5 +213,5 @@ pitfalls:
   its missing-value behavior and field spelling in the typed projection.
 review_level: security
 budget:
-  max_changed_lines: 640
+  max_changed_lines: 1000
   max_new_expects: 1

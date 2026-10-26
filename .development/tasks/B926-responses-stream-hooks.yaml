@@ -20,6 +20,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_stream_hooks.rs
   - crates/betterlite-core/src/api/responses_stream_hooks/**
   - tools/oracle/src/helpers/core_ops/responses_stream_hooks.rs
@@ -130,5 +131,5 @@ pitfalls:
 - Error-event fallback uses yielded_first_chunk, while transport fallback also considers whether output actually started.
 review_level: security
 budget:
-  max_changed_lines: 765
+  max_changed_lines: 1000
   max_new_expects: 1

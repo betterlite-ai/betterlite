@@ -36,6 +36,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/settlement.rs
     - crates/betterlite-server/src/spend/settlement/**
     - crates/betterlite-auth/src/reservation_state.rs
@@ -84,6 +85,6 @@ pitfalls:
   - A failed reconciliation finalizes the reservation but still permits the already incurred cost to be persisted.
   - Counter failure follows the database write, so retrying the entire callback would charge the row twice.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

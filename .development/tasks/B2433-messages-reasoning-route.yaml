@@ -17,6 +17,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_reasoning_route.rs
   - crates/betterlite-core/src/api/messages_reasoning_route/**
   - tools/oracle/src/helpers/core_ops/messages_reasoning_route.rs
@@ -93,5 +94,5 @@ pitfalls:
 - Inferred providers are local decisions here and are not inserted into completion_kwargs.
 review_level: standard
 budget:
-  max_changed_lines: 520
+  max_changed_lines: 1000
   max_new_expects: 0

@@ -25,9 +25,11 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_http_calls.rs
   - crates/betterlite-core/src/api/realtime_http_calls/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/realtime_http_calls.rs
   - crates/betterlite-config/src/api/realtime_http_calls/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/realtime-http-calls-*
@@ -37,6 +39,10 @@ scope:
   - tools/oracle/sdk_http/realtime_http_calls.py
   - tools/oracle/cases/sdk-http/realtime-http-calls/**
   - tools/oracle/fuzz/corpus/sdk_http_case/realtime-http-calls-*
+  - tools/oracle/helpers/b1010.py
+  - tools/oracle/helpers/b1010/**
+  - tools/oracle/src/helpers/core_ops/b1010.rs
+  - tools/oracle/src/helpers/core_ops/b1010/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L72-L75
@@ -117,5 +123,5 @@ pitfalls:
 - timeout=0 falls back to REQUEST_TIMEOUT because the source uses a truthiness test.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

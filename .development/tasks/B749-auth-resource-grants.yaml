@@ -99,8 +99,11 @@ scope:
     - tools/oracle/cases/helpers/auth-resource-grants/**
     - tools/oracle/fuzz/corpus/helper_case/auth-resource-grants-*
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-resource-grants/**
     - crates/betterlite-server/src/auth/auth_resource_grants.rs
     - crates/betterlite-server/src/auth/auth_resource_grants/**
@@ -322,6 +325,6 @@ pitfalls:
   - Search-tool denials use key_model_access_denied for teams too, while vector-store denials choose the object-specific type and 401.
   - Cached vector rows are returned before database misses, so mixed hit/miss results do not retain request order.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

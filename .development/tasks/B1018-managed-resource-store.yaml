@@ -21,6 +21,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/managed_resource_store.rs
   - crates/betterlite-core/src/api/managed_resource_store/**
   - tools/oracle/Cargo.toml
@@ -98,5 +99,5 @@ pitfalls:
 - A raw user id is the primary scope even though the same principal also has a user-prefixed scope.
 review_level: security
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

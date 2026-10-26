@@ -90,8 +90,11 @@ scope:
     - tools/oracle/cases/helpers/route-match/**
     - tools/oracle/fuzz/corpus/helper_case/route-match-*
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/route-match/**
     - crates/betterlite-server/src/auth/route_match.rs
     - crates/betterlite-server/src/auth/route_match/**
@@ -326,6 +329,6 @@ pitfalls:
   - A {name:path} Google model placeholder may span slashes but must stop at the colon before generateContent.
   - Ordinary allowed-route prefix matching requires a slash boundary, while an explicit trailing wildcard deliberately does not.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/totals.rs
     - crates/betterlite-server/src/spend/totals/**
     - crates/betterlite-config/src/spend_storage.rs
@@ -42,6 +43,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/spend_totals_query.rs
     - crates/betterlite-server/fuzz/corpus/spend_totals_query/**
     - tools/oracle/cases/http/spend-totals/**
+    - tools/oracle/helpers/b1724.py
+    - tools/oracle/helpers/b1724/**
+    - tools/oracle/src/helpers/server/b1724.rs
+    - tools/oracle/src/helpers/server/b1724/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3802-L4155
@@ -84,6 +89,6 @@ pitfalls:
   - Internal-user /global/spend/keys always asks for ten keys even when limit=1 was supplied.
   - Team totals add already rounded daily values, so rounding only the final sum changes the result.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

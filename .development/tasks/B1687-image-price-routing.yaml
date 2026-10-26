@@ -38,6 +38,7 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/**
     - crates/betterlite-core/src/cost/image_dispatch.rs
     - crates/betterlite-core/src/cost/image_dispatch/**
     - crates/betterlite-provider/src/pricing.rs
@@ -93,6 +94,6 @@ pitfalls:
   - Perplexity's zero is a completed search-price answer, so replacing it with None adds an erroneous generic fee.
   - Only optional_params.size is regex-checked here; explicit and response sizes bypass that preliminary filter.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

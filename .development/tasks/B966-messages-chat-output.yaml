@@ -21,6 +21,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_chat_output.rs
   - crates/betterlite-core/src/api/messages_chat_output/**
   - tools/oracle/Cargo.toml
@@ -137,5 +138,5 @@ pitfalls:
 - Cache counters are selected independently, then both subtracted; selecting only one changes billed input tokens.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

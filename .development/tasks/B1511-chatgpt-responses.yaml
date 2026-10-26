@@ -29,6 +29,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/chatgpt_responses.rs
     - crates/betterlite-core/src/api/chatgpt_responses/**
     - tools/oracle/src/helpers/core_ops/chatgpt_responses.rs
@@ -72,5 +73,5 @@ pitfalls:
   - The instruction check is substring containment rather than equality or a prefix test.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

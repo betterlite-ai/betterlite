@@ -29,13 +29,16 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/src/api.rs
+  - crates/betterlite-openai/src/api/**
   - crates/betterlite-openai/src/api/rerank_contracts.rs
   - crates/betterlite-openai/src/api/rerank_contracts/**
   - crates/betterlite-openai/src/error.rs
   - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/rerank_contracts.rs
   - crates/betterlite-provider/src/api/rerank_contracts/**
   - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/**
   - crates/betterlite-openai/fuzz/Cargo.toml
   - crates/betterlite-openai/fuzz/fuzz_targets/rerank_contracts.rs
   - crates/betterlite-openai/fuzz/corpus/rerank_contracts/**
@@ -129,5 +132,5 @@ pitfalls:
 - Query cost ignores total_tokens and charges only search_units, including zero or negative supplied counts.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 1

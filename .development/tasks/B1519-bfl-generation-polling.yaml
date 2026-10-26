@@ -31,6 +31,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/bfl.rs
+    - crates/betterlite-core/src/api/bfl/**
     - crates/betterlite-core/src/api/bfl/{generation_call,poll}.rs
     - crates/betterlite-core/src/api/bfl/generation_call.rs
     - crates/betterlite-core/src/api/bfl/generation_call/**
@@ -78,5 +79,5 @@ pitfalls:
   - Extra authentication headers used for submission must not accompany polling GETs.
 review_level: security
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0

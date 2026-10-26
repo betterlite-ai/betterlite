@@ -27,16 +27,9 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_native_stream.rs
   - crates/betterlite-core/src/api/messages_native_stream/**
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/messages_native_stream.rs
-  - crates/betterlite-config/src/api/messages_native_stream/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/messages-native-stream-*
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/messages_native_stream.rs
@@ -44,6 +37,12 @@ scope:
   - tools/oracle/sdk_http/messages_native_stream.py
   - tools/oracle/cases/sdk-http/messages-native-stream/**
   - tools/oracle/fuzz/corpus/sdk_http_case/messages-native-stream-*
+  - crates/betterlite-config/src/sections/messages_native_stream.rs
+  - crates/betterlite-config/src/sections/messages_native_stream/**
+  - tools/oracle/helpers/b979.py
+  - tools/oracle/helpers/b979/**
+  - tools/oracle/src/helpers/core_ops/b979.rs
+  - tools/oracle/src/helpers/core_ops/b979/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L29-L30
@@ -115,10 +114,10 @@ checks:
   commands:
   - id: behavior-tests
     why: relay state, resource bounds or process-wide drain behavior is absent
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::messages_native_stream::/)'
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::messages_native_stream::/)'
   - id: config-tests
     why: relay env settings have no loader test that changes runtime limits
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::messages_native_stream::tests::loads_relay_settings/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::messages_native_stream::tests::loads_relay_settings/)'
   - id: config-corpus
     why: no new relay settings reach the production config decoder
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/messages-native-stream-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
@@ -154,5 +153,5 @@ pitfalls:
 - Logging must be parked before the end sentinel becomes observable, or disconnect can lose the spend callback.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

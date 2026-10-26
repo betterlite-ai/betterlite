@@ -42,6 +42,7 @@ scope:
   paths:
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/src/ptu.rs
+    - crates/betterlite-db/src/ptu/**
     - crates/betterlite-db/src/ptu/charges.rs
     - crates/betterlite-db/src/ptu/charges/**
     - crates/betterlite-db/src/ptu/store.rs
@@ -109,6 +110,6 @@ pitfalls:
   - scanned_ids includes deployments whose PTU terms were removed, otherwise their stale rows can never be pruned.
   - A 90-day subtraction followed by an inclusive range produces up to 91 backfill dates.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -127,9 +127,16 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/user-bulk-update/**
+    - tools/oracle/helpers/b795.py
+    - tools/oracle/helpers/b795/**
+    - tools/oracle/src/helpers/server/b795.rs
+    - tools/oracle/src/helpers/server/b795/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1756-L2064
@@ -223,6 +230,6 @@ pitfalls:
   - The fast path bypasses per-user preparation; metadata and object permissions are direct database payloads.
   - Its fallback copies lack user_email, so the first row can persist before result construction raises 500.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

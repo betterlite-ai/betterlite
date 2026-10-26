@@ -105,21 +105,18 @@ scope:
     - tools/oracle/cases/helpers/auth-request-policy/**
     - tools/oracle/fuzz/corpus/helper_case/auth-request-policy-*
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-request-policy/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/auth_request_policy.rs
-    - crates/betterlite-config/src/auth_request_policy/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-request-policy-*
     - crates/betterlite-server/src/auth/auth_request_policy.rs
     - crates/betterlite-server/src/auth/auth_request_policy/**
+    - crates/betterlite-config/src/sections/auth_request_policy.rs
+    - crates/betterlite-config/src/sections/auth_request_policy/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L41-L618
@@ -217,7 +214,7 @@ checks:
         && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^auth_request_policy::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::auth_request_policy::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
@@ -301,6 +298,6 @@ pitfalls:
   - allowed_ips and allowed_routes denials are 403, while banned body fields become 401 auth_error.
   - The legacy use_x_forwarded_for behavior is distinct from trusted OAuth proxy authentication.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

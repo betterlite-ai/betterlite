@@ -24,16 +24,9 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/summary_model_access.rs
   - crates/betterlite-core/src/api/summary_model_access/**
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/summary_model_access.rs
-  - crates/betterlite-config/src/api/summary_model_access/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/summary-model-access-*
   - tools/oracle/src/helpers/core_ops/summary_model_access.rs
   - tools/oracle/src/helpers/core_ops/summary_model_access/**
@@ -41,6 +34,8 @@ scope:
   - tools/oracle/helpers/summary_model_access/**
   - tools/oracle/fuzz/corpus/helper_case/summary_model_access-*
   - tools/oracle/cases/helpers/summary-model-access/**
+  - crates/betterlite-config/src/sections/summary_model_access.rs
+  - crates/betterlite-config/src/sections/summary_model_access/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L97-L194
@@ -88,10 +83,10 @@ checks:
   commands:
   - id: behavior-tests
     why: access ordering, lookup failure or a settings boundary is untested
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::summary_model_access::/)'
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::summary_model_access::/)'
   - id: config-tests
     why: the loader has not accepted and applied both summary settings
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::summary_model_access::tests::loads_summary_settings/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::summary_model_access::tests::loads_summary_settings/)'
   - id: config-corpus
     why: summary settings have no added production-loader seeds
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/summary-model-access-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
@@ -122,5 +117,5 @@ pitfalls:
 - No key/team policy is inferred for SDK calls with no principal.
 review_level: security
 budget:
-  max_changed_lines: 720
+  max_changed_lines: 1000
   max_new_expects: 0

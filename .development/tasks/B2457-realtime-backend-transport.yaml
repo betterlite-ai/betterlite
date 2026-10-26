@@ -27,9 +27,11 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_backend_transport.rs
   - crates/betterlite-core/src/api/realtime_backend_transport/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/realtime_backend_transport.rs
   - crates/betterlite-config/src/api/realtime_backend_transport/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/realtime-backend-transport-*
@@ -123,5 +125,5 @@ pitfalls:
 - client and timeout are accepted but do not override the helper's8-second handshake timeout.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

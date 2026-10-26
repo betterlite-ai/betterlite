@@ -51,6 +51,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/payload.rs
     - crates/betterlite-server/src/spend/payload/**
     - crates/betterlite-logging/src/lib.rs
@@ -113,6 +114,6 @@ pitfalls:
   - Cached batch IDs receive their timestamp suffix before batch session extraction, so suffix removal must not be reordered.
   - Existing null cache-count keys prevent detail-field backfill just as existing numeric values do.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

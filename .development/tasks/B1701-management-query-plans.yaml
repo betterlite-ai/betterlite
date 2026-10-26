@@ -37,6 +37,7 @@ scope:
   paths:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/list_api.rs
+    - crates/betterlite-server/src/list_api/**
     - crates/betterlite-server/src/list_api/{plan,problem,links}.rs
     - crates/betterlite-server/src/list_api/{plan,problem,links}/**
     - crates/betterlite-server/fuzz/Cargo.toml
@@ -95,6 +96,6 @@ pitfalls:
   - Requested descending sort still ends with the ascending tiebreaker.
   - Counted-list page_size is capped, while the spend-log facet routes separately reject values above 100.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

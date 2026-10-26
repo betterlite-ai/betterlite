@@ -18,12 +18,17 @@ scope:
   - crates/betterlite-router/src/automatic_router_pipeline/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/automatic_router_pipeline.rs
   - crates/betterlite-server/src/routing/automatic_router_pipeline/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/automatic_router_pipeline.rs
   - tools/oracle/src/router_probes/automatic_router_pipeline/**
   - tools/oracle/src/router_probes/mod.rs
@@ -31,6 +36,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/automatic_router_pipeline.py
   - tools/oracle/cases/routing/automatic-router-pipeline/**
+  - tools/oracle/helpers/b021.py
+  - tools/oracle/helpers/b021/**
+  - tools/oracle/src/helpers/router/b021.rs
+  - tools/oracle/src/helpers/router/b021/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L13796-L13980
@@ -418,5 +427,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

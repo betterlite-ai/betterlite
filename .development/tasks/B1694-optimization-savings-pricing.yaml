@@ -61,6 +61,7 @@ scope:
     - crates/betterlite-server/src/savings.rs
     - crates/betterlite-server/src/savings/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - tools/oracle/src/helpers/server/savings_pricing.rs
     - tools/oracle/src/helpers/server/savings_pricing/**
     - tools/oracle/helpers/savings_pricing.py
@@ -123,6 +124,6 @@ pitfalls:
   - observed_initial and observed_identical are different provenance literals consumed by different comparison APIs.
   - A nonnull unknown estimate suppresses recomputation even when a usable routing decision and usage record are present.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

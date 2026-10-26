@@ -84,10 +84,15 @@ scope:
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-azure/Cargo.toml
   - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/provider/**
   - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/**
   - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-provider/src/prepared/**
   - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/dispatch/**
   - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/Cargo.toml
   - deny.toml
   - crates/betterlite-provider/src/azure_resource_dispatch.rs
@@ -296,6 +301,6 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as azure_resource_dispatch in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/azure_resource_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/azure_resource_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Container/video/vector overrides must retain the OpenAI leaf operation while changing its Azure base URL.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

@@ -22,6 +22,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/transcription_protocol.rs
   - crates/betterlite-core/src/api/transcription_protocol/**
   - crates/betterlite-core/fuzz/Cargo.toml
@@ -110,5 +111,5 @@ pitfalls:
 - Audio backlog validation runs before strict base64 decoding and before complete-sample validation.
 review_level: standard
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0

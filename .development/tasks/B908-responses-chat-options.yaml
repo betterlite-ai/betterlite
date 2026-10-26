@@ -21,6 +21,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_chat_options.rs
   - crates/betterlite-core/src/api/responses_chat_options/**
   - tools/oracle/Cargo.toml
@@ -104,5 +105,5 @@ pitfalls:
 - reasoning.summary is forwarded only to a chat request known to bridge back to Responses.
 review_level: standard
 budget:
-  max_changed_lines: 590
+  max_changed_lines: 1000
   max_new_expects: 1

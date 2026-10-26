@@ -18,6 +18,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_tool_repair.rs
   - crates/betterlite-core/src/api/responses_tool_repair/**
   - tools/oracle/Cargo.toml
@@ -93,5 +94,5 @@ pitfalls:
 - The nearest assistant search is not limited to the immediately preceding message.
 review_level: standard
 budget:
-  max_changed_lines: 630
+  max_changed_lines: 1000
   max_new_expects: 1

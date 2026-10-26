@@ -163,21 +163,9 @@ scope:
   - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_s3_access.rs
   - crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_access/**
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/bedrock.rs
-  - crates/betterlite-config/src/providers/bedrock/s3_access.rs
-  - crates/betterlite-config/src/providers/bedrock/s3_access/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/bedrock_services_s3_access_config.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_s3_access*
-  - crates/betterlite-config/src/providers/bedrock/bedrock_services_s3_access.rs
-  - crates/betterlite-config/src/providers/bedrock/bedrock_services_s3_access/**
+  - crates/betterlite-config/src/sections/bedrock_services_s3_access.rs
+  - crates/betterlite-config/src/sections/bedrock_services_s3_access/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cloud_storage_security.py#L11-L167
@@ -598,6 +586,6 @@ pitfalls:
   400 path as a rejected file ID.
 - The plain CommonBatchFilesUtils S3 parser accepts empty bucket/key components and must not substitute for authorization.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_file_http_create_list.rs
   - crates/betterlite-core/src/api/vector_file_http_create_list/**
   - tools/oracle/src/sdk_http.rs
@@ -27,6 +28,10 @@ scope:
   - tools/oracle/sdk_http/vector_file_create_list_transport.py
   - tools/oracle/cases/sdk-http/vector-file-create-list-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-create-list-transport-*
+  - tools/oracle/helpers/b2480.py
+  - tools/oracle/helpers/b2480/**
+  - tools/oracle/src/helpers/core_ops/b2480.rs
+  - tools/oracle/src/helpers/core_ops/b2480/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10756-L11036
@@ -90,5 +95,5 @@ pitfalls:
 - List accepts timeout but never supplies it to the HTTP client; create does in both execution modes.
 review_level: security
 budget:
-  max_changed_lines: 660
+  max_changed_lines: 1000
   max_new_expects: 0

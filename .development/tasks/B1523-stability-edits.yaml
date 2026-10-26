@@ -33,6 +33,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/stability.rs
+    - crates/betterlite-core/src/api/stability/**
     - crates/betterlite-core/src/api/stability/edit.rs
     - crates/betterlite-core/src/api/stability/edit/**
     - tools/oracle/src/helpers/core_ops/stability_edit.rs
@@ -80,5 +81,5 @@ pitfalls:
   - Catalog price is attached even when the provider response contains no image.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

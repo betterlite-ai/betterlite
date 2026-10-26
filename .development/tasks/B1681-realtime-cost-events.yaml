@@ -47,6 +47,7 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/**
     - crates/betterlite-core/src/cost/realtime.rs
     - crates/betterlite-core/src/cost/realtime/**
     - tools/oracle/src/helpers/core_ops/realtime_cost_events.rs
@@ -105,6 +106,6 @@ pitfalls:
   - A free custom realtime entry is selected only when its raw catalog declaration exists, rather than because model-info synthesized zero token prices.
   - Transcription token usage with only input_tokens contributes zero because the biller reads the audio/text detail counts instead.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

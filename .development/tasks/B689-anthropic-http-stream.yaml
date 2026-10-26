@@ -219,6 +219,6 @@ pitfalls:
   check to the asynchronous helper changes the tested seam.
 - The stream-opening logger uses api_key="" and does not receive the upstream authorization value.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

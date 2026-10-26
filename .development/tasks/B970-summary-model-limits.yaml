@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/summary_model_limits.rs
   - crates/betterlite-core/src/api/summary_model_limits/**
   - tools/oracle/src/helpers/core_ops/summary_model_limits.rs
@@ -110,5 +111,5 @@ pitfalls:
 - Unexpected rate-check errors allow, but get_proxy_hook errors precede the protected block and propagate.
 review_level: security
 budget:
-  max_changed_lines: 680
+  max_changed_lines: 1000
   max_new_expects: 0

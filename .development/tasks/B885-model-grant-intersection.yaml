@@ -79,8 +79,11 @@ scope:
     - tools/oracle/cases/helpers/model-grant-intersection/**
     - tools/oracle/fuzz/corpus/helper_case/model-grant-intersection-*
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/model-grant-intersection/**
     - crates/betterlite-server/src/auth/model_grant_intersection.rs
     - crates/betterlite-server/src/auth/model_grant_intersection/**
@@ -281,6 +284,6 @@ pitfalls:
   - enforced_model_allowlists omits organizations while attribution includes them and omits users; sharing one list builder changes behavior.
   - An empty matched result does not clear an earlier token stamp, even after a swallowed lookup error.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

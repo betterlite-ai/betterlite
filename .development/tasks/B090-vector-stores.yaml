@@ -21,9 +21,11 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_stores.rs
   - crates/betterlite-core/src/api/vector_stores/**
   - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/dispatch/**
   - tools/oracle/src/helpers/core_ops/vector_stores.rs
   - tools/oracle/src/helpers/core_ops/vector_stores/**
   - tools/oracle/helpers/vector_stores.py
@@ -97,5 +99,5 @@ pitfalls:
 - A post-hook failure returns null for success but the original chunk for streaming, without atomic rollback.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

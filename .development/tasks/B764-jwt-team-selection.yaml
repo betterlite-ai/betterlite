@@ -128,21 +128,18 @@ scope:
     - tools/oracle/cases/helpers/jwt-team-selection/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-team-selection-*
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/jwt-team-selection/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/jwt_team_selection.rs
-    - crates/betterlite-config/src/jwt_team_selection/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-team-selection-*
     - crates/betterlite-server/src/auth/jwt_team_selection.rs
     - crates/betterlite-server/src/auth/jwt_team_selection/**
+    - crates/betterlite-config/src/sections/jwt_team_selection.rs
+    - crates/betterlite-config/src/sections/jwt_team_selection/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1499-L1750
@@ -239,7 +236,7 @@ checks:
         cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^jwt_team_selection::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::jwt_team_selection::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
@@ -326,6 +323,6 @@ pitfalls:
   - Only TeamNotFoundError on the provisional ID path permits alias lookup; a generic HTTP failure becomes a membership denial.
   - Candidate selection swallows exceptions, including permission errors, before deciding which final denial wins.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

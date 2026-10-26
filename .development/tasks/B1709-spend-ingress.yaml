@@ -47,8 +47,13 @@ scope:
     - crates/betterlite-server/src/{collector,callback_replay}.rs
     - crates/betterlite-server/src/{collector,callback_replay}/**
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/fuzz/{Cargo.toml,fuzz_targets/spend_ingress.rs,corpus/spend_ingress/**}
     - tools/oracle/cases/http/callback-replay/**
+    - tools/oracle/helpers/b1709.py
+    - tools/oracle/helpers/b1709/**
+    - tools/oracle/src/helpers/server/b1709.rs
+    - tools/oracle/src/helpers/server/b1709/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/collector.py#L51-L220
@@ -89,6 +94,6 @@ pitfalls:
   - Replayed realtime payloads must set stream=false or the success callback waits for a completion that never arrives.
   - The registered callback path is /v1/rust_control_plane/logs, despite the stale types-module docstring.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

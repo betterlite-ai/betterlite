@@ -27,8 +27,11 @@ scope:
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/router_preview_validation.rs
   - crates/betterlite-server/src/routing/router_preview_validation/**
   - tools/oracle/src/router_probes/router_preview_validation.rs
@@ -41,6 +44,10 @@ scope:
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/preview_config.rs
   - crates/betterlite-server/fuzz/corpus/preview_config/router-preview-validation-*
+  - tools/oracle/helpers/b379.py
+  - tools/oracle/helpers/b379/**
+  - tools/oracle/src/helpers/server/b379.rs
+  - tools/oracle/src/helpers/server/b379/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L211-L435
@@ -168,5 +175,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

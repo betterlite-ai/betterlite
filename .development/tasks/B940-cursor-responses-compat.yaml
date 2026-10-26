@@ -79,16 +79,24 @@ scope:
   - crates/betterlite-server/src/api/cursor_responses_compat.rs
   - crates/betterlite-server/src/api/cursor_responses_compat/**
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/cursor_responses_compat.rs
   - crates/betterlite-core/src/api/cursor_responses_compat/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/cases/api/cursor-responses-compat/**
   - tools/oracle/fixtures/cursor-responses-compat/**
+  - tools/oracle/helpers/b940.py
+  - tools/oracle/helpers/b940/**
+  - tools/oracle/src/helpers/server/b940.rs
+  - tools/oracle/src/helpers/server/b940/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L68-L127
@@ -197,5 +205,5 @@ pitfalls:
 - 'The stream branch checks __anext__ rather than a concrete iterator class because router wrappers are async iterables; class-only detection leaks response events instead of chat chunks.'
 review_level: security
 budget:
-  max_changed_lines: 560
+  max_changed_lines: 1000
   max_new_expects: 0

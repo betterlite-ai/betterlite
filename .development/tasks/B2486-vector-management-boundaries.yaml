@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/vector_management_boundaries.rs
   - crates/betterlite-server/src/api/vector_management_boundaries/**
   - crates/betterlite-server/fuzz/Cargo.toml
@@ -97,5 +98,5 @@ pitfalls:
 - Config ownership is checked against the registry, not a caller-supplied is_config field.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0

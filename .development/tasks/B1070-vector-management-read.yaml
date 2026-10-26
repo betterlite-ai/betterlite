@@ -17,10 +17,15 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/vector_management_read.rs
   - crates/betterlite-server/src/api/vector_management_read/**
   - crates/betterlite-server/fuzz/corpus/management_json/info-*
   - tools/oracle/cases/api/vector-management-read/**
+  - tools/oracle/helpers/b1070.py
+  - tools/oracle/helpers/b1070/**
+  - tools/oracle/src/helpers/server/b1070.rs
+  - tools/oracle/src/helpers/server/b1070/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L344-L450
@@ -94,5 +99,5 @@ pitfalls:
 - Info checks the DB connection before using a cache hit and preserves HTTP 403/404 from either source.
 review_level: security
 budget:
-  max_changed_lines: 690
+  max_changed_lines: 1000
   max_new_expects: 0

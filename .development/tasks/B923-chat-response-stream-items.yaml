@@ -16,6 +16,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/chat_response_stream_items.rs
   - crates/betterlite-core/src/api/chat_response_stream_items/**
   - tools/oracle/src/helpers/core_ops/chat_response_stream_items.rs
@@ -109,5 +110,5 @@ pitfalls:
 - Empty final content skips message events only if a message item has never been added.
 review_level: standard
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 1

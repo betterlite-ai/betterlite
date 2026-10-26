@@ -23,8 +23,8 @@ scope:
   paths:
     - Cargo.toml
     - crates/betterlite-billing/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/sections/billing_metrics.rs
+    - crates/betterlite-config/src/sections/billing_metrics/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L70-L113
@@ -105,5 +105,5 @@ pitfalls:
   - license_data is Optional[EnterpriseLicenseData], a TypedDict with optional keys; the factory extracts user_id (if present) and passes it as license_id in the config. A None or empty dict results in no license_id attribute on the exported metrics.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

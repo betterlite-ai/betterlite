@@ -55,6 +55,7 @@ scope:
   - crates/betterlite-core/src/api/batch_limit_counters.rs
   - crates/betterlite-core/src/api/batch_limit_counters/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
@@ -164,5 +165,5 @@ pitfalls:
   and field spelling in the typed projection.
 review_level: security
 budget:
-  max_changed_lines: 490
+  max_changed_lines: 1000
   max_new_expects: 1

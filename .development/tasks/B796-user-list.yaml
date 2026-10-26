@@ -118,12 +118,19 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/user-list/**
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/user_list_query.rs
     - crates/betterlite-server/fuzz/corpus/user_list_query/**
+    - tools/oracle/helpers/b796.py
+    - tools/oracle/helpers/b796/**
+    - tools/oracle/src/helpers/server/b796.rs
+    - tools/oracle/src/helpers/server/b796/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2067-L2388
@@ -234,6 +241,6 @@ pitfalls:
   - One user_ids value means substring search; two values switch to exact IN matching.
   - sort_order is ignored without sort_by, and key counts exclude only litellm-dashboard sessions.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

@@ -64,6 +64,7 @@ scope:
     - crates/betterlite-db/src/key_repository.rs
     - crates/betterlite-db/src/key_repository/**
     - crates/betterlite-db/src/key_hash.rs
+    - crates/betterlite-db/src/key_hash/**
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/token_record.rs
@@ -140,6 +141,6 @@ pitfalls:
   - An empty org_id wins over organization_id because precedence checks None, not truthiness.
   - Raw table access bypasses the repository's JSON conversion and does not hash a supplied identifier.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

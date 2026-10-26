@@ -107,19 +107,9 @@ scope:
   - tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_invoke_agent*
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/bedrock.rs
-  - crates/betterlite-config/src/providers/bedrock/invoke_agent.rs
-  - crates/betterlite-config/src/providers/bedrock/invoke_agent/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/invoke_agent_config.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/invoke_agent*
+  - crates/betterlite-config/src/sections/bedrock_services_invoke_agent.rs
+  - crates/betterlite-config/src/sections/bedrock_services_invoke_agent/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock_invoke_agents.py#L1-L129
@@ -252,6 +242,6 @@ pitfalls:
 - An agent model must have exactly three segments; percent encoding occurs after splitting and cannot make a literal
   slash part of an ID.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

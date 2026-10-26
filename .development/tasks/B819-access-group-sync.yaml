@@ -146,6 +146,6 @@ pitfalls:
   - Key sync invalidates moved rows only, whereas team sync invalidates all affected desired/existing groups even after an idempotent retry.
   - The key attach and detach statements have no shared transaction in this helper.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

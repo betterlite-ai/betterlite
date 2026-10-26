@@ -20,10 +20,13 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_store_search.rs
   - crates/betterlite-core/src/api/vector_store_search/**
   - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/vector_store_search.rs
+  - crates/betterlite-config/src/api/vector_store_search/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-search-*
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/vector_store_search_create.rs
@@ -31,6 +34,10 @@ scope:
   - tools/oracle/sdk_http/vector_store_search_create.py
   - tools/oracle/cases/sdk-http/vector-store-search-create/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-search-create-*
+  - tools/oracle/helpers/b1064.py
+  - tools/oracle/helpers/b1064/**
+  - tools/oracle/src/helpers/core_ops/b1064.rs
+  - tools/oracle/src/helpers/core_ops/b1064/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L46-L491
@@ -115,5 +122,5 @@ pitfalls:
 - The slash in vertex_ai/rag_api selects api_type; it is not part of the LlmProviders enum value.
 review_level: security
 budget:
-  max_changed_lines: 790
+  max_changed_lines: 1000
   max_new_expects: 0

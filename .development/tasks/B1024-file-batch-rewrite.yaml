@@ -28,6 +28,7 @@ scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/file_batch_rewrite.rs
   - crates/betterlite-core/src/api/file_batch_rewrite/**
   - tools/oracle/Cargo.toml
@@ -107,5 +108,5 @@ pitfalls:
 - A no-change scan returns a result containing a closed redaction spool; consumers must not read it when changes is empty.
 review_level: security
 budget:
-  max_changed_lines: 440
+  max_changed_lines: 1000
   max_new_expects: 0

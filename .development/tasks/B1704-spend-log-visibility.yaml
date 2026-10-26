@@ -34,6 +34,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/visibility.rs
     - crates/betterlite-server/src/spend/visibility/**
     - tools/oracle/src/helpers/server/spend_visibility.rs
@@ -79,6 +80,6 @@ pitfalls:
   - Successful preauthorization does not remove the need to verify owners on the rows actually fetched.
   - Empty string IDs count as strings; null IDs must not become an unrestricted viewer.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

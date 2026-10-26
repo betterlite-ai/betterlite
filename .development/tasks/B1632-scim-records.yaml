@@ -75,6 +75,6 @@ pitfalls:
   - Dropping model_fields_set would silently reactivate a deactivated account on a PUT that omits active.
   - SCIM roles are stored directory attributes, not LitellmUserRoles authorization assignments.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

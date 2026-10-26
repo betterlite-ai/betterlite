@@ -1,0 +1,8 @@
+kind: helper
+name: anthropic-content-blocks
+call:
+  anthropic_cache_plan:
+    function: cache_plan
+    body: '{"messages":[{"role":"user","content":[{"type":"text","text":"a"},{"type":"tool_use","id":"one","name":"lookup","input":{"q":"x","n":1.5e-7}},{"type":"tool_use","id":"two","name":"lookup","input":{}},{"type":"tool_result","tool_use_id":"one","content":"done"},{"type":"tool_result","tool_use_id":"two","content":[{"type":"text","text":""}],"is_error":false,"cache_control":{"type":"ephemeral","ttl":"1h"}}]}]}'
+env: {}
+compare: {ignore: []}

@@ -30,6 +30,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/runway.rs
+    - crates/betterlite-core/src/api/runway/**
     - crates/betterlite-core/src/api/runway/video_lifecycle.rs
     - crates/betterlite-core/src/api/runway/video_lifecycle/**
     - tools/oracle/src/helpers/core_ops/runway_video_lifecycle.rs
@@ -75,5 +76,5 @@ pitfalls:
   - Retrieval deliberately loses the model component when wrapping a provider task ID.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

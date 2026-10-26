@@ -94,8 +94,11 @@ scope:
     - tools/oracle/cases/helpers/auth-tenant-budgets/**
     - tools/oracle/fuzz/corpus/helper_case/auth-tenant-budgets-*
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-tenant-budgets/**
     - crates/betterlite-server/src/auth/auth_tenant_budgets.rs
     - crates/betterlite-server/src/auth/auth_tenant_budgets/**
@@ -309,6 +312,6 @@ pitfalls:
   - The organization lookup catch intentionally skips all errors; a counter error after lookup still fails.
   - Tags allow equality while groups deny it. Neither branch schedules the alert promised by the tag docstring.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

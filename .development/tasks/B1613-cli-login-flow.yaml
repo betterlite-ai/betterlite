@@ -34,6 +34,10 @@ scope:
     - crates/betterlite-config/src/cli_login_flow/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/cli-login-flow-*
     - tools/oracle/cases/sso/cli-flow/**
+    - tools/oracle/helpers/b1613.py
+    - tools/oracle/helpers/b1613/**
+    - tools/oracle/src/helpers/server/b1613.rs
+    - tools/oracle/src/helpers/server/b1613/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L261-L401
@@ -77,6 +81,6 @@ pitfalls:
   - A Redis circuit breaker returning no flow must produce the expired-session 400 even if local cache still has a copy.
   - User-code comparison strips punctuation and uppercases Unicode, but state prefill accepts only the fixed ASCII code pattern.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

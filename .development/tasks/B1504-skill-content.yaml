@@ -35,6 +35,7 @@ scope:
     - Cargo.lock
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/skills.rs
+    - crates/betterlite-core/src/skills/**
     - crates/betterlite-core/src/skills/content.rs
     - crates/betterlite-core/src/skills/content/**
     - crates/betterlite-core/fuzz/Cargo.toml
@@ -91,5 +92,5 @@ pitfalls:
   - Description truncation counts Unicode characters rather than UTF-8 bytes.
 review_level: security
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0

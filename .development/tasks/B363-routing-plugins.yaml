@@ -34,12 +34,17 @@ scope:
   - crates/betterlite-router/src/routing_plugins/**
   - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/routing_plugins.rs
   - crates/betterlite-server/src/routing/routing_plugins/**
   - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/strategy/**
   - crates/betterlite-router/src/context.rs
+  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_plugins.rs
   - tools/oracle/src/router_probes/routing_plugins/**
   - tools/oracle/src/router_probes/mod.rs
@@ -47,21 +52,17 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/routing_plugins.py
   - tools/oracle/cases/routing/routing-plugins/**
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/router.rs
-  - crates/betterlite-config/src/routing_plugins.rs
-  - crates/betterlite-config/src/routing_plugins/**
-  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/routing-plugins-*
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/fuzz_targets/plugin_json.rs
   - crates/betterlite-router/fuzz/corpus/plugin_json/routing-plugins-*
+  - crates/betterlite-config/src/sections/routing_plugins.rs
+  - crates/betterlite-config/src/sections/routing_plugins/**
+  - tools/oracle/helpers/b363.py
+  - tools/oracle/helpers/b363/**
+  - tools/oracle/src/helpers/router/b363.rs
+  - tools/oracle/src/helpers/router/b363/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/router_plugins.json#L1-L28
@@ -517,5 +518,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0

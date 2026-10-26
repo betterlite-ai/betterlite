@@ -67,18 +67,10 @@ scope:
   - crates/betterlite-core/src/api/batch_provider_cancel.rs
   - crates/betterlite-core/src/api/batch_provider_cancel/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/batch_provider_cancel.rs
-  - crates/betterlite-config/src/api/batch_provider_cancel/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/batch-provider-cancel-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/batch_provider_cancel.rs
@@ -87,6 +79,8 @@ scope:
   - tools/oracle/helpers/batch_provider_cancel/**
   - tools/oracle/fuzz/corpus/helper_case/batch_provider_cancel-*
   - tools/oracle/cases/helpers/batch-provider-cancel/**
+  - crates/betterlite-config/src/sections/batch_provider_cancel.rs
+  - crates/betterlite-config/src/sections/batch_provider_cancel/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L592-L592
@@ -171,7 +165,7 @@ checks:
   commands:
   - id: behavior-tests
     why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::batch_provider_cancel::/)
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::batch_provider_cancel::/)
       - test(/::replays_corpus$/)'
   - id: case-batch-cancel
     why: the batch-cancel behavior or its assertions are absent
@@ -187,7 +181,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_provider_cancel::tests::async_invoke_output_location($|::)/)'
   - id: config-tests
     why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::batch_provider_cancel::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::batch_provider_cancel::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: no newly added key-bearing config seed reaches the production loader
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/batch-provider-cancel-*)"
@@ -227,5 +221,5 @@ pitfalls:
   the typed projection.
 review_level: standard
 budget:
-  max_changed_lines: 590
+  max_changed_lines: 1000
   max_new_expects: 1

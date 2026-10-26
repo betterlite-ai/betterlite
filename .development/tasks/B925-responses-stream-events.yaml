@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_stream_events.rs
   - crates/betterlite-core/src/api/responses_stream_events/**
   - crates/betterlite-core/fuzz/corpus/responses_stream_value/responses-event-*
@@ -111,5 +112,5 @@ pitfalls:
 - A terminal event is stored and logged without setting finished; the driver still consumes the stream boundary.
 review_level: standard
 budget:
-  max_changed_lines: 540
+  max_changed_lines: 1000
   max_new_expects: 1

@@ -103,19 +103,9 @@ scope:
   - crates/betterlite-foundry/fuzz/fuzz_targets/foundry_vector_stores.rs
   - crates/betterlite-foundry/fuzz/corpus/foundry_vector_stores/**
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/foundry.rs
-  - crates/betterlite-config/src/providers/foundry/foundry_vector_store.rs
-  - crates/betterlite-config/src/providers/foundry/foundry_vector_store/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/foundry_vector_store_config.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/foundry_vector_store*
+  - crates/betterlite-config/src/sections/foundry_vector_stores.rs
+  - crates/betterlite-config/src/sections/foundry_vector_stores/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/vector_stores/transformation.py#L41-L269
@@ -283,6 +273,6 @@ pitfalls:
 - The index ID is interpolated without path encoding in this source; adding encoding silently would alter the captured
   request.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

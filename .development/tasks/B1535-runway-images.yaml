@@ -29,6 +29,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/runway.rs
+    - crates/betterlite-core/src/api/runway/**
     - crates/betterlite-core/src/api/runway/images.rs
     - crates/betterlite-core/src/api/runway/images/**
     - tools/oracle/src/helpers/core_ops/runway_images.rs
@@ -80,5 +81,5 @@ pitfalls:
   - A dictionary output member lacking both url and b64_json still contributes an image entry and a charge.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0

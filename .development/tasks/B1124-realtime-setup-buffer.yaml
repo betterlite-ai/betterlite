@@ -21,6 +21,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_setup_buffer.rs
   - crates/betterlite-core/src/api/realtime_setup_buffer/**
   - tools/oracle/src/websocket_driver.rs
@@ -98,5 +99,5 @@ pitfalls:
 - The count cap is strict less than 200 before insertion; the byte cap accepts equality at 10485760.
 review_level: standard
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0

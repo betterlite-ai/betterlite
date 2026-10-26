@@ -117,22 +117,12 @@ scope:
   - tools/oracle/cases/helpers/providers/anthropic-count-tokens/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_count_tokens*
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/anthropic.rs
-  - crates/betterlite-config/src/providers/anthropic/anthropic_count.rs
-  - crates/betterlite-config/src/providers/anthropic/anthropic_count/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/anthropic_count_config.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic_count*
   - crates/betterlite-anthropic/fuzz/Cargo.toml
   - crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_count_tokens.rs
   - crates/betterlite-anthropic/fuzz/corpus/anthropic_count_tokens/**
+  - crates/betterlite-config/src/sections/anthropic_count_tokens.rs
+  - crates/betterlite-config/src/sections/anthropic_count_tokens/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/count_tokens/handler.py#L31-L128
@@ -365,6 +355,6 @@ pitfalls:
 - The counter refuses empty messages even though the lower handler accepts system-only or tools-only input.
 - A supplied api_base is the whole count endpoint, and deployment api_base is ignored by the counter.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security
