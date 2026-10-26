@@ -164,6 +164,28 @@ where
     captured
 }
 
+async fn change_diff<Workspace>(
+    sandbox: &Workspace,
+    path: &str,
+    kind: FileChangeKind,
+    old: Option<&str>,
+) -> Option<String>
+where
+    Workspace: Sandbox,
+{
+    if kind == FileChangeKind::Deleted {
+        return old.map(|text| unified_diff(path, Some(text), None));
+    }
+    let current = sandbox.read(path, HARNESS_MAX_DIFF_BYTES).await.ok()?;
+    let new = diffable_text(&current)?;
+    match kind {
+        FileChangeKind::Modified => old.map(|text| unified_diff(path, Some(text), Some(new))),
+        FileChangeKind::Created | FileChangeKind::Deleted => {
+            Some(unified_diff(path, None, Some(new)))
+        }
+    }
+}
+
 pub async fn build_file_changes<Workspace>(
     sandbox: &Workspace,
     before: &BTreeMap<String, String>,
@@ -178,20 +200,7 @@ where
         let old = before_contents
             .get(&path)
             .and_then(|data| diffable_text(data));
-        let current = match kind {
-            FileChangeKind::Deleted => None,
-            FileChangeKind::Created | FileChangeKind::Modified => {
-                sandbox.read(&path, HARNESS_MAX_DIFF_BYTES).await.ok()
-            }
-        };
-        let new = current.as_deref().and_then(diffable_text);
-        let diff = match kind {
-            FileChangeKind::Created => new.map(|text| unified_diff(&path, None, Some(text))),
-            FileChangeKind::Modified => old
-                .zip(new)
-                .map(|(old_text, new_text)| unified_diff(&path, Some(old_text), Some(new_text))),
-            FileChangeKind::Deleted => old.map(|text| unified_diff(&path, Some(text), None)),
-        };
+        let diff = change_diff(sandbox, &path, kind, old).await;
         changes.push(FileChange { path, kind, diff });
     }
     changes

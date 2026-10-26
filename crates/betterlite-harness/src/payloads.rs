@@ -1,13 +1,13 @@
+mod python_json;
 mod tests;
 
 use std::collections::BTreeMap;
 use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 use std::{fs, io, slice};
 
-use serde_json::ser::Formatter;
-use serde_json::value::RawValue;
 use thiserror::Error;
 
+use crate::payloads::python_json::{OrderedJson, python_json_text};
 use crate::types::JsonObject;
 
 pub const SKILL_MANIFEST: &str = "SKILL.md";
@@ -26,70 +26,6 @@ pub enum PayloadError {
     PathNotUtf8(PathBuf),
     #[error("the JSON could not be written")]
     Encode(#[source] serde_json::Error),
-}
-
-// json.dumps with its default separators and ensure_ascii, the text LiteLLM puts in prompts and results
-struct PythonJson;
-
-impl Formatter for PythonJson {
-    fn begin_array_value<Writer>(&mut self, writer: &mut Writer, first: bool) -> io::Result<()>
-    where
-        Writer: ?Sized + io::Write,
-    {
-        writer.write_all(if first { b"" } else { b", " })
-    }
-
-    fn begin_object_key<Writer>(&mut self, writer: &mut Writer, first: bool) -> io::Result<()>
-    where
-        Writer: ?Sized + io::Write,
-    {
-        writer.write_all(if first { b"" } else { b", " })
-    }
-
-    fn begin_object_value<Writer>(&mut self, writer: &mut Writer) -> io::Result<()>
-    where
-        Writer: ?Sized + io::Write,
-    {
-        writer.write_all(b": ")
-    }
-
-    fn write_string_fragment<Writer>(
-        &mut self,
-        writer: &mut Writer,
-        fragment: &str,
-    ) -> io::Result<()>
-    where
-        Writer: ?Sized + io::Write,
-    {
-        for character in fragment.chars() {
-            if character.is_ascii() && !character.is_ascii_control() {
-                write!(writer, "{character}")?;
-                continue;
-            }
-            let mut units = [0_u16; 2];
-            for unit in character.encode_utf16(&mut units) {
-                write!(writer, "\\u{unit:04x}")?;
-            }
-        }
-        Ok(())
-    }
-
-    fn write_f64<Writer>(&mut self, writer: &mut Writer, value: f64) -> io::Result<()>
-    where
-        Writer: ?Sized + io::Write,
-    {
-        // Rust and Python switch to exponents at the same magnitudes; Python signs and pads the exponent
-        let shortest = format!("{value:?}");
-        match shortest.split_once('e') {
-            Some((mantissa, exponent)) => {
-                let (sign, digits) = exponent
-                    .strip_prefix('-')
-                    .map_or(("+", exponent), |digits| ("-", digits));
-                write!(writer, "{mantissa}e{sign}{digits:0>2}")
-            }
-            None => writer.write_all(shortest.as_bytes()),
-        }
-    }
 }
 
 #[must_use]
@@ -125,11 +61,11 @@ pub fn last_json_object(text: &str) -> Option<String> {
     let mut start = text.find('{');
     while let Some(index) = start {
         let mut values =
-            serde_json::Deserializer::from_str(text.get(index..)?).into_iter::<&RawValue>();
+            serde_json::Deserializer::from_str(text.get(index..)?).into_iter::<OrderedJson>();
         let encoded = values
             .next()
             .and_then(Result::ok)
-            .and_then(|raw| python_json_text(raw.get()).ok());
+            .and_then(|object| python_json_text(&object).ok());
         // a parsed object hides the braces inside it, a failed one only its own
         let resume = if encoded.is_some() {
             last = encoded;
@@ -145,21 +81,8 @@ pub fn last_json_object(text: &str) -> Option<String> {
     last
 }
 
-fn python_json_text(json: &str) -> Result<String, PayloadError> {
-    let mut output = Vec::new();
-    let mut serializer = serde_json::Serializer::with_formatter(&mut output, PythonJson);
-    serde_transcode::transcode(
-        &mut serde_json::Deserializer::from_str(json),
-        &mut serializer,
-    )
-    .map_err(PayloadError::Encode)?;
-    // PythonJson escapes everything outside ASCII, so every byte is one character
-    Ok(output.into_iter().map(char::from).collect())
-}
-
 pub fn structured_output_instruction(schema: &JsonObject) -> Result<String, PayloadError> {
-    let compact = serde_json::to_string(schema).map_err(PayloadError::Encode)?;
-    let schema_text = python_json_text(&compact)?;
+    let schema_text = python_json_text(schema).map_err(PayloadError::Encode)?;
     Ok(format!(
         "When you have finished, your final message must be a single JSON object that matches this JSON schema, with no other text before or after it:\n{schema_text}"
     ))

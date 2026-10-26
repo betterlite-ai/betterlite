@@ -71,6 +71,18 @@ fn native_names_expand_in_order_without_duplicates() {
         "{\"a\": 1e+16, \"b\": 1000000000000000.0, \"c\": 0.0001, \"d\": 1e-05, \"e\": 1.0, \"f\": 2.5e-07, \"g\": -0.0, \"h\": 1e+300}"
     )
 )]
+#[case::duplicate_key_keeps_place_takes_last(
+    "{\"a\":1,\"b\":2,\"a\":3}",
+    Some("{\"a\": 3, \"b\": 2}")
+)]
+#[case::integers_stay_exact(
+    "{\"n\":123456789012345678901234567890,\"z\":-0}",
+    Some("{\"n\": 123456789012345678901234567890, \"z\": 0}")
+)]
+#[case::floats_past_the_range(
+    "{\"x\":1E5,\"y\":1e400,\"w\":-1e400}",
+    Some("{\"x\": 100000.0, \"y\": Infinity, \"w\": -Infinity}")
+)]
 #[case::array_only("[1, 2]", None)]
 #[case::no_json("no json here", None)]
 #[case::unclosed("{\"a\": 1", None)]
