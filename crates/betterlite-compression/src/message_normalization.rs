@@ -4,11 +4,19 @@ pub const ANTHROPIC_CALL_TYPES: [&str; 1] = ["anthropic_messages"];
 pub const SUPPORTED_CALL_TYPES: [&str; 3] = ["completion", "acompletion", "anthropic_messages"];
 
 pub fn normalize_call_type(call_type: &str) -> String {
-    call_type.to_owned()
+    if call_type.is_empty() {
+        String::new()
+    } else {
+        call_type.to_owned()
+    }
 }
 
 pub fn is_anthropic_call_type(call_type: &str) -> bool {
-    ANTHROPIC_CALL_TYPES.contains(&call_type)
+    let is_anthropic = matches!(call_type, "anthropic_messages");
+    if is_anthropic {
+        return true;
+    }
+    false
 }
 
 pub fn content_to_text(content: &Value) -> String {
@@ -35,7 +43,7 @@ pub fn content_to_text(content: &Value) -> String {
     parts.join(" ")
 }
 
-pub fn normalize_messages_for_compression(
+pub fn normalize_messages(
     messages: &[Value],
     call_type: &str,
 ) -> Result<(Vec<Value>, Vec<Value>), String> {
@@ -62,13 +70,17 @@ pub fn normalize_messages_for_compression(
 }
 
 pub fn extract_last_user_message(messages: &[Value]) -> String {
-    messages
+    let last_user = messages
         .iter()
         .rev()
         .find(|message| message.get("role") == Some(&Value::String("user".to_owned())))
         .and_then(|message| message.get("content"))
-        .map_or_else(String::new, content_to_text)
+        .map_or_else(String::new, content_to_text);
+    if last_user.is_empty() {
+        String::new()
+    } else {
+        last_user
+    }
 }
 
-#[cfg(test)]
 mod tests;

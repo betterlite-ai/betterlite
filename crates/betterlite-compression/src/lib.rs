@@ -4,8 +4,6 @@
 )]
 #![expect(
     clippy::arithmetic_side_effects,
-    clippy::integer_division,
-    clippy::integer_division_remainder_used,
     clippy::must_use_candidate,
     clippy::indexing_slicing,
     clippy::string_slice,
@@ -19,7 +17,10 @@
 )]
 #![cfg_attr(
     test,
-    expect(clippy::disallowed_methods, reason = "serde_json test fixtures are concise and type-directed")
+    expect(
+        clippy::disallowed_methods,
+        reason = "serde_json test fixtures are concise and type-directed"
+    )
 )]
 
 pub mod anthropic_tool_exchange;

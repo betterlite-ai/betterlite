@@ -11,12 +11,15 @@ pub fn truncate_message(message: &Value, max_tokens: usize) -> Value {
         return replace_content(message, content);
     }
     let lines: Vec<&str> = content.split('\n').collect();
-    let average = (content.len() / lines.len()).max(1);
-    let target_lines = (target_chars / average).max(2);
+    let average = content.len().checked_div(lines.len()).unwrap_or(0).max(1);
+    let target_lines = target_chars.checked_div(average).unwrap_or(0).max(2);
     if lines.len() <= target_lines {
         return replace_content(message, content);
     }
-    let first_count = target_lines * 7 / 10;
+    let first_count = target_lines
+        .checked_mul(7)
+        .and_then(|count| count.checked_div(10))
+        .unwrap_or(0);
     let last_count = target_lines - first_count;
     let first = lines
         .iter()
@@ -46,5 +49,4 @@ fn replace_content(message: &Value, content: String) -> Value {
     Value::Object(result)
 }
 
-#[cfg(test)]
 mod tests;

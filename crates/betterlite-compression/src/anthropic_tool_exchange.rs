@@ -2,38 +2,49 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 
 pub fn extract_tool_use_ids(content: &Value) -> Vec<String> {
-    content
+    let ids: Vec<String> = extract_ids(content, "tool_use", "id")
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    if ids.is_empty() { Vec::new() } else { ids }
+}
+
+fn extract_ids<'content>(
+    content: &'content Value,
+    block_type: &str,
+    id_field: &str,
+) -> Vec<&'content str> {
+    let ids: Vec<&str> = content
         .as_array()
         .map(|parts| {
             parts
                 .iter()
-                .filter(|part| part.get("type") == Some(&Value::String("tool_use".to_owned())))
-                .filter_map(|part| part.get("id").and_then(Value::as_str))
+                .filter(|part| part.get("type").and_then(Value::as_str) == Some(block_type))
+                .filter_map(|part| part.get(id_field).and_then(Value::as_str))
                 .filter(|id| !id.is_empty())
-                .map(str::to_owned)
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if ids.is_empty() { Vec::new() } else { ids }
 }
 
 pub fn extract_tool_result_ids(content: &Value) -> BTreeSet<String> {
-    content
+    let ids: BTreeSet<String> = content
         .as_array()
         .map(|parts| {
             parts
                 .iter()
-                .filter(|part| part.get("type") == Some(&Value::String("tool_result".to_owned())))
+                .filter(|part| part.get("type").and_then(Value::as_str) == Some("tool_result"))
                 .filter_map(|part| part.get("tool_use_id").and_then(Value::as_str))
                 .filter(|id| !id.is_empty())
                 .map(str::to_owned)
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if ids.is_empty() { BTreeSet::new() } else { ids }
 }
 
-pub fn extract_anthropic_tool_exchange_spans(
-    messages: &[Value],
-) -> (Vec<Vec<usize>>, Option<&'static str>) {
+pub fn extract_exchange_spans(messages: &[Value]) -> (Vec<Vec<usize>>, Option<&'static str>) {
     let mut spans = Vec::new();
     let mut index = 0;
     while index < messages.len() {
@@ -63,5 +74,4 @@ pub fn extract_anthropic_tool_exchange_spans(
     (spans, None)
 }
 
-#[cfg(test)]
 mod tests;

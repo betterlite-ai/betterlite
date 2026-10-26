@@ -11,15 +11,14 @@ fn extracts_nested_tool_result_text_and_ignores_media() {
 
 #[test]
 fn rejects_unknown_call_type() {
-    let error = normalize_messages_for_compression(&[], "chat").unwrap_err();
+    let error = normalize_messages(&[], "chat").unwrap_err();
     assert!(error.contains("completion"));
 }
 
 #[test]
 fn preserves_original_and_shallow_message_fields() {
     let messages = vec![json!({"role":"user","content":[{"type":"text","text":"hi"}],"name":"n"})];
-    let (normalized, original) =
-        normalize_messages_for_compression(&messages, "completion").unwrap();
+    let (normalized, original) = normalize_messages(&messages, "completion").unwrap();
     assert_eq!(normalized[0]["content"], "hi");
     assert_eq!(normalized[0]["name"], "n");
     assert_eq!(original, messages);

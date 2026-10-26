@@ -17,5 +17,4 @@ pub fn stub_message(message: &Value, key: &str) -> Value {
     Value::Object(result)
 }
 
-#[cfg(test)]
 mod tests;

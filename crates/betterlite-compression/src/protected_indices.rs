@@ -2,18 +2,21 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 
 pub fn message_has_cache_control(message: &Value) -> bool {
-    message
+    let has_direct_control = message
         .get("cache_control")
-        .is_some_and(|value| !value.is_null())
-        || message
-            .get("content")
-            .and_then(Value::as_array)
-            .is_some_and(|parts| {
-                parts.iter().any(|part| {
-                    part.get("cache_control")
-                        .is_some_and(|value| !value.is_null())
-                })
+        .is_some_and(|value| !value.is_null());
+    if has_direct_control {
+        return true;
+    }
+    message
+        .get("content")
+        .and_then(Value::as_array)
+        .is_some_and(|parts| {
+            parts.iter().any(|part| {
+                part.get("cache_control")
+                    .is_some_and(|value| !value.is_null())
             })
+        })
 }
 
 pub fn cached_prefix_indices(messages: &[Value]) -> Vec<usize> {
@@ -55,5 +58,4 @@ pub fn get_protected_indices(messages: &[Value]) -> Vec<usize> {
     protected.into_iter().collect()
 }
 
-#[cfg(test)]
 mod tests;

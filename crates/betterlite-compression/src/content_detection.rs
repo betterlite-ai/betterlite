@@ -35,5 +35,4 @@ pub fn detect_content_type(content: &str) -> &'static str {
     }
 }
 
-#[cfg(test)]
 mod tests;

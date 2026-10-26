@@ -63,5 +63,4 @@ pub fn content_to_string(content: &Value) -> String {
     }
 }
 
-#[cfg(test)]
 mod tests;
