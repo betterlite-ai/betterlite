@@ -4,7 +4,11 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    // A skipped marker keeps this environment-only section a YAML mapping.
+    #[serde(skip)]
+    _environment: (),
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
