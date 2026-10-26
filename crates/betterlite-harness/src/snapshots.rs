@@ -2,7 +2,7 @@ mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, DirEntry, File};
-use std::io::{self, Read as _};
+use std::io::{self, Read};
 use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 use std::str;
 
@@ -73,21 +73,26 @@ fn hash_entry(root: &Path, entry: &DirEntry) -> Option<(String, String)> {
     }
     let path = entry.path();
     let mut file = File::open(&path).ok()?;
+    let digest = hash_reader(&mut file)?;
+    let relative = path.strip_prefix(root).ok()?.to_str()?;
+    Some((relative.replace(MAIN_SEPARATOR, "/"), hex::encode(digest)))
+}
+
+fn hash_reader<Reader>(reader: &mut Reader) -> Option<[u8; 32]>
+where
+    Reader: Read,
+{
     let mut digest = Sha256::new();
     let mut chunk = vec![0_u8; HASH_CHUNK_BYTES];
     loop {
-        match file.read(&mut chunk) {
+        match reader.read(&mut chunk) {
             Ok(0) => break,
             Ok(count) => digest.update(chunk.get(..count)?),
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
             Err(_) => return None,
         }
     }
-    let relative = path.strip_prefix(root).ok()?.to_str()?;
-    Some((
-        relative.replace(MAIN_SEPARATOR, "/"),
-        hex::encode(digest.finalize()),
-    ))
+    Some(<[u8; 32]>::from(digest.finalize()))
 }
 
 pub async fn snapshot_local(root: PathBuf) -> Result<BTreeMap<String, String>, SnapshotError> {

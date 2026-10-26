@@ -1,4 +1,4 @@
-mod python_json;
+pub(super) mod python_json;
 mod tests;
 
 use std::collections::BTreeMap;

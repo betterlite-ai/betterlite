@@ -93,6 +93,14 @@ fn instruction_embeds_the_schema_as_python_json() {
     );
 }
 
+#[test]
+fn python_json_formats_float_values() {
+    assert_eq!(
+        super::python_json::python_json_text(&1.5_f64).unwrap(),
+        "1.5"
+    );
+}
+
 #[rstest]
 #[case::object_properties_required(
     r#"{"type": "object", "default": {}, "properties": {"a": {"type": "string", "default": "x"}, "b": {"type": "integer"}}}"#,

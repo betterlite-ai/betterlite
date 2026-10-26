@@ -6,6 +6,7 @@ use std::time::Duration;
 use std::{env, fs, future, io, os, process};
 
 use rstest::rstest;
+use sha2::Digest as _;
 use tokio::io::{Empty, Sink};
 
 use crate::errors::{CappedOperation, HarnessError};
@@ -154,6 +155,70 @@ fn sandbox_with(files: &[(&str, &[u8])]) -> MemorySandbox {
             .map(|(path, data)| ((*path).to_owned(), data.to_vec()))
             .collect(),
     }
+}
+
+#[test]
+fn snapshot_limits_match_the_harness_contract() {
+    assert_eq!(MAX_FILE_BYTES, 50 * 1024 * 1024);
+    assert_eq!(MAX_TOTAL_BYTES, 16 * 1024 * 1024);
+    assert_eq!(MAX_DIFF_BYTES, 256 * 1024);
+    assert_eq!(super::HASH_CHUNK_BYTES, 1024 * 1024);
+}
+
+struct InterruptOnceReader {
+    interrupted: bool,
+    delivered: bool,
+    bytes: &'static [u8],
+}
+
+impl io::Read for InterruptOnceReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if !self.interrupted {
+            self.interrupted = true;
+            return Err(io::Error::from(io::ErrorKind::Interrupted));
+        }
+        if self.delivered {
+            return Ok(0);
+        }
+        self.delivered = true;
+        buf.get_mut(..self.bytes.len())
+            .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?
+            .copy_from_slice(self.bytes);
+        Ok(self.bytes.len())
+    }
+}
+
+struct ErrorOnceReader {
+    failed: bool,
+}
+
+impl io::Read for ErrorOnceReader {
+    fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
+        if !self.failed {
+            self.failed = true;
+            return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+        }
+        Ok(0)
+    }
+}
+
+#[test]
+fn hash_reader_retries_interrupted_reads() {
+    let mut reader = InterruptOnceReader {
+        interrupted: false,
+        delivered: false,
+        bytes: b"hello\n",
+    };
+    assert_eq!(
+        super::hash_reader(&mut reader),
+        Some(<[u8; 32]>::from(sha2::Sha256::digest(b"hello\n")))
+    );
+}
+
+#[test]
+fn hash_reader_stops_on_other_errors() {
+    let mut reader = ErrorOnceReader { failed: false };
+    assert_eq!(super::hash_reader(&mut reader), None);
 }
 
 #[test]
