@@ -219,9 +219,9 @@ fn multipart_difference(
     let left_bytes = value_bytes(left)?;
     let right_bytes = value_bytes(right)?;
     let left_parts =
-        multipart_oracle::capture::decode_multipart_capture(left_content_type, left_bytes).ok()?;
+        multipart_oracle::capture::decode_multipart_capture(left_content_type, &left_bytes).ok()?;
     let right_parts =
-        multipart_oracle::capture::decode_multipart_capture(right_content_type, right_bytes)
+        multipart_oracle::capture::decode_multipart_capture(right_content_type, &right_bytes)
             .ok()?;
     let count = left_parts.len().max(right_parts.len());
     for index in 0..count {
