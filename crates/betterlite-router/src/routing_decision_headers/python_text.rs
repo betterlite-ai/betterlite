@@ -27,17 +27,17 @@ pub(super) fn python_number(number: &Number) -> String {
 
 // Python's float repr stays in fixed notation only for decimal exponents -4 through 15
 fn python_float(value: f64) -> String {
-    if value.classify() == FpCategory::Zero || (1e-4..1e16).contains(&value.abs()) {
+    if value.classify() == FpCategory::Zero || (1e-4_f64..1e16_f64).contains(&value.abs()) {
         let fixed = value.to_string();
         let point = if fixed.contains('.') { "" } else { ".0" };
         return format!("{fixed}{point}");
     }
     let scientific = format!("{value:e}");
     match scientific.split_once('e') {
-        Some((mantissa, power)) => match power.strip_prefix('-') {
-            Some(digits) => format!("{mantissa}e-{digits:0>2}"),
-            None => format!("{mantissa}e+{power:0>2}"),
-        },
+        Some((mantissa, power)) => power.strip_prefix('-').map_or_else(
+            || format!("{mantissa}e+{power:0>2}"),
+            |digits| format!("{mantissa}e-{digits:0>2}"),
+        ),
         None => scientific,
     }
 }

@@ -40,8 +40,11 @@ impl crate::helpers::Helper for Op {
                     new_headers,
                 ),
             ),
-            Input::Quality { headers, request } => {
-                let mut headers = headers.clone();
+            Input::Quality {
+                headers: original_headers,
+                request,
+            } => {
+                let mut headers = original_headers.clone();
                 betterlite_router::routing_decision_headers::apply_quality_headers(
                     &mut headers,
                     request,

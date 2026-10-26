@@ -123,13 +123,10 @@ pub fn decode_routing_header_value(value: &str) -> Option<String> {
 }
 
 const fn object(value: &RoutingValue) -> Option<&IndexMap<String, RoutingValue>> {
-    match value {
-        RoutingValue::Object(fields) => Some(fields),
-        RoutingValue::Null
-        | RoutingValue::Bool(_)
-        | RoutingValue::Number(_)
-        | RoutingValue::String(_)
-        | RoutingValue::Array(_) => None,
+    if let RoutingValue::Object(fields) = value {
+        Some(fields)
+    } else {
+        None
     }
 }
 
@@ -146,13 +143,10 @@ fn score_text(value: &RoutingValue) -> Option<String> {
 }
 
 fn header_string(value: &RoutingValue) -> Option<String> {
-    match value {
-        RoutingValue::String(text) => decode_routing_header_value(text),
-        RoutingValue::Null
-        | RoutingValue::Bool(_)
-        | RoutingValue::Number(_)
-        | RoutingValue::Array(_)
-        | RoutingValue::Object(_) => None,
+    if let RoutingValue::String(text) = value {
+        decode_routing_header_value(text)
+    } else {
+        None
     }
 }
 

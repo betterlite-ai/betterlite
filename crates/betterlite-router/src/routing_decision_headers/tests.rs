@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 
 use rstest::rstest;
 
@@ -153,8 +153,8 @@ fn complexity_score_prints_like_python(#[case] score: &str, #[case] expected: &s
 #[case::insertion_order(r#"{"b": [], "a": {}}"#, "{'b': [], 'a': {}}")]
 #[case::both_quotes(r#"["'\""]"#, r#"['\'"']"#)]
 #[case::escapes(
-    r#"["a\nb\\\t\r\u0001\u007f\u00a0\u2028\u200b\u0378\udb80\udc00 é"]"#,
-    r"['a\nb\\\t\r\x01\x7f\xa0\u2028\u200b\u0378\U000f0000 é']"
+    concat!(r#"["a\nb\\\t\r\u0001\u007f\u00a0\u2028\u200b\u0378\udb80\udc00 "#, "\u{e9}", r#""]"#),
+    concat!(r"['a\nb\\\t\r\x01\x7f\xa0\u2028\u200b\u0378\U000f0000 ", "\u{e9}", r"']")
 )]
 fn quality_values_print_like_python(#[case] field: &str, #[case] expected: &str) {
     let request = value(&format!(
@@ -181,15 +181,10 @@ fn routing_header_value_boundaries(#[case] value: &str, #[case] expected: Option
     assert_eq!(decode_routing_header_value(value).as_deref(), expected);
 }
 
-#[test]
-fn replays_the_routing_header_value_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/routing_header_value");
-    let mut count = 0_usize;
-    for entry in fs::read_dir(corpus).unwrap() {
-        let path = entry.unwrap().path();
-        let text = fs::read_to_string(path).unwrap();
-        drop(decode_routing_header_value(&text));
-        count += 1;
-    }
-    assert!(count >= 5_usize);
+#[rstest]
+fn replays_the_routing_header_value_corpus(
+    #[files("fuzz/corpus/routing_header_value/*")] path: PathBuf,
+) {
+    let text = fs::read_to_string(path).unwrap();
+    drop(decode_routing_header_value(&text));
 }
