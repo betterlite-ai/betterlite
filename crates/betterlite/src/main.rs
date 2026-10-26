@@ -75,9 +75,14 @@ fn process_environment() -> BTreeMap<String, String> {
                 environment.insert(name, value);
             }
             (Ok(name), Err(_)) => {
-                tracing::warn!(variable = name, "environment variable is not UTF-8 and is ignored");
+                tracing::warn!(
+                    variable = name,
+                    "environment variable is not UTF-8 and is ignored"
+                );
             }
-            (Err(_), _) => tracing::warn!("an environment variable name is not UTF-8 and is ignored"),
+            (Err(_), _) => {
+                tracing::warn!("an environment variable name is not UTF-8 and is ignored");
+            }
         }
     }
     environment

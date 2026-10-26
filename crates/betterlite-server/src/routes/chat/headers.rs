@@ -31,7 +31,10 @@ pub(super) fn success_headers(
         ("x-litellm-model-group", deployment.model_group.clone()),
         ("x-litellm-model-api-base", deployment.api_base.clone()),
         ("x-litellm-version", env!("CARGO_PKG_VERSION").to_owned()),
-        ("x-litellm-response-duration-ms", milliseconds(outcome.upstream_time)),
+        (
+            "x-litellm-response-duration-ms",
+            milliseconds(outcome.upstream_time),
+        ),
         ("x-litellm-overhead-duration-ms", milliseconds(overhead)),
         ("x-litellm-callback-duration-ms", "0.0".to_owned()),
         ("x-litellm-attempted-retries", "0".to_owned()),
@@ -61,7 +64,8 @@ pub(super) fn failure_headers(
         | ChatError::TooLarge
         | ChatError::Http { .. } => HeaderMap::new(),
     };
-    let timeout = deployment.map(|picked| ("x-litellm-timeout", python_float(picked.timeout_seconds)));
+    let timeout =
+        deployment.map(|picked| ("x-litellm-timeout", python_float(picked.timeout_seconds)));
     insert_all(
         &mut headers,
         iter::once(("x-litellm-call-id", call_id.to_owned())).chain(timeout),
@@ -99,13 +103,18 @@ where
             Ok(value) => {
                 headers.insert(name, value);
             }
-            Err(error) => tracing::warn!(header = name, %error, "response header value is not valid"),
+            Err(error) => {
+                tracing::warn!(header = name, %error, "response header value is not valid");
+            }
         }
     }
 }
 
 fn milliseconds(duration: Duration) -> String {
-    let micros = duration.subsec_micros().checked_rem(1000).unwrap_or_default();
+    let micros = duration
+        .subsec_micros()
+        .checked_rem(1000)
+        .unwrap_or_default();
     format!("{}.{micros:03}", duration.as_millis())
 }
 

@@ -32,15 +32,18 @@ impl ChatError {
     #[must_use]
     pub fn failure(&self) -> ProviderFailure {
         match self {
-            Self::UnknownModel { .. } | Self::Request { .. } => failure(400, Fields::Fallback, None),
+            Self::UnknownModel { .. } | Self::Request { .. } => {
+                failure(400, Fields::Fallback, None)
+            }
             Self::UnsupportedProvider { .. } | Self::Streaming => {
                 failure(501, Fields::Fallback, None)
             }
             Self::MissingApiKey => failure(401, Fields::Fallback, None),
             Self::Timeout { .. } => failure(408, Fields::Fallback, None),
-            Self::Provider { response } => {
-                classify(response.status, str::from_utf8(&response.body).unwrap_or_default())
-            }
+            Self::Provider { response } => classify(
+                response.status,
+                str::from_utf8(&response.body).unwrap_or_default(),
+            ),
             Self::Http { .. } | Self::Encode { .. } | Self::Decode { .. } | Self::TooLarge => {
                 failure(500, Fields::Fallback, None)
             }
@@ -48,7 +51,7 @@ impl ChatError {
     }
 }
 
-// LiteLLM checks the provider's error text before its status, in this order
+// LiteLLM checks the provider's error text before its status, in this order, so every 429 is a throttling_error
 fn classify(status: u16, body: &str) -> ProviderFailure {
     let lower = body.to_lowercase();
     let invalid_request = body.contains("invalid_request_error");
@@ -89,7 +92,9 @@ fn by_status(status: u16, body: &str) -> ProviderFailure {
 fn failure(status: u16, fields: Fields, body: Option<&str>) -> ProviderFailure {
     let parsed = body.and_then(|text| serde_json::from_str::<Value>(text).ok());
     // the OpenAI SDK reads type and param from the error object, or from the whole body without one
-    let error = parsed.as_ref().map(|data| data.get("error").unwrap_or(data));
+    let error = parsed
+        .as_ref()
+        .map(|data| data.get("error").unwrap_or(data));
     let text_field = |name: &str| {
         error
             .and_then(|object| object.get(name))
@@ -113,7 +118,6 @@ const fn fallback_type(status: u16) -> &'static str {
     match status {
         401 => "authentication_error",
         403 => "permission_error",
-        429 => "rate_limit_error",
         0..500 => "invalid_request_error",
         _ => "internal_server_error",
     }
@@ -122,9 +126,13 @@ const fn fallback_type(status: u16) -> &'static str {
 fn mentions_rate_limit(lower: &str) -> bool {
     lower.contains("service tier capacity exceeded")
         || lower.match_indices("rate").any(|(start, word)| {
-            let rest = lower.get(start.saturating_add(word.len())..).unwrap_or_default();
-            rest.trim_start_matches(|letter: char| letter.is_whitespace() || letter == '_' || letter == '-')
-                .starts_with("limit")
+            let rest = lower
+                .get(start.saturating_add(word.len())..)
+                .unwrap_or_default();
+            rest.trim_start_matches(|letter: char| {
+                letter.is_whitespace() || letter == '_' || letter == '-'
+            })
+            .starts_with("limit")
         })
 }
 
@@ -134,7 +142,9 @@ fn context_window_exceeded(lower: &str) -> bool {
     {
         return false;
     }
-    CONTEXT_WINDOW_PHRASES.iter().any(|phrase| lower.contains(phrase))
+    CONTEXT_WINDOW_PHRASES
+        .iter()
+        .any(|phrase| lower.contains(phrase))
         || (lower.contains("current length is") && lower.contains("while limit is"))
         || (lower.contains("maximum input length is") && lower.contains("tokens"))
 }

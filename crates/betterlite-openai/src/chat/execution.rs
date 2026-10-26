@@ -140,7 +140,9 @@ impl ChatExecutor {
         else {
             return Ok(Map::new());
         };
-        let messages = requested.remove("messages").unwrap_or(Value::Array(Vec::new()));
+        let messages = requested
+            .remove("messages")
+            .unwrap_or(Value::Array(Vec::new()));
         requested.remove("model");
         requested.remove("stream");
         let (known, forwarded): (Map<String, Value>, Map<String, Value>) = requested

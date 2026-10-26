@@ -6,6 +6,7 @@ pub mod response;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
+use serde_with::skip_serializing_none;
 use thiserror::Error;
 
 // LiteLLM reads these request keys itself and never forwards them, and betterlite does not act on them yet
@@ -36,48 +37,31 @@ pub enum RequestError {
     Unsupported { name: String },
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ChatRequest {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     pub messages: Vec<ChatMessage>,
     #[serde(default)]
     pub stream: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<Number>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<Number>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub presence_penalty: Option<Number>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<Number>,
-    #[serde(rename = "n", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "n")]
     pub choice_count: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_completion_tokens: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub stop: Option<Stop>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub logprobs: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub top_logprobs: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<Tool>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub parallel_tool_calls: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<ResponseFormat>,
     // parameters betterlite does not model: LiteLLM forwards unknown ones and filters the OpenAI ones it knows
     #[serde(flatten)]
@@ -110,16 +94,13 @@ pub enum Role {
     Function,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ChatMessage {
     pub role: Role,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<MessageContent>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
     // message fields betterlite does not model, such as cache_control or audio, which LiteLLM forwards
     #[serde(flatten)]
@@ -149,26 +130,24 @@ pub enum Stop {
     Many(Vec<String>),
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Tool {
     #[serde(rename = "type")]
     pub kind: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub function: Option<FunctionDefinition>,
     // fields of the other tool types, such as custom or web search tools
     #[serde(flatten)]
     pub passthrough: IndexMap<String, Value>,
 }
 
+// parameters is a caller's JSON schema, free-form by definition
+#[skip_serializing_none]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct FunctionDefinition {
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    // a caller's JSON schema is free-form by definition
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub parameters: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub strict: Option<bool>,
 }
 
@@ -205,12 +184,12 @@ pub struct FunctionCall {
     pub arguments: String,
 }
 
+// json_schema carries a caller's JSON schema, free-form by definition
+#[skip_serializing_none]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ResponseFormat {
     #[serde(rename = "type")]
     pub kind: String,
-    // a caller's JSON schema is free-form by definition
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub json_schema: Option<Value>,
 }
 

@@ -185,6 +185,65 @@ async fn missing_environment_logs_variable_and_path() {
     assert!(stderr.contains("general_settings.master_key"));
 }
 #[tokio::test]
+async fn reads_config_references_from_the_process_environment() {
+    let port = free_port().await;
+    let config_path = fixture(
+        port,
+        "general_settings:\n  master_key: os.environ/B004_MASTER\n",
+    )
+    .await;
+    let child = Command::new("setpriv")
+        .args(["--pdeathsig", "KILL", "--"])
+        .arg(binary_path())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &port.to_string(),
+        ])
+        .env("B004_MASTER", "environment-master")
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let server = ServerGuard { child: Some(child) };
+    wait_until_ready(port, 1000).await;
+    let mut request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    request
+        .write_all(b"GET /v1/models HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer environment-master\r\nConnection: close\r\n\r\n")
+        .await
+        .unwrap();
+    let mut response = Vec::new();
+    request.read_to_end(&mut response).await.unwrap();
+    assert!(response.starts_with(b"HTTP/1.1 200"));
+    drop(server);
+}
+#[tokio::test]
+async fn unusable_chat_deployment_stops_startup() {
+    let port = free_port().await;
+    let source = "model_list:\n  - {model_name: g, litellm_params: {model: openai/m, api_base: 'not a url'}}\n";
+    let config_path = fixture(port, source).await;
+    let output = Command::new("setpriv")
+        .args(["--pdeathsig", "KILL", "--"])
+        .arg(binary_path())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &port.to_string(),
+        ])
+        .output()
+        .await
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("failed to set up chat completions"));
+    assert!(stderr.contains("model_list entry g"));
+}
+#[tokio::test]
 async fn partial_headers_are_closed_after_the_read_deadline() {
     let port = free_port().await;
     let config_path = fixture(port, STANDARD_CONFIG).await;

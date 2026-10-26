@@ -1,4 +1,3 @@
-use std::fmt::Write as _;
 use std::time::{Duration, TryFromFloatSecsError};
 
 use betterlite_config::types::ModelDeployment;
@@ -19,7 +18,9 @@ pub enum DeploymentError {
         #[source]
         source: url::ParseError,
     },
-    #[error("model_list entry {model_name} has a timeout of {seconds} seconds, which no wait can last")]
+    #[error(
+        "model_list entry {model_name} has a timeout of {seconds} seconds, which no wait can last"
+    )]
     Timeout {
         model_name: String,
         seconds: f64,
@@ -79,29 +80,42 @@ impl ChatDeployment {
             .chain(&defaults.api_bases)
             .find(|base| !base.is_empty())
             .map_or(OPENAI_API_BASE, String::as_str);
-        let seconds = params
-            .timeout
-            .or(defaults.request_timeout)
-            .unwrap_or(REQUEST_TIMEOUT_SECONDS);
-        let timeout =
-            Duration::try_from_secs_f64(seconds).map_err(|source| DeploymentError::Timeout {
-                model_name: model_name.clone(),
-                seconds,
-                source,
-            })?;
+        let (seconds, wait) = timeout(params.timeout, defaults, model_name)?;
         Ok(Self {
+            timeout: wait,
             model_group: model_name.clone(),
             api_base: api_base.split('?').next().unwrap_or_default().to_owned(),
             endpoint: endpoint(api_base, model_name)?,
-            api_key: params.api_key.iter().chain(&defaults.api_keys).next().cloned(),
+            api_key: params
+                .api_key
+                .iter()
+                .chain(&defaults.api_keys)
+                .next()
+                .cloned(),
             organization: defaults.organization.clone(),
-            timeout,
             timeout_seconds: seconds,
             model_id: model_id(deployment),
             litellm_model,
             provider,
         })
     }
+}
+
+fn timeout(
+    seconds: Option<f64>,
+    defaults: &OpenAiDefaults,
+    model_name: &str,
+) -> Result<(f64, Duration), DeploymentError> {
+    let resolved = seconds
+        .or(defaults.request_timeout)
+        .unwrap_or(REQUEST_TIMEOUT_SECONDS);
+    let wait =
+        Duration::try_from_secs_f64(resolved).map_err(|source| DeploymentError::Timeout {
+            model_name: model_name.to_owned(),
+            seconds: resolved,
+            source,
+        })?;
+    Ok((resolved, wait))
 }
 
 fn endpoint(api_base: &str, model_name: &str) -> Result<Url, DeploymentError> {
@@ -122,8 +136,14 @@ fn model_id(deployment: &ModelDeployment) -> String {
     let params = &deployment.litellm_params;
     let numbers = [
         ("timeout", params.timeout.map(|value| value.to_string())),
-        ("stream_timeout", params.stream_timeout.map(|value| value.to_string())),
-        ("max_retries", params.max_retries.map(|value| value.to_string())),
+        (
+            "stream_timeout",
+            params.stream_timeout.map(|value| value.to_string()),
+        ),
+        (
+            "max_retries",
+            params.max_retries.map(|value| value.to_string()),
+        ),
         ("rpm", params.rpm.map(|value| value.to_string())),
         ("tpm", params.tpm.map(|value| value.to_string())),
         ("weight", params.weight.map(|value| value.to_string())),
@@ -133,7 +153,10 @@ fn model_id(deployment: &ModelDeployment) -> String {
     let texts = [
         ("model", params.model.as_deref()),
         ("api_base", params.api_base.as_deref()),
-        ("api_key", params.api_key.as_ref().map(ExposeSecret::expose_secret)),
+        (
+            "api_key",
+            params.api_key.as_ref().map(ExposeSecret::expose_secret),
+        ),
         ("api_version", params.api_version.as_deref()),
     ];
     let numbered = numbers
@@ -145,13 +168,7 @@ fn model_id(deployment: &ModelDeployment) -> String {
             hasher.update(text.as_bytes());
         }
     }
-    hasher
-        .finalize()
-        .iter()
-        .fold(String::new(), |mut hex, byte| {
-            let _written = write!(hex, "{byte:02x}");
-            hex
-        })
+    hex::encode(hasher.finalize())
 }
 
 mod tests;

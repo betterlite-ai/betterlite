@@ -14,15 +14,24 @@ fn parses_typed_fields_and_keeps_unknown_parameters_for_forwarding() {
     assert_eq!(request.model, None);
     assert_eq!(request.choice_count, Some(2));
     assert_eq!(request.stop, Some(Stop::One("\n".to_owned())));
-    assert_eq!(request.tool_choice, Some(ToolChoice::Mode("auto".to_owned())));
+    assert_eq!(
+        request.tool_choice,
+        Some(ToolChoice::Mode("auto".to_owned()))
+    );
     let message = request.messages.first().unwrap();
     assert_eq!(message.role, Role::User);
     assert!(matches!(message.content, Some(MessageContent::Parts(_))));
-    assert_eq!(message.passthrough.keys().collect::<Vec<_>>(), ["cache_control"]);
-    assert_eq!(request.passthrough.keys().collect::<Vec<_>>(), ["vendor_flag"]);
+    assert_eq!(
+        message.passthrough.keys().collect::<Vec<_>>(),
+        ["cache_control"]
+    );
+    assert_eq!(
+        request.passthrough.keys().collect::<Vec<_>>(),
+        ["vendor_flag"]
+    );
     let written = serde_json::to_value(&request).unwrap();
-    assert_eq!(written.get("temperature").unwrap(), 1);
-    assert_eq!(written.get("n").unwrap(), 2);
+    assert_eq!(written.get("temperature").unwrap(), 1_u64);
+    assert_eq!(written.get("n").unwrap(), 2_u64);
 }
 
 #[rstest]

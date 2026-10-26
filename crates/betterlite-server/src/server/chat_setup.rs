@@ -43,7 +43,10 @@ pub fn chat_executor(
             .flatten()
             .cloned()
             .collect(),
-        organization: sdk.organization.clone().or_else(|| sdk.openai_organization.clone()),
+        organization: sdk
+            .organization
+            .clone()
+            .or_else(|| sdk.openai_organization.clone()),
     };
     let deployments = config
         .model_list

@@ -94,7 +94,10 @@ impl ProxiedClient {
         for (name, value) in post.headers {
             builder = builder.header(name, value);
         }
-        let request = builder.body(post.body).build().map_err(HttpError::Request)?;
+        let request = builder
+            .body(post.body)
+            .build()
+            .map_err(HttpError::Request)?;
         let mut response = self.execute(request).await.map_err(timed_out)?;
         let status = response.status().as_u16();
         let headers = mem::take(response.headers_mut());

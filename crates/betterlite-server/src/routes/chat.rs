@@ -70,7 +70,9 @@ async fn chat_completion(
         Err(source) => return failure(&ChatError::from(source), &call_id, None),
     };
     // LiteLLM lets the model in the path win over the one in the body
-    let model = path_model.map(|Path(model)| model).or_else(|| request.model.clone());
+    let model = path_model
+        .map(|Path(model)| model)
+        .or_else(|| request.model.clone());
     let deployment = match executor.pick(model.as_deref().unwrap_or("None")) {
         Ok(deployment) => deployment,
         Err(error) => return failure(&error, &call_id, None),
@@ -88,11 +90,10 @@ fn failure(error: &ChatError, call_id: &str, deployment: Option<&ChatDeployment>
     let failure = error.failure();
     let status = StatusCode::from_u16(failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let message = error.to_string();
-    let provider_specific_fields = matches!(error, ChatError::UnknownModel { .. }).then(|| {
-        RouterErrorFields {
+    let provider_specific_fields =
+        matches!(error, ChatError::UnknownModel { .. }).then(|| RouterErrorFields {
             error: message.clone(),
-        }
-    });
+        });
     let body = ErrorBody {
         error: ErrorObject {
             message,
