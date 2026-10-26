@@ -1,0 +1,6 @@
+{
+  "id": "worker-1",
+  "name": "analysis box",
+  "scope": {"team_id": "team-a"},
+  "last_seen": "2026-01-15T09:00:00Z"
+}

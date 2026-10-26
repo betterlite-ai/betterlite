@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+betterlite-anthropic = { path = "../../crates/betterlite-anthropic" }
 betterlite-auth = { path = "../../crates/betterlite-auth" }
 betterlite-bedrock = { path = "../../crates/betterlite-bedrock" }
 betterlite-config = { path = "../../crates/betterlite-config" }
@@ -14,13 +15,15 @@ betterlite-context = { path = "../../crates/betterlite-context" }
 betterlite-db = { path = "../../crates/betterlite-db" }
 betterlite-guardrails = { path = "../../crates/betterlite-guardrails" }
 betterlite-http = { path = "../../crates/betterlite-http" }
+betterlite-lens = { path = "../../crates/betterlite-lens" }
 betterlite-logging = { path = "../../crates/betterlite-logging" }
 betterlite-models = { path = "../../crates/betterlite-models" }
 betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
+betterlite-postgres-fixture = { path = "../postgres-fixture" }
 betterlite-secrets = { path = "../../crates/betterlite-secrets" }
 chrono.workspace = true
-clap = { version = "4.6.7", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive", "env"] }
 futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"
 indexmap = { version = "2.14.2", features = ["serde"] }
