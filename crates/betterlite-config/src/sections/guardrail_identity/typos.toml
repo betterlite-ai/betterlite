@@ -1,0 +1,4 @@
+[default.extend-identifiers]
+# These identifiers retain LiteLLM's wire spelling for compatibility.
+AU_ACN = "AU_ACN"
+NG_NIN = "NG_NIN"

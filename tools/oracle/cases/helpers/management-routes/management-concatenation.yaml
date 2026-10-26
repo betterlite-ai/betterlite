@@ -1,0 +1,8 @@
+kind: helper
+name: management-concatenation
+call:
+  management_routes:
+    group: management_routes
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,197 @@
+{
+  "id": "airline-passenger-data-protection-uae",
+  "title": "Airline Passenger Data Protection (UAE)",
+  "description": "Protects airline passenger PII including PNR/booking references, multi-national passport numbers, frequent flyer (Skywards) numbers, payment cards, IBANs, Emirates ID, UAE phone numbers, and email addresses. Designed for UAE-based airlines operating global routes.",
+  "example_sentences": [
+    "Look up PNR ABC123 for passenger Ahmed Al Maktoum",
+    "My Skywards number is EK123456789",
+    "Booking reference XY7890 with Emirates ID 784-1985-1234567-1",
+    "Passenger passport number is A12345678"
+  ],
+  "icon": "ShieldCheckIcon",
+  "iconColor": "text-emerald-500",
+  "iconBg": "bg-emerald-50",
+  "guardrails": [
+    "airline-pnr-skywards-pii",
+    "airline-passport-multinational",
+    "airline-payment-financial",
+    "airline-contact-info-uae"
+  ],
+  "complexity": "High",
+  "guardrailDefinitions": [
+    {
+      "guardrail_name": "airline-pnr-skywards-pii",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "patterns": [
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "airline_pnr",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "skywards_number",
+            "action": "MASK"
+          }
+        ],
+        "pattern_redaction_format": "[{pattern_name}_REDACTED]"
+      },
+      "guardrail_info": {
+        "description": "Masks airline PNR/booking references and Emirates Skywards frequent flyer numbers"
+      }
+    },
+    {
+      "guardrail_name": "airline-passport-multinational",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "patterns": [
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "passport_us",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "passport_uk",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "passport_germany",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "passport_france",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "passport_india",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "passport_china",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "passport_australia",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "passport_japan",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "passport_canada",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "passport_netherlands",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "uae_emirates_id",
+            "action": "MASK"
+          }
+        ],
+        "pattern_redaction_format": "[{pattern_name}_REDACTED]"
+      },
+      "guardrail_info": {
+        "description": "Masks passport numbers from 10+ nationalities and UAE Emirates ID -- covers global route network"
+      }
+    },
+    {
+      "guardrail_name": "airline-payment-financial",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "patterns": [
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "credit_card",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "visa",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "mastercard",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "amex",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "iban",
+            "action": "MASK"
+          }
+        ],
+        "pattern_redaction_format": "[{pattern_name}_REDACTED]"
+      },
+      "guardrail_info": {
+        "description": "Masks credit card numbers (Visa, Mastercard, Amex) and IBANs"
+      }
+    },
+    {
+      "guardrail_name": "airline-contact-info-uae",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "patterns": [
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "email",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "uae_phone",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "us_phone",
+            "action": "MASK"
+          }
+        ],
+        "pattern_redaction_format": "[{pattern_name}_REDACTED]"
+      },
+      "guardrail_info": {
+        "description": "Masks email addresses and phone numbers (UAE and international formats)"
+      }
+    }
+  ],
+  "templateData": {
+    "policy_name": "airline-passenger-data-protection-uae",
+    "description": "Airline passenger data protection for UAE-based carriers. Masks PNR/booking references, Skywards numbers, multi-national passports, Emirates ID, payment cards, IBANs, and contact information.",
+    "guardrails_add": [
+      "airline-pnr-skywards-pii",
+      "airline-passport-multinational",
+      "airline-payment-financial",
+      "airline-contact-info-uae"
+    ],
+    "guardrails_remove": []
+  },
+  "tags": [
+    "PII Protection",
+    "Aviation",
+    "UAE"
+  ],
+  "estimated_latency_ms": 1
+}
