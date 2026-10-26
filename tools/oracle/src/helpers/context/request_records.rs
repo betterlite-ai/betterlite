@@ -18,7 +18,8 @@ pub(crate) enum Input {
     },
     FilterParameters {
         record: RequestRecord,
-        max_depth: Option<i32>,
+        #[serde(default = "default_depth")]
+        max_depth: i32,
     },
     FilterInternal {
         record: RequestRecord,
@@ -26,12 +27,34 @@ pub(crate) enum Input {
     },
     GatewayInjection {
         record: RequestRecord,
-        added: i32,
-        every_deployment: bool,
+        steps: Vec<GatewayStep>,
     },
 }
 
+const fn default_depth() -> i32 {
+    let base = 10_i32;
+    base + 10_i32
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub(crate) struct GatewayStep {
+    added: i32,
+    every_deployment: bool,
+    model_info: RequestRecord,
+}
+
 pub(crate) struct Op;
+
+fn run_gateway(record: &RequestRecord, steps: &[GatewayStep]) -> RequestRecord {
+    let mut changed = record.clone();
+    for step in steps {
+        if let RequestRecord::Object(fields) = &mut changed {
+            fields.insert("model_info".to_owned(), step.model_info.clone());
+        }
+        GatewayCacheAttribution::record(&mut changed, step.added, step.every_deployment);
+    }
+    changed
+}
 
 impl crate::helpers::Helper for Op {
     type Input = Input;
@@ -41,15 +64,26 @@ impl crate::helpers::Helper for Op {
             Input::SafeCopy {
                 record,
                 safe_memory_mode,
-            } => RequestRecordProjection::safe_copy(record.clone(), *safe_memory_mode),
+            } => {
+                let mut changed = record.clone();
+                RequestRecordProjection::safe_copy(&mut changed, *safe_memory_mode).map_err(
+                    |error| {
+                        Box::new(crate::helpers::HelperError {
+                            class: "TypeError".to_owned(),
+                            status: None,
+                            error_type: None,
+                            param: None,
+                            code: None,
+                            message: error.to_string(),
+                        })
+                    },
+                )?
+            }
             Input::IndependentSnapshot { record } => {
                 RequestRecordProjection::independent_snapshot(record)
             }
             Input::FilterParameters { record, max_depth } => {
-                RequestRecordProjection::filter_parameters(
-                    record.clone(),
-                    max_depth.unwrap_or(20_i32),
-                )
+                RequestRecordProjection::filter_parameters(record.clone(), *max_depth)
             }
             Input::FilterInternal { record, additional } => {
                 RequestRecordProjection::filter_internal(
@@ -57,15 +91,7 @@ impl crate::helpers::Helper for Op {
                     &additional.iter().cloned().collect::<BTreeSet<_>>(),
                 )
             }
-            Input::GatewayInjection {
-                record,
-                added,
-                every_deployment,
-            } => {
-                let mut changed = record.clone();
-                GatewayCacheAttribution::record(&mut changed, *added, *every_deployment);
-                changed
-            }
+            Input::GatewayInjection { record, steps } => run_gateway(record, steps),
         };
         Ok(json!(result))
     }

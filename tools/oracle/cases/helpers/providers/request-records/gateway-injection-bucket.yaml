@@ -3,8 +3,9 @@ name: gateway-injection-bucket
 call:
   request_records:
     function: gateway_injection
-    record: {metadata: {}, model_info: {id: deployment-a}}
-    added: 1
-    every_deployment: false
+    record: {litellm_metadata: {}, metadata: {litellm_gateway_injected_cache: old}, model_info: {id: null}}
+    steps:
+      - {added: 1, every_deployment: false, model_info: {id: null}}
+      - {added: 1, every_deployment: false, model_info: {id: 0}}
 env: {}
 compare: {ignore: []}

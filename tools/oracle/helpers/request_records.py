@@ -34,9 +34,8 @@ def run(input_value: dict[str, Json]) -> Json:
     if function == "independent_snapshot":
         return cast(Json, independent_snapshot(object_of(record)))
     if function == "filter_parameters":
-        depth = input_value["max_depth"]
-        limit = integer(depth) if depth is not None else 20
-        return cast(Json, filter_exceptions_from_params(record, limit))
+        depth = integer(input_value.get("max_depth", 20))
+        return cast(Json, filter_exceptions_from_params(record, depth))
     if function == "filter_internal":
         additional = input_value["additional"]
         names: set[str] = set()
@@ -44,11 +43,15 @@ def run(input_value: dict[str, Json]) -> Json:
             names = {name for name in additional if isinstance(name, str)}
         return cast(Json, filter_internal_params(object_of(record), names))
     if function == "gateway_injection":
-        changed = copy.deepcopy(record)
-        AnthropicCacheControlHook.record_gateway_injection(
-            object_of(changed),
-            integer(input_value["added"]),
-            input_value["every_deployment"] is True,
-        )
+        changed = object_of(copy.deepcopy(record))
+        raw_steps = input_value.get("steps")
+        if not isinstance(raw_steps, list):
+            raise TypeError("expected gateway steps")
+        for raw_step in raw_steps:
+            step = object_of(raw_step)
+            changed["model_info"] = step["model_info"]
+            AnthropicCacheControlHook.record_gateway_injection(
+                changed, integer(step["added"]), step["every_deployment"] is True
+            )
         return changed
     raise ValueError(f"unknown request_records function: {function}")

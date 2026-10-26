@@ -9,7 +9,8 @@ pub struct Raw {
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Global {
-    pub safe_memory_mode: Option<bool>,
+    #[serde(default)]
+    pub safe_memory_mode: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -20,21 +21,13 @@ pub struct Settings {
 impl Section for Raw {
     type Settings = Settings;
 
-    fn convert<L>(self, lookup: &L) -> Result<Settings, ConfigError>
+    fn convert<L>(self, _lookup: &L) -> Result<Settings, ConfigError>
     where
         L: EnvironmentLookup,
     {
-        let safe_memory_mode = self.litellm_settings.safe_memory_mode.unwrap_or_else(|| {
-            lookup
-                .lookup("LITELLM_SAFE_MEMORY_MODE")
-                .is_some_and(|value| {
-                    matches!(
-                        value.trim().to_ascii_lowercase().as_str(),
-                        "1" | "true" | "yes" | "on"
-                    )
-                })
-        });
-        Ok(Settings { safe_memory_mode })
+        Ok(Settings {
+            safe_memory_mode: self.litellm_settings.safe_memory_mode,
+        })
     }
 }
 

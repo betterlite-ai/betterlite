@@ -4,7 +4,12 @@ call:
   request_records:
     function: gateway_injection
     record: {metadata: {}, model_info: {id: deployment-a}}
-    added: 1
-    every_deployment: true
+    steps:
+      - {added: 1, every_deployment: false, model_info: {id: deployment-a}}
+      - {added: 1, every_deployment: false, model_info: {id: deployment-b}}
+      - {added: 0, every_deployment: false, model_info: {id: deployment-c}}
+      - {added: -1, every_deployment: false, model_info: {id: deployment-d}}
+      - {added: 1, every_deployment: true, model_info: null}
+      - {added: 1, every_deployment: false, model_info: {id: deployment-e}}
 env: {}
 compare: {ignore: []}
