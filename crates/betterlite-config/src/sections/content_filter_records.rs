@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentFilterAction {
     #[serde(rename = "BLOCK", alias = "block")]
@@ -166,11 +168,11 @@ impl Default for ContentFilterGuardrailConfig {
 
 impl ContentFilterGuardrailConfig {
     pub const UI_FRIENDLY_NAME: &'static str = "LiteLLM Content Filter";
+}
 
-    #[must_use]
-    pub const fn ui_friendly_name() -> &'static str {
-        const NAME: &str = ContentFilterGuardrailConfig::UI_FRIENDLY_NAME;
-        NAME
+impl GuardrailConfigModelIdentity for ContentFilterGuardrailConfig {
+    fn ui_friendly_name() -> &'static str {
+        "LiteLLM Content Filter"
     }
 }
 
@@ -213,18 +215,16 @@ pub struct BlockCodeExecGuardrailConfig {
 
 impl Default for BlockCodeExecGuardrailConfig {
     fn default() -> Self {
-        Self::from(())
-    }
-}
-
-impl From<()> for BlockCodeExecGuardrailConfig {
-    fn from((): ()) -> Self {
-        Self {
-            blocked_languages: Option::default(),
-            action: BlockCodeAction::default(),
+        let mut config = Self {
+            blocked_languages: None,
+            action: BlockCodeAction::Block,
             confidence_threshold: Self::CONFIDENCE_THRESHOLD,
             detect_execution_intent: Self::DETECT_EXECUTION_INTENT,
+        };
+        if config.confidence_threshold.is_sign_negative() {
+            config.confidence_threshold = 0.0_f64;
         }
+        config
     }
 }
 
@@ -232,11 +232,11 @@ impl BlockCodeExecGuardrailConfig {
     const CONFIDENCE_THRESHOLD: f64 = 0.5;
     const DETECT_EXECUTION_INTENT: bool = true;
     pub const UI_FRIENDLY_NAME: &'static str = "Block Code Execution";
+}
 
-    #[must_use]
-    pub const fn ui_friendly_name() -> &'static str {
-        const NAME: &str = BlockCodeExecGuardrailConfig::UI_FRIENDLY_NAME;
-        NAME
+impl GuardrailConfigModelIdentity for BlockCodeExecGuardrailConfig {
+    fn ui_friendly_name() -> &'static str {
+        "Block Code Execution"
     }
 }
 
@@ -248,10 +248,10 @@ pub struct HideSecretsGuardrailConfig {
 
 impl HideSecretsGuardrailConfig {
     pub const UI_FRIENDLY_NAME: &'static str = "Hide Secrets";
+}
 
-    #[must_use]
-    pub const fn ui_friendly_name() -> &'static str {
-        const NAME: &str = HideSecretsGuardrailConfig::UI_FRIENDLY_NAME;
-        NAME
+impl GuardrailConfigModelIdentity for HideSecretsGuardrailConfig {
+    fn ui_friendly_name() -> &'static str {
+        "Hide Secrets"
     }
 }

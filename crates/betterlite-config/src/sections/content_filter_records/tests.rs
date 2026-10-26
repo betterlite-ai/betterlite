@@ -6,6 +6,7 @@ use super::{
     ContentFilterGuardrailConfig, ContentFilterSeverity, HideSecretsGuardrailConfig,
     category_types::CategoryFileData,
 };
+use crate::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 
 #[test]
 fn config_defaults_match_litellm() {
