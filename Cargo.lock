@@ -370,6 +370,10 @@ dependencies = [
 [[package]]
 name = "betterlite-a2a"
 version = "0.1.0"
+dependencies = [
+ "betterlite-core",
+ "serde_json",
+]
 
 [[package]]
 name = "betterlite-anthropic"

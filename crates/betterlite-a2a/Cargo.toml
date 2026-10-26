@@ -7,3 +7,7 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+betterlite-core = { path = "../betterlite-core" }
+serde_json = "1.0.154"
