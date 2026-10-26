@@ -15,6 +15,7 @@ scope:
   - crates/betterlite-vertex/src/vertex_relay_metadata.rs
   - crates/betterlite-vertex/src/vertex_relay_metadata/**
   - crates/betterlite-models/src/passthrough/vertex.rs
+  - crates/betterlite-models/src/passthrough/vertex/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L56-L121

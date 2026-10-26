@@ -25,6 +25,7 @@ scope:
   - tools/oracle/cases/helpers/redis-cluster-node-isolation/**
   - Cargo.toml
   - deny.toml
+  - crates/betterlite-redis/src/redis_cluster_node_isolation/tests/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cluster_node_isolation.py#L86-L260

@@ -35,6 +35,7 @@ scope:
     - tools/oracle/helpers/b4117/**
     - tools/oracle/src/helpers/websearch/b4117.rs
     - tools/oracle/src/helpers/websearch/b4117/**
+    - crates/betterlite-websearch/src/tests/**
   lint_tables: false
 
 references:

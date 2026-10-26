@@ -76,6 +76,7 @@ scope:
     - tools/oracle/helpers/b4744/**
     - tools/oracle/src/helpers/mcp/b4744.rs
     - tools/oracle/src/helpers/mcp/b4744/**
+    - crates/betterlite-mcp/src/client/sessions/tests/**
   lint_tables: false
 
 references:

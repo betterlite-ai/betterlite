@@ -13,6 +13,7 @@ scope:
   paths:
   - crates/betterlite-server/src/roi_evidence.rs
   - crates/betterlite-server/src/roi_evidence/tests.rs
+  - crates/betterlite-server/src/roi_evidence/tests/**
   lint_tables: false
 
 references:
