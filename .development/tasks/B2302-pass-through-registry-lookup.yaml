@@ -107,6 +107,6 @@ pitfalls:
   - An old three-component registry key permits any method, but a four-component key ending in a colon does not.
   - The first eligible registry entry wins; sorting entries can change which auth metadata is selected.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

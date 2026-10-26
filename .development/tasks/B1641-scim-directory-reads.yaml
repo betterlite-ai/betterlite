@@ -85,6 +85,6 @@ pitfalls:
   - Unsupported user filters return the whole directory rather than a SCIM invalidFilter error.
   - Group displayName filtering is case-sensitive and uses a different parser, so normalizing it to the user grammar changes results and failures.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

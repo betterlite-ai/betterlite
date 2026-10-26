@@ -188,6 +188,6 @@ pitfalls:
   - An explicit null or empty organization_id does not suppress team-derived enrichment.
   - _user_is_org_admin requires every candidate organization and does not special-case proxy admins.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

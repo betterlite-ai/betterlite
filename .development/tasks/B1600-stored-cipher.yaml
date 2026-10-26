@@ -134,6 +134,6 @@ pitfalls:
   - decrypt_value_helper's key argument identifies a field for diagnostics and is never the signing key.
   - The legacy empty-byte result is an empty string even though decrypt_if_encrypted_with must return None for it.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

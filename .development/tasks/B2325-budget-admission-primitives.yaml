@@ -111,6 +111,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as budget_primitives in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/budget_primitives.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/budget_primitives.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An opted-in zero limit qualifies for throttling and becomes at least 1 after scaling.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

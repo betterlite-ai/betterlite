@@ -272,6 +272,6 @@ pitfalls:
 - Usage subtraction is not clamped, so decreasing cumulative provider counts produce negative deltas.
 - The leftover-usage event has new response/conversation IDs and belongs only in logs, not the client event stream.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: standard

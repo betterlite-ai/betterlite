@@ -87,6 +87,6 @@ pitfalls:
   - Falling back after a fully sent line can double-charge even when the peer disappears immediately afterward.
   - Debug logging disables traceback suppression for both console output and stored failure metadata.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

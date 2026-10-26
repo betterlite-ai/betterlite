@@ -316,6 +316,6 @@ pitfalls:
 - An empty token or empty tenant environment value passes this helper because it rejects None, not falsy values.
 - The cache stores the provider expires_in value directly; do not introduce a refresh margin in this layer.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

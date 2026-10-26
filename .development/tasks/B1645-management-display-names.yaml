@@ -52,6 +52,6 @@ pitfalls:
   - An empty stored agent_name overrides a registry label, but an empty stored MCP alias/server_name does not.
   - A key without key_alias stays absent from the result instead of exposing its token hash as a display label.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

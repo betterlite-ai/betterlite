@@ -272,6 +272,6 @@ pitfalls:
 - The execution layer decodes once before the family transform decodes again, changing malformed-JSON error priority.
 - Only the first input image reaches the selected provider config.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

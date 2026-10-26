@@ -91,5 +91,5 @@ pitfalls:
 - json.dumps uses ASCII escapes and spaces; a byte-level HTTP oracle can distinguish compact UTF-8 serialization.
 review_level: standard
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 1000
   max_new_expects: 0

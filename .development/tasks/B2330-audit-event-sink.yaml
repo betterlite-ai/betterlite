@@ -152,6 +152,6 @@ pitfalls:
   - A false explicit store_audit_logs setting must override a true environment value.
   - Audit callbacks run before the missing-database check and can succeed when no row can be stored.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

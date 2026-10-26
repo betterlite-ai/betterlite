@@ -9,6 +9,8 @@ use reqwest::blocking::{Client, ClientBuilder};
 use reqwest::redirect::Policy;
 use serde_json::Value;
 
+pub mod postgres;
+
 pub(crate) const MAX_BODY: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

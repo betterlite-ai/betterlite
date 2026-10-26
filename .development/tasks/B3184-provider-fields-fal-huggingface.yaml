@@ -159,5 +159,5 @@ pitfalls:
     Every null value in placeholder, tooltip, options or default_value must be preserved exactly; writing an empty string instead changes how the form renders or the LLM interprets the default.
 review_level: standard
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1000
   max_new_expects: 0

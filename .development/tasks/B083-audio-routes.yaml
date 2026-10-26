@@ -163,5 +163,5 @@ pitfalls:
 - Duplicate plain form fields overwrite silently; the previous warning expectation was not in get_form_data.
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0

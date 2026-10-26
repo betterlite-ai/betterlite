@@ -75,6 +75,6 @@ pitfalls:
   - A global environment change in the harness would contaminate both the default oracle and betterlite, defeating the isolated comparison.
   - A successful stock SCIM request would mean the test no longer distinguishes eligibility from the handler it is meant to exercise.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

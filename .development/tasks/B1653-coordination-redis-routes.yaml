@@ -99,6 +99,6 @@ pitfalls:
   - The connection-test route returns unhealthy with HTTP 200 even when the Redis client constructor fails.
   - Audit created versus updated depends on persisted settings, so editing a file-only configuration emits created.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

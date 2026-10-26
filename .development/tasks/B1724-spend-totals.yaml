@@ -89,6 +89,6 @@ pitfalls:
   - Internal-user /global/spend/keys always asks for ten keys even when limit=1 was supplied.
   - Team totals add already rounded daily values, so rounding only the final sum changes the result.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

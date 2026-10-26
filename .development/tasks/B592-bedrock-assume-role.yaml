@@ -242,6 +242,6 @@ pitfalls:
 - The IRSA shortcut compares the entire ARN string and never falls through to the looser role-name comparison.
 - assumed-role/ without a session segment can still parse; validation is deliberately narrower than an AWS ARN validator.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

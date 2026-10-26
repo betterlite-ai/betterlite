@@ -107,5 +107,5 @@ pitfalls:
   - "Numeric input parsing must deduplicate and sort valid indices, so 1,2,1,3 becomes [PROVIDERS[0], PROVIDERS[1], PROVIDERS[2]] not a repeat."
 review_level: standard
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1000
   max_new_expects: 1

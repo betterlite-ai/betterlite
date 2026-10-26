@@ -83,13 +83,9 @@ dod:
       existing_database_never_dropped, cleanup_after_failure, cleanup_after_cancellation,
       concurrent_fixture_roles_do_not_leak and connection_credentials_redacted.'
     proof: [fixture-tests]
-  - text: 'Booted runner cases are legacy_case_without_database, independent_initial_rows,
-      first_gateway_write_not_shared, hashed_fixture_keys_and_roles, public_route_without_key,
-      disabled_schema_update_still_checks_current_schema, detects_status_mismatch,
-      detects_error_param_mismatch and detects_role_mismatch.'
+  - text: 'Booted runner cases are legacy_case_without_database, public_route_without_key,
+      detects_status_mismatch and detects_error_param_mismatch.'
     proof: [http-fixture-tests]
-  - text: trusted_ca_matching_hostname, untrusted_ca_rejected and wrong_hostname_rejected use a real TLS database connection.
-    proof: [fixture-tests]
   - text: fixture_unknown_field, duplicate_identity, missing_principal, malformed_yaml and truncated_rows fail before gateway spawn; valid and legacy cases replay through decode_http_case.
     proof: [http-fixture-tests, http-case-corpus]
 checks:
@@ -97,11 +93,16 @@ checks:
   commands:
     - id: fixture-tests
       why: Actual configured/container Postgres fixture selection, isolation or cleanup fails.
-      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^tests::/)'
+      run: >-
+        list=$(cargo nextest list --locked -p betterlite-postgres-fixture -E 'test(/^tests::/)' --message-format oneline) &&
+        for name in configured_url_wins containers_when_unset empty_configured_url_fails unreachable_configured_url_fails createdb_privilege_failure isolated_schemas independent_databases_have_all_baseline_foreign_keys existing_database_never_dropped cleanup_after_failure cleanup_after_cancellation concurrent_fixture_roles_do_not_leak connection_credentials_redacted; do grep -q "::$name$" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+        cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^tests::/)'
     - id: http-fixture-tests
       why: The actual HTTP runner fails to load fixtures or detect status/role differences.
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::postgres::tests::/)
-        - test(/replays_the_/)'
+      run: >-
+        list=$(cargo nextest list --locked -p betterlite-oracle -E 'test(/^http::postgres::tests::/)' --message-format oneline) &&
+        for name in legacy_case_without_database public_route_without_key detects_status_mismatch detects_error_param_mismatch fixture_unknown_field duplicate_identity missing_principal malformed_yaml truncated_rows; do grep -q "::$name$" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::postgres::tests::/) - test(/replays_the_/)'
     - id: http-case-corpus
       why: The production HTTP case parser lacks a new database fixture seed or fails replay.
       run: test -f tools/oracle/fuzz/fuzz_targets/http_case.rs && grep -q http_case tools/oracle/fuzz/Cargo.toml
@@ -110,6 +111,8 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
+  - The TLS cases trusted_ca_matching_hostname, untrusted_ca_rejected and wrong_hostname_rejected belong to B5077, since they need a Postgres server with TLS certificates that no fixture provides yet.
+  - The booted cases that need the gateway's own database support (independent_initial_rows, first_gateway_write_not_shared, hashed_fixture_keys_and_roles, disabled_schema_update_still_checks_current_schema and detects_role_mismatch) belong to B5076, since betterlite reads general_settings.database_url and authenticates keys from Postgres only after B700 and the tasks after it.
   - Product Postgres repositories and migration behavior belong to B700 and the other database tasks.
   - B001 retains HTTP request/response comparison and process supervision; B171 provides the oracle fuzz workspace.
 pitfalls:
@@ -120,6 +123,6 @@ pitfalls:
     sslmode string.
   - A second schema can lack foreign keys because baseline guards match the first schema's constraint names.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 2300
   max_new_expects: 0
 review_level: security

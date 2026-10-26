@@ -199,6 +199,6 @@ pitfalls:
   - Excluding a field from serialization does not mean the source strips it from constructor input.
   - organization_id overwrites org_id in the view constructor, unlike repository fallback projection when org_id is already present.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

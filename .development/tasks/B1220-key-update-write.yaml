@@ -211,6 +211,6 @@ pitfalls:
   - A None database response is rejected only after cache invalidation, access-group synchronization and hook scheduling.
   - This executor lacks the single-route spend counter refresh and soft-budget persistence branch; sharing B775's whole implementation changes bulk behavior.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

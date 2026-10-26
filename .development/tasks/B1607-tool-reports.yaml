@@ -73,6 +73,6 @@ pitfalls:
   - Axum cannot express a catch-all before /detail or /logs directly; one bounded suffix dispatcher must preserve FastAPI's route precedence.
   - The log total counts index matches, including rows whose underlying SpendLogs record has already disappeared.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

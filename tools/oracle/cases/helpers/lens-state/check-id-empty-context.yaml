@@ -1,0 +1,16 @@
+kind: helper
+name: check-id-empty-context
+call:
+  lens_state:
+    decode_settings:
+      json:
+        name: Support replies
+        model: gpt-4o-mini
+        context: "   "
+        checks:
+          - {id: tone, instruction: Keep a calm tone., enabled: false}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message

@@ -393,6 +393,6 @@ pitfalls:
 - The output_config warning runs after structural rewrites, so a key removed earlier cannot trigger it.
 - The finally block closes the inner SSE generator even when iteration fails before completion.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

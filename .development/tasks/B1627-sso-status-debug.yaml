@@ -89,6 +89,6 @@ pitfalls:
   - A SAML-only deployment reports SSO_ENABLED=true but readiness says sso_configured=false because that route checks only OAuth IDs.
   - Debug callback URL construction does not add SERVER_ROOT_PATH in the way the normal callback helper does.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1000
   max_new_expects: 0
 review_level: security

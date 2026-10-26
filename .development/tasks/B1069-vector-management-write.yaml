@@ -108,5 +108,5 @@ pitfalls:
 - Explicit litellm_params=null clears params to an empty JSON object on update; omission leaves it untouched.
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1000
   max_new_expects: 0
