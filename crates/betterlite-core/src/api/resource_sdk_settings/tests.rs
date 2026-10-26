@@ -65,9 +65,19 @@ fn resource_precedence_ignores_empty_values() {
     settings.openai_api_base = Some("legacy-base".to_owned());
     settings.api_key = Some(secrecy::SecretString::from(""));
     settings.openai_key = Some(secrecy::SecretString::from("openai-key"));
+    settings.openai_api_key = Some(secrecy::SecretString::from("environment-key"));
+    settings.azure_key = Some(secrecy::SecretString::from("azure-key"));
+    settings.azure_openai_api_key = Some(secrecy::SecretString::from("azure-openai-key"));
+    settings.azure_api_key = Some(secrecy::SecretString::from("azure-environment-key"));
     settings.azure_api_version = Some("azure-version".to_owned());
+    settings.organization = Some(String::new());
+    settings.openai_organization = Some("openai-organization".to_owned());
+    settings.vertex_project = Some(String::new());
+    settings.vertexai_project = Some("vertex-project".to_owned());
     settings.vertex_location = Some(String::new());
     settings.vertexai_location = Some("vertex-location".to_owned());
+    settings.vertex_credentials = Some(secrecy::SecretString::from(""));
+    settings.vertexai_credentials = Some(secrecy::SecretString::from("vertex-credentials"));
     assert_eq!(settings.openai_base(), "openai-base");
     assert_eq!(
         settings
@@ -75,8 +85,59 @@ fn resource_precedence_ignores_empty_values() {
             .map(secrecy::ExposeSecret::expose_secret),
         Some("openai-key")
     );
+    assert_eq!(
+        settings
+            .azure_api_key()
+            .map(secrecy::ExposeSecret::expose_secret),
+        Some("azure-key")
+    );
+    assert_eq!(settings.azure_base(), None);
     assert_eq!(settings.azure_version(), Some("azure-version"));
+    assert_eq!(settings.organization(), Some("openai-organization"));
+    assert_eq!(settings.vertex_base(), "");
+    assert_eq!(settings.vertex_project(), Some("vertex-project"));
     assert_eq!(settings.vertex_location(), Some("vertex-location"));
+    assert_eq!(
+        settings
+            .vertex_credentials()
+            .map(secrecy::ExposeSecret::expose_secret),
+        Some("vertex-credentials")
+    );
+}
+
+#[test]
+fn resource_precedence_returns_each_direct_value() {
+    let mut settings = test_settings();
+    settings.api_base = Some("configured-base".to_owned());
+    settings.api_key = Some(secrecy::SecretString::from("api-key"));
+    settings.openai_api_key = Some(secrecy::SecretString::from("environment-key"));
+    settings.organization = Some("organization".to_owned());
+    settings.vertex_project = Some("vertex-project".to_owned());
+
+    assert_eq!(settings.azure_base(), Some("configured-base"));
+    assert_eq!(
+        settings
+            .azure_api_key()
+            .map(secrecy::ExposeSecret::expose_secret),
+        Some("api-key")
+    );
+    settings.api_key = None;
+    assert_eq!(
+        settings
+            .openai_api_key()
+            .map(secrecy::ExposeSecret::expose_secret),
+        Some("environment-key")
+    );
+    assert_eq!(settings.organization(), Some("organization"));
+    assert_eq!(settings.vertex_base(), "configured-base");
+    assert_eq!(settings.vertex_project(), Some("vertex-project"));
+}
+
+#[test]
+fn secret_precedence_returns_none_when_all_values_are_absent() {
+    let settings = test_settings();
+
+    assert!(settings.vertex_credentials().is_none());
 }
 
 #[test]
