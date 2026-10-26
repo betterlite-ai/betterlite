@@ -2,6 +2,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use std::num::ParseFloatError;
 
+#[path = "resource_sdk_settings/tests.rs"]
+mod tests;
+
 #[derive(Clone, Debug)]
 pub struct ResourceSdkSettings {
     pub api_base: Option<String>,
@@ -41,15 +44,15 @@ impl ResourceSdkSettings {
 
     #[must_use]
     pub fn openai_api_key(&self) -> Option<&SecretString> {
-        if let Some(key) = self.api_key.as_ref() {
-            if !key.expose_secret().is_empty() {
-                return Some(key);
-            }
+        if let Some(key) = self.api_key.as_ref()
+            && !key.expose_secret().is_empty()
+        {
+            return Some(key);
         }
-        if let Some(key) = self.openai_key.as_ref() {
-            if !key.expose_secret().is_empty() {
-                return Some(key);
-            }
+        if let Some(key) = self.openai_key.as_ref()
+            && !key.expose_secret().is_empty()
+        {
+            return Some(key);
         }
         self.openai_api_key
             .as_ref()
@@ -69,83 +72,79 @@ impl ResourceSdkSettings {
 
     #[must_use]
     pub fn azure_base(&self) -> Option<&str> {
-        let base = first_truthy_ref([self.api_base.as_deref(), self.azure_api_base.as_deref()]);
-        base
+        let candidates = [self.api_base.as_deref(), self.azure_api_base.as_deref()];
+        first_truthy_ref(candidates)
     }
 
     #[must_use]
     pub fn azure_version(&self) -> Option<&str> {
-        let version = first_truthy_ref([
+        let candidates = [
             self.api_version.as_deref(),
             self.azure_api_version.as_deref(),
-        ]);
-        version
+        ];
+        first_truthy_ref(candidates)
     }
 
     #[must_use]
     pub fn organization(&self) -> Option<&str> {
-        let organization = first_truthy_ref([
+        let candidates = [
             self.organization.as_deref(),
             self.openai_organization.as_deref(),
-        ]);
-        organization
+        ];
+        first_truthy_ref(candidates)
     }
 
     #[must_use]
     pub fn vertex_base(&self) -> &str {
-        let base = self.api_base.as_deref().unwrap_or("");
-        base
+        let base = self.api_base.as_deref();
+        base.unwrap_or("")
     }
 
     #[must_use]
     pub fn vertex_project(&self) -> Option<&str> {
-        let project = first_truthy_ref([
+        let candidates = [
             self.vertex_project.as_deref(),
             self.vertexai_project.as_deref(),
-        ]);
-        project
+        ];
+        first_truthy_ref(candidates)
     }
 
     #[must_use]
     pub fn vertex_location(&self) -> Option<&str> {
-        let location = first_truthy_ref([
+        let candidates = [
             self.vertex_location.as_deref(),
             self.vertexai_location.as_deref(),
-        ]);
-        location
+        ];
+        first_truthy_ref(candidates)
     }
 
     #[must_use]
     pub fn vertex_credentials(&self) -> Option<&SecretString> {
-        let credentials = first_secret([
+        let candidates = [
             self.vertex_credentials.as_ref(),
             self.vertexai_credentials.as_ref(),
-        ]);
-        credentials
+        ];
+        first_secret(candidates)
     }
 }
 
 fn first_truthy<const N: usize>(values: [Option<&str>; N]) -> &str {
-    let value = values
+    let candidate = values
         .into_iter()
         .flatten()
         .find(|value| !value.is_empty())
         .unwrap_or("");
-    value
+    if candidate.is_empty() { "" } else { candidate }
 }
 
 fn first_truthy_ref<const N: usize>(values: [Option<&str>; N]) -> Option<&str> {
-    let value = values.into_iter().flatten().find(|value| !value.is_empty());
-    value
+    let mut candidates = values.into_iter().flatten();
+    candidates.find(|value| !value.is_empty())
 }
 
 fn first_secret<const N: usize>(values: [Option<&SecretString>; N]) -> Option<&SecretString> {
-    for value in values.into_iter().flatten() {
-        if !value.expose_secret().is_empty() {
-            return Some(value);
-        }
-    }
-    None
+    let mut candidates = values.into_iter().flatten();
+    candidates.find(|value| !value.expose_secret().is_empty())
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
@@ -208,14 +207,22 @@ pub fn request_timeout(timeout: Option<f64>, request_timeout: Option<f64>) -> f6
         .filter(|value| *value != 0.0_f64)
         .or_else(|| request_timeout.filter(|value| *value != 0.0_f64))
         .unwrap_or(600.0_f64);
-    selected
+    if selected.is_finite() {
+        selected
+    } else {
+        600.0_f64
+    }
 }
 
 fn finite_or_default(value: Option<f64>) -> f64 {
     let timeout = value
         .filter(|number| number.is_finite() && *number != 0.0_f64)
         .unwrap_or(600.0_f64);
-    timeout
+    if timeout.is_finite() {
+        timeout
+    } else {
+        600.0_f64
+    }
 }
 
 fn validate_structured(timeout: StructuredTimeout) -> Result<(), TimeoutError> {

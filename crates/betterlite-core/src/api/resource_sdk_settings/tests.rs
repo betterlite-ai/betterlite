@@ -1,7 +1,8 @@
 #![cfg(test)]
 
-use super::implementation::{
-    FineTuningTimeout, request_timeout, resolve_fine_tuning_timeout, supports_httpx_timeout,
+use super::{
+    FineTuningTimeout, StructuredTimeout, TimeoutError, request_timeout,
+    resolve_fine_tuning_timeout, supports_httpx_timeout,
 };
 
 #[test]
@@ -13,6 +14,46 @@ fn timeout_capability_and_conversion() {
     assert_eq!(
         resolve_fine_tuning_timeout(Some("1_000"), "openai", None),
         Ok(FineTuningTimeout::Seconds(1000.0))
+    );
+    assert_eq!(
+        resolve_fine_tuning_timeout(Some(""), "openai", None),
+        Ok(FineTuningTimeout::Seconds(600.0))
+    );
+}
+
+#[test]
+fn structured_timeout_conversion() {
+    let structured = StructuredTimeout {
+        connect: Some(1.0_f64),
+        read: Some(2.0_f64),
+        write: Some(3.0_f64),
+        pool: Some(4.0_f64),
+    };
+    assert_eq!(
+        resolve_fine_tuning_timeout(None, "openai", Some(structured)),
+        Ok(FineTuningTimeout::Structured(structured))
+    );
+    assert_eq!(
+        resolve_fine_tuning_timeout(
+            None,
+            "vertex_ai",
+            Some(StructuredTimeout {
+                read: Some(0.0_f64),
+                ..structured
+            })
+        ),
+        Ok(FineTuningTimeout::Seconds(600.0))
+    );
+    assert_eq!(
+        resolve_fine_tuning_timeout(
+            None,
+            "openai",
+            Some(StructuredTimeout {
+                connect: Some(f64::INFINITY),
+                ..structured
+            })
+        ),
+        Err(TimeoutError::NonFinite)
     );
 }
 
@@ -45,8 +86,8 @@ fn settings_debug_redacts_secret_fields() {
     assert!(!format!("{settings:?}").contains("secret"));
 }
 
-fn test_settings() -> super::implementation::ResourceSdkSettings {
-    super::implementation::ResourceSdkSettings {
+fn test_settings() -> super::ResourceSdkSettings {
+    super::ResourceSdkSettings {
         api_base: None,
         api_version: None,
         api_key: None,
