@@ -1,5 +1,11 @@
 task: B3778
 deviations:
-  - what: Error messages on blocking violations use betterlite's own wording, not LiteLLM's.
-    why: Error messages are betterlite's own per rule errors-match-litellm, with status code and action unchanged.
+  - what: Error messages on blocking violations and Lasso API failures use betterlite's own wording, not LiteLLM's.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with the error class, status code and action unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L857-L864
+  - what: A `mask` key in a Lasso guardrail's litellm_params is honored, while LiteLLM's initializer never passes it to LassoGuardrail, so masking from YAML stays off there.
+    why: The task asks for mask in the configuration, and LitellmParams documents the key as enabling the classifix API; dropping it silently looks like a LiteLLM bug.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/__init__.py#L11-L25
+  - what: A Lasso answer body over 1 MiB fails the call, and a findings entry whose shape does not match the Lasso response model fails decoding, where LiteLLM reads any size and skips findings that are not lists of objects.
+    why: Rules bounded-inputs and typed-wire; every outbound answer has a size limit and the response is a typed model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L896-L905
