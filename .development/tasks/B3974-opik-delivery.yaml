@@ -30,6 +30,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-logging/src/opik.rs
+    - crates/betterlite-logging/src/opik/**
   lint_tables: false
 
 references:

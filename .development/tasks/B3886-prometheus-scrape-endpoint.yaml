@@ -67,6 +67,9 @@ scope:
     - tools/oracle/helpers/b3886/**
     - tools/oracle/src/helpers/prometheus/b3886.rs
     - tools/oracle/src/helpers/prometheus/b3886/**
+    - crates/betterlite-prometheus/src/scrape_endpoint/tests/**
+    - crates/betterlite-server/src/prometheus_auth_middleware/tests/**
+    - crates/betterlite/src/prometheus_mount/**
   lint_tables: false
 
 references:

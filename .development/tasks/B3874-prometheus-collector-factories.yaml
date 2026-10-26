@@ -63,6 +63,7 @@ scope:
   paths:
     - crates/betterlite-prometheus/src/collector_factory.rs
     - crates/betterlite-prometheus/src/collector_factory/tests.rs
+    - crates/betterlite-prometheus/src/collector_factory/tests/**
   lint_tables: false
 
 references:

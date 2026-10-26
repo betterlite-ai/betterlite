@@ -84,6 +84,7 @@ scope:
     - tools/oracle/helpers/b4685/**
     - tools/oracle/src/helpers/server/b4685.rs
     - tools/oracle/src/helpers/server/b4685/**
+    - crates/betterlite-server/src/mcp/semantic_filter/tests/**
   lint_tables: false
 
 references:

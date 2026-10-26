@@ -21,6 +21,7 @@ scope:
     - tools/oracle/helpers/b3783/**
     - tools/oracle/src/helpers/guardrails/b3783.rs
     - tools/oracle/src/helpers/guardrails/b3783/**
+    - crates/betterlite-guardrails/src/onyx/tests/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L32-L149
