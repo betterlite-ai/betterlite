@@ -366,6 +366,6 @@ pitfalls:
 - An additional_tools item containing no valid tools changes input but does not trigger this adapter's hoisted-tool
   filter.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

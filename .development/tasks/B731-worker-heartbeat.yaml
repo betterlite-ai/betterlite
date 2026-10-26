@@ -180,6 +180,6 @@ pitfalls:
   - A count at exactly the 180-second threshold is excluded; pruning waits strictly beyond 3600 seconds.
   - Missing litellm.json_logs returns false without consulting JSON_LOGS; only import/attribute exceptions take the fallback.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

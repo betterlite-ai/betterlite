@@ -104,5 +104,5 @@ pitfalls:
   - "Phoenix API returns status 404 for missing versions and 403 for access denial. Distinguish them in exception messages; the proxy and user must know which problem occurred."
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

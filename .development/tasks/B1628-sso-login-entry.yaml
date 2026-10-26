@@ -36,7 +36,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/sso_login_query.rs
     - crates/betterlite-server/fuzz/corpus/sso_login_query/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/sso_login_entry.rs
     - crates/betterlite-config/src/sso_login_entry/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-login-entry-*
@@ -91,6 +90,6 @@ pitfalls:
   - Microsoft login redirection can use the common tenant while its callback still rejects an absent MICROSOFT_TENANT.
   - The source validates a litellm-cli flow before choosing the SAML-only branch, even though that branch passes return_to as RelayState instead of CLI state.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -94,5 +94,5 @@ pitfalls:
   - asyncio.create_subprocess_exec does not use the shell so no injection is possible, but the binary must be absolute or findable in PATH; relative commands work only if PATH includes the directory.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

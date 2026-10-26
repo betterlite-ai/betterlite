@@ -370,6 +370,6 @@ pitfalls:
 - main.print_verbose uses truthiness but utils.print_verbose uses identity with True; a fixture value1 separates
   these paths.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

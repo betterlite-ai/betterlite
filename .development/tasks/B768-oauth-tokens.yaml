@@ -293,6 +293,6 @@ pitfalls:
   - Endpoint selection tests credential presence, but Basic authentication tests truthiness; empty secrets take different branches.
   - The config dictionary keys are identity fields despite the source docstring describing the opposite direction.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

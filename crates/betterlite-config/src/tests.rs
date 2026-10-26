@@ -4,7 +4,19 @@ use super::types::RoutingStrategy;
 use secrecy::ExposeSecret;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod bedrock_request_policy_config;
+mod coordination_redis_settings;
+mod gemini_live_settings;
+mod mistral_options;
+mod mistral_resources;
 mod provider_base_config;
+mod vertex_batch_download_settings;
+mod vertex_file_read_settings;
+mod vertex_gcs_settings;
+mod vertex_rag_settings;
+mod vertex_search_settings;
+mod xai_identity;
+mod xai_oauth;
 
 fn map_loader(values: BTreeMap<String, String>) -> ConfigLoader<BTreeMap<String, String>> {
     ConfigLoader { lookup: values }
@@ -102,8 +114,6 @@ fn rejects_boolean_in_numeric_field_as_invalid_scalar() {
         matches!(map_loader(BTreeMap::new()).load("model_list:\n  - model_name: x\n    litellm_params:\n      timeout: true\n"), Err(ConfigError::InvalidScalar { path, value: true }) if path == "model_list.0.litellm_params.timeout")
     );
 }
-
-mod bedrock_request_policy_config;
 
 #[rstest::rstest]
 #[case::known_to_a_section(

@@ -105,7 +105,7 @@ pitfalls:
   ``now``. The strict pydantic-equivalent claims model is the sole type gate.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 2
 oracle_cases:
 - tools/oracle/cases/helpers/session-tokens/symmetric-hs256-access.yaml

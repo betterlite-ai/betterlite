@@ -139,6 +139,6 @@ out_of_scope:
 pitfalls:
   - Metadata is resolved only for IDs on this page; fetching all users would leak unrelated identities.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

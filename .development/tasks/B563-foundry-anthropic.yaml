@@ -257,6 +257,6 @@ pitfalls:
 - A dict with api_key=None blocks explicit-key insertion while a typed object with a falsey key does not.
 - Foundry chat keeps x-api-key from the Anthropic header builder; the native Messages rename is a different override.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

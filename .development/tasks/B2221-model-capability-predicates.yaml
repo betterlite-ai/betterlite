@@ -381,6 +381,6 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as model_capability_predicates in the models group. Replace the stub Op in tools/oracle/src/helpers/models/model_capability_predicates.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_capability_predicates.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The provider fallback after a lookup exception sits outside the original try, so its own failure can escape.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

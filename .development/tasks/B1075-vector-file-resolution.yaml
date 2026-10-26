@@ -121,5 +121,5 @@ pitfalls:
 - Unified store decoding bypasses the legacy registry even when the parsed fields are unusable.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

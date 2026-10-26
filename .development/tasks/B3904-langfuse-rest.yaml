@@ -78,5 +78,5 @@ pitfalls:
   - "The SDK's PromptClient variants (ChatPromptClient, TextPromptClient) are not built here; _prompt_client selects a variant based on the Prompt type and returns the SDK's compiled client."
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

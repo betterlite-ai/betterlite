@@ -183,5 +183,5 @@ pitfalls:
   - _is_trace_ingest checks call_type string prefix, not exact match; "/v1/traces/span" would match and be ignored.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

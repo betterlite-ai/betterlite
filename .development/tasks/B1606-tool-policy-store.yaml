@@ -71,6 +71,6 @@ pitfalls:
   - A discovered tool's first key_hash and origin survive later discovery by a different user.
   - Making the registry refresh atomic would hide the source's new-tool-map and old-permission-map intermediate failure state.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

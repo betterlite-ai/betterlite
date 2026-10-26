@@ -29,7 +29,6 @@ scope:
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/sso_mapping_input.rs
     - crates/betterlite-auth/fuzz/corpus/sso_mapping_input/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/sso_mappings.rs
     - crates/betterlite-config/src/sso_mappings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-mappings-*
@@ -78,6 +77,6 @@ pitfalls:
   - GENERIC_CLIENT_SECRET being absent fails even for PKCE, while an explicitly empty string passes validation.
   - GENERIC_SSO_HEADERS splits on every equals sign, so a value containing another equals sign is an error.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

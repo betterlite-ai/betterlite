@@ -280,6 +280,6 @@ pitfalls:
   - An empty request grace_period falls back to the environment; it cannot force immediate revoke.
   - Archive and overlap rows can survive a failed main-token write, while failed overlap creation is swallowed.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

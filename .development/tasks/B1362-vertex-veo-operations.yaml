@@ -30,6 +30,7 @@ scope:
     - crates/betterlite-vertex/src/vertex_veo_operation.rs
     - crates/betterlite-vertex/src/vertex_veo_operation/**
     - crates/betterlite-config/src/{lib,vertex}.rs
+    - crates/betterlite-config/src/vertex.rs
     - crates/betterlite-config/src/vertex/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_video*
     - crates/betterlite-vertex/fuzz/Cargo.toml

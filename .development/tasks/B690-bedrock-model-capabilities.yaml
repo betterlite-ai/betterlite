@@ -317,6 +317,6 @@ pitfalls:
 - Only an environment-sourced Mantle URL loses its OpenAI suffix; an explicit /v1 base gains /anthropic/v1/messages
   after /v1.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

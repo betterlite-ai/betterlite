@@ -85,6 +85,6 @@ pitfalls:
   - The CyberArk boot snapshot is captured once, so deleting a second edited configuration restores deployment values rather than the first edit.
   - Unlike Vault, CyberArk explicitly restores runtime state when encrypted persistence fails after initialization.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security
