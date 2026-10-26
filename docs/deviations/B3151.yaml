@@ -1,0 +1,11 @@
+task: B3151
+deviations:
+  - what: "Spend, hours and the cost_per_hour and hours_per_dollar ratios are summed and divided as rust_decimal::Decimal, then written as the nearest float, so 0.1 + 0.2 hours reads 0.3 where LiteLLM's float sum reads 0.30000000000000004."
+    why: "Rule money-is-decimal denies float arithmetic. Inputs with short decimal values, the usual case, give the same JSON as LiteLLM, including 2/3 as 0.6666666666666666."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/analytics.py#L121-L215"
+  - what: "summarize returns SummaryError when an estimate's hours do not fit a Decimal (NaN, infinity or above about 7.9e28) or a total or ratio overflows, where LiteLLM goes on with inf or nan floats."
+    why: "Rule no-panics asks for checked arithmetic, and an inf or nan ratio can't be written as JSON anyway."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/analytics.py#L80-L118"
+  - what: "ROIIdentityMapUpdate refuses unknown fields, where Pydantic's default config ignores them."
+    why: "Rule no-silent-drops; the ROI UI sends only github_login and email."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L427-L435"
