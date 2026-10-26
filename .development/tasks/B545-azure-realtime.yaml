@@ -284,6 +284,6 @@ pitfalls:
 - A supplied empty query mapping suppresses GA model insertion, while None inserts the requested deployment.
 - Unlike the OpenAI websocket URL builder, Azure concatenates paths without clearing an existing path or query.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

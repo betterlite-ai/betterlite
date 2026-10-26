@@ -17,10 +17,12 @@ betterlite-guardrails = { path = "../../crates/betterlite-guardrails" }
 betterlite-http = { path = "../../crates/betterlite-http" }
 betterlite-lens = { path = "../../crates/betterlite-lens" }
 betterlite-logging = { path = "../../crates/betterlite-logging" }
+betterlite-mcp = { path = "../../crates/betterlite-mcp" }
 betterlite-models = { path = "../../crates/betterlite-models" }
 betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
 betterlite-postgres-fixture = { path = "../postgres-fixture" }
+betterlite-rate-limit = { path = "../../crates/betterlite-rate-limit" }
 betterlite-secrets = { path = "../../crates/betterlite-secrets" }
 betterlite-server = { path = "../../crates/betterlite-server" }
 chrono.workspace = true

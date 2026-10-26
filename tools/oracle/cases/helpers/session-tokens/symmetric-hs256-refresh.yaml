@@ -1,0 +1,17 @@
+kind: helper
+name: symmetric-hs256-refresh
+call:
+  mcp_session_token:
+    mint:
+      kind: session_refresh
+      now: 1767225600
+      entropy: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      keys: {signing_key: 0123456789abcdef0123456789abcdef}
+      principal: {user_id: user-1, client_id: client-1}
+    open:
+      kind: session_refresh
+      now: 1768435199
+      keys: {signing_key: 0123456789abcdef0123456789abcdef}
+env: {}
+compare:
+  ignore: []

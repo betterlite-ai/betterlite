@@ -28,7 +28,7 @@ description: >-
   source's proven pre-send ConnectError class, at most n_retry_times+1 attempts (default
   4), with 2^attempt plus uniform [0,1] jitter. Ambiguous post-send errors propagate with
   no retry; prior index rows may remain while rollups roll back. Inject clock/jitter and
-  database failure classification rather than broadly retrying sqlx errors.
+  database failure classification rather than broadly retrying tokio-postgres errors.
   The pure tool_spend helper covers names, date buckets, measured slices and trimming;
   native Postgres tests distinguish pre-send retries from ambiguous writes and verify
   daily atomicity. The two files total 271 nonblank source lines; allocate 290 production,
@@ -44,7 +44,6 @@ scope:
     - crates/betterlite-db/src/{spend_batches,tool_spend}/**
     - crates/betterlite-config/src/spend.rs
     - crates/betterlite-config/src/spend/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/spend_statement_limits.rs,corpus/spend_statement_limits/**}
     - tools/oracle/src/helpers/models/tool_spend.rs
     - tools/oracle/src/helpers/models/tool_spend/**
@@ -95,6 +94,6 @@ pitfalls:
   - Retrying a post-send rollup error can charge the same request twice even though index inserts are idempotent.
   - A Unicode row's serialized byte budget differs from the number of visible characters.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

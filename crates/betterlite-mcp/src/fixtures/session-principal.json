@@ -1,0 +1,7 @@
+{
+  "user_id": "üser-1",
+  "client_id": "client-1",
+  "resource_server_id": "server-1",
+  "audience": "proxy_api",
+  "team_id": "team-1"
+}

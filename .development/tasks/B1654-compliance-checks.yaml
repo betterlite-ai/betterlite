@@ -85,6 +85,6 @@ pitfalls:
   - The failed guardrail status counts as an intervention for GDPR, whereas not_run removes the entry entirely.
   - A list containing both pre_call and post_call proves neither mode under the pinned conservative matcher.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

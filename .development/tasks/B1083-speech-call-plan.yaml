@@ -85,5 +85,5 @@ pitfalls:
 - Missing model is outside try, unlike provider resolution and execution failures.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

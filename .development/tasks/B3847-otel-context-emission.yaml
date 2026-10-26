@@ -14,6 +14,8 @@ scope:
   paths:
     - crates/betterlite-logging/src/otel/emitter.rs
     - crates/betterlite-logging/src/otel/plumbing/context.rs
+    - crates/betterlite-logging/src/otel/emitter/**
+    - crates/betterlite-logging/src/otel/plumbing/context/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/emitter.py#L42-L304
@@ -109,5 +111,5 @@ pitfalls:
   - suppressed_backends returns the tenant destination callback names only in override mode; in additive mode the operator's copy is never suppressed.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

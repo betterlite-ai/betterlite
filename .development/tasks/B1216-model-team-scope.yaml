@@ -495,6 +495,6 @@ pitfalls:
   - A BYOK search tolerates a failed user lookup by narrowing to the key team, while explicit teamId authorization rejects the same failure with 403.
   - Restricted-name database lookup does not add a team predicate; preserve that query and apply the caller's filtering stages in their source order.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

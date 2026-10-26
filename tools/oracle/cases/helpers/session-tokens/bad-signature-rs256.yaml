@@ -1,0 +1,77 @@
+kind: helper
+name: bad-signature-rs256
+call:
+  mcp_session_token:
+    mint:
+      kind: session
+      now: 1767225600
+      entropy: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      keys:
+        kid: current
+        private_key_pem: |
+          -----BEGIN PRIVATE KEY-----
+          MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDIJE8hxF8PMj0l
+          5UHjyg6JcBXTNrgq84A8ObTZxOGLBetJq+0mydLoaGwjB8Z4yDG4yJR81QOAfj6W
+          Tyx4e88+eBsj2M0FIPwdZveSzuQ8L2fTrelZPzf858JUAJyqPfuJKNSmPl63387C
+          soG9yBdgEtC1oL83TufmXyw1k5zOghPc6v5AO1V2+JiIjP1vnUCLUNtU3qJiHtWC
+          1Y35sR9Q9px9WTwzHX8HMGXYSVKsRywlmTsZ8lA9Fm2vSnkoFkwice5OdivIxJJu
+          PqeKG4pFGQodIxE3aIsM7gamZIX3Rtltue1RQCPaE/Bx6TUT+rTdAhMGBJQSRYkS
+          CxyyY2RbAgMBAAECggEAX95om0ulnzFY8gyRlcwFT5dFlRFqgYR3QiIAO6ofwYi5
+          zmXQ6NoXMWVHmzYPv25hxtopqmwcy9FtKHHPYv0nZgyBL5gbiN/mdC0M3SFGWX/5
+          s39kPfBW4MmhH7zVToT3Npm81s8cbuaBc2ivVhmA/O+2UrInthYRZhvjoNxO6emz
+          POMuX0yXWSxB61Pr/x5pvk8XFGoZOgDY+8Hrn57MUjTIHMUSZj8tY8ll/j+q0lvk
+          KiIKmBP2iLXqalELJjtHSByZBXc4ppR6upZMrLjMoLyVPgBoxt6Z3HjN9IKiBlP9
+          82UERCk3UR8vq0k/Ut9q2rtKk0yuWwYBA6k4JZH5bQKBgQDlCRohpA8kHCm4HKZs
+          kfNEGTakNF1j35JmXUKQ5gzWGOeb93pqmIR98t8yyRs3qo7GrPjtpZmEdQUBSj44
+          AcWpr2GG+hVtomNb3wLZsnULHMB4Du+XZ9B6E82KIKikPphDmIghb2I2lU29lrMc
+          qSXnfCntZfWVdE8IsPIn0WbmtQKBgQDftGE1P7vpeuie4nb8KI79oFh7efx2V0+n
+          AaL+Tb7Ula/wU7mVHwG7NpoMVstbuBKLJ4ZeTzvcoMENeIWbR0w27NEBzC2kzWOn
+          KR90r4VP2epTZbN0iFBTltf+qqVdsf6xG4SP+LRg0+hQ5yaQSsbcGLWwvMo7YHwi
+          VSHpgCJ4zwKBgQCek+7D3BOfrOA12aBhC6yjOdHbX2ZKAEIdHfU43g+FLTkvg+n+
+          ZBtYGRDw2M0/fZfdd2XjJQVl8J/GhOEPZiq1kfi0u/KaNhUVRxNyJ11ilEWu2qiI
+          7Bgsbgmh2XrqPWyvYKzgeX5GzJlG61CYR4U3AYEGHdIr6JvQKLOBXjshAQKBgQC8
+          NWR7im2sl+3SjzIQIId9N0R6Tj1ryzWGisf5MKvW60Ek7yv6HCY2vk+JBhT9y7Y+
+          QTi5a+wvSUhi7v1pkOi8ZS3LV18ngm3PG7gNUgbVEcAl/jCnYHBEg2qiJiwO0kw3
+          8bDr+BC6Tk7ski1NxLvePSPP2GZE4n5N3FY1v8pA3QKBgQChndlfL5VUdtZoybx9
+          tqVG7JegLWONhqpE/W67lb42JHRzmjZHD17kbNq+RKwVYma8uFXeEKClCH1oGxZ7
+          ZhnMPCgOX7Kt+y5J4KDr39mtQVJiP14y3nXSJijXkUh2lBZ4OqMuTNmKONk0PvBo
+          IXxuWXzrNtBcI7dvMFWCVlW2qQ==
+          -----END PRIVATE KEY-----
+      principal: {user_id: user-1, client_id: client-1}
+    open:
+      kind: session
+      now: 1767225600
+      keys:
+        kid: current
+        private_key_pem: |
+          -----BEGIN PRIVATE KEY-----
+          MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDN0PVcLfAjLAF7
+          TAedBTOCdhQTe/GYM0Y2JyAJ1rpNsr99KklwqnlRiRjB/VyNKl7tvOZ14bjhRgL4
+          88lWSe8Wt3CBwrMvwEoYnsJfF/NW6+k3a/UeO5HBSdN7LkBCfNpzfBoL7V3+iQPg
+          rNbNRgtOUlXmnHijK1pJD2/oTaW/ihBA0yaG1WpmTHdJHlnWPbPYneg00FQHnYqp
+          aTOBIQ9ASAfTqbOjpwxHK7HmXVBu3F/1wB66dziyYof/8ZREHAdcopUh/ZK94Vnh
+          BMML0nkCiR1Uts6A8HRSa8pmOmzJI+tYCwM85BczTLegdA5pxp4c7Yo4byJlivmb
+          YaVLQKl9AgMBAAECggEAK7NEyaICZUFsfhy+WBd44KhIKnvsaAvpCkoD6jri22kK
+          8h1WsxqrQEX7EQOGEX4v4kwz5c875W8rZedDdnQj1R+1foPT7p1mTjR1YmIQO8JD
+          Bk7AoL72u4L8qaDAKa3fZ1pwIFyx0sAOZ/fi8vp+n45paVoLXl/v32fs87b67MBX
+          GDNsWSLwcXp57qvLLZHN+HjxCVBT2APZvh93QMRUiie91cHmLbvDZjN6Ve623h03
+          udioJWhCIvHH2cTyxRooOTjDyOX98faABnSBnKGO4Hzomlm8u5njy4+D2UNzGE1R
+          bZGOM1Wxmx9SZU0dXsdLbBSjlbBQVaJLxC2kTOaWeQKBgQDuRV7RDmHLw6Z1z843
+          /qd5ZRlV80orcM2KDfWsJdAkFDFJ8mA3D2xlQn7mfv9Q6AvbGxTwu+LL9gbUsOtn
+          CKWmAu2q4SJWAQ4A0IkOZkliXpvr3hzCa30XZNCm+qYC0insNxmW/7yekkrrGG/g
+          4J8HmZtQUcj++LNPi4zL6vl32QKBgQDdIWJgnjhcd5dxBscfaWEiNBFkQQLt5Dp8
+          Cv5ZzkvbwEph7BdOH7sMPVqjGPCC970lKkjBYtdOeTOAgRTper/uL9lU+yPhihxF
+          Af60l+/auYwLtlm/dCbm68URJZUiTt7GHRWmohwwtqlmkC829i1kpAoOVKWhzN9w
+          XCA2kgC8RQKBgQDYLVAtVGMeQFCSqwtqejzwQu2NscIlT57sFmZC3bvOQBPIB4OL
+          8Q5jgMUp0ydJ/H5lOFjzYUQP0RO5fRrWzF2eFSIU21YPub0+t/Thf6Qs/7FveoGV
+          U3iW9PzpwpdED/HBQuyQt04mgIxAaFd5K9KdTpw/bzRxQKtPDEmd6X6VYQKBgF3z
+          4j2U2/OFqGWQcKgK+Qc0QjNrX9g9gQ/VB+6WNSrgD3p9egVqe+meY9UqMn4izk1t
+          Is5vtXUVD+nIbl8pFUUZNWji74LTUGGNkG+gons3HKaZSpaKvkCc6fT4F94kzog0
+          MU/ETt/vrBf0qOrcO7sn61HdayZMyp6Nte4ZqJBVAoGAGDZwN7D+fx1I6DSO59xZ
+          izFNFdF7d+r03o79imTiKJFCatowOlK8wSWcIYmF4MiSYroTFl/WQfBUVA8Q4lC2
+          5hFEbIT3RRcyEtuduXK60dTb7F8bpuRkMKusTlMj62cj5wlZjIVDQ7u27Kvzh4b/
+          QGWXNHR3IrnDcCeJUCY6+mA=
+          -----END PRIVATE KEY-----
+env: {}
+compare:
+  ignore: []

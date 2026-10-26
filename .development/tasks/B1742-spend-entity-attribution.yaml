@@ -121,6 +121,6 @@ pitfalls:
   - Missing model_info and present model_info without access_groups have opposite effects on whether attributed groups survive.
   - Team membership keys retain raw delimiters while organization membership keys percent-encode them.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

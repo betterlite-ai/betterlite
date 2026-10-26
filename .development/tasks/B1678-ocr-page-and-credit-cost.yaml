@@ -98,6 +98,6 @@ pitfalls:
   - A numeric credit rate and credits=0 suppress all otherwise chargeable pages because presence controls the credit branch.
   - Batch annotation lookup can occur even when the page rate would be sufficient for the eventual annotation fallback.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

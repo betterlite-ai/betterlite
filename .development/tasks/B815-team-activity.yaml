@@ -226,6 +226,6 @@ pitfalls:
   - Full visibility requires permission on every returned team, and org-admin status is not a shortcut in this resolver.
   - A 400-day date difference covers 401 calendar dates because the SQL end bound is exclusive of the following day.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security
