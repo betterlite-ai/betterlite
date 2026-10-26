@@ -22,25 +22,14 @@ pub struct ProblemDocument {
     pub allowed: Option<Vec<String>>,
 }
 
-impl ProblemDetail {
-    #[must_use]
-    pub fn problem_document(&self) -> ProblemDocument {
-        if self.allowed.is_some() {
-            ProblemDocument {
-                r#type: self.r#type.clone(),
-                title: self.title.clone(),
-                status: self.status,
-                detail: self.detail.clone(),
-                allowed: self.allowed.clone(),
-            }
-        } else {
-            ProblemDocument {
-                r#type: self.r#type.clone(),
-                title: self.title.clone(),
-                status: self.status,
-                detail: self.detail.clone(),
-                allowed: None,
-            }
+impl From<&ProblemDetail> for ProblemDocument {
+    fn from(problem: &ProblemDetail) -> Self {
+        Self {
+            r#type: problem.r#type.clone(),
+            title: problem.title.clone(),
+            status: problem.status,
+            detail: problem.detail.clone(),
+            allowed: problem.allowed.clone(),
         }
     }
 }

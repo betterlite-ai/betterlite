@@ -14,37 +14,22 @@ from litellm.types.proxy.management_endpoints.management_v1 import (
 
 class ProblemInput(TypedDict):
     function: Literal["problem"]
-    type: str
-    title: str
-    status: int
-    detail: str
+    problem: ProblemDetail
     document: NotRequired[bool]
-    allowed: NotRequired[list[str] | None]
 
 
 class FacetInput(TypedDict):
     function: Literal["facet"]
     data: list[str]
-    page: int
-    page_size: int
-    has_more: bool
-    self: str
-    prev: str | None
-    next: str | None
+    meta: PageMeta
+    links: PageLinks
 
 
 class ListInput(TypedDict):
     function: Literal["list"]
     data: list[object]
-    total_count: int
-    page: int
-    page_size: int
-    total_pages: int
-    self_link: str
-    first: str
-    prev: str | None
-    next: str | None
-    last: str
+    meta: ListMeta
+    links: ListLinks
 
 
 class ResourceInput(TypedDict):
@@ -58,31 +43,22 @@ Input = ProblemInput | FacetInput | ListInput | ResourceInput
 def run(input_value: Input) -> object:
     match input_value["function"]:
         case "problem":
-            problem = ProblemDetail.model_validate(input_value)
+            problem = ProblemDetail.model_validate(input_value["problem"])
             return problem.model_dump(
                 mode="json", by_alias=True, exclude_none=input_value.get("document", False)
             )
         case "facet":
             response = FacetListResponse(
                 data=input_value["data"],
-                meta=PageMeta(
-                    page=input_value["page"],
-                    page_size=input_value["page_size"],
-                    has_more=input_value["has_more"],
-                ),
-                links=PageLinks.model_validate(input_value),
+                meta=PageMeta.model_validate(input_value["meta"]),
+                links=PageLinks.model_validate(input_value["links"]),
             )
             return response.model_dump(mode="json", by_alias=True)
         case "list":
             response = ListResponse(
                 data=input_value["data"],
-                meta=ListMeta(
-                    total_count=input_value["total_count"],
-                    page=input_value["page"],
-                    page_size=input_value["page_size"],
-                    total_pages=input_value["total_pages"],
-                ),
-                links=ListLinks.model_validate(input_value),
+                meta=ListMeta.model_validate(input_value["meta"]),
+                links=ListLinks.model_validate(input_value["links"]),
             )
             return response.model_dump(mode="json", by_alias=True)
         case "resource":

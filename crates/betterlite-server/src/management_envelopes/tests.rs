@@ -100,11 +100,11 @@ fn problem_allowed_is_nullable_and_can_be_empty() {
     assert_eq!(absent.allowed, None);
     assert_eq!(empty.allowed, Some(Vec::new()));
     assert_eq!(
-        serde_json::to_string(&absent.problem_document()).expect("document encode"),
+        serde_json::to_string(&super::ProblemDocument::from(&absent)).expect("document encode"),
         r#"{"type":"urn:litellm:error:test","title":"Test","status":400,"detail":"bad"}"#
     );
     assert_eq!(
-        serde_json::to_string(&empty.problem_document()).expect("document encode"),
+        serde_json::to_string(&super::ProblemDocument::from(&empty)).expect("document encode"),
         r#"{"type":"urn:litellm:error:test","title":"Test","status":400,"detail":"bad","allowed":[]}"#
     );
     assert_eq!(

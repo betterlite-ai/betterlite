@@ -1,5 +1,5 @@
 use betterlite_server::management_envelopes::{
-    FacetListResponse, ListLinks, ListMeta, ListResponse, PageLinks, PageMeta, ProblemDetail,
+    FacetListResponse, ListResponse, PageLinks, PageMeta, ProblemDetail, ProblemDocument,
     ResourceResponse,
 };
 use serde::Deserialize;
@@ -10,41 +10,19 @@ use serde_json::Value;
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     Problem {
-        r#type: String,
-        title: String,
-        status: u16,
-        detail: String,
-        #[serde(default)]
-        allowed: Option<Vec<String>>,
+        problem: ProblemDetail,
         #[serde(default)]
         document: bool,
     },
     Facet {
         data: Vec<String>,
-        page: u64,
-        page_size: u64,
-        has_more: bool,
-        #[serde(rename = "self", alias = "self_link")]
-        self_link: String,
-        #[serde(default)]
-        prev: Option<String>,
-        #[serde(default)]
-        next: Option<String>,
+        meta: PageMeta,
+        links: PageLinks,
     },
     List {
         data: Vec<Value>,
-        total_count: u64,
-        page: u64,
-        page_size: u64,
-        total_pages: u64,
-        #[serde(rename = "self", alias = "self_link")]
-        self_link: String,
-        first: String,
-        #[serde(default)]
-        prev: Option<String>,
-        #[serde(default)]
-        next: Option<String>,
-        last: String,
+        meta: betterlite_server::management_envelopes::ListMeta,
+        links: betterlite_server::management_envelopes::ListLinks,
     },
     Resource {
         data: Value,
@@ -57,7 +35,7 @@ pub(crate) struct Op;
 #[serde(untagged)]
 enum Output {
     Problem(ProblemDetail),
-    ProblemDocument(betterlite_server::management_envelopes::ProblemDocument),
+    ProblemDocument(ProblemDocument),
     Facet(FacetListResponse),
     List(ListResponse<Value>),
     Resource(ResourceResponse<Value>),
@@ -66,20 +44,21 @@ enum Output {
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
-    #[rustfmt::skip]
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let output = match input {
-            Input::Problem { r#type, title, status, detail, allowed, document } => {
-                let problem = ProblemDetail { r#type: r#type.clone(), title: title.clone(), status: *status, detail: detail.clone(), allowed: allowed.clone() };
-                if *document { Output::ProblemDocument(problem.problem_document()) } else { Output::Problem(problem) }
-            }
-            Input::Facet { data, page, page_size, has_more, self_link, prev, next } => Output::Facet(FacetListResponse {
-                data: data.clone(), meta: PageMeta { page: *page, page_size: *page_size, has_more: *has_more },
-                links: PageLinks { self_link: self_link.clone(), prev: prev.clone(), next: next.clone() },
+            Input::Problem { problem, document } => match document {
+                true => Output::ProblemDocument(ProblemDocument::from(problem)),
+                false => Output::Problem(problem.clone()),
+            },
+            Input::Facet { data, meta, links } => Output::Facet(FacetListResponse {
+                data: data.clone(),
+                meta: meta.clone(),
+                links: links.clone(),
             }),
-            Input::List { data, total_count, page, page_size, total_pages, self_link, first, prev, next, last } => Output::List(ListResponse {
-                data: data.clone(), meta: ListMeta { total_count: *total_count, page: *page, page_size: *page_size, total_pages: *total_pages },
-                links: ListLinks { self_link: self_link.clone(), first: first.clone(), prev: prev.clone(), next: next.clone(), last: last.clone() },
+            Input::List { data, meta, links } => Output::List(ListResponse {
+                data: data.clone(),
+                meta: meta.clone(),
+                links: links.clone(),
             }),
             Input::Resource { data } => Output::Resource(ResourceResponse { data: data.clone() }),
         };
