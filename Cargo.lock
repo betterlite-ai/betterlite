@@ -533,7 +533,9 @@ name = "betterlite-logging"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "chrono",
  "rstest",
+ "rust_decimal",
  "serde",
  "strum",
  "thiserror",
