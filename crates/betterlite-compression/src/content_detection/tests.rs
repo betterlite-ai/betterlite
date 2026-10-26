@@ -24,3 +24,15 @@ fn distinguishes_invalid_json_and_indentation_thresholds() {
         "code"
     );
 }
+
+#[test]
+fn keeps_strict_indentation_boundaries_as_text() {
+    assert_eq!(
+        detect_content_type("one\n    two\nthree\nfour\nfive"),
+        "text"
+    );
+    assert_eq!(
+        detect_content_type("one\n    two\n    three\nfour\nfive"),
+        "text"
+    );
+}

@@ -38,10 +38,10 @@ pub fn extract_key(message: &Value, fallback_index: usize, used_keys: &mut Vec<S
             },
         );
     let base = key.clone();
-    let mut suffix = 2;
+    let mut suffix = 2usize;
     while used_keys.contains(&key) {
         key = format!("{base}_{suffix}");
-        suffix += 1;
+        suffix = suffix.saturating_add(1);
     }
     used_keys.push(key.clone());
     key
