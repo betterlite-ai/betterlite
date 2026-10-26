@@ -27,12 +27,8 @@ pub fn resolve_fields(
 ) -> Vec<settings_resolution::ResolvedField> {
     let mut fields = Vec::with_capacity(descriptors.len());
     for descriptor in descriptors {
-        let single = settings_resolution::resolve_fields(
-            from_ref(descriptor),
-            stored,
-            environment,
-            empty,
-        );
+        let single =
+            settings_resolution::resolve_fields(from_ref(descriptor), stored, environment, empty);
         fields.extend(single);
     }
     fields
