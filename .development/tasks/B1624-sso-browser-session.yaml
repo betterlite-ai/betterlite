@@ -35,7 +35,6 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso_browser_session.rs
     - crates/betterlite-server/src/sso_browser_session/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/sso_browser_session.rs
     - crates/betterlite-config/src/sso_browser_session/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-browser-session-*

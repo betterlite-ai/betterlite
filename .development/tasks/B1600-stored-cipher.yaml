@@ -49,7 +49,6 @@ scope:
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/src/stored_cipher.rs
     - crates/betterlite-db/src/stored_cipher/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/encryption.rs
     - crates/betterlite-config/src/encryption/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/encryption-*

@@ -41,7 +41,6 @@ scope:
   paths:
     - crates/betterlite-logging/src/{collector_producer,spend_error}.rs
     - crates/betterlite-logging/src/{collector_producer,spend_error}/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/collector.rs
     - crates/betterlite-config/src/collector/**
     - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/collector_settings.rs,corpus/collector_settings/**}

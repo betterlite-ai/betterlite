@@ -34,7 +34,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/microsoft_graph.rs
     - crates/betterlite-server/fuzz/corpus/microsoft_graph/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/microsoft_group_sync.rs
     - crates/betterlite-config/src/microsoft_group_sync/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/microsoft-groups-*

@@ -29,7 +29,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/cli_login_input.rs
     - crates/betterlite-server/fuzz/corpus/cli_login_input/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/cli_login_flow.rs
     - crates/betterlite-config/src/cli_login_flow/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/cli-login-flow-*

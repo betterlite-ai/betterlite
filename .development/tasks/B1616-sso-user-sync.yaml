@@ -30,7 +30,6 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso_user_sync.rs
     - crates/betterlite-server/src/sso_user_sync/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/sso_user_sync.rs
     - crates/betterlite-config/src/sso_user_sync/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-user-sync-*

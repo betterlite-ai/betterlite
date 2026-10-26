@@ -25,7 +25,6 @@ scope:
     - crates/betterlite-auth/src/sso_claims.rs
     - crates/betterlite-auth/src/sso_claims/**
     - crates/betterlite-auth/fuzz/corpus/jwt_claims/sso-*
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/sso_claims.rs
     - crates/betterlite-config/src/sso_claims/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-claims-*

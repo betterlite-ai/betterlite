@@ -45,7 +45,6 @@ scope:
     - crates/betterlite-provider/fuzz/{Cargo.toml,fuzz_targets/openai_costs_page.rs,corpus/openai_costs_page/**}
     - crates/betterlite-models/src/capture_rate.rs
     - crates/betterlite-models/src/capture_rate/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/capture_rate.rs
     - crates/betterlite-config/src/capture_rate/**
     - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/capture_rate_settings.rs,corpus/capture_rate_settings/**}

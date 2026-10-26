@@ -39,7 +39,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/spend_reseed.rs
     - crates/betterlite-auth/src/spend_reseed/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/reseed-lock-*

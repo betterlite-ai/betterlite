@@ -38,7 +38,6 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/saml_callback.rs
     - crates/betterlite-server/src/saml_callback/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/saml_assertion.rs
     - crates/betterlite-config/src/saml_assertion/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/saml-assertion-*
