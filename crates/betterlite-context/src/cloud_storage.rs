@@ -79,13 +79,12 @@ pub fn sanitize_path(input: Option<&str>, fallback: &str) -> String {
     let Some(value) = input else {
         return fallback.to_owned();
     };
-    let mut segments = Vec::new();
-    for segment in value.replace('\\', "/").split('/') {
-        let safe = sanitize_component(Some(segment), "");
-        if !safe.is_empty() {
-            segments.push(safe);
-        }
-    }
+    let segments: Vec<_> = value
+        .replace('\\', "/")
+        .split('/')
+        .map(|segment| sanitize_component(Some(segment), ""))
+        .filter(|segment| !segment.is_empty())
+        .collect();
     if segments.is_empty() {
         fallback.to_owned()
     } else {

@@ -31,6 +31,7 @@ fn cloud_storage_config_cases(#[case] field: &str, #[case] expected: RawSetting)
         config.sections.cloud_storage.global_legacy,
         Some(RawSetting::Boolean(true))
     );
-    loader.load("litellm_settings: {unknown_cloud_flag: true}")
-    .unwrap_err();
+    loader
+        .load("litellm_settings: {unknown_cloud_flag: true}")
+        .unwrap_err();
 }

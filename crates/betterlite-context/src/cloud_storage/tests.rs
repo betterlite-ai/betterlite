@@ -54,26 +54,22 @@ fn sanitization(#[case] input: Option<&str>, #[case] fallback: &str, #[case] exp
     assert_eq!(sanitize_component(input, fallback), expected);
 }
 #[rstest::rstest]
-#[case::empty("", CloudStorageError::EmptyBucket)]
-#[case::scheme("gs://bucket", CloudStorageError::BucketUri)]
-#[case::query("bucket?x", CloudStorageError::BucketUri)]
-#[case::fragment("bucket#x", CloudStorageError::BucketUri)]
-#[case::control("bu\0cket", CloudStorageError::BucketControl)]
-#[case::missing_bucket("/prefix", CloudStorageError::EmptyBucket)]
-#[case::separator("bu\\cket", CloudStorageError::Separator)]
-#[case::traversal("bucket/../x", CloudStorageError::Segment)]
-fn bucket_failures(#[case] value: &str, #[case] expected: CloudStorageError) {
-    assert_eq!(split_bucket_name(value).unwrap_err(), expected);
-}
-#[rstest::rstest]
-#[case::empty("", CloudStorageError::EmptyObject)]
-#[case::absolute("/x", CloudStorageError::Absolute)]
-#[case::control("x\0", CloudStorageError::ObjectControl)]
-#[case::dot("a/.", CloudStorageError::Segment)]
-#[case::parent("a/../b", CloudStorageError::Segment)]
-#[case::empty_parent("a//", CloudStorageError::Segment)]
-fn path_failures(#[case] value: &str, #[case] expected: CloudStorageError) {
-    assert_eq!(validate_cloud_object_path(value).unwrap_err(), expected);
+#[case::empty_bucket(split_bucket_name("").unwrap_err(), CloudStorageError::EmptyBucket)]
+#[case::scheme(split_bucket_name("gs://bucket").unwrap_err(), CloudStorageError::BucketUri)]
+#[case::query(split_bucket_name("bucket?x").unwrap_err(), CloudStorageError::BucketUri)]
+#[case::fragment(split_bucket_name("bucket#x").unwrap_err(), CloudStorageError::BucketUri)]
+#[case::bucket_control(split_bucket_name("bu\0cket").unwrap_err(), CloudStorageError::BucketControl)]
+#[case::missing_bucket(split_bucket_name("/prefix").unwrap_err(), CloudStorageError::EmptyBucket)]
+#[case::separator(split_bucket_name("bu\\cket").unwrap_err(), CloudStorageError::Separator)]
+#[case::traversal(split_bucket_name("bucket/../x").unwrap_err(), CloudStorageError::Segment)]
+#[case::empty_path(validate_cloud_object_path("").unwrap_err(), CloudStorageError::EmptyObject)]
+#[case::absolute(validate_cloud_object_path("/x").unwrap_err(), CloudStorageError::Absolute)]
+#[case::control(validate_cloud_object_path("x\0").unwrap_err(), CloudStorageError::ObjectControl)]
+#[case::dot(validate_cloud_object_path("a/.").unwrap_err(), CloudStorageError::Segment)]
+#[case::parent(validate_cloud_object_path("a/../b").unwrap_err(), CloudStorageError::Segment)]
+#[case::empty_parent(validate_cloud_object_path("a//").unwrap_err(), CloudStorageError::Segment)]
+fn invalid_inputs(#[case] actual: CloudStorageError, #[case] expected: CloudStorageError) {
+    assert_eq!(actual, expected);
 }
 #[rstest::rstest]
 #[case::bucket_first("gs://bucket/../x", "bad?", &[], true, Err(CloudStorageError::BucketUri))]

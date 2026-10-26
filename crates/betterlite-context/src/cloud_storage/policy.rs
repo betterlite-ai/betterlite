@@ -1,5 +1,4 @@
 use std::fmt;
-#[derive(Clone, PartialEq, Eq)]
 pub enum LegacyCloudSetting {
     Boolean(bool),
     Text(String),

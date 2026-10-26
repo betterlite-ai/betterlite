@@ -3,8 +3,7 @@ name = "betterlite-context-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
-[package.metadata]
-cargo-fuzz = true
+metadata.cargo-fuzz = true
 [dependencies]
 betterlite-context = { path = ".." }
 libfuzzer-sys = "0.4.9"
