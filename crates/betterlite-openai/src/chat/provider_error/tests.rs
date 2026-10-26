@@ -91,6 +91,7 @@ fn expected(status: u16, error_type: &str, param: Option<&str>) -> ProviderFailu
     Some("p")
 )]
 #[case::user_field_too_long_is_not_context(400, r#"{"type":"t","param":"user","message":"Invalid 'user': string too long. Expected a string with maximum length 64"}"#, 400, "t", Some("user"))]
+#[case::user_named_in_a_context_error(400, r#"{"type":"t","param":"p","message":"invalid 'user': this model's maximum context length is 8"}"#, 400, "invalid_request_error", None)]
 #[case::max_length_code_is_not_context(400, r#"{"type":"t","param":"p","code":"string_above_max_length","message":"string too long. expected a string with maximum length 9"}"#, 400, "t", Some("p"))]
 #[case::model_not_found(
     400,
@@ -110,8 +111,20 @@ fn expected(status: u16, error_type: &str, param: Option<&str>) -> ProviderFailu
 #[case::content_policy(403, r#"{"error":{"type":"policy","param":"prompt","message":"Invalid prompt: violating our usage policy"}}"#, 403, "policy", Some("prompt"))]
 #[case::content_policy_code(403, r#"{"error":{"type":"invalid_request_error","code":"content_policy_violation","message":"Incorrect API key provided"}}"#, 403, "invalid_request_error", None)]
 #[case::safety_system(403, r#"{"type":"t","param":"p","message":"Your request was rejected as a result of the safety system"}"#, 403, "t", Some("p"))]
-#[case::invalid_prompt_alone(403, "Invalid prompt", 403, "permission_error", None)]
-#[case::usage_policy_alone(403, "violating our usage policy", 403, "permission_error", None)]
+#[case::invalid_prompt_alone(
+    403,
+    r#"{"type":"t","param":"p","message":"Invalid prompt"}"#,
+    403,
+    "permission_error",
+    None
+)]
+#[case::usage_policy_alone(
+    403,
+    r#"{"type":"t","param":"p","message":"violating our usage policy"}"#,
+    403,
+    "permission_error",
+    None
+)]
 #[case::encrypted_content(
     403,
     r#"{"type":"t","param":"p","code":"invalid_encrypted_content"}"#,
