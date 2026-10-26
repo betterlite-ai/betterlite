@@ -65,15 +65,22 @@ fn generic_guardrail_header_extraction_uses_nested_extra_allowlist() {
 }
 
 #[test]
-fn generic_guardrail_header_extraction_skips_only_uncoercible_values() {
+fn generic_guardrail_header_extraction_coerces_json_values() {
     let request_data: InboundRequestContext =
         from_str(
-            r#"{"metadata":{"headers":{"Host":false,"X-Stainless-Raw":[],"X-Request-Id":"request-123"}}}"#,
+            r#"{"metadata":{"headers":{"Host":false,"X-Stainless-Raw":[1,2,3],"X-LiteLLM-Meta":{"region":"eu"},"X-Request-Id":"request-123"}}}"#,
         )
         .expect("request context");
     let headers = extract_inbound_headers(&request_data, None).expect("headers");
     assert_eq!(headers.get("Host"), Some(&"False".to_owned()));
-    assert!(!headers.contains_key("X-Stainless-Raw"));
+    assert_eq!(
+        headers.get("X-Stainless-Raw"),
+        Some(&"[1, 2, 3]".to_owned())
+    );
+    assert_eq!(
+        headers.get("X-LiteLLM-Meta"),
+        Some(&"{'region': 'eu'}".to_owned())
+    );
     assert_eq!(headers.get("X-Request-Id"), Some(&"[present]".to_owned()));
 }
 

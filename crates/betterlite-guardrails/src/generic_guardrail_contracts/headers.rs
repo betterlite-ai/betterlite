@@ -42,9 +42,7 @@ pub fn sanitize_inbound_headers(
     let mut sanitized = BTreeMap::new();
     for (name, raw_value) in headers {
         if header_value_allowed(name, extra_allowlist) {
-            if let Some(coerced_value) = coerce_header_value(raw_value) {
-                sanitized.insert(name.clone(), coerced_value);
-            }
+            sanitized.insert(name.clone(), coerce_header_value(raw_value));
         } else {
             sanitized.insert(name.clone(), "[present]".to_owned());
         }
@@ -149,8 +147,8 @@ fn logging_headers(
     context.headers.as_ref()
 }
 
-fn coerce_header_value(raw_value: &GuardrailExtraValue) -> Option<String> {
-    let text = match raw_value {
+fn coerce_header_value(raw_value: &GuardrailExtraValue) -> String {
+    match raw_value {
         GuardrailExtraValue::Null => "None".to_owned(),
         GuardrailExtraValue::Boolean(boolean) => {
             if *boolean {
@@ -163,7 +161,66 @@ fn coerce_header_value(raw_value: &GuardrailExtraValue) -> Option<String> {
         GuardrailExtraValue::UnsignedInteger(number) => number.to_string(),
         GuardrailExtraValue::Decimal(number) => number.to_string(),
         GuardrailExtraValue::Text(text) => text.clone(),
-        GuardrailExtraValue::Array(_) | GuardrailExtraValue::Object(_) => return None,
-    };
-    Some(text)
+        GuardrailExtraValue::Array(values) => format_python_array(values),
+        GuardrailExtraValue::Object(values) => format_python_object(values),
+    }
+}
+
+fn format_python_array(values: &[GuardrailExtraValue]) -> String {
+    let rendered_values = values
+        .iter()
+        .map(format_python_value)
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{rendered_values}]")
+}
+
+fn format_python_object(values: &BTreeMap<String, GuardrailExtraValue>) -> String {
+    let rendered_values = values
+        .iter()
+        .map(|(key, value)| {
+            format!(
+                "{}: {}",
+                quote_python_string(key),
+                format_python_value(value)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{{{rendered_values}}}")
+}
+
+fn format_python_value(value: &GuardrailExtraValue) -> String {
+    match value {
+        GuardrailExtraValue::Null => "None".to_owned(),
+        GuardrailExtraValue::Boolean(boolean) => {
+            if *boolean {
+                "True".to_owned()
+            } else {
+                "False".to_owned()
+            }
+        }
+        GuardrailExtraValue::SignedInteger(number) => number.to_string(),
+        GuardrailExtraValue::UnsignedInteger(number) => number.to_string(),
+        GuardrailExtraValue::Decimal(number) => number.to_string(),
+        GuardrailExtraValue::Text(text) => quote_python_string(text),
+        GuardrailExtraValue::Array(values) => format_python_array(values),
+        GuardrailExtraValue::Object(values) => format_python_object(values),
+    }
+}
+
+fn quote_python_string(value: &str) -> String {
+    let mut quoted = String::from("'");
+    for character in value.chars() {
+        match character {
+            '\\' => quoted.push_str("\\\\"),
+            '\'' => quoted.push_str("\\'"),
+            '\n' => quoted.push_str("\\n"),
+            '\r' => quoted.push_str("\\r"),
+            '\t' => quoted.push_str("\\t"),
+            other => quoted.push(other),
+        }
+    }
+    quoted.push('\'');
+    quoted
 }
