@@ -176,18 +176,6 @@ impl SettingsStore {
     }
 
     #[must_use]
-    pub fn len(&self) -> usize {
-        let entries = self.iter();
-        entries.count()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        let mut entries = self.iter();
-        entries.next().is_none()
-    }
-
-    #[must_use]
     pub fn db_value(&self, key: &str) -> Option<&JsonValue> {
         if self.section.is_resource_list(key) {
             self.stored_value(key)

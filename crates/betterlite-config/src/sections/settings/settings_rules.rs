@@ -1,18 +1,8 @@
-use std::collections::BTreeMap;
-
-use serde::{Deserialize, Serialize};
-use serde_json::Number;
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum JsonValue {
-    Null,
-    Bool(bool),
-    Number(Number),
-    Text(String),
-    List(Vec<Self>),
-    Object(BTreeMap<String, Self>),
-}
+#[expect(
+    clippy::disallowed_types,
+    reason = "LiteLLM settings rows hold arbitrary JSON values"
+)]
+pub type JsonValue = serde_json::Value;
 
 // LiteLLM keeps no store for ui_settings; it is only the stored row behind the general_settings UI keys
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

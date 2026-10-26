@@ -301,8 +301,8 @@ fn mapping_helpers_exclude_deleted_runtime_keys() {
     let mut store = general(r#"{"config": 1}"#, r#"{"db": 2}"#);
     store.apply_runtime_values(values(r#"{"runtime": 3}"#));
     assert_eq!(store.remove("db"), Ok(Some(json("2"))));
-    assert_eq!(store.len(), 2);
-    assert!(!store.is_empty());
+    assert_eq!(store.iter().count(), 2);
+    assert!(store.iter().next().is_some());
     assert_eq!(
         store
             .iter()

@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::alerting::{EMAIL_DESCRIPTORS, MS_TEAMS_DESCRIPTORS, SLACK_DESCRIPTORS};
 use super::{EmptyDbValue, FieldDescriptor, FieldSource, resolve_fields, source_for};
@@ -25,9 +26,9 @@ fn stored(text: &str) -> BTreeMap<String, JsonValue> {
     serde_json::from_str(text).unwrap()
 }
 
-fn environment(value: Option<&str>) -> BTreeMap<String, String> {
+fn environment(value: Option<&str>) -> BTreeMap<String, SecretString> {
     value
-        .map(|text| (String::from("HOST_ENV"), text.to_owned()))
+        .map(|text| (String::from("HOST_ENV"), SecretString::from(text)))
         .into_iter()
         .collect()
 }
@@ -36,7 +37,13 @@ fn host(row: &str, env: Option<&str>, empty: EmptyDbValue) -> (Option<String>, F
     let fields = resolve_fields(&HOST, &stored(row), &environment(env), empty).unwrap();
     let field = fields.first().unwrap();
     assert_eq!(field.field_name, "host");
-    (field.value.clone(), field.source)
+    (
+        field
+            .value
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned()),
+        field.source,
+    )
 }
 
 #[rstest]
@@ -90,7 +97,15 @@ fn empty_db_means_absent_for_sso(
 ) {
     let fields =
         resolve_fields(&HOST, &stored(row), &environment(env), EmptyDbValue::Absent).unwrap();
-    let resolved: Vec<Option<&str>> = fields.iter().map(|field| field.value.as_deref()).collect();
+    let resolved: Vec<Option<&str>> = fields
+        .iter()
+        .map(|field| {
+            field
+                .value
+                .as_ref()
+                .map(secrecy::ExposeSecret::expose_secret)
+        })
+        .collect();
     assert_eq!(resolved, vec![value]);
 }
 
@@ -104,7 +119,7 @@ fn email_port_and_tls_fall_back_to_mail_defaults(
 ) {
     let environment = env
         .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .map(|(name, value)| ((*name).to_owned(), SecretString::from(*value)))
         .collect();
     let fields = resolve_fields(
         &EMAIL_DESCRIPTORS,
@@ -115,7 +130,15 @@ fn email_port_and_tls_fall_back_to_mail_defaults(
     .unwrap();
     let resolved: Vec<(Option<&str>, FieldSource)> = fields
         .iter()
-        .map(|field| (field.value.as_deref(), field.source))
+        .map(|field| {
+            (
+                field
+                    .value
+                    .as_ref()
+                    .map(secrecy::ExposeSecret::expose_secret),
+                field.source,
+            )
+        })
         .collect();
     let unset = (None, FieldSource::Unset);
     let [port, tls] = expected.map(|(value, source)| (Some(value), source));
@@ -172,9 +195,32 @@ fn source_for_reports_default_when_unset(
         stored(r#"{"stored": 2, "missing": null}"#),
     );
     assert_eq!(
-        source_for(&store, key, default.map(json).as_ref()),
+        source_for(&store, key, &default.map_or(JsonValue::Null, json)),
         expected
     );
+}
+
+#[test]
+fn resolved_secret_debug_output_is_redacted() {
+    let descriptors = [FieldDescriptor {
+        field_name: "secret",
+        db_key: "SECRET",
+        env_var: "SECRET",
+        is_secret: true,
+        default: None,
+    }];
+    let fields = resolve_fields(
+        &descriptors,
+        &BTreeMap::new(),
+        &BTreeMap::from([(String::from("SECRET"), SecretString::from("password"))]),
+        EmptyDbValue::Absent,
+    )
+    .unwrap();
+    assert_eq!(
+        fields[0].value.as_ref().unwrap().expose_secret(),
+        "password"
+    );
+    assert!(!format!("{fields:?}").contains("password"));
 }
 
 #[test]

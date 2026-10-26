@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use secrecy::SecretString;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -36,10 +37,10 @@ pub enum EmptyDbValue {
     Absent,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct ResolvedField {
     pub field_name: &'static str,
-    pub value: Option<String>,
+    pub value: Option<SecretString>,
     pub source: FieldSource,
 }
 
@@ -56,7 +57,7 @@ pub enum ResolveFieldsError {
 pub fn resolve_fields(
     descriptors: &[FieldDescriptor],
     stored: &BTreeMap<String, JsonValue>,
-    environment: &BTreeMap<String, String>,
+    environment: &BTreeMap<String, SecretString>,
     empty: EmptyDbValue,
 ) -> Result<Vec<ResolvedField>, ResolveFieldsError> {
     let mut fields = Vec::with_capacity(descriptors.len());
@@ -69,7 +70,7 @@ pub fn resolve_fields(
 fn resolve_field(
     descriptor: &FieldDescriptor,
     stored: &BTreeMap<String, JsonValue>,
-    environment: &BTreeMap<String, String>,
+    environment: &BTreeMap<String, SecretString>,
     empty: EmptyDbValue,
 ) -> Result<ResolvedField, ResolveFieldsError> {
     // Python's str.strip also drops the four ASCII separators U+001C to U+001F
@@ -80,7 +81,7 @@ fn resolve_field(
         .is_empty()
     };
     let stored_text = match (stored.get(descriptor.db_key), empty) {
-        (Some(JsonValue::Text(text)), EmptyDbValue::Absent) if !is_blank(text) => {
+        (Some(JsonValue::String(text)), EmptyDbValue::Absent) if !is_blank(text) => {
             Some(text.clone())
         }
         (None | Some(JsonValue::Null), _) | (Some(_), EmptyDbValue::Absent) => None,
@@ -88,16 +89,19 @@ fn resolve_field(
     };
     let environment_text = environment
         .get(descriptor.env_var)
+        .map(secrecy::ExposeSecret::expose_secret)
         .filter(|text| !is_blank(text));
     let resolved = stored_text
         .map(|text| (Some(text), FieldSource::Db))
-        .or_else(|| environment_text.map(|text| (Some(text.clone()), FieldSource::Env)))
+        .or_else(|| environment_text.map(|text| (Some(text.to_owned()), FieldSource::Env)))
         .or_else(|| {
             descriptor
                 .default
                 .map(|default| (Some(default.to_owned()), FieldSource::Default))
         });
-    let (value, source) = resolved.unwrap_or((None, FieldSource::Unset));
+    let (value, source) = resolved.map_or((None, FieldSource::Unset), |(value, source)| {
+        (value.map(SecretString::from), source)
+    });
     Ok(ResolvedField {
         field_name: descriptor.field_name,
         value,
@@ -108,21 +112,21 @@ fn resolve_field(
 // LiteLLM hands the stored value to str(), so booleans read True and False
 fn python_text(value: &JsonValue, field_name: &'static str) -> Result<String, ResolveFieldsError> {
     match value {
-        JsonValue::Text(text) => Ok(text.clone()),
+        JsonValue::String(text) => Ok(text.clone()),
         JsonValue::Bool(true) => Ok(String::from("True")),
         JsonValue::Bool(false) => Ok(String::from("False")),
         JsonValue::Null => Ok(String::from("None")),
         JsonValue::Number(number) => Ok(number.to_string()),
-        JsonValue::List(_) | JsonValue::Object(_) => serde_json::to_string(value)
+        JsonValue::Array(_) | JsonValue::Object(_) => serde_json::to_string(value)
             .map_err(|source| ResolveFieldsError::Render { field_name, source }),
     }
 }
 
 #[must_use]
-pub fn source_for(store: &SettingsStore, key: &str, default: Option<&JsonValue>) -> FieldSource {
+pub fn source_for(store: &SettingsStore, key: &str, default: &JsonValue) -> FieldSource {
     let source = store.resolution(key).source();
     // a field whose default is None has no default, as in LiteLLM
-    if source == FieldSource::Unset && default.is_some_and(|value| *value != JsonValue::Null) {
+    if source == FieldSource::Unset && *default != JsonValue::Null {
         FieldSource::Default
     } else {
         source
