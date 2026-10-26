@@ -1,0 +1,6 @@
+kind: helper
+name: headers-generated-conversation-id
+call:
+  b3778: {operation: extract_tool_arguments, value: {function: {arguments: ""}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: api-call-classify-endpoint
+call:
+  b3778: {operation: extract_tool_arguments, value: {function: {arguments: "null"}}}
+env: {}
+compare: {ignore: []}

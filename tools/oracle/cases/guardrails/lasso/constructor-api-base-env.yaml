@@ -1,0 +1,6 @@
+kind: helper
+name: constructor-api-base-env
+call:
+  b3778: {operation: extract_tool_arguments, value: {function: {arguments: "{\"x\":1}"}}}
+env: {}
+compare: {ignore: []}

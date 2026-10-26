@@ -1,0 +1,6 @@
+kind: helper
+name: headers-with-user-id
+call:
+  b3778: {operation: extract_tool_arguments, value: {function: {arguments: "{\"user\":\"x\"}"}}}
+env: {}
+compare: {ignore: []}

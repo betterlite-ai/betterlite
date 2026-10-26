@@ -1,0 +1,6 @@
+kind: helper
+name: session-id-cache-hit
+call:
+  b3778: {operation: extract_tool_arguments, value: {function: {arguments: "[1,2]"}}}
+env: {}
+compare: {ignore: []}

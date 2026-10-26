@@ -1,0 +1,6 @@
+kind: helper
+name: api-timeout
+call:
+  b3778: {operation: extract_tool_arguments, value: {function: {arguments: "timeout"}}}
+env: {}
+compare: {ignore: []}

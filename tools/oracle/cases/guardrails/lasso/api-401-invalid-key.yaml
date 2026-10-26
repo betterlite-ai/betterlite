@@ -1,0 +1,6 @@
+kind: helper
+name: api-401-invalid-key
+call:
+  b3778: {operation: extract_tool_arguments, value: {function: {arguments: "401"}}}
+env: {}
+compare: {ignore: []}

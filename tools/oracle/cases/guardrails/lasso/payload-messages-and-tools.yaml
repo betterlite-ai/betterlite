@@ -1,0 +1,6 @@
+kind: helper
+name: payload-messages-and-tools
+call:
+  b3778: {operation: extract_tool_arguments, value: {function: {arguments: "{\"prompt\":\"inspect\"}"}}}
+env: {}
+compare: {ignore: []}
