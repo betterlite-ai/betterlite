@@ -4,7 +4,7 @@ use regex::Regex;
 use crate::sandbox_backend::errors::BackendError;
 use crate::sandbox_backend::include_glob::IncludeGlob;
 use crate::sandbox_backend::protocol::{
-    FileInfo, GlobResult, GrepMatch, GrepResult, Listing, Reply,
+    FileInfo, GlobResult, GrepMatch, GrepQuery, GrepResult, Listing, Reply,
 };
 use crate::sandbox_backend::{
     EXIT_XARGS_BATCH, FS_TIMEOUT_SECONDS, GREP_LINE, GREP_SCRIPT, SKIP_DIRS, SandboxBackend,
@@ -47,50 +47,61 @@ where
     })
 }
 
-pub(crate) async fn grep<S>(
-    backend: &SandboxBackend<S>,
-    pattern: &str,
-    path: &str,
-    glob: Option<&str>,
-    max_count: Option<usize>,
-) -> GrepResult
+pub(crate) async fn grep<S>(backend: &SandboxBackend<S>, query: GrepQuery<'_>) -> GrepResult
 where
     S: Sandbox,
 {
-    let shown = if path.is_empty() { "/" } else { path };
-    let run = match grep_run(backend, pattern, path, glob).await {
+    let shown = if query.path.is_empty() {
+        "/"
+    } else {
+        query.path
+    };
+    let run = match grep_run(backend, query).await {
         Ok(run) => run,
         Err(error) => return Reply::Error(format!("Path '{shown}': {error}")),
     };
     if let Some(reason) = grep_failure(&run.done) {
         return Reply::Error(format!("Path '{shown}': {reason}"));
     }
-    let mut found: Vec<GrepMatch> = run
-        .done
-        .stdout
-        .lines()
-        .filter_map(|line| run.line.captures(line))
-        .filter_map(|parts| {
-            let line = parts.get(2)?.as_str().parse().ok()?;
-            Some((parts.get(1)?.as_str(), line, parts.get(3)?.as_str()))
-        })
-        .filter(|(real, _, _)| {
-            run.include
-                .as_ref()
-                .is_none_or(|include| include.matches(&run.root, real))
-        })
-        .map(|(real, line, text)| GrepMatch {
-            path: backend.to_virtual(real),
-            line,
-            text: text.to_owned(),
-        })
-        .collect();
-    let truncated = max_count.is_some_and(|max| found.len() > max);
-    found.truncate(max_count.unwrap_or(found.len()));
-    Reply::Done(Listing {
-        matches: found,
-        truncated,
-    })
+    Reply::Done(run.listing(backend, query.max_count))
+}
+
+impl GrepRun {
+    fn listing<S>(
+        &self,
+        backend: &SandboxBackend<S>,
+        max_count: Option<usize>,
+    ) -> Listing<GrepMatch>
+    where
+        S: Sandbox,
+    {
+        let mut found: Vec<GrepMatch> = self
+            .done
+            .stdout
+            .lines()
+            .filter_map(|line| self.line.captures(line))
+            .filter_map(|parts| {
+                let line = parts.get(2)?.as_str().parse().ok()?;
+                Some((parts.get(1)?.as_str(), line, parts.get(3)?.as_str()))
+            })
+            .filter(|(real, _, _)| {
+                self.include
+                    .as_ref()
+                    .is_none_or(|include| include.matches(&self.root, real))
+            })
+            .map(|(real, line, text)| GrepMatch {
+                path: backend.to_virtual(real),
+                line,
+                text: text.to_owned(),
+            })
+            .collect();
+        let truncated = max_count.is_some_and(|max| found.len() > max);
+        found.truncate(max_count.unwrap_or(found.len()));
+        Listing {
+            matches: found,
+            truncated,
+        }
+    }
 }
 
 async fn glob_run<S>(
@@ -109,20 +120,19 @@ where
 
 async fn grep_run<S>(
     backend: &SandboxBackend<S>,
-    pattern: &str,
-    path: &str,
-    glob: Option<&str>,
+    query: GrepQuery<'_>,
 ) -> Result<GrepRun, BackendError>
 where
     S: Sandbox,
 {
-    let include = glob
+    let include = query
+        .glob
         .filter(|include| !include.is_empty())
         .map(IncludeGlob::compile)
         .transpose()?;
     let line = Regex::new(GREP_LINE)?;
-    let root = backend.to_confined(path).await?;
-    let mut argv = vec!["sh", "-c", GREP_SCRIPT, "sh", pattern];
+    let root = backend.to_confined(query.path).await?;
+    let mut argv = vec!["sh", "-c", GREP_SCRIPT, "sh", query.pattern];
     argv.extend(find_argv(&root));
     let done = backend.run(&argv, FS_TIMEOUT_SECONDS).await?;
     Ok(GrepRun {

@@ -15,7 +15,8 @@ use crate::sandbox_backend::bridge::SandboxBackendProtocol as _;
 use crate::sandbox_backend::errors::BackendError;
 use crate::sandbox_backend::protocol::{
     Edited, Encoding, ExecuteResponse, FileData, FileDownloadResponse, FileInfo,
-    FileUploadResponse, GrepMatch, Listing, ReadResult, Reply, TransferError,
+    FileUploadResponse, GrepMatch, GrepQuery, Listing, ReadResult, Replacement, Reply,
+    TransferError,
 };
 use crate::sandbox_backend::{Permissions, SandboxBackend};
 use host::HostSandbox;
@@ -75,6 +76,28 @@ fn put(workdir: &str, path: &str) {
     fs::write(full, "x").unwrap();
 }
 
+fn query<'query>(
+    pattern: &'query str,
+    path: &'query str,
+    glob: Option<&'query str>,
+    max_count: Option<usize>,
+) -> GrepQuery<'query> {
+    GrepQuery {
+        pattern,
+        path,
+        glob,
+        max_count,
+    }
+}
+
+fn change<'text>(old: &'text str, new: &'text str, replace_all: bool) -> Replacement<'text> {
+    Replacement {
+        old,
+        new,
+        replace_all,
+    }
+}
+
 fn on_disk(workdir: &str, path: &str) -> String {
     fs::read_to_string(Path::new(workdir).join(path)).unwrap()
 }
@@ -118,7 +141,7 @@ fn id_carries_the_session_prefix() {
 async fn grep_whole_repo_skips_symlinks_out_of_workspace() {
     let (_dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), READ_ONLY);
-    let result = backend.agrep("AWS_SECRET", "/", None, None).await;
+    let result = backend.agrep(query("AWS_SECRET", "/", None, None)).await;
     assert_eq!(
         result,
         Reply::Done(Listing {
@@ -132,7 +155,9 @@ async fn grep_whole_repo_skips_symlinks_out_of_workspace() {
 async fn grep_rooted_at_a_symlinked_dir_is_refused() {
     let (_dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), READ_ONLY);
-    let result = backend.agrep("AWS_SECRET", "/home_link", None, None).await;
+    let result = backend
+        .agrep(query("AWS_SECRET", "/home_link", None, None))
+        .await;
     assert_eq!(
         result,
         Reply::Error(
@@ -181,7 +206,7 @@ async fn grep_still_finds_real_repo_files() {
         text: "hello".to_owned(),
     };
     assert_eq!(
-        backend.agrep("hello", "", None, None).await,
+        backend.agrep(query("hello", "", None, None)).await,
         Reply::Done(Listing {
             matches: vec![hello],
             truncated: false
@@ -288,7 +313,9 @@ async fn read_only_sessions_refuse_every_change() {
         Reply::Error(refused.clone())
     );
     assert_eq!(
-        backend.aedit("/README.md", "hello", "bye", false).await,
+        backend
+            .aedit("/README.md", change("hello", "bye", false))
+            .await,
         Reply::Error(refused.clone())
     );
     assert_eq!(backend.adelete("/README.md").await, Reply::Error(refused));
@@ -316,7 +343,9 @@ async fn edit_normalizes_crlf_and_counts_occurrences() {
         occurrences: 2,
     };
     assert_eq!(
-        backend.aedit("/app.py", " 1\r\n", " 2\r\n", true).await,
+        backend
+            .aedit("/app.py", change(" 1\r\n", " 2\r\n", true))
+            .await,
         Reply::Done(edited)
     );
     assert_eq!(on_disk(&repo, "app.py"), "x = 2\ny = 2\n");
@@ -345,7 +374,7 @@ async fn edit_names_why_it_changed_nothing(
     fs::write(Path::new(&repo).join("blob.bin"), [0xff_u8, 0x41]).unwrap();
     let backend = backend_at(&repo, Handle::current(), WRITABLE);
     assert_eq!(
-        backend.aedit(path, old, "new", false).await,
+        backend.aedit(path, change(old, "new", false)).await,
         Reply::Error(message.to_owned())
     );
     assert_eq!(
@@ -463,7 +492,10 @@ async fn grep_filters_by_include_glob_and_caps_the_count() {
     )
     .unwrap();
     let backend = backend_at(&repo, Handle::current(), READ_ONLY);
-    let Reply::Done(found) = backend.agrep("hello", "/", Some("*.txt"), None).await else {
+    let Reply::Done(found) = backend
+        .agrep(query("hello", "/", Some("*.txt"), None))
+        .await
+    else {
         panic!("grep failed");
     };
     let mut lines: Vec<(String, usize, String)> = found
@@ -479,11 +511,11 @@ async fn grep_filters_by_include_glob_and_caps_the_count() {
     ]
     .map(|(path, line, text)| (path.to_owned(), line, text.to_owned()));
     assert_eq!(lines, expected.to_vec());
-    let Reply::Done(capped) = backend.agrep("hello", "/sub", None, Some(1)).await else {
+    let Reply::Done(capped) = backend.agrep(query("hello", "/sub", None, Some(1))).await else {
         panic!("grep failed");
     };
     assert_eq!((capped.matches.len(), capped.truncated), (1, true));
-    let fixed = backend.agrep("a.c", "/", None, None).await;
+    let fixed = backend.agrep(query("a.c", "/", None, None)).await;
     assert_eq!(
         fixed,
         Reply::Done(Listing {
@@ -497,12 +529,12 @@ async fn grep_filters_by_include_glob_and_caps_the_count() {
 async fn grep_reports_a_failing_search_with_its_stderr() {
     let (_dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), READ_ONLY);
-    let Reply::Error(message) = backend.agrep("x", "/nope", None, None).await else {
+    let Reply::Error(message) = backend.agrep(query("x", "/nope", None, None)).await else {
         panic!("expected an error");
     };
     assert!(message.starts_with("Path '/nope': find: "), "{message}");
     assert_eq!(
-        backend.agrep("x", "/", Some("../*"), None).await,
+        backend.agrep(query("x", "/", Some("../*"), None)).await,
         Reply::Error("Path '/': Path traversal not allowed in glob pattern '../*'".to_owned())
     );
 }

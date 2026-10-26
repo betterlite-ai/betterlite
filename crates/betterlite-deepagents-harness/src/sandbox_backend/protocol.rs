@@ -57,6 +57,23 @@ pub struct Edited {
     pub occurrences: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Replacement<'text> {
+    pub old: &'text str,
+    pub new: &'text str,
+    pub replace_all: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GrepQuery<'query> {
+    pub pattern: &'query str,
+    pub path: &'query str,
+    // absent searches every file
+    pub glob: Option<&'query str>,
+    // absent keeps every match
+    pub max_count: Option<usize>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Listing<T> {
     pub matches: Vec<T>,

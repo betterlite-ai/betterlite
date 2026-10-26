@@ -87,7 +87,10 @@ fn expand_braces(
     pattern: &str,
     expanded: &mut Vec<String>,
 ) -> Result<(), InvalidGlobPattern> {
-    let Some(group) = first_group(pattern) else {
+    let first_group = unescaped(pattern)
+        .filter(|(_, byte)| *byte == b'{')
+        .find_map(|(open, _)| group_at(pattern, open));
+    let Some(group) = first_group else {
         if expanded.len() >= BRACE_LIMIT {
             return Err(InvalidGlobPattern::TooManyExpansions {
                 pattern: original.to_owned(),
@@ -103,34 +106,21 @@ fn expand_braces(
     Ok(())
 }
 
-fn first_group(pattern: &str) -> Option<BraceGroup<'_>> {
+// the bytes a backslash does not escape, with their positions
+fn unescaped(pattern: &str) -> impl Iterator<Item = (usize, u8)> + '_ {
     let mut escaped = false;
-    for (index, byte) in pattern.bytes().enumerate() {
-        match (escaped, byte) {
-            (true, _) => escaped = false,
-            (false, b'\\') => escaped = true,
-            (false, b'{') => {
-                if let Some(group) = group_at(pattern, index) {
-                    return Some(group);
-                }
-            }
-            (false, _) => {}
-        }
-    }
-    None
+    pattern.bytes().enumerate().filter(move |(_, byte)| {
+        let plain = !escaped && *byte != b'\\';
+        escaped = !escaped && *byte == b'\\';
+        plain
+    })
 }
 
 fn group_at(pattern: &str, open: usize) -> Option<BraceGroup<'_>> {
     let mut depth = 0_usize;
-    let mut escaped = false;
     let mut cuts = vec![open];
-    for (index, byte) in pattern.bytes().enumerate().skip(open.saturating_add(1)) {
-        if escaped {
-            escaped = false;
-            continue;
-        }
+    for (index, byte) in unescaped(pattern).filter(|(index, _)| *index > open) {
         match byte {
-            b'\\' => escaped = true,
             b'{' => depth = depth.saturating_add(1),
             b'}' if depth == 0 => return split_group(pattern, &cuts, index),
             b'}' => depth = depth.saturating_sub(1),

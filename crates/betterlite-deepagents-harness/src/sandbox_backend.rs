@@ -113,14 +113,10 @@ impl<S: Sandbox> SandboxBackend<S> {
 
     #[must_use]
     pub fn to_virtual(&self, real: &str) -> String {
-        if real == self.root {
-            "/".to_owned()
-        } else if let Some(rest) = real.strip_prefix(self.root.as_str())
-            && rest.starts_with('/')
-        {
-            rest.to_owned()
-        } else {
-            real.to_owned()
+        match real.strip_prefix(self.root.as_str()) {
+            Some("") => "/".to_owned(),
+            Some(rest) if rest.starts_with('/') => rest.to_owned(),
+            Some(_) | None => real.to_owned(),
         }
     }
 
