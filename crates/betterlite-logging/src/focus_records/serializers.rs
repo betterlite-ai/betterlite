@@ -13,5 +13,5 @@ pub enum SerializationError {
 pub trait FocusSerializer {
     const EXTENSION: &'static str;
 
-    fn serialize(&self, frame: &DataFrame) -> Result<Vec<u8>, SerializationError>;
+    fn encode(&self, frame: &DataFrame) -> Result<Vec<u8>, SerializationError>;
 }

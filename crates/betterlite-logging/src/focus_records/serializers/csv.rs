@@ -9,7 +9,7 @@ pub struct FocusCsvSerializer;
 impl FocusSerializer for FocusCsvSerializer {
     const EXTENSION: &'static str = "csv";
 
-    fn serialize(&self, frame: &DataFrame) -> Result<Vec<u8>, SerializationError> {
+    fn encode(&self, frame: &DataFrame) -> Result<Vec<u8>, SerializationError> {
         let decimal_columns: Vec<String> = frame
             .schema()
             .iter_fields()
