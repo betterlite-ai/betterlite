@@ -105,6 +105,16 @@ fn tool_choice_rewrite_copies_only_custom_tools() {
 }
 
 #[test]
+fn hosted_tools_do_not_reserve_names() {
+    let mut params = serde_json::from_str::<RequestParams>(
+        r#"{"tools":[{"type":"web_search","name":"foo_bar"},{"type":"custom","name":"foo/bar"}]}"#,
+    )
+    .unwrap();
+    let maps = sanitize_tool_names_in_request(&mut params);
+    assert_eq!(maps.forward["foo/bar"], "foo_bar");
+}
+
+#[test]
 fn tool_choice_without_rewrites_stays_unchanged() {
     let source = r#"{"tools":[{"type":"custom","name":"good"}],"tool_choice":{"type":"tool","name":"good"}}"#;
     let mut params = serde_json::from_str::<RequestParams>(source).unwrap();
