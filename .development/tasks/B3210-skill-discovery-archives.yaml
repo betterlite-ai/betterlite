@@ -39,7 +39,7 @@ scope:
     - tools/oracle/src/helpers/http/skill_discovery_archives/**
     - tools/oracle/helpers/skill_discovery_archives.py
     - tools/oracle/helpers/skill_discovery_archives/**
-    - tools/oracle/fuzz/corpus/helper_case/**
+    - "tools/oracle/fuzz/corpus/helper_case/skill_discovery_archives-*"
     - tools/oracle/cases/helpers/skill-archive/**
   lint_tables: false
 references:
@@ -130,8 +130,8 @@ checks:
     - id: helper-case-corpus
       why: helper cases are missing, the shared fuzz corpus is not updated, or corpus replay fails
       run: >-
-        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-        grep -rlq 'skill_archive\|build_skill_archive' tools/oracle/fuzz/corpus/helper_case &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/skill_discovery_archives-*")" &&
+        grep -lq 'skill_archive\|build_skill_archive' tools/oracle/fuzz/corpus/helper_case/skill_discovery_archives-* &&
         test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
         test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" &&
         cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -167,6 +167,7 @@ out_of_scope:
   - Stored skill reads and database queries belong to B3212.
 
 pitfalls:
+  - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/skill_discovery_archives-<case>.yaml. The rest of that folder belongs to other tasks.'
   - 'The oracle helper for this task is pre-registered as skill_discovery_archives in the http group. Replace the stub Op in tools/oracle/src/helpers/http/skill_discovery_archives.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/skill_discovery_archives.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - "The digest field is the literal string \"sha256:\" (with colon) followed by the lowercase hex SHA-256; neither the prefix nor the hex are optional."
   - "Path normalization must reject paths with null bytes, backslashes, leading slashes, Windows drive letters, and . or .. segments before checking for duplicates."

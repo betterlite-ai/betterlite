@@ -85,7 +85,6 @@ scope:
   - crates/betterlite-bedrock/src/assume_role.rs
   - crates/betterlite-bedrock/src/assume_role/**
   - Cargo.toml
-  - deny.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/bedrock/assume_role.rs
   - tools/oracle/src/helpers/bedrock/assume_role/**

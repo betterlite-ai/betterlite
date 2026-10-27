@@ -35,7 +35,6 @@ scope:
     - crates/betterlite-logging/src/datadog/cost_management/**
     - tools/oracle/cases/logging/datadog-cost-management/**
     - Cargo.toml
-    - deny.toml
     - tools/oracle/helpers/b3940.py
     - tools/oracle/helpers/b3940/**
     - tools/oracle/src/helpers/logging/b3940.rs

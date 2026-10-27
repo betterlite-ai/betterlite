@@ -30,7 +30,6 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-tokenizer/**
   - crates/betterlite-config/**
   - tools/oracle/Cargo.toml
@@ -39,7 +38,7 @@ scope:
   - tools/oracle/helpers/tokenizer_engine.py
   - tools/oracle/helpers/tokenizer_engine/**
   - tools/oracle/cases/helpers/tokenizer-engine/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-*"
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/tokenizer.py#L38-L217
@@ -124,8 +123,8 @@ checks:
       SUMS'
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
-      && grep -rlq 'tokenizer_engine' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-*")"
+      && grep -lq 'tokenizer_engine' tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -152,6 +151,7 @@ out_of_scope:
 - Automatic family selection requiring the three missing HF repositories stays blocked by the open decision; supplied
   local bytes are an internal API only, not a new configuration key.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as tokenizer_engine in the tokenizer group. Replace the stub Op in tools/oracle/src/helpers/tokenizer/engine.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/tokenizer_engine.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The oracle must force the Python backend and use the same vocabulary bytes, not LiteLLM's optional Rust implementation.
 - A library's default model-name lookup may differ from LiteLLM's normalization even when its BPE is correct.

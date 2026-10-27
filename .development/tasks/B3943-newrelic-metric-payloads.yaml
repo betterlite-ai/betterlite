@@ -26,7 +26,6 @@ scope:
     - crates/betterlite-logging/src/newrelic_metrics/**
     - tools/oracle/cases/logging/newrelic-metrics/**
     - Cargo.toml
-    - deny.toml
     - tools/oracle/helpers/b3943.py
     - tools/oracle/helpers/b3943/**
     - tools/oracle/src/helpers/logging/b3943.rs
