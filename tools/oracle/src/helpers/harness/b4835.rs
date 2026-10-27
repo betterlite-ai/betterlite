@@ -13,6 +13,10 @@ pub(crate) struct Input {
 impl Helper for Op {
     type Input = Input;
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The fixture helper keeps the complete JSONL state machine in one operation"
+    )]
     fn run(input: &Self::Input) -> HelperResult {
         let contents = std::fs::read_to_string(&input.fixture).map_err(|error| {
             Box::new(HelperError {
@@ -77,11 +81,11 @@ impl Helper for Op {
                         .unwrap_or_default();
                     let completed = event.get("type").and_then(Value::as_str) == Some("item.completed");
                     if kind == "agent_message" && completed {
-                        final_text = item
+                        item
                             .get("text")
                             .and_then(Value::as_str)
                             .unwrap_or_default()
-                            .to_owned();
+                            .clone_into(&mut final_text);
                         events.push(json!({"kind": "text", "id": id}));
                     } else if kind == "reasoning" && completed {
                         events.push(json!({"kind": "reasoning", "id": id}));
