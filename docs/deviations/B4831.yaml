@@ -1,0 +1,26 @@
+task: B4831
+deviations:
+  - what: Native tool names are mapped back inline; there is no normalize_tool_name function, and unmapped names pass through unchanged.
+    why: LiteLLM's helper is one expression, and rule no-one-line-functions (enforced by .ast-grep/rules/no-one-line-functions.yml in the hooks check) rejects a function whose body is a single expression.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/utils.py#L21-L23
+  - what: unified_diff aligns lines with the Myers algorithm from the similar crate instead of difflib's SequenceMatcher. Headers, hunk ranges, three lines of context and the "\ No newline at end of file" marker match, but an edit with several equally short alignments can pair its lines differently, and only \n ends a line (difflib's splitlines also splits on \r, \v, \f, \x1c to \x1e, \x85,   and  ).
+    why: No maintained Rust port of SequenceMatcher exists; the difflib crate 0.4.0 inverts the popular-element filter for inputs of 200 lines or more, so its hunks are wrong where they differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/snapshot.py#L111-L121
+  - what: last_json_object parses with serde_json, so a candidate holding NaN or Infinity literals, a lone surrogate escape or nesting past 128 levels does not count as an object.
+    why: Python's json module accepts these as extensions to JSON; serde_json follows RFC 8259.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/utils.py#L32-L45
+  - what: structured_output_instruction and strict_json_schema write object keys in sorted order, where LiteLLM keeps the order the schema was written in.
+    why: The crate holds output schemas as JsonObject and serde_json maps, both sorted maps; the schema means the same in any key order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/utils.py#L48-L82
+  - what: decode_json_line returns None for a line that is not UTF-8, where LiteLLM's json.loads raises UnicodeDecodeError and ends the turn. UTF-16 and UTF-32 lines are not detected.
+    why: The stream reader treats every other undecodable line as noise, and runtimes write UTF-8.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/utils.py#L85-L94
+  - what: read_skill_files fails with PayloadError::Read on a subfolder it cannot list, where os.walk skips it without a word.
+    why: Rule no-silent-drops; a skill copied without some of its files would fail later with no hint why.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/utils.py#L105-L116
+  - what: capture_text_contents reads each file through Sandbox::read capped at 50 MiB, so a file that grew past 50 MiB after the snapshot is skipped and not counted toward the 16 MiB budget. LiteLLM reads it whole and counts it.
+    why: The betterlite Sandbox trait requires a read cap, and the snapshot already leaves out files above 50 MiB.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/snapshot.py#L131-L148
+  - what: snapshot_local_sync leaves out files whose path is not valid UTF-8, where Python keeps them under a surrogate-escaped name.
+    why: Snapshot keys and FileChange paths are Rust Strings, and the workspace rules refuse lossy path conversion.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/snapshot.py#L43-L58

@@ -1,0 +1,166 @@
+id: B3462
+title: Decode and secure RAG ingestion requests
+description: >-
+  Build the HTTP ingestion decoder that parses multipart and JSON request bodies,
+  validates uploaded file bytes against size and format restrictions, and rejects
+  user-supplied credentials before returning document bytes for ingestion.
+
+  Own `_secure_uploaded_file` at `litellm/proxy/rag_endpoints/endpoints.py:391-401`
+  and `parse_rag_ingest_request` at `:404-525`. The decoder accepts two input
+  shapes: multipart/form-data with a file upload and a JSON `request` field
+  containing ingest_options, or application/json body with ingest_options and
+  optional file, file_url, or file_id. Base64-encoded file objects in JSON decode
+  their `content` field before validation.
+
+  Uploaded files are immediately validated through the injected upload security
+  contract, raising a 400 error when validation fails and returning
+  server-generated safe filenames and content types when it succeeds. Three
+  sources are required: at least one of file (multipart upload or base64 JSON),
+  file_url, or file_id must be present. ingest_options must contain a vector_store
+  object. URL and file-ID inputs bypass upload scanning; only multipart or base64
+  file uploads go through the validation chain. The multipart field holding request
+  options is called `request` (not `ingest_options`). All 14 credential fields in
+  vector_store are rejected in a deterministic order (betterlite-defined):
+  vertex_credentials, vertex_ai_credentials, aws_access_key_id,
+  aws_secret_access_key, aws_session_token, aws_web_identity_token,
+  aws_role_name, aws_session_name, aws_profile_name, aws_sts_endpoint,
+  aws_external_id, azure_ad_token, api_key, api_base. Each blocked field
+  receives a 400 error naming it before returning the parsed request.
+
+  Direct dependencies: **B3452** — `validate_upload`, `RejectedUpload`,
+  `MAX_UPLOAD_SIZE_BYTES`; **B1100** — `_safe_get_request_headers`,
+  `_read_request_body`; **B1101** — `get_form_data`. Build the two functions in
+  betterlite-core::rag as a request-parsing module. Test corpus and behavior cover
+  multipart with file, multipart with base64 JSON, JSON with inline base64, JSON
+  with URL, JSON with file_id, missing sources, invalid base64, missing vector_store,
+  and all blocked credential fields. Fuzz the JSON-in-form and base64 decoders with
+  bounded arbitrary payloads.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/rag/ingest_request.rs
+    - crates/betterlite-core/src/rag/ingest_request/**
+    - tools/oracle/cases/helpers/ingest-request/**
+    - tools/oracle/fuzz/corpus/helper_case/ingest-request-*
+    - crates/betterlite-core/fuzz/corpus/rag_json_decoder/
+    - tools/oracle/helpers/b3462.py
+    - tools/oracle/helpers/b3462/**
+    - tools/oracle/src/helpers/core_ops/b3462.rs
+    - tools/oracle/src/helpers/core_ops/b3462/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L391-L401
+    why: Own `_secure_uploaded_file` entry point calling validate_upload and raising
+      HTTPException on RejectedUpload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L404-L525
+    why: Own `parse_rag_ingest_request` decoder with multipart/JSON branches,
+      source-presence validation, blocked-credential checks in order, base64
+      decoding, and safe-filename return.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L420-L525
+    why: Multipart upload branch, JSON request field parsing, form file read limit
+      `MAX_UPLOAD_SIZE_BYTES+1`, base64 file object handling in JSON, URL/file_id
+      fallback when file absent.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L473-L525
+    why: >-
+      Validation and rejection logic: source-presence check, vector_store
+      requirement, credential-field blocking in listed order.
+
+dod:
+  - text: Cases multipart_file_upload, multipart_missing_file, json_body_with_url,
+      json_body_with_file_id, json_with_base64_file, invalid_base64_content,
+      missing_all_sources, missing_vector_store, and all 14 blocked credential
+      fields (vertex_credentials, vertex_ai_credentials, aws_access_key_id,
+      aws_secret_access_key, aws_session_token, aws_web_identity_token,
+      aws_role_name, aws_session_name, aws_profile_name, aws_sts_endpoint,
+      aws_external_id, azure_ad_token, api_key, api_base) verify request parsing
+      and rejection without invoking upload scanning.
+    proof:
+      - behavior-tests
+  - text: The independently invoked helper matches the production decoder and its
+      new helper-case seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: JSON and base64 fuzz corpus exercises field ordering, encoding boundaries,
+      nested object nesting and credential-field payload variations with bounded
+      payloads.
+    proof:
+      - content-fuzz-corpus
+
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::ingest_request::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b3462.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails
+        replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/ingest-request-*")"
+        && grep -rlq "parse_rag_ingest_request\|ingest_request" tools/oracle/fuzz/corpus/helper_case/ingest-request-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: content-fuzz-corpus
+      why: The RAG JSON decoder has no fuzz corpus or the corpus does not replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-core/fuzz/corpus/rag_json_decoder/")"
+        && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_rag_json_decoder_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/ingest-request/multipart-file-upload.yaml
+  - tools/oracle/cases/helpers/ingest-request/multipart-missing-file.yaml
+  - tools/oracle/cases/helpers/ingest-request/json-with-url.yaml
+  - tools/oracle/cases/helpers/ingest-request/json-with-file-id.yaml
+  - tools/oracle/cases/helpers/ingest-request/json-base64-file.yaml
+  - tools/oracle/cases/helpers/ingest-request/invalid-base64.yaml
+  - tools/oracle/cases/helpers/ingest-request/missing-all-sources.yaml
+  - tools/oracle/cases/helpers/ingest-request/missing-vector-store.yaml
+  - tools/oracle/cases/helpers/ingest-request/blocked-credential-vertex.yaml
+  - tools/oracle/cases/helpers/ingest-request/blocked-credential-aws-keys.yaml
+  - tools/oracle/cases/helpers/ingest-request/blocked-credential-aws-tokens.yaml
+  - tools/oracle/cases/helpers/ingest-request/blocked-credential-aws-other.yaml
+  - tools/oracle/cases/helpers/ingest-request/blocked-credential-azure.yaml
+  - tools/oracle/cases/helpers/ingest-request/blocked-credential-api.yaml
+
+deviations:
+  - what: Blocked credential field validation order is deterministic in betterlite,
+      checking fields in the listed sequence. LiteLLM checks by iterating a Python
+      set literal (endpoints.py:497-512), which has no guaranteed order across runs
+      due to hash randomization (PYTHONHASHSEED).
+    why: Deterministic validation order makes behavior predictable and testable.
+      The set contains exactly the 14 fields that must be blocked; the iteration
+      order does not affect which fields are rejected, only the sequence of error
+      checks when multiple blocked fields are present in a single request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L497-L512
+  - what: URL and file_id inputs bypass upload scanning; only multipart or base64
+      file uploads go through validation. The decoded request returns tuples of
+      (ingest_options, file_data, file_url, file_id) where file_data is
+      (safe_filename, content_bytes, content_type) after security validation, or
+      None when no file is present.
+    why: Decoding is independent of storage and ingestion; the request shape matches
+      the pin's multipart and JSON branches with safe filename generation deferred
+      to validation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L404-L525
+
+out_of_scope:
+  - B1103 owns `add_litellm_data_to_request` and related request setup that follows
+    this decoder in the final rag_ingest route.
+
+pitfalls:
+  - 'The multipart form field holding request options is named `request`, not `ingest_options`; JSON bodies use `ingest_options` as the top-level key.'
+  - 'Base64 decoding failures raise a 400 HTTPException with a descriptive error message; base64 content is validated through the entire decode path, not with a try-except that silently ignores errors.'
+  - 'Credential field blocking checks vector_store as a dict before iterating its keys; a non-dict vector_store config passes through to later callers that validate it.'
+  - 'The decoder reads at most `MAX_UPLOAD_SIZE_BYTES+1` from multipart uploads to detect oversized files without buffering the entire payload into memory.'
+  - 'File data returned from multipart is (filename, bytes, content_type) after _secure_uploaded_file validates and replaces the filename with a server-generated safe name and updates content_type from the detected format.'
+  - 'URL and file_id inputs are returned as-is without validation; only multipart/base64 file uploads go through the security validator.'
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

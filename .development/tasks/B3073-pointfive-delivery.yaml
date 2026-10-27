@@ -74,5 +74,5 @@ pitfalls:
   - PointFiveUploadError is imported by B3074's PointFiveLogger.async_send_batch to represent non-retryable failures; it must be in scope as a public type.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

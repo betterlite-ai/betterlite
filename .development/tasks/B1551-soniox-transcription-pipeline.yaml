@@ -81,5 +81,5 @@ pitfalls:
   - Invalid audio_duration_ms can fail after post_call already ran.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

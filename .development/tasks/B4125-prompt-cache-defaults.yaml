@@ -1,0 +1,123 @@
+id: B4125
+title: Seed default prompt caching and attribute injected marks
+description: >-
+  Build default-point selection, router cache-affinity projection and request-level cache injection in
+  the prompt-policy layer. When `litellm.enable_anthropic_prompt_caching` is on or a request carries
+  the per-request `enable_prompt_caching` flag, and the model is Claude with explicit cache control,
+  synthesize two breakpoints: one for the system message and one for the trailing user message. Suppress
+  defaults when the client already carries cache_control marks, when the request is a Claude Code one-shot
+  subagent call, or when the model lacks cache support. Configured injection points always win: when
+  present, apply them even over client marks (bounded by the provider's four-block cap), and never apply
+  defaults. Seed defaults into the cache_control_injection_points parameter for /chat/completions so the
+  prompt-management gate and placement service see them. For /v1/messages requests, apply them directly
+  and record a deployment attribution mark only for newly added breakpoints, so spend tracking credits
+  the request to the deployment it was sent to, not the one that might have failed and been retried.
+  Attribution never overwrites an every-deployment mark that a pre-deployment injection already placed.
+
+  `litellm.anthropic_prompt_caching_ttl` defaults to None (unset), accepting only "5m" or "1h" when
+  explicitly set via the `LITELLM_ANTHROPIC_PROMPT_CACHING_TTL` environment variable. When unset,
+  the ephemeral cache block has no ttl field, which the Anthropic API interprets as a 5-minute cache.
+  `litellm.model_alias_map` is consulted for /chat/completions default selection; /v1/messages
+  defaults ignore the map since they apply after alias resolution.
+scope:
+  paths:
+    - crates/betterlite-prompts/src/cache_defaults.rs
+    - crates/betterlite-prompts/src/cache_defaults/**
+    - tools/oracle/cases/cache/**
+    - tools/oracle/helpers/b4125.py
+    - tools/oracle/helpers/b4125/**
+    - tools/oracle/src/helpers/prompts/b4125.rs
+    - tools/oracle/src/helpers/prompts/b4125/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L717-L763
+    why: Default injection point selection logic and Claude capability gating.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L765-L812
+    why: Router cache-affinity projection, applying defaults to a message list copy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L814-L862
+    why: Seeding defaults into cache_control_injection_points for /chat/completions path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L938-L1008
+    why: Applying injection points to /v1/messages and recording deployment attribution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L343-L345
+    why: Behavior of anthropic_prompt_caching_ttl default and LITELLM_ANTHROPIC_PROMPT_CACHING_TTL env var.
+dod:
+  - text: Default injection points are not selected when litellm.enable_anthropic_prompt_caching
+      is off and the request has no per-request enable_prompt_caching flag.
+    proof: [cache-behavior-tests, cache-oracle-cases]
+  - text: Default injection points are synthesized when the global flag is on, the model is Claude
+      with explicit cache support, and the client has not supplied cache_control marks.
+    proof: [cache-behavior-tests, cache-oracle-cases]
+  - text: Defaults are suppressed for Claude Code one-shot subagent requests, even when the model
+      supports cache and the global flag is on.
+    proof: [cache-behavior-tests, cache-oracle-cases]
+  - text: Defaults are suppressed when the client already carries cache_control in the request
+      messages, system, tools or top-level cache_control field.
+    proof: [cache-behavior-tests, cache-oracle-cases]
+  - text: Configured injection points are applied when present, even over client marks, and defaults
+      are never applied alongside them.
+    proof: [cache-behavior-tests, cache-oracle-cases]
+  - text: For /chat/completions, default points are seeded as cache_control_injection_points in
+      the request parameters, and configured points are stamped with dialect and external-breakpoint
+      metadata.
+    proof: [cache-behavior-tests, cache-oracle-cases]
+  - text: For /v1/messages, injection points are applied to the message list and system, and every
+      remaining point is written back so downstream transforms can handle them.
+    proof: [cache-behavior-tests, cache-oracle-cases]
+  - text: A deployment attribution mark is recorded in litellm_metadata or metadata only when
+      breakpoints were added by the gateway, and never overwrites an every-deployment mark.
+    proof: [cache-behavior-tests, cache-oracle-cases]
+  - text: The default cache_control has no ttl field (ephemeral 5-minute cache); "5m" or "1h" are
+      valid only when litellm.anthropic_prompt_caching_ttl is set via LITELLM_ANTHROPIC_PROMPT_CACHING_TTL
+      environment variable. Any other value defaults to no ttl field.
+    proof: [cache-behavior-tests, cache-oracle-cases]
+checks:
+  optional: []
+  commands:
+    - id: cache-behavior-tests
+      why: the default/attribution behavior tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts -p betterlite-context --no-tests=fail -E 'test(/cache_defaults|cache_attribution|injection_seeding)/'
+    - id: cache-oracle-cases
+      why: one of the oracle cases fails or does not exist
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/cache/
+oracle_cases:
+  - tools/oracle/cases/cache/claude-defaults-off.yaml
+  - tools/oracle/cases/cache/claude-defaults-on.yaml
+  - tools/oracle/cases/cache/claude-client-marks.yaml
+  - tools/oracle/cases/cache/claude-one-shot-suppressed.yaml
+  - tools/oracle/cases/cache/claude-configured-points-win.yaml
+  - tools/oracle/cases/cache/messages-route-attribution.yaml
+  - tools/oracle/cases/cache/messages-route-attribution-no-overwrite.yaml
+deviations:
+  - what: Configured injection points are applied even when the client has cache_control marks,
+      whereas LiteLLM defaults alone stand down on client marks.
+    why: Explicit configuration is an instruction the user provided and should take precedence
+      over a heuristic that avoids conflicts.
+  - what: per-request enable_prompt_caching stamped from key metadata enables defaults; LiteLLM
+      has no such per-request flag.
+    why: betterlite's proxy uses this flag to let API key policies override the global setting
+      per principal.
+out_of_scope:
+  - Validation and config reading of litellm.anthropic_prompt_caching_ttl; B4123 handles the
+    config loader that provides the TTL policy. This task consumes the already-resolved TTL value.
+  - The prompt-management hook gate and the cache placement service that B4124 implements.
+  - Bedrock converse tool_config point injection, which is handled downstream by the provider transform.
+  - Any interaction with LiteLLM's enterprise features, which betterlite does not have.
+pitfalls:
+  - "Router cache affinity in messages_with_default_injections picks the first model from the
+    list whose defaults would apply. Since defaults depend only on model support and global/per-request
+    flags, not on deployment, the first match is stable across retries."
+  - "maybe_seed_default_injection_points modifies the non_default_params dict in place for
+    /chat/completions and must remove both configured and enable_prompt_caching from it after
+    use so they do not double-inject downstream."
+  - "maybe_inject_cache_control pops enable_prompt_caching and configured points from kwargs before
+    applying, and writes remaining non-message points back if any. Popping is required so the
+    prompt-management layer never sees them twice."
+  - "Attribution recording checks both litellm_metadata and metadata keys because the Responses
+    API names metadata as an explicit parameter while chat/completions buries it in kwargs."
+  - "When no breakpoints are added (added <= 0), record_gateway_injection returns early without
+    creating the metadata bucket. Creating it would add a key to untyped kwargs, which breaks
+    the Responses API where metadata is both a parameter name and this bucket's fallback name."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

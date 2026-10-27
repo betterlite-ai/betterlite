@@ -1,0 +1,143 @@
+id: B4809
+title: A2A completion dispatch and LangFlow session routing
+description: >-
+  Build the A2A completion bridge handler that dispatches requests to specialized provider
+  configs (Bedrock AgentCore, Pydantic AI, Watsonx Orchestrate, LangFlow) or falls back to
+  generic litellm.acompletion. Implement the provider selector and keep LangFlow's recursive
+  session-scoping loop with skip-routing at this layer.
+
+  A2ACompletionBridgeHandler is a static-method collection taking (request_id, params, litellm_params,
+  api_base, agent_extra_headers) and returning A2A response dicts (non-streaming) or async
+  iterators of response dicts (streaming). _build_completion_params strips agent-only metadata
+  (is_public, agent_name, agent_id, agent_card_params, agent_card_path, litellm_a2a_user_api_key_hash),
+  transforms A2A message to OpenAI messages, applies forward metadata (message metadata > params metadata
+  > configured extra_body.metadata), builds the full model string by prepending custom_llm_provider
+  if model does not already start with provider/, and merges agent_extra_headers over static headers
+  using case-insensitive header merging (inlined from merge_agent_headers). Non-streaming calls the
+  selected provider config's handle_non_streaming or falls through to litellm.acompletion, transforms
+  the response to A2A format, and returns the dict. Streaming yields task event (submitted), status
+  update (working), accumulates all choice-zero text from the completion stream, emits artifact event
+  if text is nonempty, emits final status update (completed, final=true), and returns. Provider selection
+  is by custom_llm_provider and optional model substring; unknown or None returns None from the selector
+  and completion runs. The selector returns PydanticAIProviderConfig for "pydantic_ai_agents",
+  BedrockAgentCoreA2AConfig when custom_llm_provider is "bedrock" and model contains "agentcore",
+  LangFlowA2AConfig for "langflow", and WatsonxOrchestrateA2AConfig for "watsonx_orchestrate".
+  LangFlow config merges A2A contextId as a session ID (inlined from merge_a2a_session_into_litellm_params)
+  then calls handle_non_streaming/handle_streaming with _skip_a2a_provider_routing=True to prevent
+  routing loops. Both merge_agent_headers and merge_a2a_session_into_litellm_params are inlined to
+  avoid task dependencies on functions not yet assigned to a leaf task.
+
+scope:
+  paths:
+    - crates/betterlite-a2a/src/completion_bridge.rs
+    - crates/betterlite-a2a/src/completion_bridge/**
+    - crates/betterlite-a2a/src/provider_selector.rs
+    - crates/betterlite-a2a/src/provider_selector/**
+    - crates/betterlite-a2a/src/langflow_config.rs
+    - crates/betterlite-a2a/src/langflow_config/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/litellm_completion_bridge/handler.py#L51-L111
+    why: A2ACompletionBridgeHandler._build_completion_params strips agent-only params, transforms message, applies metadata, builds model string, merges headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/litellm_completion_bridge/handler.py#L120-L181
+    why: handle_non_streaming routes through provider selector or calls litellm.acompletion, transforms response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/litellm_completion_bridge/handler.py#L183-L298
+    why: handle_streaming yields task, status, artifact, and final status events; accumulates text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/config_manager.py#L17-L61
+    why: A2AProviderConfigManager.get_provider_config selects by custom_llm_provider and model substring.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/langflow/config.py#L16-L61
+    why: LangFlowA2AConfig merges a2a_session and calls bridge handlers with _skip_a2a_provider_routing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/utils.py#L11-L37
+    why: merge_agent_headers case-insensitive header merging to inline in completion_bridge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langflow/a2a.py#L9-L18
+    why: merge_a2a_session_into_litellm_params session ID scoping to inline in langflow_config.
+
+dod:
+  - text: A2ACompletionBridgeHandler._build_completion_params extracts message, transforms to OpenAI format, builds full model string, applies forward metadata, and merges agent headers.
+    proof: [bridge-handler-tests]
+  - text: _build_completion_params strips agent-only params (is_public, agent_name, agent_id, agent_card_params, agent_card_path, litellm_a2a_user_api_key_hash) from completion params.
+    proof: [bridge-handler-tests]
+  - text: _build_completion_params applies metadata in order (message > params > configured extra_body) so message metadata wins.
+    proof: [bridge-handler-tests]
+  - text: _build_completion_params prepends custom_llm_provider to model only if model does not already start with the provider prefix (startswith check).
+    proof: [bridge-handler-tests]
+  - text: handle_non_streaming routes through A2AProviderConfigManager.get_provider_config; if a config is found, calls its handle_non_streaming method; otherwise calls litellm.acompletion.
+    proof: [bridge-handler-tests]
+  - text: handle_streaming yields task event (submitted), status update (working), artifact event if text is nonempty, and final status update (completed).
+    proof: [bridge-handler-tests]
+  - text: handle_streaming accumulates text from all choice-zero delta.content fields before emitting artifact.
+    proof: [bridge-handler-tests]
+  - text: A2AProviderConfigManager.get_provider_config returns PydanticAIProviderConfig for pydantic_ai_agents, BedrockAgentCoreA2AConfig when custom_llm_provider is bedrock and model contains agentcore, LangFlowA2AConfig for langflow, WatsonxOrchestrateA2AConfig for watsonx_orchestrate, and None for unknown providers.
+    proof: [provider-selector-tests]
+  - text: LangFlowA2AConfig.handle_non_streaming and handle_streaming merge session into litellm_params and call bridge handlers with _skip_a2a_provider_routing=True.
+    proof: [langflow-config-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: bridge-handler-tests
+      why: Completion bridge handler tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^a2a_completion_dispatch($|::)/)'
+    - id: provider-selector-tests
+      why: Provider selector tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^a2a_provider_selector($|::)/)'
+    - id: langflow-config-tests
+      why: LangFlow config tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^a2a_langflow_config($|::)/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Completion entry point (litellm.acompletion) is not owned by this task. The bridge holds a
+      seam that accepts the function by name from vars(litellm)["acompletion"] to delay the dependency
+      until dispatch time. An unresolved caller, awaiting assignment in architect question 3.
+    why: A2A provider tasks (B4804, B4806, B4808) dispatch through this bridge to any provider.
+      Owning the completion entry would create a cycle since B4809 sits below them. The seam delays
+      the dependency while allowing compilation. Document the blocker until assigned.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/litellm_completion_bridge/handler.py#L113-L118
+  - what: >-
+      merge_agent_headers (case-insensitive header merging) and merge_a2a_session_into_litellm_params
+      (session ID scoping) are both inlined in this task to avoid external task dependencies.
+    why: Both functions are called from within A2A dispatch (merge_agent_headers in completion_bridge,
+      merge_a2a_session_into_litellm_params in langflow_config) but their real owners were not yet
+      assigned to leaf tasks (B098 and B050 have no files). Inlining them here avoids task cycles and
+      dependency blocking while the architect assigns their ownership.
+
+out_of_scope:
+  - Tool invocation and execution logic; those belong to provider-specific tasks (B4804, B4806, B4808).
+  - Message transformation from A2A to OpenAI format; owned by B4803 (A2ACompletionBridgeTransformation).
+  - OpenAI response to A2A transformation; owned by B4803.
+  - Event creation (task, status, artifact); owned by B4803.
+  - Provider config base class and interface; owned by B4803.
+  - Bedrock AgentCore handler; owned by B4804.
+  - Pydantic AI handler; owned by B4806.
+  - Watsonx Orchestrate handler; owned by B4808.
+  - Completion function (litellm.acompletion) and its selection logic; owned by the unassigned execution port (architect question 3).
+
+pitfalls:
+  - _build_completion_params must strip exactly the frozenset of agent-only params before passing
+    to litellm.acompletion. Missing even one causes the completion call to fail with unexpected parameter.
+  - Model prefix check uses startswith() on '{provider}/' to detect if the model already includes a provider,
+    avoiding double-prepending (e.g., "bedrock/agentcore" must not become "bedrock/bedrock/agentcore").
+  - Forward metadata precedence is message > params > configured extra_body.metadata; apply in that order
+    so message metadata overrides params metadata, and both override defaults.
+  - LangFlow config must call merge_a2a_session_into_litellm_params before handler dispatch to scope sessions
+    per authenticated key. Omitting this breaks session isolation.
+  - LangFlow config must pass _skip_a2a_provider_routing=True to prevent recursive provider selection loops
+    (bridge → LangFlow → bridge → LangFlow ...). Omitting this causes infinite recursion.
+  - Streaming handler must accumulate text from all chunks before emitting artifact. If text is empty,
+    do not emit artifact event. Do not replay a chunk after the stream ends.
+  - Provider selector uses model substring check for bedrock ("agentcore" in model); a model like
+    "bedrock-with-agentcore-support" will match, which is the intended LiteLLM behavior.
+  - Agent extra headers are merged with case-insensitive key handling (inlined merge_agent_headers).
+    Header names are preserved as-is in the merge output (no normalization).
+  - The completion bridge is a static collection; _acompletion is a seam that captures litellm.acompletion
+    dynamically to delay the import. Avoid storing it as a module-level global.
+  - A2A_USER_API_KEY_HASH_PARAM ("litellm_a2a_user_api_key_hash") must match the value defined in this task
+    (B4809 supplies the constant, B4802 references it as a declaration dependency).
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

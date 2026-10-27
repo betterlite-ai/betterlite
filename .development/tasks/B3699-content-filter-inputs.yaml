@@ -141,5 +141,5 @@ pitfalls:
 - Object keys are always checked for masking violations, even if the value is not a string. A numeric key that matches a pattern raises HTTP 400 with the masking error message and the context_label.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

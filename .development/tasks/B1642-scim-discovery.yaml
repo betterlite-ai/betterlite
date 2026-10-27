@@ -71,6 +71,6 @@ pitfalls:
   - filter.supported remains false even though /Users and /Groups understand selected equality filters.
   - ResourceType locations are request-origin URLs while Schema locations are fixed relative strings.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

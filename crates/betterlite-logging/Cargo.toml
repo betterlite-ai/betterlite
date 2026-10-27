@@ -7,7 +7,17 @@ publish.workspace = true
 
 [dependencies]
 betterlite-config = { path = "../betterlite-config" }
+chrono.workspace = true
+hex.workspace = true
+parquet-format-safe = "0.2.4"
+parquet2 = { version = "0.17.2", default-features = false, features = ["snappy"] }
+pep440_rs = "0.7.3"
+regex.workspace = true
+rust_decimal.workspace = true
+ryu = "1.0.23"
 serde.workspace = true
+serde_json = "1.0.154"
+sha2.workspace = true
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tracing.workspace = true
@@ -15,6 +25,17 @@ unicode-properties = { version = "0.1.4", default-features = false, features = [
 
 [dev-dependencies]
 rstest = "=0.27.0"
+serde-saphyr.workspace = true
+serde_json = "1.0.154"
+tracing-subscriber.workspace = true
+
+[[test]]
+name = "mlflow_logging"
+path = "src/mlflow/test_target.rs"
 
 [lints]
 workspace = true
+
+[[test]]
+name = "sdk_analytics"
+path = "src/analytics/suite.rs"

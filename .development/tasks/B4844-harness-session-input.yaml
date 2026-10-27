@@ -95,5 +95,5 @@ pitfalls:
   - parse_output returns (None, error_message) for JSON parse failures, not raising exceptions. OutputInvalid is raised by the turn engine after parse_output returns, if an error is present.
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 2

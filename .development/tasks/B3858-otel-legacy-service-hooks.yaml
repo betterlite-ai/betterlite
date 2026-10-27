@@ -1,0 +1,114 @@
+id: B3858
+title: Legacy OTel service and management callbacks
+description: >-
+  Implement async_service_success_hook, async_service_failure_hook, async_post_call_failure_hook,
+  async_post_call_success_hook, async_management_endpoint_success_hook, async_management_endpoint_failure_hook
+  and record_error_attributes_on_span. Handle service and management span closure with error stamping and guardrail
+  emission. Use the shared ServiceSpanData/GuardrailSpanData/SpanError record constructors from B3843, datastore
+  attribute projection from B3848, and deduplication/exception writers from B3854 instead of duplicating logging
+  logic. Turn service completion events (Postgres, cache, HTTP backends) into spans, preserving service-tier
+  classification, guardrail invocation windows and proxy failure annotation. Budget 330 logic (all callable), 150
+  tests and 100 wiring (580 total). Write the behavior rstest functions otel_legacy_service_callbacks_behavior_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior; test against ServiceLoggerPayload and
+  ManagementEndpointLoggingPayload records, injection clock/span/tracing container, and exceptions.
+scope:
+  paths:
+  - crates/betterlite-logging/src/otel/service.rs
+  - crates/betterlite-logging/src/otel/service/**
+  - tools/oracle/cases/otel/service-span-success.yaml
+  - tools/oracle/cases/otel/service-span-failure.yaml
+  - tools/oracle/cases/otel/post-call-failure-guardrails.yaml
+  - tools/oracle/cases/otel/post-call-success-guardrails.yaml
+  - tools/oracle/cases/otel/management-endpoint-success.yaml
+  - tools/oracle/cases/otel/management-endpoint-failure.yaml
+  - tools/oracle/cases/otel/error-attributes-stamping.yaml
+  - tools/oracle/helpers/b3858.py
+  - tools/oracle/helpers/b3858/**
+  - tools/oracle/src/helpers/logging/b3858.rs
+  - tools/oracle/src/helpers/logging/b3858/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L768-L1052
+  why: Service span creation, success/failure handling and guardrail emission.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3382-L3506
+  why: Management endpoint success/failure hooks and span closure.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3560-L3580
+  why: Error attribute stamping on server span.
+dod:
+- text: >-
+    Each callback preserves the pinned timing, status, and attribute behavior from the LiteLLM ranges,
+    using injected clock and span context instead of direct calls to datetime/opentelemetry. Service
+    span names and datastore classification match the pinned behavior.
+  proof:
+  - oracle
+  - behavior-tests
+- text: >-
+    Guardrail span deduplication through _emit_once honors the dedupe state shared with B3859.
+    Guardrail spans from request_data and from standard_logging_object use the same dedupe markers.
+  proof:
+  - oracle
+  - behavior-tests
+- text: >-
+    Team attributes on the SERVER span failure path match the pinned code; parent span status
+    is ERROR before child exceptions are recorded.
+  proof:
+  - oracle
+  - behavior-tests
+- text: >-
+    Exception events use get_error_information from B253 to build error_code, error_type and exception
+    message, preserving the logic rather than re-implementing it.
+  proof:
+  - oracle
+  - behavior-tests
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::otel_legacy_service_callbacks_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+oracle_cases:
+- tools/oracle/cases/otel/service-span-success.yaml
+- tools/oracle/cases/otel/service-span-failure.yaml
+- tools/oracle/cases/otel/post-call-failure-guardrails.yaml
+- tools/oracle/cases/otel/post-call-success-guardrails.yaml
+- tools/oracle/cases/otel/management-endpoint-success.yaml
+- tools/oracle/cases/otel/management-endpoint-failure.yaml
+- tools/oracle/cases/otel/error-attributes-stamping.yaml
+deviations: []
+out_of_scope:
+- >-
+  The legacy OpenTelemetry class initialization (B3868), provider/exporter setup (B3855), and
+  metric/semantic logging (B3857) are implemented elsewhere. This task implements only the callback
+  methods listed above and their internal helpers.
+- >-
+  Vendor-specific callback specialization (Arize, Phoenix, Weave, AgentOps) lives in B3862/B3863.
+  This task implements the base legacy callbacks that run ahead of or beneath vendor overrides.
+- >-
+  The _get_span_context helper used for span resolution is owned by B3854. The exception/team/status
+  writers (_record_exception_on_span, _set_team_attributes_on_span, set_response_status_code_attribute,
+  set_preprocessing_duration_attribute) are owned by B3854 and are called, not re-implemented.
+pitfalls:
+- 'Service span names must match the pinned code: a Postgres call becomes a Postgres service span named by db_system from B3848, not a generic SERVICE span. db_span_attributes returns empty for non-datastore services, and the span kind becomes INTERNAL.'
+- 'The async_post_call_failure_hook stamps error attributes on the SERVER (root) span BEFORE creating the exception child span, so the root is team-filterable on failure. The child comes second and gets the exception message.'
+- >-
+  Guardrail spans from _emit_guardrail_spans_from_request_data read guardrail_information from metadata
+  inside request_data, not from kwargs.standard_logging_object. The dedupe state lives in the same metadata
+  dict so _emit_once sees it whether _handle_failure (B3859) or this hook emitted first.
+- >-
+  async_post_call_success_hook calls _create_guardrail_span on the context returned by _get_span_context,
+  not on the parent span directly. The context is None if the span is unset; passing None to _trace.set_span_in_context
+  is safe and creates an empty context.
+- >-
+  Management endpoint success closes both the child endpoint span AND the parent SERVER span. The endpoint span
+  carries no exception events; errors are stamped only on the SERVER span via record_error_attributes_on_span.
+  StatusCode.OK goes on the endpoint span, then the parent gets status/code set and is ended.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

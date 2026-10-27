@@ -99,5 +99,5 @@ pitfalls:
   - "The metricsMarker field in Mavvrik responses is optional (NotRequired); default to 0 if missing, not null or empty string."
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 3

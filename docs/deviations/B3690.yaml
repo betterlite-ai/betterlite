@@ -1,0 +1,11 @@
+task: B3690
+deviations:
+  - what: "LiteLLM's category file schema includes phrase_patterns (regex phrases for paraphrases), inherit_from (inheritance chains), and exceptions (substring exemptions). The schema maps fields to lowercase and merges YAML/JSON sources; betterlite defines the same field names for serde mapping."
+    why: "The structure is read from configuration files; matching LiteLLM's field names ensures the configuration keeps working across the two implementations."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L145-L156"
+  - what: "An explicit null for pattern_redaction_format or keyword_redaction_tag fails to load. LiteLLM accepts null there and the guardrail falls back to the default tag."
+    why: "The defaults are resolved when the config loads, so both fields are plain strings. Leaving a key out still gives LiteLLM's default."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/litellm_content_filter.py#L150-L157"
+  - what: "A confidence_threshold outside 0.0 to 1.0 is rejected with the message 'confidence_threshold must be between 0.0 and 1.0, got <value>' instead of pydantic's 'Input should be less than or equal to 1' text."
+    why: "The range check matches LiteLLM's ge=0.0 and le=1.0. Only the error wording differs, since pydantic's message format is not reproduced in config errors."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/block_code_execution.py#L54-L66"

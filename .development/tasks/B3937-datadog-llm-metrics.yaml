@@ -1,0 +1,139 @@
+id: B3937
+title: Datadog LLM span kinds, errors and token metrics
+description: >-
+  Build span-kind classification, structured errors and token/cost metrics for Datadog LLM Observability spans.
+  Implement token counting from tool results and usage object fields, including cache-read and cache-write token
+  extraction through injected B1693 cache helpers, with reasoning-token support. Map call-type strings to span kinds
+  (llm, tool, task, embedding, retrieval) with non-LLM kinds requiring a parent span ID. Assemble structured error
+  information from StandardLoggingPayload failures, preserving error message/type/stack and creating no error object
+  when error_information is absent. Build complete span metrics with prompt/completion/total tokens, prompt-cache
+  counts clamped at zero on residual, time-to-first-token latency, and reasoning tokens distinguished in
+  output_tokens_details. In betterlite's Rust records, represent total_cost as Decimal for higher precision than
+  LiteLLM's float. Inject B196's token_counter(model, text) and B1693's extract_cache_read_tokens/extract_cache_creation_tokens;
+  inherit tool_output_tokens accumulation and redaction from B3935/B3936.
+scope:
+  paths:
+    - crates/betterlite-logging/src/datadog_llm_metrics.rs
+    - crates/betterlite-logging/src/datadog_llm_metrics/**
+    - tools/oracle/cases/helpers/datadog-llm-metrics/**
+    - Cargo.toml
+    - tools/oracle/helpers/b3937.py
+    - tools/oracle/helpers/b3937/**
+    - tools/oracle/src/helpers/logging/b3937.rs
+    - tools/oracle/src/helpers/logging/b3937/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L207-L213
+  why: Tool output token counting function from message tool_results.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L240-L254
+  why: Reasoning output token extraction from usage object details fields.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L697-L718
+  why: Error info assembly from failure payloads with fallback message handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L730-L772
+  why: Metrics assembly including cache counts, cost as Decimal, and token distinctions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L842-L943
+  why: Span-kind classification mapping call types to DD LLM Obs kinds with parent ID requirement for non-llm.
+dod:
+- text: Tool output tokens are counted from all tool_results in messages, returning None when none present.
+  proof:
+  - token-metrics-tests
+- text: Reasoning output tokens are extracted from completion_tokens_details or output_tokens_details,
+    returning 0.0 when absent or non-numeric.
+  proof:
+  - token-metrics-tests
+- text: Error info is assembled from error_information field on failures, with fallback to error_str,
+    and no object created when error_information is absent.
+  proof:
+  - token-metrics-tests
+  - oracle
+- text: Span metrics include prompt/completion/total tokens, cost, time-to-first-token, cache read/write counts,
+    non-cached input clamped at zero, and reasoning tokens when present.
+  proof:
+  - token-metrics-tests
+  - oracle
+- text: Cache read/write tokens are extracted only when present and non-zero, residual input clamps at zero,
+    and tool output tokens appear only when counted.
+  proof:
+  - token-metrics-tests
+  - oracle
+- text: >-
+    Span kinds map call types: chat/completion/LLM types return llm, embedding types return embedding,
+    tool/mcp types return tool, retrieval types return retrieval, task/batch/etc types return task.
+  proof:
+  - oracle
+- text: Non-llm span kinds require a parent ID; absent parent defaults to llm kind.
+  proof:
+  - oracle
+  - span-kind-tests
+- text: Every span-kind case from the oracle matches LiteLLM's mapping for the call type and parent presence.
+  proof:
+  - oracle
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: token-metrics-tests
+      why: the required tests fail or the filter selects no tests
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^datadog_llm_metrics::token_counting::/) - test(/replays_the_/)'
+    - id: span-kind-tests
+      why: the span kind mapping tests fail or the filter selects no tests
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^datadog_llm_metrics::span_kind_tests::/) - test(/replays_the_/)'
+    - id: metrics-and-error-tests
+      why: the metrics assembly and error info tests fail or the filter selects no tests
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^datadog_llm_metrics::/) - test(/replays_the_/)'
+    - id: oracle-metrics
+      why: oracle cases are missing or oracle tests fail
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/cases/helpers/datadog-llm-metrics/**")"
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^datadog_llm_metrics::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/datadog-llm-metrics/span-kind-llm-solo.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/span-kind-llm-parent.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/span-kind-embedding.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/span-kind-tool.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/span-kind-task.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/span-kind-retrieval.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/span-kind-unknown-no-parent.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/metrics-basic-tokens.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/metrics-with-cache-read.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/metrics-with-cache-write.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/metrics-cache-fully-read.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/metrics-reasoning-tokens.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/metrics-tool-output-tokens.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/metrics-all-tokens.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/error-with-information.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/error-fallback-to-error-str.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/error-no-information-no-error.yaml
+  - tools/oracle/cases/helpers/datadog-llm-metrics/error-success-payload.yaml
+deviations:
+  - what: betterlite represents total_cost as Decimal in its Rust LLMMetrics record type, while LiteLLM uses float.
+    why: Decimal provides higher precision for currency calculations than float, preventing rounding errors in cost aggregation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L745
+  - what: Cache residual input tokens clamp at zero instead of going negative.
+    why: Prevent confusing negative token counts when cache hits exceed total prompt tokens.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L764
+  - what: An error status without structured error_information creates no DDLLMObsError object.
+    why: Avoid inventing error details where none exist; a status alone carries no object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L710
+out_of_scope:
+- Datadog LLM Obs span assembly and delivery (B3938).
+- Message redaction and privacy masking (B3936).
+- Message and tool-call projection (B3935).
+- Prompt latency calculation beyond time_to_first_token (B3936).
+pitfalls:
+- Tool output tokens are counted only from tool_results in the messages; do not create a token count without
+  messages present.
+- Cache residual must clamp at zero, never negative. This applies whether both cache types present or just one.
+- Reasoning output tokens are only set when present in the usage details; zero is omitted, not emitted as 0.0.
+- Non-LLM span kinds (tool, task, embedding, retrieval) require a parent_span_id; absent parent means llm kind.
+- An error_information field must be a structured object; use the fallback error_str only when structured info absent.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

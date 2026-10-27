@@ -21,6 +21,7 @@ scope:
     - tools/oracle/helpers/b3783/**
     - tools/oracle/src/helpers/guardrails/b3783.rs
     - tools/oracle/src/helpers/guardrails/b3783/**
+    - crates/betterlite-guardrails/src/onyx/tests/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L32-L149
@@ -98,5 +99,5 @@ pitfalls:
   - "ONYX_TIMEOUT is parsed with int(os.getenv(...)); the default 10.0 becomes 10, and non-integer strings like '7.5' raise ValueError, not a parse error message."
 review_level: security
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

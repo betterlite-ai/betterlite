@@ -13,6 +13,7 @@ pub mod feature_flags;
 pub mod files;
 pub mod headers;
 pub mod message_replay;
+pub mod observation_parsing;
 pub mod option_primitives;
 pub mod output_schema;
 pub mod params;

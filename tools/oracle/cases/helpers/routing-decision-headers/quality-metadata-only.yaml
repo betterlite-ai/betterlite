@@ -1,0 +1,9 @@
+kind: helper
+name: quality-metadata-only
+call:
+  routing_decision_headers:
+    function: quality
+    headers: {}
+    request: {litellm_metadata: {quality_router_decision: {routed_model: wrong}}}
+env: {}
+compare: {ignore: []}

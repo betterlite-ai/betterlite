@@ -1,0 +1,301 @@
+id: B4656
+title: MCP OAuth token stores and cache codecs
+description: >-
+  Build OAuth token store abstractions and implementations in betterlite-server::mcp::outbound_credentials.
+  Implement core token types (OAuthToken with access token, expiry, refresh token, scopes, and identity binding proof),
+  per-user token store protocols, cache backends (in-process and Redis), codec for encrypted token serialization,
+  token refresh coordination for single-flight per (user, server) pair, and caching + refresh layers that wrap the inner store.
+
+  OAuthToken is a frozen dataclass holding access_token (string), expires_at (epoch seconds or None), refresh_token
+  (optional), scopes (tuple of strings), and identity_binding_proof (optional); its repr masks secrets.
+  TokenStoreUnavailable is raised when the backing store is unreachable (distinct from None for "not authorized").
+  OAuthTokenStore is a protocol for per-user token lookup by (user_id, server_id); InvalidatableOAuthTokenStore
+  extends it with an invalidate method for dropping cached entries after reauth.
+
+  TokenRefresher is a protocol that mints a fresh token from an expired one and persists it, taking (user_id, server_id, token)
+  and returning a fresh token or None. TokenCacheBackend is a protocol for storage under (user_id, server_id) with TTL.
+  InMemoryTokenCacheBackend is the default per-process backend (bounded dict with wall-clock TTL, evicts oldest on overflow).
+  CachedOAuthTokenStore wraps an inner store with expiry-aware caching: caches positive tokens only (never misses), serves
+  cached tokens while unexpired (minus expiry_skew_seconds), falls through to inner store on miss, and propagates TokenStoreUnavailable.
+
+  OAuthTokenCacheCodec holds encrypt/decrypt callables and encodes tokens (with identity proof or bearer-only),
+  decoding legacy entries without proof. Bound entries have "litellm-bound-oauth-v1:" prefix and contain access_token + proof
+  as JSON; unbound entries are bare encrypted access tokens. A missing or undecryptable entry reads as None.
+  DualCacheTokenCacheBackend implements TokenCacheBackend using an AsyncCache (Redis-like) and OAuthTokenCacheCodec,
+  degrading cache/codec failures to safe values (cache misses on read, no-ops on write/delete).
+
+  RefreshCoordinator is a protocol ensuring one refresh runs per (user_id, server_id) at a time, with run() accepting
+  a refresh callable and a reread callable (for cross-replica losers to re-read the persisted token).
+  InProcessRefreshCoordinator implements in-process single-flight: first caller per key refreshes, concurrent callers
+  await the same in-flight task and share its result. RefreshingTokenStore wraps an inner store and proactively refreshes
+  near-expiry tokens via the injected TokenRefresher and RefreshCoordinator, returning None when refresh fails (triggering a challenge).
+
+  V2PerUserTokenStore reads the user's persisted authorization_code credential via an injected CredentialReader,
+  validating the decoded payload at the boundary and returning a typed OAuthToken. Helper functions _iso_to_epoch,
+  _to_scopes, and _to_oauth_token parse and validate credential fields. Refresh and caching are owned by wrapping layers.
+  PresentedOAuthTokenStore serves one in-hand token for preview calls (no DB, no cache).
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/outbound_credentials.rs
+    - crates/betterlite-server/src/mcp/outbound_credentials/**
+    - tools/oracle/cases/outbound-credentials/**
+    - tools/oracle/helpers/b4656.py
+    - tools/oracle/helpers/b4656/**
+    - tools/oracle/src/helpers/server/b4656.rs
+    - tools/oracle/src/helpers/server/b4656/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L24-L49
+    why: OAuthToken dataclass with access_token, expires_at, refresh_token, scopes, identity_binding_proof, and masked repr.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L51-L70
+    why: TokenStoreUnavailable exception and OAuthTokenStore protocol.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L73-L81
+    why: InvalidatableOAuthTokenStore protocol extends OAuthTokenStore with invalidate method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L84-L98
+    why: TokenRefresher protocol for minting fresh tokens and persisting them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L100-L143
+    why: TokenCacheBackend protocol and InMemoryTokenCacheBackend implementation with LRU eviction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L145-L196
+    why: CachedOAuthTokenStore wraps inner store with expiry-aware caching, never caches misses, propagates TokenStoreUnavailable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L198-L302
+    why: RefreshCoordinator protocol, InProcessRefreshCoordinator and RefreshingTokenStore for proactive refresh with single-flight.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_cache_codec.py#L25-L58
+    why: OAuthTokenCacheCodec encode/decode with bound (identity proof) and legacy bearer-only entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/dual_cache_token_backend.py#L24-L75
+    why: AsyncCache protocol and DualCacheTokenCacheBackend implementation with failure degradation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/v2_token_store.py#L21-L79
+    why: V2PerUserTokenStore with CredentialReader, _iso_to_epoch, _to_scopes, _to_oauth_token validation functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/presented_token_store.py#L19-L27
+    why: PresentedOAuthTokenStore serves one in-hand token for preview calls.
+
+dod:
+  - text: >-
+      OAuthToken is a frozen dataclass holding access_token, expires_at (epoch or None), refresh_token (optional),
+      scopes (tuple of strings), and identity_binding_proof (optional); repr masks secrets (access_token and refresh_token).
+    proof: [token-types, token-tests]
+  - text: >-
+      TokenStoreUnavailable is raised when the backing store is unreachable; distinct from None for "not authorized".
+      OAuthTokenStore and InvalidatableOAuthTokenStore protocols define fetch and invalidate methods with correct signatures.
+    proof: [store-protocols, token-tests]
+  - text: >-
+      InMemoryTokenCacheBackend is a per-process cache with bounded size (default 4096), wall-clock TTL, and FIFO eviction
+      (oldest entry evicted on overflow); never evicts on hit and respects TTL expiry.
+    proof: [cache-backend-tests, cache-eviction]
+  - text: >-
+      CachedOAuthTokenStore caches positive tokens only, serving cached tokens while unexpired (minus expiry_skew_seconds),
+      falling through on miss, never caching misses, and propagating TokenStoreUnavailable without caching.
+    proof: [cached-store-tests, cache-expiry, cache-misses]
+  - text: >-
+      OAuthTokenCacheCodec encodes tokens with identity proof under "litellm-bound-oauth-v1:" prefix as JSON, or bearer-only;
+      decodes legacy entries without proof and returns None on validation error or missing blob.
+    proof: [codec-tests, codec-encoding, codec-legacy]
+  - text: >-
+      DualCacheTokenCacheBackend degrades cache and codec failures to safe values: cache misses on read errors, no-ops on set/delete errors,
+      and returns None on undecryptable entries with debug logging.
+    proof: [dual-cache-tests, dual-cache-degradation]
+  - text: >-
+      RefreshCoordinator protocol and InProcessRefreshCoordinator implement per-(user, server) single-flight:
+      first caller refreshes, concurrent callers await the same in-flight task and share its result.
+    proof: [refresh-coordinator-tests, refresh-singleflight]
+  - text: >-
+      RefreshingTokenStore proactively refreshes near-expiry tokens (within expiry_skew_seconds) via injected TokenRefresher
+      and RefreshCoordinator, returning None when refresh fails, and preserving unexpired tokens.
+    proof: [refresh-store-tests, refresh-expiry]
+  - text: >-
+      V2PerUserTokenStore reads persisted authorization_code credential via injected CredentialReader and returns typed OAuthToken,
+      with helper functions parsing ISO expiry to epoch, validating scopes and binding proof, and handling missing/malformed fields.
+    proof: [v2-store-tests, v2-parsing]
+  - text: >-
+      PresentedOAuthTokenStore serves one in-hand token for preview calls, ignoring (user_id, server_id) keys.
+    proof: [preview-store-tests]
+  - text: >-
+      DualCacheTokenCacheBackend.delete() catches exceptions (e.g. cache unavailable or delete failed),
+      logs a debug message, and completes as a no-op without propagating the error.
+    proof: [dual-cache-tests, dual-cache-delete-failure]
+  - text: >-
+      DualCacheTokenCacheBackend.set() skips writing when ttl_seconds <= 0, returning immediately without caching.
+    proof: [dual-cache-tests, dual-cache-set-ttl-zero]
+  - text: >-
+      The key_prefix literal "mcp:per_user_token:" is preserved exactly for cross-replica cutover compatibility with v1 cache entries.
+    proof: [dual-cache-tests, dual-cache-key-prefix]
+  - text: >-
+      New oracle helper operation for OAuth token stores integrates with pinned LiteLLM behavior and replays case corpus.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: token-types
+      why: OAuthToken structure or identity_binding_proof field is missing.
+      run: grep -qE 'struct OAuthToken|dataclass.*OAuthToken' crates/betterlite-server/src/mcp/outbound_credentials.rs && grep -qE 'identity_binding_proof|binding_proof' crates/betterlite-server/src/mcp/outbound_credentials.rs
+    - id: store-protocols
+      why: OAuthTokenStore or InvalidatableOAuthTokenStore protocol is missing.
+      run: grep -qE 'trait OAuthTokenStore|pub trait OAuthTokenStore' crates/betterlite-server/src/mcp/outbound_credentials.rs && grep -qE 'trait InvalidatableOAuthTokenStore' crates/betterlite-server/src/mcp/outbound_credentials.rs
+    - id: cache-backend-tests
+      why: InMemoryTokenCacheBackend tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::.*cache.*backend/) - test(/replays_corpus$/)'
+    - id: cached-store-tests
+      why: CachedOAuthTokenStore tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::.*cached/) - test(/replays_corpus$/)'
+    - id: token-tests
+      why: Core token type and store protocol tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::.*token/) - test(/replays_corpus$/)'
+    - id: codec-tests
+      why: OAuthTokenCacheCodec encoding/decoding tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::.*codec/) - test(/replays_corpus$/)'
+    - id: dual-cache-tests
+      why: DualCacheTokenCacheBackend tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::.*dual/) - test(/replays_corpus$/)'
+    - id: refresh-coordinator-tests
+      why: RefreshCoordinator and InProcessRefreshCoordinator tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::.*coordinator/) - test(/replays_corpus$/)'
+    - id: refresh-store-tests
+      why: RefreshingTokenStore tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::.*refresh/) - test(/replays_corpus$/)'
+    - id: v2-store-tests
+      why: V2PerUserTokenStore tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::.*v2/) - test(/replays_corpus$/)'
+    - id: preview-store-tests
+      why: PresentedOAuthTokenStore tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::.*presented/) - test(/replays_corpus$/)'
+    - id: cache-eviction
+      why: InMemoryTokenCacheBackend does not evict oldest entry on overflow.
+      run: grep -qE 'max_size|overflow|evict' crates/betterlite-server/src/mcp/outbound_credentials.rs
+    - id: cache-expiry
+      why: CachedOAuthTokenStore does not respect expiry_skew_seconds.
+      run: grep -qE 'expiry_skew|skew_seconds' crates/betterlite-server/src/mcp/outbound_credentials.rs
+    - id: cache-misses
+      why: CachedOAuthTokenStore does not implement in-process cache using InMemoryTokenCacheBackend or does not handle misses correctly.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::.*cached.*never.*miss/)'
+    - id: codec-encoding
+      why: OAuthTokenCacheCodec does not encode bound entries with "litellm-bound-oauth-v1:" prefix.
+      run: grep -qE 'litellm-bound-oauth-v1|bound.*prefix' crates/betterlite-server/src/mcp/outbound_credentials.rs
+    - id: codec-legacy
+      why: OAuthTokenCacheCodec does not decode legacy bearer-only entries.
+      run: grep -qE 'legacy|bearer.*only' crates/betterlite-server/src/mcp/outbound_credentials.rs
+    - id: dual-cache-degradation
+      why: DualCacheTokenCacheBackend does not catch and log cache/codec exceptions.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::.*dual.*degrade/)'
+    - id: dual-cache-delete-failure
+      why: DualCacheTokenCacheBackend.delete() does not catch exceptions and degrade to a no-op.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::.*dual.*delete.*failure/)'
+    - id: dual-cache-set-ttl-zero
+      why: DualCacheTokenCacheBackend.set() does not skip writing when ttl_seconds <= 0.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::.*dual.*ttl.*zero/)'
+    - id: dual-cache-key-prefix
+      why: DualCacheTokenCacheBackend does not use exact key_prefix "mcp:per_user_token:" for cross-replica compatibility.
+      run: grep -qE 'mcp:per_user_token:' crates/betterlite-server/src/mcp/outbound_credentials.rs
+    - id: refresh-singleflight
+      why: InProcessRefreshCoordinator does not implement per-key single-flight.
+      run: grep -qE 'inflight|in_flight|single.flight' crates/betterlite-server/src/mcp/outbound_credentials.rs
+    - id: refresh-expiry
+      why: RefreshingTokenStore does not check expiry_skew_seconds before refreshing.
+      run: grep -qE 'is_expired|expiry_skew' crates/betterlite-server/src/mcp/outbound_credentials.rs
+    - id: v2-parsing
+      why: V2PerUserTokenStore does not validate credential fields or convert ISO expiry to epoch.
+      run: grep -qE 'iso_to_epoch|fromisoformat|timestamp' crates/betterlite-server/src/mcp/outbound_credentials.rs
+    - id: helper-python
+      why: The oracle helper adapter is missing or Python type checking fails.
+      run: test -f tools/oracle/helpers/b4656.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/oauth_token_stores-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/outbound-credentials/oauth-token-basic.yaml
+  - tools/oracle/cases/outbound-credentials/oauth-token-expiry.yaml
+  - tools/oracle/cases/outbound-credentials/oauth-token-binding-proof.yaml
+  - tools/oracle/cases/outbound-credentials/cache-backend-get-hit.yaml
+  - tools/oracle/cases/outbound-credentials/cache-backend-get-miss.yaml
+  - tools/oracle/cases/outbound-credentials/cache-backend-ttl-expiry.yaml
+  - tools/oracle/cases/outbound-credentials/cache-backend-overflow-eviction.yaml
+  - tools/oracle/cases/outbound-credentials/cached-store-caches-positive.yaml
+  - tools/oracle/cases/outbound-credentials/cached-store-never-caches-miss.yaml
+  - tools/oracle/cases/outbound-credentials/cached-store-propagates-unavailable.yaml
+  - tools/oracle/cases/outbound-credentials/codec-encode-bound.yaml
+  - tools/oracle/cases/outbound-credentials/codec-encode-bearer-only.yaml
+  - tools/oracle/cases/outbound-credentials/codec-decode-bound.yaml
+  - tools/oracle/cases/outbound-credentials/codec-decode-legacy.yaml
+  - tools/oracle/cases/outbound-credentials/codec-decode-invalid.yaml
+  - tools/oracle/cases/outbound-credentials/dual-cache-get-success.yaml
+  - tools/oracle/cases/outbound-credentials/dual-cache-get-failure.yaml
+  - tools/oracle/cases/outbound-credentials/dual-cache-set-failure.yaml
+  - tools/oracle/cases/outbound-credentials/dual-cache-delete-failure.yaml
+  - tools/oracle/cases/outbound-credentials/dual-cache-set-ttl-zero.yaml
+  - tools/oracle/cases/outbound-credentials/refresh-coordinator-singleflight.yaml
+  - tools/oracle/cases/outbound-credentials/refreshing-store-unexpired.yaml
+  - tools/oracle/cases/outbound-credentials/refreshing-store-refresh-success.yaml
+  - tools/oracle/cases/outbound-credentials/refreshing-store-refresh-failure.yaml
+  - tools/oracle/cases/outbound-credentials/v2-store-parse-valid.yaml
+  - tools/oracle/cases/outbound-credentials/v2-store-parse-invalid.yaml
+  - tools/oracle/cases/outbound-credentials/v2-store-iso-expiry.yaml
+  - tools/oracle/cases/outbound-credentials/v2-store-scopes-validation.yaml
+  - tools/oracle/cases/outbound-credentials/presented-store-single-token.yaml
+
+deviations:
+  - what: >-
+      Token caching in betterlite uses the same in-process InMemoryTokenCacheBackend with FIFO eviction as LiteLLM,
+      and supports cross-replica caching through a pluggable AsyncCache (Redis) via DualCacheTokenCacheBackend.
+    why: >-
+      This preserves LiteLLM's default single-process behavior while allowing deployments to inject a shared cache.
+      The interface is owned by this task; a later task will wire in the Redis implementation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L114-L143
+  - what: >-
+      RefreshingTokenStore composes under CachedOAuthTokenStore, not above it as in LiteLLM.
+      This ensures refresh is only triggered when caching is in place, avoiding multiple concurrent refreshes
+      before the first completes and is cached.
+    why: >-
+      Explicit composition order reduces race windows. A near-expiry token is refreshed once per cache miss,
+      and concurrent misses during refresh are serialized by the RefreshCoordinator.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L243-L302
+
+out_of_scope:
+  - Token invalidation triggers (reauth, revocation, 401 response) are owned by the arm that handles OAuth exchanges.
+  - Refresh token validation and the specific per-mode refresher (authorization_code, client_credentials, token_exchange) belong to those mode tasks.
+  - Credential reading from the database (V2PerUserTokenStore's read_credential implementation) belongs to a later persistence task.
+  - AsyncCache Redis implementation and encryption/decryption callables belong to infrastructure tasks.
+  - Configuration loading of token cache TTLs and eviction policies belongs to the manager/config layer.
+
+pitfalls:
+  - >-
+    The oauth_token_stores helper operation exercises token store protocols (OAuthTokenStore, InvalidatableOAuthTokenStore),
+    cache backends (InMemoryTokenCacheBackend, DualCacheTokenCacheBackend with async cache injection), and codec encode/decode
+    with bound and legacy entries; replace the stub Op in tools/oracle/src/helpers/server/b4656.rs and implement
+    the Python adapter in tools/oracle/helpers/b4656.py.
+  - >-
+    OAuthToken.repr masks secrets (access_token and refresh_token show as *** and a boolean has_refresh_token), but the fields remain plain strings internally so no SecretStr wrapper is needed.
+  - >-
+    TokenStoreUnavailable is distinct from None; a TokenStoreUnavailable exception is never cached and always propagates, while None is the "not authorized" answer that never gets cached.
+  - >-
+    InMemoryTokenCacheBackend evicts the oldest entry (first inserted) by FIFO order when max_size is reached and a new insert arrives; the eviction happens before the insert.
+  - >-
+    CachedOAuthTokenStore caches a token under its compute TTL (expires_at - skew - now, or default_ttl_seconds if no expiry) and re-reads the inner store on every miss; a token written after OAuth is visible immediately on every replica because misses are never cached.
+  - >-
+    DualCacheTokenCacheBackend degrades all cache and codec exceptions to safe fallback values (cache misses, no-ops) and logs debug messages; it does not re-raise or propagate them as errors.
+  - >-
+    OAuthTokenCacheCodec's encode always encrypts the result; a decode that gets an undecryptable blob (decryption returns None) returns None (a cache miss).
+  - >-
+    RefreshCoordinator.run() is called with two callables: refresh (the first caller refreshes) and reread (concurrent/losing callers re-read the persisted token); in-process, reread is unused and all callers share the refresh result.
+  - >-
+    RefreshingTokenStore._is_expired checks (expires_at is not None) and (clock() >= expires_at - expiry_skew), not >, so a token exactly at expiry - skew triggers refresh.
+  - >-
+    V2PerUserTokenStore._iso_to_epoch treats a timezone-naive ISO string as UTC before converting to epoch, matching LiteLLM's db.py behavior; a malformed ISO string returns None.
+  - >-
+    _to_scopes filters a list/tuple to strings only, returning an empty tuple if raw is not a list/tuple or contains no strings.
+  - >-
+    _to_oauth_token returns None if access_token is missing or not a string; other fields default gracefully (refresh_token defaults to None, expires_at to None, scopes to empty tuple).
+  - >-
+    PresentedOAuthTokenStore is not an async interface; its fetch method is sync but the seam expects async, so the task may need to wrap it as a state adapter when called.
+  - >-
+    DualCacheTokenCacheBackend.set() returns early without caching when ttl_seconds <= 0; this skip-write behavior is
+    intentional to avoid persisting already-expired tokens, and the test case dual-cache-set-ttl-zero covers it.
+  - >-
+    The exact key_prefix literal "mcp:per_user_token:" must be preserved in DualCacheTokenCacheBackend._key() for cross-replica
+    cutover compatibility with v1 cache entries; v2 implementations must use this prefix unchanged even if the token store changes.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

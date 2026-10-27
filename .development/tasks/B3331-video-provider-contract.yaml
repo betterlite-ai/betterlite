@@ -1,0 +1,139 @@
+id: B3331
+title: Video provider operation contract
+description: >-
+  Build the typed video operation contract as a trait in betterlite-provider::api::video_contracts,
+  defining the interface each provider must implement. Include abstract methods for request/response
+  transformation on all video operations (create, content, remix, list, status, character create/get,
+  edit, extension), inherited fallback behavior, and unsupported operation defaults that raise NotImplementedError.
+
+  Implement BaseVideoConfig as a trait with 28 required and optional methods: __init__, get_supported_openai_params,
+  map_openai_params, validate_environment, get_complete_url, use_multipart_form_data, transform_video_create_request,
+  transform_video_create_response, transform_video_content_request, transform_video_content_response, async_transform_video_content_response,
+  transform_video_remix_request, transform_video_remix_response, transform_video_list_request, transform_video_list_response,
+  transform_video_status_retrieve_request, transform_video_status_retrieve_response, async_transform_video_status_retrieve_response,
+  transform_video_create_character_request, transform_video_create_character_response, transform_video_get_character_request,
+  transform_video_get_character_response, get_video_edit_prefetch_params, transform_video_edit_request, transform_video_edit_response,
+  transform_video_extension_request, transform_video_extension_response, and get_error_class.
+
+  Preserve default non-multipart request behavior (use_multipart_form_data returns false), sync fallback for async response transforms
+  (async methods call their sync counterparts by default), absent edit prefetch (get_video_edit_prefetch_params returns None),
+  and unsupported operation methods that raise NotImplementedError with the exact message "video {operation} is not supported for this provider"
+  for character creation/retrieval and edit/extension operations.
+
+  The contract accepts typed request parameters from B3330 (VideoCreateOptionalRequestParams, VideoObject, CharacterObject)
+  and returns or accepts those same types. Abstract declarations specify operation signatures and return types; concrete implementations
+  are selected by callers in transport and provider selection tasks. The base error constructor calls B2202's BaseLLMException with
+  status_code, message and headers.
+
+  The owned LiteLLM ranges total approximately 300 nonblank/non-comment source lines (including signatures and docstrings).
+  Budget this task: 200 production contract lines, 150 test lines, 100 oracle case lines, 80 adapter lines and 20 module wiring lines,
+  550 total changed lines.
+scope:
+  paths:
+    - crates/betterlite-provider/src/api/video_contracts.rs
+    - crates/betterlite-provider/src/api/video_contracts/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/provider/video-contracts/**
+    - tools/oracle/helpers/b3331.py
+    - tools/oracle/helpers/b3331/**
+    - tools/oracle/src/helpers/provider/b3331.rs
+    - tools/oracle/src/helpers/provider/b3331/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L32-L34
+    why: BaseVideoConfig class definition and __init__ method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L55-L102
+    why: Abstract methods for configuration and request preparation; get_supported_openai_params, map_openai_params, validate_environment, get_complete_url, use_multipart_form_data.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L104-L174
+    why: Video create and content transformation contract methods; transform_video_create_request, transform_video_create_response, transform_video_content_request, transform_video_content_response, async_transform_video_content_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L176-L227
+    why: Video remix and list transformation contract methods; transform_video_remix_request, transform_video_remix_response, transform_video_list_request, transform_video_list_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L252-L289
+    why: Video status transformation contract; sync and async variants of transform_video_status_retrieve_request and transform_video_status_retrieve_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L291-L334
+    why: Video character operation contract; transform_video_create_character_request, transform_video_create_character_response, transform_video_get_character_request, transform_video_get_character_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L336-L408
+    why: Video edit and extension operation contract; get_video_edit_prefetch_params, transform_video_edit_request, transform_video_edit_response, transform_video_extension_request, transform_video_extension_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L410-L417
+    why: get_error_class method constructor that builds a BaseLLMException with status_code, message and headers.
+dod:
+  - text: BaseVideoConfig trait exists with all 28 required and optional methods matching LiteLLM's abstract contract.
+    proof: [video-trait-compile]
+  - text: use_multipart_form_data has a default implementation that returns false.
+    proof: [multipart-default]
+  - text: get_video_edit_prefetch_params has a default implementation that returns None.
+    proof: [prefetch-default]
+  - text: async_transform_video_content_response has a default implementation that calls sync transform_video_content_response.
+    proof: [async-content-fallback]
+  - text: async_transform_video_status_retrieve_response has a default implementation that calls sync transform_video_status_retrieve_response (without client argument).
+    proof: [async-status-fallback]
+  - text: Unsupported operations (character, edit, extension) raise NotImplementedError with message "video {operation} is not supported for this provider".
+    proof: [unsupported-errors]
+  - text: get_error_class constructs a BaseLLMException with status_code, message and headers arguments.
+    proof: [error-class-constructor]
+  - text: Request and response types use B3330 records (VideoObject, CharacterObject, VideoCreateOptionalRequestParams).
+    proof: [type-references]
+checks:
+  optional: []
+  commands:
+    - id: video-trait-compile
+      why: BaseVideoConfig trait does not compile or is missing required methods
+      run: cargo build --locked -p betterlite-provider
+    - id: multipart-default
+      why: use_multipart_form_data default implementation is missing or wrong
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::video_contracts::multipart_/)'
+    - id: prefetch-default
+      why: get_video_edit_prefetch_params default implementation is missing or returns wrong type
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::video_contracts::prefetch_/)'
+    - id: async-content-fallback
+      why: async_transform_video_content_response does not fall back to sync version or does not match behavior
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::video_contracts::async_content_/)'
+    - id: async-status-fallback
+      why: async_transform_video_status_retrieve_response does not fall back to sync version or passes wrong arguments
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::video_contracts::async_status_/)'
+    - id: unsupported-errors
+      why: Unsupported operation methods do not raise NotImplementedError with correct messages
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::video_contracts::unsupported_/)'
+    - id: error-class-constructor
+      why: get_error_class does not construct BaseLLMException with correct arguments
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::video_contracts::error_class/)'
+    - id: type-references
+      why: Request/response types do not match B3330 records or types do not compile
+      run: cargo build --locked -p betterlite-provider && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::video_contracts::types/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/provider/video-contracts/multipart-default-false.yaml
+  - tools/oracle/cases/helpers/provider/video-contracts/prefetch-default-none.yaml
+  - tools/oracle/cases/helpers/provider/video-contracts/async-content-fallback-sync.yaml
+  - tools/oracle/cases/helpers/provider/video-contracts/async-status-fallback-sync.yaml
+  - tools/oracle/cases/helpers/provider/video-contracts/unsupported-character-create.yaml
+  - tools/oracle/cases/helpers/provider/video-contracts/unsupported-character-get.yaml
+  - tools/oracle/cases/helpers/provider/video-contracts/unsupported-edit.yaml
+  - tools/oracle/cases/helpers/provider/video-contracts/unsupported-extension.yaml
+  - tools/oracle/cases/helpers/provider/video-contracts/error-class-with-headers.yaml
+deviations:
+  - what: Async fallback methods call their corresponding sync methods without forwarding the client/http_handler argument to the sync version.
+    why: The client parameter is only used by the async implementation (for status response hook); the sync fallback does not need it. LiteLLM's async_transform_video_status_retrieve_response omits the client argument when calling the sync method.
+  - what: Unsupported operation methods raise NotImplementedError at method definition (as default implementations), not as abstract method stubs.
+    why: Rust traits require either an implementation or explicit abstract declaration; Python's `raise NotImplementedError` in the method body becomes an inherited default implementation that raises when called.
+  - what: Character, edit and extension operation method names use the exact verb sequence from LiteLLM (create_character, get_character, edit, extension), not shortened or reordered names.
+    why: Wire formats and provider integrations call these methods by the exact name from the base contract; name changes would require updates across all provider leaf implementations.
+out_of_scope:
+  - "litellm/llms/base_llm/videos/transformation.py:36-53 (BaseVideoConfig.get_config): no caller at the pin. This configuration reflection method is a dead code path left from a prior version; it is not called by any provider transformation."
+  - "litellm/llms/base_llm/videos/transformation.py:229-250 (transform_video_delete_request and transform_video_delete_response): no caller at the pin. There is no public delete function, router registration or proxy delete route; the only caller is a dead async_video_delete_handler."
+  - Video request/response transformation for specific providers (OpenAI, Azure, Vertex AI, Gemini), owned by B525, B526, B547, B1361, B1362, B1363, B1364.
+  - HTTP transport and routing for video operations, owned by B3333–B3337 and B3343–B3345.
+  - Video provider selection logic and dispatcher, owned by B3332.
+  - Video record types and proxy input helpers, owned by B3330.
+  - BaseLLMException construction and error handling, owned by B2202.
+pitfalls:
+  - "The trait has 28 methods; some are required abstract methods (transform_video_create_request, transform_video_create_response, etc.), some have default implementations (use_multipart_form_data, get_video_edit_prefetch_params), and some override default implementations (async_transform_video_content_response, async_transform_video_status_retrieve_response)."
+  - "Unsupported operations raise NotImplementedError with distinct operation names: 'video create character is not supported for this provider' for transform_video_create_character_request/response, 'video get character is not supported for this provider' for transform_video_get_character_request/response, 'video edit is not supported for this provider' for transform_video_edit_request/response, and 'video extension is not supported for this provider' for transform_video_extension_request/response."
+  - "The async fallback for async_transform_video_status_retrieve_response must NOT forward the client argument to the sync method; the client is only used by async code that fetches the artifact from provider-specific URLs."
+  - "The get_error_class method constructs BaseLLMException with named arguments status_code, message and headers; preserve the order and argument names to match B2202's constructor."
+  - "Request parameters VideoCreateOptionalRequestParams is used only as a type hint; it is a TypedDict in Python and a reference type in Rust."
+  - "Response types VideoObject and CharacterObject are records built and serialized by B3330 and B525/B526; do not redefine them."
+  - "The contract defines request/response signatures; concrete provider implementations in B525/B526 and provider leaves provide the bodies and return actual typed instances."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

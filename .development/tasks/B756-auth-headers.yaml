@@ -345,6 +345,6 @@ pitfalls:
   - Unverified claims select a verifier but never grant identity or model access.
   - get_api_key_from_custom_header logs every header at debug upstream; betterlite never logs header values.
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

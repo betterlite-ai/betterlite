@@ -1,0 +1,14 @@
+kind: helper
+name: management-envelope-problem-allowed-empty-document
+call:
+  management_envelope:
+    function: problem
+    problem:
+      type: urn:litellm:error:unknown-query-parameter
+      title: Unknown query parameter
+      status: 400
+      detail: "Unrecognized query parameter(s): nope."
+      allowed: []
+    document: true
+env: {}
+compare: {ignore: []}

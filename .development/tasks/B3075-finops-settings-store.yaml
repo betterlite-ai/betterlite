@@ -1,0 +1,83 @@
+id: B3075
+title: Persist FinOps settings and detect configured exporters
+description: >-
+  Build typed CloudZero/Vantage config-row access in betterlite-db::finops and setup detection in betterlite-server::finops.
+  Store encrypted API keys and credentials in the database through ConfigRepository, supporting both JSON-string and Mapping config values.
+  For CloudZero: encrypt api_key, store connection_id and timezone as plaintext.
+  For Vantage: encrypt api_key and integration_token, store base_url as plaintext.
+  Decryption errors raise HTTPException with error detail, never silently fail.
+  The setup-detection functions check both database (whether settings exist and have non-None value) and config callbacks separately, so callers can distinguish database-only from config-only setup.
+  Preserve CloudZero's string-only config access pattern (checks if "cloudzero" is in litellm.callbacks)
+  and Vantage's string-or-instance pattern (checks callback name or isinstance(cb, VantageLogger)).
+  Build helpers in dedicated modules, not in the endpoint files B3076 and B3077 claim.
+scope:
+  paths:
+    - crates/betterlite-db/src/finops.rs
+    - crates/betterlite-db/src/finops/**
+    - crates/betterlite-server/src/finops.rs
+    - crates/betterlite-server/src/finops/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L45-L46
+    why: _CloudZeroConfigRow.param_value contract as str | Mapping[str, str] | None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L49-L51
+    why: _config_table factory using ConfigRepository.table with cast for find_first.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L54-L89
+    why: _set_cloudzero_settings encryption, JSON serialization and upsert pattern.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L92-L130
+    why: _get_cloudzero_settings decryption, JSON/Mapping compatibility and error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L273-L300
+    why: is_cloudzero_setup_in_db checking config row existence and non-None value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L303-L314
+    why: is_cloudzero_setup_in_config checking "cloudzero" in callbacks (string-only).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L317-L342
+    why: is_cloudzero_setup composing database and config checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L47-L48
+    why: _VantageConfigRow.param_value contract as str | Mapping[str, str] | None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L51-L53
+    why: _config_table factory for Vantage with same ConfigRepository pattern.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L66-L94
+    why: _set_vantage_settings encryption of api_key and integration_token, plaintext base_url.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L97-L144
+    why: _get_vantage_settings decryption of two credentials and JSON/Mapping compatibility.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L268-L284
+    why: is_vantage_setup_in_db checking config row existence and non-None value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L287-L294
+    why: is_vantage_setup_in_config checking "vantage" string or VantageLogger instance.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L297-L307
+    why: is_vantage_setup composing database and config checks.
+dod:
+  - text: CloudZero settings store and retrieve api_key encrypted, connection_id and timezone plaintext, matching both string and Mapping config values on read.
+    proof: [finops-settings-tests]
+  - text: Vantage settings store and retrieve api_key and integration_token encrypted, base_url plaintext, matching both string and Mapping config values.
+    proof: [finops-settings-tests]
+  - text: Setup detection distinguishes between database and config callback sources, and correctly composes them to report overall setup state.
+    proof: [finops-settings-tests]
+  - text: Decryption failures raise an error visible to the caller; missing or malformed salt configuration does not silently return None.
+    proof: [finops-settings-tests]
+  - text: Every stored and retrieved credential is encrypted using B1600 helpers with appropriate key/exception_type parameters.
+    proof: [finops-settings-tests]
+checks:
+  optional: []
+  commands:
+    - id: finops-settings-tests
+      why: Encryption, decryption, storage retrieval or setup detection fail or do not exist.
+      run: cargo nextest run --locked -p betterlite-db -p betterlite-server --no-tests=fail -E 'test(/^finops::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - ConfigRepository and the table protocol are owned by B725; this task uses them through the repository.
+  - The encrypt_value_helper and decrypt_value_helper functions are owned by B1600; this task calls them with appropriate key names.
+  - B189 owns the CustomLogger interface and callback registry that these setup checks query.
+  - B3067 owns VantageLogger and its registration; this task only detects its presence in the callback registry.
+  - HTTP routes for CloudZero settings are owned by B3076; HTTP routes for Vantage settings are owned by B3077.
+  - The request/response types are owned by B3079; this task uses them for validation but does not define them.
+pitfalls:
+  - param_value from the config row can be a JSON string, a Mapping (dict), or None; the code must handle all three cases after deserialization.
+  - CloudZero checks for the string "cloudzero" in callbacks, not isinstance; Vantage checks both string and instance, so the two patterns are different.
+  - Decryption key names must match the source's expectations (cloudzero_api_key, vantage_api_key, vantage_integration_token); mismatched keys fail decryption.
+  - A setup check for the database must return false, not raise, if prisma_client is None or the query fails; config checks always work.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

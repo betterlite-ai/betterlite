@@ -84,7 +84,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^extraction::extract_stored::catalog_iteration/)'
     - id: extraction-tests
       why: extraction main logic tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^extraction::/) and test(!replays_) and test(!examine_executions_)'
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^extraction::/) and not test(replays_) and not test(examine_executions_)'
     - id: feedback-loop-detection-tests
       why: feedback navigation loop detection or forced final decision is missing
       run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^extraction::feedback_loop_detection/)'
@@ -147,5 +147,5 @@ pitfalls:
   - concurrent_results defaults to ANALYSIS_CONCURRENCY only inside concurrent_results; examine_executions must pass concurrency explicitly from claim.job.settings.
 review_level: standard
 budget:
-  max_changed_lines: 1000
+  max_changed_lines: 1500
   max_new_expects: 0

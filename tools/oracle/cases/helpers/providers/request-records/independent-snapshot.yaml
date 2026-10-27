@@ -1,0 +1,1 @@
+{kind: helper, name: independent-snapshot, call: {request_records: {function: independent_snapshot, record: {metadata: {litellm_parent_otel_span: span-a}, litellm_metadata: {litellm_parent_otel_span: span-b}, value: {x: 1}}}}, env: {}, compare: {ignore: []}}
