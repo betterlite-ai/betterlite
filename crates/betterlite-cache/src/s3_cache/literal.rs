@@ -86,11 +86,15 @@ impl Parser<'_> {
             }
             let key = self.value()?.as_str().ok_or(LiteralError::Key)?.to_owned();
             self.space();
-            self.expect(':')?;
+            self.consume(':')
+                .then_some(())
+                .ok_or(LiteralError::Unexpected)?;
             object.insert(key, self.value()?);
             self.space();
             if !self.consume(',') {
-                self.expect('}')?;
+                self.consume('}')
+                    .then_some(())
+                    .ok_or(LiteralError::Unexpected)?;
                 return Ok(Value::Object(object));
             }
         }
@@ -106,7 +110,9 @@ impl Parser<'_> {
             values.push(self.value()?);
             self.space();
             if !self.consume(',') {
-                self.expect(closing)?;
+                self.consume(closing)
+                    .then_some(())
+                    .ok_or(LiteralError::Unexpected)?;
                 return Ok(Value::Array(values));
             }
         }
@@ -187,12 +193,6 @@ impl Parser<'_> {
         } else {
             false
         }
-    }
-
-    fn expect(&mut self, expected: char) -> Result<(), LiteralError> {
-        self.consume(expected)
-            .then_some(())
-            .ok_or(LiteralError::Unexpected)
     }
 }
 

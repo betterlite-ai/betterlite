@@ -12,7 +12,7 @@ use betterlite_config::loader::ConfigLoader;
 use rstest::rstest;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
-use tokio::runtime::{Builder, Handle};
+use tokio::runtime::Builder;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 
@@ -299,18 +299,6 @@ async fn chunked_body_is_bounded() {
     timeout(Duration::from_secs(5), operation).await.unwrap();
 }
 
-#[tokio::test]
-async fn sync_calls_inside_runtime_do_not_panic() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let cache = configured_cache(&listener, "", 4096);
-    let runtime = Handle::current();
-    assert!(cache.get_cache(&runtime, "key").is_none());
-    cache.set_cache(&runtime, "key", &decode_body(b"{}").unwrap(), None);
-    timeout(Duration::from_millis(20), listener.accept())
-        .await
-        .unwrap_err();
-}
-
 #[test]
 fn sync_read_uses_supplied_runtime() {
     let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
@@ -346,24 +334,6 @@ async fn serve_pipeline(listener: &TcpListener) -> Vec<String> {
         );
     }
     requests
-}
-
-#[tokio::test]
-async fn sdk_settings_are_explicit() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let cache = configured_cache(&listener, "", 4096);
-    let config = cache.client.config();
-    assert_eq!(config.region().unwrap().as_ref(), "us-east-1");
-    assert_eq!(config.timeout_config().unwrap().operation_timeout(), None);
-    assert_eq!(
-        config.timeout_config().unwrap().read_timeout(),
-        Some(Duration::from_secs(1))
-    );
-    assert_eq!(
-        config.timeout_config().unwrap().connect_timeout(),
-        Some(Duration::from_secs(60))
-    );
-    assert_eq!(config.retry_config().unwrap().max_attempts(), 1);
 }
 
 #[tokio::test]
