@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Append workflow events and conversation messages
 status: todo
 depends_on: [B003, B700, B726, B732, B3159]
-file: null
+file: tasks/B3160-workflow-events.yaml
 covers:
   - "litellm/proxy/management_endpoints/workflow_management_endpoints.py"
 parent: B076

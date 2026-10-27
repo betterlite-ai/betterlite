@@ -1,0 +1,179 @@
+id: B3859
+title: Legacy OTel inference and guardrail lifecycle
+description: >-
+  Choose the request tracer and execute the legacy success/failure lifecycle, including dynamic credentials, raw-request child spans and exactly-once proxy-span closure. Build guardrail spans from their recorded execution windows and propagate the pinned failure/status behavior.
+
+  The request lifecycle calls `log_success_event`, `log_failure_event` and their async counterparts, which route through `_handle_success` and `_handle_failure`. The success path creates a primary litellm_request span (child of the proxy span opened by auth), logs raw-request attributes in a subspan (if enabled), emits guardrail spans, records metrics, and closes the proxy span. The failure path creates a primary ERROR span, appends guardrail spans, and closes the proxy span itself (unconditionally when the span is named LITELLM_PROXY_REQUEST_SPAN_NAME with no is_recording guard); `async_post_call_failure_hook` independently calls .end() on the same proxy span after appending a "Failed Proxy Server Request" child, so the worker replicates this double-close rather than a single hand-off. Both paths dedupe via `_emit_once` to prevent sync/async handler collisions in streaming contexts.
+
+  The tracer is selected by `get_tracer_to_use_for_request`, which first checks for a full per-request `OpenTelemetryConfig` override from `construct_dynamic_otel_config`, then per-request headers from `construct_dynamic_otel_headers`, then falls back to the global tracer or headers-only dynamic tracer. Dynamic configs and headers come from `standard_callback_dynamic_params` and are constructed by subclass overrides (Arize, Langfuse, etc.) for team/key-scoped credentials. Base implementations return None.
+
+  Guardrail spans are created from entries in `standard_logging_object.guardrail_information`, a list of dicts each carrying guardrail_name, guardrail_mode, start_time/end_time (float seconds), guardrail_status (success / guardrail_intervened / guardrail_failed_to_respond / not_run), guardrail_response, masked_entity_count, guardrail_action, violation_categories, usage, and cost. Each guardrail invocation becomes a span with recorded execution windows (start_time/end_time as float seconds converted to datetime then nanoseconds). Dedupe keys use guardrail name/mode/start-time so one real guardrail invocation produces exactly one span per emission point (_handle_success, _handle_failure, async_post_call_failure_hook emit_guardrail_spans_from_request_data). Guardrail spans are stamped with OpenInference kind=GUARDRAIL, team attributes, and status attributes so dashboards can group and filter by violation category, cost and outcome without parsing the redacted response blob.
+
+  The proxy span (opened in auth with name LITELLM_PROXY_REQUEST_SPAN_NAME, kind SERVER, traceparent context from headers) is closed: on success by `_end_proxy_span_from_kwargs` after all children, on failure both in `_handle_failure` unconditionally (without is_recording guard) and again in `async_post_call_failure_hook` after the "Failed Proxy Server Request" child (double-close replicates LiteLLM behavior). Team attributes are stamped on the proxy span at close time on success, and by the hook on both paths, so the trace root is team-filterable. Raw-request spans are created only when capture is enabled and not under semconv mode; they are named from generation_name or RAW_REQUEST_SPAN_NAME.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/legacy_lifecycle.rs
+    - crates/betterlite-logging/src/otel/legacy_lifecycle/**
+    - tools/oracle/helpers/b3859.py
+    - tools/oracle/helpers/b3859/**
+    - tools/oracle/src/helpers/logging/b3859.rs
+    - tools/oracle/src/helpers/logging/b3859/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L756-L766
+    why: "log_success_event, log_failure_event, async_log_success_event, async_log_failure_event callback entry points routing to _handle_success/_handle_failure"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1057-L1127
+    why: "get_tracer_to_use_for_request tracer selection with dynamic config/headers precedence; _get_dynamic_otel_headers_from_kwargs and _get_dynamic_otel_config_from_kwargs extraction from standard_callback_dynamic_params"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1218-L1242
+    why: "construct_dynamic_otel_headers and construct_dynamic_otel_config base implementations (returning None) overridden by subclasses for team/key routing"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1309-L1347
+    why: "_end_proxy_span_from_kwargs exact-once proxy span closure guarded to LITELLM_PROXY_REQUEST_SPAN_NAME; _close_proxy_span_ok stamping status=OK + http.response.status_code=200"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1349-L1436
+    why: "_handle_success with dedup guard, primary span creation or parent-span-only path, guardrail/metric/semantic-log emission, team stamping on proxy span, and proxy span closure"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1437-L1461
+    why: "_start_primary_span creating litellm_request span with tracer selection, span name, start/end times, CLIENT kind in semconv mode, attribute setting and closure"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1463-L1490
+    why: "_maybe_log_raw_request creating raw_gen_ai_request subspan (skipped in semconv mode) with generation_name or RAW_REQUEST_SPAN_NAME"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1532-L1550
+    why: "_set_team_attributes_on_proxy_span_from_kwargs stamping team attributes on LiteLLM-created proxy span before closure on success path"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1977-2008
+    why: "_resolve_guardrail_context returning context for guardrail spans (priority: created span > parent span > fallback context) so guardrails never become orphaned"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1998-L2130
+    why: "_create_guardrail_span extracting guardrail_information list from standard_logging_object, deduping per entry (name/mode/start_time), building spans with execution windows (float seconds → datetime → ns), stamping OpenInference.span_kind=GUARDRAIL, status/action/categories/usage/cost attributes, team attributes"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2131-L2208
+    why: "_handle_failure with dedup guard, primary span creation or parent-span-only path, exception recording, guardrail emission, and proxy span closure only on LITELLM_PROXY_REQUEST_SPAN_NAME"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L991-L1029
+    why: "_emit_guardrail_spans_from_request_data pulling guardrail_information from request_data metadata and calling _create_guardrail_span with shared dedupe state for pre-call guardrails on failure path"
+
+dod:
+  - text: log_success_event and log_failure_event route to _handle_success/_handle_failure; async_log_success_event and async_log_failure_event route to the same handlers (sync/async handlers share implementation).
+    proof: [legacy-lifecycle-tests]
+  - text: get_tracer_to_use_for_request checks for full per-request OpenTelemetryConfig first, then per-request headers, then global tracer or langfuse_otel env-var headers or global fallback.
+    proof: [legacy-lifecycle-tests]
+  - text: _get_dynamic_otel_headers_from_kwargs extracts standard_callback_dynamic_params from kwargs and calls construct_dynamic_otel_headers to build header dict.
+    proof: [legacy-lifecycle-tests]
+  - text: _get_dynamic_otel_config_from_kwargs extracts standard_callback_dynamic_params and calls construct_dynamic_otel_config to build full OpenTelemetryConfig or None.
+    proof: [legacy-lifecycle-tests]
+  - text: construct_dynamic_otel_headers base implementation returns None; subclasses override for team/key-based header routing.
+    proof: [legacy-lifecycle-tests]
+  - text: construct_dynamic_otel_config base implementation returns None; subclasses override for team/key-based full config override.
+    proof: [legacy-lifecycle-tests]
+  - text: _end_proxy_span_from_kwargs closes proxy span only if it is recording and named LITELLM_PROXY_REQUEST_SPAN_NAME (guards against closing external spans).
+    proof: [legacy-lifecycle-tests]
+  - text: _close_proxy_span_ok stamps http.response.status_code=200 and status=OK on the span before calling end().
+    proof: [legacy-lifecycle-tests]
+  - text: _handle_success guards with _emit_once(kwargs, "success") to skip duplicate handlers in streaming; always closes proxy span on skip path.
+    proof: [legacy-lifecycle-tests]
+  - text: _handle_success creates primary span only if no parent span or USE_OTEL_LITELLM_REQUEST_SPAN is true; otherwise sets attributes on parent span without creating new span.
+    proof: [legacy-lifecycle-tests]
+  - text: _start_primary_span uses selected tracer, sets span name from metadata/semconv/default, stamps OK status, sets attributes, ends span before returning.
+    proof: [legacy-lifecycle-tests]
+  - text: _maybe_log_raw_request is skipped in semconv mode; otherwise creates raw_gen_ai_request subspan under parent with generation_name or RAW_REQUEST_SPAN_NAME, sets raw attributes and team attributes.
+    proof: [legacy-lifecycle-tests]
+  - text: _set_team_attributes_on_proxy_span_from_kwargs guards to LiteLLM-created proxy span (LITELLM_PROXY_REQUEST_SPAN_NAME name + recording) and stamps team attributes via _set_team_attributes_from_kwargs.
+    proof: [legacy-lifecycle-tests]
+  - text: _resolve_guardrail_context returns context set from created span, then parent span, then fallback context; never returns None (orphaned guardrails prevented).
+    proof: [legacy-lifecycle-tests]
+  - text: "_create_guardrail_span extracts guardrail_information list from standard_logging_object; returns early if no list or all entries are non-dict."
+    proof: [legacy-lifecycle-tests]
+  - text: "Guardrail dedup key is (kwargs-id, 'guardrail', name, start_time, mode); _emit_once dedup check skips duplicate entry and continues on false; one real guardrail produces exactly one span per emission point."
+    proof: [legacy-lifecycle-tests]
+  - text: "Guardrail start_time and end_time are float seconds; converted to datetime via datetime.fromtimestamp() or datetime.now() if None, then to nanoseconds via _to_ns()."
+    proof: [legacy-lifecycle-tests]
+  - text: "Guardrail spans are named 'guardrail' and stamped with OpenInference.span_kind=GUARDRAIL, guardrail_name, guardrail_mode, guardrail_status, guardrail_action (if present), violation_categories (if present, as JSON), masked_entity_count (if present, as JSON via safe_dumps using plain set_attribute), guardrail_response (if present, as JSON via safe_dumps using plain set_attribute), usage (if present, as JSON), cost (if present), cost_in_spend (if bool)."
+    proof: [legacy-lifecycle-tests]
+  - text: "Guardrail spans are stamped with team attributes via _set_team_attributes_from_kwargs so they are team-filterable."
+    proof: [legacy-lifecycle-tests]
+  - text: "_emit_guardrail_spans_from_request_data pulls guardrail_information from request_data metadata and calls _create_guardrail_span with shared dedupe state so pre-call guardrails are not emitted twice."
+    proof: [legacy-lifecycle-tests]
+  - text: "_handle_failure guards with _emit_once(kwargs, 'failure') to skip duplicate handlers in streaming."
+    proof: [legacy-lifecycle-tests]
+  - text: "_handle_failure creates primary span with ERROR status or sets ERROR on parent span if no primary; calls _record_exception_on_span and _create_guardrail_span."
+    proof: [legacy-lifecycle-tests]
+  - text: "_handle_failure closes proxy span unconditionally when it is the LiteLLM-created span (name == LITELLM_PROXY_REQUEST_SPAN_NAME, with no is_recording guard) after emitting guardrail spans; async_post_call_failure_hook independently closes the same span after appending its child, so the worker replicates this double-close."
+    proof: [legacy-lifecycle-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: legacy-lifecycle-tests
+      why: Legacy lifecycle, tracer selection, dynamic config/headers, proxy span management, guardrail span creation or dedup tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^legacy_lifecycle|^tracer_selection|^dynamic_|^guardrail_|^proxy_span)' - test(replays_the_legacy_lifecycle_corpus)
+
+oracle_cases:
+  - tools/oracle/cases/helpers/legacy_lifecycle/success-with-primary-span.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/success-with-parent-span.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/success-closes-proxy-span.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/failure-with-primary-span.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/failure-with-parent-span.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/failure-closes-proxy-span.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/dynamic-headers-tracer-selection.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/dynamic-config-override.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/langfuse-env-var-headers.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/guardrail-span-creation.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/guardrail-dedup-per-entry.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/guardrail-start-end-times.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/guardrail-attributes-masked-entity-count.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/guardrail-attributes-guardrail-response.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/guardrail-team-attributes.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/raw-request-span-generation-name.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/raw-request-span-skipped-in-semconv.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/team-attributes-on-proxy-span.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/success-dedup-streaming.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/failure-dedup-streaming.yaml
+  - tools/oracle/cases/helpers/legacy_lifecycle/emit-guardrail-spans-from-request-data.yaml
+
+deviations:
+  - what: Guardrail start_time and end_time are float seconds (Unix timestamps); both are converted to datetime and then to nanoseconds for OTel span timing.
+    why: LiteLLM populates guardrail_information with float seconds; datetime.fromtimestamp() handles the conversion, and _to_ns() standardizes all timestamps to nanoseconds as required by the OTel SDK.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2022-L2044
+  - what: Guardrail spans are named exactly "guardrail" (not derived from guardrail_name or mode) so dashboards can filter by span name before opening attributes.
+    why: LiteLLM stamps all guardrail invocations with the same span name so they appear as a queryable class; individual guardrails are distinguished by the guardrail_name and guardrail_mode attributes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2047
+  - what: Both _handle_failure (L2203-2208) and async_post_call_failure_hook (L988-989) call .end() on the same proxy span; the worker replicates this double-close rather than a single hand-off between them.
+    why: _handle_failure unconditionally closes the proxy span when its name is LITELLM_PROXY_REQUEST_SPAN_NAME (with no is_recording guard), and async_post_call_failure_hook independently closes it after appending the "Failed Proxy Server Request" child, so both functions call .end() on the same span object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2203-L2208
+  - what: Guardrail violation_categories and usage are serialized to JSON via safe_dumps before being set as span attributes (OTel span attributes must be homogeneous primitives or JSON strings).
+    why: These fields are lists or dicts; OTel SDKs do not accept nested sequences or mappings directly as attribute values, so JSON serialization is required to preserve the structure in the span.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2105
+  - what: The raw-request span is skipped entirely in semconv mode (when _gen_ai_semconv_latest_experimental is true); it is not replaced by a different structure, just omitted.
+    why: Semconv mode uses OpenInference span kinds and attributes; raw request data goes into the primary span attributes instead of a separate child span, so creating a raw_gen_ai_request span would duplicate information.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1467-L1469
+
+out_of_scope:
+  - safe_set_attribute and _cast_as_primitive_value_type (primitive-safe setter belongs to B3844)
+  - set_attributes and set_raw_request_attributes (inference attribute dispatch belongs to B3856)
+  - _record_metrics and _emit_semantic_logs (metrics/logs recording belongs to B3857)
+  - _get_span_context (W3C context extraction belongs to B3847)
+  - _record_exception_on_span (exception stamping belongs to B3854, called by _handle_failure)
+  - _emit_once and _otel_internal_state (dedupe state management belongs to B3854)
+  - _set_team_attributes_on_span and _set_team_attributes_from_kwargs (team-attribute stamping belongs to B3854)
+  - _to_ns and _get_span_name (timestamp/name helpers belong to B3854)
+  - _capture_in_span (capture-mode query belongs to B3854)
+  - _resolve_capture_mode (capture mode resolution belongs to B3854)
+  - _get_headers_dictionary and _get_tracer_with_dynamic_config/_get_tracer_with_dynamic_headers (dynamic provider construction belongs to B3855)
+  - Tracer/Span types and span lifecycle (OTel SDK types from opentelemetry library)
+  - clock and UUID interfaces (context interface belongs to B198)
+  - get_secret_bool for USE_OTEL_LITELLM_REQUEST_SPAN and feature flags (belongs to B002)
+  - redact_string for logging (belongs to B187)
+  - safe_dumps for JSON serialization (belongs to B192)
+
+pitfalls:
+  - "The dedup key for success/failure handlers is (handler_class_id, scope_name) per _emit_once; sync and async handlers fire for streaming responses, so the dedup must catch both and close the proxy span on skip."
+  - "Guardrail dedup is per-entry with key (handler_class_id, 'guardrail', name, start_time, mode); one real guardrail invocation appears in multiple payloads (_handle_success, _handle_failure, async_post_call_failure_hook), so dedupe ensures exactly one span per real invocation."
+  - "start_time_float and end_time_float are float seconds (Unix timestamps); datetime.now() is the fallback only if the field is None/missing, not for invalid values; partial parse failures do not raise, they just use now()."
+  - "The primary span is not created when a parent span exists AND USE_OTEL_LITELLM_REQUEST_SPAN is false; in that case attributes are set on the parent span instead (shallow hierarchy)."
+  - "Raw-request spans are skipped entirely in semconv mode; do not create them but redirect their data to the primary span attributes instead (B3856 owns that redirection)."
+  - "Proxy span closure on success is guarded to (name == LITELLM_PROXY_REQUEST_SPAN_NAME AND is_recording); externally provided spans passed through kwargs must never be closed by LiteLLM."
+  - "Proxy span closure on failure happens in _handle_failure itself (unconditionally when parent_otel_span.name == LITELLM_PROXY_REQUEST_SPAN_NAME, with no is_recording guard) and again in async_post_call_failure_hook after the 'Failed Proxy Server Request' child is appended; both call .end() on the same span object, so replicate this double-close."
+  - "Guardrail span parenting uses _resolve_guardrail_context which returns context set from span (if created) > parent_span (if exists) > fallback_ctx; this ensures guardrails are never orphaned (Issue #5)."
+  - "The langfuse_otel callback checks hasattr(self, 'callback_name') and self.callback_name == 'langfuse_otel' to trigger env-var credential loading; this special case must be preserved."
+  - "Construct_dynamic_otel_headers and construct_dynamic_otel_config return None in the base class; every override (Arize, Langfuse, etc.) is responsible for its own routing logic and must also return None if no override applies."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Resolve native GenAI calls and preserve top-level fields
 status: todo
 depends_on: [B3480, B174, B247, B1306, B1368]
-file: null
+file: tasks/B3483-genai-call-preparation.yaml
 covers:
   - "litellm/google_genai/main.py"
   - "litellm/utils.py"

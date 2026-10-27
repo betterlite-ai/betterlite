@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Publish standard and legacy spend logs to Google PubSub
 status: todo
 depends_on: [B002, B256, B173, B1303, B1304, B1716]
-file: null
+file: tasks/B3999-gcs-pubsub-logging.yaml
 covers:
   - "litellm/integrations/gcs_pubsub/**"
 parent: B115

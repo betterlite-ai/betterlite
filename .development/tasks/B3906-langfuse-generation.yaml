@@ -1,0 +1,96 @@
+id: B3906
+title: Langfuse generation and trace assembly
+description: >-
+  Port the complete _log_langfuse_v2 operation into crates/betterlite-logging as assemble_generation_trace,
+  composing typed trace and generation records with the already-built projections and observation services. Accept a standard
+  payload and its timing, metadata, and response; extract and clean allowed fields (user_api_key_end_user_id, prompt_management_metadata);
+  build trace parameters from submitted trace_id or fall back to litellm_call_id; detect session-header reuse with _is_session_header_trace
+  and use call_trace_id (litellm_call_id) so each call gets its own trace, returning that resolved_trace_id to the caller in both
+  cases. Apply masking to input/output when masking functions are configured; redact metadata and proxy headers of credentials;
+  update an existing-trace when present or create a new trace and generation otherwise. Assemble trace attributes with input/output
+  only when generation is not the trace root OR when the value differs from the generation's own input/output. Include prompt links
+  and child-span finalization through B3912's observations on the happy path, and return (None, None) on the failure path.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-logging/src/langfuse_assembly.rs
+    - crates/betterlite-logging/src/langfuse_assembly/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L57-L59
+    why: "Denied metadata keys, empty metadata and redacted header constants"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L602-L960
+    why: "_log_langfuse_v2 full implementation: metadata cleaning, trace ID resolution, generation assembly with masking and child spans"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L676-L754
+    why: "Trace ID resolution logic: session-header detection, call_trace_id derivation and trace parameter construction"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L815-L878
+    why: "Generation name, model reconstruction, usage details extraction and generation parameter assembly"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L899-L943
+    why: "Trace attribute construction with input/output inclusion logic and generation start with span finalization"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/langfuse.py#L11-L16
+    why: "LangfuseUsageDetails type definition"
+dod:
+  - text: "Trace ID resolution extracts from metadata, standard payload, or litellm_call_id in order; detects session-header reuse and returns the resolved call_trace_id (which may differ from the user-supplied trace_id) to the caller."
+    proof: [langfuse-generation-tests]
+  - text: "Session-header detection returns true when trace_id equals session_id or comes from proxy_server_request, and always uses the call_trace_id (litellm_call_id or the submitted trace_id) for this call's own trace even when continuing a shared session."
+    proof: [langfuse-generation-tests]
+  - text: "Metadata is cleaned: prompt_management_metadata and allowed user metadata are kept, denied steering keys (headers, endpoint, caching_groups, previous_models) are dropped, and all other keys are retained, then redacted of credentials."
+    proof: [langfuse-generation-tests]
+  - text: "Proxy headers are scrubbed of authorization, cookie and referer keys before including in trace metadata."
+    proof: [langfuse-generation-tests]
+  - text: "New trace parameters include id (call_trace_id), name (from metadata or 'litellm-{call_type}'), session_id, user_id, input (masked if mask_input), output (masked if mask_output), tags, and all trace_* prefixed metadata keys unprefixed."
+    proof: [langfuse-generation-tests]
+  - text: "Existing-trace updates keep the existing trace id and selectively update name, input, output and other trace_* fields according to update_trace_keys configuration."
+    proof: [langfuse-generation-tests]
+  - text: "Masking applies the configured masking function to input and output before assembly; when a masking function is callable, pass both values through it; when not, pass through unmasked. mask_input and mask_output flags replace masked values with 'redacted-by-litellm'."
+    proof: [langfuse-generation-tests]
+  - text: "Generation input/output are always masked independently; trace input/output are included unless generation is the trace root and the value equals the generation's own input/output."
+    proof: [langfuse-generation-tests]
+  - text: "Usage details are extracted from response object when present: prompt_tokens, completion_tokens, total_tokens, cache_creation_input_tokens and cache_read_input_tokens are each normalized to 0 if null."
+    proof: [langfuse-generation-tests]
+  - text: "Input tokens for Langfuse are reduced by cache_read_input_tokens per Langfuse documentation."
+    proof: [langfuse-generation-tests]
+  - text: "Generation name is from metadata generation_name, or 'litellm:{user_api_key_alias}', or 'litellm-{call_type}' in fallback order."
+    proof: [langfuse-generation-tests]
+  - text: "Child spans (prompt links and guardrail observations) are added on the happy path through B3912 functions before generation is finalized; generation is always ended with the provided end_time regardless."
+    proof: [langfuse-generation-tests]
+  - text: "The return value is (resolved_trace_id, generation.id) on success or (None, None) on exception."
+    proof: [langfuse-generation-tests]
+  - text: "Debug metadata is included in trace parameters when debug=true or debug='true' (case-insensitive), as a sub-dict of only string/int/float/bool values."
+    proof: [langfuse-generation-tests]
+  - text: "Default Langfuse tags are appended to the tags list; proxy_base_url is added to tags when it is in langfuse_default_tags."
+    proof: [langfuse-generation-tests]
+checks:
+  optional: []
+  commands:
+    - id: langfuse-generation-tests
+      why: "the generation assembly tests fail, do not exist, or core trace/generation assembly is missing"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_assembly::/) - test(/replays_the_/)'
+oracle_cases: []
+deviations:
+  - what: "Both resolved_trace_id and the returned trace ID are call_trace_id (which may differ from the user-submitted trace_id when session-header reuse is detected); the user's original trace_id is never written to trace parameters in the session-header case."
+    why: "Session-header detection at langfuse.py:682-687 uses call_trace_id specifically so each call gets its own trace while continuing the shared session; this is the semantically correct behavior to preserve."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L676-L754
+  - what: "Credential redaction happens on clean_metadata and proxy headers before tracing, dropping authorization, cookie and referer headers and scrubbing user API key info from all metadata."
+    why: "The pin redacts secrets at langfuse.py:804-810 and 713; this is the secret-redaction path security review reserves and must be preserved."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L804-L873
+  - what: "Python masking functions are invoked if callable; when not callable, values pass through unmasked, preserving LiteLLM's non-strict behavior."
+    why: "The pin stores and invokes _langfuse_masking_function without prior type enforcement; interim behavior accepts any configured value at assembly time."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L697-L710
+out_of_scope:
+  - "Logger construction and tracing acquisition; B3907 owns those."
+  - "Prompt client calls; B3904 owns the client and B3912 owns attachment."
+  - "Guardrail and grounding observation construction; B3912 owns those."
+  - "Configuration of masking functions, update_trace_keys and debug flags; B002/B3900 own those."
+pitfalls:
+  - "resolved_trace_id comes from resolve_trace_id(call_trace_id), not from the user-submitted trace_id. When session-header reuse is detected, the call_trace_id is litellm_call_id, which differs from trace_id; both the return value and trace_params['id'] must use the resolved call_trace_id, never the original session trace_id."
+  - "Trace input/output inclusion logic: they are included UNLESS (generation_is_trace_root AND value equals generation's own input/output). All other cases—non-root traces or different values—pass the trace values through."
+  - "Proxy headers are scrubbed case-insensitively: authorization, cookie, referer. All other headers pass through."
+  - "Generation ID defaults to _logging_id(start_time, response_obj) when response_obj has an id; it is also settable from metadata generation_id."
+  - "Usage details input is prompt_tokens - cache_read_input_tokens, honoring Langfuse's requirement that cache reads not be double-counted."
+  - "Child spans (prompt and guardrail observations) are finalized in a try/finally block; generation.end(end_time) is always called even if observation finalization fails."
+  - "PROXY_BASE_URL is read from the environment at assembly time (not config load time) when present in langfuse_default_tags; redacted headers never include authorization, cookie or referer."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Cursor TypeSafe and Comprehend Medical logging
 status: todo
 depends_on: [B190, B193]
-file: null
+file: tasks/B3651-service-relay-logging.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/cursor_passthrough_logging_handler.py"
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/typesafe_passthrough_logging_handler.py"

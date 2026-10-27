@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Attach recovered key identities to daily activity reads
 status: todo
 depends_on: [B727, B729, B1710, B1711]
-file: null
+file: tasks/B3092-daily-activity-identities.yaml
 covers:
   - "litellm/proxy/management_endpoints/common_daily_activity.py"
 parent: B074

@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Decode and secure RAG ingestion requests
 status: todo
 depends_on: [B3452, B1100, B1101]
-file: null
+file: tasks/B3462-rag-ingest-request.yaml
 covers:
   - "litellm/proxy/rag_endpoints/endpoints.py"
 parent: B097

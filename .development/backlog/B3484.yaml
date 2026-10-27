@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Translate GenAI input to chat messages and options
 status: todo
 depends_on: [B174, B175, B200, B219]
-file: null
+file: tasks/B3484-genai-chat-input.yaml
 covers:
   - "litellm/google_genai/adapters/transformation.py"
   - "litellm/types/google_genai/adapters.py"

@@ -1,0 +1,129 @@
+id: B4442
+title: Strategy router health from reachable deployment evidence
+description: >-
+  Implement strategy router health verdicts derived from reachable deployment probes.
+  Deploy only the deployments directly requested, plus transitively every deployment a strategy
+  router depends on, then compute verdicts that mark routers unhealthy when any dependency
+  has no healthy deployment behind it. Cycle bounds by router count and handles router cycles
+  the same way LiteLLM does: every round expands to fresh dependencies and settles verdicts
+  iteratively, terminating when no new routers red.
+
+  Every strategy router (via classifier, embedding, evaluation, or tier model dependencies from
+  auto_router_model_naming) is a marker that is never probed directly. Markers return {} from
+  _run_model_health_check, representing no probe; the verdict here is what makes them fail the
+  cached result. A router whose dependency resolves to no deployment is an error reason; when
+  it resolves to some deployments and all are unhealthy, the same error marks the router. A router
+  whose dependencies all have at least one healthy deployment stays healthy; partial evidence (one
+  replica never checked, opted out of health checks) leaves the verdict green.
+
+  Implement the native services in crates/betterlite-server/src/health/router.rs:
+  deployment_id extracts model_info.id from a deployment, safely; resolved_deployment_ids
+  resolves a model name to the frozenset of ids for every deployment a request for that name
+  routes to (using the router's get_model_list, so a missing alias fails like a missing name);
+  dependency_deployments_to_probe walks the full expansion of strategy router dependencies
+  reachable from the probed set, returns the IDs to reach them, and dedupes by id. Then implement
+  strategy_router_verdicts to settle dependency faults and finalize_strategy_router_endpoints
+  to apply verdicts and drop the probed-only deployments from results.
+
+  Add ProbeOperation::StrategyRouterHealth in tools/oracle/src/router_probes/mod.rs and the
+  corresponding B4442 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
+  production services and do not repeat vendor-specific logic.
+scope:
+  paths:
+  - crates/betterlite-server/src/health/router.rs
+  - crates/betterlite-server/src/health/router/**
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/**
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/health/mod.rs
+  - crates/betterlite-server/src/health/mod/**
+  - tools/oracle/cases/routing/router-health/**
+  - tools/oracle/src/router_probes/strategy_router_health.rs
+  - tools/oracle/src/router_probes/strategy_router_health/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/strategy_router_health.py
+  - tools/oracle/helpers/b4442.py
+  - tools/oracle/helpers/b4442/**
+  - tools/oracle/src/helpers/server/b4442.rs
+  - tools/oracle/src/helpers/server/b4442/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L317-L325
+  why: Strategy router marker detection via classify_strategy_router_model and _is_marker predicate.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L328-L345
+  why: Deployment ID extraction and resolved_deployment_ids walks model_list from get_model_list.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L348-L384
+  why: Dependency failure reasoning and strategy_router_dependency_error first-fault detection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L387-L432
+  why: "Deployment-by-id lookup, deduplication, and dependency expansion from reachable routers."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L435-L476
+  why: Iterative verdict settlement across strategy router rounds until fixed point.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L479-L511
+  why: Apply verdicts to keep healthy routers, transition healthy-with-error to unhealthy, drop dependency probes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/auto_router_model_naming.py#L26-L40
+  why: StrategyRouterDependency type and strategy_router_dependencies function from B377.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/auto_router_model_naming.py#L68-L84
+  why: classify_strategy_router_model determines if a deployment model string is a strategy router.
+dod:
+- text: Every oracle case exercises the production operation and asserts exact verdicts, healthy/unhealthy
+    transitions, dependency walks, and dropped probes; only message text may be ignored for betterlite
+    wording.
+  proof:
+  - oracle
+- text: "Tests named strategy_router_verdicts_behaviors and strategy_router_verdicts_boundaries
+    under health/router tests. The first asserts settled verdicts, transitive expansion, and cycle
+    termination; the second asserts dependency fault messages, verdict ordering, and the keyed
+    dedup rule."
+  proof:
+  - behavior-tests
+- text: "Test deployment_id, resolved_deployment_ids, and dependency_deployments_to_probe independently
+    with named tests: id_extraction, name_resolution, expansion_dedup, expansion_cycle."
+  proof:
+  - behavior-tests
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the task-specific behavior tests are absent or fail
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::health_router_/) - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/strategy_router_health.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/strategy_router_health.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked
+      --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/router-health/strategy-marker-no-deps.yaml
+- tools/oracle/cases/routing/router-health/strategy-marker-with-healthy-deps.yaml
+- tools/oracle/cases/routing/router-health/strategy-marker-with-unhealthy-deps.yaml
+- tools/oracle/cases/routing/router-health/nested-router-cycle.yaml
+deviations:
+- what: "A router whose dependency resolves to no deployment (missing alias or unknown model name) marks it with an error. Missing dependencies fail the router immediately, no partial evidence allowed."
+  why: A dependency that vanishes is a configuration error that prevents the router from serving any request, unlike a probe that never happened.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L348-L364
+out_of_scope:
+- "litellm/proxy/health_check.py: B4441 owns _resolve_health_check_mode (L75-94), _should_inject_health_check_max_tokens (L97-109), _get_process_rss_mb (L116-129), _rss_mb_for_log (L132-136), _get_random_llm_message (L139-145), _clean_endpoint_data (L148-153), health_check_filter_kwargs_from_general_settings (L156-171), parse_background_health_check_model_groups (L174-193), filter_deployments_to_model_groups (L196-203), filter_deployments_by_id (L206-222), run_with_timeout (L225-236), _skips_health_checks (L239-241), _health_check_eligible (L244-253), _deployment_model (L256-258), _owner_team_id (L261-264), _team_public_model_name (L267-270), _deployments_routed_by_name (L273-293), deployments_targeted_by_name (L296-302), _narrow_to_target (L305-314), _health_check_deployment_is_wildcard (L705-706), _resolve_health_check_max_tokens (L709-751), _update_litellm_params_for_health_check (L754-844)."
+- "litellm/proxy/health_check.py: B4440 owns _run_model_health_check (L514-536)."
+- "litellm/proxy/health_check.py: B4443 owns _run_health_checks_with_bounded_concurrency (L539-576), _perform_health_check (L579-655), perform_health_check (L847-975), build_deployment_health_states (L658-693)."
+- "litellm/proxy/health_check.py: B4446 owns the HTTP routing and request validation for /health endpoints."
+pitfalls:
+- "A strategy router is identified via classify_strategy_router_model on the model string in litellm_params, not by a type field. Never call probe logic directly on a marker; _run_model_health_check returns {} for markers."
+- "Dependency expansion follows routers through routers, one hop per round. Bounds by len(universe) so a cycle terminates; without that bound, a cycle spins forever."
+- "Verdicts settle iteratively: each round consumes the last round's failures plus the current round's probed unhealthy ids. A router cannot red in round 1 because no routers were probed yet, only their dependencies."
+- "A deployment probed only to reach a router must be dropped from results; a caller never asked for it and the router verdict now answers the question of whether it could serve."
+- "_resolved_deployment_ids uses get_model_list exactly like a request would route to the name; a missing alias or unknown name returns None, not an empty set."
+- "Deduplication happens by id only, preserving order; filter_deployments_by_id keeps one row per unique id and must run after narrowing to the requested set, not before, to avoid dropping valid rows."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

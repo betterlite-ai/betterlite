@@ -1,0 +1,146 @@
+id: B3863
+title: AgentOps Levo Logfire Traceloop and Weave callbacks
+description: >-
+  Implement AgentOps JWT authentication, Levo health checks and the Logfire/Traceloop event
+  adapters. Complete Weave's legacy callback specialization, sharing the base span lifecycle
+  and using the pooled HTTP client and injected IDs.
+
+  AgentOps fetches a JWT token from its authentication endpoint at startup by posting the api_key,
+  preserving the token refresh behavior and the endpoint fallback when authentication fails. Store
+  the project ID from the response and set resource attributes on the tracer provider.
+
+  Levo reads its configuration from four environment variables (LEVOAI_API_KEY, LEVOAI_ORG_ID,
+  LEVOAI_WORKSPACE_ID, LEVOAI_COLLECTOR_URL) and builds the otlp_auth_headers string with format
+  "Authorization=Bearer {api_key},x-levo-organization-id={org_id},x-levo-workspace-id={workspace_id}".
+  The health check validates that all four required env vars are configured and returns status/message or status/error_message.
+
+  Logfire receives call payloads (completion, embedding, image_generation and others) and emits
+  them as event spans by branching on call_type to select the appropriate message template. Traceloop
+  always emits one "litellm.completion" span regardless of call_type. Both extract call_type, model,
+  metadata and usage fields from kwargs and response, sanitize metadata with redact_user_api_key_info,
+  and construct the event span. Logfire forwards errors as error-level logs with _exc_info=True.
+
+  Weave's callback overrides three base methods to create a child span on every LLM call instead of
+  reusing a parent span, skips the raw_gen_ai_request child span, and never ends externally managed
+  wrapper spans. The construct_dynamic_otel_headers method reads wandb_api_key and weave_project_id
+  from standard_callback_dynamic_params and builds Authorization and project_id headers.
+
+  Use _get_httpx_client from B173 for the AgentOps authentication POST, never create a client inline.
+  All IDs and timestamps come through injected B198 interfaces, never uuid.uuid4() or time calls.
+  The base OpenTelemetry.__init__ from B3868 handles the callback name and service registration.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/callbacks.rs
+    - crates/betterlite-logging/src/otel/callbacks/**
+    - tools/oracle/cases/otel-callbacks/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/agentops/agentops.py#L13-L116
+    why: AgentOps config dataclass, from_env constructor, __init__ and JWT token fetch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/levo/levo.py#L37-L112
+    why: LevoLogger class declaration, get_levo_config and async_health_check methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/logfire_logger.py#L16-L162
+    why: LogfireLogger class, config records, __init__, _get_span_config and log_event.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/traceloop.py#L7-L139
+    why: TraceloopLogger class declaration, __init__ and log_event implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weave/weave_otel.py#L182-L331
+    why: WeaveOtelLogger class declaration, __init__, _maybe_log_raw_request, _start_primary_span, _handle_success and construct_dynamic_otel_headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L381-L445
+    why: Base OpenTelemetry class __init__ signature and initialization pattern.
+
+dod:
+  - text: AgentOps reads api_key from AGENTOPS_API_KEY env var, fetches a JWT token from auth_endpoint with a POST request, stores project_id in resource attributes, and falls back silently if the request fails.
+    proof: [agentops-auth, agentops-tests]
+  - text: AgentOps resource attributes include service.name (default litellm), deployment.environment (default production) and project.id when fetched.
+    proof: [agentops-tests]
+  - text: Levo health check returns status=healthy with message when all four env vars (LEVOAI_API_KEY, LEVOAI_ORG_ID, LEVOAI_WORKSPACE_ID, LEVOAI_COLLECTOR_URL) are configured, and status=unhealthy with error_message when any required env var is missing.
+    proof: [levo-health, levo-health-partial, levo-tests]
+  - text: Levo health check with partial configuration (e.g. LEVOAI_API_KEY set, LEVOAI_ORG_ID missing) calls get_levo_config which raises ValueError, caught by async_health_check except block, returns status=unhealthy with the ValueError message.
+    proof: [levo-health-partial]
+  - text: Levo's otlp_auth_headers format is "Authorization=Bearer {api_key},x-levo-organization-id={org_id},x-levo-workspace-id={workspace_id}".
+    proof: [levo-tests]
+  - text: Logfire constructs a SpanConfig with message_template and span_data based on call_type, and logs with logfire.info or logfire.error depending on level.
+    proof: [logfire-tests]
+  - text: Logfire redacts metadata with redact_user_api_key_info and excludes endpoint/caching_groups/previous_models keys.
+    proof: [logfire-tests]
+  - text: Traceloop initializes the Traceloop SDK with app_name=Litellm-Server and disable_batch=True, and emits spans with attributes from OpenTelemetry semconv.
+    proof: [traceloop-tests]
+  - text: Weave's _start_primary_span always creates a child span (never reuses the parent) and sets Status.OK.
+    proof: [weave-tests]
+  - text: Weave's _maybe_log_raw_request is overridden to do nothing (skip raw_gen_ai_request child span).
+    proof: [weave-tests]
+  - text: Weave's _handle_success never ends a parent span (external wrapper spans are user-managed).
+    proof: [weave-tests]
+  - text: Weave's construct_dynamic_otel_headers reads wandb_api_key and weave_project_id from standard_callback_dynamic_params.
+    proof: [weave-tests]
+  - text: AgentOps uses _get_httpx_client from B173 and closes the client after the POST request.
+    proof: [agentops-auth, agentops-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: agentops-auth
+      why: AgentOps JWT token fetch fails or does not use the pooled HTTP client
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(agentops_callback_)'
+    - id: agentops-tests
+      why: AgentOps callback tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^agentops::/)'
+    - id: levo-health
+      why: Levo health check tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(levo_health_)'
+    - id: levo-health-partial
+      why: Levo health check with partial environment (missing one of four required vars) returns unhealthy
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^levo.*partial/)'
+    - id: levo-tests
+      why: Levo callback tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^levo::/)'
+    - id: logfire-tests
+      why: Logfire callback tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logfire::/)'
+    - id: traceloop-tests
+      why: Traceloop callback tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^traceloop::/)'
+    - id: weave-tests
+      why: Weave callback tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^weave::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: AgentOps silently skips JWT token fetch on failure instead of halting initialization. The callback continues with no auth headers.
+    why: LiteLLM initializes the callback even when authentication fails, allowing the service to start with degraded telemetry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/agentops/agentops.py#L59-L65
+  - what: Levo uses LEVOAI_COLLECTOR_URL exactly as provided, with no endpoint normalization or defaulting.
+    why: LiteLLM does not provide a default collector URL; users must configure it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/levo/levo.py#L71
+  - what: Traceloop initializes with disable_batch=True, making every span emit immediately instead of batching.
+    why: LiteLLM disables batching to ensure spans reach the backend promptly in low-volume scenarios.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/traceloop.py#L27
+  - what: Traceloop.log_event fails silently when response_obj.get("choices") returns None (line 118 calls enumerate(None) raising TypeError), caught by the outer except block (lines 138-139), leaving span.end never reached and the span unclosed.
+    why: LiteLLM reproduces this silent-failure/leaked-span path without adding defensive defaults; betterlite preserves the source behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/traceloop.py#L118-L139
+
+out_of_scope:
+  - AgentOps resource attribute merging with base OTel provider attributes; B3868 owns the base provider.
+  - Levo protocol selection (otlp_http is hardcoded); only the configuration container is built here.
+  - Logfire SDK configuration beyond token setup; the logfire module is external.
+  - Traceloop tracer wrapper management; the traceloop.sdk is external.
+  - Weave's parent span lifecycle management when parent_span is not None; B3859 owns the base success/failure lifecycle.
+
+pitfalls:
+  - AgentOps auth_endpoint defaults to "https://api.agentops.ai/v3/auth/token"; do not invent a fallback if the call fails.
+  - Levo's four environment variables (LEVOAI_API_KEY, LEVOAI_ORG_ID, LEVOAI_WORKSPACE_ID, LEVOAI_COLLECTOR_URL) must all be present for get_levo_config to succeed; any missing variable raises ValueError with a specific message.
+  - Logfire's message_template uses Python f-string format "{request_data[model]!r}"; replicate exactly for compatibility.
+  - Logfire's metadata sanitization skips three specific keys (endpoint, caching_groups, previous_models), not all litellm.* keys.
+  - Traceloop's SpanKind and semconv attributes are from opentelemetry.*; import from the source SDK, not local copies.
+  - Weave's _handle_success must never call span.end() on parent_span or parent spans from kwargs; only child spans created by _start_primary_span are ended.
+  - Logfire must handle missing response_obj (default to empty dict), missing usage and missing choices gracefully; line 95 guards response_obj with default empty dict before calling get().
+  - Traceloop's actual behavior silently fails if response_obj.get("choices") returns None (TypeError caught by outer except on line 138-139), leaving the span unclosed; betterlite reproduces this without adding defensive defaults.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

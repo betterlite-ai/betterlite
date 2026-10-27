@@ -1,0 +1,202 @@
+id: B3726
+title: Bedrock native guardrail hooks and buffered streams
+description: >-
+  Build the native pre/during/post-call hooks and buffered streaming branch, including
+  Anthropic block framing and original token usage on replacement responses. Delegate
+  incremental and Responses streaming to the unified framework with the source's buffering
+  defaults.
+
+  Implement async_pre_call_hook to validate and mask user messages before the LLM call,
+  using should_run_guardrail and get_guardrails_messages_for_call_type to select messages,
+  _prepare_guardrail_messages_for_role to filter role-qualified content, then call
+  make_bedrock_api_request for INPUT scanning, apply the response masking via
+  _update_messages_with_updated_bedrock_guardrail_response and _merge_filtered_messages,
+  and add the guardrail name to the applied-guardrails header. The hook returns the request
+  dict with updated messages, or the original dict unmodified when the guardrail does not run.
+
+  Implement async_moderation_hook (during-call) identically to async_pre_call_hook except
+  it accepts during_call or during_mcp_call event types and lets ModifyResponseException
+  propagate so the endpoint handler returns a block response, since the LLM call is
+  already in-flight in an asyncio.gather and cannot be cancelled from here.
+
+  Implement async_post_call_success_hook to scan the model response OUTPUT and apply
+  masking to it, but only when the response carries text content (filter out tool-only
+  responses). Wrap the make_bedrock_api_request call to attach original_response before
+  rethrowing ModifyResponseException so the endpoint handler carries original token usage
+  in the block response. Apply masking via _apply_masking_to_response, then add the
+  guardrail name to the response header.
+
+  Implement async_post_call_streaming_iterator_hook to collect all chunks from the
+  upstream response, assemble them (handling both chat-completion chunks and raw
+  Anthropic SSE separately), scan the assembled OUTPUT, apply masking, and yield chunks
+  for the masked response. When _streams_incrementally returns true, delegate to
+  UnifiedLLMGuardrails with buffer_until_moderated_default=False. When the route is
+  Responses API, delegate to UnifiedLLMGuardrails with buffer_until_moderated_default=True.
+  For Anthropic SSE streams (raw_sse=true), detect blocks via status 400 and structured
+  detail, then emit error or block frames without raising (headers already flushed); use
+  keepalive_ping_has_fired to decide whether a service error can be raised. Non-Anthropic
+  streams yield chunks from the assembled response via MockResponseIterator. When a
+  ModifyResponseException is caught, preserve the original model/usage and emit block
+  frames instead of raising.
+
+  Implement _streams_incrementally to return false if masking is enabled (full buffering),
+  true if buffering is disabled, or check streaming_buffer_release_on_scan and
+  streaming_end_of_stream_only to decide between incremental and full-buffer modes.
+
+  Implement _is_responses_api_route to use get_call_types_for_route and check whether the
+  route supports Responses API call types. Store the Responses call-type constant in
+  _RESPONSES_API_CALL_TYPES as a frozenset of CallTypes.responses and CallTypes.aresponses.
+
+scope:
+  paths:
+    - crates/betterlite-bedrock/src/guardrail_hooks.rs
+    - crates/betterlite-bedrock/src/guardrail_hooks/**
+    - tools/oracle/cases/bedrock_guardrail_hooks/**
+    - tools/oracle/helpers/b3726.py
+    - tools/oracle/helpers/b3726/**
+    - tools/oracle/src/helpers/bedrock/b3726.rs
+    - tools/oracle/src/helpers/bedrock/b3726/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L222-L229
+    why: Implement _RESPONSES_API_CALL_TYPES constant and _is_responses_api_route function to detect Responses-API routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L332-L337
+    why: Implement _streams_incrementally method that decides between incremental and buffered streaming based on mask/buffer settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2488-L2553
+    why: Implement async_pre_call_hook that selects messages, masks INPUT content, and updates request messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2555-L2622
+    why: Implement async_moderation_hook that scans INPUT during the LLM call and lets ModifyResponseException propagate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2624-L2695
+    why: Implement async_post_call_success_hook that scans OUTPUT response, preserves usage on block, and applies masking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2733-L2905
+    why: Implement async_post_call_streaming_iterator_hook with incremental/Responses delegation, Anthropic SSE assembly, masking and error frame emission.
+
+dod:
+  - text: _RESPONSES_API_CALL_TYPES constant is a frozenset containing CallTypes.responses and CallTypes.aresponses.
+    proof: [responses-api-constant]
+  - text: _is_responses_api_route returns false when request_route is None, and uses get_call_types_for_route to detect Responses API support.
+    proof: [responses-api-route-check]
+  - text: _streams_incrementally returns false when mask_response_content is true, true when streaming_buffer_until_moderated is false, otherwise checks streaming_buffer_release_on_scan and streaming_end_of_stream_only.
+    proof: [streaming-mode-decision]
+  - text: async_pre_call_hook selects messages via get_guardrails_messages_for_call_type, filters by role via _prepare_guardrail_messages_for_role, scans INPUT, updates messages via _update_messages_with_updated_bedrock_guardrail_response and _merge_filtered_messages, and adds guardrail header.
+    proof: [pre-call-hook-tests]
+  - text: async_moderation_hook implements the same flow as async_pre_call_hook but with during_call/during_mcp_call event types and lets ModifyResponseException propagate for endpoint handling.
+    proof: [moderation-hook-tests]
+  - text: async_post_call_success_hook scans OUTPUT only when response carries text content, preserves original_response before rethrowing ModifyResponseException, applies masking, and adds guardrail header.
+    proof: [post-call-hook-tests]
+  - text: async_post_call_streaming_iterator_hook delegates to UnifiedLLMGuardrails when _streams_incrementally or _is_responses_api_route returns true, with correct buffer_until_moderated_default settings.
+    proof: [stream-delegation-tests]
+  - text: Anthropic SSE streams are assembled with raw_sse detection, blocks emit error frames without raising once headers are flushed, service failures raise early or frame based on keepalive_ping_has_fired.
+    proof: [sse-assembly-tests]
+  - text: Non-Anthropic streamed responses yield chunks via MockResponseIterator after assembly and masking.
+    proof: [mock-iterator-tests]
+  - text: ModifyResponseException in streaming preserves model/usage from pre-block response and emits block frames for both SSE and non-SSE surfaces.
+    proof: [streaming-block-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: responses-api-constant
+      why: _RESPONSES_API_CALL_TYPES constant is missing or does not match LiteLLM definition
+      run: grep -q "_RESPONSES_API_CALL_TYPES" crates/betterlite-bedrock/src/guardrail_hooks.rs && grep -q "CallTypes::responses" crates/betterlite-bedrock/src/guardrail_hooks.rs
+    - id: responses-api-route-check
+      why: _is_responses_api_route function is missing or does not use get_call_types_for_route
+      run: grep -q "_is_responses_api_route" crates/betterlite-bedrock/src/guardrail_hooks.rs && grep -q "get_call_types_for_route" crates/betterlite-bedrock/src/guardrail_hooks.rs
+    - id: streaming-mode-decision
+      why: _streams_incrementally method is missing or does not check all streaming parameters
+      run: grep -q "_streams_incrementally" crates/betterlite-bedrock/src/guardrail_hooks.rs && grep -q "mask_response_content" crates/betterlite-bedrock/src/guardrail_hooks.rs
+    - id: pre-call-hook-tests
+      why: async_pre_call_hook tests must pass for message selection, filtering, scanning and masking
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^guardrail_hooks::.*pre_call/)'
+    - id: moderation-hook-tests
+      why: async_moderation_hook tests must pass for during-call event handling and exception propagation
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^guardrail_hooks::.*moderation/)'
+    - id: post-call-hook-tests
+      why: async_post_call_success_hook tests must pass for OUTPUT scanning and masking
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^guardrail_hooks::.*post_call/)'
+    - id: stream-delegation-tests
+      why: Stream delegation to UnifiedLLMGuardrails tests must pass with correct buffer settings
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^guardrail_hooks::.*stream_delegation/)'
+    - id: sse-assembly-tests
+      why: Anthropic SSE assembly, block detection and error framing tests must pass
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^guardrail_hooks::.*sse/)'
+    - id: mock-iterator-tests
+      why: Non-SSE stream reconstruction via MockResponseIterator tests must pass
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^guardrail_hooks::.*mock_iterator/)'
+    - id: streaming-block-tests
+      why: ModifyResponseException handling in streaming must preserve usage and emit frames correctly
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^guardrail_hooks::.*block/)'
+
+oracle_cases:
+  - tools/oracle/cases/bedrock_guardrail_hooks/block-via-400-status.yaml
+  - tools/oracle/cases/bedrock_guardrail_hooks/keepalive-fired-emits-frame.yaml
+  - tools/oracle/cases/bedrock_guardrail_hooks/keepalive-not-fired-raises.yaml
+  - tools/oracle/cases/bedrock_guardrail_hooks/usage-preserved-on-block.yaml
+  - tools/oracle/cases/bedrock_guardrail_hooks/post-call-skips-tool-only-response.yaml
+  - tools/oracle/cases/bedrock_guardrail_hooks/pre-call-hook-success.yaml
+  - tools/oracle/cases/bedrock_guardrail_hooks/moderation-hook-exception-propagates.yaml
+  - tools/oracle/cases/bedrock_guardrail_hooks/streaming-incremental-delegation.yaml
+  - tools/oracle/cases/bedrock_guardrail_hooks/streaming-responses-api-delegation.yaml
+  - tools/oracle/cases/bedrock_guardrail_hooks/non-anthropic-stream-reconstruction.yaml
+  - tools/oracle/cases/bedrock_guardrail_hooks/anthropic-sse-assembly-and-block-detection.yaml
+  - tools/oracle/cases/bedrock_guardrail_hooks/streaming-block-frames-without-raise.yaml
+  - tools/oracle/cases/bedrock_guardrail_hooks/responses-api-route-detection.yaml
+
+deviations:
+  - what: >-
+      Streaming error handling defers to keepalive_ping_has_fired to determine whether
+      a service error raised after chunk consumption can reach the client via HTTP status
+      or must travel as a frame. Once a keepalive ping has flushed headers, only frames
+      can be sent; earlier, a raise can return an HTTP error. Bedrock policy blocks are
+      emitted as error frames once assembled; they do not propagate as exceptions.
+    why: >-
+      Streaming responses have already flushed headers by the time chunks are yielded.
+      A service error early in the stream can raise, but once keepalive pings have been
+      sent, the HTTP status is locked and the error must be serialized as an SSE frame
+      (matching Anthropic's own behavior). Blocks always travel as frames to preserve
+      the response shape the client expects, and original token usage is carried from
+      the upstream call, not re-calculated.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2814-L2847
+
+  - what: >-
+      Responses-API routes delegate to UnifiedLLMGuardrails for scanning because the
+      unified framework owns the translation layer that decodes Responses events into
+      messages and responses; the native Bedrock hook cannot assemble Responses chunks
+      because they are neither chat-completion SSE nor Anthropic SSE frames.
+    why: >-
+      Responses API is a distinct event stream format with its own assembly rules.
+      Attempting to scan it with native code would duplicate translation logic and
+      require the Bedrock hook to understand the Responses wire format, which belongs
+      to the unified framework. Delegating preserves separation of concerns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2760-L2776
+
+out_of_scope:
+  - B3721 owns _prepare_guardrail_messages_for_role, _update_messages_with_updated_bedrock_guardrail_response, _merge_filtered_messages, and _apply_masking_to_response; this task calls them.
+  - B3723 owns constructor streaming_params fields (_set_streaming_params); this task reads them via _streams_incrementally.
+  - B3724 owns make_bedrock_api_request; this task calls it from all hooks.
+  - B207 owns get_call_types_for_route from betterlite-core::routes; this task calls it to detect Responses API.
+  - B2227 owns stream_chunk_builder and the streaming assembly; this task calls them to reconstruct responses.
+  - B732 owns AuthContext and user principal accessors; this task reads request_route from the auth dict.
+  - B3669 owns assemble_anthropic_sse_stream, anthropic_sse_chunks_from_response, anthropic_sse_error_frames, is_raw_sse_stream and model_response_text (litellm/proxy/guardrails/anthropic_sse.py); this task calls them.
+  - U1 (should_run_guardrail, get_guardrails_messages_for_call_type, UnifiedLLMGuardrails, AnthropicMessagesHandler) are unresolved and must be provided elsewhere.
+  - U3 (add_guardrail_to_applied_guardrails_header) and U6 (keepalive_ping_has_fired, serialize_http_exception_detail, MockResponseIterator) are unresolved.
+  - UnifiedLLMGuardrails.async_post_call_streaming_iterator_hook is called via delegation when incremental/Responses modes are active.
+
+pitfalls:
+  - "_RESPONSES_API_CALL_TYPES must be a frozenset containing exactly CallTypes.responses and CallTypes.aresponses; the constant is used to check route support via membership test."
+  - "_is_responses_api_route returns false (not None) when request_route is None; the function checks call_types membership only if get_call_types_for_route returns a non-None result."
+  - "_streams_incrementally returns false when mask_response_content is true because masking requires the full assembled response; incremental yields would pass incomplete content to the masking layer."
+  - "async_pre_call_hook and async_moderation_hook share the same implementation pattern; the only difference is the event_type parameter (pre_call vs during_call/during_mcp_call) and exception handling (pre_call suppresses ModifyResponseException in its hook context, during_call lets it propagate)."
+  - "async_post_call_success_hook filters responses that have no text content (e.g., tool-only choices) and skips scanning for them, since Bedrock requires non-empty content."
+  - "Streaming error handling checks both is_block (structured detail + 400 status for blocks) and headers_flushed (keepalive timing) before deciding to raise vs emit a frame; raw_sse is also required for the block detection logic."
+  - "ModifyResponseException in streaming context must preserve the model and original response before constructing a replacement, since the exception carries usage that will be lost when the response is replaced; the original_response field is populated by this hook."
+  - "Empty assembled responses (no text content) are passed through via all_chunks without scanning; the check for isinstance(assembled_model_response, ModelResponse) guards against TextCompletionResponse or None."
+  - "keepalive_ping_has_fired takes elapsed seconds and interval seconds as arguments; the elapsed time is calculated from time.monotonic() to match the source's calculation."
+  - "MockResponseIterator must be awaited like an async generator; yielding from it requires async for, not a direct yield of the iterator."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

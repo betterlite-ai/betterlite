@@ -1,0 +1,112 @@
+id: B3497
+title: Translate interaction requests and replies through Responses
+description: >-
+  Build `betterlite-core::responses_transform` to convert Interactions API requests and
+  responses to and from the Responses API format. Implement role mapping from step types
+  and Turn objects, content-item transformation with schema-aware type selection, usage
+  projection from Responses to Interactions format, and ISO timestamp conversion for
+  response creation times. Preserve extras overwriting mapped parameters, the split
+  between legacy outputs and new steps in response synthesis, and role remapping
+  (model -> assistant) between the two APIs.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/responses_transform.rs
+    - crates/betterlite-core/src/api/responses_transform/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L26
+    why: "Role map constant _STEP_TYPE_ROLES mapping step types to roles"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L33-L89
+    why: "transform_interactions_request_to_responses_request: convert Interactions request to Responses format with extras overwriting mapped params"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L92-L141
+    why: "_transform_interactions_input_to_responses_input: handle string, Turn[], Step[], Content, and dict input variants"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L144-L147
+    why: "_is_history_item: detect Turn objects and step/role dicts in input"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L150-L161
+    why: "_transform_history_item: extract role and content from Turn or dict, apply role selection and content array transform"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L164-L169
+    why: "_responses_role: map step type to role, remap model to assistant, default to user"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L172-L174
+    why: "_transform_content_array: apply schema-aware type selection to each content item"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L177-L187
+    why: "_transform_content_item: map text content and fallback to string coercion by role (input_text vs output_text)"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L190-L277
+    why: "transform_responses_response_to_interactions_response: extract outputs and steps from response, convert timestamp to ISO, map status, project usage"
+
+dod:
+  - text: "_STEP_TYPE_ROLES constant maps step types user_input and model_output to roles user and assistant."
+    proof: [transformation-tests]
+  - text: "transform_interactions_request_to_responses_request builds a dict with model, input, instructions, tools, generation config fields extracted from optional_params, and extra kwargs overwriting any mapped params."
+    proof: [transformation-tests]
+  - text: "generation_config is unpacked to temperature, top_p, max_output_tokens; top_k is dropped silently since Responses API does not support it."
+    proof: [transformation-tests]
+  - text: "Stream, store, metadata and user passthrough params are copied from optional_params to responses_request when non-None."
+    proof: [transformation-tests]
+  - text: "_transform_interactions_input_to_responses_input handles string input by passthrough, list input by detecting history items or wrapping as user content, dict input by extracting content field, and falls back to string coercion."
+    proof: [transformation-tests]
+  - text: "_is_history_item returns true for Turn objects and for dicts with role field or step type (user_input or model_output)."
+    proof: [transformation-tests]
+  - text: "_transform_history_item extracts role via _responses_role, extracts content field and normalizes to list, and builds role/content dict via _transform_content_array."
+    proof: [transformation-tests]
+  - text: "_responses_role maps step type via _STEP_TYPE_ROLES, remaps model to assistant, and defaults to user for missing or empty-string role (through truthiness check)."
+    proof: [transformation-tests]
+  - text: "_transform_content_array applies _transform_content_item to each item in the content sequence with the given role context."
+    proof: [transformation-tests]
+  - text: "_transform_content_item converts string to {type: input_text/output_text, text: value} based on role, preserves text type dicts by converting to appropriate type, coerces BaseModel to dict then recurses, and coerces unknown types to string."
+    proof: [transformation-tests]
+  - text: "_transform_content_item passes through non-text Mapping items unchanged when item.get(\"type\") is not \"text\", including dicts with other type values like input_image."
+    proof: [transformation-tests]
+  - text: "transform_responses_response_to_interactions_response extracts text from output[].content[] items and builds both independent outputs list (legacy) and steps list (new schema) with model_output type."
+    proof: [transformation-tests]
+  - text: "Outputs list contains {type: text, text: value} objects from response content items; steps list groups model_output contents, one step per output item."
+    proof: [transformation-tests]
+  - text: "timestamp conversion uses injected LocalTimeContext for datetime.fromtimestamp(created_at).isoformat(), or passes through datetime objects that already have isoformat(), or None if absent."
+    proof: [transformation-tests]
+  - text: "Status mapping preserves completed and in_progress, passes through other status values unchanged."
+    proof: [transformation-tests]
+  - text: "Usage projection maps Responses input_tokens/output_tokens to Interactions total_input_tokens/total_output_tokens, with zero default for missing fields."
+    proof: [transformation-tests]
+  - text: "InteractionsAPIResponse is built with id, object (literal 'interaction'), status, outputs, steps, model, created and updated (same as created), and usage dict."
+    proof: [transformation-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: transformation-tests
+      why: transformation tests are missing, do not run, or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_transform::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Role remapping from model to assistant is done in _responses_role rather than at response build time, affecting all role selections consistently."
+    why: "LiteLLM does the same remapping in the same location; betterlite preserves this behavior for consistency."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L169
+  - what: "Generation config top_k field is silently dropped; Responses API does not support it."
+    why: "This preserves LiteLLM's behavior and matches the Responses API specification."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L74-L76
+  - what: "Timestamp conversion uses LocalTimeContext from B1306 for testable time injection, not the datetime module directly."
+    why: "Enables deterministic tests and time-controlled scenarios without affecting other code paths."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L234-L241
+
+out_of_scope:
+  - Request validation or schema enforcement (handled by B3481 type constructors).
+  - Responses API completion execution (handled by B3498 adapter handler).
+  - Provider-specific field mapping or adapter selection (handled by B3498 handler).
+  - History processing or Turn/Step/Content type construction (B3481 owns record construction).
+
+pitfalls:
+  - "Content item recursion in _transform_content_item applies the schema type selection after model_dump() on BaseModel, not before."
+  - "outputs and steps are built from independent dict instances to prevent mutation leakage between the legacy and new response fields."
+  - "Step type detection uses string.get() of the type field, not isinstance check, allowing string type values from user input."
+  - "Created timestamp remaps to None if created_at is absent; no fallback to current time or zero."
+  - "extras override mapped parameters via dict.update(), so passthrough_params like stream/store can be overwritten by kwargs."
+  - "Role defaults to user through truthiness check: missing, None, or empty-string role all fall back to user via the `or \"user\"` expression."
+  - "Non-text Mapping items are passed through unchanged in _transform_content_item; only items with type==\"text\" are transformed to type input_text or output_text."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -2,8 +2,8 @@ id: B4814
 milestone: M9 agents and mcp
 title: A2A send entry points and provider bridge selection
 status: todo
-depends_on: [B198, B247, B4800, B4801, B4802, B4809, B4810]
-file: null
+depends_on: [B198, B247, B4771, B4800, B4801, B4802, B4809, B4810]
+file: tasks/B4814-a2a-send-entry-points.yaml
 covers:
   - "litellm/a2a_protocol/main.py"
   - "litellm/a2a_protocol/client.py"

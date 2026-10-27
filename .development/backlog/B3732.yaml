@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Model Armor configuration and verdict projection
 status: todo
 depends_on: [B1302, B218, B173]
-file: null
+file: tasks/B3732-model-armor-decisions.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/model_armor.py"
