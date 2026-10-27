@@ -15,6 +15,7 @@ regex.workspace = true
 rust_decimal.workspace = true
 ryu = "1.0.23"
 serde.workspace = true
+serde_json = "1.0.154"
 sha2.workspace = true
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
@@ -26,6 +27,10 @@ rstest = "=0.27.0"
 serde-saphyr.workspace = true
 serde_json = "1.0.154"
 tracing-subscriber.workspace = true
+
+[[test]]
+name = "mlflow_logging"
+path = "src/mlflow/test_target.rs"
 
 [lints]
 workspace = true
