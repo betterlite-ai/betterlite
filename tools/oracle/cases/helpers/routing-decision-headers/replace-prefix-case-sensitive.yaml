@@ -1,0 +1,9 @@
+kind: helper
+name: replace-prefix-case-sensitive
+call:
+  routing_decision_headers:
+    function: replace
+    existing: {x-litellm-complexity-router-tier: old, X-LiteLLM-complexity-router-cause: keep, unrelated: false}
+    new_headers: {x-litellm-complexity-router-score: '1', unrelated: new}
+env: {}
+compare: {ignore: []}

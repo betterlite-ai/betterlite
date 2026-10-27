@@ -1,0 +1,8 @@
+task: B2350
+deviations:
+  - what: A JSON integer outside the i64 and u64 range, or the literal -0, in a complexity score or a quality decision field prints as a Python float (1e+20, -0.0) where LiteLLM prints the exact integer (100000000000000000000, 0).
+    why: serde_json without arbitrary_precision reads those integers as f64, and turning that feature on would change number handling in every crate of the workspace. Router scores and quality tiers are small numbers, so the case doesn't come up.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L49-L53
+  - what: Inside a list or dict quality value, a character first assigned in Unicode 16.0 prints as is, while LiteLLM on Python 3.13 escapes it as unassigned.
+    why: The unicode-general-category crate carries Unicode 16.0 tables and Python 3.13 carries 15.1. Python 3.14 uses 16.0 and agrees with betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L162-L164
