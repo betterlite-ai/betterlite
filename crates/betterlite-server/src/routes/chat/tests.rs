@@ -152,41 +152,71 @@ async fn serves_every_chat_route_with_litellm_headers(
         answered.sent.contains("authorization: Bearer env-key")
             && answered.sent.contains("openai-organization: org-9")
     );
-    let expected = [
-        ("x-litellm-call-id", "call-1"),
-        ("x-litellm-model-id", "dep-1"),
-        ("x-litellm-model-name", "openai/up"),
-        ("x-litellm-model-group", "g"),
-        ("x-litellm-callback-duration-ms", "0.0"),
-        ("x-litellm-attempted-retries", "0"),
-        ("x-litellm-attempted-fallbacks", "0"),
-        ("x-litellm-version", env!("CARGO_PKG_VERSION")),
-        ("llm_provider-x-ratelimit-reset-requests", "1s"),
-        ("x-ratelimit-reset-requests", "1s"),
-        ("x-ratelimit-remaining-requests", "9"),
-    ];
-    for (name, value) in expected {
-        assert_eq!(header(&answered.headers, name), Some(value), "{name}");
-    }
+    assert_eq!(
+        header(&answered.headers, "x-litellm-call-id"),
+        Some("call-1")
+    );
+    assert_eq!(
+        header(&answered.headers, "x-litellm-model-id"),
+        Some("dep-1")
+    );
+    assert_eq!(
+        header(&answered.headers, "x-litellm-model-name"),
+        Some("openai/up")
+    );
+    assert_eq!(
+        header(&answered.headers, "x-litellm-model-group"),
+        Some("g")
+    );
+    assert_eq!(
+        header(&answered.headers, "x-litellm-callback-duration-ms"),
+        Some("0.0")
+    );
+    assert_eq!(
+        header(&answered.headers, "x-litellm-attempted-retries"),
+        Some("0")
+    );
+    assert_eq!(
+        header(&answered.headers, "x-litellm-attempted-fallbacks"),
+        Some("0")
+    );
+    assert_eq!(
+        header(&answered.headers, "x-litellm-version"),
+        Some(env!("CARGO_PKG_VERSION"))
+    );
+    assert_eq!(
+        header(&answered.headers, "llm_provider-x-ratelimit-reset-requests"),
+        Some("1s")
+    );
+    assert_eq!(
+        header(&answered.headers, "x-ratelimit-reset-requests"),
+        Some("1s")
+    );
+    assert_eq!(
+        header(&answered.headers, "x-ratelimit-remaining-requests"),
+        Some("9")
+    );
     assert!(
         header(&answered.headers, "x-litellm-model-api-base")
             .unwrap()
             .ends_with("/v1")
     );
     assert!(header(&answered.headers, "x-litellm-timeout").is_none());
-    for name in [
-        "x-litellm-response-duration-ms",
-        "x-litellm-overhead-duration-ms",
-    ] {
-        let (whole, fraction) = header(&answered.headers, name)
+    let (whole, fraction) = header(&answered.headers, "x-litellm-response-duration-ms")
+        .unwrap()
+        .split_once('.')
+        .unwrap();
+    assert!(whole.parse::<u64>().is_ok() && fraction.len() == 3 && fraction.parse::<u16>().is_ok());
+    let (overhead_whole, overhead_fraction) =
+        header(&answered.headers, "x-litellm-overhead-duration-ms")
             .unwrap()
             .split_once('.')
             .unwrap();
-        assert!(
-            whole.parse::<u64>().is_ok() && fraction.len() == 3 && fraction.parse::<u16>().is_ok(),
-            "{name}"
-        );
-    }
+    assert!(
+        overhead_whole.parse::<u64>().is_ok()
+            && overhead_fraction.len() == 3
+            && overhead_fraction.parse::<u16>().is_ok()
+    );
 }
 
 #[rstest]

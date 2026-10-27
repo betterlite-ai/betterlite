@@ -115,14 +115,10 @@ async fn sends_the_mapped_body_and_answers_with_the_requested_model() {
         chat.send(deployment, &request)
     );
     assert!(sent.starts_with("POST /v1/chat/completions HTTP/1.1\r\n"));
-    for header in [
-        "authorization: Bearer k",
-        "openai-organization: org-7",
-        "content-type: application/json",
-        "accept: application/json",
-    ] {
-        assert!(sent.contains(header), "{header} missing from {sent}");
-    }
+    assert!(sent.contains("authorization: Bearer k"));
+    assert!(sent.contains("openai-organization: org-7"));
+    assert!(sent.contains("content-type: application/json"));
+    assert!(sent.contains("accept: application/json"));
     let upstream: Value = serde_json::from_str(sent.split("\r\n\r\n").nth(1).unwrap()).unwrap();
     let expected = r#"{"model":"up","temperature":1,"vendor_flag":{"a":1},"messages":[{"role":"assistant","tool_calls":[{"id":"t","type":"function","function":{"name":"f","arguments":"{}"}}]}]}"#;
     assert_eq!(upstream, serde_json::from_str::<Value>(expected).unwrap());

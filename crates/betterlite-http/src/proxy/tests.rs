@@ -138,15 +138,11 @@ async fn posts_json_with_a_bearer_key_and_bounded_answer(
         body_limit,
     };
     let (sent, answered) = tokio::join!(reply_after(listener, delay), client.post_json(post));
-    for line in [
-        "POST /v1/chat/completions HTTP/1.1",
-        "authorization: Bearer sk-test",
-        "openai-organization: org-1",
-        "content-type: application/json",
-        "accept: application/json",
-    ] {
-        assert!(sent.contains(line), "{line} missing from {sent}");
-    }
+    assert!(sent.contains("POST /v1/chat/completions HTTP/1.1"));
+    assert!(sent.contains("authorization: Bearer sk-test"));
+    assert!(sent.contains("openai-organization: org-1"));
+    assert!(sent.contains("content-type: application/json"));
+    assert!(sent.contains("accept: application/json"));
     let observed = answered.map_or_else(
         |error| error.to_string(),
         |response| {

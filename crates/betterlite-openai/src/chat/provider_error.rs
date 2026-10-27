@@ -129,8 +129,10 @@ const fn fallback_type(status: u16) -> &'static str {
 }
 
 fn mentions_rate_limit(lower: &str) -> bool {
-    lower.contains("service tier capacity exceeded")
-        || lower.match_indices("rate").any(|(start, word)| {
+    if lower.contains("service tier capacity exceeded") {
+        true
+    } else {
+        lower.match_indices("rate").any(|(start, word)| {
             let rest = lower
                 .get(start.saturating_add(word.len())..)
                 .unwrap_or_default();
@@ -139,6 +141,7 @@ fn mentions_rate_limit(lower: &str) -> bool {
             })
             .starts_with("limit")
         })
+    }
 }
 
 fn context_window_exceeded(lower: &str) -> bool {
@@ -155,9 +158,12 @@ fn context_window_exceeded(lower: &str) -> bool {
 }
 
 fn content_policy_violation(body: &str, lower: &str) -> bool {
-    (body.contains("invalid_request_error") && body.contains("content_policy_violation"))
-        || (body.contains("Invalid prompt") && body.contains("violating our usage policy"))
-        || lower.contains("request was rejected as a result of the safety system")
+    if body.contains("invalid_request_error") && body.contains("content_policy_violation") {
+        true
+    } else {
+        (body.contains("Invalid prompt") && body.contains("violating our usage policy"))
+            || lower.contains("request was rejected as a result of the safety system")
+    }
 }
 
 mod tests;

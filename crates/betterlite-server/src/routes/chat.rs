@@ -42,15 +42,15 @@ struct RouterErrorFields {
 }
 
 pub(crate) fn chat_routes(executor: Arc<ChatExecutor>) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/chat/completions", post(chat_completion))
         .route("/v1/chat/completions", post(chat_completion))
         .route("/engines/{model}/chat/completions", post(chat_completion))
         .route(
             "/openai/deployments/{model}/chat/completions",
             post(chat_completion),
-        )
-        .with_state(executor)
+        );
+    router.with_state(executor)
 }
 
 async fn chat_completion(
