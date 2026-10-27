@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::helpers::Helper;
 
@@ -36,21 +36,26 @@ impl Helper for Op {
         ];
         let mut result = serde_json::Map::new();
         for (name, environment) in names {
-            let value = input.deployment.get(name)
+            let value = input
+                .deployment
+                .get(name)
                 .or_else(|| input.litellm_settings.get(name))
                 .or_else(|| input.env.get(environment))
-                .cloned().unwrap_or(Value::Null);
+                .cloned()
+                .unwrap_or(Value::Null);
             result.insert(name.to_owned(), value);
         }
         result.insert(
             "aws_session_tags".to_owned(),
-            input.deployment.get("aws_session_tags")
+            input
+                .deployment
+                .get("aws_session_tags")
                 .or_else(|| input.litellm_settings.get("aws_session_tags"))
-                .cloned().unwrap_or(Value::Null),
+                .cloned()
+                .unwrap_or(Value::Null),
         );
         Ok(json!(result))
     }
 }
 
-#[cfg(test)]
 mod tests;

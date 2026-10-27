@@ -1,0 +1,9 @@
+kind: helper
+name: empty-bearer
+call:
+  bedrock_settings:
+    deployment: {aws_bearer_token_bedrock: ""}
+    litellm_settings: {}
+    env: {AWS_BEARER_TOKEN_BEDROCK: fallback}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: error-text-unread
+call:
+  bedrock_settings:
+    deployment: {}
+    litellm_settings: {}
+    env: {}
+env: {}
+compare: {ignore: []}

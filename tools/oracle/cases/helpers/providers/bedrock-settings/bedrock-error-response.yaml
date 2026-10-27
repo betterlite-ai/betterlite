@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-error-response
+call:
+  bedrock_settings:
+    deployment: {}
+    litellm_settings: {}
+    env: {}
+env: {}
+compare: {ignore: []}

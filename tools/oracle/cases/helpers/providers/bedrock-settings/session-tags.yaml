@@ -1,0 +1,9 @@
+kind: helper
+name: session-tags
+call:
+  bedrock_settings:
+    deployment: {aws_session_tags: [{Key: 1}]}
+    litellm_settings: {}
+    env: {}
+env: {}
+compare: {ignore: []}

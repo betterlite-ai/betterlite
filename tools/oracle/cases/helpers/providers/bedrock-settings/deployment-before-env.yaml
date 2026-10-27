@@ -1,0 +1,9 @@
+kind: helper
+name: deployment-before-env
+call:
+  bedrock_settings:
+    deployment: {aws_region_name: deployment}
+    litellm_settings: {aws_region_name: module}
+    env: {AWS_REGION_NAME: environment}
+env: {}
+compare: {ignore: []}

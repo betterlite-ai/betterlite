@@ -1,17 +1,17 @@
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-#[expect(
-    clippy::disallowed_types,
-    reason = "session tags and HTTP header values must preserve unvalidated input"
-)]
-use serde_json::Value;
-
-#[expect(
-    clippy::disallowed_types,
-    reason = "session tags and HTTP header values must preserve unvalidated input"
-)]
-type JsonValue = Value;
 use std::collections::BTreeMap;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum RawValue {
+    Null(()),
+    Bool(bool),
+    Number(f64),
+    Text(String),
+    Array(Vec<Self>),
+    Object(BTreeMap<String, Self>),
+}
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct AwsInput {
@@ -28,7 +28,7 @@ pub struct AwsInput {
     pub aws_role_arn: Option<String>,
     pub aws_web_identity_token_file: Option<String>,
     pub aws_bearer_token_bedrock: Option<String>,
-    pub aws_session_tags: Option<JsonValue>,
+    pub aws_session_tags: Option<RawValue>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -46,7 +46,7 @@ pub struct AwsSettings {
     pub aws_role_arn: Option<String>,
     pub aws_web_identity_token_file: Option<String>,
     pub aws_bearer_token_bedrock: Option<SecretString>,
-    pub aws_session_tags: Option<JsonValue>,
+    pub aws_session_tags: Option<RawValue>,
 }
 
 pub trait Environment {
@@ -60,7 +60,7 @@ impl Environment for BTreeMap<String, String> {
 
 #[expect(
     clippy::too_many_lines,
-    reason = "the AWS snapshot has one field per LiteLLM input"
+    reason = "AWS settings contain one field per supported input"
 )]
 pub fn snapshot<E>(deployment: &AwsInput, module: &AwsInput, environment: &E) -> AwsSettings
 where
@@ -165,21 +165,15 @@ pub struct BedrockError {
 #[must_use]
 pub fn synthesize_error_response(
     status: u16,
-    headers: Option<&BTreeMap<String, JsonValue>>,
+    headers: Option<&BTreeMap<String, RawValue>>,
     request: Option<String>,
 ) -> Option<ErrorResponse> {
     let provided_headers = headers.filter(|provided| !provided.is_empty())?;
-    let filtered = provided_headers
-        .iter()
-        .filter_map(|(key, header_value)| match header_value {
-            Value::String(text) => Some((key.clone(), text.clone())),
-            Value::Null
-            | Value::Bool(_)
-            | Value::Number(_)
-            | Value::Array(_)
-            | Value::Object(_) => None,
-        })
-        .collect();
+    let filtered = string_headers(
+        provided_headers
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone())),
+    );
     Some(ErrorResponse {
         status,
         headers: filtered,
@@ -191,23 +185,11 @@ pub fn synthesize_error_response(
 pub fn bedrock_error(
     status: u16,
     message: String,
-    headers: Option<BTreeMap<String, JsonValue>>,
+    headers: Option<BTreeMap<String, RawValue>>,
     request: Option<String>,
 ) -> BedrockError {
     let response = synthesize_error_response(status, headers.as_ref(), request);
-    let filtered_headers = headers.map(|values| {
-        values
-            .into_iter()
-            .filter_map(|(key, header_value)| match header_value {
-                Value::String(text) => Some((key, text)),
-                Value::Null
-                | Value::Bool(_)
-                | Value::Number(_)
-                | Value::Array(_)
-                | Value::Object(_) => None,
-            })
-            .collect()
-    });
+    let filtered_headers = headers.map(string_headers);
     BedrockError {
         status,
         message,
@@ -216,5 +198,17 @@ pub fn bedrock_error(
     }
 }
 
-#[cfg(test)]
+fn string_headers<I>(values: I) -> BTreeMap<String, String>
+where
+    I: IntoIterator<Item = (String, RawValue)>,
+{
+    let mut filtered = BTreeMap::new();
+    for (key, value) in values {
+        if let RawValue::Text(text) = value {
+            filtered.insert(key, text);
+        }
+    }
+    filtered
+}
+
 mod tests;

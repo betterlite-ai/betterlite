@@ -1,0 +1,9 @@
+kind: helper
+name: irsa-config
+call:
+  bedrock_settings:
+    deployment: {aws_role_arn: arn}
+    litellm_settings: {aws_web_identity_token_file: /token}
+    env: {}
+env: {}
+compare: {ignore: []}
