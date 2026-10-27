@@ -1,105 +1,93 @@
-use serde_json::{Map, Value};
+use thiserror::Error;
 
-use crate::schema_transforms::SchemaError;
+use crate::schema_transforms::object_in;
+use crate::schema_transforms::tree::{JsonObject, JsonTree};
 
-const MAX_DEPTH: usize = 32;
+mod tests;
 
-pub fn inline_request_body(schema: Option<Value>, example: Value) -> Result<Value, SchemaError> {
-    let media = serde_json::json!({"example": example});
-    let Some(schema) = schema else {
-        return Ok(serde_json::json!({"required": true, "content": {"application/json": media}}));
-    };
-    let definitions = schema
-        .as_object()
-        .and_then(|object| object.get("$defs"))
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    let expanded = inline_value(schema, &definitions, 0)?;
-    Ok(
-        serde_json::json!({"required": true, "content": {"application/json": {"schema": expanded, "example": media["example"]}}}),
-    )
+const MAX_INLINE_DEPTH: u8 = 32;
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum InlineError {
+    #[error("the schema references #/$defs/{name}, which it does not define")]
+    MissingDefinition { name: String },
 }
 
-fn inline_value(
-    value: Value,
-    definitions: &Map<String, Value>,
-    depth: usize,
-) -> Result<Value, SchemaError> {
-    if depth >= MAX_DEPTH || !value.is_object() && !value.is_array() {
-        return Ok(value);
+// Swagger UI resolves $ref against the whole document, so an inline body cannot keep #/$defs references
+pub fn inline_request_body(
+    schema: Option<&JsonObject>,
+    example: &JsonObject,
+) -> Result<JsonObject, InlineError> {
+    let mut media = JsonObject::new();
+    if let Some(generated) = schema {
+        let no_definitions = JsonObject::new();
+        let definitions = generated
+            .get("$defs")
+            .and_then(object_in)
+            .unwrap_or(&no_definitions);
+        let inlined = inline_object(generated, definitions, 0)?;
+        media.insert("schema".to_owned(), inlined);
     }
-    if let Value::Array(values) = value {
-        return values
-            .into_iter()
-            .map(|item| inline_value(item, definitions, depth + 1))
+    media.insert("example".to_owned(), JsonTree::Object(example.clone()));
+    let content = JsonObject::from([("application/json".to_owned(), JsonTree::Object(media))]);
+    Ok(JsonObject::from([
+        ("required".to_owned(), JsonTree::Flag(true)),
+        ("content".to_owned(), JsonTree::Object(content)),
+    ]))
+}
+
+fn inline(tree: &JsonTree, definitions: &JsonObject, depth: u8) -> Result<JsonTree, InlineError> {
+    if depth >= MAX_INLINE_DEPTH {
+        return Ok(tree.clone());
+    }
+    match tree {
+        JsonTree::Object(object) => inline_object(object, definitions, depth),
+        JsonTree::Array(items) => items
+            .iter()
+            .map(|item| inline(item, definitions, depth.saturating_add(1)))
             .collect::<Result<Vec<_>, _>>()
-            .map(Value::Array);
+            .map(JsonTree::Array),
+        JsonTree::Null | JsonTree::Flag(_) | JsonTree::Number(_) | JsonTree::Text(_) => {
+            Ok(tree.clone())
+        }
     }
-    let Value::Object(object) = value else {
-        return Ok(value);
-    };
-    if let Some(reference) = object
-        .get("$ref")
-        .and_then(Value::as_str)
-        .and_then(|value| value.strip_prefix("#/$defs/"))
-    {
-        let target = definitions
-            .get(reference)
-            .ok_or_else(|| SchemaError::MissingDefinition(reference.to_owned()))?;
-        let target = inline_value(target.clone(), definitions, depth + 1)?;
-        let siblings = object
-            .into_iter()
-            .filter(|(key, _)| key != "$ref")
-            .map(|(key, value)| Ok((key, inline_value(value, definitions, depth + 1)?)))
-            .collect::<Result<Map<_, _>, SchemaError>>()?;
-        return Ok(match target {
-            Value::Object(mut target) => {
-                target.extend(siblings);
-                Value::Object(target)
-            }
-            _ => Value::Object(siblings),
-        });
-    }
-    if object.contains_key("propertyName") && object.contains_key("mapping") {
-        let property_name = object.get("propertyName").cloned().unwrap_or(Value::Null);
-        return Ok(serde_json::json!({"propertyName": property_name}));
-    }
-    object
-        .into_iter()
-        .filter(|(key, _)| key != "$defs")
-        .map(|(key, value)| Ok((key, inline_value(value, definitions, depth + 1)?)))
-        .collect::<Result<Map<_, _>, SchemaError>>()
-        .map(Value::Object)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn expands_reference_and_removes_defs() {
-        let body = inline_request_body(
-            Some(serde_json::json!({"$defs":{"Message":{"type":"string"}},"properties":{"message":{"$ref":"#/$defs/Message"}}})),
-            serde_json::json!({"message":"ok"}),
-        ).expect("inline schema should be valid");
-        assert_eq!(
-            body["content"]["application/json"]["schema"]["properties"]["message"]["type"],
-            "string"
-        );
-        assert!(
-            body["content"]["application/json"]["schema"]
-                .get("$defs")
-                .is_none()
-        );
+fn inline_object(
+    object: &JsonObject,
+    definitions: &JsonObject,
+    depth: u8,
+) -> Result<JsonTree, InlineError> {
+    let child_depth = depth.saturating_add(1);
+    if let Some(JsonTree::Text(reference)) = object.get("$ref")
+        && let Some(name) = reference.strip_prefix("#/$defs/")
+    {
+        let definition = definitions
+            .get(name)
+            .ok_or_else(|| InlineError::MissingDefinition {
+                name: name.to_owned(),
+            })?;
+        let target = inline(definition, definitions, child_depth)?;
+        let mut merged = object_in(&target).cloned().unwrap_or_default();
+        for (key, value) in object {
+            if key != "$ref" {
+                merged.insert(key.clone(), inline(value, definitions, child_depth)?);
+            }
+        }
+        return Ok(JsonTree::Object(merged));
     }
-
-    #[test]
-    fn missing_reference_is_reported() {
-        let result = inline_request_body(
-            Some(serde_json::json!({"$ref":"#/$defs/Missing"})),
-            serde_json::json!({}),
-        );
-        assert!(matches!(result, Err(SchemaError::MissingDefinition(name)) if name == "Missing"));
+    // Swagger UI cannot resolve a discriminator mapping once its targets are inlined
+    if let Some(property_name) = object.get("propertyName")
+        && object.contains_key("mapping")
+    {
+        let discriminator = JsonObject::from([("propertyName".to_owned(), property_name.clone())]);
+        return Ok(JsonTree::Object(discriminator));
     }
+    let mut inlined = JsonObject::new();
+    for (key, value) in object {
+        if key != "$defs" {
+            inlined.insert(key.clone(), inline(value, definitions, child_depth)?);
+        }
+    }
+    Ok(JsonTree::Object(inlined))
 }
