@@ -9,8 +9,9 @@ use rustix::io::Errno;
 use rustix::process::{Pid, Signal, kill_process, kill_process_group};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::io::{AsyncRead, AsyncReadExt as _};
-use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
+use tokio::process as tokio_process;
 use tokio::time::{sleep, timeout};
+use tokio_process::{Child, ChildStderr, ChildStdin, ChildStdout};
 
 use super::error::SandboxError;
 use super::files::decode_utf8;
@@ -124,7 +125,7 @@ pub(super) fn start(
     environment: &BTreeMap<String, SecretString>,
 ) -> Result<SubprocessHandle, HarnessError> {
     let name = command.argv.first().ok_or(SandboxError::EmptyCommand)?;
-    let mut child = Command::new(name)
+    let mut child = tokio_process::Command::new(name)
         .args(command.argv.iter().skip(1))
         .current_dir(cwd)
         .env_clear()
