@@ -1,4 +1,7 @@
+pub mod records;
 mod tests;
+
+use records::AgentKeySummary;
 
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use rust_decimal::Decimal;
@@ -7,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 use thiserror::Error;
-use url::Url;
 
 pub const CALLER_USER_ID_HEADER: &str = "x-litellm-user-id";
 pub const CALLER_TEAM_ID_HEADER: &str = "x-litellm-team-id";
@@ -42,7 +44,43 @@ pub enum AgentKillSwitchAuth {
     },
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AgentKillSwitchAuthView {
+    Bearer {
+        token: String,
+    },
+    ApiKey {
+        header_name: ApiKeyHeader,
+        api_key: String,
+    },
+    Basic {
+        username: String,
+        password: String,
+    },
+}
+
 impl AgentKillSwitchAuth {
+    #[must_use]
+    pub fn exposed(&self) -> AgentKillSwitchAuthView {
+        match self {
+            Self::Bearer { token } => AgentKillSwitchAuthView::Bearer {
+                token: token.expose_secret().to_owned(),
+            },
+            Self::ApiKey {
+                header_name,
+                api_key,
+            } => AgentKillSwitchAuthView::ApiKey {
+                header_name: header_name.clone(),
+                api_key: api_key.expose_secret().to_owned(),
+            },
+            Self::Basic { username, password } => AgentKillSwitchAuthView::Basic {
+                username: username.clone(),
+                password: password.expose_secret().to_owned(),
+            },
+        }
+    }
+
     #[must_use]
     pub fn secret_value(&self) -> &str {
         match self {
@@ -86,31 +124,37 @@ impl TryFrom<String> for KillSwitchUrl {
     type Error = KillSwitchUrlError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        let candidate = value.trim_start_matches(char::is_whitespace);
-        let parsed_url = Url::parse(candidate);
-        match parsed_url {
-            Ok(valid_url)
-                if matches!(valid_url.scheme(), "http" | "https")
-                    && valid_url.host_str().is_some() => {}
-            Err(url::ParseError::InvalidPort) if has_nonempty_authority(candidate) => {}
-            _ => return Err(KillSwitchUrlError),
+        let candidate = value.trim_start_matches(|character| character <= ' ');
+        let Some((scheme, remainder)) = candidate.split_once(':') else {
+            return Err(KillSwitchUrlError);
+        };
+        let Some(authority) = remainder.strip_prefix("//") else {
+            return Err(KillSwitchUrlError);
+        };
+        if !matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https")
+            || !has_valid_authority(authority)
+        {
+            return Err(KillSwitchUrlError);
         }
         Ok(Self(value))
     }
 }
 
-fn has_nonempty_authority(value: &str) -> bool {
-    let Some((scheme, remainder)) = value.split_once("://") else {
-        return false;
-    };
-    if !matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https") {
+fn has_valid_authority(value: &str) -> bool {
+    let authority = value.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.is_empty() {
         return false;
     }
-    let authority = remainder.split(['/', '?', '#']).next().unwrap_or_default();
-    let host = authority
-        .rsplit_once('@')
-        .map_or(authority, |(_, host)| host);
-    !host.is_empty() && !host.starts_with(':') && !host.starts_with('[')
+    if authority.starts_with('[') {
+        return authority.find(']').is_some_and(|end| {
+            let Some(after_bracket) = end.checked_add(1).and_then(|index| authority.get(index..))
+            else {
+                return false;
+            };
+            !after_bracket.contains('[') && !after_bracket.contains(']')
+        });
+    }
+    !authority.contains(['[', ']'])
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -136,23 +180,6 @@ pub enum AgentExecutionMode {
     Autonomous,
     Delegated,
     Both,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct AgentCaller {
-    #[serde(default)]
-    pub user_id: Option<String>,
-    #[serde(default)]
-    pub team_id: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct AgentKeySummary {
-    pub token: String,
-    #[serde(default)]
-    pub key_alias: Option<String>,
-    #[serde(default)]
-    pub key_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -104,28 +104,110 @@ fn dates_keep_offset_and_naive_forms() {
 }
 
 #[rstest]
-#[case::each_snapshot_field_alias("key_reset")]
-#[case::each_team_snapshot_field_alias("team_reset")]
-#[case::each_team_budget_field_alias("team_budget")]
-#[case::each_user_snapshot_field_alias("user_reset")]
-#[case::each_user_budget_field_alias("user_budget")]
-#[case::each_user_alias_field_alias("user_alias")]
-#[case::each_org_spend_field_alias("org_spend")]
-#[case::each_org_budget_field_alias("org_budget")]
-#[case::snapshot_required_nullable_fields("required")]
-#[case::snapshot_alias_wins_over_field_name("precedence")]
-#[case::snapshot_extras_ignored("extras")]
-#[case::metadata_entries_aliases_and_nulls("metadata")]
-#[case::metadata_dates_utc_offset_naive("dates")]
-#[case::metadata_mapping_readonly("readonly")]
-#[case::invalid_field_discards_snapshot("invalid")]
-#[case::omitted_field_discards_snapshot("omitted")]
-#[case::all_null_valid_snapshot_retained("all_null")]
-#[case::embedded_json_string_not_decoded("embedded")]
-#[case::snapshot_failure_silent("silent")]
-#[case::negative_policy_numbers_preserved("negative")]
-#[case::policy_decimal_exact("decimal")]
-#[case::policy_nonfinite_or_out_of_range_rejected("range")]
-fn named_snapshot_contracts(#[case] name: &str) {
-    assert!(!name.is_empty());
+#[case::each_snapshot_field_alias("key_reset", r#"{"user_api_key_budget_reset_at":null}"#)]
+#[case::each_team_snapshot_field_alias(
+    "team_reset",
+    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":null}"#
+)]
+#[case::each_team_budget_field_alias(
+    "team_budget",
+    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":1.25}"#
+)]
+#[case::each_user_snapshot_field_alias("user_reset", r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":null}"#)]
+#[case::each_user_budget_field_alias("user_budget", r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":1.25,"user_api_key_user_alias":null}"#)]
+#[case::each_user_alias_field_alias("user_alias", r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":"u"}"#)]
+#[case::each_org_spend_field_alias(
+    "org_spend",
+    r#"{"user_api_key_org_spend":1.25,"user_api_key_org_max_budget":null}"#
+)]
+#[case::each_org_budget_field_alias(
+    "org_budget",
+    r#"{"user_api_key_org_spend":0,"user_api_key_org_max_budget":1.25}"#
+)]
+#[case::snapshot_required_nullable_fields(
+    "required",
+    r#"{"user_api_key_team_budget_reset_at":null}"#
+)]
+#[case::snapshot_alias_wins_over_field_name("precedence", r#"{"budget_reset_at":null,"user_api_key_team_budget_reset_at":null,"max_budget":1.25,"user_api_key_team_table_max_budget":2.5}"#)]
+#[case::snapshot_extras_ignored("extras", r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":null,"unrelated":1}"#)]
+#[case::metadata_entries_aliases_and_nulls(
+    "metadata",
+    r#"{"budget_reset_at":null,"max_budget":null}"#
+)]
+#[case::metadata_dates_utc_offset_naive(
+    "dates",
+    r#"{"budget_reset_at":"2026-01-01T12:00:00+02:00","max_budget":null}"#
+)]
+#[case::metadata_mapping_readonly("readonly", r#"{"budget_reset_at":null,"max_budget":null}"#)]
+#[case::invalid_field_discards_snapshot(
+    "invalid",
+    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":"bad"}"#
+)]
+#[case::omitted_field_discards_snapshot("omitted", r#"{"user_api_key_team_budget_reset_at":null}"#)]
+#[case::all_null_valid_snapshot_retained(
+    "all_null",
+    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":null}"#
+)]
+#[case::embedded_json_string_not_decoded("embedded", r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":"{\"x\":1}"}"#)]
+#[case::snapshot_failure_silent(
+    "silent",
+    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":"bad"}"#
+)]
+#[case::negative_policy_numbers_preserved(
+    "negative",
+    r#"{"user_api_key_org_spend":-1,"user_api_key_org_max_budget":-2}"#
+)]
+#[case::policy_decimal_exact(
+    "decimal",
+    r#"{"user_api_key_org_spend":1.2300,"user_api_key_org_max_budget":null}"#
+)]
+#[case::policy_nonfinite_or_out_of_range_rejected(
+    "range",
+    r#"{"user_api_key_org_spend":1e+1000,"user_api_key_org_max_budget":null}"#
+)]
+fn named_snapshot_contracts(#[case] name: &str, #[case] input: &str) {
+    let metadata: BTreeMap<String, Box<RawValue>> = serde_json::from_str(input).unwrap();
+    match name {
+        "key_reset" => assert!(KeyBudgetSnapshot::from_metadata(&metadata).is_some()),
+        "team_reset" | "team_budget" | "extras" | "all_null" => {
+            assert!(TeamBudgetSnapshot::from_metadata(&metadata).is_some());
+        }
+        "user_reset" | "user_budget" | "user_alias" | "embedded" => {
+            assert!(UserBudgetSnapshot::from_metadata(&metadata).is_some());
+        }
+        "org_spend" | "org_budget" | "negative" | "decimal" => {
+            assert!(OrgBudgetSnapshot::from_metadata(&metadata).is_some());
+        }
+        "required" | "invalid" | "omitted" | "silent" | "range" => {
+            assert!(TeamBudgetSnapshot::from_metadata(&metadata).is_none());
+        }
+        "precedence" => {
+            let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
+            assert_eq!(
+                snapshot.max_budget,
+                Some(Decimal::from_str_exact("2.5").unwrap())
+            );
+        }
+        "metadata" => {
+            let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
+            assert_eq!(
+                snapshot.metadata_entries().unwrap()["user_api_key_team_budget_reset_at"].get(),
+                "null"
+            );
+        }
+        "dates" => {
+            let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
+            assert!(matches!(
+                snapshot.budget_reset_at,
+                Some(SnapshotDateTime::Offset(_))
+            ));
+        }
+        "readonly" => {
+            TeamBudgetSnapshot::from_metadata(&metadata)
+                .unwrap()
+                .metadata_entries()
+                .unwrap();
+        }
+        _ => panic!("unknown snapshot case"),
+    }
 }

@@ -2,6 +2,17 @@ use betterlite_auth::{agent_policy, budget_snapshots};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+enum CarriedPolicyRecordsError {
+    #[error("failed to decode or encode carried policy record")]
+    Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Snapshot(#[from] budget_snapshots::BudgetSnapshotError),
+    #[error("kill-switch auth did not serialize as an object")]
+    AuthNotObject,
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -32,8 +43,8 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input.function {
             Function::KillAuth => kill_auth(&input.value),
-            Function::KillConfig => model::<agent_policy::AgentKillSwitchConfig>(&input.value),
-            Function::AgentResponse => model::<agent_policy::AgentResponse>(&input.value),
+            Function::KillConfig => kill_config(&input.value),
+            Function::AgentResponse => agent_response(&input.value),
             Function::IdentityBinding => model::<agent_policy::AgentIdentityBinding>(&input.value),
             Function::ManagedContext => model::<agent_policy::ManagedAgentContext>(&input.value),
             Function::KeySnapshot => snapshot::<budget_snapshots::KeyBudgetSnapshot>(&input.value),
@@ -52,52 +63,68 @@ impl crate::helpers::Helper for Op {
                 error_type: None,
                 param: None,
                 code: None,
-                message: error,
+                message: error.to_string(),
             })
         })
     }
 }
 
-fn model<T>(value: &Value) -> Result<Value, String>
+fn model<T>(value: &Value) -> Result<Value, CarriedPolicyRecordsError>
 where
     T: serde::de::DeserializeOwned + serde::Serialize,
 {
-    let model: T = serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
-    serde_json::to_value(model).map_err(|error| error.to_string())
+    let model: T = serde_json::from_value(value.clone())?;
+    Ok(serde_json::to_value(model)?)
 }
 
-fn kill_auth(value: &Value) -> Result<Value, String> {
-    let auth: agent_policy::AgentKillSwitchAuth =
-        serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
-    let mut output = serde_json::to_value(&auth).map_err(|error| error.to_string())?;
+fn kill_auth(value: &Value) -> Result<Value, CarriedPolicyRecordsError> {
+    let auth: agent_policy::AgentKillSwitchAuth = serde_json::from_value(value.clone())?;
+    Ok(serde_json::to_value(auth.exposed())?)
+}
+
+fn kill_config(value: &Value) -> Result<Value, CarriedPolicyRecordsError> {
+    let config: agent_policy::AgentKillSwitchConfig = serde_json::from_value(value.clone())?;
+    exposed_config(&config)
+}
+
+fn exposed_config(
+    config: &agent_policy::AgentKillSwitchConfig,
+) -> Result<Value, CarriedPolicyRecordsError> {
+    let mut output = serde_json::to_value(config)?;
+    let Some(auth) = config.auth.as_ref() else {
+        return Ok(output);
+    };
     let object = output
         .as_object_mut()
-        .ok_or_else(|| String::from("kill-switch auth did not serialize as an object"))?;
-    let field = match value.get("type").and_then(Value::as_str) {
-        Some("bearer") => "token",
-        Some("api_key") => "api_key",
-        Some("basic") => "password",
-        _ => return Err(String::from("kill-switch auth type is missing")),
-    };
-    object.insert(
-        field.to_owned(),
-        Value::String(auth.secret_value().to_owned()),
-    );
+        .ok_or(CarriedPolicyRecordsError::AuthNotObject)?;
+    object.insert(String::from("auth"), serde_json::to_value(auth.exposed())?);
     Ok(output)
 }
 
-fn snapshot<T>(value: &Value) -> Result<Value, String>
+fn agent_response(value: &Value) -> Result<Value, CarriedPolicyRecordsError> {
+    let response: agent_policy::AgentResponse = serde_json::from_value(value.clone())?;
+    let mut output = serde_json::to_value(response)?;
+    if let Some(config) = output.get_mut("kill_switch").and_then(Value::as_object_mut) {
+        let decoded: agent_policy::AgentKillSwitchConfig =
+            serde_json::from_value(Value::Object(config.clone()))?;
+        let exposed = exposed_config(&decoded)?;
+        let exposed_object = exposed
+            .as_object()
+            .ok_or(CarriedPolicyRecordsError::AuthNotObject)?;
+        config.clone_from(exposed_object);
+    }
+    Ok(output)
+}
+
+fn snapshot<T>(value: &Value) -> Result<Value, CarriedPolicyRecordsError>
 where
     T: budget_snapshots::BudgetSnapshot,
 {
     let metadata: BTreeMap<String, Box<serde_json::value::RawValue>> =
-        serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
+        serde_json::from_value(value.clone())?;
     let Some(snapshot) = T::from_metadata(&metadata) else {
         return Ok(serde_json::json!({"snapshot": null}));
     };
-    let entries = snapshot
-        .metadata_entries()
-        .map_err(|error| error.to_string())?;
-    serde_json::to_value(serde_json::json!({"snapshot": entries}))
-        .map_err(|error| error.to_string())
+    let entries = snapshot.metadata_entries()?;
+    Ok(serde_json::json!({"snapshot": entries}))
 }

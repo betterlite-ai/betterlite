@@ -1,0 +1,9 @@
+kind: helper
+name: kill-switch-url-backslash
+call:
+  carried_policy_records:
+    function: kill_config
+    value: {url: 'http:\example.com'}
+env: {}
+compare:
+  ignore: []

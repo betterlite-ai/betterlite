@@ -1,0 +1,9 @@
+kind: helper
+name: managed-mode-both
+call:
+  carried_policy_records:
+    function: managed_context
+    value: {agent_id: a, mode: both}
+env: {}
+compare:
+  ignore: []
