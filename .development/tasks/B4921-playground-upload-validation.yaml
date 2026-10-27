@@ -13,7 +13,7 @@ description: >-
   naming the file.
 scope:
   paths:
-  - ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.ts
+  - 'ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.ts'
   - ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.test.ts
   lint_tables: false
 references:
@@ -85,8 +85,8 @@ checks:
     run: npm run test --prefix ui/litellm-dashboard -- uploadValidation.test.ts --run
   - id: upload-validation-lint
     why: eslint or prettier rejects the code
-    run: npm run lint --prefix ui/litellm-dashboard -- ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.ts
-      && npx prettier --check ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.ts
+    run: npm run lint --prefix ui/litellm-dashboard -- 'ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.ts'
+      && npx prettier --check 'ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.ts'
 oracle_cases: []
 deviations: []
 out_of_scope:
