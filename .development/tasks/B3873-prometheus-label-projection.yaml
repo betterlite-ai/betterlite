@@ -1,0 +1,141 @@
+id: B3873
+title: Prometheus request labels and custom metadata
+description: >-
+  Build per-request label projection with reusable context, custom metadata precedence,
+  and wildcard tag matching. Resolve end-user identity through the existing cost-tracking
+  policy with its exact-true Prometheus opt-in.
+
+  Port litellm/integrations/prometheus.py:4595-4824 and
+  litellm/integrations/prometheus_helpers/__init__.py:1-78 to crates/betterlite-logging.
+
+  PrometheusLabelFactoryContext precomputes per-request label inputs (sanitized enum,
+  custom metadata by key, tag labels, cached end-user) so prometheus_label_factory
+  can subset per metric without repeated work. The context amortizes model_dump,
+  tag-label computation, and end-user resolution across multiple label sets per request.
+  A sentinel value (_END_USER_NOT_COMPUTED) caches None as a valid result to distinguish
+  "not computed yet" from "computed to None".
+
+  prometheus_label_factory accepts either a context (fast path, reusing precomputed
+  state) or raw enum values (slow path, used only when no context is available). It
+  filters supported labels, sanitizes values, resolves end-user through the cost-tracking
+  resolver, and merges custom metadata labels and tag labels into the result. Missing
+  labels fill with None so every supported label appears in every result.
+
+  Custom metadata labels come from litellm.custom_prometheus_metadata_labels (a config
+  list of dot-notation keys), traversing nested dicts and returning only string values.
+  The combined metadata source includes top-level scalar fields from standard logging
+  metadata plus requester_metadata, user_api_key_auth_metadata and spend_logs_metadata
+  subobjects, merged with left bias (top-level scalars override subobject values).
+
+  Wildcard tag matching uses PatternMatchRouter._pattern_to_regex to compile "*"
+  patterns (e.g. "User-Agent: curl/*") into regexes for exact-or-wildcard tag matching.
+  Tag labels are emitted with "tag_" prefix and label names sanitized. get_custom_labels_from_tags
+  returns a dict of label_name: "true"/"false" for each configured tag, indicating whether
+  any request tag matches that pattern or exact match.
+
+  End-user resolution calls the cost-tracking policy's get_end_user_id_for_cost_tracking
+  with service_type="prometheus", reusing its opt-in logic (only when prometheus flag is
+  exactly true in the end-user budget setting). Cache the function via lazy import
+  in _get_cached_end_user_id_for_cost_tracking to avoid loading utils.py at module
+  import time.
+
+  The source's late import of get_custom_labels_from_tags inside PrometheusLabelFactoryContext
+  (from litellm.integrations.prometheus) is handled by having label_factory_context in a separate
+  module file, avoiding a circular dependency where the main prometheus module imports its helper
+  and the helper would import back.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/prometheus_label_projection.rs
+    - crates/betterlite-logging/src/prometheus_label_projection/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4595-L4824
+    why: Label projection functions, custom metadata extraction, tag matching and label factory.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/__init__.py#L1-L78
+    why: PrometheusLabelFactoryContext class and end-user caching resolver.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L1026-L1127
+    why: UserAPIKeyLabelValues dataclass structure and model_dump behavior.
+
+dod:
+  - text: PrometheusLabelFactoryContext precomputes and caches enum_dict (sanitized), custom_by_sanitized_key, tag_labels and a sentinel-guarded end-user value.
+    proof: [label-factory-context-tests]
+  - text: prometheus_label_factory accepts a context (fast path) or raw enum values (slow path) and validates context.enum_values matches the supplied enum_values.
+    proof: [label-factory-tests]
+  - text: prometheus_label_factory filters labels to supported_enum_labels, fills missing labels with None, and merges custom metadata and tag labels into the result.
+    proof: [label-factory-tests]
+  - text: get_custom_labels_from_metadata traverses dot-notation keys (e.g. "metadata.foo.bar") through nested dicts and returns string values only, replacing "." with "_" in label names.
+    proof: [custom-metadata-extraction-tests]
+  - text: _get_combined_custom_metadata_from_standard_logging_payload merges top-level scalar fields, requester_metadata, user_api_key_auth_metadata and spend_logs_metadata with left bias (scalars override subobjects).
+    proof: [combined-metadata-tests]
+  - text: _tag_matches_wildcard_configured_pattern uses PatternMatchRouter._pattern_to_regex to match request tags against configured patterns (exact or wildcard).
+    proof: [tag-matching-tests]
+  - text: "get_custom_labels_from_tags returns label_name: \"true\"/\"false\" for each configured tag in custom_prometheus_tags, checking exact match first, then wildcard pattern match."
+    proof: [tag-labels-tests]
+  - text: PrometheusLabelFactoryContext.get_resolved_end_user caches the end-user value using a sentinel, so None can be distinguished from "not computed yet".
+    proof: [end-user-caching-tests]
+  - text: _get_cached_end_user_id_for_cost_tracking uses lazy import of get_end_user_id_for_cost_tracking from betterlite-logging to avoid circular imports.
+    proof: [end-user-resolution-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: label-factory-context-tests
+      why: PrometheusLabelFactoryContext construction or caching is incomplete or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^label_factory_context::/) - test(/replays_the_/)'
+    - id: label-factory-tests
+      why: prometheus_label_factory behavior or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_label_factory::/) - test(/replays_the_/)'
+    - id: custom-metadata-extraction-tests
+      why: Custom metadata extraction or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^custom_metadata_extraction::/) - test(/replays_the_/)'
+    - id: combined-metadata-tests
+      why: Combined metadata construction or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^combined_custom_metadata::/) - test(/replays_the_/)'
+    - id: tag-matching-tests
+      why: Tag wildcard pattern matching or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^tag_wildcard_matching::/) - test(/replays_the_/)'
+    - id: tag-labels-tests
+      why: Tag label extraction or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^tag_labels::/) - test(/replays_the_/)'
+    - id: end-user-caching-tests
+      why: End-user caching or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^end_user_caching::/) - test(/replays_the_/)'
+    - id: end-user-resolution-tests
+      why: End-user resolution through cost-tracking or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^end_user_resolution::/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Custom metadata labels and custom tags come through config (B002) and are passed at metric time, not read from module state.
+    why: Betterlite has no module-level mutable state; callers pass these values at metric time, making functions pure and testable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4690-L4715
+  - what: PrometheusLabelFactoryContext is constructed once per request and passed to prometheus_label_factory to amortize precomputation across multiple metric label sets.
+    why: LiteLLM recomputes enum_dict, tag labels and end-user on every call; betterlite precomputes these once via context to improve performance when a request emits many metrics.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4626-L4683
+  - what: End-user resolution respects the existing cost-tracking policy's opt-in flag; if the policy rejects Prometheus, end-user is not resolved.
+    why: LiteLLM calls the cost-tracking resolver, which checks its own opt-in setting; betterlite defers to that policy decision rather than reimplementing it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4658-L4663
+
+out_of_scope:
+  - Emitting metrics or calling label methods on actual Prometheus collectors; that is in B3876 and B3874.
+  - Config loading for custom_prometheus_metadata_labels and custom_prometheus_tags; that is in B002.
+  - The cost-tracking policy itself; that is in B1716.
+  - Wildcard pattern compilation and matching beyond calling PatternMatchRouter._pattern_to_regex; that is in B367.
+
+pitfalls:
+  - "PrometheusLabelFactoryContext uses a dedicated sentinel (_END_USER_NOT_COMPUTED) to distinguish \"not computed yet\" from \"computed to None\", so that None can be cached as a valid result."
+  - "Custom metadata keys are dot-notation (e.g. \"metadata.foo.bar\" or plain \"foo\"); the function handles both and traverses nested dicts but returns only string values, never dict/list/None."
+  - "Tag labels are prefixed with \"tag_\" and their names are sanitized, so a configured tag \"User-Agent: curl/*\" produces label name \"tag_user_agent_curl\"."
+  - "Wildcard patterns use \"*\" as a glob, not a regex; they are compiled via PatternMatchRouter._pattern_to_regex, which handles escaping."
+  - "End-user resolution is lazy within the context: it is computed only when explicitly requested via get_resolved_end_user, not during context construction."
+  - "Combined metadata merge order: top-level scalar fields override values from nested subobjects, so if a top-level \"foo\" and requester_metadata.foo both exist, top-level wins."
+  - "The source's late import of get_custom_labels_from_tags (inside PrometheusLabelFactoryContext.__init__) avoids a circular dependency; replicate this if B3873 and B3877/B3876 end up in the same crate."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

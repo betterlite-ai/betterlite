@@ -1,0 +1,106 @@
+id: B4572
+title: Configure, reconfigure and disconnect agent commands
+description: >-
+  Build the configure, reconfigure and unconfigure command groups and their subcommands for each agent target.
+  Merge explicit flags with saved profiles using this precedence: explicit flags override group flags, which override saved connection settings, which override the stored gateway URL from login.
+  Group invocation without a subcommand applies saved setup to both agents, opens the setup wizard for first-time configuration, opens an edit dialog for reconfiguration, and prompts for a gateway URL if none was explicitly supplied.
+  Subcommands apply settings to one agent; configure accepts --model to skip the wizard, reconfigure uses current choices as defaults, and both commands honor saved profiles so reruns are idempotent.
+  Reconfigure without --model or --default-model always opens the interactive edit dialog; only configure with an existing saved profile reapplies it non-interactively without prompting.
+  Unconfigure removes each agent's settings. The --forget flag belongs only to unconfigure_group and the unconfigure_claude and unconfigure_codex subcommands; configure and reconfigure commands have no --forget option.
+  Interactive flows require a terminal; non-interactive paths accept explicit --model and credentials.
+  Missing-receipt messaging distinguishes cases where unconfigure has nothing to undo from cases where settings were modified after configuration.
+  On unconfigure, withheld credentials are reported per-item with their captured endpoint if the gateway URL changed since issuance; other settings are kept or restored depending on ownership.
+scope:
+  paths:
+    - tools/management-cli/src/commands/configure.rs
+    - tools/management-cli/src/commands/configure/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L1-L310
+    why: "The complete configure/reconfigure/unconfigure command tree, option merging, terminal checks, and undo messaging."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L46-L63
+    why: "Connection settings merging order and explicit flag precedence."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L70-L77
+    why: "Terminal requirement check and error message for non-interactive environments."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L80-L104
+    why: "Group command logic with saved-profile reapplication, edit-mode detection, and interactive wizard entry points."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L107-L122
+    why: "configure_group and reconfigure_group decorators and entry points."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L150-L205
+    why: "Subcommands for each target (claude, codex) and their option/model handling."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L208-L241
+    why: "Disconnect logic, receipt checking, error handling and selective forget behavior."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L282-L300
+    why: "Unconfigure outcome reporting with ownership checks and endpoint mismatch messages."
+dod:
+  - text: "Group commands without subcommand apply saved setup or open the wizard for first-time setup."
+    proof: [group-invocation-test]
+  - text: "Reconfigure without --model or --default-model opens the interactive edit dialog using current choices as defaults."
+    proof: [reconfigure-edit-test]
+  - text: "Option resolution merges explicit flags, group flags and saved settings in the correct order."
+    proof: [option-precedence-test]
+  - text: "Terminal is required for interactive mode; non-interactive paths accept explicit --model and flags."
+    proof: [terminal-requirement-test]
+  - text: "Unconfigure with no receipt reports the correct message and offers manual cleanup guidance."
+    proof: [missing-receipt-test]
+  - text: "--forget flag belongs only to unconfigure commands and deletes saved profiles only when requested."
+    proof: [forget-behavior-test]
+  - text: "Withheld credentials are reported with their captured endpoint and guidance for recovery."
+    proof: [withheld-credentials-test]
+checks:
+  optional: []
+  commands:
+    - id: group-invocation-test
+      why: "group-command invocation tests missing or failing"
+      run: >-
+        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+        'test(/^configure::(apply_saved_setup|group_invocation).*($|::)/)'
+    - id: reconfigure-edit-test
+      why: "reconfigure edit-mode behavior tests missing or failing"
+      run: >-
+        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+        'test(/^configure::(reconfigure|edit_mode|edit_dialog).*($|::)/)'
+    - id: option-precedence-test
+      why: "option-precedence merging tests missing or failing"
+      run: >-
+        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+        'test(/^configure::(option_precedence|option_merge|flag_precedence).*($|::)/)'
+    - id: terminal-requirement-test
+      why: "terminal-requirement validation tests missing or failing"
+      run: >-
+        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+        'test(/^configure::(terminal_requirement|require_terminal|interactive).*($|::)/)'
+    - id: missing-receipt-test
+      why: "missing-receipt messaging tests missing or failing"
+      run: >-
+        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+        'test(/^configure::(missing_receipt|unconfigure_no_receipt).*($|::)/)'
+    - id: forget-behavior-test
+      why: "--forget behavior and unconfigure-only availability tests missing or failing"
+      run: >-
+        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+        'test(/^configure::(forget|forget_flag|forget_behavior).*($|::)/)'
+    - id: withheld-credentials-test
+      why: "withheld-credential reporting tests missing or failing"
+      run: >-
+        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+        'test(/^configure::(withheld|withheld_credentials|endpoint_mismatch).*($|::)/)'
+oracle_cases: []
+deviations:
+  - what: "Non-interactive error message text differs to reflect betterlite CLI conventions."
+    why: "The source message references `lite` as a command and includes example flags specific to LiteLLM's Python CLI."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L73-L76"
+  - what: "Saved profiles are stored in native config paths specific to betterlite, not LiteLLM's directory structure."
+    why: "betterlite uses its own credential and settings management (B4570, B4562, B4569)."
+out_of_scope:
+  - "The re-exported `interactive_configure` function, which belongs to B4571."
+pitfalls:
+  - "Group command invocation without a subcommand requires checking ctx.invoked_subcommand; the same flags apply to both the group and subcommands, so option merging must handle both paths."
+  - "Reconfigure's edit_mode flag changes wizard behavior and error messages; edit_connection must also be True for full setting replacement."
+  - "Disconnect logic checks three different receipt/state sources (state_path exists, settings_path exists, profile exists); the messaging order matters for clarity."
+  - "Withheld credentials are reported per-item with their captured endpoint; the recovery guidance must instruct the user to restore the exact same endpoint for rotation."
+  - "The `forget` flag propagates from parent context (unconfigure group) to subcommands; nested option merging prevents duplication."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,92 @@
+id: B3727
+title: Bedrock incremental and unified guardrail application
+description: >-
+  Build session-deduplicated request scanning and generic text-batch guardrail application
+  with selective masking. Implement `_incremental_scan_cache`, `_bedrock_response_has_masked_output`,
+  `_apply_incremental_request_scan`, and `apply_guardrail` as methods on the `BedrockGuardrail`
+  struct. When incremental mode is active, the cache tracks which message segments a session
+  has already scanned by session_id and message hash. A masked incremental result forces a
+  full-context rescan without recording session progress, while absent or newly empty content
+  skips the scan entirely. The generic `apply_guardrail` method accepts a batch of texts and
+  applies the guardrail through the ApplyGuardrail request, handling both INPUT (request)
+  and OUTPUT (response) scan types. Bedrock errors are propagated and rewritten for the proxy;
+  guardrail blocks raise exceptions that preserve the correct HTTP status. The incremental
+  cache uses the shared proxy cache when available, falling back to a process-local DualCache
+  singleton in test/offline contexts.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/bedrock_incremental_guardrail.rs
+    - crates/betterlite-guardrails/src/bedrock_incremental_guardrail/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L3063-L3081
+    why: _incremental_scan_cache method — resolves shared proxy cache vs process-local fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L3082-L3092
+    why: _bedrock_response_has_masked_output method — detects whether guardrail returned masked/anonymized content.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L3094-L3145
+    why: _apply_incremental_request_scan method — filters texts by session, skips call when nothing is new, returns None on masked output.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L3147-L3286
+    why: apply_guardrail method — generic hook accepting text batch, selecting messages by input_type, calling make_bedrock_api_request, applying masking and write-back.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L3276-L3286
+    why: Exception handling — HTTPException and ModifyResponseException propagate as-is, others are wrapped.
+dod:
+  - text: _incremental_scan_cache returns the shared proxy cache when proxy_logging_obj is available and has internal_usage_cache.dual_cache, otherwise returns process-local fallback.
+    proof: [incremental-cache]
+  - text: _bedrock_response_has_masked_output returns true only when the response has non-empty text in the "output" or "outputs" field, meaning the guardrail masked/anonymized content.
+    proof: [masked-detection]
+  - text: _apply_incremental_request_scan calls filter_new_texts_for_session, skips the Bedrock call when no new texts are found, returns None when masked output is detected, and calls mark_texts_scanned on success.
+    proof: [incremental-scan]
+  - text: apply_guardrail handles input_type "request" with INPUT source (user content) and "response" with OUTPUT source (model content), using synthetic mock messages for response scans.
+    proof: [apply-guardrail-sources]
+  - text: apply_guardrail calls _select_messages_for_apply_guardrail, skips scan when skip_scan is true, and applies masking write-back through _merge_masked_texts.
+    proof: [apply-guardrail-selection]
+  - text: apply_guardrail logs debug messages on entry, exit and when content is empty/new, and logs errors on exception.
+    proof: [apply-guardrail-logging]
+  - text: HTTPException and ModifyResponseException from guardrail blocks are re-raised; other exceptions are wrapped in Exception with the guardrail error message.
+    proof: [apply-guardrail-errors]
+checks:
+  optional: []
+  commands:
+    - id: incremental-cache
+      why: incremental scan cache resolution tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_incremental_guardrail::(incremental_cache|cache_resolution)/)'
+    - id: masked-detection
+      why: masked output detection tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_incremental_guardrail::masked_output/)'
+    - id: incremental-scan
+      why: incremental request scanning tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_incremental_guardrail::incremental_scan/)'
+    - id: apply-guardrail-sources
+      why: apply_guardrail source mapping tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_incremental_guardrail::(request_source|response_source|source_mapping)/)'
+    - id: apply-guardrail-selection
+      why: apply_guardrail message selection tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_incremental_guardrail::(apply_selection|skip_scan|masking_write_back)/)'
+    - id: apply-guardrail-logging
+      why: apply_guardrail logging tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_incremental_guardrail::(apply_logging|debug_messages)/)'
+    - id: apply-guardrail-errors
+      why: apply_guardrail exception handling tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_incremental_guardrail::(error_propagation|exception_handling|block_exceptions)/)'
+oracle_cases: []
+deviations:
+  - what: The incremental scan cache is optional; when unavailable, every request is treated as a full scan.
+    why: The proxy's internal_usage_cache may not be initialized in offline/test contexts; fallback behavior matches LiteLLM's process-local guard against missing state.
+  - what: Session deduplication is recorded only on successful full scans; masked incremental results do not update the session cache, forcing a full rescan on the next request.
+    why: When incremental masking fails to apply to skipped context, the full scan must include all messages, so session state from a partial scan would corrupt the next request.
+out_of_scope:
+  - "The filter_new_texts_for_session and mark_texts_scanned methods, which belong to the guardrail framework (U1) and are called from _apply_incremental_request_scan."
+  - "Synthetic message and response constructors (ChatCompletionUserMessage, ModelResponse, Choices, Message) from the wire format crate, used to build scan inputs for response-type calls."
+  - "HTTPException and ModifyResponseException construction, raised by upstream guardrail execution and re-raised from apply_guardrail."
+pitfalls:
+  - "The incremental cache must check for None/missing proxy_logging_obj at import time because it may be initialized after the guardrail, so a try/except block with a fallback is required."
+  - "Masked output detection iterates both 'output' and 'outputs' fields; early return on first match avoids unnecessary field lookups when masking is found."
+  - "_apply_incremental_request_scan returns None (not None inputs) to signal that the caller must retry with a full scan; an empty new_texts list returns inputs (skip call but no retry)."
+  - "Bedrock response extraction uses get(field) or [] to handle missing fields without panicking; items may be non-dict types, so isinstance checks are required."
+  - "Synthetic response construction for OUTPUT scans must map each filtered message to a choice with ascending index and stop finish_reason, matching Bedrock's response structure."
+  - "The _select_messages_for_apply_guardrail call must receive the exact same inputs and texts lists that will be written back; mismatches between filtered_messages and scanned_slice positions cause masking write-back to skip silently."
+  - "Exception handling must re-raise HTTPException and ModifyResponseException before the generic catch-all, or the caller loses the ability to return the correct HTTP status code."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

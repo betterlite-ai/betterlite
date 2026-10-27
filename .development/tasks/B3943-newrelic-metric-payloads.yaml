@@ -1,0 +1,128 @@
+id: B3943
+title: New Relic team metric records and aggregation
+description: >-
+  Build typed team metric records and aggregate per-request counts, duration summaries
+  and per-team budget gauges into a Metric API envelope. Resolve newrelic_region to a fixed
+  region-specific endpoint table (us: https://metric-api.newrelic.com/metric/v1, eu: https://metric-api.eu.newrelic.com/metric/v1);
+  unknown regions log a warning, list supported regions and fall back to us. The metric
+  payload contains one envelope aggregating records by (team_id, team_alias, model_group, model,
+  custom_llm_provider, status) into one count metric per counter field (requests, cost_usd,
+  prompt_tokens, completion_tokens, total_tokens) plus one duration summary metric with
+  count/sum/min/max. Team budget gauges (max_budget and remaining_budget) are added once per team,
+  taken from the team's latest record in the batch. Remaining budget is team_max_budget minus
+  team_spend minus response_cost, never clamped. Attribute values are truncated to 255 characters.
+  Interval is computed at flush time as max(1, ceil((now - window_start) * 1000)) milliseconds,
+  so the flush window is the real interval seen by the client. Empty attributes (all-empty team id/alias)
+  are omitted from the attributes map. Bucket order is stable: first-seen order is preserved by
+  iterating bucket_key in the order they first appeared in the record sequence. All money remains Decimal.
+
+  Region resolution is a pure function with no config file read: it takes a region string parameter
+  (case-insensitive, from a per-request credential value or config injection), maps lowercase strings
+  to the fixed endpoint table, warns on unknown regions listing supported options, and falls back to
+  the US endpoint.
+scope:
+  paths:
+    - crates/betterlite-logging/src/newrelic_metrics.rs
+    - crates/betterlite-logging/src/newrelic_metrics/**
+    - tools/oracle/cases/logging/newrelic-metrics/**
+    - Cargo.toml
+    - deny.toml
+    - tools/oracle/helpers/b3943.py
+    - tools/oracle/helpers/b3943/**
+    - tools/oracle/src/helpers/logging/b3943.rs
+    - tools/oracle/src/helpers/logging/b3943/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/newrelic.py#L17-L30
+    why: Region endpoint table (US/EU) and default region constant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/newrelic.py#L41-L52
+    why: Metric API attribute limit (255 chars), metric name constants for requests, cost, tokens and budget gauges.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/newrelic.py#L55-L132
+    why: TypedDict definitions for summary values, count/gauge/summary metrics, metric envelope and NewRelicMetricRecord with bucket_key property.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L73-L85
+    why: resolve_newrelic_metric_endpoint with region lowercasing, unknown-region warning, and US fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L87-L108
+    why: _metric_record_from_payload extracting fields from StandardLoggingPayload metadata and root, with defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L110-L147
+    why: _bucket_metrics creating count metrics and summary metric per aggregated bucket with 255-char attribute truncation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L149-L167
+    why: _team_budget_gauges computing max_budget and remaining_budget from latest record, emitting only when team_max_budget is present.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L169-L174
+    why: _team_budget_metrics selecting latest record per team and collecting gauges from each.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L176-L194
+    why: build_metric_payload assembling one envelope with timestamp (ms), interval.ms (actual window, 1ms floor), bucket metrics and team gauges.
+dod:
+  - text: Region resolution selects the correct endpoint for 'us' and 'eu', logs unknown-region warning with supported list, falls back to us on unknown or None, and never accepts arbitrary URLs.
+    proof: [region-resolution-tests]
+  - text: Metric records extract team_id, team_alias, model_group, model, custom_llm_provider, status, response_cost, prompt_tokens, completion_tokens, total_tokens, duration_ms from StandardLoggingPayload with empty-string defaults.
+    proof: [metric-record-tests, oracle]
+  - text: Bucket aggregation creates count metrics for requests, cost_usd, prompt_tokens, completion_tokens, total_tokens and one duration summary with min/max/sum/count over all records in the bucket.
+    proof: [bucket-aggregation-tests, oracle]
+  - text: Team budget gauges are included once per team from the latest record in the batch, omitted if team_max_budget is None, and remaining_budget is unclamped (team_max_budget - team_spend - response_cost).
+    proof: [budget-gauge-tests, oracle]
+  - text: Attributes are truncated to 255 characters; empty values (team_id and team_alias both empty) are omitted entirely from the map.
+    proof: [attribute-truncation-tests, oracle]
+  - text: Bucket order is stable and preserves first-seen order (dict.fromkeys maintains order in Rust iteration).
+    proof: [bucket-order-tests]
+  - text: Interval.ms is computed as max(1, ceil((now - window_start) * 1000)) at flush time, and timestamp uses window_start * 1000 milliseconds since epoch.
+    proof: [envelope-timing-tests, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: region-resolution-tests
+      why: Region resolution falls back incorrectly or accepts invalid endpoints.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::region_resolution(::|$)/)'
+    - id: metric-record-tests
+      why: Records fail to extract from payloads or apply wrong defaults.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::metric_record(::|$)/)'
+    - id: bucket-aggregation-tests
+      why: Aggregation fails to count, sum or compute summaries over buckets.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::bucket_aggregation(::|$)/)'
+    - id: budget-gauge-tests
+      why: Budget gauges omit teams, use wrong latest record, or clamp remaining budget.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::budget_gauges(::|$)/)'
+    - id: attribute-truncation-tests
+      why: Attributes are not truncated or empty attributes are included.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::attribute_truncation(::|$)/)'
+    - id: bucket-order-tests
+      why: Bucket order changes or does not match first-seen order.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::bucket_order(::|$)/)'
+    - id: envelope-timing-tests
+      why: Interval or timestamp computation is wrong or interval never reaches minimum 1ms.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::envelope_timing(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/logging/newrelic-region-us-endpoint.yaml
+  - tools/oracle/cases/logging/newrelic-region-eu-endpoint.yaml
+  - tools/oracle/cases/logging/newrelic-region-unknown-fallback.yaml
+  - tools/oracle/cases/logging/newrelic-metric-record-extraction.yaml
+  - tools/oracle/cases/logging/newrelic-bucket-single-record.yaml
+  - tools/oracle/cases/logging/newrelic-bucket-aggregation.yaml
+  - tools/oracle/cases/logging/newrelic-budget-gauge-with-spend.yaml
+  - tools/oracle/cases/logging/newrelic-budget-gauge-without-budget.yaml
+  - tools/oracle/cases/logging/newrelic-attribute-truncation.yaml
+  - tools/oracle/cases/logging/newrelic-empty-attributes-omitted.yaml
+  - tools/oracle/cases/logging/newrelic-envelope-interval-minimum.yaml
+  - tools/oracle/cases/logging/newrelic-envelope-stable-bucket-order.yaml
+deviations:
+  - what: Remaining budget is computed as max_budget - spend - cost without clamping to zero or any minimum.
+    why: LiteLLM's NewRelicMetricsLogger._team_budget_metrics preserves the unclamped calculation; a negative remaining budget is visible and actionable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L158
+out_of_scope:
+  - Metric API delivery, retries, gzip compression and queue management (B3944 owns NewRelicMetricsLogger and its flush/drain state machine).
+  - NEWRELIC_METRICS_MAX_BATCH_SIZE, NEWRELIC_METRICS_MAX_RETRY_QUEUE_SIZE and NEWRELIC_METRICS_MAX_DRAIN_PASSES constants (B3944 owns these delivery limits).
+  - NewRelicMetricsLogger.__init__ and all delivery methods (B3944 owns the logger class and its batch/drain logic).
+pitfalls:
+  - "Region strings are lowercased before lookup; the endpoint table keys are lowercase 'us' and 'eu'."
+  - "Team ID and alias extraction uses a specific preference order: user_api_key_team_id/team_id for ID, and user_api_key_team_alias/team_alias for alias."
+  - "Status defaults to \"success\" (string), not an enum variant; convert using str()."
+  - "Duration is milliseconds (response_time is seconds); convert with * 1000.0 and keep as float."
+  - "Attribute values must be truncated at 255 characters; use value[:255] on strings."
+  - "Empty attribute values (empty strings) are omitted, not included with empty values."
+  - "Team budget gauges appear only when team_max_budget is not None; records without budget metadata produce no gauge metrics."
+  - "Remaining budget is unclamped: team_max_budget - team_spend - response_cost, even if negative."
+  - "Interval.ms must have a floor of 1 millisecond; use max(1, int((now - window_start) * 1000))."
+  - "Bucket order is stable via insertion order; use dict.fromkeys to preserve first-seen order across multiple identical bucket keys."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

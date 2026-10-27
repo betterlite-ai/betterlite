@@ -1,0 +1,1 @@
+{"model":"basic-model","messages":[{"role":"system","content":"You are terse."},{"role":"user","content":[{"type":"text","text":"Say hello."}]}],"temperature":0.2,"top_p":0.9,"max_tokens":20,"n":1,"stop":["\n"],"seed":7,"stream":false}

@@ -2,8 +2,8 @@ id: B4809
 milestone: M9 agents and mcp
 title: A2A completion dispatch and LangFlow session routing
 status: todo
-depends_on: [B004, B005, B4800, B4802, B4803, B4804, B4806, B4808]
-file: null
+depends_on: [B004, B005, B4800, B4802, B4803, B4804, B4806, B4808, B3501]
+file: tasks/B4809-a2a-completion-dispatch.yaml
 covers:
   - "litellm/a2a_protocol/litellm_completion_bridge/handler.py"
   - "litellm/a2a_protocol/litellm_completion_bridge/__init__.py"

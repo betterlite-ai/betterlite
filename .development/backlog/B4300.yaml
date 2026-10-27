@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Normalize cache requests and retrieve embedding hits
 status: todo
 depends_on: [B2226, B4290, B4293, B4296, B4297, B4299]
-file: null
+file: tasks/B4300-cache-request-retrieval.yaml
 covers:
   - "litellm/caching/caching_handler.py"
 parent: B125

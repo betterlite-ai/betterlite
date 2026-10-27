@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Policy validation and concrete attachment scopes
 status: todo
 depends_on: [B3240, B3241, B722, B724, B367, B882]
-file: null
+file: tasks/B3245-policy-validation.yaml
 covers:
   - "litellm/proxy/policy_engine/policy_validator.py"
   - "litellm/types/proxy/policy_engine/validation_types.py"

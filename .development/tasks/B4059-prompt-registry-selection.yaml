@@ -1,0 +1,115 @@
+id: B4059
+title: Prompt registry selection and database row conversion
+description: >-
+  Build the in-memory prompt registry with environment-aware selection, version helpers,
+  and database-row projection. Implement helper functions: get_base_prompt_id (strips .v or _v suffix),
+  get_version_number (extracts version or defaults to 1), prompt_environment_or_default (defaults to
+  "development"), registry_key_for_prompt (combines prompt_id and environment), parse_prompt_version
+  (validates object as optional int), _spec_version (returns explicit version or extracted), and
+  _default_serve_environment (picks production > staging > development > alphabetically first).
+
+  Add InMemoryPromptRegistry with IN_MEMORY_PROMPTS map (registry_key -> PromptSpec) and
+  prompt_id_to_custom_prompt map (registry_key -> PromptManagementClient). Implement
+  resolve_prompt_spec (by base id, optional version, optional environment, with default environment
+  handling and max-version selection), get_prompt_callback_for_prompt (lookup by registry key),
+  and has_config_prompt (check for config-type prompt under base id).
+
+  Add database row types: _PromptRow protocol with properties (id, prompt_id, version, environment,
+  created_by, created_at, updated_at, litellm_params as str or map, prompt_info as str/map/null)
+  and model_dump method; _PromptRowData record (prompt_id, version defaulting to 1, environment
+  defaulting to "development", created_by, litellm_params, prompt_info, created_at/updated_at);
+  _PromptTableActions protocol (find_many with where/order/take/distinct, create, update, delete_many);
+  _prompt_table helper (returns PromptRepository table).
+
+  Add endpoint request/response helpers: get_latest_prompt_versions (filters to max version per
+  (base_id, environment) tuple), get_next_version_for_prompt (reads db for base_id+environment,
+  returns max+1 or 1), create_versioned_prompt_spec (converts db row to PromptSpec with versioned
+  prompt_id like "chat.v2", deserializes litellm_params/prompt_info JSON strings, defaults
+  prompt_info.prompt_type to "db"), Prompt record (prompt_id, litellm_params, prompt_info),
+  AMBIGUOUS_PROMPT_DATA_ERROR constant (error message when litellm_params.prompt_id combined with
+  keyed prompt_data), is_ambiguous_keyed_prompt_data (check litellm_params.prompt_id presence and
+  prompt_data dict keys for "content" presence), and PatchPromptRequest record (litellm_params
+  and prompt_info both optional).
+
+  Preserve: environment serving precedence (production, staging, development, then alphabetical),
+  latest explicit version inside chosen environment, base-ID stripping for both .v and _v without
+  validating suffix, get_next_version_for_prompt read-then-increment pattern without transaction,
+  default environment to "development", default prompt_info.prompt_type to "db" when not supplied.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-prompts/src/registry.rs
+    - crates/betterlite-prompts/src/registry/**
+    - crates/betterlite-prompts/src/tests.rs
+    - crates/betterlite-prompts/Cargo.toml
+    - crates/betterlite-prompts/src/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L1-L98
+    why: Helper functions for version/environment selection (get_base_prompt_id through _default_serve_environment).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L171-L183
+    why: InMemoryPromptRegistry.__init__ with two dict fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L267-L308
+    why: resolve_prompt_spec, get_prompt_callback_for_prompt, has_config_prompt methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L1-L217
+    why: Endpoint contracts, row protocols, helper functions and request records.
+dod:
+  - text: Helper functions parse version numbers, handle defaults, and select environments in the correct order (production > staging > development > alphabetical).
+    proof: [registry-helpers-tests]
+  - text: get_base_prompt_id strips both .v and _v suffixes without validating what follows.
+    proof: [registry-helpers-tests]
+  - text: get_version_number extracts and validates version from .v or _v suffix, defaulting to 1 on absence or parse failure.
+    proof: [registry-helpers-tests]
+  - text: parse_prompt_version rejects bool, accepts int/digit-string as int, returns None otherwise.
+    proof: [registry-helpers-tests]
+  - text: InMemoryPromptRegistry stores two maps keyed by registry_key_for_prompt result.
+    proof: [registry-tests]
+  - text: resolve_prompt_spec selects environment by precedence or explicit choice, finds max version in that environment, and returns None when no match exists.
+    proof: [registry-tests]
+  - text: get_latest_prompt_versions filters to one per (base_id, environment) keeping the highest version number.
+    proof: [endpoint-tests]
+  - text: get_next_version_for_prompt queries database, returns max+1 or 1 on empty result, without transaction isolation.
+    proof: [endpoint-tests]
+  - text: create_versioned_prompt_spec converts db row to PromptSpec with versioned_prompt_id (base_id.v{version}), deserializes JSON fields, and injects prompt_type="db" when missing.
+    proof: [endpoint-tests]
+  - text: is_ambiguous_keyed_prompt_data returns true only when litellm_params.prompt_id is present and prompt_data dict lacks "content" key.
+    proof: [endpoint-tests]
+  - text: PatchPromptRequest and Prompt records deserialize from JSON with optional fields matching the outline.
+    proof: [endpoint-tests]
+checks:
+  optional: []
+  commands:
+    - id: registry-helpers-tests
+      why: version/environment helper functions fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_helpers::/)'
+    - id: registry-tests
+      why: InMemoryPromptRegistry or selection tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry::/)'
+    - id: endpoint-tests
+      why: endpoint request/response records or database conversion tests fail
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_endpoint_contracts::/)'
+oracle_cases: []
+deviations:
+  - what: InMemoryPromptRegistry is an in-memory lookup only. Prompt persistence, initialization from database, and callback registration are outside this task's scope.
+    why: Those behaviors belong to B4060 (registry mutation) and the startup flow; this task builds the selection and conversion layer only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L185-L265
+out_of_scope:
+  - Registry initialization and population from database; B4060 builds initialize_prompt and sync_prompt_from_db.
+  - Callback building and registration; B4060 builds _build_prompt_callback and integrates with logging registry.
+  - Prompt endpoints (routes) and their HTTP handling; B4061/B4062 register the actual routes.
+  - Custom prompt management dispatch; B4058 owns get_chat_completion_prompt orchestration.
+  - litellm/proxy/prompts/prompt_registry.py:99-169 (get_prompt_initializer_from_integrations and prompt_initializer_registry assignment); owned by B4060.
+  - "litellm/proxy/prompts/prompt_registry.py:310-335 (remove_prompt and delete_prompts_by_base_id methods); owned by B4060 for registry mutation."
+  - The listing and caching helpers in LiteLLM that have no runtime caller at the pinned commit.
+pitfalls:
+  - Base-ID stripping must handle both .v1 and _v1 syntax; a prompt_id like "prefix.v1" and "prefix_v2" both become "prefix".
+  - _default_serve_environment() checks for exact string matches against PROMPT_ENVIRONMENT_SERVE_PRECEDENCE tuple; adding new environments requires updating that constant.
+  - Environment defaults to "development" everywhere a prompt lacks one; this is a string literal, not a None sentinel.
+  - parse_prompt_version accepts string "123" but rejects string "abc", returning None only for non-numeric strings and booleans.
+  - create_versioned_prompt_spec must deserialize JSON strings for litellm_params and prompt_info but accept maps directly; use serde_json::from_str for strings only.
+  - registry_key_for_prompt combines prompt_id with environment; two versions of the same prompt in different environments have different registry keys.
+  - get_next_version_for_prompt reads the database directly without holding a transaction lock; concurrent calls may return the same next version.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

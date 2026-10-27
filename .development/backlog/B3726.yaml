@@ -2,8 +2,8 @@ id: B3726
 milestone: M6 guardrails
 title: Bedrock native guardrail hooks and buffered streams
 status: todo
-depends_on: [B3721, B3723, B3724, B207, B2227, B732]
-file: null
+depends_on: [B3721, B3723, B3724, B207, B2227, B732, B3669]
+file: tasks/B3726-bedrock-guardrail-hooks.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py"
 parent: B106

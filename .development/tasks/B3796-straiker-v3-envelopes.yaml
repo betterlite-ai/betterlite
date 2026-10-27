@@ -1,0 +1,175 @@
+id: B3796
+title: Straiker v3 provider envelopes and sessions
+description: >-
+  Build credential-filtered v3 payloads, client/session headers and v3 response decisions for chat,
+  text and Anthropic calls. The task builds the unified Kong plugin's contract for request and
+  response phases, including one-level credential removal from tool and MCP server schemas,
+  stable conversation-prefix hashing from prompt or message sequences, and session derivation
+  from principal identity and conversation content. Message text extraction handles both string
+  and list-of-blocks content. Preserve User-Agent identity recognition for Claude Code sessions,
+  stable conversation-prefix hashing on the full request payload after credential scrubbing,
+  and the three-tier session resolution: client-supplied header, LiteLLM metadata session, or
+  a derived hash of user identity and conversation preamble. Token decoding uses tiktoken with
+  text-davinci-003; absent tokenizer returns None to relay the raw prompt untouched.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/straiker/v3.rs
+    - crates/betterlite-guardrails/src/straiker/v3/**
+    - tools/oracle/cases/guardrails/straiker/v3/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L63-L149
+    why: Support ownership of v3 constants, frozensets, headers, default fallback behavior and credential field names (_V3_PROVIDER_BODY_KEYS, _V3_CREDENTIAL_FIELDS, _V3_REDACTED_KEYS, V3_* constants).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L379-L384
+    why: Support ownership of placeholder identity filtering and role precedence setup (_PLACEHOLDER_IDENTITIES).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L385-L421
+    why: Identity filtering, header extraction, JSON frozen structures and v3 metadata projection (_real_identity, _request_header, _frozen, _json_default, _v3_identity_metadata).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L424-L559
+    why: Credential-filtered request body construction, one-level schema scrubbing, route detection, token decoding and text completion as messages (_v3_request_body, _v3_without_credentials, _v3_route_is, _v3_anthropic_messages_route, _v3_text_completion_route, _v3_is_token_list, _v3_decode_tokens, _v3_prompt_texts, _v3_prompt_as_messages, _v3_answer).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L562-L704
+    why: Legacy text completion transformation, answer JSON assembly, Kong v3 payload envelope, conversation hashing and stable session derivation (_v3_text_completion_as_chat, _v3_answer_json, _v3_payload, _v3_conversation_prefixes, _v3_session_id).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L707-L709
+    why: Preamble role set for system/developer message detection in message-first system text extraction (_V3_PREAMBLE_ROLES).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L710-L870
+    why: Message text block extraction, unified message retrieval, system text resolution (Anthropic system, Responses instructions, OpenAI preamble message), first user message text, user identity selection, User-Agent client recognition, per-call header composition and v3 response decision mapping (_v3_message_text, _v3_messages, _v3_system_text, _v3_first_message_text, _v3_user, _v3_client_from_user_agent, _v3_headers, _v3_decision, _v3_blocked_by, _v3_response).
+
+dod:
+  - text: "_v3_request_body returns a frozen mapping of the client's provider body, stripped of proxy-added fields, with credentials redacted from tools and mcp_servers."
+    proof: [request-body-cases]
+  - text: "_v3_without_credentials redacts authorization_token, authorization and headers fields to [redacted] in tool/MCP schemas one level deep."
+    proof: [credential-redaction-cases]
+  - text: "_v3_route_is determines whether a request targets a call type by reading the request route from metadata."
+    proof: [route-detection-cases]
+  - text: "_v3_prompt_texts decodes token lists with tiktoken text-davinci-003, returns None when decoding fails, and handles string/list/token-list prompts."
+    proof: [prompt-text-cases]
+  - text: "_v3_prompt_as_messages converts decoded prompt texts into user messages with role and content fields."
+    proof: [prompt-messages-cases]
+  - text: "_v3_text_completion_as_chat transforms a text completion response into a chat completion envelope with object type, choices and model."
+    proof: [completion-as-chat-cases]
+  - text: "_v3_answer returns the response in the client's original API shape, translating text completions to chat and converting ModelResponse to Anthropic format when appropriate."
+    proof: [answer-shape-cases]
+  - text: "_v3_payload builds the Kong v3 envelope with request/response phases, context, session ID and original user metadata."
+    proof: [payload-envelope-cases]
+  - text: "_v3_conversation_prefixes computes SHA256 hashes of each message in order (request phase) or one hash of plain prompt/input (text completion)."
+    proof: [conversation-hash-cases]
+  - text: "_v3_session_id resolves client header, then LiteLLM metadata session, then derives a stable hash from user principal and conversation preamble."
+    proof: [session-resolution-cases]
+  - text: "_v3_system_text extracts preamble from Anthropic system field, Responses instructions, or leading system/developer message in chat messages."
+    proof: [system-text-cases]
+  - text: "_v3_first_message_text returns the first user message text from chat, or plain input/prompt string, never the system preamble."
+    proof: [first-user-text-cases]
+  - text: "_v3_user returns the key's own user (litellm_user_email, litellm_user_id) or end user, filtering placeholder identities."
+    proof: [user-identity-cases]
+  - text: "_v3_client_from_user_agent recognizes User-Agent prefixes and returns (client, agent display name) when matched."
+    proof: [client-recognition-cases]
+  - text: "_v3_headers composes per-call routing hints (session, agent, client, format) as a frozen mapping from route config and User-Agent."
+    proof: [header-composition-cases]
+  - text: "_v3_decision reads the nested or flat verdict and returns (decision string, verdict object) with permissionDecision and action fallbacks."
+    proof: [decision-mapping-cases]
+  - text: "_v3_blocked_by extracts blocked_by control list from verdict as a sorted tuple."
+    proof: [blocked-by-cases]
+  - text: "_v3_response maps v3 verdict to StraikerWebhookResponse with action, reason, controls and turn ID, returning None for undecided/ask."
+    proof: [response-mapping-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: request-body-cases
+      why: "_v3_request_body filtering or credential scrubbing is incorrect or tests are missing"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::request_body/)'
+    - id: credential-redaction-cases
+      why: "_v3_without_credentials does not redact one level deep or tests are missing"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::credential_redaction/)'
+    - id: route-detection-cases
+      why: "_v3_route_is route detection tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::route_detection/)'
+    - id: prompt-text-cases
+      why: "_v3_prompt_texts token decoding or list handling tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::prompt_text/)'
+    - id: prompt-messages-cases
+      why: "_v3_prompt_as_messages conversion tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::prompt_messages/)'
+    - id: completion-as-chat-cases
+      why: "_v3_text_completion_as_chat transformation tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::completion_as_chat/)'
+    - id: answer-shape-cases
+      why: "_v3_answer shape preservation tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::answer_shape/)'
+    - id: payload-envelope-cases
+      why: "_v3_payload envelope structure or phase encoding tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::payload_envelope/)'
+    - id: conversation-hash-cases
+      why: "_v3_conversation_prefixes SHA256 hashing or message ordering tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::conversation_hash/)'
+    - id: session-resolution-cases
+      why: "_v3_session_id three-tier resolution or stable derivation tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::session_resolution/)'
+    - id: system-text-cases
+      why: "_v3_system_text extraction from system/instructions/preamble message tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::system_text/)'
+    - id: first-user-text-cases
+      why: "_v3_first_message_text extraction excluding preamble tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::first_user_text/)'
+    - id: user-identity-cases
+      why: "_v3_user priority selection or placeholder filtering tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::user_identity/)'
+    - id: client-recognition-cases
+      why: "_v3_client_from_user_agent prefix matching tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::client_recognition/)'
+    - id: header-composition-cases
+      why: "_v3_headers routing hint assembly tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::header_composition/)'
+    - id: decision-mapping-cases
+      why: "_v3_decision nested/flat verdict reading tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::decision_mapping/)'
+    - id: blocked-by-cases
+      why: "_v3_blocked_by control sorting tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::blocked_by/)'
+    - id: response-mapping-cases
+      why: "_v3_response verdict to action mapping tests are missing or fail"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::response_mapping/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Token decoding uses tiktoken with text-davinci-003 when available; absent tokenizer returns None and the raw prompt is relayed untouched instead of raising.
+    why: LiteLLM's token decoder gracefully falls back when tiktoken is unavailable. betterlite preserves this fallback to relay unscreened prompts rather than fail the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L500-L508
+  - what: Placeholder identities (default_user_id and litellm_proxy_master_key) are filtered out of the user identity, returning None so they are not recorded as Straiker identities.
+    why: LiteLLM's proxy does not identify the admin/proxy itself to downstream services; betterlite follows this convention to avoid master-key calls being scored under proxy admin identity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L381-L388
+  - what: Conversation prefix hashing uses SHA256 with UTF-8 JSON encoding and a 0x1E separator byte between messages, matching LiteLLM's approach.
+    why: LiteLLM's stable prefix hashing is the contract with Straiker for replay detection. betterlite replicates the exact encoding and separator to maintain compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L654-L675
+
+out_of_scope:
+  - "Guardrail initialization, configuration updates and logging are owned by B104 (CustomGuardrail framework)."
+  - "Session ID retrieval from request data (get_session_id_from_request_data) is owned by U1 (framework utilities)."
+  - "Webhook delivery, retry behavior and intervention application are owned by B3797 (Straiker delivery)."
+  - "Webhook records and context projection (identity, metadata, usage) are owned by B3795 (Straiker records)."
+  - "Route-to-call-type translation and message structure handling are owned by B207 (routing utilities)."
+  - "Anthropic response translation (translate_openai_response_to_anthropic) is owned by B966 (message output adapters)."
+  - "HTTP request pooling and transport are owned by B173 (HTTP client)."
+
+pitfalls:
+  - "Credential redaction is one level deep on purpose: a function schema that defines a `token` or `headers` property lives under `parameters` and must be relayed as sent."
+  - "_v3_prompt_texts returns None when decoding fails; the caller must check None and relay the untouched prompt instead of assuming success."
+  - "Token lists that decode to None are indistinguishable from no tokens; check the return value, never assume all-or-nothing success."
+  - "_v3_conversation_prefixes returns one hash for plain prompt/input, one hash per message in sequences; the list length differs based on input shape."
+  - "Conversation prefixes include all messages in order, including system/developer preamble; the hash is a fingerprint of the exact sequence, not user turns only."
+  - "Session ID derivation hashes both the user principal and the conversation preamble+first user text; two users who open with the same words are two sessions."
+  - "_v3_system_text finds the system field first, then instructions, then a leading system/developer message; it never returns None when any of these are present."
+  - "First user message text skips system/developer roles and returns the first role=user message; it never includes the system preamble."
+  - "_v3_user filters placeholder identities and returns None for proxy-admin calls; the None return means the principal was masked, not that identity is unknown."
+  - "User-Agent recognition returns only (client, agent name) pairs from the allowlist; unrecognized agents return None and the client header is omitted."
+  - "_v3_headers returns a frozen mapping with only present-valued fields; all four routing hints are optional."
+  - "_v3_decision reads permissionDecision first from nested hook output, then action from the verdict; reading only one envelope would miss block decisions."
+  - "_v3_blocked_by returns a sorted tuple; the order is stable across runs and skips duplicate controls."
+  - "_v3_response returns None for undecided/ask decisions with no blocked_by controls; the None means no action, not that Straiker was silent."
+  - "The v3 response decision defaults to 'NONE' (allow) when Straiker gives no verdict; an absent verdict is treated as allow, not fail-open deny."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

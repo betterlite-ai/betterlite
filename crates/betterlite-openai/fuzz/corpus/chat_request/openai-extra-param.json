@@ -1,0 +1,1 @@
+{"model":"extra-model","messages":[{"role":"user","content":"hi"}],"service_tier":"auto","user":"oracle-user","logprobs":true,"top_logprobs":2,"vendor_flag":{"mode":"fast","level":3}}

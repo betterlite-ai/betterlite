@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Decode native interaction streams and log terminal results
 status: todo
 depends_on: [B3481, B3490, B005, B206, B250, B1370]
-file: null
+file: tasks/B3491-interaction-stream.yaml
 covers:
   - "litellm/interactions/streaming_iterator.py"
 parent: B098

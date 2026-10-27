@@ -1,0 +1,100 @@
+id: B3421
+title: Eval creation and listing operations
+description: >-
+  Build eval creation and listing orchestration in `betterlite-core::api::eval_create_list`. Implement `create_eval`, `acreate_eval`, `list_evals`, and `alist_evals` with native sync/async semantics, preserving the extra-body/query merge order and provider selection. Each operation constructs typed requests from user parameters, validates the provider config, transforms through the OpenAI implementation, logs the operation before transport, and maps provider errors to user-facing exceptions.
+
+  In `create_eval`: accept `data_source_config` (required), `testing_criteria` (required), `name` (optional), `metadata` (optional, not forwarded unless overridden by `extra_body`), `extra_headers`, `extra_query`, `extra_body`, `timeout`, and `custom_llm_provider`. Select provider: `custom_llm_provider` becomes `"openai"` if `None`. Construct `CreateEvalRequest` with required fields and optional `name`, apply `extra_body` updates, validate environment through the config, transform the request, call the logging updater with the full request body as optional params, and dispatch to the transport handler with resolved timeout (`timeout or request_timeout`).
+
+  In `list_evals`: accept pagination parameters `limit`, `after`, `before`, `order`, `order_by` (all optional), `extra_headers`, `extra_query`, `timeout`, and `custom_llm_provider`. Build `ListEvalsParams` from non-None explicit parameters only, apply `extra_query` overrides afterward, validate environment, transform request, log with query params as optional params, dispatch with the same timeout resolution.
+
+  Async wrappers `acreate_eval` and `alist_evals` run their sync counterparts in a thread pool via `loop.run_in_executor`, copy context with `contextvars.copy_context`, and await the result. If the result is a coroutine, await it; otherwise return it.
+
+  Unsupported providers are rejected with `ValueError` after `ProviderConfigManager.get_provider_evals_api_config` returns `None`. Exception mapping uses the same `litellm.exception_type` dispatch as the provider transforms: OpenAI errors through B185, other or unmapped errors through B186. Store `local_vars = locals()` before the try block to capture arguments and defaults.
+
+  Preserve module-level `DEFAULT_OPENAI_API_BASE = "https://api.openai.com"` as a Final constant. Import and bind `BaseLLMHTTPHandler()` at module level; the instance is shared across all operations.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/eval_create_list.rs
+    - crates/betterlite-core/src/api/eval_create_list/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1-43
+    why: Module preamble, imports, DEFAULT_OPENAI_API_BASE and BaseLLMHTTPHandler binding
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L44-110
+    why: "acreate_eval: async wrapper calling create_eval via executor and contextvars"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L113-226
+    why: "create_eval: build request, validate, transform, log, dispatch; error handling"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L229-295
+    why: "alist_evals: async wrapper parallel to acreate_eval"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L298-412
+    why: "list_evals: pagination param handling, request building, transform, log, dispatch"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L562-577
+    why: "request_timeout: default timeout when user does not supply one"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L381-519
+    why: "GenericLiteLLMParams: wrapper over kwargs, resolved to extract litellm_params"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9262-9279
+    why: "ProviderConfigManager.get_provider_evals_api_config: provider factory lookup"
+
+dod:
+  - text: "create_eval constructs CreateEvalRequest from required and optional input parameters, applies extra_body updates, and returns an Eval contract validated through B3420's model."
+    proof: [eval-create-list-tests]
+  - text: "acreate_eval runs create_eval in a thread pool with context copy and awaits the result, handling both direct returns and coroutines."
+    proof: [eval-create-list-tests]
+  - text: "list_evals builds ListEvalsParams from non-None pagination parameters only, applies extra_query overrides afterward, and returns ListEvalsResponse contract validated through B3420's model."
+    proof: [eval-create-list-tests]
+  - text: "alist_evals runs list_evals in a thread pool with context copy and awaits the result, handling both direct returns and coroutines."
+    proof: [eval-create-list-tests]
+  - text: "Both create and list operations call validate_environment on the provider config and pass resolved headers to the transform."
+    proof: [eval-create-list-tests]
+  - text: "Both create and list operations call the logging updater with operation kwargs and optional_params (request body or query params) before dispatching."
+    proof: [eval-create-list-tests]
+  - text: "custom_llm_provider=None selects openai; missing provider config raises ValueError before transport."
+    proof: [eval-create-list-tests]
+  - text: "Timeout resolves to supplied timeout or request_timeout constant."
+    proof: [eval-create-list-tests]
+  - text: "Exception mapping uses litellm.exception_type for both operation families; exceptions include local_vars (all parameters at entry)."
+    proof: [eval-create-list-tests]
+  - text: "Module binds DEFAULT_OPENAI_API_BASE and BaseLLMHTTPHandler() at initialization and reuses them across operations."
+    proof: [eval-create-list-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: eval-create-list-tests
+      why: creation and listing operation tests fail, do not exist, or cannot reach B3420 contracts and B523 provider transforms
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::eval_create_list::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Async wrappers call sync counterparts via thread pool and contextvars copy, matching the @client decorator in LiteLLM but betterlite has its own context/logging mechanism."
+    why: "The pattern (sync function, async wrapper running it in executor with context) is preserved; logging and context types come from betterlite's observability layer."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L44-102
+  - what: "Metadata supplied by the user is captured in local_vars for error reporting but not added to the outgoing request unless extra_body includes it."
+    why: "LiteLLM accepts and documents metadata but does not forward it; only extra_body can override the behavior, matching the pinned behavior exactly."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L113-175
+
+out_of_scope:
+  - Provider factory owned by B523 or a utility owner (ProviderConfigManager.get_provider_evals_api_config).
+  - HTTP handler implementation and transport dispatch (owned by the handler/transport owner identified by B096's external-calls table).
+  - Request/response transformation for OpenAI (owned by B523).
+  - Logging infrastructure and observability (B247).
+  - Exception type mapping from provider errors to OpenAI vs. other/fallback (B185, B186).
+  - Async runtime, context variables and request tracing beyond what local operations require.
+  - Client-wrapper decorator or its side effects on operation selection (betterlite's routing replaces this).
+
+pitfalls:
+  - "metadata is user-supplied but not forwarded by default; extra_body can override it, so the request may lack or include metadata depending on user intent and the transform. This is intentional and security-sensitive: do not 'fix' it to always forward metadata."
+  - "list_evals merges extra_query after explicit parameters, so extra_query overwrites pagination keys. This order is load-bearing: build ListEvalsParams from explicit params first, then apply extra_query updates."
+  - "Timeout resolution uses: supplied timeout if not None, otherwise request_timeout constant. On None inputs, this becomes the module default, not a per-request timeout."
+  - "Async wrappers must handle both direct returns and coroutines from create_eval/list_evals; contextvars.copy_context and loop.run_in_executor preserve request context across the thread boundary."
+  - "local_vars = locals() must be called before the try block to include all function parameters and defaults in error reporting."
+  - "ProviderConfigManager returns None for unsupported providers; do not silently fall back to openai on None, raise ValueError with the provider name."
+  - "Both functions use the @client decorator in LiteLLM, which the outline marks as external; betterlite's @client decorator (or its equivalent) is not in scope here; the signature and parameter capture belong to this module."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

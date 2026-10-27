@@ -1,0 +1,26 @@
+kind: helper
+name: collision-different-shape
+call:
+  openapi_schema_transforms:
+    function: add_schema_to_components
+    schema_name: Request
+    openapi:
+      components:
+        schemas:
+          Block: {properties: {value: {type: string}}, required: [value]}
+          Mode: {enum: [a, b]}
+          Empty: {properties: {}}
+    schema:
+      properties:
+        block: {"$ref": "#/$defs/Block"}
+        mode: {"$ref": "#/$defs/Mode"}
+        empty: {"$ref": "#/$defs/Empty"}
+        other: {"$ref": "#/$defs/Missing"}
+      "$defs":
+        Block: {properties: {value: {type: string}, extra: {type: string}}, required: [value]}
+        Mode: {enum: [a, b, c]}
+        Empty: {properties: {}}
+        Fresh: {type: integer, "$defs": {Nested: {}}}
+env: {}
+compare:
+  ignore: []

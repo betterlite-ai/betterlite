@@ -1,0 +1,158 @@
+id: B3729
+title: Azure Prompt Shield and billing usage
+description: >-
+  Implement Azure Prompt Shield guardrail with configurable cost tiers and pricing,
+  building on B3728's text splitting and authentication transport layer. The guardrail
+  scans user prompts at pre-call time and raises HTTPException with 400 status if an attack
+  is detected in any chunk. Cost tracking uses a per-invocation ContextVar to collect billing
+  counters (requests, input_characters, text_records) and pricing metadata (cost_tier and
+  price_per_1000_text_records), separated from request metadata since concurrent guardrail
+  tasks run with their own context copy. cost_tier accepts 'free' (cost 0) and 'paid' (requires
+  positive price_per_1000_text_records); omitted pricing tracks usage without cost estimate.
+  Configuration resolves os.environ/ credentials at startup and fails fast if references
+  resolve to unset or blank values. Updates in place re-resolve pricing and credentials,
+  validating them before any state mutation so invalid updates leave the running guardrail
+  untouched. Billing is recorded in logs, OTEL spans and the UI but never billed against
+  team/user/key budgets (guardrail_cost_in_spend=False), using B1667's cost_breakdown_with_guardrail
+  and azure_prompt_shield_guardrail_cost for exact arithmetic.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/azure_prompt_shield.rs
+    - crates/betterlite-guardrails/src/azure_prompt_shield/**
+    - tools/oracle/cases/guardrails/azure/prompt-shield/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L1-L402
+    why: Complete implementation of AzureContentSafetyPromptShieldGuardrail with _billing_usage_stash, cost tier resolution, pricing validation, ContextVar-based per-invocation accumulator, async_make_request chunking and attack detection, apply_guardrail and hook implementations, in-memory param updates with credential resolution, and billing tracing detail extraction and process methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L42-L47
+    why: Per-invocation billing counters stored in a ContextVar instead of request metadata to isolate concurrent guardrail tasks and survive request_data swaps by decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L50-L153
+    why: "Configuration parsing and validation: _resolved_secret_value for os.environ/ references, _resolved_cost_tier normalization to 'free' / 'paid' / None, _resolved_price with tier validation, and __init__ storing cost_tier and price_per_1000_text_records as plain attributes for in-place updates."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L156-L214
+    why: async_make_request splits text at word boundaries (from B3728), posts each chunk to Prompt Shield, accumulates billing counters (requests, input_characters, text_records as ceil(len/1000)), and raises HTTPException immediately on attack detection while still counting submitted chunks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L217-L269
+    why: apply_guardrail entry point and async_pre_call_hook that scan user prompts, call async_make_request with a usage accumulator dict, and call _record_billing_usage to stash per-invocation counters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L271-L323
+    why: update_in_memory_litellm_params re-resolves cost_tier and pricing with validation before mutation, _pop_billing_tracing_detail converts per-invocation counters to a GuardrailTracingDetail with guardrail_cost_in_spend=False, and _record_billing_usage manages the stashed counters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L325-L383
+    why: _process_response and _process_error override CustomGuardrail to attach GuardrailTracingDetail, call add_standard_logging_guardrail_information_to_request_data with guardrail_provider="azure", and pop stashed billing usage on both success and intervention paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/azure/azure_prompt_shield.py#L1-L52
+    why: "Type definitions: AzurePromptShieldGuardrailRequestBody with userPrompt and documents, UserPromptAnalysis with attackDetected, AzurePromptShieldGuardrailResponse, and AzurePromptShieldGuardrailConfigModel with cost_tier and price_per_1000_text_records fields."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L98-L116
+    why: "azure_prompt_shield_guardrail_cost function and AZURE_PROMPT_SHIELD_TEXT_RECORD_UNIT constant for exact cost calculation: free tier yields 0.0, omitted price yields None, and paid yields text_records * price / 1000."
+dod:
+  - text: >-
+      Cost tiers normalize to 'free', 'paid' or None. cost_tier='free' forces price None
+      internally, cost_tier='paid' requires positive price_per_1000_text_records at startup
+      and raises ValueError if missing, and omitted cost_tier allows usage-only tracking.
+    proof: [cost-tier-cases]
+  - text: >-
+      Credentials starting with 'os.environ/' resolve to environment variables and raise
+      ValueError if the reference points to unset or blank values. Non-environ values and
+      None pass through unchanged.
+    proof: [secret-resolution-cases]
+  - text: >-
+      update_in_memory_litellm_params validates resolved pricing and credentials before
+      any state mutation, so an invalid update leaves the guardrail untouched and a raw
+      'os.environ/' reference never overwrites a resolved credential.
+    proof: [update-param-cases]
+  - text: >-
+      async_make_request splits text into chunks using B3728's split_text_by_words,
+      POSTs each chunk with userPrompt and empty documents, increments (requests,
+      input_characters, text_records as ceil(len/1000)) per chunk, and raises HTTPException
+      with 400 status on attackDetected without processing further chunks.
+    proof: [make-request-cases]
+  - text: >-
+      Per-invocation billing counters are stashed in a ContextVar, survive decorator
+      request_data swaps, reset between invocations, and are popped into a GuardrailTracingDetail
+      with guardrail_cost_in_spend=False for logging without budget enforcement.
+    proof: [billing-stash-cases]
+  - text: >-
+      azure_prompt_shield_guardrail_cost returns 0.0 for cost_tier='free', None when price
+      is omitted, and text_records * price_per_1000_text_records / 1000 for paid tier,
+      treating missing text_records count as 0.
+    proof: [cost-calc-cases]
+  - text: >-
+      _process_response and _process_error attach GuardrailTracingDetail with usage and
+      cost, call add_standard_logging_guardrail_information_to_request_data with
+      guardrail_provider="azure" and guardrail_cost_in_spend=False, and pop the stashed
+      counters on both success and intervention paths.
+    proof: [process-override-cases]
+  - text: >-
+      get_supported_event_hooks returns pre_call and during_call; apply_guardrail is called
+      by both pre-call and during-call handlers to scan user prompts and responses respectively.
+    proof: [event-hook-cases]
+  - text: >-
+      get_config_model returns AzurePromptShieldGuardrailConfigModel; ui_friendly_name()
+      returns the literal string "Azure Content Safety Prompt Shield".
+    proof: [config-model-cases]
+  - text: >-
+      async_pre_call_hook logs "Azure Prompt Shield: not running guardrail. No messages in data"
+      and returns data unchanged when call_type is not in RESPONSES_API_CALL_TYPES and data lacks
+      messages; logs "Azure Prompt Shield: No user prompt found" and returns None when user_prompt
+      is empty or falsy after extraction.
+    proof: [warn-and-drop-cases]
+checks:
+  optional: []
+  commands:
+    - id: cost-tier-cases
+      why: Cost tier normalization fails or validation of paid tier missing price is absent
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_cost_tier::/)'
+    - id: secret-resolution-cases
+      why: Environment variable resolution for 'os.environ/' credentials is missing or fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_credential_resolution::/)'
+    - id: update-param-cases
+      why: update_in_memory_litellm_params does not validate before mutation or allows invalid updates
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_param_update::/)'
+    - id: make-request-cases
+      why: async_make_request does not chunk correctly, accumulate usage, or detect attacks properly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_make_request::/)'
+    - id: billing-stash-cases
+      why: Per-invocation billing counters are not isolated or do not survive context switches
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_billing_stash::/)'
+    - id: cost-calc-cases
+      why: azure_prompt_shield_guardrail_cost returns wrong costs or does not handle missing prices
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_cost_calculation::/)'
+    - id: process-override-cases
+      why: _process_response or _process_error does not attach GuardrailTracingDetail or record billing correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_process_override::/)'
+    - id: event-hook-cases
+      why: Event hook support or guardrail application to pre-call and during-call events is missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_event_hooks::/)'
+    - id: config-model-cases
+      why: get_config_model does not return AzurePromptShieldGuardrailConfigModel or ui_friendly_name returns wrong string
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_config_model::/)'
+    - id: warn-and-drop-cases
+      why: async_pre_call_hook does not log warnings on missing messages or user prompt, or does not skip scanning appropriately
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_warn_and_drop::/)'
+oracle_cases: []
+deviations:
+  - what: Azure Prompt Shield billing usage is tracked in a per-invocation ContextVar instead of request metadata, so concurrent guardrail tasks running in separate asyncio tasks with their own context copy see isolated counters.
+    why: LiteLLM stores usage in a ContextVar to survive request_data swaps by decorators and isolate concurrent invocations. betterlite preserves this pattern for the same reasons.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L42-L47
+  - what: A misconfigured deployment with cost_tier='paid' and no price_per_1000_text_records raises ValueError at startup, failing fast instead of silently reporting zero cost.
+    why: LiteLLM validates the paid tier configuration to ensure deployments that should incur cost do not accidentally run cost-free. betterlite preserves this fast-fail behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L91-L92
+  - what: Environment variable references starting with 'os.environ/' that resolve to unset or blank values raise ValueError instead of silently disabling pricing.
+    why: LiteLLM fails fast on broken credentials so a misconfigured deployment is caught at startup, not silently skipped at runtime. betterlite preserves this behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L54-L59
+out_of_scope:
+  - Text splitting and Azure Content Safety HTTP transport are owned by B3728 (AzureGuardrailBase).
+  - CustomGuardrail decorator, logging methods (log_guardrail_information, add_standard_logging_guardrail_information_to_request_data, _summarize_guardrail_response, _is_guardrail_intervention), and update lifecycle are owned by B3664 (Guardrail framework leaves).
+  - Cost accumulation in daily rollups and spend enforcement against team/user/key budgets are owned by B068 and B069; guardrail_cost_in_spend=False blocks budget enforcement.
+  - Text moderation hooks and threshold configuration are owned by B3730.
+  - get_user_prompt_from_request and other framework utilities are owned by B3728.
+  - The guardrail registration caller at litellm/proxy/common_utils/callback_utils.py:356 is owned by U3 (callback helpers).
+pitfalls:
+  - "Per-invocation billing counters live in a ContextVar scoped to an asyncio task, not request metadata. Decorators that swap request_data in place do not affect the stashed counters."
+  - "cost_tier='free' internally overrides any configured price, so the cost is always 0.0; cost_tier='paid' requires a positive price or startup fails."
+  - "A blank or unset 'os.environ/<VAR>' reference raises ValueError at startup, not silently disabling the guardrail. This behavior is by design: misconfigured deployments fail fast."
+  - "update_in_memory_litellm_params validates credentials and pricing BEFORE any state mutation. An invalid credential reference never overwrites the running guardrail's state."
+  - "Chunks that trigger an attack detection were still submitted to Azure and billed, so they are counted in usage before the HTTPException is raised."
+  - "GuardrailTracingDetail has guardrail_cost_in_spend=False, so guardrail cost never counts against team/user/key budgets; it appears in logs, OTEL and the UI only."
+  - "text_records billing unit is the ceiling of input characters divided by 1000, not the floor. A 500-character input counts as 1 text record."
+  - "The cost calculation uses exact arithmetic (B204's Decimal-like checking); floating-point rounding or infinity never occurs."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

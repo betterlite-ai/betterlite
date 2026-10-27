@@ -1,0 +1,96 @@
+id: B4022
+title: User and team budget email delivery
+description: >-
+  Build individual budget email delivery for user budget alerts and team member notifications.
+  Implement get_all_team_member_emails to look up all team member emails from a team_id
+  using TeamRepository (B724) and execute a SQL query for user emails via DbSession (B700).
+  Implement send_team_budget_alert to format and send a team budget alert email to all team
+  members, preserving the sequential user-email then team-email sends and the false return value
+  after sending. Validate email customization restrictions: in open-source betterlite without
+  a paid tier, logo and contact customization fields are rejected when both premium_user is false
+  and customization is attempted. Implement send_email_alert_using_smtp to send individual SMTP
+  budget alerts with logo and contact information from B4020's settings, HTML email templates with
+  logo image and support contact, and sequential email sending (user email first, then team email
+  for team events). Keep empty-recipient behavior visible: joining an empty recipient list produces
+  an empty string, not None. Preserve LiteLLM's loud logging for missing recipients and configuration,
+  but never log event dumps containing tokens or credentials. Return false after sending both user
+  and team emails, matching the source behavior. Integrate with SMTP transport through the injected
+  send_email function from Q2.
+scope:
+  paths:
+    - crates/betterlite-logging/src/budget_email.rs
+    - crates/betterlite-logging/src/budget_email/
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_alerting.py#L17-L65
+    why: Team member email lookup from team_id, member role filtering, and raw SQL query execution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_alerting.py#L68-L131
+    why: Team budget alert email formatting with logo, contact, team alias and spend information.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1224-L1234
+    why: Premium user email customization check; betterlite's no-paid-tier decision.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1367-L1428
+    why: Individual SMTP budget alert email with template formatting, sequential sends and false return.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_alerting.py#L1-L16
+    why: Email branding constants logo URL and support contact defaults.
+dod:
+  - text: get_all_team_member_emails queries team members by team_id using TeamRepository.table.find_unique and filters valid user_id values from members_with_roles.
+    proof: [budget-email-tests]
+  - text: Team member lookup constructs a SQL query with user_id list and returns user_email rows from LiteLLM_UserTable or an empty list on missing/null results.
+    proof: [budget-email-tests]
+  - text: send_team_budget_alert sends team budget alert emails to all team members returned by get_all_team_member_emails.
+    proof: [budget-email-tests]
+  - text: Team budget alert email includes logo URL (SMTP_SENDER_LOGO or EMAIL_LOGO_URL or default), team alias, max budget, current spend and support contact.
+    proof: [budget-email-tests]
+  - text: Empty team member list produces an empty recipient string (joined empty list), not None or None string.
+    proof: [budget-email-tests]
+  - text: send_team_budget_alert returns false regardless of send result; empty recipient list produces empty string (not None) from join operation, so no warning condition triggers.
+    proof: [budget-email-tests]
+  - text: Email customization validation checks if email_logo_url or email_support_contact are customized when premium_user is false and raises ValueError.
+    proof: [budget-email-tests]
+  - text: send_email_alert_using_smtp accepts WebhookEvent and alert_type, checks premium email feature, gets email settings from config via B4020.
+    proof: [budget-email-tests]
+  - text: User email alert is sent first with individual budget information (user_id as name, max_budget, event_message, support contact).
+    proof: [budget-email-tests]
+  - text: Team email alert is sent second when event_group is TEAM using send_team_budget_alert.
+    proof: [budget-email-tests]
+  - text: send_email_alert_using_smtp returns false after sending user email and team email, matching source behavior.
+    proof: [budget-email-tests]
+  - text: Email subject includes event_name (budget_crossed) and branding is preserved in HTML templates.
+    proof: [budget-email-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: budget-email-tests
+      why: team member lookup, budget email sending or customization check tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^budget_email::/)'
+oracle_cases: []
+deviations:
+  - what: Email customization rejection raises ValueError in all cases; betterlite has no paid tier, so customization is never allowed in open-source.
+    why: B4022 retains LiteLLM's loud validation logic. Unlike the source's premium_user check that conditionally raises, betterlite's no-paid-tier decision makes the check live for all users.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1224-L1234
+  - what: Email branding defaults to LiteLLM's constants when SMTP_SENDER_LOGO, EMAIL_LOGO_URL and EMAIL_SUPPORT_CONTACT are not set; no implicit asset fetching.
+    why: B4022 and B4023 use B4020's settings without network fetches. Missing configuration falls back to constants, matching source behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_alerting.py#L79-L89
+  - what: Event dump logging for missing recipients logs recipient_emails_str value, not the full webhook_event dict with token/credentials.
+    why: LiteLLM logs event information in some paths; betterlite applies the repository's credential redaction policy and never logs full event dumps.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_alerting.py#L99-L102
+out_of_scope:
+  - Alert production and alert type decisions are owned by B4025 and B4024.
+  - WebhookEvent record definitions and webhook delivery are owned by B4020 and B4024.
+  - SMTP send_email function transport and implementation are Q2 (unresolved).
+  - User and team repository lookups are owned by B700 and B724; this task uses their table handles.
+  - Email template rendering for key creation and invitations are owned by B4023.
+  - Alert settings configuration loading is owned by B4020.
+pitfalls:
+  - "Empty team member list from get_all_team_member_emails results in an empty string recipient, not None, to preserve LiteLLM's join behavior."
+  - "Team member filtering from members_with_roles requires both member dict check and user_id string validation before adding to the lookup list."
+  - "SQL query execution on team members must use parameterized queries (any($1::TEXT[])) to prevent injection and match Prisma's safety."
+  - "send_team_budget_alert returns false unconditionally after sending, not true on successful send; this matches LiteLLM's behavior."
+  - "Premium email customization rejection applies to both email_logo_url and email_support_contact independently in betterlite (no paid tier)."
+  - "Email subject must include event_message from webhook_event, not a hardcoded string, for different alert types."
+  - "Budget alert HTML email must preserve logo image tag, team/user name in greeting, budget/spend values formatted as currency, and support contact."
+  - "Sequential sends mean user email first (event budget_crossed), then team email second only if event_group is TEAM; do not nest calls."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
