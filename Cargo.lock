@@ -592,6 +592,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "chrono",
+ "hex",
  "parquet-format-safe",
  "parquet2",
  "regex",
@@ -599,9 +600,13 @@ dependencies = [
  "rust_decimal",
  "ryu",
  "serde",
+ "serde-saphyr",
+ "serde_json",
+ "sha2 0.11.1",
  "strum",
  "thiserror",
  "tracing",
+ "tracing-subscriber",
  "unicode-properties",
 ]
 
