@@ -1,0 +1,5 @@
+task: B244
+deviations:
+  - what: Structured traversal replaces containers at the masking depth or byte-work bound with REDACTED rather than returning the original container.
+    why: Fail-closed masking prevents credentials from escaping when a payload exceeds traversal limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/sensitive_data_masker.py#L117-L145

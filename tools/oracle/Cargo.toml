@@ -25,6 +25,7 @@ betterlite-openapi = { path = "../../crates/betterlite-openapi" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
 betterlite-postgres-fixture = { path = "../postgres-fixture" }
 betterlite-rate-limit = { path = "../../crates/betterlite-rate-limit" }
+betterlite-redact = { path = "../../crates/betterlite-redact" }
 betterlite-router = { path = "../../crates/betterlite-router" }
 betterlite-secrets = { path = "../../crates/betterlite-secrets" }
 betterlite-server = { path = "../../crates/betterlite-server" }

@@ -1,0 +1,9 @@
+kind: helper
+name: structured-nested-sequence
+call:
+  structured_redaction:
+    function: mask_sensitive_structure
+    data: {headers: [{authorization: 'Bearer abcdefghijk'}, plain]}
+env: {}
+compare:
+  ignore: []
