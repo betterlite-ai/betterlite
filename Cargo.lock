@@ -913,6 +913,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-config",
+ "regex",
  "reqwest",
  "rstest",
  "secrecy",
@@ -922,6 +923,7 @@ dependencies = [
  "tokio",
  "tracing",
  "ulid",
+ "unicode-normalization",
 ]
 
 [[package]]

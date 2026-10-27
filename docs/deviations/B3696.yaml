@@ -1,0 +1,5 @@
+task: B3696
+deviations:
+  - what: "Text normalization treats any non-string input (None, numbers, objects) as empty string, returning empty result instead of panicking."
+    why: "Input validation for config and test data allows flexible structures; Rust receives validated text as &str, so the Python fallback is not representable at this typed boundary."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L23-L31"
