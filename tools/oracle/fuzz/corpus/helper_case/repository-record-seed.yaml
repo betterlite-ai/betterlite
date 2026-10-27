@@ -1,0 +1,8 @@
+kind: helper
+name: repository-record-seed
+call:
+  repository_record:
+    operation: to_model_list
+    record: [null, {id: 1}, {id: 2}]
+env: {}
+compare: {ignore: []}

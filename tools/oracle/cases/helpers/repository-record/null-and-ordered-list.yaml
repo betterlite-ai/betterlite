@@ -1,0 +1,8 @@
+kind: helper
+name: repository-record-null-and-ordered-list
+call:
+  repository_record:
+    operation: to_model_list
+    record: [null, {id: 2}, null, {id: 1}]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: repository-record-mapping-and-pair-sequence
+call:
+  repository_record:
+    operation: record_to_dict
+    record: [[a, 1], [a, 2], [b, 3]]
+env: {}
+compare: {ignore: []}

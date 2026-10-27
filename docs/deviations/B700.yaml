@@ -1,0 +1,5 @@
+task: B700
+deviations:
+  - what: Membership reads use one native PostgreSQL array rather than sequential 5000-value statements.
+    why: The native driver supports array parameters and no live caller supplies chunking options.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/chunked_in.py#L76-L102

@@ -10,10 +10,14 @@ workspace = true
 
 [dependencies]
 chrono.workspace = true
+deadpool-postgres.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
+tokio.workspace = true
+tokio-postgres.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 rstest = "=0.27.0"
 serde_json = { version = "1.0.145", features = ["raw_value"] }
