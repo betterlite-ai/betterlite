@@ -56,7 +56,7 @@ fn structured_redaction_bounds(#[case] depth: usize) {
     let output = if depth == 10 {
         mask_credentials_in_payload(&input)
     } else {
-        redact_credentials_in_payload(&input)
+        redact_credentials_in_payload(input.as_object().unwrap())
     };
     assert!(!output.to_string().contains("secret"));
     assert!(output.to_string().contains("REDACTED") || output.to_string().contains("****"));
@@ -83,8 +83,11 @@ fn exact_key_masking_and_redaction_cover_non_strings() {
     );
     assert_eq!(masked["token"], "*****");
     assert_eq!(masked["other"], "short");
-    let redacted =
-        redact_credentials_in_payload(&parse(r#"{"token":17, "none":null, "model":"x"}"#));
+    let redacted = redact_credentials_in_payload(
+        parse(r#"{"token":17, "none":null, "model":"x"}"#)
+            .as_object()
+            .unwrap(),
+    );
     assert_eq!(redacted["token"], "REDACTED");
     assert_eq!(redacted["none"], Value::Null);
 }
@@ -95,6 +98,11 @@ fn custom_patterns_and_overrides_are_local() {
     assert!(masker.is_sensitive_key("mongodb_connection_string", &[]));
     assert!(!masker.is_sensitive_key("input_cost_per_token", &[]));
     assert!(!SensitiveDataMasker::new().is_sensitive_key("mongodb_connection_string", &[]));
+    assert!(SensitiveDataMasker::new().is_sensitive_key("\u{212a}ey", &[]));
+    assert!(
+        !SensitiveDataMasker::with_patterns(["connection"], Vec::<String>::new())
+            .is_sensitive_key("input_cost_per_token", &[])
+    );
 }
 
 #[test]
@@ -115,4 +123,20 @@ fn mask_dict_fails_closed_at_depth(#[case] source: &str) {
     let output = masker.mask_dict(input.as_object().unwrap(), 0, 1, &[]);
     assert_eq!(output, parse(r#"{"nested":"REDACTED"}"#));
     assert_eq!(input, parse(source));
+}
+
+#[rstest]
+#[case::structure(mask_sensitive_structure)]
+#[case::payload(mask_credentials_in_payload)]
+#[case::redact(|data: &Value| redact_credentials_in_payload(data.as_object().unwrap()))]
+fn rejects_excessive_byte_work(#[case] mask: fn(&Value) -> Value) {
+    let input = Value::Object(serde_json::Map::from_iter([
+        (
+            "ordinary".to_owned(),
+            Value::String("x".repeat(super::MAX_WORK)),
+        ),
+        ("token".to_owned(), Value::String("secret".to_owned())),
+    ]));
+    let output = mask(&input);
+    assert_eq!(output, Value::String("REDACTED".to_owned()));
 }

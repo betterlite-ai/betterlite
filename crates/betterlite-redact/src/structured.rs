@@ -1,11 +1,9 @@
 #![expect(
     clippy::disallowed_types,
-    clippy::too_many_arguments,
-    clippy::too_many_lines,
     reason = "B244 owns the existing opaque JSON payload field and its typed traversal boundary"
 )]
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
@@ -18,12 +16,13 @@ pub type Payload = Value;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SensitiveDataMasker {
-    sensitive_patterns: BTreeSet<String>,
-    non_sensitive_overrides: BTreeSet<String>,
-    visible_prefix: usize,
-    visible_suffix: usize,
-    mask_char: char,
-    mask_short_values: bool,
+    pub sensitive_patterns: BTreeSet<String>,
+    pub non_sensitive_overrides: BTreeSet<String>,
+    pub visible_prefix: usize,
+    pub visible_suffix: usize,
+    pub mask_char: String,
+    pub mask_short_values: bool,
+    pub max_work: usize,
 }
 
 impl SensitiveDataMasker {
@@ -50,17 +49,21 @@ impl SensitiveDataMasker {
                 .into_iter()
                 .map(|item| item.as_ref().to_owned()),
         );
-        let non_sensitive_overrides = overrides
+        let mut non_sensitive_overrides = overrides
             .into_iter()
             .map(|item| item.as_ref().to_owned())
-            .collect();
+            .collect::<BTreeSet<_>>();
+        if non_sensitive_overrides.is_empty() {
+            non_sensitive_overrides.insert("cost".to_owned());
+        }
         Self {
             sensitive_patterns,
             non_sensitive_overrides,
             visible_prefix: 4,
             visible_suffix: 4,
-            mask_char: '*',
+            mask_char: "*".to_owned(),
             mask_short_values: true,
+            max_work: MAX_WORK,
         }
     }
 
@@ -71,36 +74,12 @@ impl SensitiveDataMasker {
     }
 
     #[must_use]
-    pub fn mask_value(&self, value: &str) -> String {
-        let characters = value.chars().collect::<Vec<_>>();
-        if characters.is_empty() {
-            return String::new();
+    pub fn mask_value(&self, text: &str) -> String {
+        if text.len() > self.max_work {
+            REDACTED.to_owned()
+        } else {
+            value::mask(self, text)
         }
-        let visible = self.visible_prefix.saturating_add(self.visible_suffix);
-        if characters.len() <= visible {
-            return if self.mask_short_values {
-                self.mask_char.to_string().repeat(characters.len())
-            } else {
-                value.to_owned()
-            };
-        }
-        let masked_length = characters.len().saturating_sub(visible);
-        let prefix = characters
-            .iter()
-            .take(self.visible_prefix)
-            .collect::<String>();
-        let suffix = characters
-            .iter()
-            .rev()
-            .take(self.visible_suffix)
-            .collect::<String>()
-            .chars()
-            .rev()
-            .collect::<String>();
-        format!(
-            "{prefix}{}{suffix}",
-            self.mask_char.to_string().repeat(masked_length)
-        )
     }
 
     #[must_use]
@@ -108,7 +87,7 @@ impl SensitiveDataMasker {
         if excluded_keys.iter().any(|excluded| excluded == key) {
             return false;
         }
-        let normalized_key = key.to_ascii_lowercase().replace('-', "_");
+        let normalized_key = key.to_lowercase().replace('-', "_");
         let segments = normalized_key.split('_').collect::<BTreeSet<_>>();
         if self
             .non_sensitive_overrides
@@ -130,71 +109,30 @@ impl SensitiveDataMasker {
         max_depth: usize,
         excluded_keys: &[String],
     ) -> Value {
-        if depth >= max_depth {
-            return Value::String(REDACTED.to_owned());
-        }
-        let mut masked = Map::new();
-        for (key, value) in data {
-            let sensitive = self.is_sensitive_key(key, excluded_keys);
-            if sensitive && !value.is_object() && !value.is_array() {
-                masked.insert(
-                    key.clone(),
-                    Value::String(self.mask_value(&scalar_text(value))),
-                );
-                continue;
-            }
-            masked.insert(
-                key.clone(),
-                self.mask_nested(
-                    value,
-                    depth.saturating_add(1),
-                    max_depth,
-                    excluded_keys,
-                    sensitive,
-                ),
-            );
-        }
-        Value::Object(masked)
-    }
-
-    fn mask_nested(
-        &self,
-        value: &Value,
-        depth: usize,
-        max_depth: usize,
-        excluded_keys: &[String],
-        sensitive: bool,
-    ) -> Value {
-        match value {
-            Value::Object(object) => self.mask_dict(object, depth, max_depth, excluded_keys),
-            Value::Array(_) if depth >= max_depth => Value::String(REDACTED.to_owned()),
-            Value::Array(values) => Value::Array(
-                values
-                    .iter()
-                    .map(|item| {
-                        self.mask_nested(
-                            item,
-                            depth.saturating_add(1),
-                            max_depth,
-                            excluded_keys,
-                            sensitive,
-                        )
-                    })
-                    .collect(),
-            ),
-            Value::String(text) if sensitive => Value::String(self.mask_value(text)),
-            Value::Null => Value::String("None".to_owned()),
-            Value::Bool(_) | Value::Number(_) | Value::String(_) => value.clone(),
-        }
+        let mut walker = walk::Walker {
+            masker: self,
+            kind: walk::Kind::Config,
+            excluded_keys,
+            max_depth: max_depth.min(DEFAULT_REDACT_DEPTH),
+            remaining: self.max_work,
+        };
+        walker
+            .mapping(data, depth)
+            .unwrap_or_else(|| Value::String(REDACTED.to_owned()))
     }
 
     #[must_use]
     pub fn mask(&self, data: &Value) -> Value {
-        match data {
-            Value::Object(object) => self.mask_dict(object, 0, DEFAULT_MASK_DEPTH, &[]),
-            Value::Array(_) => self.mask_nested(data, 0, DEFAULT_MASK_DEPTH, &[], false),
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => data.clone(),
-        }
+        let mut walker = walk::Walker {
+            masker: self,
+            kind: walk::Kind::Config,
+            excluded_keys: &[],
+            max_depth: DEFAULT_MASK_DEPTH,
+            remaining: self.max_work,
+        };
+        walker
+            .walk(data, 0, walk::Context::Root)
+            .unwrap_or_else(|| Value::String(REDACTED.to_owned()))
     }
 }
 
@@ -204,93 +142,29 @@ impl Default for SensitiveDataMasker {
     }
 }
 
-fn scalar_text(value: &Value) -> String {
-    match value {
-        Value::Null | Value::Array(_) | Value::Object(_) => String::new(),
-        Value::Bool(true) => "True".to_owned(),
-        Value::Bool(false) => "False".to_owned(),
-        Value::Number(number) => number.to_string(),
-        Value::String(string) => string.clone(),
-    }
-}
-
 #[must_use]
 pub fn mask_sensitive_structure(data: &Value) -> Value {
     let masker = SensitiveDataMasker::error_masker();
-    if data.is_null() {
-        Value::Null
-    } else {
-        masker.mask(data)
-    }
+    masker.mask(data)
 }
 
 #[must_use]
 pub fn mask_credentials_in_payload(data: &Value) -> Value {
-    let mut walker = PayloadWalker {
-        memo: HashMap::new(),
-        work: 0,
+    let masker = SensitiveDataMasker::new();
+    let mut walker = walk::Walker {
+        masker: &masker,
+        kind: walk::Kind::Payload,
+        excluded_keys: &[],
+        max_depth: DEFAULT_MASK_DEPTH,
+        remaining: MAX_WORK,
     };
-    walker.walk(data, false, 0)
+    walker
+        .walk(data, 0, walk::Context::Root)
+        .unwrap_or_else(|| Value::String(REDACTED.to_owned()))
 }
 
-struct PayloadWalker {
-    memo: HashMap<(String, bool), Value>,
-    work: usize,
-}
-
-impl PayloadWalker {
-    fn walk(&mut self, node: &Value, sensitive: bool, depth: usize) -> Value {
-        self.work = self.work.saturating_add(1);
-        if self.work > MAX_WORK {
-            return Value::String(REDACTED.to_owned());
-        }
-        if let Value::String(value) = node {
-            return if sensitive {
-                Value::String(SensitiveDataMasker::new().mask_value(value))
-            } else {
-                node.clone()
-            };
-        }
-        if !node.is_object() && !node.is_array() {
-            return node.clone();
-        }
-        if depth >= DEFAULT_MASK_DEPTH {
-            return Value::String(REDACTED.to_owned());
-        }
-        let cache_key = (node.to_string(), sensitive);
-        if let Some(value) = self.memo.get(&cache_key) {
-            return value.clone();
-        }
-        self.memo
-            .insert(cache_key.clone(), Value::String(REDACTED.to_owned()));
-        let value = match node {
-            Value::Object(object) => Value::Object(
-                object
-                    .iter()
-                    .map(|(key, value)| {
-                        (
-                            key.clone(),
-                            self.walk(
-                                value,
-                                SensitiveDataMasker::new().is_sensitive_key(key, &[]),
-                                depth.saturating_add(1),
-                            ),
-                        )
-                    })
-                    .collect(),
-            ),
-            Value::Array(values) => Value::Array(
-                values
-                    .iter()
-                    .map(|value| self.walk(value, sensitive, depth.saturating_add(1)))
-                    .collect(),
-            ),
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => node.clone(),
-        };
-        self.memo.insert(cache_key, value.clone());
-        value
-    }
-}
-
+pub mod parse;
 pub mod redact;
 mod tests;
+mod value;
+mod walk;

@@ -3,7 +3,7 @@ name: structured-nested-sequence
 call:
   structured_redaction:
     function: mask_sensitive_structure
-    data: {headers: [{authorization: 'Bearer abcdefghijk'}, plain]}
+    data: {headers: [{authorization: 'Bearer abcdefghijk'}, plain], token: null, plain: null, key: [null, false, 17, secret]}
 env: {}
 compare:
   ignore: []
