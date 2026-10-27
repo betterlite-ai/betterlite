@@ -1,0 +1,150 @@
+id: B4174
+title: Authenticated memory and task debug routes
+description: >-
+  Register GET /debug/asyncio-tasks, /memory-usage, /memory-usage-in-mem-cache, /memory-usage-in-mem-cache-items, /debug/memory/summary, /debug/memory/details,
+  POST /debug/memory/gc/configure and GET /otel-spans in betterlite-server.
+  Each route requires authentication through B052's user_api_key_auth.
+
+  GET /debug/asyncio-tasks, /memory-usage, /debug/memory/summary, /debug/memory/details and POST /debug/memory/gc/configure are unsupported in native Rust
+  and return HTTP 501 with error.type=unsupported_runtime, error.code=unsupported_runtime because native runtime has no Python asyncio tasks, tracemalloc,
+  or GC generations to inspect.
+
+  GET /memory-usage-in-mem-cache and GET /memory-usage-in-mem-cache-items assemble responses from B4173 diagnostic snapshot functions.
+  GET /memory-usage registers conditionally only when LITELLM_PROFILE is case-insensitive true; requests when unset return 404.
+  Query parameter defaults for GET /debug/memory/details are top_n=20 and include_process_info=true.
+  Cache item endpoints include TTL maps where LiteLLM includes them.
+  GET /otel-spans groups spans by parent trace ID and uses 1,000,000 starting timestamp; absent exporter returns empty results.
+  All handlers are live framework callbacks registered at startup through the debug router.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/debug_routes.rs
+    - crates/betterlite-server/src/debug_routes/**
+    - tools/oracle/cases/debug/tasks/**
+    - tools/oracle/cases/debug/memory/**
+    - tools/oracle/cases/debug/spans/**
+    - tools/oracle/helpers/b4174.py
+    - tools/oracle/helpers/b4174/**
+    - tools/oracle/src/helpers/server/b4174.rs
+    - tools/oracle/src/helpers/server/b4174/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L1-L60
+    why: Module imports, router construction, GC configuration call at line 57, and conditional profiling initialization at 94-108.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L60-L91
+    why: get_active_tasks_stats route with MAX_TASKS_TO_CHECK=5000 and by_name coroutine counter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L94-L127
+    why: Conditional profiling check and memory_usage route registering only when LITELLM_PROFILE is true.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L130-L169
+    why: memory_usage_in_mem_cache route returning cache dictionary and TTL dictionary counts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L172-L205
+    why: memory_usage_in_mem_cache_items route returning full cache and TTL dictionaries for all components.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L318-L409
+    why: get_memory_summary route returning worker_pid, hostname, status, memory, caches and garbage_collector fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L412-L481
+    why: Helper functions for GC statistics, object type counting and uncollectable objects detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L484-L669
+    why: Helper functions for cache memory, router memory and process memory info used by get_memory_details.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L672-L728
+    why: get_memory_details route with top_n and include_process_info query parameters and default values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L731-L786
+    why: POST configure_gc_thresholds_endpoint route with generation_0/1/2 query parameters and defaults 700/10/10.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L806-L850
+    why: get_otel_spans route grouping spans by parent trace ID and using 1,000,000 starting timestamp.
+dod:
+  - text: GET /debug/asyncio-tasks registers and requires authentication, returning HTTP 501 with error.type=unsupported_runtime and error.code=unsupported_runtime because native Rust has no Python asyncio introspection.
+    proof: [tasks-route-tests]
+  - text: GET /memory-usage registers only when LITELLM_PROFILE is case-insensitive true and returns HTTP 501 with error.type=unsupported_runtime because native Rust has no tracemalloc; requests return 404 when LITELLM_PROFILE is unset or false.
+    proof: [profiling-conditional-tests]
+  - text: GET /memory-usage-in-mem-cache requires authentication and returns item counts for user_api_key_cache, llm_router_cache and proxy_logging_obj_cache.
+    proof: [cache-counts-tests]
+  - text: GET /memory-usage-in-mem-cache-items requires authentication and returns cache_dict and ttl_dict entries for all cache components.
+    proof: [cache-items-tests]
+  - text: GET /debug/memory/summary requires authentication, returning HTTP 501 with error.type=unsupported_runtime and error.code=unsupported_runtime because native Rust cannot measure Python memory metrics.
+    proof: [summary-tests]
+  - text: GET /debug/memory/details requires authentication, defaults are top_n=20 and include_process_info=true, returning HTTP 501 with error.type=unsupported_runtime and error.code=unsupported_runtime because native Rust cannot measure Python memory metrics.
+    proof: [details-defaults-tests]
+  - text: POST /debug/memory/gc/configure requires authentication, defaults are generation_0=700, generation_1=10, generation_2=10, returning HTTP 501 with error.type=unsupported_runtime and error.code=unsupported_runtime because native Rust has no Python GC to configure.
+    proof: [gc-configure-tests]
+  - text: GET /otel-spans requires authentication and returns otel_spans grouped by parent trace ID with 1,000,000 starting timestamp.
+    proof: [spans-tests]
+  - text: All routes with include_in_schema=false in LiteLLM are excluded from OpenAPI schema in betterlite.
+    proof: [schema-tests]
+checks:
+  optional: []
+  commands:
+    - id: tasks-route-tests
+      why: GET /debug/asyncio-tasks does not register, does not authenticate, or does not return HTTP 501 with unsupported_runtime error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^debug_routes::asyncio_tasks::/) - test(/replays_the_/)'
+    - id: profiling-conditional-tests
+      why: GET /memory-usage is not conditional on LITELLM_PROFILE, or does not return 501 when enabled, or does not return 404 when disabled
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^debug_routes::memory_usage::/) - test(/replays_the_/)'
+    - id: cache-counts-tests
+      why: GET /memory-usage-in-mem-cache does not register, does not authenticate, or counts are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^debug_routes::cache_counts::/) - test(/replays_the_/)'
+    - id: cache-items-tests
+      why: GET /memory-usage-in-mem-cache-items does not register, does not authenticate, or cache/TTL dicts are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^debug_routes::cache_items::/) - test(/replays_the_/)'
+    - id: summary-tests
+      why: GET /debug/memory/summary does not register, does not authenticate, or does not return HTTP 501 with unsupported_runtime error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^debug_routes::memory_summary::/) - test(/replays_the_/)'
+    - id: details-defaults-tests
+      why: GET /debug/memory/details does not register, does not authenticate, or does not return HTTP 501 with unsupported_runtime error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^debug_routes::memory_details::/) - test(/replays_the_/)'
+    - id: gc-configure-tests
+      why: POST /debug/memory/gc/configure does not register, does not authenticate, or does not return HTTP 501 with unsupported_runtime error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^debug_routes::gc_configure::/) - test(/replays_the_/)'
+    - id: spans-tests
+      why: GET /otel-spans does not register, does not authenticate, or span grouping by parent trace ID is broken
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^debug_routes::otel_spans::/) - test(/replays_the_/)'
+    - id: schema-tests
+      why: Routes with include_in_schema=false are exposed in OpenAPI schema
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^debug_routes::schema::/) - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/debug/tasks/get-active-tasks.yaml
+  - tools/oracle/cases/debug/memory/memory-usage.yaml
+  - tools/oracle/cases/debug/memory/cache-counts.yaml
+  - tools/oracle/cases/debug/memory/cache-items.yaml
+  - tools/oracle/cases/debug/memory/summary.yaml
+  - tools/oracle/cases/debug/memory/details-defaults.yaml
+  - tools/oracle/cases/debug/memory/gc-configure.yaml
+  - tools/oracle/cases/debug/spans/get-otel-spans.yaml
+deviations:
+  - what: "GET /debug/asyncio-tasks, /memory-usage (when enabled), /debug/memory/summary, /debug/memory/details, and POST /debug/memory/gc/configure return HTTP 501 with error.type=unsupported_runtime and error.code=unsupported_runtime."
+    why: Native Rust runtime has no Python interpreter to query asyncio tasks, tracemalloc snapshots, GC generations, Python object counts or memory state. Return 501 instead of fabricating empty or fabricated responses.
+  - what: Cache state snapshot is injected through server initialization, not read from proxy_server globals.
+    why: betterlite separates cache management from route dispatch. Cache views are typed parameters, not shared global state.
+  - what: Process memory information uses system APIs (psutil equivalent or /proc filesystem) instead of Python-specific tools.
+    why: Native Rust cannot access Python object heap or CPython internals. Platform OS APIs provide comparable memory data.
+out_of_scope:
+  - GET /debug/report route and its proxy-admin-only 403 check; owned by B4171.
+  - Request decoding, HTTP status mapping, error message formatting; owned by B003.
+  - ProxyState and scheduled job state access; managed by B4172 and its callers.
+  - Authentication pipeline implementation; owned by B052.
+  - Cache read/write operations; B4173 provides readonly snapshots.
+  - OpenTelemetry exporter lifecycle; routes read the already-running exporter.
+pitfalls:
+  - >-
+    GET /debug/asyncio-tasks, /memory-usage (when enabled), /debug/memory/summary, /debug/memory/details, and POST /debug/memory/gc/configure
+    return HTTP 501 with error.type=unsupported_runtime and error.code=unsupported_runtime, not empty responses or fabricated healthy metrics.
+    Never return a 200 response pretending to provide Python runtime data from Rust.
+  - >-
+    Cache counts sum cache_dict and ttl_dict items; user_api_key_cache includes both in_memory_cache and key_object_cache.
+    A single cache component may report twice the physical entries if both dicts hold data.
+  - >-
+    GET /memory-usage registers conditionally: only when LITELLM_PROFILE.lower() == "true". The route does not exist otherwise; requests get 404.
+    Check at server startup, not per-request.
+  - >-
+    Span grouping uses span.parent.trace_id, not span.trace_id. Missing parent or missing trace_id returns results ungrouped.
+    An absent exporter returns empty spans_grouped_by_parent and empty otel_spans; never return None.
+  - >-
+    GC configuration at startup happens at server initialization time, not at module import. Call it in the server startup path.
+  - >-
+    Cache-item routes expose sensitive contents (API keys, internal caches). Preserve the current permission model: authentication required, no admin check.
+    Never silently add an admin-only restriction.
+  - >-
+    Memory percent thresholds use strict > (not >=) for 80 and 60; matching LiteLLM exactly determines critical/warning/healthy status.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

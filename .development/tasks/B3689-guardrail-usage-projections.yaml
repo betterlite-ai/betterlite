@@ -1,0 +1,221 @@
+id: B3689
+title: Guardrail usage windows and dashboard aggregation
+description: >-
+  Validate dashboard date windows and aggregate daily guardrail/policy counters,
+  trends and priced/unpriced units into response records. Keep database lookup
+  and pure projection below the HTTP handlers.
+
+  Implement aggregation helpers and response types in betterlite-server for
+  usage dashboard queries:
+
+  - Constants: usage_max_range_days = 366, empty_units immutable map.
+
+  - resolve_usage_window: parse optional start/end date query params (YYYY-MM-DD
+    format), validate format round-trips exactly, ensure end >= start, cap range
+    at 366 days. Default to UTC today minus seven days when start_date is absent;
+    return both as normalized strings. Reject with HTTP 400 bad_request on format
+    error, out-of-order dates, or range overflow.
+
+  - Row projection helpers: counter_name (usage_unit field), team_of (team_id),
+    key_of (api_key). row_untracked_units: returns full units when cost is null,
+    else untracked_units column. row_tracked_cost: returns cost only when cost is
+    not null and untracked_units < total units; else null.
+
+  - Aggregation helpers: sum_counter_units (group by counter, sum units per
+    group), sum_untracked_units (group by counter, sum untracked_units, omit
+    zero counts). sum_tracked_cost (sum costs where cost is not null and at
+    least one unit is priced; return null when no priced row exists). by
+    (generic groupby-reduce pattern: sort by key_of, group, apply reduce,
+    collect keyed mapping). first_match (search lookup_keys in mapping in order,
+    return first match or default).
+
+  - metric aggregation: aggregate_daily_metrics groups rows by id_of, summing
+    requests_evaluated, passed_count, blocked_count and flagged_count per id.
+    prev_fail_rates groups previous-period rows by id_of, calculates (blocked /
+    requests) fail rate per id. chart_from_metrics groups by date, sums passed
+    and blocked counts, returns sorted list of {date, passed, blocked}.
+
+  - Trend and status: status_from_fail_rate returns "critical" (>15%),
+    "warning" (>5%), else "healthy". trend_from_comparison returns "up"
+    (+0.5pp), "down" (-0.5pp), else "stable"; return "stable" when
+    previous_fail_rate is zero.
+
+  - Response types: UsageChartPoint {date, passed, blocked, ?score},
+    UsageOverviewRow {id, name, type, provider, requestsEvaluated, failRate,
+    ?avgScore, ?avgLatency, status, trend, usageUnits map, ?cost, untrackedUsageUnits},
+    UsageOverviewResponse {rows, chart, totalRequests, totalBlocked, passRate,
+    totalUsageUnits, ?totalCost, totalUntrackedUsageUnits}.
+
+  - guardrail_overview_rows: builds overview rows from guardrails (db or config)
+    and aggregated metrics/units/costs. Looks up metrics by guardrail display
+    name (guardrail_name field) or guardrail_id (both as lookup keys, first match
+    wins). Falls back to {requests: 0, passed: 0, blocked: 0, flagged: 0} when
+    not found. Adds rows for metrics keys not in any guardrail (config/MCP
+    guardrails with no db entry), setting id=key, name=key, type="Guardrail",
+    provider="Custom". Omits metrics rows with zero requests.
+
+  - policy_overview_rows: builds overview rows from policy records and
+    aggregated metrics. Looks up metrics by policy_id. Returns rows with
+    type="Policy", provider="LiteLLM", usageUnits and cost always empty/null.
+
+  - Field access helpers: get_guardrail_field (overloaded for str fields
+    guardrail_id/guardrail_name vs object fields litellm_params/guardrail_info;
+    accesses db rows as struct attributes, config dicts as key lookups). to_dict
+    (coerce BaseModel to dict via model_dump(exclude_none=True), pass-through
+    dict, return empty dict otherwise). field_str (stringify mapping[key] or
+    default when absent). get_guardrail_attrs (extract {guardrail_id, display
+    name} pair from guardrail record; name falls back to id, then empty string).
+
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/usage_projections.rs
+    - crates/betterlite-server/src/guardrails/usage_projections/**
+    - tools/oracle/cases/helpers/guardrail-usage-projections/**
+    - tools/oracle/fuzz/corpus/helper_case/guardrail-usage-projections-*
+    - tools/oracle/helpers/b3689.py
+    - tools/oracle/helpers/b3689/**
+    - tools/oracle/src/helpers/server/b3689.rs
+    - tools/oracle/src/helpers/server/b3689/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L44,L50
+    why: Constants _EMPTY_UNITS and _USAGE_MAX_RANGE_DAYS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L53-L82
+    why: _resolve_usage_window date parsing, validation and range checking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L158-L212
+    why: Row projection and aggregation helpers (counter_name, team_of, key_of, row_untracked_units, row_tracked_cost, sum_counter_units, sum_untracked_units, sum_tracked_cost, by, first_match).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L345-L401
+    why: Trend and status calculation, metric aggregation and chart building (status_from_fail_rate, trend_from_comparison, aggregate_daily_metrics, prev_fail_rates, chart_from_metrics).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L227-L292
+    why: Response types (UsageChartPoint, UsageOverviewRow, UsageOverviewResponse, UsageDetailResponse) with all fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L404-L550
+    why: Field extraction and overview row builders (get_guardrail_field, to_dict, field_str, get_guardrail_attrs, guardrail_overview_rows, policy_overview_rows).
+
+dod:
+  - text: >-
+      resolve_usage_window parses start/end dates in YYYY-MM-DD format, defaults
+      start to 7 days ago UTC and end to today UTC. Rejects non-ISO format, out-
+      of-order dates and ranges exceeding 366 days with HTTP 400 bad_request and
+      exact LiteLLM error messages.
+    proof: [window-validation-works, window-defaults-work, window-format-strict]
+  - text: >-
+      Constants usage_max_range_days is 366, empty_units is immutable.
+      status_from_fail_rate returns correct thresholds (critical >15, warning >5,
+      healthy <=5) and trend_from_comparison returns up/down/stable with ±0.5pp
+      hysteresis; stable when previous is zero.
+    proof: [thresholds-correct]
+  - text: >-
+      aggregate_daily_metrics sums all four counter types per id. prev_fail_rates
+      calculates (blocked / requests) per id, handles zero requests. chart_from_metrics
+      groups by date string, sums passed/blocked, returns sorted chronological list.
+    proof: [metrics-aggregation-works]
+  - text: >-
+      sum_counter_units groups by counter name, sums units. sum_untracked_units groups
+      by counter, sums untracked_units, omits zero values. sum_tracked_cost sums costs
+      only from rows with non-null cost and untracked < total; returns null when no
+      priced row exists.
+    proof: [row-aggregation-works]
+  - text: >-
+      guardrail_overview_rows looks up each guardrail by display_name then id (first match),
+      defaults to zero metrics when not found. Adds fallback rows for metrics keys not in
+      guardrails (omits zero-request entries). Extracts provider from litellm_params.guardrail,
+      type from guardrail_info.type.
+    proof: [guardrail-overview-works]
+  - text: >-
+      policy_overview_rows looks up each policy by policy_id, defaults to zero metrics.
+      Returns all policies with type=Policy, provider=LiteLLM, empty units and null cost.
+    proof: [policy-overview-works]
+  - text: >-
+      get_guardrail_field overloaded for str fields (guardrail_id, guardrail_name) returning
+      strings and object fields (litellm_params, guardrail_info) returning dicts. Accesses db
+      struct attributes and config dict keys uniformly.
+    proof: [field-access-works]
+  - text: >-
+      The independently invoked MIT helper matches the production aggregation operation
+      and the new helper-case seed replays.
+    proof: [guardrail-usage-oracle, guardrail-usage-python, guardrail-usage-corpus]
+
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: window-validation-works
+      why: Date window validation is missing, incorrect or error messages mismatch LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*window_validation/)'
+    - id: window-defaults-work
+      why: resolve_usage_window defaults are incorrect or do not round-trip as ISO strings
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*window_defaults/)'
+    - id: window-format-strict
+      why: Date format is not validated strictly (non-ISO round-trip allowed)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*format_strict/)'
+    - id: thresholds-correct
+      why: Status thresholds or trend comparison offsets are incorrect
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*(status|trend)/)'
+    - id: metrics-aggregation-works
+      why: Daily metrics aggregation is missing, incomplete or produces wrong totals
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*aggregat(e|ion)/)'
+    - id: row-aggregation-works
+      why: Row summation or grouping by counter/team/key is missing or incorrect
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*sum_|.*grouping/)'
+    - id: guardrail-overview-works
+      why: Overview row building is missing, metrics lookup fails or fallback rows are incorrect
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*overview/)'
+    - id: policy-overview-works
+      why: Policy overview rows are missing or policy_id lookup is incorrect
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*policy/)'
+    - id: field-access-works
+      why: Field extraction from mixed db/config guardrail records fails
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*field/)'
+    - id: guardrail-usage-oracle
+      why: The typed operation has no seed, the oracle helper fails or behavior tests are missing
+      run: test -f tools/oracle/helpers/b3689.py && test -f tools/oracle/src/helpers/server/b3689.rs && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^guardrail_usage_projections::|replays_the_helper_case_corpus)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-usage-projections-*)"
+    - id: guardrail-usage-python
+      why: The helper adapter is missing or strict Python checking fails
+      run: test -f tools/oracle/helpers/b3689.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: guardrail-usage-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-usage-projections-*)" && grep -rlq "guardrail_usage_projections" tools/oracle/fuzz/corpus/helper_case/guardrail-usage-projections-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-usage-projections/window-validation-errors.yaml
+  - tools/oracle/cases/helpers/guardrail-usage-projections/window-defaults-and-format.yaml
+  - tools/oracle/cases/helpers/guardrail-usage-projections/status-and-trend-thresholds.yaml
+  - tools/oracle/cases/helpers/guardrail-usage-projections/metrics-aggregation.yaml
+  - tools/oracle/cases/helpers/guardrail-usage-projections/row-summation-and-grouping.yaml
+  - tools/oracle/cases/helpers/guardrail-usage-projections/guardrail-overview-rows.yaml
+  - tools/oracle/cases/helpers/guardrail-usage-projections/policy-overview-rows.yaml
+  - tools/oracle/cases/helpers/guardrail-usage-projections/field-extraction.yaml
+
+deviations:
+  - what: Default start_date is UTC today minus seven days, not the configured server timezone.
+    why: LiteLLM uses datetime.now(timezone.utc), so betterlite matches for consistency and simplicity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L56-L58
+  - what: UsageOverviewResponse.passRate is calculated as (requests - blocked) / requests * 100, never taken from a separate tracked field.
+    why: LiteLLM calculates it on the fly from aggregated counters; deriving it at the response boundary matches the dependency on B726's table accessors, not on usage_tracking's cost model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L393-L401
+
+out_of_scope:
+  - "_ACTION_SEVERITY constant (litellm/proxy/guardrails/usage_endpoints.py:45): only used by _usage_log_entry_from_row (L783), owned by B104."
+  - "_GuardrailRunInfo TypedDict (litellm/proxy/guardrails/usage_endpoints.py:217-224): only used by _usage_log_entry_from_row (L780-781), owned by B104."
+  - HTTP route handlers guardrails_usage_overview, guardrails_usage_detail, guardrails_usage_logs, policies_usage_overview (owned by B104).
+  - Database table find_many operations (owned by B726 repositories).
+  - Guardrail registry IN_MEMORY_GUARDRAIL_HANDLER.list_config_guardrails (owned by B3682-B3683).
+  - spend log filtering and pagination (owned by B3688 usage_tracking).
+
+pitfalls:
+  - "resolve_usage_window must validate that parsed dates round-trip exactly through fromisoformat and isoformat; non-ISO formats like M-D-YYYY are rejected even if parsed."
+  - "Default window start is (now - timedelta(days=7)).isoformat(), not a hardcoded past date; each request uses the current UTC time."
+  - "status_from_fail_rate thresholds are strict inequalities: fail_rate > 15 returns critical, not >=; fail_rate > 5 returns warning, not >=."
+  - "trend_from_comparison returns stable when previous_fail is 0.0 or None, not when diff is exactly 0; hysteresis is ±0.5 percentage points."
+  - "_sum_tracked_cost returns None (not 0.0) when no row has a tracked cost; this distinguishes unpriced from zero-cost."
+  - "Guardrail metrics are keyed by display_name from spend logs, not always by guardrail_id; overview rows must look up both keys in order and use first match."
+  - "Fallback overview rows for metrics without a guardrail record omit zero-request entries; a metric key with requests=0 never gets a row."
+  - "Policy overview rows always have empty usageUnits and null cost; policies do not participate in unit tracking."
+  - "get_guardrail_field handles both Prisma model attributes (db rows) and dict keys (config guardrails) in one function; dict.get returns None for missing keys, not AttributeError."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

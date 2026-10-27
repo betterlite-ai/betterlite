@@ -1,0 +1,93 @@
+id: B3071
+title: Run CloudZero exports and previews
+description: >-
+  Build CloudZero export orchestration, preview summaries and scheduling in `betterlite-server::finops::cloudzero`.
+  CloudZeroLogger coordinates hourly exports and on-demand dry-runs, integrating with the pod lock manager for multi-pod safety.
+  The logger loads CLOUDZERO_API_KEY and CLOUDZERO_CONNECTION_ID from environment or constructor parameters (required for actual exports, optional for dry-run previews).
+  It reads CLOUDZERO_TIMEZONE (default "UTC"), CLOUDZERO_EXPORT_INTERVAL_MINUTES (the scheduled interval, e.g., 60) and CLOUDZERO_MAX_FETCHED_DATA_RECORDS (the row cap for database queries).
+  export_usage_data accepts optional start_time_utc and end_time_utc bounds, a limit on fetched records, and an operation parameter (defaults to "replace_hourly", also accepts "sum"); all three flow through to the database query and CloudZero streamer.
+  dry_run_export_usage_data accepts only a limit parameter (defaults to 10000, no time bounds), queries the database without credentials validation, transforms and summarizes records to dict format, and returns structured JSON with usage_data sample, cbf_data records and summary statistics (total_records, total_cost, total_tokens, unique_accounts, unique_services).
+  initialize_cloudzero_export_job runs on startup: if a pod lock manager exists and acquire_lock succeeds, it exports once and releases the lock; if the lock cannot be acquired, no export runs and release_lock is not called; if redis is unavailable, it exports directly without locking.
+  init_cloudzero_background_job wires the scheduler to call initialize_cloudzero_export_job on an interval matching CLOUDZERO_EXPORT_INTERVAL_MINUTES.
+  Keep the 60-minute default interval, twice-interval lookback window for hourly exports, 50,000 record cap and `cloudzero_export_usage_data` lease key.
+  When CLOUDZERO_API_KEY or CLOUDZERO_CONNECTION_ID is missing during export_usage_data, raise ValueError with the literal message: "CloudZero configuration missing. Please set CLOUDZERO_API_KEY and CLOUDZERO_CONNECTION_ID environment variables."
+scope:
+  paths:
+    - crates/betterlite-server/src/finops/cloudzero/schedule.rs
+    - crates/betterlite-server/src/finops/cloudzero/schedule/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L26-L42"
+    why: "CloudZeroLogger.__init__: credential storage from parameters or environment, timezone defaulting, debug logging."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L44-L70"
+    why: "initialize_cloudzero_export_job: pod lock manager integration, redis-conditional locking, direct export when redis unavailable."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L72-L91"
+    why: "_hourly_usage_data_export: two-times-interval lookback, operation passthrough to export_usage_data."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L93-L157"
+    why: "export_usage_data: full signature with limit, operation, start/end time bounds; credential validation; database query, transformation, and streamer invocation."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L159-L249"
+    why: "dry_run_export_usage_data: limit-only signature (no time bounds), no credential validation, record transformation and summary statistics (total_records, total_cost, total_tokens, unique_accounts, unique_services)."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L339-L364"
+    why: "init_cloudzero_background_job: scheduler integration, interval configuration from CLOUDZERO_EXPORT_INTERVAL_MINUTES, logger lookup by type."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py"
+    why: "LiteLLM's CLOUDZERO_EXPORT_INTERVAL_MINUTES and related constants."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py"
+    why: "CustomLogger base class contract."
+dod:
+  - text: CloudZeroLogger inherits from CustomLogger and initializes with api_key, connection_id, and timezone parameters that fall back to CLOUDZERO_API_KEY, CLOUDZERO_CONNECTION_ID and CLOUDZERO_TIMEZONE environment variables respectively.
+    proof: [behavior-tests]
+  - text: export_usage_data validates that api_key and connection_id are non-empty before querying, raising ValueError with the literal message "CloudZero configuration missing. Please set CLOUDZERO_API_KEY and CLOUDZERO_CONNECTION_ID environment variables." when either is missing.
+    proof: [behavior-tests]
+  - text: export_usage_data accepts operation parameter defaulting to "replace_hourly" and forwards it unchanged to CloudZeroStreamer.send_batched; "sum" is an accepted alternate value.
+    proof: [behavior-tests]
+  - text: dry_run_export_usage_data accepts only a limit parameter (defaults to 10000) with no time bounds, does not validate credentials, and returns a dict with usage_data, cbf_data and summary fields.
+    proof: [behavior-tests]
+  - text: dry_run_export_usage_data summary contains total_records, total_cost, total_tokens, unique_accounts and unique_services computed from CBF records.
+    proof: [behavior-tests]
+  - text: initialize_cloudzero_export_job acquires a lock using pod_lock_manager with cronjob_id "cloudzero_export_usage_data", exports once if acquired, and releases the lock afterward; if lock acquisition fails, no export runs and release_lock is not called.
+    proof: [behavior-tests]
+  - text: initialize_cloudzero_export_job exports directly without locking when redis is unavailable (pod_lock_manager is None or redis_cache is None).
+    proof: [behavior-tests]
+  - text: _hourly_usage_data_export computes the export time window as current UTC time minus twice CLOUDZERO_EXPORT_INTERVAL_MINUTES (two-times-interval lookback) and calls export_usage_data with operation "replace_hourly".
+    proof: [behavior-tests]
+  - text: init_cloudzero_background_job registers a scheduler job that calls initialize_cloudzero_export_job on an interval (in minutes) read from CLOUDZERO_EXPORT_INTERVAL_MINUTES.
+    proof: [behavior-tests]
+  - text: Every mutant in the schedule logic is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: initialization, credential validation, export operation defaults, dry-run isolation, lock handling, interval scheduling or export window calculation differs from source
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cloudzero_schedule($|::)/) - test(/replays_the_/)'
+oracle_cases: []
+deviations:
+  - what: Credential validation happens at export time, not during initialization. If credentials are missing, export_usage_data raises an error immediately.
+    why: betterlite validates at the operation boundary rather than at logger construction, allowing dry-run previews (which need no credentials) to work with a logger instance created before credentials are available.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L119-L122"
+  - what: Logging uses injected instrumentation (tracing or the owner's logger) instead of litellm.verbose_logger inline.
+    why: betterlite uses structured logging infrastructure rather than side-channel console output, allowing callers to control verbosity.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L40-L41"
+  - what: The scheduler and pod lock manager are injected rather than imported from global proxy_server state.
+    why: Injected dependencies enable testing without global state and allow callers to control scheduling and locking behavior.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L59"
+out_of_scope:
+  - Daily usage row querying (covered by B3060).
+  - CZRN and CBF record transformation (covered by B3069).
+  - CloudZero delivery and batching (covered by B3070).
+  - HTTP client pooling and credential management (covered by B173).
+  - Scheduler and pod lock manager implementation (covered by B002, B189, B1690).
+  - The screen display renderer _display_cbf_data_on_screen (no caller at the pin).
+pitfalls:
+  - The operation parameter flows unchanged from export_usage_data into CloudZeroStreamer.send_batched; "replace_hourly" is the default but "sum" must be accepted as well. _hourly_usage_data_export explicitly passes "replace_hourly", showing the parameter is configurable for other callers.
+  - When acquire_lock returns false, no export runs and release_lock is never called. The job simply returns without exporting and without error.
+  - _hourly_usage_data_export's lookback window is twice CLOUDZERO_EXPORT_INTERVAL_MINUTES (two times the interval), not the interval itself, to mitigate missing spend from ephemeral environment restarts.
+  - dry_run_export_usage_data accepts only a limit parameter with a default of 10000; it takes no start_time_utc or end_time_utc parameters, unlike export_usage_data.
+  - The literal ValueError message for missing credentials is exactly "CloudZero configuration missing. Please set CLOUDZERO_API_KEY and CLOUDZERO_CONNECTION_ID environment variables." with no variation.
+  - dry_run_export_usage_data returns a dict with usage_data (first 50 rows as dicts), cbf_data (all transformed records as dicts) and summary (statistics); do not return a list or raw DataFrame.
+  - Credentials passed to CloudZeroLogger.__init__ take precedence over environment variables; only fall back to environment lookups when constructor parameters are None or empty.
+  - The scheduler job is registered with an interval in minutes, not seconds or hours; read CLOUDZERO_EXPORT_INTERVAL_MINUTES as the minutes value directly.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -2,8 +2,8 @@ id: B4027
 milestone: M7 observability
 title: Slow response and hanging request alerts
 status: todo
-depends_on: [B4020, B4024, B206, B390, B2226, B191]
-file: null
+depends_on: [B4020, B4024, B206, B390, B2226, B191, B4293, B004, B236]
+file: tasks/B4027-request-latency-alerts.yaml
 covers:
   - "litellm/integrations/SlackAlerting/hanging_request_check.py"
   - "litellm/integrations/SlackAlerting/slack_alerting.py"

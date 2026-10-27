@@ -1,0 +1,91 @@
+id: B3647
+title: AssemblyAI transcript polling and spend logging
+description: >-
+  Poll submitted AssemblyAI transcription jobs to completion, measure their duration, and record spend without blocking the relayed response.
+
+  Build the logging handler, typed transcript record, and polling/pricing functions. Poll the GET /v2/transcript/{transcript_id} endpoint at 10-second intervals for at most 180 attempts (30 minutes total), stopping when a job reaches completed/error status or when the response is absent.
+  Use the Bearer authorization header and the transcript's audio_duration field for cost calculation.
+  Get pricing via litellm.get_model_info with the speech_model, falling back to assemblyai/nano if the exact model pricing is not found.
+
+  Retain regional URL quirks: routing returns https://api.eu.assemblyai.com while polling uses https://eu.assemblyai.com.
+  Reject transcript IDs containing disallowed characters (forward slash, backslash, hash, question mark) or containing "..", and URL-encode the ID before constructing the request URL.
+
+  Only POST requests are logged; other operations are skipped. Submit polling work through the injected async transport to avoid blocking the relayed response.
+  Two unresolved framework dependencies are PassthroughEndpointRouter.get_credentials (credential lookup) and PassThroughEndpointLogging._handle_logging (the logging sink); neither may come from a B102 umbrella.
+scope:
+  paths:
+    - crates/betterlite-core/src/relay/assemblyai.rs
+    - crates/betterlite-core/src/relay/assemblyai/**
+    - tools/oracle/cases/relay/assemblyai/**
+    - tools/oracle/helpers/b3647.py
+    - tools/oracle/helpers/b3647/**
+    - tools/oracle/src/helpers/core_ops/b3647.rs
+    - tools/oracle/src/helpers/core_ops/b3647/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L37-54
+    why: AssemblyAIPassthroughLoggingHandler init with base URLs and polling interval/attempts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L56-159
+    why: Main handler and async logging dispatch; executor.submit non-blocking pattern.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L161-164
+    why: Response projection helper _get_response_to_log.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L166-227
+    why: Transcript ID validation (chars, ..), URL-encoding, Bearer header construction, polling loop with regional base URL selection and stop conditions (completed/error/absent/180 attempts).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L229-279
+    why: Cost calculation as audio_duration * cost_per_second and model-info fallback pricing through assemblyai/nano.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L281-308
+    why: Request filtering for POST only, region detection from URL hostname, base URL selection by region.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/assembly_ai.py#L1-4
+    why: Polling interval (10 seconds) and max attempts (180) constants.
+dod:
+  - text: Polling stops when transcript status is completed, error, or absent, or after 180 attempts at 10-second intervals.
+    proof: [relay-tests]
+  - text: >-
+      Disallowed transcript ID characters (/, backslash, #, ?) and ".." are rejected.
+    proof: [relay-tests]
+  - text: Pricing falls back to assemblyai/nano when the specific speech_model pricing is not found.
+    proof: [relay-tests]
+  - text: Regional URL handling returns https://api.eu.assemblyai.com when routing specifies eu.assemblyai.com, while polling uses https://eu.assemblyai.com.
+    proof: [relay-tests]
+  - text: The handler only processes POST requests; other methods are skipped.
+    proof: [relay-tests]
+  - text: Cost is calculated as audio_duration * cost_per_second when both values are present; missing audio_duration returns None.
+    proof: [relay-tests]
+  - text: Bearer authorization uses the API key from get_credentials with the format "Bearer <key>".
+    proof: [relay-tests]
+  - text: Transcript IDs are URL-encoded before being placed in the request URL.
+    proof: [relay-tests]
+checks:
+  optional: []
+  commands:
+    - id: relay-tests
+      why: the AssemblyAI relay handler tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^relay::assemblyai::/)'
+oracle_cases:
+  - tools/oracle/cases/relay/assemblyai/post-creates-async-job.yaml
+  - tools/oracle/cases/relay/assemblyai/get-job-not-logged.yaml
+  - tools/oracle/cases/relay/assemblyai/polling-max-attempts.yaml
+  - tools/oracle/cases/relay/assemblyai/polling-stops-on-completed.yaml
+  - tools/oracle/cases/relay/assemblyai/polling-stops-on-error.yaml
+  - tools/oracle/cases/relay/assemblyai/disallowed-transcript-id.yaml
+  - tools/oracle/cases/relay/assemblyai/pricing-fallback-to-nano.yaml
+  - tools/oracle/cases/relay/assemblyai/pricing-with-exact-model.yaml
+  - tools/oracle/cases/relay/assemblyai/eu-region-routing-vs-polling.yaml
+  - tools/oracle/cases/relay/assemblyai/missing-audio-duration.yaml
+deviations:
+  - what: AssemblyAI polling and logging run asynchronously through an injected transport layer, not in the response path.
+    why: Blocking on transcript completion would delay the initial relayed response to the client. betterlite matches LiteLLM's executor.submit pattern for non-blocking cost measurement.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L71-82
+out_of_scope:
+  - HTTP routing and request forwarding; this task owns polling and logging only.
+  - The PassthroughEndpointRouter.get_credentials and PassThroughEndpointLogging._handle_logging framework dependencies; the architect must assign concrete owners.
+pitfalls:
+  - "Polling URL always uses https://eu.assemblyai.com for EU region even though routing may return https://api.eu.assemblyai.com; normalizing these would silently differ from LiteLLM."
+  - "Transcript ID validation rejects multiple distinct disallowed characters; an ID containing any of /, \\, #, ? or the sequence .. must be rejected."
+  - "audio_duration may be zero or absent; only present duration values produce a cost."
+  - "Model pricing lookup catches exceptions from get_model_info and continues to fallback; missing pricing silently returns None, not an error."
+  - "Only POST operations are logged; other HTTP methods on the same endpoint are skipped without marking the request as logged."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

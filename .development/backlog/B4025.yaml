@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Budget threshold and customer spend alerts
 status: todo
 depends_on: [B4020, B4021, B4024]
-file: null
+file: tasks/B4025-budget-alerts.yaml
 covers:
   - "litellm/integrations/SlackAlerting/budget_alert_types.py"
   - "litellm/integrations/SlackAlerting/slack_alerting.py"

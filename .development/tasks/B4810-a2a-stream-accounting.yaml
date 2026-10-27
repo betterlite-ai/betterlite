@@ -1,0 +1,130 @@
+id: B4810
+title: A2A logging context and stream completion accounting
+description: >-
+  Build request-owned A2A logging metadata and the stream iterator's terminal usage and cost delivery.
+  Implement _set_usage_on_logging_obj, _set_agent_id_on_logging_obj, _a2a_cost_params, _set_litellm_params_on_logging_obj,
+  _get_a2a_model_info, _build_streaming_logging_obj and the A2AStreamingIterator class.
+  The iterator collects streaming response chunks, extracts projected text for token counting, tracks completion state,
+  and on stream termination calculates final usage, updates the logging object, and dispatches success handlers.
+  Only the three pricing keys (cost_per_query, input_cost_per_token, output_cost_per_token) enter the logging object;
+  agent credentials never do. Reused non-streaming logging params are merged while preserving proxy and user metadata.
+  Streaming completion sets the logging stream flag to false and catches accounting failures; stream errors do not
+  run the normal exhausted-stream completion branch. The iterator is owned by stream callers and tracks callback
+  delivery rather than detaching work.
+scope:
+  paths:
+  - crates/betterlite-a2a/src/logging_context.rs
+  - crates/betterlite-a2a/src/logging_context/**
+  - crates/betterlite-a2a/src/streaming_iterator.rs
+  - crates/betterlite-a2a/src/streaming_iterator/**
+  - tools/oracle/cases/helpers/a2a-stream-accounting/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  - tools/oracle/helpers/b4810.py
+  - tools/oracle/helpers/b4810/**
+  - tools/oracle/src/helpers/a2a/b4810.rs
+  - tools/oracle/src/helpers/a2a/b4810/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L90-L110
+  why: _set_usage_on_logging_obj
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L113-L130
+  why: _set_agent_id_on_logging_obj
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L133-L144
+  why: _A2A_COST_PARAM_KEYS and _a2a_cost_params
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L156-L179
+  why: _set_litellm_params_on_logging_obj
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L182-L208
+  why: _get_a2a_model_info
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L585-L624
+  why: _build_streaming_logging_obj
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/streaming_iterator.py
+  why: A2AStreamingIterator class and all methods
+dod:
+- text: >-
+    Each listed helper case compares its named function output with the pinned Python behavior, including
+    usage tuple structure, logging object mutation, pricing key filtering and agent info extraction.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    A2AStreamingIterator collects all chunks, preserves the final completion marker, extracts text from
+    each chunk independently, counts input/output tokens correctly, and invokes success handlers on stream termination.
+  proof:
+  - behavior-tests
+- text: >-
+    On non-streaming logging reuse, cost parameters merge into existing litellm_params while preserving
+    proxy_server_request and metadata keys.
+  proof:
+  - behavior-tests
+- text: >-
+    Streaming completion sets stream flag to false, calculates decimal cost through A2ACostCalculator,
+    and dispatches success handlers with asyncio.create_task.
+  proof:
+  - behavior-tests
+- text: >-
+    The pricing-key constant and all main.py helper functions are registered exports through betterlite-a2a.
+  proof:
+  - clippy
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/::a2a_stream_accounting_behavior_tests($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: helper adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'a2a_stream_accounting' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/a2a-stream-accounting/usage-mutation.yaml
+- tools/oracle/cases/helpers/a2a-stream-accounting/agent-id-mutation.yaml
+- tools/oracle/cases/helpers/a2a-stream-accounting/cost-param-filter.yaml
+- tools/oracle/cases/helpers/a2a-stream-accounting/model-info-extraction.yaml
+- tools/oracle/cases/helpers/a2a-stream-accounting/streaming-logging-init.yaml
+- tools/oracle/cases/helpers/a2a-stream-accounting/iterator-chunk-collection.yaml
+deviations:
+- what: >-
+    The iterator calls asyncio.create_task to dispatch success handlers asynchronously after stream termination.
+  why: >-
+    Streaming callbacks must execute after text collection completes. The caller holds the iterator for the
+    stream lifetime, so the task is implicitly tracked by the retained iterator object.
+out_of_scope:
+- >-
+  The remaining functions in litellm/a2a_protocol/main.py belong to other tasks (B4801 transport,
+  B4814 send entry points, B4809 dispatch), and litellm/a2a_protocol/streaming_iterator.py's imports
+  and external protocol types are owned by their defining modules.
+- >-
+  Enterprise logging behavior, exporter-specific delivery, prompt management and MCP hooks belong
+  to other logging tasks.
+pitfalls:
+- >-
+  The iterator stores chunks as a mutable list; final_chunk is set only if a completed chunk is seen
+  during iteration, otherwise it is the last chunk on StopAsyncIteration. Do not accumulate text;
+  extract and count each chunk independently.
+- >-
+  _a2a_cost_params returns a MappingProxyType to prevent mutation of the filtered dict. Tests must
+  not rely on mutability.
+- >-
+  Pricing key precedence in A2ACostCalculator is explicit cost_per_query, then token rates, then zero;
+  only these three keys ever enter the logging object, never credentials or auth metadata.
+- >-
+  Logging object reuse on non-streaming calls must preserve proxy_server_request and metadata keys
+  that were set by earlier proxy middleware. Merge cost parameters in, do not replace the whole litellm_params.
+- >-
+  A2AStreamingIterator receives a request and logging_obj already initialized; do not rebuild them or
+  lose request fields during text extraction.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

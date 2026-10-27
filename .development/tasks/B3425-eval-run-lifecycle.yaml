@@ -1,0 +1,110 @@
+id: B3425
+title: Eval run retrieval cancellation and deletion operations
+description: >-
+  Build run get/cancel/delete orchestration in `betterlite-core::api::eval_run_lifecycle`.
+  The module exports six functions: `get_run`, `aget_run`, `cancel_run`, `acancel_run`, `delete_run` and `adelete_run`.
+
+  Each function accepts an `eval_id` and `run_id` identifying the target, plus `extra_headers`, `extra_query`, `timeout`, `custom_llm_provider` and `**kwargs` for runtime parameters.
+  When `custom_llm_provider` is `None`, default to `"openai"`.
+  The three sync functions are the implementation core; the three async variants use `asyncio.get_event_loop().run_in_executor` with `functools.partial` and `contextvars.copy_context` to call their sync counterparts.
+
+  Each sync function retrieves a `LiteLLMLoggingObj` from kwargs, extracts `litellm_call_id` with `None` default, and pops the matching async flag (e.g., `aget_run` checks `kwargs.pop("aget_run", False)`).
+  Build `GenericLiteLLMParams` from `**kwargs` after that pop.
+  Call `ProviderConfigManager.get_provider_evals_api_config` with the resolved provider; fail with `ValueError("GET run is not supported for {provider}")` if it returns `None`.
+  Call `validate_environment` on the provider config, passing `extra_headers or {}` and the params; use the returned headers.
+  Call the matching `transform_*_request` method (e.g., `transform_get_run_request` for get) with `eval_id`, `run_id`, api_base (resolved from `litellm_params.api_base or DEFAULT_OPENAI_API_BASE`), litellm_params and headers.
+  For get, receive `url, headers` from the transform; for cancel and delete, receive `url, headers, request_body`.
+  Call `litellm_logging_obj.update_from_kwargs` with the `kwargs`, `model=None`, `optional_params={"eval_id": eval_id, "run_id": run_id}`, and `litellm_params={"litellm_call_id": litellm_call_id}`, plus the provider.
+  Call the matching handler on `base_llm_http_handler` (e.g., `get_run_handler` for get) with url, evals_api_provider_config, provider, litellm_params, logging_obj, extra_headers (the returned headers), timeout (resolved from `timeout or request_timeout`), `_is_async`, client and shared_session from kwargs.
+  Return the response.
+  On exception, raise `litellm.exception_type` with `model=None`, the provider, the original exception, local_vars as completion_kwargs and kwargs as extra_kwargs.
+
+  Preserve both identifiers throughout logging and provider dispatch.
+  Leave request/response transformation in B523.
+  The unresolved transport owner (the handler callees in `litellm/llms/custom_httpx/llm_http_handler.py`) must preserve the call boundaries and implement the three handlers: `get_run_handler`, `cancel_run_handler`, `delete_run_handler`.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/eval_run_lifecycle.rs
+    - crates/betterlite-core/src/api/eval_run_lifecycle/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1463-L1520
+    why: aget_run async wrapper function
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1523-L1616
+    why: get_run sync implementation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1619-L1676
+    why: acancel_run async wrapper function
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1679-L1776
+    why: cancel_run sync implementation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1784-L1841
+    why: adelete_run async wrapper function
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1844-L1941
+    why: delete_run sync implementation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L562-577
+    why: request_timeout default timeout when user does not supply one
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L381-519
+    why: "GenericLiteLLMParams: wrapper over kwargs, resolved to extract litellm_params"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9262-9279
+    why: "ProviderConfigManager.get_provider_evals_api_config: provider factory lookup"
+dod:
+  - text: The module exports `get_run`, `aget_run`, `cancel_run`, `acancel_run`, `delete_run` and `adelete_run` with the correct signatures matching the LiteLLM functions.
+    proof: [eval-run-lifecycle-exports]
+  - text: All six functions preserve both `eval_id` and `run_id` throughout logging and provider dispatch.
+    proof: [eval-run-lifecycle-exports]
+  - text: Each sync function returns its response contract (`Run` for get, `CancelRunResponse` for cancel, `RunDeleteResponse` for delete).
+    proof: [eval-run-lifecycle-exports]
+  - text: All three accept but do not forward `extra_query` to the transport.
+    proof: [eval-run-lifecycle-extra-query]
+  - text: Cancel and delete discard the transform's returned body before transport, as get never receives one.
+    proof: [eval-run-lifecycle-body-handling]
+  - text: When an unsupported provider is selected, the function fails with `ValueError("GET run is not supported for {provider}")`, `ValueError("CANCEL run is not supported for {provider}")` or `ValueError("DELETE run is not supported for {provider}")` respectively.
+    proof: [eval-run-lifecycle-unsupported-provider]
+  - text: Exceptions are caught and re-raised via `litellm.exception_type` with the correct parameters.
+    proof: [eval-run-lifecycle-error-handling]
+  - text: Async variants call their sync counterparts using `asyncio.get_event_loop().run_in_executor` with `functools.partial` and `contextvars.copy_context`.
+    proof: [eval-run-lifecycle-async]
+  - text: Timeout resolves to supplied timeout or request_timeout constant.
+    proof: [eval-run-lifecycle-timeout]
+checks:
+  optional: []
+  commands:
+    - id: eval-run-lifecycle-exports
+      why: the module does not export all six functions with correct signatures
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(eval_run_lifecycle_exports)'
+    - id: eval-run-lifecycle-extra-query
+      why: extra_query is forwarded to the transport
+      run: grep -q 'extra_query' crates/betterlite-core/src/api/eval_run_lifecycle.rs && ! grep -q 'extra_query.*handler' crates/betterlite-core/src/api/eval_run_lifecycle.rs
+    - id: eval-run-lifecycle-body-handling
+      why: cancel/delete do not discard the transform's returned body before transport
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(eval_run_lifecycle_body)'
+    - id: eval-run-lifecycle-unsupported-provider
+      why: unsupported providers do not fail with the correct error message
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(eval_run_lifecycle_unsupported)'
+    - id: eval-run-lifecycle-error-handling
+      why: exceptions are not properly caught and re-raised
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(eval_run_lifecycle_error)'
+    - id: eval-run-lifecycle-async
+      why: async variants do not use run_in_executor with partial and copy_context
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(eval_run_lifecycle_async)'
+    - id: eval-run-lifecycle-timeout
+      why: timeout does not resolve to supplied timeout or request_timeout constant
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(eval_run_lifecycle_timeout)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - ProviderConfigManager.get_provider_evals_api_config owned by B523 or a utility owner.
+  - HTTP handler implementation and transport dispatch (owned by the handler/transport owner identified by B096's external-calls table).
+  - Request/response transformation. B523 owns the transform_* methods.
+  - Logging callback registration and the @client decorator implementation. B247 owns the logging integration.
+pitfalls:
+  - "Both eval_id and run_id must be preserved in all logging calls and passed to the provider config's transform methods. A missing identifier in logging silently breaks observability."
+  - "Cancel and delete receive a request_body from the transform but discard it before calling the handler. Do not accidentally forward it or omit the discard."
+  - "Get never receives a request_body from its transform; cancel and delete always do. The transform signatures differ."
+  - "extra_query is accepted but must not be forwarded to the transport layer, matching LiteLLM's behavior."
+  - "The async flag (e.g., kwargs.pop(\"aget_run\", False)) must be popped before building GenericLiteLLMParams from kwargs, or it pollutes the params."
+  - "Logging calls must use the exact optional_params keys eval_id and run_id to match B247's expected structure."
+  - "Timeout resolution uses: supplied timeout if not None, otherwise request_timeout constant (REQUEST_TIMEOUT env var with 6000-second default). On None inputs, the default applies, not a per-request timeout."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

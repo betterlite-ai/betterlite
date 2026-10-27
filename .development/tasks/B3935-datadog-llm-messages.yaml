@@ -1,0 +1,137 @@
+id: B3935
+title: Datadog LLM Observability messages and tool records
+description: >-
+  Build the LLM Observability typed records and OpenAI/Anthropic message, tool-call, result-linking and tool-definition projection.
+  Parse tool arguments up to 256 Ki characters; preserve raw non-object arguments as strings.
+  Retain the response-string Python-literal-then-JSON behavior with a bounded decoder and its own fuzz corpus.
+
+  Implement `_to_dd_message`, `_to_dd_messages`, `_to_dd_tool_calls`, `_to_dd_tool_results`, `_to_dd_tool_definitions`, `_mapping_field`, `_text_field`, `_content_blocks` and `_safe_identifier` helper functions that transform standard logging payload messages into Datadog's LLM Obs schema.
+
+  The input decoder (safe_json_loads with size-bound parsing) is built here, not in metadata or delivery tasks, with fuzz corpus and replay test.
+  Type records for messages, tool calls, tool results, tool definitions, spans, intake envelopes and metrics are built from the pinned Datadog API schema.
+
+  Message role normalization drops unrecognized roles when redaction is on; tool arguments stay raw strings when they exceed 256 Ki or do not parse to objects.
+  The response-message extraction handles both string literals and JSON fallback, since LiteLLM captures ast.literal_eval first, then json.loads.
+scope:
+  paths:
+    - crates/betterlite-logging/src/datadog_llm_obs.rs
+    - crates/betterlite-logging/src/datadog_llm_obs/**
+    - crates/betterlite-logging/src/datadog_llm_obs/tests.rs
+    - tools/oracle/cases/helpers/datadog-llm-obs/**
+    - tools/oracle/fuzz/corpus/datadog_llm_argument_decoder/**
+    - tools/oracle/fuzz/fuzz_targets/datadog_llm_argument_decoder.rs
+    - tools/oracle/fuzz/Cargo.toml
+    - Cargo.toml
+    - tools/oracle/helpers/b3935.py
+    - tools/oracle/helpers/b3935/**
+    - tools/oracle/src/helpers/logging/b3935.rs
+    - tools/oracle/src/helpers/logging/b3935/**
+    - crates/betterlite-logging/src/datadog_llm_obs/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/datadog_llm_obs.py#L1-L134
+    why: >-
+      Complete TypedDict declarations for Message, ToolCall, ToolResult, ToolDefinition, Meta, LLMMetrics, LLMObsPayload, DDSpanAttributes, DDIntakePayload, and init params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L57-L87
+    why: >-
+      Constants: empty-mapping, empty-message, max-parsed-tool-argument-chars (256 Ki), safe-redacted-message-roles, classified-guardrail-fields, prompt-carrying-metadata-fields, router-span-fields and cost-dimensions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L168-L169
+    why: "_safe_identifier converts non-strings to empty string."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L257-L287
+    why: >-
+      _mapping_field, _text_field, _content_blocks extract and type-coerce nested payload fields.
+      _to_dd_arguments parse tool arguments with size bound, returning object or raw string.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L289-L320
+    why: >-
+      _to_dd_tool_calls projects OpenAI function-wrapped and Anthropic tool_use block calls into unified ToolCall schema.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L322-L344
+    why: >-
+      _to_dd_tool_results links tool messages and Anthropic tool_result blocks back to their calls by ID.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L347-L404
+    why: >-
+      _tool_call_names_by_id, _to_dd_message, _to_dd_messages project entire conversation, handling both dialects and converting non-dict messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L407-L437
+    why: >-
+      _to_dd_tool_definition, _to_dd_tool_definitions project request tools into LLM Obs ToolDefinition schema from either function-wrapper or bare shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L793-L840
+    why: >-
+      DataDogLLMObsLogger._get_response_messages extracts messages from choices[0] or return empty, handling string-literal response fallback.
+dod:
+  - text: All type records match Datadog LLM Obs intake schema with required and optional fields.
+    proof: [type-tests]
+  - text: Message and tool-call projection handles both OpenAI and Anthropic message shapes.
+    proof: [oracle, type-tests]
+  - text: Tool arguments are parsed only when under 256 Ki characters and stay raw strings otherwise.
+    proof: [argument-decoder-corpus, argument-decoder-tests]
+  - text: Response message extraction handles both ast.literal_eval and JSON fallback strings.
+    proof: [oracle, helper-python]
+  - text: Message roles are kept only when they are recognized safe roles, dropping unknown ones.
+    proof: [oracle, type-tests]
+  - text: Tool call and result linking by ID is bidirectional and complete.
+    proof: [oracle, type-tests]
+  - text: >-
+      Tool definitions are projected from both function-wrapped shapes (with "function" key wrapping the schema) and bare shapes, extracting name and description, handling both "parameters" and "input_schema" for the schema, and dropping entries with no name.
+    proof: [oracle, tool-definitions-tests]
+  - text: The argument decoder fuzz corpus is committed and replays without panics or decoding errors.
+    proof: [argument-decoder-corpus]
+checks:
+  optional: []
+  commands:
+    - id: type-tests
+      why: >-
+        the message and tool record projection tests fail or do not exist
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_obs::/)
+        - test(/replays_the_datadog_llm_argument_decoder_corpus/)'
+    - id: argument-decoder-corpus
+      why: >-
+        the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/datadog_llm_argument_decoder)"
+        && test -f tools/oracle/fuzz/fuzz_targets/datadog_llm_argument_decoder.rs
+        && test -n "$(ls -A tools/oracle/fuzz/corpus/datadog_llm_argument_decoder)"
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_datadog_llm_argument_decoder_corpus)'
+    - id: argument-decoder-tests
+      why: >-
+        the argument decoder unit tests fail or do not exist
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_argument_decoder::test/)'
+    - id: tool-definitions-tests
+      why: >-
+        tool definition projection tests fail or do not exist
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_obs::.*tool_definitions?/)'
+    - id: helper-python
+      why: >-
+        the oracle adapters fail strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3935.py)"
+        && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3935.py
+        && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json tools/oracle/helpers/b3935.py
+oracle_cases:
+  - tools/oracle/cases/helpers/datadog-llm-obs/openai-messages.yaml
+  - tools/oracle/cases/helpers/datadog-llm-obs/openai-tool-calls.yaml
+  - tools/oracle/cases/helpers/datadog-llm-obs/anthropic-messages.yaml
+  - tools/oracle/cases/helpers/datadog-llm-obs/anthropic-tool-calls.yaml
+  - tools/oracle/cases/helpers/datadog-llm-obs/response-literal-string.yaml
+  - tools/oracle/cases/helpers/datadog-llm-obs/response-json-fallback.yaml
+  - tools/oracle/cases/helpers/datadog-llm-obs/tool-argument-size-bound.yaml
+  - tools/oracle/cases/helpers/datadog-llm-obs/tool-definitions.yaml
+deviations: []
+out_of_scope:
+  - Redaction of prompt-carrying message fields; that is B3936.
+  - ">-
+    Metadata extraction from guardrails and router decisions; B3936 handles those separately.
+    This task supplies the helpers the privacy task uses to redact messages."
+  - Tool-call counting for metrics; B3937 uses these projected messages for token counting.
+  - Span assembly, initialization and intake delivery; B3938 composes the records built here.
+pitfalls:
+  - "The oracle helper for this task is pre-registered as b3935 in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/b3935.rs with an impl Helper whose Input is HelperInput and Output the typed output, and write run in tools/oracle/helpers/b3935.py. The registry files (helpers/mod.rs, dispatch.py) are not this task's to edit."
+  - Tool argument parsing with safe_json_loads must catch decode errors and fall back to raw string. The 256 Ki bound is per-argument string length, checked before decoding to avoid quadratic expansion on nested JSON.
+  - Message role validation uses the safe roles set exactly; a role not in that set is dropped, not preserved as-is.
+  - Response message extraction returns empty when response_obj is None, not when choices is empty or missing. An empty choices list means no message, not an error.
+  - Tool-call ID linking uses string keys; an id that is not a string becomes the empty string.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

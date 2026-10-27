@@ -1,0 +1,114 @@
+id: B3092
+title: Attach recovered key identities to daily activity reads
+description: >-
+  Implement the proxy-specific adapter and scope construction in `betterlite-server::daily_activity::recovery`
+  to wire recovered key identities into the daily activity repository. Implement `spend_logs_window` to compute
+  a time window from the date strings in a set of spend records, `_parse_spend_date` to parse individual date
+  strings, `_metadata_with_recovered_owner` to merge a recovered user_id back into existing metadata, `daily_activity_repository`
+  factory to inject the recovery adapter into the repository, and `daily_activity_scope` builder to construct scopes
+  from query parameters.
+
+  The `_ProxyDailyActivityReads` adapter calls five recovery functions in strict order: `recover_cli_session_key_metadata`
+  (extract the user_id from LiteLLM_CliSessionKey prefix tokens), `recover_double_hashed_key_metadata` (reverse-hash
+  active and deleted verification tokens), `recover_key_metadata_from_spend_logs` (read oldest and newest named rows
+  within a time window), `recover_key_owner_from_daily_spend` (find unanimous user_id values from LiteLLM_DailyUserSpend),
+  and `attach_user_details` (fill user_email from users table and team_id from CLI session user team field). Each step
+  only enriches keys with no live metadata in the preceding step; already-resolved keys are never replaced.
+
+  get_api_key_metadata is the only function that accepts an optional spend_logs_window override parameter
+  (defaulting to None), supplied by the caller; get_daily_activity and get_daily_activity_aggregated always derive
+  the window from the records they aggregate. Recovery order, window boundary enforcement and fault tolerance justify
+  keeping this adapter in a separate security-focused module.
+scope:
+  paths:
+    - crates/betterlite-server/src/daily_activity/recovery.rs
+    - crates/betterlite-server/src/daily_activity/recovery/**
+    - tools/oracle/cases/helpers/daily-activity-recovery/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L453-L457
+    why: spend_logs_window computes the time range from dates, expanding one day before the earliest date to two days after the latest.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L460-L466
+    why: _parse_spend_date parses ISO date strings with isoformat() roundtrip and returns None for invalid input.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L469-L477
+    why: _metadata_with_recovered_owner merges recovered owner into existing metadata, creating a stub entry if the key is new.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L480-L549
+    why: _ProxyDailyActivityReads and its recover_key_metadata method, the complete recovery sequence with five ordered steps and no replacement of existing resolved keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L552-L553
+    why: daily_activity_repository factory injects the proxy adapter into the DailyActivityRepository constructor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L556-L586
+    why: daily_activity_scope builder, tuple/list normalization, empty-string handling and no default values on caller-supplied parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L330-L346
+    why: recover_cli_session_key_metadata extracts user_id from CLI session key prefixes and validates against the users table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L349-L372
+    why: recover_double_hashed_key_metadata reverse-hashes SHA256 key digests against active tokens first, then archived tokens.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L463-L480
+    why: recover_key_metadata_from_spend_logs reads oldest and newest named rows per digest within the time window, with query-level serialization and per-digest caching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L219-L239
+    why: recover_key_owner_from_daily_spend infers the owning user_id from LiteLLM_DailyUserSpend for keys with no user_id and not confirmed to exist, taking the unanimous value when first and last rows match.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L313-L327
+    why: attach_user_details fetches user records for ids that need email or team enrichment, skipping keys with email already present except CLI session keys missing team_id.
+dod:
+  - text: spend_logs_window accepts a set of date strings, parses each to a datetime, returns (earliest - 1 day, latest + 2 days) or None if the set is empty or all parse failures.
+    proof: [spend-window-cases]
+  - text: _parse_spend_date parses ISO date strings with datetime.fromisoformat and returns None for invalid input without logging.
+    proof: [date-parse-cases]
+  - text: _metadata_with_recovered_owner merges a recovered user_id into existing metadata dict, creating a new dict with only user_id if metadata is None.
+    proof: [owner-merge-cases]
+  - text: _ProxyDailyActivityReads.recover_key_metadata calls the five recovery functions in order (CLI session, double hash, spend logs, daily spend owner, user details), passing the unresolved key set to each step and combining results without replacing already-resolved entries.
+    proof: [recovery-order-cases]
+  - text: Recovery functions return empty mappings for empty input sets without database queries; a database failure logs a warning and returns empty/None without raising.
+    proof: [recovery-error-cases]
+  - text: The spend logs window is computed from the aggregated records' date fields and passed to recover_key_metadata_from_spend_logs; an empty or all-None date set returns no window (None) and skips that recovery step.
+    proof: [window-boundary-cases]
+  - text: recover_key_owner_from_daily_spend fills user_id for keys with no existing user_id and no confirmed key_exists flag, never fills team_id, and selects the unanimous value when first and last owners match.
+    proof: [daily-spend-owner-cases]
+  - text: attach_user_details fetches user_email and optionally team_id from the users table, filling team_id only for CLI session keys that lack team_id.
+    proof: [user-details-cases]
+checks:
+  optional: []
+  commands:
+    - id: spend-window-cases
+      why: spend_logs_window computation is missing, wrong or does not handle empty dates
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::spend_window/)'
+    - id: date-parse-cases
+      why: _parse_spend_date parsing is missing, does not handle invalid dates, or logs unexpectedly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::parse_spend_date/)'
+    - id: owner-merge-cases
+      why: _metadata_with_recovered_owner merging is missing or does not preserve existing metadata
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::metadata_merge/)'
+    - id: recovery-order-cases
+      why: recovery sequence does not call all five functions in order or replaces existing resolved keys
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::recover_key_metadata/)'
+    - id: recovery-error-cases
+      why: recovery functions do not handle database errors gracefully or return partial results on failure
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::(empty_recovery|recovery_error)/)'
+    - id: window-boundary-cases
+      why: window boundaries are wrong, all-None dates do not skip recovery, or window is passed incorrectly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::window_/)'
+    - id: daily-spend-owner-cases
+      why: recover_key_owner_from_daily_spend does not infer user_id correctly or fills team_id incorrectly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::spend_owner/)'
+    - id: user-details-cases
+      why: attach_user_details does not fetch user_email or team_id, or applies team_id to non-CLI keys
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::user_details/)'
+oracle_cases: []
+deviations:
+  - what: Recovery functions accept an empty or all-None spend_logs_window parameter and skip the spend-log query when None, returning empty metadata without querying.
+    why: The window is computed from record dates in the calling service; no records with dates means no historical lookups needed. LiteLLM's window defaults to None when spend logs are absent.
+  - what: recover_key_owner_from_daily_spend infers only user_id (never team_id) from unanimous values in LiteLLM_DailyUserSpend, filtering out empty strings and returning an empty mapping on query failure.
+    why: The recover and attach sequence is designed to fill user_id from multiple sources; team_id is inferred only from CLI session user records by attach_user_details. LiteLLM_DailyUserSpend contains no team data.
+out_of_scope:
+  - Recovery function implementations (recover_cli_session_key_metadata, recover_double_hashed_key_metadata, recover_key_metadata_from_spend_logs, recover_key_owner_from_daily_spend, attach_user_details) are owned by B1710 and B1711 in betterlite-db::key_attribution and history modules; this task calls them through their contracts.
+  - DailyActivityRepository and DailyActivityScope are defined by B727/B729; this task only constructs them.
+  - Date arithmetic and timezone handling in date parsing; B3090 owns canonical date validation.
+pitfalls:
+  - spend_logs_window expands the window by 1 day before and 2 days after the extreme dates (not symmetric); off-by-one bugs here propagate to all historical lookups.
+  - _parse_spend_date uses datetime.fromisoformat without custom format strings; inputs that isoformat() accepts may not parse if the string format differs (e.g., T vs space).
+  - _ProxyDailyActivityReads passes the ORIGINAL full key frozenset to recover_key_metadata, not just the still-missing ones; each recovery function is responsible for checking what it can resolve and returning empty for the rest.
+  - recover_key_owner_from_daily_spend only fills keys with no user_id AND no confirmed key_exists flag; a key already marked key_exists=true skips this step even if user_id is missing.
+  - Window boundaries exclude the window start but include the window end (>=start, <end per the SQL); date arithmetic off by one will miss rows at range edges.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

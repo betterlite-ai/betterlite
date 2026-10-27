@@ -1,0 +1,143 @@
+id: B3651
+title: Cursor TypeSafe and Comprehend Medical logging
+description: >-
+  Implement three small service-specific passthrough logging handlers that transform provider
+  responses into standardized logging payloads. Each handler classifies requests, extracts
+  response data, calculates costs according to provider pricing models, and enriches the
+  logging payload with operation names and model identifiers.
+
+  Cursor handler maps API endpoints to readable operation summaries and logs all requests
+  with zero cost, extracting agent ID/name/status from responses. Unmatched requests fall back
+  to the literal format cursor:<method>:<path> (lowercase method, normalized path). The handler
+  wraps its body in try/except, logs warnings via verbose_proxy_logger.exception on failure,
+  and returns an intact payload with the original response and kwargs. TypeSafe handler parses
+  response body and request model to determine a logged model name; when custom_llm_provider is
+  "openrouter" and response.usage.cost is present, that field becomes response_cost; otherwise
+  response_cost is input_tokens × input_cost_per_token + output_tokens × output_cost_per_token
+  via litellm.model_cost lookup. TypeSafe has no exception handler or logging; ValidationError
+  or missing model keys silently return zero-cost, zero-token defaults with no warning logged.
+  Comprehend Medical measures request text length, charges per started 100-character unit
+  (minimum 1 unit) using provider-specific tariffs, and extracts operation names from x-amz-target
+  headers. The handler wraps its body in try/except, logs warnings via verbose_proxy_logger.exception
+  on failure, and returns an intact payload with the original response and kwargs.
+
+  Each handler shares the get_standard_logging_object_payload API from B190 and receives
+  request/response bodies, timing, HTTP metadata and kwargs through a standard interface.
+  Cursor and Comprehend Medical preserve LiteLLM's warn-and-return fallback when pricing or
+  parsing fails; TypeSafe silently defaults to zero cost on validation failure. Implement
+  these three handlers in separate domain modules under betterlite-core::api::passthrough_logging,
+  reusing wire format types and injected logging state.
+scope:
+  paths:
+    - crates/betterlite-core/src/relay/cursor.rs
+    - crates/betterlite-core/src/relay/cursor/**
+    - crates/betterlite-core/src/relay/typesafe.rs
+    - crates/betterlite-core/src/relay/typesafe/**
+    - crates/betterlite-core/src/relay/comprehend_medical.rs
+    - crates/betterlite-core/src/relay/comprehend_medical/**
+    - tools/oracle/cases/relay/cursor/**
+    - tools/oracle/cases/relay/typesafe/**
+    - tools/oracle/cases/relay/comprehend-medical/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cursor_passthrough_logging_handler.py#L21-L61
+    why: Cursor endpoint table and operation classification.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cursor_passthrough_logging_handler.py#L63-L135
+    why: Cursor handler response transformation, zero-cost logging and agent metadata extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/typesafe_passthrough_logging_handler.py#L17-L54
+    why: TypeSafe usage/response/pricing records and litellm.model_cost lookup contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/typesafe_passthrough_logging_handler.py#L57-L122
+    why: TypeSafe handler token pricing, OpenRouter cost override and usage token handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/comprehend_medical_passthrough_logging_handler.py#L17-L42
+    why: Comprehend Medical tariff constants, operation detection from x-amz-target headers and per-unit billing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/comprehend_medical_passthrough_logging_handler.py#L45-L102
+    why: Comprehend Medical handler request text extraction, 100-char unit rounding, minimum 1 unit and operation-based tariff lookup.
+dod:
+  - text: Cursor handler classifies requests into operation names from CURSOR_AGENT_ENDPOINTS and falls back to cursor:<method>:<path> for unmatched endpoints.
+    proof: [passthrough-tests]
+  - text: Cursor handler extracts agent metadata (id, name, status) from response body and logs zero cost for all requests.
+    proof: [passthrough-tests]
+  - text: Cursor handler exception catches errors during classification or logging, logs warnings via verbose_proxy_logger.exception, and returns an intact payload.
+    proof: [passthrough-tests]
+  - text: TypeSafe handler parses response and usage records via Pydantic ValidationError fallback to empty defaults with no logging.
+    proof: [passthrough-tests]
+  - text: TypeSafe handler looks up model prices in litellm.model_cost using response model then request model as keys; missing models default to zero cost per token silently.
+    proof: [passthrough-tests]
+  - text: TypeSafe handler honors response.usage.cost when custom_llm_provider is openrouter and cost is not None; otherwise calculates response_cost from token counts and per-token rates.
+    proof: [passthrough-tests]
+  - text: TypeSafe handler always returns a successful payload with the relayed result unchanged, even when parsing, validation, or cost lookup fails.
+    proof: [passthrough-tests]
+  - text: Comprehend Medical handler extracts operation from x-amz-target header by splitting on the last dot and taking the final component.
+    proof: [passthrough-tests]
+  - text: Comprehend Medical handler calculates cost as character count rounded up to the nearest 100-character unit (minimum 1 unit) times the per-operation tariff, returning zero cost for unknown operations.
+    proof: [passthrough-tests]
+  - text: Comprehend Medical handler exception catches errors during operation/cost calculation, logs warnings via verbose_proxy_logger.exception, and returns an intact payload.
+    proof: [passthrough-tests]
+  - text: All handlers use get_standard_logging_object_payload to emit their payloads and set model, custom_llm_provider and response_cost in both kwargs and logging_obj.model_call_details.
+    proof: [passthrough-tests]
+checks:
+  optional: []
+  commands:
+    - id: passthrough-tests
+      why: the required tests fail or the filter selects no tests
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^passthrough_logging::(cursor|typesafe|comprehend_medical)::/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      Cursor handler logs all requests with zero cost and extracts metadata from response body fields (id, name, status)
+      rather than separately managing agent costs.
+    why: Cursor API does not publish pricing; logging zero cost preserves request context without inferring charges.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cursor_passthrough_logging_handler.py#L82-L110
+  - what: >-
+      Cursor unmatched requests fall back to the literal format cursor:<method>:<path> (lowercase method, normalized path).
+    why: This fallback enables logging of custom or future Cursor endpoints without explicit handler updates, matching the source behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cursor_passthrough_logging_handler.py#L60
+  - what: >-
+      TypeSafe returns zero-cost pricing with no warning logged when response/request model cost is not found in litellm.model_cost
+      or when Pydantic parsing fails.
+    why: Unlike Cursor and Comprehend Medical, TypeSafe has no try/except block or exception logging; validation failures silently produce
+      default zero-token, zero-cost payloads matching the source behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/typesafe_passthrough_logging_handler.py#L37-L54
+  - what: >-
+      TypeSafe handler honors response.usage.cost when custom_llm_provider is openrouter; other providers price from token counts
+      and litellm.model_cost lookup using response_model or request_model as the key.
+    why: OpenRouter returns provider-calculated costs in the response; other services price from tokens using the model catalog.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/typesafe_passthrough_logging_handler.py#L84-L89
+  - what: >-
+      Comprehend Medical rounds text length up to the nearest 100-character unit, with a 1-unit minimum. Unknown operations
+      return zero cost with a warning instead of raising an error.
+    why: AWS charges per started unit; LiteLLM uses the same rounding and fallback on unsupported operations.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/comprehend_medical_passthrough_logging_handler.py#L37-L42
+out_of_scope:
+  - HTTP routing and passthrough request forwarding. B102 owns route registration.
+  - Cost accounting, budgets and spend tracking. B190 provides logging payloads that downstream tasks record.
+  - Provider authentication, request validation and upstream error handling.
+  - Batch operations and async polling. These service handlers only process single synchronous calls.
+pitfalls:
+  - >-
+    Cursor endpoint patterns include path parameters like {id}; classification must match these with wildcards
+    while preserving operation names that distinguish different HTTP methods on the same path.
+  - >-
+    Cursor unmatched requests fall back to the literal format cursor:<method>:<path> where method is lowercased
+    and path has trailing slashes stripped; this format enables logging of custom or future endpoints without handler updates.
+  - >-
+    TypeSafe ValidationError in _parse_typesafe_response returns _TypeSafeResponse() with model=None and usage=None
+    silently without logging or exception handling, producing zero tokens and zero cost.
+  - >-
+    TypeSafe pricing lookup tries model_keys in order (response_model first, then request_model) and catches
+    ValidationError when unpacking cost dictionaries; missing keys or invalid schemas default to zero cost per token.
+  - >-
+    Comprehend Medical requires x-amz-target header with format like "ComprehendMedical_V20181030.DetectPHI".
+    Operation is the rightmost dot-separated component; missing/malformed header returns empty operation and zero cost.
+  - >-
+    Text length for Comprehend Medical is measured in Unicode characters, not bytes. UTF-8 encoding or API-side decoding
+    changes never affect the billing unit calculation, which runs on raw request.Text after JSON parsing.
+  - >-
+    OpenRouter is the only provider that sends back a cost field in usage; all other providers in the TypeSafe handler
+    use token multiplication against litellm.model_cost. Fallback pricing is 0.0 when the model/key is absent.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

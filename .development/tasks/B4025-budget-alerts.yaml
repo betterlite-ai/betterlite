@@ -1,0 +1,391 @@
+id: B4025
+title: Budget threshold and customer spend alerts
+description: >-
+  Build entity-specific budget labels and IDs, threshold decisions, cached duplicate
+  suppression and structured end-user spend notifications. Preserve soft-budget then
+  max-budget precedence, the shared threshold cache key for 5% and 15%, and cache
+  writes after delivery.
+
+  Implement the budget alert type mapping as an abstract contract: BaseBudgetAlertType
+  with get_event_message() and get_id(CallInfo) methods. Supply concrete instances
+  for ProxyBudgetAlert, SoftBudgetAlert, UserBudgetAlert, TeamBudgetAlert,
+  OrganizationBudgetAlert, TokenBudgetAlert, ProjectedLimitExceededAlert and
+  ProjectBudgetAlert. Factory function get_budget_alert_type returns the appropriate
+  type by name. Keep entity-specific ID patterns: soft budget routes on team_id when
+  event_group is TEAM, otherwise token; user budget uses user_id; team uses team_id;
+  token checks TEAM_MEMBER first and builds "team_member:<user_id>:<team_id>".
+
+  Implement budget_alerts entry point: check soft_budget then max_budget, detect soft
+  budget crossed, max budget crossed, and percentage thresholds (5% and 15% remaining).
+  Soft budget checks first; max budget checks and thresholds follow. When both are
+  set, soft-budget crossing takes precedence and is reported before threshold checks.
+  Cache the alert by event type and entity ID with budget_alert_ttl; skip if already
+  sent. Build WebhookEvent with all present fields and send via send_alert. Later
+  send_webhook_alert for webhook delivery.
+
+  Implement failed_tracking_alert: single-use per-model cache with budget_alert_ttl,
+  send when cache miss, write cache after send.
+
+  Implement customer_spend_alert: check that webhook alerting is on, end_user_id,
+  token and response_cost are present. Build WebhookEvent with spend_tracked event,
+  END_USER entity group and customer_id set to end_user_id, then send via
+  send_webhook_alert.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/alerting/budget_alerts.rs
+    - crates/betterlite-server/src/alerting/budget_alerts/**
+    - crates/betterlite-logging/src/helpers/budget_alert_types.rs
+    - crates/betterlite-logging/src/helpers/budget_alert_types/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/budget_alert_types.py#L7-L117
+    why: Abstract BaseBudgetAlertType contract, concrete budget alert type classes, factory function and type name literals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L493-L522
+    why: failed_tracking_alert implementation, cache key structure, and alert-sent pattern.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L524-L625
+    why: budget_alerts entry point, event detection logic, cache precedence and WebhookEvent structure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L627-L671
+    why: Event and message determination for soft and max budget thresholds, precedence of soft budget over max budget.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L673-L685
+    why: Percent-of-budget calculation, zero budget handling and division logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L687-L699
+    why: User info string formatting for alert messages, Litellm_EntityType enum value conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L701-L733
+    why: customer_spend_alert implementation, webhook event structure and send_webhook_alert dispatch.
+
+dod:
+  - text: BaseBudgetAlertType trait defines abstract get_event_message() and get_id(CallInfo) contract for all budget alert types.
+    proof:
+      - budget-type-tests
+
+  - text: >-
+      ProxyBudgetAlert returns "Proxy Budget: " and "default_id" for all CallInfo.
+    proof:
+      - budget-type-tests
+
+  - text: >-
+      SoftBudgetAlert returns "Soft Budget Crossed: " and team_id when event_group
+      is TEAM, otherwise token or "default_id".
+    proof:
+      - soft-budget-type-tests
+
+  - text: >-
+      UserBudgetAlert returns "User Budget: " and user_id or "default_id".
+    proof:
+      - user-budget-type-tests
+
+  - text: >-
+      TeamBudgetAlert returns "Team Budget: " and team_id or "default_id".
+    proof:
+      - team-budget-type-tests
+
+  - text: >-
+      OrganizationBudgetAlert returns "Organization Budget: " and organization_id
+      or "default_id".
+    proof:
+      - org-budget-type-tests
+
+  - text: >-
+      TokenBudgetAlert returns "Key Budget: " and "team_member:<user_id>:<team_id>"
+      when event_group is TEAM_MEMBER, otherwise token or "default_id".
+    proof:
+      - token-budget-type-tests
+
+  - text: >-
+      ProjectedLimitExceededAlert returns "Key Budget: Projected Limit Exceeded"
+      and token or "default_id".
+    proof:
+      - projected-type-tests
+
+  - text: >-
+      ProjectBudgetAlert returns "Project Budget: " and token or "default_id".
+    proof:
+      - project-budget-type-tests
+
+  - text: get_budget_alert_type factory returns the correct type instance by name literal; returns ProxyBudgetAlert for unknown names.
+    proof:
+      - budget-factory-tests
+
+  - text: failed_tracking_alert skips when alerting is None, or "failed_tracking_spend" is not in alert_types.
+    proof:
+      - failed-tracking-tests
+
+  - text: failed_tracking_alert uses cache key "budget_alerts:failed_tracking:<failing_model>" with budget_alert_ttl and sends once per model per 24hr window.
+    proof:
+      - failed-tracking-tests
+
+  - text: failed_tracking_alert sends alert with "High" level, failed_tracking_spend alert type and empty metadata.
+    proof:
+      - failed-tracking-tests
+
+  - text: budget_alerts returns without alert when alerting is None or "budget_alerts" is not in alert_types.
+    proof:
+      - budget-alert-entry-tests
+
+  - text: budget_alerts returns without alert when both max_budget and soft_budget are None.
+    proof:
+      - budget-alert-entry-tests
+
+  - text: budget_alerts checks soft_budget first; if soft_budget is set and spend >= soft_budget, event is "soft_budget_crossed" and soft_budget value is appended to message.
+    proof:
+      - soft-budget-threshold-tests
+
+  - text: budget_alerts checks max_budget next; if max_budget is set and spend >= max_budget, event becomes "budget_crossed" overriding soft-budget state.
+    proof:
+      - max-budget-threshold-tests
+
+  - text: budget_alerts checks max_budget percentage thresholds after crossed check; 5% or less remaining sets event to "threshold_crossed" with message "5% or less of budget remaining".
+    proof:
+      - threshold-5pct-tests
+
+  - text: budget_alerts checks max_budget percentage thresholds; 15% or less (but more than 5%) sets event to "threshold_crossed" with message "15% or less of budget remaining".
+    proof:
+      - threshold-15pct-tests
+
+  - text: budget_alerts cache key is "budget_alerts:<event>:<id>" where event is one of budget_crossed, threshold_crossed, soft_budget_crossed or projected_limit_exceeded, and id comes from the budget alert type's get_id method.
+    proof:
+      - cache-key-tests
+
+  - text: budget_alerts cache uses budget_alert_ttl from alerting_args; multiple alerts of the same type and entity are suppressed within the TTL window.
+    proof:
+      - cache-ttl-tests
+
+  - text: budget_alerts builds WebhookEvent with all present CallInfo fields (spend, max_budget, soft_budget, token, customer_id, user_id, team_id, team_alias, organization_id, user_email, key_alias, projected_exceeded_date, projected_spend, event_group, alert_emails, max_budget_alert_emails) when event is not None and event_group is not None.
+    proof:
+      - webhook-event-tests
+
+  - text: budget_alerts skips alert without sending when event is not None but event_group is None, preserving the guard condition in the send check.
+    proof:
+      - webhook-event-tests
+
+  - text: >-
+      budget_alerts forces event_message to "Team Member Budget: " when event_group
+      is TEAM_MEMBER, overriding the budget alert type's get_event_message() result.
+    proof:
+      - team-member-message-tests
+
+  - text: budget_alerts calls send_alert with message, "High" level, budget_alerts alert type, WebhookEvent as user_info and empty metadata.
+    proof:
+      - budget-alert-send-tests
+
+  - text: _get_event_and_event_message handles soft budget (spend >= soft_budget gives "soft_budget_crossed") and max budget (spend >= max_budget gives "budget_crossed", percent <= 5% gives "threshold_crossed", percent <= 15% gives "threshold_crossed").
+    proof:
+      - threshold-logic-tests
+
+  - text: _get_percent_of_max_budget_left calculates (max_budget - current_spend) / max_budget; returns 0.0 when max_budget is None or <= 0.
+    proof:
+      - percent-calc-tests
+
+  - text: _get_user_info_str formats CallInfo fields as key-value pairs excluding token, converting Litellm_EntityType to its string value.
+    proof:
+      - user-info-str-tests
+
+  - text: customer_spend_alert returns without sending when alerting does not contain "webhook" or any of end_user_id, token, response_cost are None.
+    proof:
+      - customer-spend-tests
+
+  - text: customer_spend_alert builds WebhookEvent with spend_tracked event, END_USER entity group, customer_id set to end_user_id, and sends via send_webhook_alert.
+    proof:
+      - customer-spend-tests
+
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: budget-type-tests
+      why: Budget alert type classes or factory fail
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^budget_alert_types::/)' -- --include-ignored
+
+    - id: soft-budget-type-tests
+      why: SoftBudgetAlert type or ID mapping fails
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^budget_alert_types::soft_budget($|::)/)'
+
+    - id: user-budget-type-tests
+      why: UserBudgetAlert type or ID mapping fails
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^budget_alert_types::user_budget($|::)/)'
+
+    - id: team-budget-type-tests
+      why: TeamBudgetAlert type or ID mapping fails
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^budget_alert_types::team_budget($|::)/)'
+
+    - id: org-budget-type-tests
+      why: OrganizationBudgetAlert type or ID mapping fails
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^budget_alert_types::org_budget($|::)/)'
+
+    - id: token-budget-type-tests
+      why: TokenBudgetAlert type or team-member ID mapping fails
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^budget_alert_types::token_budget($|::)/)'
+
+    - id: projected-type-tests
+      why: ProjectedLimitExceededAlert type or ID mapping fails
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^budget_alert_types::projected($|::)/)'
+
+    - id: project-budget-type-tests
+      why: ProjectBudgetAlert type or ID mapping fails
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^budget_alert_types::project_budget($|::)/)'
+
+    - id: budget-factory-tests
+      why: get_budget_alert_type factory fails or returns wrong types
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^budget_alert_types::factory($|::)/)'
+
+    - id: failed-tracking-tests
+      why: failed_tracking_alert logic or caching fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::failed_tracking($|::)/)'
+
+    - id: budget-alert-entry-tests
+      why: budget_alerts entry point guard logic fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::entry($|::)/)'
+
+    - id: soft-budget-threshold-tests
+      why: Soft budget threshold detection or message generation fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::soft_budget($|::)/)'
+
+    - id: max-budget-threshold-tests
+      why: Max budget crossed detection fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::max_budget($|::)/)'
+
+    - id: threshold-5pct-tests
+      why: 5% threshold detection or message fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::threshold_5pct($|::)/)'
+
+    - id: threshold-15pct-tests
+      why: 15% threshold detection or message fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::threshold_15pct($|::)/)'
+
+    - id: cache-key-tests
+      why: Cache key generation or lookup fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::cache_key($|::)/)'
+
+    - id: cache-ttl-tests
+      why: Cache TTL or alert suppression fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::cache_ttl($|::)/)'
+
+    - id: webhook-event-tests
+      why: WebhookEvent construction or field mapping fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::webhook_event($|::)/)'
+
+    - id: budget-alert-send-tests
+      why: send_alert call or message formatting fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::send($|::)/)'
+
+    - id: threshold-logic-tests
+      why: _get_event_and_event_message logic or message composition fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::threshold_logic($|::)/)'
+
+    - id: percent-calc-tests
+      why: _get_percent_of_max_budget_left calculation fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::percent_calc($|::)/)'
+
+    - id: user-info-str-tests
+      why: _get_user_info_str formatting or field conversion fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::user_info_str($|::)/)'
+
+    - id: customer-spend-tests
+      why: customer_spend_alert guards or send_webhook_alert dispatch fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::customer_spend($|::)/)'
+
+    - id: team-member-message-tests
+      why: TEAM_MEMBER event_group message override fails
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^budget_alerts::team_member_message($|::)/)'
+
+oracle_cases: []
+deviations:
+  - what: >-
+      The abstract budget alert type contract is built using Rust traits with concrete
+      implementations, not Python class inheritance. Trait objects or enums bridge to
+      the factory function.
+    why: >-
+      Rust's type system requires explicit contracts; trait implementations provide
+      the same polymorphic interface as Python abstract classes without runtime
+      overhead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/budget_alert_types.py#L7-L24
+
+  - what: >-
+      Decimal arithmetic is used for budget calculations instead of floats, preserving
+      precision through percentage checks and threshold comparisons.
+    why: >-
+      Float rounding errors can cause alerts to fire at wrong thresholds; Decimal
+      arithmetic matches financial precision expectations.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L673-L685
+
+  - what: >-
+      Soft budget crossing precedes and overrides max budget threshold checks when both
+      are set, preserving LiteLLM's soft-budget-first design. Once soft budget is
+      triggered, further max budget checks do not run.
+    why: >-
+      LiteLLM's source checks soft budget first; preserving this order avoids masking
+      soft-budget alerts with threshold messages.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L649-L670
+
+out_of_scope:
+  - "send_alert: B4024 owns the shared entry point."
+  - "send_webhook_alert: B4021 owns the structured webhook delivery."
+  - "DualCache reads and writes: Q4 unresolved; task uses the injected cache passed in construction."
+  - "CallInfo and WebhookEvent type definitions: B4020 supplies these."
+  - "AlertType enum and EntityType enum: B4020 supplies these."
+  - "SLACK_ALERTING_THRESHOLD_5_PERCENT and SLACK_ALERTING_THRESHOLD_15_PERCENT: B4020 supplies these."
+
+pitfalls:
+  - "Soft budget checks must run before max budget checks, and soft budget crossing must override subsequent threshold checks. LiteLLM's source has soft budget first; preserve that order to avoid masking alerts."
+  - "The cache key for soft_budget_crossed, budget_crossed, threshold_crossed and projected_limit_exceeded must use the same entity ID from get_budget_alert_type; mismatched cache keys lead to duplicate alerts or missed suppression."
+  - "TeamBudgetAlert's get_id uses team_id when set, returning \"default_id\" when None. This differs from other types in that it never falls back to token."
+  - "TokenBudgetAlert has two paths: when event_group is TEAM_MEMBER, construct \"team_member:<user_id>:<team_id>\"; otherwise use token or \"default_id\". Do not mix the paths."
+  - "Percent-of-budget calculation must return 0.0 when max_budget is None or <= 0, not a ratio that would cause later comparisons to fail or panic."
+  - "Percentage thresholds (5% and 15%) must be constants from B4020, never hardcoded; using the wrong thresholds breaks duplicate suppression and alert behavior."
+  - "customer_spend_alert must return early without sending if any guard condition (webhook in alerting, end_user_id, token, response_cost) fails, matching LiteLLM's all-or-nothing dispatch."
+  - "WebhookEvent fields must exclude token from the message string but include it in the event record for backend processing; do not serialize token into alert text."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
