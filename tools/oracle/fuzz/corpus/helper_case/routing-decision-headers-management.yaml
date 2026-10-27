@@ -1,0 +1,8 @@
+kind: helper
+name: routing-decision-headers-management
+call:
+  routing_decision_headers:
+    function: complexity
+    request: {metadata: {routing_decision: {router_type: complexity, tier: seed}}}
+env: {}
+compare: {ignore: []}

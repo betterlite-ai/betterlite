@@ -1,0 +1,8 @@
+kind: helper
+name: trim-ascii-drop-controls
+call:
+  routing_decision_headers:
+    function: complexity
+    request: {metadata: {routing_decision: {router_type: complexity, tier: '  high  ', cause: "bad\nvalue", tier_litellm_params: {reasoning_effort: 'é'}}}}
+env: {}
+compare: {ignore: []}

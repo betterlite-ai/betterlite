@@ -1,14 +1,14 @@
 id: B4140
 milestone: M8 platform
 title: Resolve settings provenance and enforce config ownership
-status: todo
+status: done
 depends_on: []
 file: tasks/B4140-settings-ownership.yaml
 covers:
   - "litellm/proxy/config_resolvers/{__init__,_descriptors,alerting,changed_section_keys,settings_rules,settings_store}.py"
 parent: B120
 split_from: B120
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 222
