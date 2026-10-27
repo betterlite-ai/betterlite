@@ -23,6 +23,18 @@ pub enum DbRow {
     UiSettings,
 }
 
+impl From<Section> for DbRow {
+    fn from(section: Section) -> Self {
+        match section {
+            Section::GeneralSettings => Self::GeneralSettings,
+            Section::RouterSettings => Self::RouterSettings,
+            Section::LitellmSettings => Self::LitellmSettings,
+            Section::EnvironmentVariables => Self::EnvironmentVariables,
+            Section::UiSettings => Self::UiSettings,
+        }
+    }
+}
+
 pub const UI_SETTINGS_FIELDS: [&str; 10] = [
     "allow_public_health_readiness_details",
     "forward_client_headers_to_llm_api",
@@ -50,13 +62,10 @@ impl Section {
 
     #[must_use]
     pub fn row_for(self, key: &str) -> DbRow {
-        match self {
-            Self::GeneralSettings if UI_SETTINGS_FIELDS.contains(&key) => DbRow::UiSettings,
-            Self::GeneralSettings => DbRow::GeneralSettings,
-            Self::RouterSettings => DbRow::RouterSettings,
-            Self::LitellmSettings => DbRow::LitellmSettings,
-            Self::EnvironmentVariables => DbRow::EnvironmentVariables,
-            Self::UiSettings => DbRow::UiSettings,
+        if self == Self::GeneralSettings && UI_SETTINGS_FIELDS.contains(&key) {
+            DbRow::UiSettings
+        } else {
+            DbRow::from(self)
         }
     }
 
