@@ -20,6 +20,8 @@ pub enum ReplaceError {
         "Error: String '{old}' appears {count} times in file. Use replace_all=True to replace all instances, or provide a more specific string with surrounding context."
     )]
     Ambiguous { old: String, count: usize },
+    #[error("Error: replacement result exceeds {limit} bytes")]
+    ResultTooLarge { limit: usize },
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -45,6 +47,28 @@ pub fn replace_occurrences(
         return Err(ReplaceError::Ambiguous {
             old: old.to_owned(),
             count: occurrences,
+        });
+    }
+    let removed_bytes = occurrences
+        .checked_mul(old.len())
+        .ok_or(ReplaceError::ResultTooLarge {
+            limit: super::READ_CAP_BYTES,
+        })?;
+    let added_bytes = occurrences
+        .checked_mul(new.len())
+        .ok_or(ReplaceError::ResultTooLarge {
+            limit: super::READ_CAP_BYTES,
+        })?;
+    let result_len = content
+        .len()
+        .checked_sub(removed_bytes)
+        .and_then(|length| length.checked_add(added_bytes))
+        .ok_or(ReplaceError::ResultTooLarge {
+            limit: super::READ_CAP_BYTES,
+        })?;
+    if result_len > super::READ_CAP_BYTES {
+        return Err(ReplaceError::ResultTooLarge {
+            limit: super::READ_CAP_BYTES,
         });
     }
     Ok(Replaced {

@@ -1,6 +1,7 @@
 #![cfg(test)]
 use rstest::rstest;
 
+use crate::sandbox_backend::READ_CAP_BYTES;
 use crate::sandbox_backend::replace::{ReplaceError, Replaced, replace_occurrences};
 
 #[rstest]
@@ -61,6 +62,21 @@ fn refuses_several_matches_without_replace_all() {
         Err(ReplaceError::Ambiguous {
             old: "b".to_owned(),
             count: 3,
+        })
+    );
+}
+
+#[test]
+fn refuses_replacement_result_over_read_cap() {
+    let half_read_cap = READ_CAP_BYTES
+        .checked_div(2)
+        .expect("the read cap must be nonzero");
+    let content = "a".repeat(half_read_cap + 1);
+
+    assert_eq!(
+        replace_occurrences(&content, "a", "xx", true),
+        Err(ReplaceError::ResultTooLarge {
+            limit: READ_CAP_BYTES,
         })
     );
 }

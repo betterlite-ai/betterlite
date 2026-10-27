@@ -1,5 +1,8 @@
 task: B4838
 deviations:
+  - what: "edit refuses a replacement whose checked result length exceeds the 50 MiB read cap; LiteLLM does not cap replacement output."
+    why: "The model controls old_string and new_string, so an unrestricted replace_all can request an oversized allocation and abort the gateway. The cap keeps the edited file readable through the same bounded Sandbox.read path."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepagents/harness/sandbox_backend.py#L205-L207"
   - what: "grep that finds nothing returns an empty match list; LiteLLM returns the error \"Path '/': grep failed\"."
     why: "xargs exits 123 when its grep batch found nothing, and LiteLLM only accepts 0 and 1, so every empty search is reported as a failure. betterlite treats 123 with empty stdout and stderr as no matches; a real grep or find error still carries its stderr."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepagents/harness/sandbox_backend.py#L354-L355"
