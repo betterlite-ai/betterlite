@@ -1,0 +1,7 @@
+codex_history_tools:
+  operation: normalize
+  input:
+    - type: agent_message
+      content:
+        - text: a
+        - encrypted_content: b
