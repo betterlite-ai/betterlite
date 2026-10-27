@@ -18,4 +18,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "structured_response"
+path = "fuzz_targets/structured_response.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
