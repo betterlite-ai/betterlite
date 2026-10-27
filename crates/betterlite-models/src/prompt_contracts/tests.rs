@@ -1,9 +1,9 @@
 #![cfg(test)]
 
 use super::{
-    _get_model_from_prompt as model_helper, CustomPromptManagement, PromptIgnoreFlags,
-    PromptManagement, PromptManagementClient, PromptParams, PromptProcessingOptions,
-    post_compile_prompt_processing, resolve_ignore_flags,
+    CustomPromptManagement, PromptIgnoreFlags, PromptManagement as _, PromptManagementClient,
+    PromptParams, PromptProcessingOptions, get_model_from_prompt, post_compile_prompt_processing,
+    resolve_ignore_flags,
 };
 use crate::decisions::Json;
 use crate::prompt_spec::PromptSpec;
@@ -45,7 +45,7 @@ fn ignore_flags_use_or_semantics() {
 fn model_prefix_is_stripped_repeatedly_without_template_override() {
     let client = PromptManagementClient::default();
     assert_eq!(
-        model_helper(&client, "custom", "custom/custom/model"),
+        get_model_from_prompt(&client, "custom", "custom/custom/model"),
         "model"
     );
 }
@@ -117,13 +117,8 @@ fn custom_management_is_noop_gate_and_rejects_compilation() {
         prompt_label: None,
         prompt_version: None,
     };
-    let compile_helper: fn(
-        &CustomPromptManagement,
-        &super::PromptCompileRequest<'_>,
-    ) -> Result<PromptManagementClient, super::PromptContractError> =
-        <CustomPromptManagement as PromptManagement>::_compile_prompt_helper;
     assert_eq!(
-        compile_helper(&manager, &request),
+        manager.compile_prompt_helper(&request),
         Err(super::PromptContractError::NotImplemented)
     );
 }

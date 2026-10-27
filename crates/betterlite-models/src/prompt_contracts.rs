@@ -53,7 +53,7 @@ pub fn resolve_ignore_flags(
 }
 
 #[must_use]
-pub fn _get_model_from_prompt(
+pub fn get_model_from_prompt(
     prompt_management_client: &PromptManagementClient,
     integration_name: &str,
     model: &str,
@@ -96,7 +96,7 @@ pub fn post_compile_prompt_processing(
     let resolved_model = if options.ignore_flags.model {
         model
     } else {
-        _get_model_from_prompt(prompt_template, &options.integration_name, &model)
+        get_model_from_prompt(prompt_template, &options.integration_name, &model)
     };
     (resolved_model, completed_messages, updated_params)
 }
@@ -127,7 +127,7 @@ pub trait PromptManagement {
         prompt_spec: Option<&PromptSpec>,
         dynamic_callback_params: &StandardCallbackDynamicParams,
     ) -> bool;
-    fn _compile_prompt_helper(
+    fn compile_prompt_helper(
         &self,
         request: &PromptCompileRequest<'_>,
     ) -> Result<PromptManagementClient, PromptContractError>;
@@ -154,7 +154,7 @@ impl PromptManagement for CustomPromptManagement {
     ) -> bool {
         true
     }
-    fn _compile_prompt_helper(
+    fn compile_prompt_helper(
         &self,
         _request: &PromptCompileRequest<'_>,
     ) -> Result<PromptManagementClient, PromptContractError> {
