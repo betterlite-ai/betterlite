@@ -22,7 +22,7 @@ upstream:
       - '{"id":"chatcmpl-tools","object":"chat.completion.chunk","created":1700000001,"model":"gpt-tools-upstream","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}'
       - '[DONE]'
 compare:
-  headers: [content-type]
+  headers: [content-type, x-litellm-model-id, x-litellm-model-name, x-litellm-model-api-base]
   headers_present: [x-litellm-call-id]
   upstream_headers: [authorization, content-type]
   ignore:

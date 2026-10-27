@@ -81,11 +81,17 @@ async fn chat_completion(
         Err(error) => return failure(&error, &call_id, None),
     };
     if request.stream {
-        return stream_chat(&executor, deployment, &request, &call_id).await;
+        return stream_chat(&executor, deployment, &request, &call_id, started).await;
     }
     match executor.send(deployment, &request).await {
         Ok(outcome) => {
-            let headers = success_headers(&outcome, deployment, &call_id, started.elapsed());
+            let headers = success_headers(
+                &outcome.upstream.headers,
+                deployment,
+                &call_id,
+                outcome.upstream_time,
+                started.elapsed(),
+            );
             (headers, Json(outcome.response)).into_response()
         }
         Err(error) => failure(&error, &call_id, Some(deployment)),

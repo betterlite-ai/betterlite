@@ -1,7 +1,6 @@
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
-use betterlite_http::proxy::StreamResponse;
 use betterlite_openai::chat::deployment::ChatDeployment;
-use betterlite_openai::chat::execution::{ChatError, ChatOutcome};
+use betterlite_openai::chat::execution::ChatError;
 use std::time::Duration;
 
 // LiteLLM's OPENAI_RESPONSE_HEADERS, repeated without the llm_provider- prefix on a success
@@ -17,13 +16,14 @@ const RATE_LIMIT_HEADERS: [&str; 6] = [
 const FAILURE_RATE_LIMIT_HEADERS: usize = 4;
 
 pub(super) fn success_headers(
-    outcome: &ChatOutcome,
+    upstream: &HeaderMap,
     deployment: &ChatDeployment,
     call_id: &str,
+    upstream_time: Duration,
     total: Duration,
 ) -> HeaderMap {
-    let mut headers = provider_headers(&outcome.upstream.headers, RATE_LIMIT_HEADERS.len());
-    let overhead = total.saturating_sub(outcome.upstream_time);
+    let mut headers = provider_headers(upstream, RATE_LIMIT_HEADERS.len());
+    let overhead = total.saturating_sub(upstream_time);
     let values = [
         ("x-litellm-call-id", call_id.to_owned()),
         ("x-litellm-model-id", deployment.model_id.clone()),
@@ -33,7 +33,7 @@ pub(super) fn success_headers(
         ("x-litellm-version", env!("CARGO_PKG_VERSION").to_owned()),
         (
             "x-litellm-response-duration-ms",
-            milliseconds(outcome.upstream_time),
+            milliseconds(upstream_time),
         ),
         ("x-litellm-overhead-duration-ms", milliseconds(overhead)),
         ("x-litellm-callback-duration-ms", "0.0".to_owned()),
@@ -44,11 +44,14 @@ pub(super) fn success_headers(
     headers
 }
 
-pub(super) fn stream_headers(upstream: &StreamResponse, call_id: &str) -> HeaderMap {
-    let mut headers = provider_headers(upstream.response.headers(), RATE_LIMIT_HEADERS.len());
-    if let Ok(value) = HeaderValue::try_from(call_id) {
-        headers.insert("x-litellm-call-id", value);
-    }
+pub(super) fn stream_headers(
+    upstream: &HeaderMap,
+    deployment: &ChatDeployment,
+    call_id: &str,
+    upstream_time: Duration,
+    total: Duration,
+) -> HeaderMap {
+    let mut headers = success_headers(upstream, deployment, call_id, upstream_time, total);
     headers.insert(
         "content-type",
         HeaderValue::from_static("text/event-stream; charset=utf-8"),
@@ -145,3 +148,5 @@ fn python_float(value: f64) -> String {
         format!("{text}.0")
     }
 }
+
+mod tests;

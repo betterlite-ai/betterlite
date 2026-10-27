@@ -23,7 +23,7 @@ upstream:
       - '{"id":"chatcmpl-usage","object":"chat.completion.chunk","created":1700000000,"model":"oracle-model","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}'
       - '[DONE]'
 compare:
-  headers: [content-type]
+  headers: [content-type, x-litellm-model-id, x-litellm-model-name, x-litellm-model-api-base]
   headers_present: [x-litellm-call-id]
   upstream_headers: [authorization, content-type]
   ignore:

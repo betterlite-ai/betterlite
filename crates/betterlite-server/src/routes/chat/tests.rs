@@ -343,3 +343,41 @@ async fn stream_finishes_once(#[case] input: &str) {
         Some("stream-done")
     );
 }
+
+#[rstest]
+#[case::model_id("x-litellm-model-id", "dep-1")]
+#[case::model_name("x-litellm-model-name", "openai/up")]
+#[case::model_group("x-litellm-model-group", "g")]
+#[case::version("x-litellm-version", env!("CARGO_PKG_VERSION"))]
+#[case::callback("x-litellm-callback-duration-ms", "0.0")]
+#[case::retries("x-litellm-attempted-retries", "0")]
+#[case::fallbacks("x-litellm-attempted-fallbacks", "0")]
+#[tokio::test]
+async fn stream_has_success_headers(#[case] name: &str, #[case] value: &str) {
+    let answered = exchange(
+        "/v1/chat/completions",
+        r#"{"model":"g","messages":[],"stream":true}"#,
+        "stream-headers",
+        (200, "data: [DONE]\n\n"),
+        NO_DELAY,
+    )
+    .await;
+    assert_eq!(header(&answered.headers, name), Some(value));
+    assert!(
+        header(&answered.headers, "x-litellm-model-api-base")
+            .unwrap()
+            .ends_with("/v1")
+    );
+    assert!(
+        header(&answered.headers, "x-litellm-response-duration-ms")
+            .unwrap()
+            .parse::<rust_decimal::Decimal>()
+            .is_ok()
+    );
+    assert!(
+        header(&answered.headers, "x-litellm-overhead-duration-ms")
+            .unwrap()
+            .parse::<rust_decimal::Decimal>()
+            .is_ok()
+    );
+}

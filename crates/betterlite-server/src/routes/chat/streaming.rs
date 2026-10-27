@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::io;
+use std::time::Instant;
 
 use axum::body::{Body, Bytes};
 use axum::response::{IntoResponse as _, Response};
@@ -30,10 +31,19 @@ pub(super) async fn stream_chat(
     deployment: &ChatDeployment,
     request: &ChatRequest,
     call_id: &str,
+    started: Instant,
 ) -> Response {
+    let upstream_started = Instant::now();
     match executor.stream(deployment, request).await {
         Ok(upstream) => {
-            let headers = stream_headers(&upstream, call_id);
+            let upstream_time = upstream_started.elapsed();
+            let headers = stream_headers(
+                upstream.response.headers(),
+                deployment,
+                call_id,
+                upstream_time,
+                started.elapsed(),
+            );
             let stream_body = Body::from_stream(relay_sse(upstream, request));
             (headers, stream_body).into_response()
         }
