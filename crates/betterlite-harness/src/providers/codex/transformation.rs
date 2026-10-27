@@ -8,7 +8,7 @@
 )]
 use secrecy::SecretString;
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::context::SessionContext;
 use crate::errors::HarnessError;
@@ -20,38 +20,30 @@ use crate::transformation::{
     BaseCLIHarnessConfig, BaseHarnessConfig, HarnessSessionSetup, HarnessTurnRequest,
     HarnessTurnResponse, PersistedDir, TurnInput,
 };
-use crate::types::{Capabilities, Capability, Harness, JsonObject, PermissionMode};
+use crate::types::JsonObject;
+#[path = "capabilities.rs"]
+mod capabilities;
 #[path = "config.rs"]
 mod config;
+#[path = "features.rs"]
+mod features;
+#[path = "input.rs"]
+mod input;
+#[path = "provider.rs"]
+mod provider;
 #[path = "stream.rs"]
 mod stream;
+mod tests;
 use config::{
-    CODEX_HOME_ENV, CODEX_SCHEMA_FILENAME, CODEX_TOKEN_ENV, feature_overrides, mismatch, pairs,
-    permission_args, provider_overrides,
+    CODEX_HOME_ENV, CODEX_SCHEMA_FILENAME, CODEX_TOKEN_ENV, mismatch, pairs, permission_args,
 };
 pub use config::{config_overrides, toml_key, toml_value};
+use features::feature_overrides;
+use input::tool_input;
+use provider::provider_overrides;
 pub use stream::CodexStreamState;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CodexHarnessConfig;
-
-impl BaseHarnessConfig for CodexHarnessConfig {
-    type Options = CodexOptions;
-    const HARNESS: Harness = Harness::Codex;
-    fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            supported: BTreeSet::from([
-                Capability::StructuredOutput,
-                Capability::Skills,
-                Capability::Resume,
-            ]),
-            permission_modes: BTreeSet::from([PermissionMode::ReadOnly, PermissionMode::Full]),
-        }
-    }
-    fn validate_environment<S>(&self, context: &SessionContext<S>) -> Result<(), HarnessError> {
-        let options = self.get_options(context)?;
-        config_overrides(&options.config).map(|_| ())
-    }
-}
 
 impl BaseCLIHarnessConfig for CodexHarnessConfig {
     type StreamState = CodexStreamState;
@@ -234,7 +226,7 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
                 }
                 let mut events = Vec::new();
                 if state.started.insert(id.clone()) {
-                    let (name, native_name, input, builtin) = stream::tool_input(&item);
+                    let (name, native_name, input, builtin) = tool_input(&item);
                     events.push(Event::ToolCall {
                         id: id.clone(),
                         name,

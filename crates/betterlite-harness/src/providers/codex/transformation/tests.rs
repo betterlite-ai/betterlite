@@ -1,20 +1,19 @@
 #![cfg(test)]
 
-use super::transformation::{CodexHarnessConfig, CodexStreamState};
-use super::transformation::{config_overrides, toml_key, toml_value};
+use super::{CodexHarnessConfig, CodexStreamState};
 use crate::events::Event;
 use crate::transformation::BaseCLIHarnessConfig as _;
 use crate::types::JsonObject;
 
 #[test]
 fn config_toml_managed_keys() {
-    assert_eq!(toml_key("plain-key"), "plain-key");
-    assert_eq!(toml_key("a key"), "\"a key\"");
+    assert_eq!(super::toml_key("plain-key"), "plain-key");
+    assert_eq!(super::toml_key("a key"), "\"a key\"");
     let config: JsonObject =
         serde_json::from_str("{\"a key\": [true, 2], \"model\": \"wrong\"}").unwrap();
     let value = config.values().next().unwrap();
-    assert_eq!(toml_value(value, 0).unwrap(), "[true, 2]");
-    config_overrides(&config).unwrap_err();
+    assert_eq!(super::toml_value(value, 0).unwrap(), "[true, 2]");
+    super::config_overrides(&config).unwrap_err();
 }
 
 #[test]

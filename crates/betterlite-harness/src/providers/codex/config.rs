@@ -2,7 +2,6 @@ use serde_json::Value;
 
 use crate::context::SessionContext;
 use crate::errors::HarnessError;
-use crate::options::{CodexOptions, ReasoningEffort};
 use crate::sandbox::Sandbox;
 use crate::types::{Harness, JsonObject, PermissionMode};
 
@@ -90,24 +89,6 @@ pub(super) fn pairs(flag: &str, values: &[String]) -> Vec<String> {
     pairs
 }
 
-pub(super) fn provider_overrides<S>(
-    context: &SessionContext<S>,
-) -> Result<Vec<String>, HarnessError> {
-    let gateway = context.settings.gateway.as_ref().ok_or_else(mismatch)?;
-    let base = format!("{}/v1", gateway.api_base.trim_end_matches('/'));
-    Ok(vec![
-        "model_provider=litellm".to_owned(),
-        "model_providers.litellm.name=litellm".to_owned(),
-        format!(
-            "model_providers.litellm.base_url={}",
-            toml_value(&Value::String(base), 0)?
-        ),
-        format!("model_providers.litellm.env_key={CODEX_TOKEN_ENV}"),
-        "model_providers.litellm.wire_api=responses".to_owned(),
-        "approval_policy=never".to_owned(),
-    ])
-}
-
 pub(super) fn permission_args<S: Sandbox>(
     context: &SessionContext<S>,
     resumed: bool,
@@ -124,34 +105,4 @@ pub(super) fn permission_args<S: Sandbox>(
     } else {
         vec!["--sandbox".to_owned(), mode.to_owned()]
     }
-}
-
-pub(super) fn feature_overrides<S>(
-    context: &SessionContext<S>,
-    options: &CodexOptions,
-) -> Vec<String> {
-    let mut values = vec![format!(
-        "web_search={}",
-        if options.web_search {
-            "live"
-        } else {
-            "disabled"
-        }
-    )];
-    if let Some(effort) = options.reasoning_effort {
-        let value = match effort {
-            ReasoningEffort::Low => "low",
-            ReasoningEffort::Medium => "medium",
-            ReasoningEffort::High => "high",
-            ReasoningEffort::Xhigh => "xhigh",
-        };
-        values.push(format!("model_reasoning_effort={value}"));
-        values.push("model_reasoning_summary=auto".to_owned());
-    }
-    if let Some(instructions) = context.settings.instructions.as_ref() {
-        if let Ok(encoded) = toml_value(&Value::String(instructions.clone()), 0) {
-            values.push(format!("developer_instructions={encoded}"));
-        }
-    }
-    values
 }

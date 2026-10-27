@@ -53,12 +53,10 @@ impl Helper for Op {
                         .map(str::to_owned);
                 }
                 Some("error") => {
-                    error = event
-                        .get("message")
-                        .and_then(Value::as_str)
-                        .map_or_else(|| Some("codex reported an error".to_owned()), |value| {
-                            Some(value.to_owned())
-                        });
+                    error = event.get("message").and_then(Value::as_str).map_or_else(
+                        || Some("codex reported an error".to_owned()),
+                        |value| Some(value.to_owned()),
+                    );
                 }
                 Some("turn.failed") => {
                     failed = true;
@@ -66,24 +64,22 @@ impl Helper for Op {
                         .get("error")
                         .and_then(|value| value.get("message").or(Some(value)))
                         .and_then(Value::as_str)
-                        .map_or_else(|| Some("codex turn failed".to_owned()), |value| {
-                            Some(value.to_owned())
-                        });
+                        .map_or_else(
+                            || Some("codex turn failed".to_owned()),
+                            |value| Some(value.to_owned()),
+                        );
                 }
                 Some("item.started" | "item.updated" | "item.completed") => {
                     let Some(item) = event.get("item").and_then(Value::as_object) else {
                         continue;
                     };
                     let kind = item.get("type").and_then(Value::as_str).unwrap_or_default();
-                    let id = item
-                        .get("id")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default();
-                    let completed = event.get("type").and_then(Value::as_str) == Some("item.completed");
+                    let id = item.get("id").and_then(Value::as_str).unwrap_or_default();
+                    let completed =
+                        event.get("type").and_then(Value::as_str) == Some("item.completed");
                     match kind {
                         "agent_message" if completed => {
-                            item
-                                .get("text")
+                            item.get("text")
                                 .and_then(Value::as_str)
                                 .unwrap_or_default()
                                 .clone_into(&mut final_text);
