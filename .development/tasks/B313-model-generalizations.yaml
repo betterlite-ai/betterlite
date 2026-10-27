@@ -38,7 +38,6 @@ scope:
   - tools/oracle/litellm/probes/model_generalizations.py
   - tools/oracle/cases/routing/model-generalizations/**
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-router/Cargo.toml
   - crates/betterlite-router/src/generalization_integration.rs
   - crates/betterlite-router/src/generalization_integration/**
