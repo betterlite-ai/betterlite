@@ -1,0 +1,8 @@
+task: B4320
+deviations:
+  - what: Azure credentials are represented as a refresh-aware credential selection in betterlite-config; token acquisition remains with the Azure SDK integration layer.
+    why: The config crate cannot depend on the Python azure-identity SDK, while preserving the selected Default, Managed Identity, or Client Secret mode for runtime consumers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis_credential_provider.py#L203-L229
+  - what: GCP IAM tokens are represented by a typed 3300-second cache contract rather than generated in the config crate.
+    why: Network token generation belongs to the Redis runtime integration; config resolution remains deterministic and secret-safe.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis_credential_provider.py#L41-L102
