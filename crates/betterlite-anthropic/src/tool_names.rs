@@ -1,14 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use serde_json::value::RawValue;
 pub const REVERSE_MAP_KEY: &str = "_anthropic_tool_name_map";
 const MAX_TOOL_NAME_LENGTH: usize = 128;
 
 pub type ToolName = String;
 
-pub type AdditionalFields = BTreeMap<String, Box<RawValue>>;
+pub mod wire;
+
+use wire::{Call, Calls, Function, Message, Name, RequestParams, Tool, Tools};
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, Eq, PartialEq)]
 pub struct ToolNameMaps {
@@ -16,94 +16,12 @@ pub struct ToolNameMaps {
     pub reverse: BTreeMap<String, String>,
 }
 
-// a JSON object split into the keys this module reads (head) and every other key kept raw (rest)
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(
-    try_from = "Box<RawValue>",
-    bound(deserialize = "Head: DeserializeOwned + Serialize")
-)]
-pub struct Record<Head> {
-    #[serde(flatten)]
-    pub head: Head,
-    #[serde(flatten)]
-    pub rest: AdditionalFields,
-}
-
-// a tool entry or a tool_choice
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct NamedHead {
-    #[serde(rename = "type", default, deserialize_with = "lenient")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
-    #[serde(default, deserialize_with = "lenient")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct MessageHead {
-    #[serde(default, deserialize_with = "lenient")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<Record<CallHead>>>,
-    #[serde(default, deserialize_with = "lenient")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub function_call: Option<Record<FunctionHead>>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct CallHead {
-    #[serde(default, deserialize_with = "lenient")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub function: Option<Record<FunctionHead>>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct FunctionHead {
-    #[serde(default, deserialize_with = "lenient")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct RequestParams {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<Record<NamedHead>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<Record<NamedHead>>,
-}
-
-// flatten buffers values and RawValue cannot come back out of that buffer, so the object is read twice
-impl<Head> TryFrom<Box<RawValue>> for Record<Head>
-where
-    Head: DeserializeOwned + Serialize,
-{
-    type Error = serde_json::Error;
-
-    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
-        let head = serde_json::from_str::<Head>(raw.get())?;
-        let modeled = serde_json::from_str::<AdditionalFields>(&serde_json::to_string(&head)?)?;
-        let mut rest = serde_json::from_str::<AdditionalFields>(raw.get())?;
-        rest.retain(|key, _| !modeled.contains_key(key));
-        Ok(Self { head, rest })
-    }
-}
-
-// LiteLLM skips a value of the wrong JSON type, so it reads as absent and stays in rest unchanged
-fn lenient<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: DeserializeOwned,
-{
-    let raw = Box::<RawValue>::deserialize(deserializer)?;
-    Ok(serde_json::from_str(raw.get()).ok())
-}
-
 #[must_use]
-pub fn basic_sanitize_tool_name(name: &ToolName) -> ToolName {
-    if name.is_empty() {
-        return name.clone();
+pub fn basic_sanitize_tool_name(name: &Name) -> Name {
+    match name {
+        Name::Known(text) => Name::Known(sanitize_text(text)),
+        Name::Other(raw) => Name::Other(raw.clone()),
     }
-    sanitize_text(name)
 }
 
 #[must_use]
@@ -128,12 +46,16 @@ pub fn build_tool_name_maps(original_names: &[ToolName]) -> ToolNameMaps {
             continue;
         }
         let mut unique = candidate.clone();
-        let mut suffix = 1_u32;
+        let mut suffix = 1_usize;
         while used.contains(&unique) {
             suffix = suffix.saturating_add(1);
             let suffix_text = format!("_{suffix}");
             let head_length = MAX_TOOL_NAME_LENGTH.saturating_sub(suffix_text.chars().count());
-            unique = format!("{}{}", take_chars(&candidate, head_length), suffix_text);
+            unique = format!(
+                "{}{}",
+                candidate.chars().take(head_length).collect::<String>(),
+                suffix_text
+            );
         }
         used.insert(unique.clone());
         forward.insert(original.to_owned(), unique);
@@ -146,7 +68,7 @@ pub fn build_tool_name_maps(original_names: &[ToolName]) -> ToolNameMaps {
 }
 
 pub fn sanitize_tool_names_in_request(params: &mut RequestParams) -> ToolNameMaps {
-    let Some(tools_ref) = params.tools.as_ref() else {
+    let Some(Tools::Known(tools_ref)) = params.head.tools.as_ref() else {
         return ToolNameMaps::default();
     };
     if tools_ref.is_empty() {
@@ -161,13 +83,13 @@ pub fn sanitize_tool_names_in_request(params: &mut RequestParams) -> ToolNameMap
     if maps.forward.is_empty() {
         return maps;
     }
-    if let Some(tools_mut) = params.tools.as_mut() {
+    if let Some(Tools::Known(tools_mut)) = params.head.tools.as_mut() {
         for tool in tools_mut {
             rewrite_tool(tool, &maps.forward);
         }
     }
-    if let Some(choice) = params.tool_choice.as_mut()
-        && choice.head.kind.as_deref() == Some("tool")
+    if let Some(Tool::Known(choice)) = params.head.tool_choice.as_mut()
+        && matches!(&choice.head.kind, Some(Name::Known(kind)) if kind == "tool")
     {
         rewrite_name(&mut choice.head.name, &maps.forward);
     }
@@ -176,9 +98,9 @@ pub fn sanitize_tool_names_in_request(params: &mut RequestParams) -> ToolNameMap
 
 #[must_use]
 pub fn rewrite_tool_names_in_messages(
-    messages: &[Record<MessageHead>],
+    messages: &[Message],
     forward: &BTreeMap<String, String>,
-) -> Vec<Record<MessageHead>> {
+) -> Vec<Message> {
     if forward.is_empty() {
         return messages.to_vec();
     }
@@ -199,11 +121,7 @@ fn sanitize_text(name: &str) -> String {
             }
         })
         .collect::<String>();
-    take_chars(&sanitized, MAX_TOOL_NAME_LENGTH)
-}
-
-fn take_chars(value: &str, length: usize) -> String {
-    value.chars().take(length).collect()
+    sanitized.chars().take(MAX_TOOL_NAME_LENGTH).collect()
 }
 
 const fn text_name(value: &str) -> Option<&str> {
@@ -213,50 +131,50 @@ const fn text_name(value: &str) -> Option<&str> {
     Some(value)
 }
 
-fn custom_name(tool: &Record<NamedHead>) -> Option<&str> {
-    if tool.head.kind.as_deref() == Some("custom") {
-        return tool.head.name.as_deref().and_then(text_name);
+fn custom_name(tool: &Tool) -> Option<&str> {
+    if let Tool::Known(record) = tool
+        && matches!(&record.head.kind, Some(Name::Known(kind)) if kind == "custom")
+        && let Some(Name::Known(name)) = &record.head.name
+    {
+        return text_name(name);
     }
     None
 }
 
-fn rewrite_tool(tool: &mut Record<NamedHead>, forward: &BTreeMap<String, String>) {
-    if tool.head.kind.as_deref() != Some("custom") {
-        return;
+fn rewrite_tool(tool: &mut Tool, forward: &BTreeMap<String, String>) {
+    if let Tool::Known(record) = tool
+        && matches!(&record.head.kind, Some(Name::Known(kind)) if kind == "custom")
+    {
+        rewrite_name(&mut record.head.name, forward);
     }
-    rewrite_name(&mut tool.head.name, forward);
 }
 
-fn rewrite_name(name: &mut Option<String>, forward: &BTreeMap<String, String>) {
-    let Some(original) = name.as_ref() else {
-        return;
-    };
-    let Some(mapped) = forward.get(original) else {
-        return;
-    };
-    *name = Some(mapped.clone());
+fn rewrite_name(name: &mut Option<Name>, forward: &BTreeMap<String, String>) {
+    if let Some(Name::Known(original)) = name
+        && let Some(mapped) = forward.get(original)
+    {
+        *original = mapped.clone();
+    }
 }
 
-fn rewrite_message(
-    message: &Record<MessageHead>,
-    forward: &BTreeMap<String, String>,
-) -> Record<MessageHead> {
+fn rewrite_message(message: &Message, forward: &BTreeMap<String, String>) -> Message {
     let mut rewritten = message.clone();
-    if let Some(calls) = rewritten.head.tool_calls.as_mut() {
+    let Message::Known(record) = &mut rewritten else {
+        return rewritten;
+    };
+    if let Some(Calls::Known(calls)) = record.head.tool_calls.as_mut() {
         for call in calls {
-            rewrite_call(call, forward);
+            if let Call::Known(entry) = call
+                && let Some(Function::Known(function)) = entry.head.function.as_mut()
+            {
+                rewrite_name(&mut function.head.name, forward);
+            }
         }
     }
-    if let Some(call) = rewritten.head.function_call.as_mut() {
-        rewrite_name(&mut call.head.name, forward);
-    }
-    rewritten
-}
-
-fn rewrite_call(call: &mut Record<CallHead>, forward: &BTreeMap<String, String>) {
-    if let Some(function) = call.head.function.as_mut() {
+    if let Some(Function::Known(function)) = record.head.function_call.as_mut() {
         rewrite_name(&mut function.head.name, forward);
     }
+    rewritten
 }
 
 mod tests;

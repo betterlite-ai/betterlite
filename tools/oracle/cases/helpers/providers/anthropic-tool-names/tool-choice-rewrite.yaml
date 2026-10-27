@@ -1,5 +1,5 @@
 kind: helper
 name: anthropic-tool-names-tool-choice-rewrite
-call: {anthropic_tool_names: {function: request, params: {tools: [{type: custom, name: "bad/name", description: keep, input_schema: {type: object}, cache_control: {type: ephemeral}}, {type: web_search, name: "bad/name"}, {type: custom, description: nameless}], tool_choice: {type: tool, name: "bad/name", extra: true}}}}
+call: {anthropic_tool_names: {function: request, params: {tools: [null, 7, [], {type: custom, name: null}, {type: custom, name: {}}, {type: [], name: "bad/name"}, {type: custom, name: "bad/name", description: keep, input_schema: {type: object}, cache_control: {type: ephemeral}}, {type: web_search, name: "bad/name"}, {type: custom, description: nameless}], temperature: 0.5, metadata: {keep: [1, null]}, tool_choice: {type: tool, name: "bad/name", extra: true}}}}
 env: {}
 compare: {ignore: []}

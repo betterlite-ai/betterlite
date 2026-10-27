@@ -1,13 +1,17 @@
 use std::collections::BTreeMap;
 
+use betterlite_anthropic::tool_names::wire::{Message, Name, RequestParams};
 use betterlite_anthropic::tool_names::{
-    MessageHead, Record, RequestParams, ToolName, build_tool_name_maps,
-    rewrite_tool_names_in_messages, sanitize_tool_names_in_request,
+    ToolName, basic_sanitize_tool_name, build_tool_name_maps, rewrite_tool_names_in_messages,
+    sanitize_tool_names_in_request,
 };
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
+    Basic {
+        name: serde_json::Value,
+    },
     Map {
         names: Vec<serde_json::Value>,
     },
@@ -39,6 +43,12 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let output = match input {
+            Input::Basic { name } => {
+                let encoded = serde_json::to_string(name).map_err(|error| json_error(&error))?;
+                let parsed =
+                    serde_json::from_str::<Name>(&encoded).map_err(|error| json_error(&error))?;
+                serde_json::to_value(basic_sanitize_tool_name(&parsed))
+            }
             Input::Map { names } => {
                 let typed_names = names
                     .iter()
@@ -58,7 +68,7 @@ impl crate::helpers::Helper for Op {
             }
             Input::Messages { messages, forward } => serde_json::to_value(serde_json::json!({
                 "messages": rewrite_tool_names_in_messages(
-                    &serde_json::from_str::<Vec<Record<MessageHead>>>(
+                    &serde_json::from_str::<Vec<Message>>(
                         &serde_json::to_string(messages).map_err(|error| json_error(&error))?,
                     )
                     .map_err(|error| json_error(&error))?,
@@ -66,16 +76,7 @@ impl crate::helpers::Helper for Op {
                 )
             })),
         };
-        output.map_err(|error| {
-            Box::new(crate::helpers::HelperError {
-                class: "AnthropicToolNames".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })
+        output.map_err(|error| json_error(&error))
     }
 }
 

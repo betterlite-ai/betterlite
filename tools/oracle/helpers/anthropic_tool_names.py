@@ -2,6 +2,7 @@ from typing import TypeAlias, cast
 
 from litellm.llms.anthropic.chat.transformation import (
     AnthropicConfig,
+    _basic_sanitize_anthropic_tool_name,  # pyright: ignore[reportPrivateUsage]
     _build_anthropic_tool_name_maps,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -10,6 +11,8 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 
 def run(input_value: dict[str, Json]) -> Json:
     function = input_value.get("function")
+    if function == "basic":
+        return cast(Json, _basic_sanitize_anthropic_tool_name(cast(str, input_value.get("name"))))
     if function == "map":
         names = input_value.get("names")
         if not isinstance(names, list):
