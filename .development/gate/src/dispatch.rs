@@ -5,6 +5,7 @@ mod review;
 mod runner;
 mod sandbox;
 mod seat;
+mod tests;
 mod worktree;
 
 use std::env;
@@ -38,6 +39,8 @@ struct Progress {
     feedback: Vec<String>,
     number: u32,
     review_rounds: u32,
+    blocked_reports: u32,
+    last_blocked: u32,
     earlier: Option<EarlierReview>,
 }
 
@@ -133,6 +136,33 @@ fn ready_file<'backlog>(
         .ok_or_else(|| GateError::NoTaskFile(task_id.to_owned()))
 }
 
+fn note_blocked(
+    agents: &Agents,
+    brief: &Brief<'_>,
+    progress: &mut Progress,
+    next: Vec<String>,
+) -> Result<(), GateError> {
+    progress.blocked_reports = if progress.last_blocked.saturating_add(1) == progress.number {
+        progress.blocked_reports.saturating_add(1)
+    } else {
+        1
+    };
+    progress.last_blocked = progress.number;
+    if progress.blocked_reports >= agents.policy.max_blocked_reports {
+        let reason = format!(
+            "{} workers in a row reported blocked; last feedback: {}",
+            progress.blocked_reports,
+            next.join("; ")
+        );
+        return Err(GateError::Dispatch {
+            task: brief.task.id.clone(),
+            reason,
+        });
+    }
+    progress.feedback = next;
+    Ok(())
+}
+
 fn climb_rung(
     agents: &Agents,
     brief: &Brief<'_>,
@@ -166,7 +196,7 @@ fn climb_rung(
                 });
             }
             Step::Climb(next) => {
-                progress.feedback = next;
+                note_blocked(agents, brief, progress, next)?;
                 return Ok(None);
             }
         }
@@ -184,6 +214,8 @@ fn run_ladder(
         feedback: notes,
         number: 0,
         review_rounds: 0,
+        blocked_reports: 0,
+        last_blocked: 0,
         earlier: None,
     };
     for rung in &agents.roles.worker.ladder {
