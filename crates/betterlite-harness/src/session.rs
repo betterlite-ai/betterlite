@@ -15,7 +15,6 @@ use crate::types::Harness;
 #[derive(Clone, Default)]
 pub struct SessionParameters {
     pub settings: SessionSettings,
-    pub tools: Box<[String]>,
     pub install: bool,
 }
 

@@ -3,8 +3,10 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_harness::context::ApprovalHandler;
 use betterlite_harness::errors::HarnessError;
 use betterlite_harness::options::{ClaudeCodeOptions, CodexOptions, HarnessOptions};
 use betterlite_harness::session::output::parse_output;
@@ -191,7 +193,6 @@ fn permission_whitelist_is_exact() {
 
 #[rstest]
 #[case::output(Capability::StructuredOutput)]
-#[case::tools(Capability::CustomTools)]
 #[case::skills(Capability::Skills)]
 #[case::filter(Capability::ToolFiltering)]
 fn guards_optional_capabilities(#[case] capability: Capability) {
@@ -200,14 +201,16 @@ fn guards_optional_capabilities(#[case] capability: Capability) {
         Capability::StructuredOutput => {
             config.parameters.settings.output_schema = Some(JsonObject::new());
         }
-        Capability::CustomTools => config.parameters.tools = Box::from(["tool".to_owned()]),
         Capability::Skills => config.parameters.settings.skills.push("skill".to_owned()),
         Capability::ToolFiltering => config
             .parameters
             .settings
             .disable_tools
             .push("shell".to_owned()),
-        Capability::ToolApproval | Capability::History | Capability::Resume => {
+        Capability::ToolApproval
+        | Capability::CustomTools
+        | Capability::History
+        | Capability::Resume => {
             panic!("not a session option")
         }
     }
@@ -251,6 +254,32 @@ fn guards_interactive_approval() {
         Err(ValidationError::ApprovalRequired)
     ));
     check_capabilities(&config, &capabilities, true).unwrap();
+}
+
+#[test]
+fn asks_for_a_handler_before_other_capabilities() {
+    let mut config = configuration();
+    config.parameters.settings.permissions = PermissionMode::Ask;
+    config.parameters.settings.output_schema = Some(JsonObject::new());
+    let capabilities = Capabilities {
+        supported: BTreeSet::from([Capability::ToolApproval]),
+        permission_modes: BTreeSet::from([PermissionMode::Ask]),
+    };
+    assert!(matches!(
+        check_capabilities(&config, &capabilities, false),
+        Err(ValidationError::ApprovalRequired)
+    ));
+    let handler: ApprovalHandler = Arc::new(|_| Box::pin(async { true }));
+    config.parameters.settings.on_approval = Some(handler);
+    assert!(matches!(
+        check_capabilities(&config, &capabilities, false),
+        Err(ValidationError::Harness(
+            HarnessError::CapabilityUnsupported {
+                capability: Capability::StructuredOutput,
+                ..
+            }
+        ))
+    ));
 }
 
 struct CodexConfig;
@@ -306,7 +335,6 @@ fn builds_defaults_and_context() {
         Path::new(env!("CARGO_MANIFEST_DIR")),
     )
     .unwrap();
-    assert!(config.parameters.tools.is_empty());
     assert!(!config.parameters.install);
     validate(&config, &CodexConfig, false).unwrap();
     let session_id = Uuid::new_v4();

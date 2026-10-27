@@ -47,24 +47,20 @@ pub fn check_basic<S>(config: &SessionConfig<S>) -> Result<(), ValidationError> 
     Ok(())
 }
 
-pub fn check_options<S, C>(
-    config: &SessionConfig<S>,
-    _harness_config: &C,
-) -> Result<(), ValidationError>
+pub fn check_options<S, C>(config: &SessionConfig<S>) -> Result<(), ValidationError>
 where
     C: BaseHarnessConfig,
 {
-    let Some(options) = &config.parameters.settings.options else {
-        return Ok(());
-    };
-    if C::Options::pick(options).is_none() {
-        return Err(ValidationError::Harness(HarnessError::OptionsMismatch {
-            given: options.name(),
-            harness: config.harness,
-            expected: C::Options::NAME,
-        }));
+    match &config.parameters.settings.options {
+        Some(options) if C::Options::pick(options).is_none() => {
+            Err(ValidationError::Harness(HarnessError::OptionsMismatch {
+                given: options.name(),
+                harness: config.harness,
+                expected: C::Options::NAME,
+            }))
+        }
+        Some(_) | None => Ok(()),
     }
-    Ok(())
 }
 
 pub fn check_capabilities<S>(
@@ -73,23 +69,20 @@ pub fn check_capabilities<S>(
     interactive: bool,
 ) -> Result<(), ValidationError> {
     let settings = &config.parameters.settings;
-    if !capabilities
-        .permission_modes
-        .contains(&settings.permissions)
-    {
+    let permission = settings.permissions;
+    if !capabilities.permission_modes.contains(&permission) {
         return Err(ValidationError::PermissionUnsupported {
             harness: config.harness,
-            permission: settings.permissions,
+            permission,
             supported: capabilities.permission_modes.iter().copied().collect(),
         });
     }
-    check_approval(config, capabilities, interactive)?;
     let required = [
+        (permission == PermissionMode::Ask, Capability::ToolApproval),
         (
             settings.output_schema.is_some(),
             Capability::StructuredOutput,
         ),
-        (!config.parameters.tools.is_empty(), Capability::CustomTools),
         (!settings.skills.is_empty(), Capability::Skills),
         (
             !settings.disable_tools.is_empty(),
@@ -105,26 +98,12 @@ pub fn check_capabilities<S>(
                 },
             ));
         }
-    }
-    Ok(())
-}
-
-fn check_approval<S>(
-    config: &SessionConfig<S>,
-    capabilities: &Capabilities,
-    interactive: bool,
-) -> Result<(), ValidationError> {
-    let settings = &config.parameters.settings;
-    if settings.permissions == PermissionMode::Ask {
-        if !capabilities.supported.contains(&Capability::ToolApproval) {
-            return Err(ValidationError::Harness(
-                HarnessError::CapabilityUnsupported {
-                    harness: config.harness,
-                    capability: Capability::ToolApproval,
-                },
-            ));
-        }
-        if settings.on_approval.is_none() && !interactive {
+        // LiteLLM asks for the handler right after the approval capability, before the other capabilities
+        if enabled
+            && capability == Capability::ToolApproval
+            && settings.on_approval.is_none()
+            && !interactive
+        {
             return Err(ValidationError::ApprovalRequired);
         }
     }
@@ -140,6 +119,6 @@ where
     C: BaseHarnessConfig,
 {
     check_basic(config)?;
-    check_options(config, harness_config)?;
+    check_options::<S, C>(config)?;
     check_capabilities(config, &harness_config.capabilities(), interactive)
 }
