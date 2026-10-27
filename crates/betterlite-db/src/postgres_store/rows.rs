@@ -1,9 +1,10 @@
-use super::errors::DbError;
+use std::error::Error;
 use tokio_postgres::{Row, types::ToSql};
 
 pub trait RowCodec {
     type Model;
-    fn decode(&self, row: &Row) -> Result<Option<Self::Model>, DbError>;
+    type Error: Error + Send + Sync + 'static;
+    fn decode(&self, row: &Row) -> Result<Option<Self::Model>, Self::Error>;
 }
 
 pub struct Query<'query> {
@@ -24,9 +25,9 @@ pub struct Key<'query, C> {
 }
 
 #[derive(Clone, Copy)]
-pub enum KeyAction {
+pub enum KeyAction<'query, D> {
     Find,
-    Update,
+    Update(&'query D),
     Delete,
 }
 
@@ -55,9 +56,8 @@ pub trait Table: RowCodec {
     type Data;
     fn keyed<'query>(
         &'query self,
-        action: KeyAction,
+        action: KeyAction<'query, Self::Data>,
         key: Key<'query, Self::Column>,
-        data: Option<&'query Self::Data>,
     ) -> Query<'query>;
     fn list<'query>(
         &'query self,

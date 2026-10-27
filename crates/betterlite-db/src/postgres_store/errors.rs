@@ -1,53 +1,58 @@
-use std::fmt;
+use super::diagnostics::{DriverError, PoolFailure};
+use std::{convert::Infallible, fmt};
 use thiserror::Error;
 use tokio_postgres::error::SqlState;
 
 #[derive(Error)]
-pub enum DbError {
+pub enum DbError<E = Infallible> {
     #[error("No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys")]
     NoDbConnected,
     #[error("database pool unavailable")]
     Pool {
         #[source]
-        source: deadpool_postgres::PoolError,
+        source: PoolFailure,
     },
     #[error("database driver error")]
     Backend {
         #[source]
-        source: tokio_postgres::Error,
+        source: DriverError,
     },
     #[error("invalid database record")]
-    InvalidRecord { message: String },
+    InvalidRecord {
+        #[source]
+        source: E,
+    },
     #[error("create returned no model")]
     CreateNull,
     #[error("unique constraint violation: {constraint:?}")]
     UniqueViolation {
         constraint: Option<String>,
         #[source]
-        source: tokio_postgres::Error,
+        source: DriverError,
     },
     #[error("database SQLSTATE {code:?}: {constraint:?}")]
     SqlState {
         code: SqlState,
         constraint: Option<String>,
         #[source]
-        source: tokio_postgres::Error,
+        source: DriverError,
     },
 }
 
-// Driver sources retain diagnostics for policy, but may contain SQL parameters in their Debug output.
-impl fmt::Debug for DbError {
+impl<E> fmt::Debug for DbError<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(self, f)
     }
 }
 
-pub fn backend(source: tokio_postgres::Error) -> DbError {
+pub fn backend<E>(driver: tokio_postgres::Error) -> DbError<E> {
+    let source = DriverError { driver };
     let constraint = source
+        .driver
         .as_db_error()
         .and_then(|error| error.constraint())
         .map(str::to_owned);
-    match source.code() {
+    match source.driver.code() {
         Some(code) if code == &SqlState::UNIQUE_VIOLATION => {
             DbError::UniqueViolation { constraint, source }
         }
@@ -61,7 +66,7 @@ pub fn backend(source: tokio_postgres::Error) -> DbError {
 }
 
 #[must_use]
-pub const fn is_unique_violation(error: &DbError) -> bool {
+pub const fn is_unique_violation<E>(error: &DbError<E>) -> bool {
     match error {
         DbError::UniqueViolation { .. } => true,
         DbError::NoDbConnected

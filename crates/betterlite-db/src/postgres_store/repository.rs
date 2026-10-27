@@ -19,7 +19,7 @@ where
     T::Filter: Sync,
     T::Order: Sync,
 {
-    async fn optional(&self, query: Query<'_>) -> Result<Option<Row>, DbError> {
+    async fn optional(&self, query: Query<'_>) -> Result<Option<Row>, DbError<T::Error>> {
         let client = self.client.ok_or(DbError::NoDbConnected)?;
         client
             .query_opt(query.sql, &query.parameters)
@@ -29,33 +29,36 @@ where
 
     pub async fn by_key(
         &self,
-        action: KeyAction,
+        action: KeyAction<'_, T::Data>,
         key: Key<'_, T::Column>,
-        data: Option<&T::Data>,
-    ) -> Result<Option<T::Model>, DbError> {
-        let row = self.optional(self.table.keyed(action, key, data)).await?;
+    ) -> Result<Option<T::Model>, DbError<T::Error>> {
+        let row = self.optional(self.table.keyed(action, key)).await?;
         row.as_ref()
             .map(|record| self.table.decode(record))
             .transpose()
             .map(Option::flatten)
+            .map_err(|source| DbError::InvalidRecord { source })
     }
 
-    pub async fn create(&self, data: &T::Data) -> Result<T::Model, DbError> {
+    pub async fn create(&self, data: &T::Data) -> Result<T::Model, DbError<T::Error>> {
         let row = self
             .optional(self.table.insert(data))
             .await?
             .ok_or(DbError::CreateNull)?;
-        self.table.decode(&row)?.ok_or(DbError::CreateNull)
+        self.table
+            .decode(&row)
+            .map_err(|source| DbError::InvalidRecord { source })?
+            .ok_or(DbError::CreateNull)
     }
 
-    pub async fn exists(&self, key: Key<'_, T::Column>) -> Result<bool, DbError> {
+    pub async fn exists(&self, key: Key<'_, T::Column>) -> Result<bool, DbError<T::Error>> {
         let row = self
-            .optional(self.table.keyed(KeyAction::Find, key, None))
+            .optional(self.table.keyed(KeyAction::Find, key))
             .await?;
         Ok(row.is_some())
     }
 
-    pub async fn count(&self, filter: Option<&[T::Filter]>) -> Result<i64, DbError> {
+    pub async fn count(&self, filter: Option<&[T::Filter]>) -> Result<i64, DbError<T::Error>> {
         let query = self.table.count(filter);
         let client = self.client.ok_or(DbError::NoDbConnected)?;
         client
@@ -69,7 +72,7 @@ where
     pub async fn find_many(
         &self,
         mut options: FindMany<'_, T::Filter, T::Order>,
-    ) -> Result<Vec<T::Model>, DbError> {
+    ) -> Result<Vec<T::Model>, DbError<T::Error>> {
         options.filter = options.filter.filter(|filter| !filter.is_empty());
         options.order = options.order.filter(|order| !order.is_empty());
         let query = self.table.list(options);
@@ -85,7 +88,7 @@ where
         &self,
         column: KeyColumn<T::Column>,
         values: Vec<V>,
-    ) -> Result<Vec<T::Model>, DbError>
+    ) -> Result<Vec<T::Model>, DbError<T::Error>>
     where
         V: Eq + Hash + Clone + ToSql + Sync + Send,
         Vec<V>: ToSql,
@@ -106,11 +109,12 @@ where
         self.decode(&rows)
     }
 
-    fn decode(&self, rows: &[Row]) -> Result<Vec<T::Model>, DbError> {
+    fn decode(&self, rows: &[Row]) -> Result<Vec<T::Model>, DbError<T::Error>> {
         let models = rows
             .iter()
             .map(|row| self.table.decode(row))
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|source| DbError::InvalidRecord { source })?;
         Ok(models.into_iter().flatten().collect())
     }
 }

@@ -65,6 +65,7 @@ use super::repository::Repository;
 use super::rows::{FindMany, Key, KeyAction, KeyColumn, Query, RowCodec, Table};
 use rstest::rstest;
 use std::convert::Infallible;
+use std::error::Error;
 use std::future::{Future as _, pending, poll_fn};
 use std::pin::Pin;
 use std::time::Duration;
@@ -79,11 +80,14 @@ struct Records {
 }
 impl RowCodec for Records {
     type Model = String;
-    fn decode(&self, row: &Row) -> Result<Option<String>, DbError> {
-        match row.try_get::<_, &str>(0).map_err(backend)? {
-            "invalid" => Err(DbError::InvalidRecord {
-                message: "invalid".to_owned(),
-            }),
+    type Error = DecodeError;
+    fn decode(&self, row: &Row) -> Result<Option<String>, DecodeError> {
+        match row
+            .try_get::<_, &str>(0)
+            .map_err(|driver| DecodeError::Column {
+                source: super::diagnostics::DriverError { driver },
+            })? {
+            "invalid" => Err(DecodeError::Invalid),
             "null" => Ok(None),
             value => Ok(Some(value.to_owned())),
         }
@@ -96,17 +100,20 @@ impl Table for Records {
     type Order = ();
     fn keyed<'query>(
         &'query self,
-        action: KeyAction,
+        action: KeyAction<'query, String>,
         key: Key<'query, ()>,
-        data: Option<&'query String>,
     ) -> Query<'query> {
+        let mut parameters = vec![key.value];
+        if let KeyAction::Update(value) = &action {
+            parameters.push(*value);
+        }
         let sql = match (action, key.column) {
             (KeyAction::Find, KeyColumn::Id) => "SELECT id FROM records WHERE id=$1",
             (KeyAction::Find, KeyColumn::Alternate(())) => "SELECT id FROM records WHERE alias=$1",
-            (KeyAction::Update, KeyColumn::Id) => {
+            (KeyAction::Update(_), KeyColumn::Id) => {
                 "UPDATE records SET alias=$2 WHERE id=$1 RETURNING id"
             }
-            (KeyAction::Update, KeyColumn::Alternate(())) => {
+            (KeyAction::Update(_), KeyColumn::Alternate(())) => {
                 "UPDATE records SET alias=$2 WHERE alias=$1 RETURNING id"
             }
             (KeyAction::Delete, KeyColumn::Id) => "DELETE FROM records WHERE id=$1 RETURNING id",
@@ -114,10 +121,6 @@ impl Table for Records {
                 "DELETE FROM records WHERE alias=$1 RETURNING id"
             }
         };
-        let mut parameters = vec![key.value];
-        if let Some(value) = data {
-            parameters.push(value);
-        }
         Query { sql, parameters }
     }
     fn insert<'query>(&'query self, data: &'query String) -> Query<'query> {
@@ -171,32 +174,63 @@ async fn optional_client_access_fails() {
     ));
 }
 
-#[rstest]
-#[case::default_id(KeyColumn::default(), "key")]
-#[case::alternate_key(KeyColumn::Alternate(()), "alias")]
-#[tokio::test]
-async fn postgres_key_results(#[case] column: KeyColumn<()>, #[case] value: &str) {
+#[derive(Debug, thiserror::Error)]
+enum DecodeError {
+    #[error("invalid record")]
+    Invalid,
+    #[error("invalid column")]
+    Column {
+        #[source]
+        source: super::diagnostics::DriverError,
+    },
+}
+
+async fn records() -> (PostgresFixture, PostgresStore, deadpool_postgres::Client) {
     let (fixture, store) = database().await;
     let client = store.session().await.unwrap();
     client.batch_execute("CREATE TABLE records(id TEXT PRIMARY KEY, alias TEXT UNIQUE); INSERT INTO records VALUES ('key','alias'), ('invalid','bad')").await.unwrap();
+    (fixture, store, client)
+}
+
+#[rstest]
+#[case::find_id(KeyAction::Find, KeyColumn::default(), "key")]
+#[case::find_alternate(KeyAction::Find, KeyColumn::Alternate(()), "alias")]
+#[case::update_id(KeyAction::Update(&"changed".to_owned()), KeyColumn::default(), "key")]
+#[case::update_alternate(KeyAction::Update(&"changed".to_owned()), KeyColumn::Alternate(()), "alias")]
+#[case::delete_id(KeyAction::Delete, KeyColumn::default(), "key")]
+#[case::delete_alternate(KeyAction::Delete, KeyColumn::Alternate(()), "alias")]
+#[tokio::test]
+async fn postgres_default_and_alt_key(
+    #[case] action: KeyAction<'_, String>,
+    #[case] column: KeyColumn<()>,
+    #[case] value: &str,
+) {
+    let (fixture, store, client) = records().await;
     let repository = Repository {
         client: Some(&client),
         table: Records::default(),
     };
-    assert_eq!(
-        repository
-            .by_key(
-                KeyAction::Find,
-                Key {
-                    column,
-                    value: &value
-                },
-                None
-            )
-            .await
-            .unwrap(),
-        Some("key".to_owned())
-    );
+    let result = repository
+        .by_key(
+            action,
+            Key {
+                column,
+                value: &value,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(result, Some("key".to_owned()));
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
+async fn postgres_exists_does_not_decode() {
+    let (fixture, store, client) = records().await;
+    let repository = Repository {
+        client: Some(&client),
+        table: Records::default(),
+    };
     assert!(
         repository
             .exists(Key {
@@ -206,172 +240,168 @@ async fn postgres_key_results(#[case] column: KeyColumn<()>, #[case] value: &str
             .await
             .unwrap()
     );
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
+async fn postgres_decode_cause_retained() {
+    let (fixture, store, client) = records().await;
+    let repository = Repository {
+        client: Some(&client),
+        table: Records::default(),
+    };
+    let error = repository
+        .by_key(
+            KeyAction::Find,
+            Key {
+                column: KeyColumn::Id,
+                value: &"invalid",
+            },
+        )
+        .await
+        .unwrap_err();
     assert!(matches!(
-        repository
-            .by_key(
-                KeyAction::Find,
-                Key {
-                    column: KeyColumn::Id,
-                    value: &"invalid"
-                },
-                None
-            )
-            .await,
-        Err(DbError::InvalidRecord { .. })
+        &error,
+        DbError::InvalidRecord {
+            source: DecodeError::Invalid
+        }
     ));
+    assert!(matches!(
+        error.source().unwrap().downcast_ref::<DecodeError>(),
+        Some(DecodeError::Invalid)
+    ));
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
+async fn postgres_backend_error_not_none() {
+    let (fixture, store, client) = records().await;
+    let repository = Repository {
+        client: Some(&client),
+        table: Records::default(),
+    };
     let conflict = "bad".to_owned();
-    assert!(matches!(
-        repository
-            .by_key(
-                KeyAction::Update,
-                Key {
-                    column,
-                    value: &value
-                },
-                Some(&conflict)
-            )
-            .await,
-        Err(DbError::UniqueViolation { .. })
-    ));
-    let replacement = "changed".to_owned();
-    assert_eq!(
-        repository
-            .by_key(
-                KeyAction::Update,
-                Key {
-                    column,
-                    value: &value
-                },
-                Some(&replacement)
-            )
-            .await
-            .unwrap(),
-        Some("key".to_owned())
-    );
-    assert_eq!(
-        repository
-            .by_key(
-                KeyAction::Delete,
-                Key {
-                    column: KeyColumn::Alternate(()),
-                    value: &replacement
-                },
-                None
-            )
-            .await
-            .unwrap(),
-        Some("key".to_owned())
-    );
-    assert_eq!(
-        repository
-            .by_key(
-                KeyAction::Find,
-                Key {
-                    column,
-                    value: &value
-                },
-                None
-            )
-            .await
-            .unwrap(),
-        None
-    );
-    assert_eq!(
-        repository
-            .by_key(
-                KeyAction::Update,
-                Key {
-                    column,
-                    value: &value
-                },
-                Some(&replacement)
-            )
-            .await
-            .unwrap(),
-        None
-    );
-    assert_eq!(
-        repository
-            .by_key(
-                KeyAction::Delete,
-                Key {
-                    column,
-                    value: &value
-                },
-                None
-            )
-            .await
-            .unwrap(),
-        None
-    );
+    let result = repository
+        .by_key(
+            KeyAction::Update(&conflict),
+            Key {
+                column: KeyColumn::Id,
+                value: &"key",
+            },
+        )
+        .await;
+    assert!(matches!(result, Err(DbError::UniqueViolation { .. })));
     finish(fixture, store, client).await;
 }
 
 #[rstest]
-#[case::unset(None)]
-#[case::zero(Some(0))]
+#[case::find(KeyAction::Find)]
+#[case::update(KeyAction::Update(&"changed".to_owned()))]
+#[case::delete(KeyAction::Delete)]
 #[tokio::test]
-async fn postgres_list_defaults(#[case] pagination: Option<i64>) {
-    let (fixture, store) = database().await;
-    let client = store.session().await.unwrap();
-    client
-        .batch_execute("CREATE TABLE records(id TEXT)")
+async fn postgres_missing_result_none(#[case] action: KeyAction<'_, String>) {
+    let (fixture, store, client) = records().await;
+    let repository = Repository {
+        client: Some(&client),
+        table: Records::default(),
+    };
+    let result = repository
+        .by_key(
+            action,
+            Key {
+                column: KeyColumn::Id,
+                value: &"missing",
+            },
+        )
         .await
         .unwrap();
-    let table = Records {
-        sql: "SELECT unnest(ARRAY['second','null','first'])",
-        options: (false, false, pagination, pagination),
-    };
-    let mut repository = Repository {
+    assert_eq!(result, None);
+    finish(fixture, store, client).await;
+}
+
+#[rstest]
+#[case::empty_where_order_absent(None)]
+#[case::skip_take_zero_preserved(Some(0))]
+#[tokio::test]
+async fn postgres_list_defaults(#[case] pagination: Option<i64>) {
+    let (fixture, store, client) = records().await;
+    let repository = Repository {
         client: Some(&client),
-        table,
+        table: Records {
+            sql: "SELECT unnest(ARRAY['second','null','first'])",
+            options: (false, false, pagination, pagination),
+        },
+    };
+    let options = FindMany {
+        filter: Some(&[]),
+        order: Some(&[]),
+        skip: pagination,
+        take: pagination,
     };
     assert_eq!(
-        repository
-            .find_many(FindMany {
-                filter: Some(&[]),
-                order: Some(&[]),
-                skip: pagination,
-                take: pagination
-            })
-            .await
-            .unwrap(),
+        repository.find_many(options).await.unwrap(),
         vec!["second", "first"]
     );
-    repository.table.options.0 = true;
-    assert_eq!(repository.count(Some(&[])).await.unwrap(), 0);
-    repository.table.sql = "SELECT 'invalid'::text";
-    repository.table.options.0 = false;
-    assert!(matches!(
-        repository
-            .find_many(FindMany {
-                filter: None,
-                order: None,
-                skip: pagination,
-                take: pagination
-            })
-            .await,
-        Err(DbError::InvalidRecord { .. })
-    ));
-    repository.table.sql = "SELECT $1::text WHERE false";
-    assert!(matches!(
-        repository.create(&"key".to_owned()).await,
-        Err(DbError::CreateNull)
-    ));
-    repository.table.sql = "SELECT $1::text";
-    assert!(matches!(
-        repository.create(&"null".to_owned()).await,
-        Err(DbError::CreateNull)
-    ));
-    assert_eq!(repository.create(&"key".to_owned()).await.unwrap(), "key");
     finish(fixture, store, client).await;
 }
 
 #[tokio::test]
-async fn postgres_membership() {
-    let (fixture, store) = database().await;
-    let client = store.session().await.unwrap();
-    let mut repository = Repository {
+async fn postgres_count_filter_preserved() {
+    let (fixture, store, client) = records().await;
+    let repository = Repository {
+        client: Some(&client),
+        table: Records {
+            sql: "",
+            options: (true, false, None, None),
+        },
+    };
+    assert_eq!(repository.count(Some(&[])).await.unwrap(), 2);
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
+async fn postgres_invalid_list_fails() {
+    let (fixture, store, client) = records().await;
+    let repository = Repository {
+        client: Some(&client),
+        table: Records {
+            sql: "SELECT 'invalid'::text",
+            options: (false, false, None, None),
+        },
+    };
+    assert!(matches!(
+        repository.find_many(FindMany::default()).await,
+        Err(DbError::InvalidRecord {
+            source: DecodeError::Invalid
+        })
+    ));
+    finish(fixture, store, client).await;
+}
+
+#[rstest]
+#[case::no_row("SELECT $1::text WHERE false", "key")]
+#[case::no_model("SELECT $1::text", "null")]
+#[tokio::test]
+async fn postgres_create_null_invariant(#[case] sql: &'static str, #[case] value: &str) {
+    let (fixture, store, client) = records().await;
+    let repository = Repository {
+        client: Some(&client),
+        table: Records {
+            sql,
+            options: (false, false, None, None),
+        },
+    };
+    assert!(matches!(
+        repository.create(&value.to_owned()).await,
+        Err(DbError::CreateNull)
+    ));
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
+async fn postgres_empty_no_statement() {
+    let (fixture, store, client) = records().await;
+    let repository = Repository {
         client: Some(&client),
         table: Records::default(),
     };
@@ -382,7 +412,19 @@ async fn postgres_membership() {
             .unwrap()
             .is_empty()
     );
-    repository.table.sql = "SELECT unnest($1::text[])";
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
+async fn postgres_stable_input_dedup() {
+    let (fixture, store, client) = records().await;
+    let repository = Repository {
+        client: Some(&client),
+        table: Records {
+            sql: "SELECT unnest($1::text[])",
+            options: (false, false, None, None),
+        },
+    };
     assert_eq!(
         repository
             .find_many_in(KeyColumn::Id, vec!["b", "a", "b"])
@@ -390,9 +432,24 @@ async fn postgres_membership() {
             .unwrap(),
         vec!["b", "a"]
     );
-    client.batch_execute("CREATE TABLE records(id TEXT); INSERT INTO records VALUES ('key'), ($$'); DROP TABLE records; --$$)").await.unwrap();
-    repository.table.sql = "SELECT id FROM records WHERE id = ANY($1)";
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
+async fn postgres_bound_array_literal() {
+    let (fixture, store, client) = records().await;
     let literal = "'); DROP TABLE records; --";
+    client
+        .execute("INSERT INTO records(id) VALUES ($1)", &[&literal])
+        .await
+        .unwrap();
+    let repository = Repository {
+        client: Some(&client),
+        table: Records {
+            sql: "SELECT id FROM records WHERE id = ANY($1)",
+            options: (false, false, None, None),
+        },
+    };
     assert_eq!(
         repository
             .find_many_in(KeyColumn::Id, vec![literal, literal])
@@ -409,47 +466,55 @@ async fn postgres_membership() {
     finish(fixture, store, client).await;
 }
 
+async fn constraints() -> (PostgresFixture, PostgresStore, deadpool_postgres::Client) {
+    let (fixture, store) = database().await;
+    let client = store.session().await.unwrap();
+    client.batch_execute("CREATE TABLE records(id TEXT PRIMARY KEY, parent TEXT REFERENCES records(id)); INSERT INTO records VALUES ('secret', NULL)").await.unwrap();
+    (fixture, store, client)
+}
+
 #[rstest]
-#[case::unique(
+#[case::unique_sqlstate_23505(
     "INSERT INTO records VALUES ('secret', NULL)",
     SqlState::UNIQUE_VIOLATION,
     Some("records_pkey")
 )]
-#[case::foreign_key(
-    "INSERT INTO records VALUES ('other', 'missing')",
+#[case::foreign_key_not_unique(
+    "INSERT INTO records VALUES ('other', 'secret-missing')",
     SqlState::FOREIGN_KEY_VIOLATION,
     Some("records_parent_fkey")
 )]
-#[case::not_null(
-    "INSERT INTO records VALUES (NULL, NULL)",
+#[case::not_null_not_unique(
+    "INSERT INTO records VALUES (NULL, 'secret')",
     SqlState::NOT_NULL_VIOLATION,
     None
 )]
 #[tokio::test]
-async fn postgres_errors(
+async fn postgres_constraint_identity(
     #[case] sql: &str,
     #[case] state: SqlState,
     #[case] constraint: Option<&str>,
 ) {
-    let (fixture, store) = database().await;
-    let client = store.session().await.unwrap();
-    client.batch_execute("CREATE TABLE records(id TEXT PRIMARY KEY, parent TEXT REFERENCES records(id)); INSERT INTO records VALUES ('secret', NULL)").await.unwrap();
-    let error = backend(client.batch_execute(sql).await.unwrap_err());
-    assert_eq!(
-        is_unique_violation(&error),
-        state == SqlState::UNIQUE_VIOLATION
-    );
+    let (fixture, store, client) = constraints().await;
+    let error: DbError = backend(client.batch_execute(sql).await.unwrap_err());
+    let unique = state == SqlState::UNIQUE_VIOLATION;
+    assert_eq!(is_unique_violation(&error), unique);
     match &error {
         DbError::UniqueViolation {
-            constraint: actual, ..
-        } => assert_eq!(actual.as_deref(), constraint),
+            constraint: actual,
+            source,
+        } => {
+            assert_eq!(actual.as_deref(), constraint);
+            assert_eq!(source.driver.code(), Some(&state));
+        }
         DbError::SqlState {
             code,
             constraint: actual,
-            ..
+            source,
         } => {
             assert_eq!(*code, state);
             assert_eq!(actual.as_deref(), constraint);
+            assert_eq!(source.driver.code(), Some(&state));
         }
         DbError::NoDbConnected
         | DbError::Pool { .. }
@@ -457,19 +522,38 @@ async fn postgres_errors(
         | DbError::InvalidRecord { .. }
         | DbError::CreateNull => panic!("unexpected error: {error}"),
     }
-    assert!(!format!("{error} {error:?}").contains("secret"));
-    let repository = Repository {
-        client: Some(&client),
-        table: Records {
-            sql: "INSERT INTO records(id) VALUES ($1) RETURNING id",
-            options: (false, false, None, None),
-        },
-    };
-    assert!(matches!(
-        repository.create(&"secret".to_owned()).await,
-        Err(DbError::UniqueViolation { .. })
-    ));
     finish(fixture, store, client).await;
+}
+
+#[rstest]
+#[case::unique("INSERT INTO records VALUES ('secret', NULL)")]
+#[case::foreign_key("INSERT INTO records VALUES ('other', 'secret-missing')")]
+#[case::not_null("INSERT INTO records VALUES (NULL, 'secret')")]
+#[tokio::test]
+async fn postgres_secrets_absent(#[case] sql: &str) {
+    let (fixture, store, client) = constraints().await;
+    let error: DbError = backend(client.batch_execute(sql).await.unwrap_err());
+    assert_safe_chain(&error);
+    finish(fixture, store, client).await;
+}
+
+fn assert_safe_chain(error: &dyn Error) {
+    let mut cause = Some(error);
+    while let Some(current) = cause {
+        assert!(!format!("{current} {current:?}").contains("secret"));
+        cause = current.source();
+    }
+}
+
+#[test]
+fn backend_secrets_absent() {
+    let driver = "secret=credential"
+        .parse::<tokio_postgres::Config>()
+        .unwrap_err();
+    assert!(format!("{driver:?}").contains("secret"));
+    let error: DbError = backend(driver);
+    assert!(matches!(&error, DbError::Backend { .. }));
+    assert_safe_chain(&error);
 }
 
 #[rstest]
@@ -492,10 +576,8 @@ async fn postgres_transactions(#[case] commit: bool) {
         client: Some(&transaction),
         table,
     };
-    assert_eq!(
-        repository.create(&"first".to_owned()).await.unwrap(),
-        "first"
-    );
+    let created = repository.create(&"first".to_owned()).await.unwrap();
+    assert_eq!(created, "first");
     assert_eq!(repository.count(None).await.unwrap(), 1);
     if commit {
         transaction.commit().await.unwrap();
@@ -507,14 +589,11 @@ async fn postgres_transactions(#[case] commit: bool) {
     }
     drop(client);
     let reader = store.session().await.unwrap();
-    assert_eq!(
-        reader
-            .query_one("SELECT count(*) FROM records", &[])
-            .await
-            .unwrap()
-            .get::<_, i64>(0),
-        i64::from(commit)
-    );
+    let count = reader
+        .query_one("SELECT count(*) FROM records", &[])
+        .await
+        .unwrap();
+    assert_eq!(count.get::<_, i64>(0), i64::from(commit));
     finish(fixture, store, reader).await;
 }
 
@@ -538,7 +617,7 @@ async fn postgres_cancel_and_autocommit() {
         .execute("INSERT INTO records VALUES ('committed')", &[])
         .await
         .unwrap_err();
-    assert!(is_unique_violation(&backend(error)));
+    assert!(is_unique_violation(&backend::<Infallible>(error)));
     let rows = reader.query("SELECT id FROM records", &[]).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows.first().unwrap().get::<_, String>(0), "committed");
@@ -572,14 +651,11 @@ async fn postgres_fixture_contracts() {
         .unwrap();
     let other_pool = pool(&second.options.url);
     let other = other_pool.get().await.unwrap();
-    assert!(
-        other
-            .query_one("SELECT to_regclass('records')::text", &[])
-            .await
-            .unwrap()
-            .get::<_, Option<String>>(0)
-            .is_none()
-    );
+    let row = other
+        .query_one("SELECT to_regclass('records')::text", &[])
+        .await
+        .unwrap();
+    assert!(row.get::<_, Option<String>>(0).is_none());
     drop(other);
     other_pool.close();
     second.close_async().await.unwrap();
@@ -652,4 +728,18 @@ fn find_many_defaults_are_unset() {
         (options.filter, options.order, options.skip, options.take),
         (None, None, None, None)
     );
+}
+
+#[test]
+fn pool_secrets_absent() {
+    let driver = "secret=credential"
+        .parse::<tokio_postgres::Config>()
+        .unwrap_err();
+    assert!(format!("{driver:?}").contains("secret"));
+    let error: DbError = DbError::Pool {
+        source: super::diagnostics::PoolFailure {
+            driver: deadpool_postgres::PoolError::Backend(driver),
+        },
+    };
+    assert_safe_chain(&error);
 }
