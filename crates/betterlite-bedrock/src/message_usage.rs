@@ -78,7 +78,7 @@ pub fn promote_invocation_metrics(mut event: Fields) -> Result<Fields, MessageUs
                 .map(|value| ((*field).to_owned(), value.clone()))
         })
         .collect();
-    usage.extend(dict(&event, "usage")?);
+    usage.extend(field_object(&event, "usage")?.unwrap_or_default());
     event.insert("usage".to_owned(), to_raw_value(&usage)?);
     Ok(event)
 }
@@ -90,44 +90,45 @@ impl MessageUsageState {
         output: &mut Vec<StreamItem>,
     ) -> Result<(), MessageUsageError> {
         let StreamItem::Event(event) = item else {
-            self.flush(output);
+            output.extend(self.pending.take().map(StreamItem::Event));
             output.push(item);
             return Ok(());
         };
         match event_type(&event)?.as_deref() {
             Some("message_start") => {
-                if let Some(usage) = field_object(&dict(&event, "message")?, "usage")? {
+                let message = field_object(&event, "message")?.unwrap_or_default();
+                if let Some(usage) = field_object(&message, "usage")? {
                     self.start_usage = Some(usage);
                 }
-                self.flush(output);
+                output.extend(self.pending.take().map(StreamItem::Event));
             }
             Some("message_delta") => {
                 self.pending = Some(event);
                 return Ok(());
             }
-            Some("message_stop") if self.pending.is_some() => {
-                let stop_usage = dict(&event, "usage")?;
-                self.promote_stop(&stop_usage, output)?;
+            Some("message_stop") if let Some(delta) = self.pending.take() => {
+                let stop_usage = field_object(&event, "usage")?.unwrap_or_default();
+                output.push(StreamItem::Event(self.promote_stop(delta, &stop_usage)?));
             }
-            _ => self.flush(output),
+            _ => output.extend(self.pending.take().map(StreamItem::Event)),
         }
         output.push(StreamItem::Event(event));
         Ok(())
     }
 
     pub fn finish(mut self, output: &mut Vec<StreamItem>) -> Result<(), MessageUsageError> {
-        self.promote_stop(&Fields::new(), output)
+        if let Some(delta) = self.pending.take() {
+            output.push(StreamItem::Event(self.promote_stop(delta, &Fields::new())?));
+        }
+        Ok(())
     }
 
     fn promote_stop(
-        &mut self,
+        &self,
+        mut delta: Fields,
         stop_usage: &Fields,
-        output: &mut Vec<StreamItem>,
-    ) -> Result<(), MessageUsageError> {
-        let Some(mut delta) = self.pending.take() else {
-            return Ok(());
-        };
-        let mut usage = dict(&delta, "usage")?;
+    ) -> Result<Fields, MessageUsageError> {
+        let mut usage = field_object(&delta, "usage")?.unwrap_or_default();
         for field in STOP_CACHE_FIELDS {
             if let Some(value) = stop_usage.get(field) {
                 usage.insert(field.to_owned(), value.clone());
@@ -136,7 +137,12 @@ impl MessageUsageState {
         if let Some(input) = stop_usage.get("input_tokens")
             && input.get() != "null"
         {
-            let tokens = if python_int(input.get()) {
+            let text = input.get();
+            // Python's isinstance(value, int) holds for booleans and for JSON numbers without a fraction or exponent
+            let python_int = matches!(text, "true" | "false")
+                || (matches!(text.as_bytes().first(), Some(b'-' | b'0'..=b'9'))
+                    && !text.contains(['.', 'e', 'E']));
+            let tokens = if python_int {
                 input.clone()
             } else {
                 to_raw_value(&0_u8)?
@@ -154,12 +160,7 @@ impl MessageUsageState {
         if !usage.is_empty() {
             delta.insert("usage".to_owned(), to_raw_value(&usage)?);
         }
-        output.push(StreamItem::Event(delta));
-        Ok(())
-    }
-
-    fn flush(&mut self, output: &mut Vec<StreamItem>) {
-        output.extend(self.pending.take().map(StreamItem::Event));
+        Ok(delta)
     }
 }
 
@@ -171,17 +172,12 @@ fn object(raw: &RawValue) -> Result<Option<Fields>, serde_json::Error> {
     }
 }
 
+// LiteLLM reads `value or {}` and then dict methods, so anything but an object counts as absent here
 fn field_object(record: &Fields, key: &str) -> Result<Option<Fields>, serde_json::Error> {
-    Ok(record
-        .get(key)
-        .map(|value| object(value))
-        .transpose()?
-        .flatten())
-}
-
-// LiteLLM reads `value or {}` and then dict methods, so anything but an object counts as empty here
-fn dict(record: &Fields, key: &str) -> Result<Fields, serde_json::Error> {
-    Ok(field_object(record, key)?.unwrap_or_default())
+    let Some(value) = record.get(key) else {
+        return Ok(None);
+    };
+    object(value)
 }
 
 fn event_type(event: &Fields) -> Result<Option<String>, serde_json::Error> {
@@ -200,11 +196,4 @@ fn truthy(raw: &RawValue) -> bool {
         Some(b'-' | b'0'..=b'9') => text.parse::<f64>().is_ok_and(|number| number != 0.0_f64),
         Some(_) | None => !matches!(text, "null" | "false" | "\"\""),
     }
-}
-
-// Python's isinstance(value, int) holds for booleans and for JSON numbers without a fraction or exponent
-fn python_int(text: &str) -> bool {
-    matches!(text, "true" | "false")
-        || (matches!(text.as_bytes().first(), Some(b'-' | b'0'..=b'9'))
-            && !text.contains(['.', 'e', 'E']))
 }
