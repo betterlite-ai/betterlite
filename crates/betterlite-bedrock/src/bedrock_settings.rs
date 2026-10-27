@@ -1,9 +1,11 @@
 use std::str;
 
 use betterlite_openai::error::{ErrorResponse, ProviderError, ProviderErrorParts};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum HeaderValue {
     Text(String),
     Bytes(Vec<u8>),
@@ -12,13 +14,15 @@ pub enum HeaderValue {
     Null,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ErrorHeaders {
     Http(Vec<(String, String)>),
     Mapping(Vec<(String, HeaderValue)>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ResponseBody {
     Read(String),
     Unread { reason_phrase: String },

@@ -2,8 +2,17 @@ kind: helper
 name: deployment-before-env
 call:
   bedrock_settings:
-    deployment: {aws_region_name: deployment}
-    litellm_settings: {aws_region_name: module}
-    env: {AWS_REGION_NAME: environment}
-env: {}
+    settings:
+      deployments:
+        - {aws_region_name: deployment, aws_access_key_id: deployment-key, aws_role_name: deployment-role}
+        - {}
+        - {aws_region_name: "", aws_session_name: ""}
+      environment:
+        AWS_REGION_NAME: environment
+        AWS_ACCESS_KEY_ID: environment-key
+        AWS_SESSION_NAME: environment-session
+env:
+  AWS_REGION_NAME: environment
+  AWS_ACCESS_KEY_ID: environment-key
+  AWS_SESSION_NAME: environment-session
 compare: {ignore: []}

@@ -2,8 +2,19 @@ kind: helper
 name: error-text-unread
 call:
   bedrock_settings:
-    deployment: {}
-    litellm_settings: {}
-    env: {}
+    error:
+      status_code: 500
+      message: stream failed
+      headers:
+        mapping:
+          - [x-count, {integer: 7}]
+      request: null
+      response:
+        status_code: 500
+        request: {method: POST, url: "https://bedrock-runtime.us-east-1.amazonaws.com/model/m/invoke"}
+        headers: [[X-Amzn-Requestid, req-1]]
+        body: {unread: {reason_phrase: Internal Server Error}}
+      body: null
+      status_code_is_synthesized: true
 env: {}
 compare: {ignore: []}

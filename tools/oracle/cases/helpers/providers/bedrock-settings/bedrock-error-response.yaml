@@ -2,8 +2,19 @@ kind: helper
 name: bedrock-error-response
 call:
   bedrock_settings:
-    deployment: {}
-    litellm_settings: {}
-    env: {}
+    error:
+      status_code: 413
+      message: too large
+      headers:
+        mapping:
+          - [X-Request, {text: abc}]
+          - [x-raw, {bytes: [195, 169]}]
+          - [x-count, {integer: 7}]
+          - [x-flag, {boolean: true}]
+          - [x-none, "null"]
+      request: null
+      response: null
+      body: {Message: too large, count: 7}
+      status_code_is_synthesized: false
 env: {}
 compare: {ignore: []}

@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::{resolve_secret, resolve_string};
@@ -44,7 +44,7 @@ struct RawParams {
     session_tags: Option<SessionTagValue>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum SessionTagValue {
     Null,
