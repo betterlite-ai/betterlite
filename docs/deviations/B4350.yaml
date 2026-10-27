@@ -18,6 +18,12 @@ deviations:
   - what: "Without explicit credentials the SDK makes unsigned requests and does not discover AWS environment, profiles, SSO or IMDS; missing region defaults to us-east-1."
     why: "All deployment discovery belongs to betterlite-config, and this backend accepts only resolved settings."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/s3_cache.py#L43-L57
-  - what: "Cache objects have a constructor-supplied byte limit, operations and reads time out, and pipelines run at most 16 writes concurrently."
-    why: "Untrusted or stalled S3 objects and large pipelines must not consume unbounded memory or execution resources."
+  - what: "Cache objects have a constructor-supplied byte limit, each get and put has a constructor-supplied total time cap covering every retry and the body read, and pipelines run at most 16 writes concurrently. s3_config.read_timeout keeps botocore's meaning of a per-read timeout and does not set the total cap."
+    why: "Untrusted or stalled S3 objects and large pipelines must not consume unbounded memory or execution resources. botocore has no total cap, so with its defaults a stalled call can wait 60 seconds per read across 5 attempts."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/s3_cache.py#L127-L182
+  - what: "Without s3_config the client uses botocore's defaults of 60 second connect and read timeouts and 5 attempts in total, but retries follow the Rust SDK's standard mode (its retryable error set and jittered exponential backoff) instead of botocore's legacy mode."
+    why: "The Rust SDK has no legacy retry mode, so only the attempt count and timeouts can match what boto3 gets from s3_config=None."
+    link: https://github.com/boto/botocore/blob/1.43.118/botocore/data/_retry.json#L91-L93
+  - what: "An Expires header is parsed as epoch seconds, an HTTP date or an RFC 3339 timestamp with offset. Any other value is logged and ignored, so the object is served as unexpired. Other date forms dateutil accepts (RFC 850 dates, dates without a time zone, space-separated ISO dates) are ignored too, so such an object past its date is a hit in betterlite and a miss in LiteLLM."
+    why: "botocore parses Expires with dateutil, which guesses at free-form dates; betterlite accepts only the unambiguous formats aws-smithy-types parses. S3 itself writes HTTP dates."
+    link: https://github.com/boto/botocore/blob/1.43.118/botocore/handlers.py#L1229-L1243

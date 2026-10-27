@@ -142,6 +142,7 @@ fn names_rejected_key(#[case] setting: &str, #[case] key: &str) {
 #[rstest::rstest]
 #[case::path("s3_path: null")]
 #[case::config("s3_config: null")]
+#[case::partial("s3_config: {s3: {addressing_style: path}}")]
 fn null_optional_values_use_defaults(#[case] setting: &str) {
     let yaml = format!(
         "litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    {setting}\n"
@@ -153,6 +154,7 @@ fn null_optional_values_use_defaults(#[case] setting: &str) {
     .unwrap();
     let settings = config.sections.s3_response_cache.unwrap();
     assert_eq!(settings.key_prefix, "");
-    assert_eq!(settings.config.connect_timeout, 5);
-    assert_eq!(settings.config.read_timeout, 30);
+    assert_eq!(settings.config.connect_timeout, 60);
+    assert_eq!(settings.config.read_timeout, 60);
+    assert_eq!(settings.config.retries.max_attempts, 4);
 }

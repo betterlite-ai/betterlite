@@ -38,10 +38,14 @@ fn configured_cache(listener: &TcpListener, prefix: &str, limit: usize) -> S3Cac
     let yaml = format!(
         "litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    s3_region_name: us-east-1\n    s3_endpoint_url: http://{address}\n    s3_path: '{prefix}'\n    s3_aws_access_key_id: test-key\n    s3_aws_secret_access_key: test-secret\n    s3_config:\n      read_timeout: 1\n      retries:\n        max_attempts: 0\n      s3:\n        addressing_style: path\n"
     );
+    cache_from(&yaml, limit, Duration::from_secs(5))
+}
+
+fn cache_from(yaml: &str, limit: usize, operation_timeout: Duration) -> S3Cache {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
-    .load(&yaml)
+    .load(yaml)
     .unwrap();
     let transport = aws_smithy_http_client::Builder::new()
         .tls_provider(Provider::Rustls(CryptoMode::Ring))
@@ -55,6 +59,7 @@ fn configured_cache(listener: &TcpListener, prefix: &str, limit: usize) -> S3Cac
                 .unwrap()
         },
         NonZeroUsize::new(limit).unwrap(),
+        operation_timeout,
     )
 }
 
@@ -132,7 +137,11 @@ async fn no_ttl_omits_expiry() {
 #[case::expired("Expires: Thu, 01 Jan 1970 00:16:39 GMT\r\n", b"{}", false)]
 #[case::exact_expiry("Expires: Thu, 01 Jan 1970 00:16:40 GMT\r\n", b"{}", true)]
 #[case::future("Expires: Thu, 01 Jan 1970 00:16:41 GMT\r\n", b"{}", true)]
-#[case::invalid_expiry("Expires: invalid\r\n", b"{}", false)]
+#[case::invalid_expiry("Expires: invalid\r\n", b"{}", true)]
+#[case::iso_expired("Expires: 1970-01-01T00:16:39Z\r\n", b"{}", false)]
+#[case::iso_offset_future("Expires: 1970-01-01T01:16:41+01:00\r\n", b"{}", true)]
+#[case::epoch_expired("Expires: 999\r\n", b"{}", false)]
+#[case::epoch_future("Expires: 1001\r\n", b"{}", true)]
 #[case::malformed("", b"not JSON", false)]
 #[case::utf8("", b"\xff", false)]
 #[case::oversize("", b"{\"response\":\"over the configured size limit\"}", false)]
@@ -337,19 +346,53 @@ async fn sdk_settings_are_explicit() {
     let cache = configured_cache(&listener, "", 4096);
     let config = cache.client.config();
     assert_eq!(config.region().unwrap().as_ref(), "us-east-1");
-    assert_eq!(
-        config.timeout_config().unwrap().operation_timeout(),
-        Some(Duration::from_secs(1))
-    );
+    assert_eq!(config.timeout_config().unwrap().operation_timeout(), None);
     assert_eq!(
         config.timeout_config().unwrap().read_timeout(),
         Some(Duration::from_secs(1))
     );
     assert_eq!(
         config.timeout_config().unwrap().connect_timeout(),
-        Some(Duration::from_secs(5))
+        Some(Duration::from_secs(60))
     );
     assert_eq!(config.retry_config().unwrap().max_attempts(), 1);
+}
+
+#[tokio::test]
+async fn default_retries_match_botocore_legacy_attempts() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let yaml = format!(
+        "litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    s3_endpoint_url: http://{address}\n"
+    );
+    let cache = cache_from(&yaml, 4096, Duration::from_secs(5));
+    let config = cache.client.config();
+    assert_eq!(config.retry_config().unwrap().max_attempts(), 5);
+    assert_eq!(
+        config.timeout_config().unwrap().read_timeout(),
+        Some(Duration::from_secs(60))
+    );
+}
+
+#[tokio::test]
+async fn operation_cap_bounds_stalled_calls() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let yaml = format!(
+        "litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    s3_endpoint_url: http://{address}\n    s3_aws_access_key_id: test-key\n    s3_aws_secret_access_key: test-secret\n    s3_config:\n      retries:\n        max_attempts: 0\n      s3:\n        addressing_style: path\n"
+    );
+    let cache = cache_from(&yaml, 4096, Duration::from_millis(500));
+    let value = decode_body(b"{}").unwrap();
+    let operation = async {
+        let (connection, cached) = tokio::join!(listener.accept(), cache.async_get_cache("key"));
+        assert!(cached.is_none());
+        let (upload, ()) = tokio::join!(
+            listener.accept(),
+            cache.async_set_cache("key", &value, None)
+        );
+        drop((connection.unwrap(), upload.unwrap()));
+    };
+    timeout(Duration::from_secs(3), operation).await.unwrap();
 }
 
 #[tokio::test]
@@ -372,6 +415,7 @@ async fn absent_credentials_do_not_use_default_chain() {
         SharedHttpClient::new(transport),
         SystemTime::now,
         NonZeroUsize::new(1024).unwrap(),
+        Duration::from_secs(2),
     );
     let operation = async {
         let (value, request) = tokio::join!(

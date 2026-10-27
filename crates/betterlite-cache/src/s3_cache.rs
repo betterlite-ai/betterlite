@@ -30,7 +30,7 @@ pub struct S3Cache {
     key_prefix: String,
     clock: fn() -> SystemTime,
     max_object_bytes: NonZeroUsize,
-    read_timeout: Duration,
+    operation_timeout: Duration,
 }
 
 impl S3Cache {
@@ -39,6 +39,7 @@ impl S3Cache {
         transport: SharedHttpClient,
         clock: fn() -> SystemTime,
         max_object_bytes: NonZeroUsize,
+        operation_timeout: Duration,
     ) -> Self {
         let client = client::build(settings, transport);
         Self {
@@ -47,7 +48,7 @@ impl S3Cache {
             key_prefix: settings.key_prefix.clone(),
             clock,
             max_object_bytes,
-            read_timeout: Duration::from_secs(settings.config.read_timeout),
+            operation_timeout,
         }
     }
 
@@ -104,7 +105,7 @@ impl S3Cache {
     ) {
         let cache_ttl = ttl.unwrap_or(DEFAULT_TTL);
         let object_key = self.object_key(key);
-        let result = self
+        let request = self
             .client
             .put_object()
             .bucket(&self.bucket_name)
@@ -117,10 +118,11 @@ impl S3Cache {
             .content_language("en")
             .content_disposition(format!("inline; filename=\"{object_key}.json\""))
             .set_expires(expires)
-            .send()
-            .await;
-        if let Err(source) = result {
-            tracing::warn!(error = %source, "S3 cache write failed");
+            .send();
+        match timeout(self.operation_timeout, request).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(source)) => tracing::warn!(error = %source, "S3 cache write failed"),
+            Err(source) => tracing::warn!(error = %source, "S3 cache write timed out"),
         }
     }
 
@@ -168,6 +170,16 @@ impl S3Cache {
     }
 
     pub async fn async_get_cache(&self, key: &str) -> Option<CachedEntry> {
+        match timeout(self.operation_timeout, self.fetch(key)).await {
+            Ok(result) => result,
+            Err(source) => {
+                tracing::error!(error = %source, "S3 cache read timed out");
+                None
+            }
+        }
+    }
+
+    async fn fetch(&self, key: &str) -> Option<CachedEntry> {
         let output = match self
             .client
             .get_object()
@@ -189,13 +201,7 @@ impl S3Cache {
                 return None;
             }
         };
-        match timeout(self.read_timeout, read::read_body(self, output)).await {
-            Ok(result) => result,
-            Err(source) => {
-                tracing::error!(error = %source, "S3 cache body timed out");
-                None
-            }
-        }
+        read::read_body(self, output).await
     }
 
     fn object_key(&self, key: &str) -> String {

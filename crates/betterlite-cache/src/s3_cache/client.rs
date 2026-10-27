@@ -12,7 +12,6 @@ pub(super) fn build(settings: &S3Settings, transport: SharedHttpClient) -> Clien
     let timeouts = TimeoutConfig::builder()
         .connect_timeout(Duration::from_secs(settings.config.connect_timeout))
         .read_timeout(Duration::from_secs(settings.config.read_timeout))
-        .operation_timeout(Duration::from_secs(settings.config.read_timeout))
         .build();
     let mut builder = Builder::new()
         .behavior_version(BehaviorVersion::latest())

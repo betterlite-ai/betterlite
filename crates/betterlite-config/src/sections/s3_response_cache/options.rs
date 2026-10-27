@@ -10,10 +10,11 @@ pub struct Options {
 }
 
 impl Default for Options {
+    // botocore DEFAULT_TIMEOUT in endpoint.py, used when LiteLLM passes s3_config=None
     fn default() -> Self {
         Self {
-            connect_timeout: 5,
-            read_timeout: 30,
+            connect_timeout: 60,
+            read_timeout: 60,
             retries: Retries::default(),
             s3: S3Options::default(),
         }
@@ -44,8 +45,9 @@ pub struct Retries {
 }
 
 impl Default for Retries {
+    // botocore legacy mode makes 5 attempts in total, so 4 retries
     fn default() -> Self {
-        Self { max_attempts: 2 }
+        Self { max_attempts: 4 }
     }
 }
 

@@ -1,5 +1,3 @@
-use std::time::SystemTime;
-
 use aws_sdk_s3::operation::get_object::GetObjectOutput;
 use aws_smithy_types::date_time::{DateTime, Format};
 
@@ -50,17 +48,20 @@ fn unexpired(cache: &S3Cache, expires: Option<&str>) -> bool {
     let Some(text) = expires else {
         return true;
     };
-    match DateTime::from_str(text, Format::HttpDate) {
-        Ok(timestamp) => match SystemTime::try_from(timestamp) {
-            Ok(expiration) => (cache.clock)() <= expiration,
-            Err(source) => {
-                tracing::error!(error = %source, "S3 cache expiry invalid");
-                false
-            }
-        },
-        Err(source) => {
-            tracing::error!(error = %source, "S3 cache expiry invalid");
-            false
+    // botocore tries epoch seconds first, then date strings
+    let parsed = [
+        Format::EpochSeconds,
+        Format::HttpDate,
+        Format::DateTimeWithOffset,
+    ]
+    .into_iter()
+    .find_map(|format| DateTime::from_str(text, format).ok());
+    match parsed {
+        Some(expiration) => DateTime::from((cache.clock)()) <= expiration,
+        None => {
+            // botocore drops an unparseable Expires, so LiteLLM serves the object as unexpired
+            tracing::warn!(expires = text, "S3 cache expiry unparseable, ignoring it");
+            true
         }
     }
 }
