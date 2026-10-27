@@ -1,4 +1,3 @@
-# Task specs, docs, CI and lint configuration change no package's tests.
 [[path-rule]]
 globs = [
   ".development/**",
