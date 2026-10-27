@@ -1,2 +1,8 @@
 task: B4507
-deviations: []
+deviations:
+  - what: Extraction is async Rust instead of Python async/await, using tokio for task spawning.
+    why: Betterlite is a Rust gateway; async code mirrors the surrounding crate architecture with typed futures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L201-L206
+  - what: Span read loop detection uses a HashSet of visited feedback pages instead of Python set mutable state.
+    why: Rust requires explicit mutability; a bounded HashSet tracks navigation to detect cycles without relying on garbage collection or implicit state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L223-L230
