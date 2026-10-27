@@ -1,37 +1,6 @@
-use secrecy::{ExposeSecret as _, SecretString};
+use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::Deserialize;
-use std::collections::BTreeMap;
-use std::hint::black_box;
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum RawValue {
-    Null(()),
-    Bool(bool),
-    Number(f64),
-    Text(String),
-    Array(Vec<Self>),
-    Object(BTreeMap<String, Self>),
-}
-
-impl RawValue {
-    fn preserve(&self) {
-        match self {
-            Self::Null(()) => {}
-            Self::Bool(value) => {
-                black_box(value);
-            }
-            Self::Number(value) => {
-                black_box(value);
-            }
-            Self::Text(value) => {
-                black_box(value);
-            }
-            Self::Array(values) => values.iter().for_each(Self::preserve),
-            Self::Object(values) => values.values().for_each(Self::preserve),
-        }
-    }
-}
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::{resolve_secret, resolve_string};
@@ -40,13 +9,17 @@ use crate::sections::Section;
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
-    litellm_settings: RawModule,
-    #[serde(default)]
     model_list: Vec<RawDeployment>,
 }
 
 #[derive(Debug, Default, Deserialize)]
-struct RawModule {
+struct RawDeployment {
+    #[serde(default)]
+    litellm_params: RawParams,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawParams {
     #[serde(rename = "aws_access_key_id")]
     access_key_id: Option<String>,
     #[serde(rename = "aws_secret_access_key")]
@@ -67,20 +40,21 @@ struct RawModule {
     sts_endpoint: Option<String>,
     #[serde(rename = "aws_external_id")]
     external_id: Option<String>,
-    #[serde(rename = "aws_role_arn")]
-    role_arn: Option<String>,
-    #[serde(rename = "aws_web_identity_token_file")]
-    web_identity_token_file: Option<String>,
-    #[serde(rename = "aws_bearer_token_bedrock")]
-    bearer_token_bedrock: Option<String>,
     #[serde(rename = "aws_session_tags")]
-    session_tags: Option<RawValue>,
+    session_tags: Option<SessionTagValue>,
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct RawDeployment {
-    #[serde(default)]
-    litellm_params: RawModule,
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum SessionTagValue {
+    Null,
+    Boolean(bool),
+    Integer(i64),
+    Unsigned(u64),
+    Decimal(f64),
+    Text(String),
+    List(Vec<Self>),
+    Mapping(IndexMap<String, Self>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -94,38 +68,15 @@ pub struct AwsSettings {
     pub role_name: Option<String>,
     pub web_identity_token: Option<SecretString>,
     pub sts_endpoint: Option<String>,
-    pub external_id: Option<SecretString>,
+    pub external_id: Option<String>,
+    pub session_tags: Option<SessionTagValue>,
     pub role_arn: Option<String>,
     pub web_identity_token_file: Option<String>,
-    pub bearer_token_bedrock: Option<SecretString>,
-    pub session_tags: Option<RawValue>,
-}
-
-impl AwsSettings {
-    #[must_use]
-    pub fn deployable(&self, field: &str) -> bool {
-        match field {
-            "aws_access_key_id" => self.access_key_id.is_some(),
-            "aws_secret_access_key" => self.secret_access_key.is_some(),
-            "aws_session_token" => self.session_token.is_some(),
-            "aws_region_name" => self.region_name.is_some(),
-            "aws_session_name" => self.session_name.is_some(),
-            "aws_profile_name" => self.profile_name.is_some(),
-            "aws_role_name" => self.role_name.is_some(),
-            "aws_web_identity_token" => self.web_identity_token.is_some(),
-            "aws_sts_endpoint" => self.sts_endpoint.is_some(),
-            "aws_external_id" => self.external_id.is_some(),
-            "aws_role_arn" => self.role_arn.is_some(),
-            "aws_web_identity_token_file" => self.web_identity_token_file.is_some(),
-            "aws_bearer_token_bedrock" => self.bearer_token_bedrock.is_some(),
-            _ => false,
-        }
-    }
+    pub bearer_token: Option<SecretString>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
-    pub litellm_settings: AwsSettings,
     pub deployments: Vec<AwsSettings>,
 }
 
@@ -136,84 +87,88 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let module = resolve_settings(self.litellm_settings, None, lookup)?;
         let mut deployments = Vec::with_capacity(self.model_list.len());
-        for deployment in self.model_list {
-            deployments.push(resolve_settings(
-                deployment.litellm_params,
-                Some(&module),
-                lookup,
-            )?);
+        for (index, deployment) in self.model_list.into_iter().enumerate() {
+            deployments.push(snapshot(deployment.litellm_params, index, lookup)?);
         }
-        Ok(Settings {
-            litellm_settings: module,
-            deployments,
-        })
+        Ok(Settings { deployments })
     }
 }
 
-macro_rules! resolve_value {
-    (secret, $raw:ident, $fallback:ident, $lookup:ident, $field:ident, $name:literal) => {
-        $raw.$field
-            .or_else(|| {
-                $fallback
-                    .and_then(|settings| settings.$field.as_ref())
-                    .map(|value| value.expose_secret().to_owned())
-            })
-            .or_else(|| $lookup.lookup($name))
-            .map(|value| resolve_secret(Some(value), $name, $lookup))
-            .transpose()
-            .map(Option::flatten)?
-    };
-    (text, $raw:ident, $fallback:ident, $lookup:ident, $field:ident, $name:literal) => {
-        $raw.$field
-            .or_else(|| {
-                $fallback
-                    .and_then(|settings| settings.$field.as_ref())
-                    .cloned()
-            })
-            .or_else(|| $lookup.lookup($name))
-            .map(|value| resolve_string(value, $name, $lookup))
-            .transpose()?
-    };
+struct Resolver<'lookup, L> {
+    index: usize,
+    lookup: &'lookup L,
 }
 
-fn resolve_settings<L>(
-    raw: RawModule,
-    fallback: Option<&AwsSettings>,
-    lookup: &L,
-) -> Result<AwsSettings, ConfigError>
+impl<L> Resolver<'_, L>
 where
     L: EnvironmentLookup,
 {
-    macro_rules! resolve {
-        ($kind:ident, $field:ident, $name:literal) => {
-            resolve_value!($kind, raw, fallback, lookup, $field, $name)
-        };
+    fn text(
+        &self,
+        value: Option<String>,
+        key: &str,
+        variable: &str,
+    ) -> Result<Option<String>, ConfigError> {
+        let path = format!("model_list.{}.litellm_params.{key}", self.index);
+        value.map_or_else(
+            || Ok(self.lookup.lookup(variable)),
+            |text| resolve_string(text, &path, self.lookup).map(Some),
+        )
     }
-    raw.session_tags.as_ref().map(RawValue::preserve);
+
+    fn secret(
+        &self,
+        value: Option<String>,
+        key: &str,
+        variable: &str,
+    ) -> Result<Option<SecretString>, ConfigError> {
+        if value.is_none() {
+            return Ok(self.lookup.lookup(variable).map(SecretString::from));
+        }
+        let path = format!("model_list.{}.litellm_params.{key}", self.index);
+        resolve_secret(value, &path, self.lookup)
+    }
+}
+
+fn snapshot<L>(raw: RawParams, index: usize, lookup: &L) -> Result<AwsSettings, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let resolver = Resolver { index, lookup };
     Ok(AwsSettings {
-        access_key_id: resolve!(secret, access_key_id, "AWS_ACCESS_KEY_ID"),
-        secret_access_key: resolve!(secret, secret_access_key, "AWS_SECRET_ACCESS_KEY"),
-        session_token: resolve!(secret, session_token, "AWS_SESSION_TOKEN"),
-        region_name: resolve!(text, region_name, "AWS_REGION_NAME"),
-        session_name: resolve!(text, session_name, "AWS_SESSION_NAME"),
-        profile_name: resolve!(text, profile_name, "AWS_PROFILE_NAME"),
-        role_name: resolve!(text, role_name, "AWS_ROLE_NAME"),
-        web_identity_token: resolve!(secret, web_identity_token, "AWS_WEB_IDENTITY_TOKEN"),
-        sts_endpoint: resolve!(text, sts_endpoint, "AWS_STS_ENDPOINT"),
-        external_id: resolve!(secret, external_id, "AWS_EXTERNAL_ID"),
-        role_arn: resolve!(text, role_arn, "AWS_ROLE_ARN"),
-        web_identity_token_file: resolve!(
-            text,
-            web_identity_token_file,
-            "AWS_WEB_IDENTITY_TOKEN_FILE"
-        ),
-        bearer_token_bedrock: resolve!(secret, bearer_token_bedrock, "AWS_BEARER_TOKEN_BEDROCK"),
-        session_tags: raw.session_tags.or_else(|| {
-            let settings = fallback?;
-            settings.session_tags.clone()
-        }),
+        access_key_id: resolver.secret(
+            raw.access_key_id,
+            "aws_access_key_id",
+            "AWS_ACCESS_KEY_ID",
+        )?,
+        secret_access_key: resolver.secret(
+            raw.secret_access_key,
+            "aws_secret_access_key",
+            "AWS_SECRET_ACCESS_KEY",
+        )?,
+        session_token: resolver.secret(
+            raw.session_token,
+            "aws_session_token",
+            "AWS_SESSION_TOKEN",
+        )?,
+        region_name: resolver.text(raw.region_name, "aws_region_name", "AWS_REGION_NAME")?,
+        session_name: resolver.text(raw.session_name, "aws_session_name", "AWS_SESSION_NAME")?,
+        profile_name: resolver.text(raw.profile_name, "aws_profile_name", "AWS_PROFILE_NAME")?,
+        role_name: resolver.text(raw.role_name, "aws_role_name", "AWS_ROLE_NAME")?,
+        web_identity_token: resolver.secret(
+            raw.web_identity_token,
+            "aws_web_identity_token",
+            "AWS_WEB_IDENTITY_TOKEN",
+        )?,
+        sts_endpoint: resolver.text(raw.sts_endpoint, "aws_sts_endpoint", "AWS_STS_ENDPOINT")?,
+        external_id: resolver.text(raw.external_id, "aws_external_id", "AWS_EXTERNAL_ID")?,
+        session_tags: raw.session_tags,
+        role_arn: lookup.lookup("AWS_ROLE_ARN"),
+        web_identity_token_file: lookup.lookup("AWS_WEB_IDENTITY_TOKEN_FILE"),
+        bearer_token: lookup
+            .lookup("AWS_BEARER_TOKEN_BEDROCK")
+            .map(SecretString::from),
     })
 }
 

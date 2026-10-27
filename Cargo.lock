@@ -814,6 +814,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-rate-limit",
  "betterlite-secrets",
+ "indexmap 2.14.2",
  "insta",
  "netrc-rs",
  "percent-encoding",
