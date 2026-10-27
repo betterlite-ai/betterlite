@@ -29,7 +29,7 @@ scope:
   - tools/oracle/helpers/provider_resolution/**
   - tools/oracle/cases/helpers/provider-resolution/**
   - crates/betterlite-server/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/provider_resolution-*"
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L19-L155
@@ -84,8 +84,8 @@ checks:
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
-      && grep -rlq 'provider_resolution' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/provider_resolution-*")"
+      && grep -lq 'provider_resolution' tools/oracle/fuzz/corpus/helper_case/provider_resolution-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -110,6 +110,7 @@ out_of_scope:
 - is_registered_custom_provider and Python custom-provider registration are B164; actual provider authentication/execution
   belongs to B024-B050.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/provider_resolution-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as provider_resolution in the models group. Replace the stub Op in tools/oracle/src/helpers/models/provider_resolution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/provider_resolution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The native OpenRouter model openrouter/auto is not the same prefix case as openrouter/anthropic/claude-3.5-sonnet.
 - Do not add betterlite-provider as a dependency of betterlite-openai if the executable dispatcher will depend on

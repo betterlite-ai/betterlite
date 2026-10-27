@@ -47,7 +47,7 @@ scope:
   - tools/oracle/helpers/aws_partition.py
   - tools/oracle/helpers/aws_partition/**
   - tools/oracle/cases/helpers/call-context/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/call_context-*"
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_internal_context.py#L15-L54
@@ -109,9 +109,9 @@ checks:
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
-      && grep -rlq 'call_context' tools/oracle/fuzz/corpus/helper_case && grep -rlq 'aws_partition' tools/oracle/fuzz/corpus/helper_case
-      && grep -rlq 'env_integer' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/call_context-*")"
+      && grep -lq 'call_context' tools/oracle/fuzz/corpus/helper_case/call_context-* && grep -lq 'aws_partition' tools/oracle/fuzz/corpus/helper_case/call_context-*
+      && grep -lq 'env_integer' tools/oracle/fuzz/corpus/helper_case/call_context-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: dispatch-views-preserve-absence-and-identity
@@ -140,6 +140,7 @@ out_of_scope:
   this leaf context task.
 - All other main.py functions keep their existing owners; B024-B028 own their provider dispatch branches.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/call_context-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as call_context and aws_partition and env_integer in the context group. Replace the stub Op in tools/oracle/src/helpers/context/call_context.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/call_context.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The current billing time is fixed for a call even if pricing crosses a time window during execution.
 - An SDK sync wrapper must not start a nested Tokio runtime inside an async call.

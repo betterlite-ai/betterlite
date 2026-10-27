@@ -32,7 +32,7 @@ scope:
   - tools/oracle/helpers/price_fields.py
   - tools/oracle/helpers/price_fields/**
   - tools/oracle/cases/helpers/price-fields/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/price_fields-*"
   lint_tables: false
 references:
 - url: >-
@@ -93,8 +93,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'price_fields' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/price_fields-*")" &&
+      grep -lq 'price_fields' tools/oracle/fuzz/corpus/helper_case/price_fields-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: price-map-pin
@@ -121,6 +121,7 @@ out_of_scope:
 - Token-cost multiplication and spend accounting are B068-B069.
 - Whole-entry parsing, aliases and loading are B193-B194.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/price_fields-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as price_fields in the models group. Replace the stub Op in tools/oracle/src/helpers/models/price_fields.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/price_fields.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Model-entry top-level keys are schema-covered; untyped monetary dimensions are nested or sample_spec-only, so
