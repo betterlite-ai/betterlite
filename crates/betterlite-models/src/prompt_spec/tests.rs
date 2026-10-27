@@ -31,6 +31,21 @@ fn prompt_records_keep_extra_fields() {
     assert_eq!(params.extra.get("future_option"), Some(&Json::Bool(true)));
 }
 
+#[test]
+fn prompt_api_key_is_secret() {
+    let params: PromptLiteLLMParams =
+        serde_json::from_str(r#"{"prompt_integration":"langfuse","api_key":"remote-secret"}"#)
+            .expect("valid prompt params");
+    assert_eq!(
+        params
+            .api_key
+            .as_ref()
+            .map(secrecy::ExposeSecret::expose_secret),
+        Some("remote-secret")
+    );
+    assert!(!format!("{params:?}").contains("remote-secret"));
+}
+
 #[rstest]
 #[case::dotprompt(SupportedPromptIntegrations::DotPrompt, "dotprompt")]
 #[case::langfuse(SupportedPromptIntegrations::Langfuse, "langfuse")]

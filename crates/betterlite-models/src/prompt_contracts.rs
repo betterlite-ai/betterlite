@@ -4,6 +4,7 @@ use std::pin::Pin;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use self::_get_model_from_prompt as resolve_model;
 use crate::decisions::Json;
 use crate::prompt_spec::PromptSpec;
 
@@ -69,19 +70,6 @@ pub fn _get_model_from_prompt(
     resolved
 }
 
-const MODEL_RESOLVER: fn(&PromptManagementClient, &str, &str) -> String = _get_model_from_prompt;
-
-#[must_use]
-pub fn get_model_from_prompt(
-    prompt_management_client: &PromptManagementClient,
-    integration_name: &str,
-    model: &str,
-) -> String {
-    let mut resolved = MODEL_RESOLVER(prompt_management_client, integration_name, model);
-    resolved.shrink_to_fit();
-    resolved
-}
-
 #[derive(Clone, Debug)]
 pub struct PromptProcessingOptions {
     pub integration_name: String,
@@ -96,10 +84,10 @@ pub fn post_compile_prompt_processing(
     model: String,
     options: &PromptProcessingOptions,
 ) -> (String, Vec<AllMessageValues>, PromptParams) {
-    let completed_messages = prompt_template
-        .completed_messages
-        .clone()
-        .unwrap_or(messages);
+    let completed_messages = match prompt_template.completed_messages.as_ref() {
+        Some(completed_messages) if !completed_messages.is_empty() => completed_messages.clone(),
+        _ => messages,
+    };
     let mut updated_params = non_default_params;
     if !options.ignore_flags.optional_params
         && let Some(optional_params) = &prompt_template.prompt_optional_params
@@ -109,7 +97,7 @@ pub fn post_compile_prompt_processing(
     let resolved_model = if options.ignore_flags.model {
         model
     } else {
-        get_model_from_prompt(prompt_template, &options.integration_name, &model)
+        resolve_model(prompt_template, &options.integration_name, &model)
     };
     (resolved_model, completed_messages, updated_params)
 }

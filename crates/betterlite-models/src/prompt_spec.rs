@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 use crate::decisions::Json;
@@ -38,12 +39,12 @@ impl Default for PromptInfo {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct PromptLiteLLMParams {
     pub prompt_id: Option<String>,
     pub prompt_integration: String,
     pub api_base: Option<String>,
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     pub provider_specific_query_params: Option<IndexMap<String, Json>>,
     #[serde(default)]
     #[serde(rename = "ignore_prompt_manager_model")]
@@ -56,7 +57,7 @@ pub struct PromptLiteLLMParams {
     pub extra: IndexMap<String, Json>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct PromptSpec {
     pub prompt_id: String,
     pub litellm_params: PromptLiteLLMParams,

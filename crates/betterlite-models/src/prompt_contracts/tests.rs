@@ -81,6 +81,26 @@ fn processing_uses_template_params_and_completed_messages() {
 }
 
 #[test]
+fn processing_falls_back_to_request_messages_when_compiled_messages_are_empty() {
+    let client = PromptManagementClient {
+        completed_messages: Some(Vec::new()),
+        ..PromptManagementClient::default()
+    };
+    let request_messages = vec![json(r#"{"role":"client"}"#)];
+    let (_, messages, _) = post_compile_prompt_processing(
+        &client,
+        request_messages.clone(),
+        PromptParams::new(),
+        "custom/model".to_owned(),
+        &PromptProcessingOptions {
+            integration_name: "custom".to_owned(),
+            ignore_flags: PromptIgnoreFlags::default(),
+        },
+    );
+    assert_eq!(messages, request_messages);
+}
+
+#[test]
 fn custom_management_is_noop_gate_and_rejects_compilation() {
     let manager = CustomPromptManagement;
     let dynamic_params = json("{}");
