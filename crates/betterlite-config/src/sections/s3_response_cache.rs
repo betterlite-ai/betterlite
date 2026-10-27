@@ -44,7 +44,7 @@ struct CacheParams {
     #[serde(rename = "s3_config")]
     config: Options,
     #[serde(rename = "s3_path")]
-    path: String,
+    path: Option<String>,
 }
 
 pub type Settings = Option<S3Settings>;
@@ -102,11 +102,8 @@ where
         params.aws_session_token,
         lookup,
     )?;
-    let key_prefix = if params.path.is_empty() {
-        String::new()
-    } else {
-        format!("{}/", params.path.trim_end_matches('/'))
-    };
+    let key_prefix = params.path.as_deref().filter(|path| !path.is_empty())
+        .map_or_else(String::new, |path| format!("{}/", path.trim_end_matches('/')));
     Ok(S3Settings {
         bucket_name,
         region_name: params.region_name.unwrap_or_else(|| "us-east-1".to_owned()),
