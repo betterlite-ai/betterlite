@@ -1,7 +1,7 @@
 use reqwest::StatusCode;
 use thiserror::Error;
 
-use super::nesting_depth::{LeafPath, MAX_STRUCTURED_CONTENT_SCAN_DEPTH};
+use super::nesting_depth::{LeafPath, MAX_SCAN_DEPTH};
 
 #[derive(Debug, Error)]
 pub enum TranslationError<GuardrailFailure> {
@@ -14,7 +14,7 @@ pub enum TranslationError<GuardrailFailure> {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ContentBlocked {
     #[error(
-        "content blocked: the {} nests deeper than {MAX_STRUCTURED_CONTENT_SCAN_DEPTH} levels, so the guardrail cannot scan it",
+        "content blocked: the {} nests deeper than {MAX_SCAN_DEPTH} levels, so the guardrail cannot scan it",
         .payload.label()
     )]
     TooDeep { payload: NestedPayload },

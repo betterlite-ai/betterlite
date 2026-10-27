@@ -4,7 +4,7 @@ use super::error::{ContentBlocked, NestedPayload};
 
 mod tests;
 
-pub const MAX_STRUCTURED_CONTENT_SCAN_DEPTH: usize = 100;
+pub const MAX_SCAN_DEPTH: usize = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PathPart {
@@ -54,7 +54,7 @@ fn collect(
     found: &mut JsonScan,
     payload: NestedPayload,
 ) -> Result<(), ContentBlocked> {
-    if path.len() > MAX_STRUCTURED_CONTENT_SCAN_DEPTH {
+    if path.len() > MAX_SCAN_DEPTH {
         return Err(ContentBlocked::TooDeep { payload });
     }
     match value {
