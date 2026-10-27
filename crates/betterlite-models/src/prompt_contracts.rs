@@ -4,7 +4,6 @@ use std::pin::Pin;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use self::_get_model_from_prompt as resolve_model;
 use crate::decisions::Json;
 use crate::prompt_spec::PromptSpec;
 
@@ -97,7 +96,7 @@ pub fn post_compile_prompt_processing(
     let resolved_model = if options.ignore_flags.model {
         model
     } else {
-        resolve_model(prompt_template, &options.integration_name, &model)
+        _get_model_from_prompt(prompt_template, &options.integration_name, &model)
     };
     (resolved_model, completed_messages, updated_params)
 }
