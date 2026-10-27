@@ -83,8 +83,11 @@ fn processing_uses_template_params_and_completed_messages() {
 #[test]
 fn processing_falls_back_to_request_messages_when_compiled_messages_are_empty() {
     let client = PromptManagementClient {
+        prompt_id: None,
+        prompt_template: Vec::new(),
+        prompt_template_model: None,
+        prompt_optional_params: None,
         completed_messages: Some(Vec::new()),
-        ..PromptManagementClient::default()
     };
     let request_messages = vec![json(r#"{"role":"client"}"#)];
     let (_, messages, _) = post_compile_prompt_processing(
