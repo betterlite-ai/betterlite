@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use super::json_value::McpValue;
 
 use super::nesting_depth::{Leaf, LeafPath, PathPart};
 
@@ -17,23 +17,20 @@ where
     replacements
 }
 
-pub fn rewrite_leaves(value: &mut GuardrailValue, replacements: &BTreeMap<LeafPath, String>) {
+pub fn rewrite_leaves(value: &mut McpValue, replacements: &BTreeMap<LeafPath, String>) {
     for (path, replacement) in replacements {
-        if let Some(GuardrailValue::Text(text)) = value_at(value, path) {
+        if let Some(McpValue::Text(text)) = value_at(value, path) {
             replacement.clone_into(text);
         }
     }
 }
 
-fn value_at<'value>(
-    value: &'value mut GuardrailValue,
-    path: &LeafPath,
-) -> Option<&'value mut GuardrailValue> {
+fn value_at<'value>(value: &'value mut McpValue, path: &LeafPath) -> Option<&'value mut McpValue> {
     let mut current = value;
     for part in &path.0 {
         current = match (current, part) {
-            (GuardrailValue::Object(entries), PathPart::Key(key)) => entries.get_mut(key)?,
-            (GuardrailValue::Array(items), PathPart::Index(index)) => items.get_mut(*index)?,
+            (McpValue::Object(entries), PathPart::Key(key)) => entries.get_mut(key)?,
+            (McpValue::Array(items), PathPart::Index(index)) => items.get_mut(*index)?,
             _ => return None,
         };
     }

@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use super::json_value::McpValue;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpToolRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_tool_name: Option<String>,
@@ -14,14 +14,14 @@ pub struct McpToolRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mcp_input_schema: Option<GuardrailValue>,
+    pub mcp_input_schema: Option<McpValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mcp_arguments: Option<GuardrailValue>,
+    pub mcp_arguments: Option<McpValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub arguments: Option<GuardrailValue>,
+    pub arguments: Option<McpValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub modified_arguments: Option<GuardrailValue>,
+    pub modified_arguments: Option<McpValue>,
     // the synthetic MCP request carries the proxy's own keys, which pass through untouched
     #[serde(flatten)]
-    pub extra: BTreeMap<String, GuardrailValue>,
+    pub extra: BTreeMap<String, McpValue>,
 }

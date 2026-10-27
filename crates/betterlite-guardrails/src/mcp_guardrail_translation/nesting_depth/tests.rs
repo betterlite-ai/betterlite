@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use crate::mcp_guardrail_translation::json_value::McpValue;
 use rstest::rstest;
 
 use crate::mcp_guardrail_translation::error::{ContentBlocked, NestedPayload, TranslationError};
@@ -17,7 +17,7 @@ fn nested(depth: usize, leaf: &str) -> String {
     format!("{}{leaf}{}", "[".repeat(depth), "]".repeat(depth))
 }
 
-fn value(json: &str) -> GuardrailValue {
+fn value(json: &str) -> McpValue {
     serde_json::from_str(json).unwrap()
 }
 

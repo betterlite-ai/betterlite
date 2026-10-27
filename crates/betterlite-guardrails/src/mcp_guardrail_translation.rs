@@ -4,6 +4,7 @@ pub mod error;
 pub mod fallback_behavior;
 pub mod guardrail;
 pub mod input_writeback;
+pub mod json_value;
 pub mod leaf_rewrite;
 pub mod mapping_registration;
 pub mod nesting_depth;

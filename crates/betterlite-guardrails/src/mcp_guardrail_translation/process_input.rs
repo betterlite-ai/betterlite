@@ -1,21 +1,21 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use super::json_value::McpValue;
 
 use super::error::{ContentBlocked, NestedPayload, TranslationError};
-use super::guardrail::{ApplyGuardrail, GuardrailInputs};
+use super::guardrail::{ApplyGuardrail, FunctionDefinition, GuardrailInputs, ToolDefinition};
 use super::input_writeback::write_back;
 use super::nesting_depth::{Leaf, PathPart, scan_json};
 use super::tool_request::McpToolRequest;
-use crate::generic_guardrail_contracts::{GuardrailInputType, GuardrailToolParam};
+use crate::generic_guardrail_contracts::GuardrailInputType;
 
 mod tests;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InputScan {
     pub inputs: GuardrailInputs,
     pub description: Option<String>,
-    pub schema: BTreeMap<String, GuardrailValue>,
+    pub schema: BTreeMap<String, McpValue>,
     pub schema_leaves: Vec<Leaf>,
     pub argument_leaves: Vec<Leaf>,
 }
@@ -46,11 +46,11 @@ impl InputScan {
         };
         let description = request.tool_description().map(str::to_owned);
         let schema = match &request.mcp_input_schema {
-            Some(GuardrailValue::Object(entries)) => entries.clone(),
+            Some(McpValue::Object(entries)) => entries.clone(),
             Some(_) | None => BTreeMap::new(),
         };
         let schema_leaves: Vec<Leaf> = scan_json(
-            &GuardrailValue::Object(schema.clone()),
+            &McpValue::Object(schema.clone()),
             NestedPayload::InputSchema,
         )?
         .leaves
@@ -78,9 +78,7 @@ impl InputScan {
     }
 }
 
-pub(super) fn argument_leaves(
-    arguments: Option<&GuardrailValue>,
-) -> Result<Vec<Leaf>, ContentBlocked> {
+pub(super) fn argument_leaves(arguments: Option<&McpValue>) -> Result<Vec<Leaf>, ContentBlocked> {
     match arguments {
         Some(value) => Ok(scan_json(value, NestedPayload::ToolArguments)?.leaves),
         None => Ok(Vec::new()),
@@ -91,29 +89,25 @@ pub(super) fn argument_leaves(
 fn tool_definition(
     name: &str,
     description: Option<&str>,
-    schema: &BTreeMap<String, GuardrailValue>,
-) -> GuardrailToolParam {
+    schema: &BTreeMap<String, McpValue>,
+) -> ToolDefinition {
     let mut parameters = schema.clone();
     parameters
         .entry("type".to_owned())
-        .or_insert_with(|| GuardrailValue::Text("object".to_owned()));
+        .or_insert_with(|| McpValue::Text("object".to_owned()));
     parameters
         .entry("properties".to_owned())
-        .or_insert_with(|| GuardrailValue::Object(BTreeMap::new()));
+        .or_insert_with(|| McpValue::Object(BTreeMap::new()));
     parameters
         .entry("additionalProperties".to_owned())
-        .or_insert(GuardrailValue::Boolean(false));
-    let function = BTreeMap::from([
-        ("name".to_owned(), GuardrailValue::Text(name.to_owned())),
-        (
-            "description".to_owned(),
-            GuardrailValue::Text(description.unwrap_or_default().to_owned()),
-        ),
-        ("parameters".to_owned(), GuardrailValue::Object(parameters)),
-        ("strict".to_owned(), GuardrailValue::Boolean(false)),
-    ]);
-    GuardrailToolParam {
-        tool_type: "function".to_owned(),
-        extra: BTreeMap::from([("function".to_owned(), GuardrailValue::Object(function))]),
+        .or_insert(McpValue::Boolean(false));
+    ToolDefinition {
+        kind: "function",
+        function: FunctionDefinition {
+            name: name.to_owned(),
+            description: description.unwrap_or_default().to_owned(),
+            parameters,
+            strict: false,
+        },
     }
 }

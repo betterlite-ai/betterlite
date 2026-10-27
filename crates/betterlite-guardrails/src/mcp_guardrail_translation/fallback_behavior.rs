@@ -1,6 +1,6 @@
 use std::num::FpCategory;
 
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use super::json_value::McpValue;
 
 use super::tool_request::McpToolRequest;
 
@@ -28,7 +28,7 @@ impl McpToolRequest {
     }
 
     #[must_use]
-    pub fn tool_arguments(&self) -> Option<&GuardrailValue> {
+    pub fn tool_arguments(&self) -> Option<&McpValue> {
         match &self.mcp_arguments {
             Some(arguments) if is_truthy(arguments) => Some(arguments),
             Some(_) | None => self.arguments.as_ref(),
@@ -36,15 +36,13 @@ impl McpToolRequest {
     }
 }
 
-fn is_truthy(value: &GuardrailValue) -> bool {
+fn is_truthy(value: &McpValue) -> bool {
     match value {
-        GuardrailValue::Null => false,
-        GuardrailValue::Boolean(flag) => *flag,
-        GuardrailValue::SignedInteger(number) => *number != 0,
-        GuardrailValue::UnsignedInteger(number) => *number != 0,
-        GuardrailValue::Decimal(number) => number.classify() != FpCategory::Zero,
-        GuardrailValue::Text(text) => !text.is_empty(),
-        GuardrailValue::Array(items) => !items.is_empty(),
-        GuardrailValue::Object(entries) => !entries.is_empty(),
+        McpValue::Null => false,
+        McpValue::Boolean(flag) => *flag,
+        McpValue::Number(number) => number.as_f64().map(f64::classify) != Some(FpCategory::Zero),
+        McpValue::Text(text) => !text.is_empty(),
+        McpValue::Array(items) => !items.is_empty(),
+        McpValue::Object(entries) => !entries.is_empty(),
     }
 }

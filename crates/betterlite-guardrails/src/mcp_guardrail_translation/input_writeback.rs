@@ -1,6 +1,6 @@
 use std::vec::IntoIter;
 
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use super::json_value::McpValue;
 
 use super::concurrent_conflict::conflicting_paths;
 use super::error::{ContentBlocked, ScanTarget};
@@ -35,7 +35,7 @@ pub fn write_back(
     if !conflicts.is_empty() {
         return Err(ContentBlocked::ConflictingRewrite { paths: conflicts });
     }
-    let mut arguments = current.cloned().unwrap_or(GuardrailValue::Null);
+    let mut arguments = current.cloned().unwrap_or(McpValue::Null);
     rewrite_leaves(&mut arguments, &replacements);
     request.mcp_arguments = Some(arguments.clone());
     request.modified_arguments = Some(arguments);
@@ -55,7 +55,7 @@ fn write_tool_definition(
     }
     let replacements = leaf_replacements(&scan.schema_leaves, masked.by_ref());
     if !replacements.is_empty() {
-        let mut schema = GuardrailValue::Object(scan.schema.clone());
+        let mut schema = McpValue::Object(scan.schema.clone());
         rewrite_leaves(&mut schema, &replacements);
         request.mcp_input_schema = Some(schema);
     }

@@ -1,4 +1,4 @@
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use super::json_value::McpValue;
 
 use super::error::{ContentBlocked, NestedPayload};
 
@@ -42,17 +42,14 @@ pub struct JsonScan {
     pub labels: Vec<String>,
 }
 
-pub fn scan_json(
-    value: &GuardrailValue,
-    payload: NestedPayload,
-) -> Result<JsonScan, ContentBlocked> {
+pub fn scan_json(value: &McpValue, payload: NestedPayload) -> Result<JsonScan, ContentBlocked> {
     let mut found = JsonScan::default();
     collect(value, &mut Vec::new(), &mut found, payload)?;
     Ok(found)
 }
 
 fn collect(
-    value: &GuardrailValue,
+    value: &McpValue,
     path: &mut Vec<PathPart>,
     found: &mut JsonScan,
     payload: NestedPayload,
@@ -61,18 +58,18 @@ fn collect(
         return Err(ContentBlocked::TooDeep { payload });
     }
     match value {
-        GuardrailValue::Text(text) => found.leaves.push(Leaf {
+        McpValue::Text(text) => found.leaves.push(Leaf {
             path: LeafPath(path.clone()),
             text: text.clone(),
         }),
-        GuardrailValue::Array(items) => {
+        McpValue::Array(items) => {
             for (index, item) in items.iter().enumerate() {
                 path.push(PathPart::Index(index));
                 collect(item, path, found, payload)?;
                 path.pop();
             }
         }
-        GuardrailValue::Object(entries) => {
+        McpValue::Object(entries) => {
             found.labels.extend(entries.keys().cloned());
             for (key, item) in entries {
                 path.push(PathPart::Key(key.clone()));
@@ -80,10 +77,8 @@ fn collect(
                 path.pop();
             }
         }
-        GuardrailValue::SignedInteger(number) => found.labels.push(number.to_string()),
-        GuardrailValue::UnsignedInteger(number) => found.labels.push(number.to_string()),
-        GuardrailValue::Decimal(number) => found.labels.push(format!("{number:?}")),
-        GuardrailValue::Null | GuardrailValue::Boolean(_) => {}
+        McpValue::Number(number) => found.labels.push(number.to_string()),
+        McpValue::Null | McpValue::Boolean(_) => {}
     }
     Ok(())
 }
