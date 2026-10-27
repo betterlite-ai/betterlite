@@ -1,0 +1,106 @@
+id: B3050
+title: Legacy dynamic project quota sharing
+description: >-
+  Build the legacy dynamic rate limiter that tracks active keys per minute-scoped model set, divides remaining model capacity among them with priority weight adjustment, and attaches project/model debugging headers to responses.
+
+  Implement DynamicRateLimiterCache to maintain minute-keyed sets of active API keys per model, reading set cardinality and writing new keys with a 60-second TTL. When both available capacity and active projects are known, divide by weight/active_projects; clamp the result to zero or positive.
+
+  Implement _PROXY_DynamicRateLimitHandler with check_available_usage that resolves model TPM/RPM from router metadata, computes weight from litellm.priority_reservation when a priority is present and a LITELLM_LICENSE environment variable exists, and returns the five-tuple (available_tpm, available_rpm, total_model_tpm, total_model_rpm, active_projects). Values that cannot be computed (missing limits, no cache count) stay None. Catch all exceptions, log them and return five Nones so errors are fail-open.
+
+  Wire async_pre_call_hook to check TPM then RPM, raising ProxyRateLimitError (B3030) if either is zero with details that name the key, available quota, model total and active key count. Fire cache.async_set_cache_sadd asynchronously without await to register the calling key. Wire async_post_call_success_hook to compute the same five-tuple and attach six x-litellm-* and x-ratelimit-* headers with the values, the model_name and active count.
+
+  License-gate the priority weight path: if LITELLM_LICENSE is absent and priority is present, log an error (not raise) and use weight 1. Keep the existing verbose_proxy_logger and CustomLogger inheritance.
+scope:
+  paths:
+    - crates/betterlite-core/src/dynamic_limits.rs
+    - crates/betterlite-core/src/dynamic_limits/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L28-L74
+    why: DynamicRateLimiterCache, its cache and time_fn fields, async_get_cache returning set cardinality and async_set_cache_sadd writing a key to the minute set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L77-L180
+    why: _PROXY_DynamicRateLimitHandler, check_available_usage computing weight, dividing by active_projects, clamping to zero, and handling exceptions with five Nones.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L182-L235
+    why: async_pre_call_hook checking available_tpm == 0, then available_rpm == 0, raising ProxyRateLimitError with model, provider, rate_limit_type and detail message, firing async_set_cache_sadd without await.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L237-L271
+    why: async_post_call_success_hook computing the five-tuple and attaching x-litellm-model_group, x-ratelimit-remaining-litellm-project-tokens, x-ratelimit-remaining-litellm-project-requests, x-ratelimit-remaining-model-tokens, x-ratelimit-remaining-model-requests and x-ratelimit-current-active-projects headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L108-L122
+    why: License check on LITELLM_LICENSE when priority is present, logging error instead of raising, weight fallback 1.
+dod:
+  - text: DynamicRateLimiterCache computes the minute from the time function and stores sets with a 60-second TTL.
+    proof: [cache-minute-ttl]
+  - text: async_get_cache returns the count of keys in the set for the current minute, or None if the key is absent.
+    proof: [cache-count-behavior]
+  - text: async_set_cache_sadd fires without await and adds a key to the minute-scoped model set.
+    proof: [cache-sadd-async]
+  - text: check_available_usage reads model group info, current usage and total limits from the router.
+    proof: [router-methods]
+  - text: When TPM/RPM limits and active project counts are all present, available quota = total * weight / active_projects, clamped to zero or positive.
+    proof: [division-clamping]
+  - text: Weight defaults to 1.0 and uses litellm.priority_reservation[priority] through convert_priority_to_percent when priority is present and LITELLM_LICENSE is set.
+    proof: [weight-priority-license]
+  - text: When any step raises an exception, check_available_usage logs it and returns (None, None, None, None, None) for fail-open.
+    proof: [exception-handling]
+  - text: async_pre_call_hook raises ProxyRateLimitError with TOKENS type if available_tpm == 0, and REQUESTS type if available_rpm == 0.
+    proof: [rate-limit-error]
+  - text: The error detail includes the key, available quota, model total and active project count.
+    proof: [error-detail]
+  - text: async_pre_call_hook fires async_set_cache_sadd without await to register the key.
+    proof: [cache-sadd-async]
+  - text: async_post_call_success_hook on a ModelResponse attaches the six x-litellm-* and x-ratelimit-* headers with computed values.
+    proof: [response-headers]
+checks:
+  optional: []
+  commands:
+    - id: cache-minute-ttl
+      why: the cache does not use minute-based keys with 60-second TTL
+      run: grep -q 'strftime.*"%H-%M"' crates/betterlite-core/src/dynamic_limits.rs && grep -q 'ttl.*60' crates/betterlite-core/src/dynamic_limits.rs
+    - id: cache-count-behavior
+      why: async_get_cache does not return set cardinality or None
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^dynamic_limits::(cache_returns_none_for_missing|count_for_existing_key)$/)'
+    - id: cache-sadd-async
+      why: async_set_cache_sadd is not spawned without await
+      run: grep -q 'spawn' crates/betterlite-core/src/dynamic_limits.rs && ! grep -Pq 'async_set_cache_sadd[^;]*\.await' crates/betterlite-core/src/dynamic_limits.rs
+    - id: router-methods
+      why: check_available_usage does not call get_model_group_info and get_model_group_usage
+      run: grep -q 'get_model_group_info' crates/betterlite-core/src/dynamic_limits.rs && grep -q 'get_model_group_usage' crates/betterlite-core/src/dynamic_limits.rs
+    - id: division-clamping
+      why: available quota is not divided by weight and active projects, or not clamped
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^dynamic_limits::(division|clamping|zero_floor)$/)'
+    - id: weight-priority-license
+      why: weight does not use priority_reservation when LITELLM_LICENSE is set
+      run: grep -q 'env.*LITELLM_LICENSE' crates/betterlite-core/src/dynamic_limits.rs && grep -q 'priority_reservation' crates/betterlite-core/src/dynamic_limits.rs && grep -q 'convert_priority_to_percent' crates/betterlite-core/src/dynamic_limits.rs
+    - id: exception-handling
+      why: exceptions do not return (None, None, None, None, None)
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^dynamic_limits::exception_returns_nones$/)'
+    - id: rate-limit-error
+      why: async_pre_call_hook does not raise ProxyRateLimitError or uses wrong RateLimitType
+      run: grep -q 'RateLimitType::TOKENS' crates/betterlite-core/src/dynamic_limits.rs && grep -q 'RateLimitType::REQUESTS' crates/betterlite-core/src/dynamic_limits.rs
+    - id: error-detail
+      why: error detail does not include key, available, total and active count
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^dynamic_limits::error_detail_complete$/)'
+    - id: response-headers
+      why: response headers are not attached or keys are incorrect
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^dynamic_limits::post_call_headers$/)'
+oracle_cases: []
+deviations:
+  - what: When priority is present but LITELLM_LICENSE is absent, betterlite logs an error and uses weight 1.0 instead of raising and blocking the request.
+    why: The legacy behavior is warn/fail-open; priority allocation without a license silently continues with baseline weight. betterlite distinguishes this with a log message and achieves the same outcome.
+out_of_scope:
+  - Cache backend (DualCache.async_get_cache, async_set_cache_sadd, async_increment_cache). B3050 calls them; B4293 owns them.
+  - ModelResponse._hidden_params and response header injection. These are wire protocol; B046 owns similar header logic.
+  - The CustomLogger protocol and parent hook chain. B3050 inherits and calls super() for fallback.
+  - litellm.priority_reservation population and schema. That is configuration in B002.
+pitfalls:
+  - The cache key is `f"{hour}-{minute}:{model}"` where hour and minute come from UTC time. A request that crosses a minute boundary gets a fresh set.
+  - async_get_cache returns the set's length, not the set itself. If the cache backend returns an empty set, length is 0, not None.
+  - The weight conversion uses `litellm.priority_reservation[priority]` directly without validation. If the key is not present when the dict exists, this is a KeyError caught by the exception handler.
+  - LITELLM_LICENSE is an os.environ lookup, not a config key. If unset, `os.getenv("LITELLM_LICENSE")` returns None. The license check uses `is None`, so an empty string is truthy.
+  - When available_tpm is computed as 0.0 and cast to int, it stays 0. The == 0 check catches both. Clamping happens before the check, so negative values become 0.
+  - The error message format is f-string with no escaping. Special characters in key values, model names or count strings are unescaped in the error body.
+  - async_post_call_success_hook asserts model_info is not None. If it is, the assertion fails; this is not caught by the exception handler in the outer hook block, so the exception propagates.
+  - The header values are Python int/None. On the wire they are JSON numbers or null. betterlite must serialize consistently.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

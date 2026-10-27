@@ -2,8 +2,8 @@ id: B3570
 milestone: M5 api families
 title: Passthrough provider contract and relay projection helpers
 status: todo
-depends_on: [B2202]
-file: null
+depends_on: [B2202, B207]
+file: tasks/B3570-passthrough-provider-contract.yaml
 covers:
   - "litellm/llms/base_llm/passthrough/**"
 parent: B101

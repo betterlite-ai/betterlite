@@ -1,0 +1,107 @@
+id: B3811
+title: Evaluate ordered tool permissions and nested argument patterns
+description: >-
+  Implement tool permission evaluation with ordered rule matching and nested argument pattern validation.
+  Given a tool name, tool type and optional function arguments, evaluate rules in order to determine if
+  the tool is allowed, checking both tool_name/tool_type regex matches and optional allowed_param_patterns
+  constraints on nested argument values. Rules are pre-compiled by B3810.
+  _get_permission_for_tool_call returns (is_allowed, matched_rule_id, message) with detailed permission/denial
+  reasoning, defaulting to default_action when no rule matches.
+  Tool argument paths use dot notation (field.nested.key) and array notation (field[]
+  for items in an array) to specify constraints on nested values that must match as strings
+  against their patterns. Arguments missing required paths fail matching.
+  A tool_call carries function.name and type, and the flow checks rules until one matches, then returns
+  whether it is allowed (decision == "allow") or denied.
+  Evaluation succeeds without arguments when a matching rule has no allowed_param_patterns.
+  When matching fails due to an argument error (parse, missing, pattern), continue to the next rule;
+  fall back to default_action if none match, preserving the last pattern failure message for context when denying.
+  The task provides evaluation functions for request and response hooks to call; B3812 wraps this
+  for request enforcement and B3813 wraps it for response enforcement.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/tool_permission.rs
+    - crates/betterlite-guardrails/src/tool_permission/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L307-L337
+    why: Parsing tool call arguments from string or dict form.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L339-L364
+    why: Collecting nested argument paths (dot and array notation) from arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L366-L395
+    why: Matching allowed_param_patterns against collected argument paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L397-L462
+    why: _get_permission_for_tool_call ordered rule evaluation with nested argument checking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L224-L251
+    why: Regex matching for tool_name and tool_type patterns; helper for rule matching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py#L9-L54
+    why: ToolPermissionRule structure with tool_name, tool_type, decision and allowed_param_patterns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L45-L73
+    why: Helper functions for mapping and list checks on opaque objects.
+dod:
+  - text: >-
+      A tool_call with neither function.name nor type short-circuits to (default_action=="allow", None, None) with no rule check and no message.
+    proof: [tool-permission-tests]
+  - text: >-
+      A tool with no matching rule uses default_action (allow or deny), and a tool matching a rule uses
+      its decision. Rules are evaluated in order until one matches completely (tool name/type and argument patterns).
+    proof: [tool-permission-tests]
+  - text: >-
+      Tool argument paths are collected from nested dicts and arrays using dot and [] notation, up to the
+      recursion depth limit LiteLLM enforces, and missing required paths cause matching to fail and continue to the next rule.
+    proof: [tool-permission-tests]
+  - text: >-
+      Allowed argument patterns are matched as strings against collected values; a mismatch continues to the next rule,
+      preserving the last mismatch message for context in a final denial.
+    proof: [tool-permission-tests]
+  - text: >-
+      Tools with no arguments when allowed_param_patterns are required fail matching and continue.
+      Tools with malformed JSON arguments log a warning and report a parse error, moving to the next rule.
+    proof: [tool-permission-tests]
+  - text: >-
+      Permission decisions come from rule ordering: rules are checked top to bottom, first complete match wins,
+      and no rule fallback uses default_action with preserved context from the last pattern failure.
+    proof: [tool-permission-tests]
+checks:
+  optional: []
+  commands:
+    - id: tool-permission-tests
+      why: the permission evaluation tests fail, do not exist, or filter selects no tests
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_evaluation::/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      _get_permission_for_tool_call calls a render_violation_message method that formats the default message with template parameters.
+      Until B3664 lands, betterlite returns the raw default message without template rendering.
+    why: >-
+      The render_violation_message method (litellm/integrations/custom_guardrail.py) is owned by B3664 and not yet implemented.
+      Evaluation still returns the correct allow/deny decision; only the message text is unrendered.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L422-L425
+  - what: >-
+      When a matching rule has allowed_param_patterns and arguments cannot be parsed (JSON decode error, non-object result),
+      evaluation reports a parse error and continues to the next rule instead of blocking at that rule.
+    why: >-
+      LiteLLM logs a warning and continues checking; betterlite replicates the fallthrough behavior.
+      A genuine parse error is diagnostic; missing arguments when required is a policy decision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L307-L337
+  - what: >-
+      Nested argument path collection respects LiteLLM's DEFAULT_MAX_RECURSE_DEPTH limit (currently 20 in LiteLLM),
+      so deeply nested structures are truncated.
+    why: >-
+      Prevent unbounded recursion in extremely nested structures; LiteLLM enforces this limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L346
+out_of_scope:
+  - Rule compilation, regex compilation and pattern initialization (owned by B3810).
+  - "_check_tool_permission L253-L305, the simpler tool_name/tool_type-only check used by the pre-call hook (owned by B3812)"
+  - "async_pre_call_hook L790-L838 and _modify_request_with_permission_errors L658-L704, which call _get_permission_for_tool_call indirectly via _check_tool_permission (owned by B3812)"
+  - "async_post_call_success_hook L841-L890, async_post_call_streaming_iterator_hook L892-L953, _check_assembled_stream L955-L967, _modify_response_with_permission_errors L725-L787, and _anthropic_tool_use_to_tool_call L515-L527, which call _get_permission_for_tool_call or wrap extracted tool calls (owned by B3813)"
+  - "render_violation_message/violation_message_template (litellm/integrations/custom_guardrail.py, owned by B3664); betterlite returns the raw default message until B3664 lands"
+pitfalls:
+  - Argument patterns are matched on string representations of values, not typed structures; flatten to strings for comparison.
+  - Array paths like field[] must be recognized as a single collected-into target, not individual indexes.
+  - Rules are evaluated strictly in order; a tool matching rule 2 never reaches rule 3, so default_action is only fallback.
+  - A missing arguments object when allowed_param_patterns are present is a hard fail for that rule, not a soft skip.
+  - The last pattern failure message (if any) is preserved when falling through all rules and denying by default.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

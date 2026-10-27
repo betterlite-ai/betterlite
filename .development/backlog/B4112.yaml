@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Detect intercepted search calls in three response formats
 status: todo
 depends_on: [B4111]
-file: null
+file: tasks/B4112-websearch-call-detection.yaml
 covers:
   - "litellm/integrations/websearch_interception/transformation.py"
 parent: B119

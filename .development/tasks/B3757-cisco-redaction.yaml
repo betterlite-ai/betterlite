@@ -1,0 +1,125 @@
+id: B3757
+title: Cisco request and response redaction
+description: >-
+  Apply Cisco's sanitized content to request and response surfaces through
+  dedicated redaction functions that rewrite in place. _apply_redaction dispatches
+  to input/output redactors based on surface and direction; _redact_mcp_input
+  rewrites tool arguments in all proxy-accessible locations; _redact_chat_input
+  handles both messages and Responses API input fields with tool-argument clearing
+  and instructions rewriting; _redact_chat_output targets ModelResponse,
+  TextCompletionResponse and Responses API shapes with reasoning-field removal.
+  Each redaction preserves the incomplete-rewrite return value so the verdict engine
+  can fall back to block/monitor policy when no suitable surface exists. Tool arguments
+  are cleared by setting arguments to "{}" as JSON; reasoning fields (reasoning_content,
+  thinking_blocks, reasoning_items) are deleted where possible or set to None on
+  immutable shapes. Instructions field extraction respects role priorities (system/developer
+  over user content) and falls back to sanitized_text when messages are unavailable.
+  Responses API input rewriting delegates to cisco_conversation.rs public functions
+  for message-to-input conversion and flat-list text-part detection.
+scope:
+  paths:
+  - crates/betterlite-guardrails/Cargo.toml
+  - crates/betterlite-guardrails/src/cisco_redaction.rs
+  - tools/oracle/cases/helpers/cisco-redaction/**
+  - tools/oracle/helpers/b3757.py
+  - tools/oracle/helpers/b3757/**
+  - tools/oracle/src/helpers/guardrails/b3757.rs
+  - tools/oracle/src/helpers/guardrails/b3757/**
+  - crates/betterlite-guardrails/src/cisco_redaction/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1330-L1355
+  why: _apply_redaction dispatches redaction across mcp/chat input/output surfaces and returns incomplete-rewrite bool for fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1357-L1389
+  why: _redact_mcp_input rewrites tool arguments in request_data and params.arguments paths with sanitized_mcp_arguments or sanitized_text.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1391-L1444
+  why: _redact_chat_input strips tool-definition synthetic messages, rewrites instructions/messages with sanitized variants, and clears tool arguments on fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1446-L1486
+  why: _redact_responses_instructions, _instruction_text_from_messages and _is_instruction_role extract system/developer role text and rewrite instructions field.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1488-L1500
+  why: _clear_chat_input_tool_arguments uses extract_message_tool_argument_parts to detect and clear tool calls in every message.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1502-L1527
+  why: _redact_chat_output dispatches to choice-type redactors (model response, text completion, Responses API) and removes reasoning fields.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1529-L1571
+  why: _redact_model_response_choices rewrites choices[].message with sanitized text/messages and clears tool-call arguments.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1573-L1596
+  why: _redact_text_completion_choices replaces choices[].text with sanitized_text or fallback from message content.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1598-L1639
+  why: _redact_message_reasoning_fields removes reasoning_content/thinking_blocks/reasoning_items on messages that hold them; _clear_arguments_field sets arguments to "{}".
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1641-L1675
+  why: _redact_responses_api_output walks output items and content-part lists, replacing text-type fields and clearing arguments.
+dod:
+- text: >-
+    apply_redaction_mcp_input rewrites request_data.mcp_arguments, request_data.arguments,
+    and params.arguments with sanitized_mcp_arguments when present, or locates the single
+    string argument field and rewrites it with sanitized_text. Returns true on rewrite,
+    false when no argument field matched.
+  proof: [helpers-rust, helper-python, redaction-oracle]
+- text: >-
+    apply_redaction_chat_input_with_messages strips the tool-definition synthetic message
+    (last item appended during inspection) when sanitized_messages present, rewrites request_data.messages
+    or converts to Responses API input field via sanitized_messages_to_responses_input, and falls back
+    to clearing tool arguments when sanitized_text is the only available rewrite. Returns true on any
+    rewrite, false when no suitable surface exists.
+  proof: [helpers-rust, helper-python, redaction-oracle]
+- text: >-
+    apply_redaction_chat_output_model_response pulls choices[].message and rewrites content via
+    sanitized text or message list (consuming one message per choice), then clears tool-call arguments.
+    Returns true on any rewrite, false when response is null or choices is not a list.
+  proof: [helpers-rust, helper-python, redaction-oracle]
+- text: >-
+    apply_redaction_chat_output_text_completion rewrites choices[].text with sanitized_text or
+    extracts text from the first message in sanitized_messages if available. Returns false when
+    response is null, choices is not a list, or no replacement text found.
+  proof: [helpers-rust, helper-python, redaction-oracle]
+- text: >-
+    apply_redaction_responses_api_output walks output items, rewrites content-part lists where
+    type is in {text, input_text, output_text, summary_text, reasoning_text} with sanitized_text
+    (or joined message content), and sets arguments field to "{}". Returns false when response is null,
+    output is not a list, or no replacement text found.
+  proof: [helpers-rust, helper-python, redaction-oracle]
+- text: >-
+    apply_redaction_mcp_output delegates to B3761's set_mcp_tool_response_text when sanitized_text
+    is present. Returns false when response is null or no sanitized_text available.
+  proof: [helpers-rust, helper-python, redaction-oracle]
+- text: >-
+    extract_masked_entity_count_rules sums entity_type counts from a rules array,
+    returning a map of string counts or None if no rules or empty.
+  proof: [helpers-rust, helper-python, redaction-oracle]
+checks:
+  optional: []
+  commands:
+  - id: helpers-rust
+    why: Rust redaction and response-rewrite helpers are missing or do not match LiteLLM behavior
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^cisco_redaction::tests::/) - test(/::replays_corpus$/)'
+  - id: helper-python
+    why: Python oracle helpers lack implementations or fail on LiteLLM comparison
+    run: test -f tools/oracle/helpers/b3757.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: redaction-oracle
+    why: Oracle cases for redaction behavior are missing or fail against LiteLLM
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/cisco-redaction)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/cisco-redaction/
+oracle_cases:
+- tools/oracle/cases/helpers/cisco-redaction/apply-redaction-mcp-input.yaml
+- tools/oracle/cases/helpers/cisco-redaction/apply-redaction-chat-input.yaml
+- tools/oracle/cases/helpers/cisco-redaction/apply-redaction-chat-output-model-response.yaml
+- tools/oracle/cases/helpers/cisco-redaction/apply-redaction-chat-output-text-completion.yaml
+- tools/oracle/cases/helpers/cisco-redaction/apply-redaction-responses-api-output.yaml
+- tools/oracle/cases/helpers/cisco-redaction/apply-redaction-mcp-output.yaml
+- tools/oracle/cases/helpers/cisco-redaction/extract-masked-entity-count-rules.yaml
+deviations: []
+out_of_scope:
+- B3756 owns _extract_tool_definition_text, _normalize_message_content, _extract_message_tool_argument_parts, _sanitized_messages_to_responses_input, _rewrite_responses_input_text and _extract_message_reasoning_parts; this task calls them as public exports from cisco_conversation.rs.
+- _non_instruction_messages filters messages to exclude instruction roles; it is a small helper within this task's redaction flow.
+- B3761 owns _set_mcp_tool_response_text which applies redacted text to MCP responses.
+- Verdict construction and incomplete-rewrite dispatch (B3760 calls _apply_redaction to enforce verdicts).
+pitfalls:
+- _apply_redaction returns false when no suitable surface exists to apply redaction, allowing the verdict engine to fall back to block/monitor policy without rewriting.
+- Tool arguments are cleared by setting the arguments field to the string "{}", not to an empty dict, preserving the wire format.
+- Reasoning fields (reasoning_content, thinking_blocks, reasoning_items) may not be deletable on immutable response shapes; catch exceptions and fall back to setattr(..., None).
+- _redact_chat_input strips the last message when it is a synthetic tool-definition message appended during inspection.
+- Instructions field rewriting checks for system/developer roles first (with _is_instruction_role) and only falls back to sanitized_text when instructions are present but no instruction role found in messages.
+- _clear_chat_input_tool_arguments uses extract_message_tool_argument_parts to detect tool calls; only messages with tool_calls/function_call fields get cleared.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
