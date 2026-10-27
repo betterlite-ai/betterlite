@@ -87,7 +87,6 @@ scope:
   - crates/betterlite-core/src/operation.rs
   - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/Cargo.toml
-  - deny.toml
   - crates/betterlite-provider/src/azure_media_dispatch.rs
   - crates/betterlite-provider/src/azure_media_dispatch/**
   - tools/oracle/Cargo.toml

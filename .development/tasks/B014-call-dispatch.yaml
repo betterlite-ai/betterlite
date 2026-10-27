@@ -17,7 +17,6 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-core/**
   - crates/betterlite-server/**
   - crates/betterlite/**

@@ -1,14 +1,14 @@
 id: B4838
 milestone: M9 agents and mcp
 title: Confine Deep Agents filesystem and shell operations to its sandbox
-status: todo
+status: done
 depends_on: [B4830]
 file: tasks/B4838-deepagents-sandbox-backend.yaml
 covers:
   - "litellm/llms/deepagents/harness/sandbox_backend.py"
 parent: B143
 split_from: B143
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 231

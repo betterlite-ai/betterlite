@@ -18,7 +18,7 @@ scope:
   - crates/betterlite-a2a/src/streaming_iterator.rs
   - crates/betterlite-a2a/src/streaming_iterator/**
   - tools/oracle/cases/helpers/a2a-stream-accounting/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/b4810-*"
   - tools/oracle/helpers/b4810.py
   - tools/oracle/helpers/b4810/**
   - tools/oracle/src/helpers/a2a/b4810.rs
@@ -82,8 +82,8 @@ checks:
   - id: helper-case-corpus
     why: new helper seeds are missing or fail replay
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'a2a_stream_accounting' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b4810-*")" &&
+      grep -lq 'a2a_stream_accounting' tools/oracle/fuzz/corpus/helper_case/b4810-* && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -108,6 +108,7 @@ out_of_scope:
   Enterprise logging behavior, exporter-specific delivery, prompt management and MCP hooks belong
   to other logging tasks.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/b4810-<case>.yaml. The rest of that folder belongs to other tasks.'
 - >-
   The iterator stores chunks as a mutable list; final_chunk is set only if a completed chunk is seen
   during iteration, otherwise it is the last chunk on StopAsyncIteration. Do not accumulate text;

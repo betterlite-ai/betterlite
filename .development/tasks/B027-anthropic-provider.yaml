@@ -120,7 +120,6 @@ scope:
   - crates/betterlite-core/src/operation.rs
   - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/Cargo.toml
-  - deny.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/provider/anthropic_provider.rs
   - tools/oracle/src/helpers/provider/anthropic_provider/**

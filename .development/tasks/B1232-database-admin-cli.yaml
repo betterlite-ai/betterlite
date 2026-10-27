@@ -53,7 +53,6 @@ description: >-
 scope:
   paths:
     - Cargo.toml
-    - deny.toml
     - tools/betterlite-db-admin/Cargo.toml
     - tools/betterlite-db-admin/src/main.rs
     - tools/betterlite-db-admin/src/lib.rs

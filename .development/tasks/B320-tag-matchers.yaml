@@ -54,7 +54,6 @@ scope:
   - tools/oracle/cases/routing/tag-matchers/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/tag-matchers-*
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-router/Cargo.toml
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/Cargo.toml
