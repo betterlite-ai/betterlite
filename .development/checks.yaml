@@ -97,8 +97,10 @@ base:
       why: the lint table is the code standard and warnings are errors
       run: cargo clippy --workspace --all-targets --locked -- -D warnings
     - id: tests
-      why: the whole test suite passes
-      run: cargo nextest run --workspace --locked --no-tests=warn
+      why: the tests of every package the change can affect pass, and a push to main runs the whole suite
+      run: |-
+        packages=$(cargo gate affected) || exit 1
+        if [ -z "$packages" ]; then echo "the change affects no package"; else cargo nextest run --locked --no-tests=warn $packages; fi
     - id: doctests
       why: documentation examples compile and pass
       run: |-
