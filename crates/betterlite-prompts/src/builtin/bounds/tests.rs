@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::{OUTPUT_BYTES, check, finish};
-use crate::builtin::{Content, Message, PromptError, deepseek};
+use crate::builtin::{Content, Message, PromptError, deepseek, images, ollama};
 use rstest::rstest;
 
 #[derive(Clone, Copy)]
@@ -31,7 +31,10 @@ fn builtin_prompts_behavior_tests_behavior(
     match boundary {
         Boundary::Input => assert_eq!(check(&messages).is_ok(), accepted),
         Boundary::Output => {
-            assert_eq!(finish("x".repeat(size)).is_ok(), accepted);
+            let value = "x".repeat(size);
+            assert_eq!(images::convert_to_ollama_image(&value).is_ok(), accepted);
+            assert_eq!(ollama::ollama(&value, &[]).is_ok(), accepted);
+            assert_eq!(finish(value).is_ok(), accepted);
             assert_eq!(deepseek(&[], |_, _| Ok("x".repeat(size))).is_ok(), accepted);
         }
         Boundary::Dependency => {
