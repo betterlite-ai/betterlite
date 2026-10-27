@@ -1,0 +1,83 @@
+id: B4837
+title: Adapt Deep Agents messages, tool permissions and usage accounting
+description: >-
+  Translate LangChain messages and LangGraph updates into harness events, configure
+  approval/filter policy and count model usage with price fallback. Keep middleware
+  callbacks below the graph handler so filtering and accounting never depend on its driver.
+
+  Message and update translation functions extract plain text, reasoning deltas and tool
+  calls from LangChain message objects and LangGraph state updates, returning Event lists
+  suitable for the turn engine. gateway_headers adds attribution tags and optional metadata
+  for gateway mode. chat_model_kwargs returns a ChatLiteLLM constructor dict for gateway
+  or SDK mode. Tool-name helpers (native_tool_name, normalized_tool_name) map between
+  native Deep Agents tool names and a shared normalized vocabulary. blocked_tools returns
+  native tool names the model must not see, based on permissions mode (read-only, edit,
+  ask, full) and disable_tools list. interrupt_config builds the interrupt_on policy for
+  permissions='ask'. recursion_limit computes the max LangGraph steps from ctx.max_turns.
+
+  ToolFilterMiddleware hides filtered tools from the model and refuses calls to them by
+  wrapping model and tool-call handlers. UsageCallback counts every model call in the graph,
+  subagents and summarization included, reading usage_metadata and cost_per_token with
+  fallback to zero for unmapped models. message_cost extracts the reported response_cost
+  or computes it from tokens; record_llm_usage increments session counters and catches
+  exceptions to prevent accounting failures from breaking a turn.
+
+  DeepAgentsHarnessConfig.validate_environment checks that ctx.model is set (model is
+  required for Deep Agents). The permissions-to-capabilities mapping is validated in B4844.
+
+scope:
+  paths:
+    - crates/betterlite-harness/src/deepagents/transformation.rs
+    - crates/betterlite-harness/src/deepagents/sandbox_backend.rs
+    - crates/betterlite-harness/src/deepagents/transformation/**
+    - crates/betterlite-harness/src/deepagents/sandbox_backend/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepagents/harness/transformation.py#L73-L280
+    why: Helper functions (gateway_headers, chat_model_kwargs, tool-name mapping, blocked_tools, interrupt_config, recursion_limit, message/event translation), plus all transformations
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepagents/harness/transformation.py#L305-L309
+    why: DeepAgentsHarnessConfig class definition and validate_environment method that checks ctx.model
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepagents/harness/sandbox_backend.py#L438-L547
+    why: ToolFilterMiddleware and UsageCallback classes for permissions filtering and usage accounting
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L151-L169
+    why: _check_capabilities validates permissions against capabilities (owned by B4844, not B4837)
+dod:
+  - text: Message translation preserves LiteLLM semantics. gateway_headers formats attribution tags and optional metadata. chat_model_kwargs returns ChatLiteLLM kwargs for gateway or SDK mode. content_text and reasoning_text extract plain text and reasoning from LangChain messages. stream_events converts AIMessageChunk into Text/Reasoning events. tool_call_event builds ToolCall from a call dict. update_events and _message_events extract ToolCall/ToolResult events from LangGraph updates. final_ai_text finds the last AI message's text. structured_json serializes structured output using model_dump_json or json.dumps. interrupts_in and approval_requests extract interrupt payloads. decision builds a LangGraph HITL decision (approve/reject).
+    proof: [deepagents-behavior-tests]
+  - text: Tool permissions and filtering work correctly. native_tool_name and normalized_tool_name map between naming schemes (read<->read_file, write<->write_file, edit<->edit_file, bash<->execute). blocked_tools computes native names to hide based on permissions mode. interrupt_config builds interrupt_on policy for ask mode, listing approve/reject as allowed decisions. recursion_limit scales to ctx.max_turns with DEEPAGENTS_STEPS_PER_TURN=6.
+    proof: [deepagents-behavior-tests]
+  - text: DeepAgentsHarnessConfig.validate_environment checks that ctx.model is set, raising ValueError if missing.
+    proof: [deepagents-behavior-tests]
+  - text: ToolFilterMiddleware filters tools from model requests and refuses blocked tool calls with an error message, supporting both sync and async handler interfaces.
+    proof: [deepagents-behavior-tests]
+  - text: UsageCallback counts model calls from LLMResult.generations, reading usage_metadata tokens and computing cost with cost_per_token fallback. Unknown models are logged once and cost zero. record_llm_usage increments counters before reading generations and catches exceptions to prevent accounting failures.
+    proof: [deepagents-behavior-tests]
+  - text: Every function in the covered LiteLLM ranges is implemented or listed out of scope with its reason.
+    proof: [deepagents-behavior-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: deepagents-behavior-tests
+      why: behavior tests for Deep Agents transformation and accounting fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^deepagents::/) - test(replays_the_deepagents_corpus)'
+oracle_cases: []
+deviations:
+  - what: Unknown models in cost_per_token are logged once per session and their calls cost zero.
+    why: LiteLLM logs unknown models and treats them as zero cost; betterlite does the same, but suppresses subsequent logs for the same model within a session.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepagents/harness/sandbox_backend.py#L509-L518
+out_of_scope:
+  - Tool call and tool result execution. ToolFilterMiddleware.wrap_tool_call and awrap_tool_call forward unblocked calls to the handler; execution is the graph's responsibility (owned by B4840).
+  - DeepAgents graph creation and streaming. chat_model_kwargs provides initialization args; the graph builder is in B4840.
+  - LangChain and deepagents optional dependencies. These are assumed available at import time if used.
+pitfalls:
+  - interrupt_config builds a dict for deepagents.create_deep_agent(interrupt_on=); the dict shape must match LangGraph InterruptOnConfig exactly (list of allowed_decisions per tool name).
+  - message_cost reads response_metadata.response_cost first, falling back to cost_per_token only if not found or not numeric. The fallback must not skip LiteLLM's response_cost if present.
+  - record_llm_usage catches all exceptions and logs them with full traceback, never raising. A broken token count parse must not fail the turn.
+  - structured_json tries model_dump_json (Pydantic v2) before json.dumps. Ensure the fallback handles datetime and other json.JSONEncoder defaults.
+  - 'blocked_tools returns native names: the normalization happens on input, so disable_tools/permission strings map to native names for comparison with tool.name.'
+  - Tool-name mappings are Deep Agents-specific (read/write/edit/bash to file/file/file/execute). Unmapped names pass through; callers handle agent-specific tooling.
+  - DEEPAGENTS_STEPS_PER_TURN is 6, matching LangGraph supersteps per turn (model node, tools node, middleware hooks) for recursion_limit scaling.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

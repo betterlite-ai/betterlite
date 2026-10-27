@@ -1,0 +1,148 @@
+id: B4779
+title: Resolve key and team agent grants
+description: >-
+  Build crates/betterlite-auth/src/agent_permission_handler with the key and team grant resolution layer. A key or team can declare agent permissions directly (through object_permission) or through access groups (unified or declared). `get_allowed_agents_for_key` returns the set of agents a key is permitted to invoke; `_get_allowed_agents_for_team` returns the same for a team. Both check native permissions first (object_permission.agents), then declared access groups (object_permission.agent_access_groups), then unified access groups (key/team.access_group_ids). A key or team that declares agents or groups is restricted even when those declarations resolve to nothing, so an emptied access group denies rather than opening the key/team. Lookup failures propagate to the caller in strict mode (raising 503) and warn and allow in non-strict mode.
+
+  `resolve_key_team_agent_access` combines both sources with intersection, while `agent_caller_access` gets team-only access for a caller. `_agent_access_group_ceiling` narrows an agent's own ceiling to the intersection of its access group and the caller's allowed agents. Access group helpers split the lookup: config agents match agent_access_groups names in the registry, DB agents match with the agents table's hasSome filter, and unified groups delegate to B747's `_get_agent_ids_from_access_groups`.
+
+  Preserve declared-but-empty restrictions, strict 503 failures versus non-strict warnings, agent visibility changes based on group membership, and config-before-DB ordering.
+scope:
+  paths:
+    - crates/betterlite-auth/src/agent_permission_handler.rs
+    - crates/betterlite-auth/src/agent_permission_handler/**
+    - tools/oracle/cases/agent_grants/**
+    - tools/oracle/helpers/b4779.py
+    - tools/oracle/helpers/b4779/**
+    - tools/oracle/src/helpers/auth/b4779.rs
+    - tools/oracle/src/helpers/auth/b4779/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L113-L154
+    why: agent_caller_access, resolve_key_team_agent_access, and _agent_access_group_ceiling with strict/non-strict mode.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L224-L237
+    why: _get_key_object_permission extracts object_permission from UserAPIKeyAuth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L273-L334
+    why: get_allowed_agents_for_key combines native permissions and access groups, strict/non-strict error handling and empty-group denial semantics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L336-L420
+    why: _get_allowed_agents_for_team mirrors key logic with team object fetch and per-team group tracking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L422-L487
+    why: Helpers to resolve access groups to agent IDs from config and database, plus the unified group delegation.
+dod:
+  - text: agent_caller_access and resolve_key_team_agent_access compute the intersection of key and team grants with strict/non-strict error handling.
+    proof: [access-merge]
+  - text: get_allowed_agents_for_key returns agents from native permissions, declared access groups and unified groups; returns unrestricted if none are declared.
+    proof: [key-access-resolution]
+  - text: _get_allowed_agents_for_team mirrors key resolution with team object fetch; a missing team in strict mode denies, in non-strict allows.
+    proof: [team-access-resolution]
+  - text: A key or team that declares agents or groups is restricted even when those declarations resolve to nothing (empty group denial).
+    proof: [empty-group-denial]
+  - text: Config agents match their agent_access_groups to declared group names; DB agents use the agents table's hasSome filter on agent_access_groups.
+    proof: [access-group-lookup]
+  - text: Unified access groups delegate to B747's _get_agent_ids_from_access_groups without reimplementing the lookup.
+    proof: [unified-delegation]
+  - text: _agent_access_group_ceiling returns None when user_api_key_auth is None or has no agent_id.
+    proof: [ceiling-guard]
+  - text: _agent_access_group_ceiling dispatches to resolve_agent_access_group_ceiling with check_db_only=true in strict mode, or uses the injected resolver in non-strict mode.
+    proof: [ceiling-dispatch]
+  - text: _agent_access_group_ceiling returns None when the resolved ceiling is None.
+    proof: [ceiling-null-propagation]
+  - text: _agent_access_group_ceiling converts the resolved ceiling's agent IDs to stable IDs before returning.
+    proof: [ceiling-stable-ids]
+  - text: Strict mode raises HTTPException(503) on lookup failures; non-strict mode logs warnings (skipping noisy ones for the UI team) and allows access.
+    proof: [error-handling]
+  - text: Every function's logic, error cases and team-specific behavior match the pinned LiteLLM.
+    proof: [oracle-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: access-merge
+      why: agent_caller_access or resolve_key_team_agent_access do not compute the correct intersection or error handling
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_permission_handler::(agent_caller_access|resolve_key_team_agent_access)/)'
+    - id: key-access-resolution
+      why: get_allowed_agents_for_key does not resolve native permissions, declared groups or unified groups correctly
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_permission_handler::get_allowed_agents_for_key/)'
+    - id: team-access-resolution
+      why: _get_allowed_agents_for_team does not resolve team permissions correctly or does not handle missing teams
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_permission_handler::get_allowed_agents_for_team/)'
+    - id: empty-group-denial
+      why: empty or non-existent access groups do not deny when declared
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_permission_handler::(empty_group|missing_group)/)'
+    - id: access-group-lookup
+      why: config or database agent lookups do not match declared access groups correctly
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_permission_handler::(config_agent_ids|db_agent_ids)_for_access_groups/)'
+    - id: unified-delegation
+      why: unified access group delegation does not call B747's lookup or returns incorrect results
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_permission_handler::unified_access_group/)'
+    - id: ceiling-guard
+      why: _agent_access_group_ceiling does not return None when user_api_key_auth is None or has no agent_id
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_permission_handler::ceiling.*guard/)'
+    - id: ceiling-dispatch
+      why: _agent_access_group_ceiling does not dispatch to strict/non-strict resolvers correctly
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_permission_handler::ceiling.*dispatch/)'
+    - id: ceiling-null-propagation
+      why: _agent_access_group_ceiling does not return None when the resolved ceiling is None
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_permission_handler::ceiling.*null/)'
+    - id: ceiling-stable-ids
+      why: _agent_access_group_ceiling does not convert ceiling to stable IDs
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_permission_handler::ceiling.*stable/)'
+    - id: error-handling
+      why: strict mode does not raise 503 on failures or non-strict mode does not warn and allow
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_permission_handler::(.*strict|.*warning)/)'
+    - id: oracle-cases
+      why: oracle cases do not run, fail or mismatch LiteLLM's behavior
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^helpers::agent_permission_handler::/)'
+oracle_cases:
+  - tools/oracle/cases/agent_grants/key_only.yaml
+  - tools/oracle/cases/agent_grants/team_only.yaml
+  - tools/oracle/cases/agent_grants/key_and_team_intersection.yaml
+  - tools/oracle/cases/agent_grants/empty_group_denial.yaml
+  - tools/oracle/cases/agent_grants/declared_vs_unified_groups.yaml
+  - tools/oracle/cases/agent_grants/missing_team_strict.yaml
+  - tools/oracle/cases/agent_grants/missing_team_nonstrict.yaml
+  - tools/oracle/cases/agent_grants/lookup_failure_strict.yaml
+  - tools/oracle/cases/agent_grants/lookup_failure_nonstrict.yaml
+  - tools/oracle/cases/agent_grants/config_and_db_agents.yaml
+deviations:
+  - what: Declared-but-empty access groups deny access (RestrictedAgentAccess with empty set), not open access.
+    why: LiteLLM treats an declared group as a restriction boundary. An emptied or deleted group must deny rather than silently fall through.
+  - what: Strict mode propagates lookup errors as HTTP 503 "Agent invocation policy is unavailable"; non-strict logs and allows.
+    why: Failing open on transient errors is preferable to blocking all access, but strict mode ensures policy enforcement is never silently violated.
+  - what: Non-strict mode skips warning logs for the UI team (litellm-dashboard) since it never has agent declarations.
+    why: LiteLLM's dashboard team produces spurious warning logs that are not actionable for operators.
+out_of_scope:
+  - HTTP route registration and invocation checks. Those belong to B4780/B4781 and later routes.
+  - Managed identity and fresh-key policy. Those belong to B4780.
+  - Credential restore and redaction. That belongs to B4775.
+  - Object permission write persistence. That belongs to B4777.
+  - Managed-agent-specific authorization. That belongs to B4780/B4781.
+  - '_get_team_object_permission: no caller at the pin.'
+  - 'get_agent_access_groups: no caller at the pin.'
+  - '_get_agent_access_groups_for_key: no caller at the pin.'
+  - '_get_agent_access_groups_for_team: no caller at the pin.'
+pitfalls:
+  - >-
+    Declared vs. unrestricted: a key with declared agents/groups restricts access even if all those declarations are empty. A key with no declarations is unrestricted.
+  - >-
+    Intersection semantics: resolve_key_team_agent_access intersects key and team access using _intersect_agent_access from B4778; a key with access A and a team with access B results in A ∩ B.
+  - >-
+    Access groups come from three sources: object_permission.agents (direct), object_permission.agent_access_groups (declared groups), and key/team.access_group_ids (unified groups). All three go into one union before returning.
+  - >-
+    Config agents use getattr for agent_access_groups to be defensive; DB agents use the Prisma hasSome filter. Both return empty sets on no match, not errors.
+  - >-
+    Empty result when all sources are defined but resolve to nothing is RestrictedAgentAccess(empty set), not UnrestrictedAgentAccess. That signals "restricted to nothing" vs. "no restrictions".
+  - >-
+    UI_TEAM_ID is the literal string "litellm-dashboard" and is checked by identity, not by a function; use string equality.
+  - >-
+    HTTPException(503, ...) is raised in strict mode; json.HTTPException import and raised status must match LiteLLM.
+  - >-
+    _get_allowed_agents_for_team uses get_team_object from auth_checks (B737) with check_db_only set to strict, not check_cache_only or other parameters.
+  - >-
+    The team object's object_permission and access_group_ids both exist on LiteLLM_TeamTable; read both for completeness.
+  - >-
+    Unified groups call _get_agent_ids_from_access_groups from B747; do not re-implement this logic.
+  - >-
+    A Final variable is const in Rust (const binding or immutable reference). Type it explicitly where LiteLLM uses Final.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

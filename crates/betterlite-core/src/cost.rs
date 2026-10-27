@@ -6,6 +6,7 @@ pub mod context;
 pub mod dispatch;
 pub mod image_dispatch;
 pub mod prepare;
+pub mod prompt_cache_scenarios;
 pub mod realtime;
 pub mod recording;
 pub mod response;

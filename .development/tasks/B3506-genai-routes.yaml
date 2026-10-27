@@ -1,0 +1,138 @@
+id: B3506
+title: Serve Google generation streaming and token-count routes
+description: >-
+  Register HTTP routes for Google GenAI generation, streaming, and token counting in betterlite-server.
+  Serve POST /v1beta/models/{model_name}:generateContent, /models/{model_name}:generateContent,
+  POST /v1beta/models/{model_name}:streamGenerateContent, /models/{model_name}:streamGenerateContent,
+  POST /v1beta/models/{model_name}:countTokens, and /models/{model_name}:countTokens.
+  Each route receives requests from LiteLLM API clients using the Google GenAI SDK.
+  Parse the JSON body (using B1100's request decoder), authenticate via B052's virtual key auth,
+  extract the model name from the path, and dispatch to B3489's generation and streaming handlers.
+  For generation, call the non-streaming path; for streaming, set stream=True and the GenAI-specific
+  SSE flags (_litellm_skip_openai_stream_done and _litellm_raw_sse_stream) before dispatch.
+
+  Token counting extracts contents from the request body. Translate contents to OpenAI-compatible
+  messages by calling B3484's GoogleGenAIAdapter.translate_generate_content_to_completion, then
+  build a TokenCountRequest with model, contents, and translated messages. Call the internal
+  token_counter endpoint with call_endpoint=True. The response has three branches: (1) if
+  token_response.original_response exists, return TokenCountDetailsResponse with its totalTokens
+  and promptTokensDetails; (2) if token_response lacks original_response but has total_tokens,
+  return totalTokens from token_response.total_tokens and promptTokensDetails as an empty array;
+  (3) if token_response is None, return totalTokens=0 and promptTokensDetails=[].
+
+  Return the same error status, type, param and code LiteLLM returns on provider errors (rule
+  errors-match-litellm), with betterlite's own message. On exceptions during dispatch, extract
+  the error and reraise it through the exception handler so the error response middleware (from B003)
+  returns the correct HTTP response. Clients that read x-litellm-* response headers must see the
+  ones LiteLLM sends: call id, model id, model group, model api base, and others the oracle cases
+  show. The cost and key-limit headers wait for spend tracking and virtual keys.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/api/genai_routes.rs
+    - crates/betterlite-server/src/api/genai_routes/**
+    - tools/oracle/cases/genai/**
+    - tools/oracle/fuzz/corpus/http_case/genai-*
+    - tools/oracle/helpers/b3506.py
+    - tools/oracle/helpers/b3506/**
+    - tools/oracle/src/helpers/server/b3506.rs
+    - tools/oracle/src/helpers/server/b3506/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L17-L76
+    why: google_generate_content route and handler, both /v1beta and / paths
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L78-L141
+    why: google_stream_generate_content route and handler with stream=True and SSE flags
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L143-L211
+    why: "google_count_tokens route and handler: contents extraction, adapter translation, internal token counter call, three response branches"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L311-L320
+    why: TokenCountDetailsResponse structure with totalTokens and promptTokensDetails fields
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L295-L419
+    why: GoogleGenAIAdapter and translate_generate_content_to_completion for contents-to-messages translation
+dod:
+  - text: "POST /v1beta/models/{model_name}:generateContent and POST /models/{model_name}:generateContent both serve the same handler and dispatch via agenerate_content."
+    proof: [genai-routes-http]
+  - text: "POST /v1beta/models/{model_name}:streamGenerateContent and POST /models/{model_name}:streamGenerateContent both serve the same streaming handler, set stream=True and both _litellm_skip_openai_stream_done and _litellm_raw_sse_stream to True, and dispatch via agenerate_content_stream."
+    proof: [genai-routes-http]
+  - text: "POST /v1beta/models/{model_name}:countTokens and POST /models/{model_name}:countTokens both serve the same handler and require authentication."
+    proof: [genai-routes-http]
+  - text: "google_count_tokens translates contents to OpenAI messages via GoogleGenAIAdapter.translate_generate_content_to_completion before building TokenCountRequest."
+    proof: [genai-routes-http]
+  - text: "google_count_tokens returns totalTokens and promptTokensDetails from token_response.original_response when original_response is populated."
+    proof: [genai-routes-http]
+  - text: "google_count_tokens returns totalTokens from token_response.total_tokens and promptTokensDetails as empty array when original_response is absent but total_tokens exists."
+    proof: [genai-routes-http]
+  - text: "google_count_tokens returns totalTokens=0 and promptTokensDetails=[] when token_response is None."
+    proof: [genai-routes-http]
+  - text: "The model_name from the path is placed in the request data if not already present, preserving any existing model field."
+    proof: [genai-routes-http]
+  - text: "Every listed generation, streaming, and token-count case matches LiteLLM on the client response and request sent upstream."
+    proof: [genai-routes-http]
+  - text: "Every x-litellm-* header LiteLLM sends on the listed cases is present with the same value unless the case lists it in headers_present."
+    proof: [genai-routes-http]
+  - text: "On provider error, the client receives the same status, type, param and code as LiteLLM with betterlite's own message."
+    proof: [genai-routes-http]
+checks:
+  optional: []
+  commands:
+    - id: genai-routes-http
+      why: HTTP routes, auth, model override, streaming flags or token count response branches are missing or incorrect
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_case/genai-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/genai/generate-content-basic.yaml
+  - tools/oracle/cases/genai/generate-content-with-body-model-override.yaml
+  - tools/oracle/cases/genai/stream-generate-content-no-done-marker.yaml
+  - tools/oracle/cases/genai/stream-generate-content-raw-sse.yaml
+  - tools/oracle/cases/genai/count-tokens-original-response.yaml
+  - tools/oracle/cases/genai/count-tokens-total-tokens-fallback.yaml
+  - tools/oracle/cases/genai/count-tokens-none-response.yaml
+  - tools/oracle/cases/genai/count-tokens-adapter-translation.yaml
+deviations:
+  - what: Contents are translated to OpenAI-compatible messages via GoogleGenAIAdapter.translate_generate_content_to_completion before building TokenCountRequest for the internal token counter.
+    why: The internal token counter accepts both native Google GenAI contents and OpenAI-format messages. Translation enables the existing counter handler to work with both formats without duplication.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L178
+  - what: Token count response prioritizes original_response over total_tokens, and falls back to totalTokens=0 when both are absent.
+    why: The three-branch response handling matches LiteLLM's internal token_counter fallback strategy, allowing graceful degradation when original response metadata is unavailable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L191-L211
+  - what: betterlite sets _litellm_skip_openai_stream_done and _litellm_raw_sse_stream in streaming requests to prevent LiteLLM's OpenAI-specific stream terminator from being sent, matching LiteLLM's behavior for Google GenAI streaming.
+    why: "The Google GenAI SDK expects raw SSE streaming without OpenAI's data: [DONE] terminator, per the SDK's (?alt=sse) parameter handling in LiteLLM."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L110-L112
+out_of_scope:
+  - Interaction API routes (create, get, delete, cancel); those are owned by B3507.
+  - Streaming response assembly and logging; B252 and B2227 handle buffered chunk assembly and completion callbacks.
+  - Agent-specific interaction routes in agents_endpoints.py; those are owned by B3508.
+  - Retries and fallbacks for generation or streaming requests.
+  - Cost tracking headers (x-litellm-response-cost) and key-limit headers; they need spend tracking (B069) and virtual keys (B052).
+  - The internal token counter handler itself; it is called but not implemented here.
+pitfalls:
+  - >-
+    Set stream=True and _litellm_skip_openai_stream_done and _litellm_raw_sse_stream in the
+    request data before calling the streaming dispatcher, not in the response, so the upstream
+    handler sees the flags.
+  - >-
+    Model name extraction from the path must preserve any existing model field in the request
+    body if it is already present, only setting it if missing.
+  - >-
+    The two routes (/v1beta/ and /) for each endpoint must share the same async handler
+    function, not duplicate it, to avoid maintenance divergence.
+  - >-
+    When the upstream fails before sending the first byte, return the provider's error status
+    and type, not a gateway error, so clients see the real failure.
+  - >-
+    The exception handler expects exceptions raised from the dispatcher, not errors in status
+    codes; re-raise provider errors from the exception handler rather than returning them directly.
+  - >-
+    Contents list must be extracted as data.get("contents", []) with empty default; missing
+    contents produces empty messages list, not an error.
+  - >-
+    Token count response branches in strict order: check token_response.original_response first,
+    fall back to token_response.total_tokens second, then default to zero. Missing or None fields
+    do not raise errors.
+  - >-
+    TokenCountDetailsResponse requires both totalTokens and promptTokensDetails fields;
+    promptTokensDetails is a list, never null, and may be empty when token_response is the
+    fallback source.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

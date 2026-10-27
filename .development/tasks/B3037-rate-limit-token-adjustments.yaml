@@ -1,0 +1,95 @@
+id: B3037
+title: Token counter adjustments and reservation deltas
+description: >-
+  Build token delta operations and apply them with TTL preservation, optionally guarded by the original
+  reservation window/backend. Keep positive-only fallback after a failed Redis window guard on the Redis side,
+  and the source post-call pipeline failure behavior.
+
+  Token adjustments flow through two paths: a direct increment-with-TTL path for fresh token counts, and a
+  window-guarded path for reservation-aware reconciliation. The window-guarded path verifies that the
+  reservation window is still active (expected_window_start matches the active window); if verification fails
+  on Redis, fall back to a positive-only increment; if verification fails on the local backend, skip the
+  increment entirely with no fallback.
+
+  Build two Lua operations: one for preserving existing TTL by checking if a key already has a TTL before
+  setting one, and one for atomically checking window validity before incrementing, returning the success
+  flag and new counter value. Implement direct script execution grouped by hash tag for Redis cluster
+  compatibility, and defer execution through the active_post_call_redis_batch when available, falling back
+  to regular pipeline on any error.
+
+  Implement reservation-aware operations in three flavors: direct increment-with-TTL for fresh counts, a
+  Redis-backed path for window-guarded operations that validates window identity, and a local-backend path
+  for in-memory guarded operations. Route operations to the appropriate applier based on reservation_backend.
+
+  Build project-scoped reservation deltas in two builders: one for simple TPM reconciliation computing
+  actual-minus-reserved adjustments only for reserved scopes, and one for project input/output token scopes
+  that emits window-guard metadata when the window identity is known.
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/token_adjustments.rs
+    - crates/betterlite-rate-limit/src/token_adjustments/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L310-L335
+    why: WINDOW_GUARDED_TOKEN_INCREMENT_SCRIPT Lua implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L400-L425
+    why: TOKEN_INCREMENT_SCRIPT Lua implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4315-L4533
+    why: Token increment execution, window-guarded increments and reservation-aware routing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4786-L4880
+    why: TPM and project reservation operation builders.
+dod:
+  - text: TTL-preserving increment script constant is defined with correct Lua syntax that checks TTL before setting it.
+    proof: [token-adjustment-tests]
+  - text: Window-guarded increment script constant is defined with correct Lua syntax that validates expected_window_start before incrementing and returns success flag with new counter value.
+    proof: [token-adjustment-tests]
+  - text: Direct increment-with-TTL path executes grouped by hash tag for Redis cluster compatibility and falls back to regular pipeline on any error.
+    proof: [token-adjustment-tests]
+  - text: Token increment deferral handler registers script execution through active_post_call_redis_batch when available, with fallback to regular pipeline on any error.
+    proof: [token-adjustment-tests]
+  - text: Redis-backed window-guard applier validates the window before incrementing and falls back to positive-only increment when window fails.
+    proof: [token-adjustment-tests]
+  - text: Local-backend window-guard applier skips the increment entirely (with no fallback) when window key is missing or outdated.
+    proof: [token-adjustment-tests]
+  - text: Reservation-aware router classifies operations by backend (local or Redis) and applies the corresponding window-guard path, or direct increment for operations without window guards.
+    proof: [token-adjustment-tests]
+  - text: Simple TPM reconciliation builder computes actual-minus-reserved deltas only for reserved scopes and full actual for unreserved scopes.
+    proof: [token-adjustment-tests]
+  - text: Project reservation builder emits operations with window-guard metadata (counter_key, expected_window_start, backend) when window_identity is found for a reserved scope.
+    proof: [token-adjustment-tests]
+checks:
+  optional: []
+  commands:
+    - id: token-adjustment-tests
+      why: the token adjustment tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_adjustments::/)'
+oracle_cases: []
+deviations:
+  - what: Shared cache increment and post-call batch transport ownership remains open; this task does not claim the external cache pipeline or active_post_call_redis_batch owners.
+    why: Cache and batch services are injected dependencies; their implementation owners are not yet assigned.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4315-L4385
+  - what: TTL preservation falls back to regular pipeline increment on Redis error, not a hard failure.
+    why: LiteLLM does not propagate script errors; it logs and continues with the non-TTL-preserving path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4414-L4422
+  - what: Window-guarded increments on the Redis backend fall back to positive-only increment when window verification fails; only positive deltas are applied, never negative ones.
+    why: LiteLLM avoids under-reserving by refusing to apply window-guard-gated deltas when the window has moved, but still increments positive amounts as a best-effort recovery.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4489-L4495
+  - what: Window-guarded increments on the local backend skip the increment entirely (no fallback) when the window key is missing or the window start does not match.
+    why: Local in-memory state has no partial-recovery fallback; continuing without the increment keeps the count consistent with the actual window state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4440-L4441
+out_of_scope:
+  - log_redis_failure, supplied by B393.
+  - _group_keys_by_hash_tag, supplied by B3032.
+  - create_rate_limit_keys, supplied by B3031.
+  - RedisPipelineIncrementOperation, ReservationAwareIncrementOperation TypedDicts, supplied by B3031.
+  - active_post_call_redis_batch creation and lifecycle; B4331 owns batch lifecycle and settlement.
+pitfalls:
+  - TOKEN_INCREMENT_SCRIPT uses INCRBYFLOAT not INCRBY; token increments are floats in LiteLLM's model.
+  - WINDOW_GUARDED_TOKEN_INCREMENT_SCRIPT expects pairs of keys (window_key, counter_key) and triples of args (expected_window_start, increment, ttl).
+  - TTL preservation only sets EXPIRE if current_ttl is -1 (no expiry); existing TTLs are left untouched.
+  - Positive-only fallback happens only when window_key exists but is missing or outdated; increments without window guards always apply.
+  - Hash tag grouping is required for Redis cluster mode; operations with different hash tags must be in separate script invocations.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

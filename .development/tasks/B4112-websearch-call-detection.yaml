@@ -1,0 +1,223 @@
+id: B4112
+title: Detect intercepted search calls in three response formats
+description: >-
+  Build crates/betterlite-websearch/src/call_transformation.rs and its tests to detect
+  WebSearch tool calls intercepted in three response formats: Anthropic (tool_use blocks
+  in content), OpenAI Chat Completions (tool_calls nested in message), and Responses API
+  (function_call items in output). Transform model responses to extract search queries,
+  and transform search results back into the wire format each API expects.
+
+  The core interface is WebSearchTransformation with two entry points:
+  - `transform_request(response, stream, format)` takes a model response and returns
+    `(has_websearch, tool_calls)` where tool_calls is a list of dicts with id, name,
+    input/arguments and (for OpenAI) the nested function dict.
+  - `transform_response(tool_calls, search_results, format)` takes the search results
+    and returns `(assistant_message, user_or_tool_messages)` shaped for each format.
+
+  For Anthropic format: detect tool_use blocks where name matches litellm_web_search or
+  web_search, extract id and input dict. Transform back builds an assistant message with
+  tool_use blocks and a user message with tool_result blocks, each result's tool_use_id
+  matching a call's id. Preserve thinking blocks (prepend them to assistant_content before
+  tool_use blocks when present).
+
+  For OpenAI format: detect function-type tool_calls in message.tool_calls where
+  function.name matches litellm_web_search or web_search; handle both dict and object
+  responses. Arguments may be a JSON string or dict; normalize to dict. Transform back
+  builds an assistant message with tool_calls and separate tool role messages, each
+  tool message's tool_call_id matching a call's id. Convert function arguments to JSON
+  string for the wire.
+
+  For Responses API format: detect function_call items in output where type matches
+  function_call and name matches litellm_web_search; handle both dict and object items.
+  Arguments may be a JSON string or dict; normalize to dict. Do not detect native
+  Anthropic types (web_search_20250305, web_search_preview_*) here — that belongs to
+  is_web_search_tool_responses in B4111. Transform back is not used by Responses API
+  since it sends tool results via a separate payload shape.
+
+  Streaming requests are pre-converted to non-streaming by async_log_pre_api_call before
+  transform_request sees them, so a stream flag of true here is unexpected (warn and
+  return false, []).
+
+  Helper functions build Anthropic native web_search_tool_result blocks, error blocks,
+  and handle outcome matches (SearchSucceeded, SearchFailed). search_error_code maps
+  exceptions to error codes. build_web_search_tool_result_block takes a tool_use_id and
+  optional SearchResponse, returns a typed block with url, title, page_age, encrypted_content
+  empty, and snippet from each result. Emit these blocks only when sending a native
+  response format response (not for Chat Completions or Responses API).
+
+  Search outcome helpers convert exceptions to SearchFailed blocks with error codes
+  (RateLimitError → too_many_requests, BadRequestError → invalid_tool_input, others →
+  unavailable). format_search_response converts a SearchResponse to text for tool_result
+  content, formatting as "Title: ...\nURL: ...\nSnippet: ..." per result.
+
+  Write oracle cases under tools/oracle/cases/chat/ for each format and common scenarios:
+  - Anthropic tool_use detection and response transform
+  - OpenAI tool_calls detection and response transform
+  - Responses API function_call detection (transform back is not needed)
+  - Streaming pre-converted to non-streaming
+  - Multiple search calls in one response
+  - Invalid or missing arguments
+  - Responses without WebSearch calls (detect returns false)
+
+  Create test cases for all three formats with the core detection and transformation
+  logic verified against LiteLLM's behavior.
+
+scope:
+  paths:
+    - crates/betterlite-websearch/src/call_transformation.rs
+    - crates/betterlite-websearch/src/call_transformation/**
+    - crates/betterlite-websearch/src/tests.rs
+    - tools/oracle/cases/chat/**
+    - tools/oracle/helpers/b4112.py
+    - tools/oracle/helpers/b4112/**
+    - tools/oracle/src/helpers/websearch/b4112.rs
+    - tools/oracle/src/helpers/websearch/b4112/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L35-L75
+    why: The WebSearchTransformation class and transform_request dispatcher.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L77-L137
+    why: Responses API detection of function_call items in output.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L139-L193
+    why: Anthropic format detection of tool_use blocks in content.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L195-L288
+    why: OpenAI Chat Completions detection of tool_calls in message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L290-L406
+    why: The transform_response dispatcher and format-specific builders.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L408-L504
+    why: Helper functions for building result blocks and error codes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L530-L551
+    why: Format search response as text for tool_result content.
+
+dod:
+  - text: >-
+      Every Anthropic format case (tool_use detection, response transform, thinking blocks)
+      matches LiteLLM. Detection finds id, name, and input dict; transform builds assistant
+      with tool_use blocks and user message with tool_result blocks.
+    proof: [websearch-anthropic-oracle, websearch-tests]
+  - text: >-
+      Every OpenAI Chat Completions case (tool_calls detection, response transform,
+      multi-call, invalid arguments) matches LiteLLM. Detection finds id, nested function.name
+      and arguments (JSON string or dict); transform builds assistant with tool_calls and
+      separate tool messages.
+    proof: [websearch-openai-oracle, websearch-tests]
+  - text: >-
+      Every Responses API case (function_call detection, multi-call, no native type matching)
+      matches LiteLLM. Detection finds id, type, name and arguments.
+    proof: [websearch-responses-oracle, websearch-tests]
+  - text: >-
+      Responses without WebSearch calls are detected as false on all three formats.
+      Detection returns (false, []) for non-streaming responses without the tool.
+    proof: [websearch-no-tool-oracle, websearch-tests]
+  - text: >-
+      Streaming responses log a warning and return (false, []) without processing.
+    proof: [websearch-tests]
+  - text: >-
+      Helper functions build Anthropic web_search_tool_result blocks with url, title,
+      page_age and snippet per result, encrypted_content empty. Error blocks carry error_code
+      and web_search_tool_result_error type.
+    proof: [websearch-result-blocks, websearch-tests]
+  - text: >-
+      search_error_code maps RateLimitError to too_many_requests, BadRequestError to
+      invalid_tool_input, others to unavailable.
+    proof: [websearch-error-codes, websearch-tests]
+  - text: >-
+      format_search_response converts SearchResponse results to text with
+      "Title: ...\nURL: ...\nSnippet: ..." format per result.
+    proof: [websearch-format-response, websearch-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: websearch-tests
+      why: detection, transform or helper tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/call_transformation/)'
+    - id: websearch-anthropic-oracle
+      why: Anthropic format cases fail against LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/chat)" &&
+        cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/chat/websearch-anthropic-*.yaml
+    - id: websearch-openai-oracle
+      why: OpenAI format cases fail against LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/chat)" &&
+        cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/chat/websearch-openai-*.yaml
+    - id: websearch-responses-oracle
+      why: Responses API format cases fail against LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/chat)" &&
+        cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/chat/websearch-responses-*.yaml
+    - id: websearch-no-tool-oracle
+      why: non-WebSearch response cases fail against LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/chat)" &&
+        cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/chat/websearch-no-tool-*.yaml
+    - id: websearch-result-blocks
+      why: web_search_tool_result block builders do not exist or fail tests
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/result_block/)'
+    - id: websearch-error-codes
+      why: error code mapping does not exist or fails
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/error_code/)'
+    - id: websearch-format-response
+      why: format_search_response does not exist or fails
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/format_search/)'
+
+oracle_cases:
+  - tools/oracle/cases/chat/websearch-anthropic-basic.yaml
+  - tools/oracle/cases/chat/websearch-anthropic-thinking.yaml
+  - tools/oracle/cases/chat/websearch-anthropic-multi-call.yaml
+  - tools/oracle/cases/chat/websearch-anthropic-invalid-input.yaml
+  - tools/oracle/cases/chat/websearch-openai-basic.yaml
+  - tools/oracle/cases/chat/websearch-openai-multi-call.yaml
+  - tools/oracle/cases/chat/websearch-openai-string-arguments.yaml
+  - tools/oracle/cases/chat/websearch-openai-invalid-arguments.yaml
+  - tools/oracle/cases/chat/websearch-responses-basic.yaml
+  - tools/oracle/cases/chat/websearch-responses-multi-call.yaml
+  - tools/oracle/cases/chat/websearch-responses-invalid-arguments.yaml
+  - tools/oracle/cases/chat/websearch-no-tool-anthropic.yaml
+  - tools/oracle/cases/chat/websearch-no-tool-openai.yaml
+  - tools/oracle/cases/chat/websearch-no-tool-responses.yaml
+
+deviations:
+  - what: >-
+      betterlite returns (has_websearch: bool, tool_calls: Vec<...>) from transform_request,
+      while LiteLLM returns a tuple of (bool, list[dict]). The values are semantically identical;
+      the type is idiomatic to Rust.
+    why: Rust requires explicit return types; Python uses implicit tuples.
+  - what: >-
+      Thinking blocks in Anthropic responses are preserved as a list prepended to assistant_content
+      before tool_use blocks, matching LiteLLM's order when extended thinking is enabled.
+    why: The Anthropic API requires thinking blocks to come first.
+  - what: >-
+      When format_search_response encounters a SearchResponse without results, it returns
+      the result object as a string, matching LiteLLM's fallback behavior.
+    why: Graceful handling of partial or missing structured data.
+
+out_of_scope:
+  - 'litellm/integrations/websearch_interception/transformation.py: B4113 owns search_outcome (L506-518)
+    and search_outcome_text (L520-528).'
+  - SearchResponse contract and search execution logic.
+  - Native Anthropic web_search_* type detection (owned by B4111).
+  - Actual search execution via litellm.asearch.
+  - Integration with agentic loop callbacks and async logging.
+  - Passthrough of WebSearch calls that don't match interception patterns.
+
+pitfalls:
+  - Streaming requests are pre-converted to non-streaming before this code runs. A stream=true
+    flag is a guard to protect against future API changes; log a warning and return false.
+  - Arguments in OpenAI responses may be a JSON string or already a dict; always normalize to dict
+    for internal use and back to JSON string for the wire.
+  - The Responses API does not receive a transform_response call; its payload shape is handled elsewhere.
+  - Thinking blocks (type "thinking" or "redacted_thinking") must be prepended to the assistant
+    message's content list before tool_use blocks when present, required by the Anthropic API.
+  - build_web_search_tool_result_block takes an optional SearchResponse; emit an empty items list
+    (valid block with no results) when None, signaling "search ran, no results" not "search did not run".
+  - encrypted_content is always empty in result blocks; snippet carries the text. This is a deviation
+    from the Anthropic spec that requires encrypted_content but does not leak it, so betterlite carries
+    snippet as plaintext for the agentic loop's follow-up use.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,149 @@
+id: B3759
+title: Cisco configuration normalization and records
+description: >-
+  Build Cisco's shared scan/verdict records, mode inference, configuration normalization,
+  chat payload metadata and supported-hook metadata. Invalid choices warn and use their
+  pinned defaults, while timeout values clamp to 1–60 seconds.
+
+  Cisco AI Defense runs two distinct inspection surfaces (chat and MCP), each scanning
+  specific traffic types. Each guardrail instance targets one surface via the
+  ``inspection_type`` dropdown. This task owns configuration helpers that normalize
+  user-supplied settings against Cisco's API expectations: resolving invalid inspection
+  types and actions with warnings and defaults, coercing timeout values to valid bounds,
+  and mapping event-hook configurations to infer which inspection surface a user intends.
+
+  Build the ``_ScanContext`` record (surface and direction), the ``_CiscoVerdict`` record
+  (Cisco's complete response including is_safe, classifications, severity, rules,
+  explanation, event_id, action and any sanitized rewrites), and shared helpers that
+  normalize rules (accepting string, dict or Pydantic model inputs), build chat inspection
+  payloads (messages + metadata + config), and provide the typed configuration model
+  accessor and supported event hooks list. The configuration model is owned by the
+  base guardrail framework (F); this task only returns its type via ``get_config_model``.
+
+  Direct prerequisite B3758: ``get_config_model`` selects ``CiscoAIDefenseGuardrailConfigModel``.
+  The shared record definitions do not construct a live guardrail and do not call
+  B3762's constructor.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-guardrails/src/cisco_configuration.rs
+    - crates/betterlite-guardrails/src/cisco_configuration_tests.rs
+    - tools/oracle/cases/helpers/cisco-configuration/**
+    - crates/betterlite-guardrails/src/cisco_configuration/**
+    - crates/betterlite-guardrails/src/cisco_configuration_tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1-L136
+    why: Module docstring, imports, constants (CISCO_DEFAULT_API_BASE, SUPPORTED_INSPECTION_TYPES, DEFAULT_INSPECTION_TYPE, _MCP_CALL_TYPES, action vocabulary).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L83-L105
+    why: _ScanContext (surface, direction) and _CiscoVerdict (is_safe, classifications, severity, rules, explanation, event_id, action, sanitized_text, sanitized_messages, sanitized_mcp_arguments) record definitions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L246-266
+    why: _resolve_choice validates config choices against allowed sets, logs warnings on mismatch, defaults to pinned values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L268-283
+    why: _coerce_timeout parses float, clamps to [1, 60], returns None on unparseable, logs warnings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L285-287
+    why: _is_mcp_call_type checks call_type against _MCP_CALL_TYPES.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L616-620
+    why: _surface_matches checks traffic surface against configured inspection_type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L622-641
+    why: _normalize_event_hooks coerces event_hook (str, enum, list) to set of strings, extracting .value from enums.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L643-664
+    why: _infer_inspection_from_mode auto-flips inspection_type to mcp when event_hook is exclusively MCP-typed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L720-746
+    why: _warn_if_mode_surface_mismatch logs when inspection_type conflicts with mixed-surface event hooks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L786-796
+    why: _build_chat_payload assembles messages, metadata and config for chat inspection requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L859-889
+    why: _build_metadata extracts user, litellm_call_id, and request metadata (src_app, dst_app, src_ip, dst_ip, dst_host, sni, user_agent).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L891-903
+    why: _build_config builds enabled_rules list and integration profile/tenant/type fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L905-944
+    why: _normalize_rule coerces str/dict/Pydantic-model rules to wire shape, retaining rule_name, entity_types, rule_id, classification.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L2114-2120
+    why: get_config_model returns CiscoAIDefenseGuardrailConfigModel for config loading.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L2122-2131
+    why: get_supported_event_hooks returns the six GuardrailEventHooks (pre_call, during_call, post_call, logging_only, pre_mcp_call, during_mcp_call).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/cisco_ai_defense.py
+    why: CiscoAIDefenseGuardrailConfigModel definition and related types.
+
+dod:
+  - text: _ScanContext (surface, direction) and _CiscoVerdict (is_safe, classifications, severity, rules, explanation, event_id, action, sanitized_text, sanitized_messages, sanitized_mcp_arguments) records are defined and immutable.
+    proof: [cisco-config-tests]
+  - text: _resolve_choice normalizes invalid config choices (inspection_type, on_flagged_action, fallback_on_error) against allowed values, logs a warning, and returns the pinned default when the value is invalid or missing.
+    proof: [cisco-config-tests]
+  - text: _coerce_timeout accepts string and float inputs, clamps to 1–60 seconds, and returns None (so the caller uses DEFAULT_TIMEOUT_SECONDS) on invalid input or missing env var.
+    proof: [cisco-config-tests]
+  - text: _is_mcp_call_type identifies call_type values that LiteLLM routes to MCP inspection hooks (mcp_call, call_mcp_tool).
+    proof: [cisco-config-tests]
+  - text: _surface_matches returns true when (inspection_type == mcp and is_mcp_traffic) or (inspection_type == chat and not is_mcp_traffic).
+    proof: [cisco-config-tests]
+  - text: _normalize_event_hooks coerces event_hook argument (str, enum, or list thereof) to a set of hook names, extracting the .value attribute from enums and discarding None/unparseable entries.
+    proof: [cisco-config-tests]
+  - text: _infer_inspection_from_mode auto-flips inspection_type from chat to mcp when event_hook is exclusively MCP (pre_mcp_call, during_mcp_call), from mcp to chat when exclusively chat (pre_call, during_call, post_call), and preserves current when mixed.
+    proof: [cisco-config-tests]
+  - text: _warn_if_mode_surface_mismatch logs a warning only when event_hook mixes both surfaces (at least one MCP hook and at least one chat hook), naming the unused hooks for the configured inspection_type.
+    proof: [cisco-config-tests]
+  - text: _build_chat_payload assembles {messages, metadata, config} where metadata is from _build_metadata and config from _build_config, ready for the Cisco chat inspection endpoint.
+    proof: [cisco-config-tests]
+  - text: >-
+      _build_metadata extracts user (from request_data or user_api_key_dict),
+      litellm_call_id→client_transaction_id, and whitelisted metadata keys
+      (src_app, dst_app, src_ip, dst_ip, dst_host, sni, user_agent), each
+      returned only if present.
+    proof: [cisco-config-tests]
+  - text: >-
+      _build_config constructs {enabled_rules, integration_profile_id,
+      integration_profile_version, integration_tenant_id, integration_type},
+      each included only if set (None-valued keys are omitted).
+    proof: [cisco-config-tests]
+  - text: >-
+      _normalize_rule accepts string (wrapped as {rule_name: ...}), dict with
+      rule_name/entity_types/rule_id/classification, or Pydantic model (dumped
+      and re-entered dict branch), raising ValueError on malformed input.
+    proof: [cisco-config-tests]
+  - text: get_config_model returns the CiscoAIDefenseGuardrailConfigModel type (not an instance), imported locally to avoid circular dependencies.
+    proof: [cisco-config-tests]
+  - text: get_supported_event_hooks returns a list of six GuardrailEventHooks values (pre_call, during_call, post_call, logging_only, pre_mcp_call, during_mcp_call).
+    proof: [cisco-config-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: cisco-config-tests
+      why: the cisco configuration module's tests fail, do not exist, or do not exercise all code paths
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^cisco_configuration::)'
+
+oracle_cases: []
+
+deviations:
+  - what: Timeout values are clamped to 1–60 seconds; LiteLLM does the same.
+    why: Enforce safe defaults; values below 1s are too tight for network calls, values above 60s risk hung requests.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L268-L283
+  - what: Invalid config choices (inspection_type, on_flagged_action, fallback_on_error) fall back to pinned defaults with a log warning; LiteLLM does the same.
+    why: Silent fallback masks typos and misconfigurations; a warning makes them visible at startup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L246-L266
+
+out_of_scope:
+  - Cisco inspection API calls and response parsing (_post_inspection, _finalize_inspection); those belong to B3760.
+  - Redaction application (_apply_redaction, message/response rewriting); those belong to B3757 and B3760.
+  - Logging and decision metadata attachment (_log_decision, _stash_verdict_on_request); those belong to B3760.
+  - HTTP headers and transport setup (_build_headers, async_handler); those belong to shared transport (H).
+  - The actual guardrail constructor (__init__) which orchestrates these helpers; that belongs to B3762.
+  - MCP-specific payload building and message extraction; those belong to B3761 and B3756.
+  - Block payload building (_build_block_payload); that belongs to B3760.
+  - Chat inspection method (_inspect_chat); that belongs to B3762.
+  - Request/response redaction; that belongs to B3757.
+
+pitfalls:
+  - _normalize_event_hooks extracts the .value attribute from enum objects; enums may not inherit str so a direct isinstance check on the original enum object fails and produces None.
+  - _infer_inspection_from_mode must not flip inspection_type when event_hook mixes both surfaces; let the user keep control via their explicit setting and warn them instead (B3759 owns the warning logic).
+  - Metadata keys from request_data are optional; build the metadata dict only with keys that are actually present so logs stay compact.
+  - _resolve_choice reads from os.environ; it is not disallowed in this module since config loading is a system boundary, but add the expect attribute to avoid clippy warnings.
+  - _normalize_rule accepts Pydantic models; call model_dump(exclude_none=True) first and fall back to model_dump() if the exclude_none kwarg is not supported by older model versions.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

@@ -1,0 +1,134 @@
+id: B4841
+title: Account harness endpoint usage and protect session credentials
+description: >-
+  Implement credential filtering, endpoint auth/error helpers, SSE encoding, cumulative
+  usage parsing and cost fallback independently of server registration or transport.
+  Define endpoint state so neither forwarding nor route handlers need to call their caller.
+  Build UsageTracker to accumulate tokens and cost, with add() and snapshot() methods.
+  Implement SSEUsageParser to extract token usage from SSE streams line-by-line, handling
+  Anthropic/OpenAI/Responses event types. Extract tokens from response headers and bodies
+  independently using usage_from_mapping and usage_from_body for JSON responses, and detect
+  cost in x-litellm-response-cost headers and _hidden_params. Compute cost using
+  litellm.cost_per_token with fallback to zero for unknown models. Filter credentials from
+  error messages and HTTP headers, dropping hop-by-hop headers, authorization, API keys and
+  accept-encoding. Build authentication by comparing session tokens in constant time. Construct
+  gateway headers with filtered incoming headers, adding bearer token, harness tags and optional
+  metadata. Encode chunks for Anthropic/chat/responses streaming responses using the
+  route-specific SSE encoder and format. Build ModelEndpoint with harness, model, gateway config,
+  API credentials and session tracking. Implement route_of() helper to strip path prefixes.
+  Uses B4830's Usage/GatewayTarget records and harness/error types; B1686's cost_per_token
+  for price lookup. No dependency on B4842/B4843 server implementation. Authentication compares
+  the 32-byte session token in constant time; error redaction covers gateway/API/session secrets.
+  Chat [DONE] is a trailer, not an accounting event.
+scope:
+  paths:
+    - crates/betterlite-harness/src/endpoint.rs
+    - crates/betterlite-harness/src/endpoint/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L111-L131
+    why: UsageTracker and its add/snapshot methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L134-L160
+    why: Token extraction helpers (_as_int, usage_from_mapping, usage_from_body).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L163-L226
+    why: SSE stream parser for token usage extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L228-L260
+    why: Cost computation and header extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L263-L322
+    why: Token extraction, header filtering, error body construction, JSON encoding helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L324-L360
+    why: SSE chunk encoders for streaming responses and route path parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L366-L393
+    why: ModelEndpoint initialization with session token generation and state setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L485-L546
+    why: ModelEndpoint helper methods for auth, error responses, secret filtering and usage recording.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2215-L2224
+    why: Session token byte size constant (HARNESS_SESSION_TOKEN_BYTES at L2219).
+dod:
+  - text: UsageTracker accumulates tokens and calls; add() increments all three, snapshot() returns Usage with zero calls.
+    proof:
+      - endpoint-tests
+  - text: SSEUsageParser extracts input/output tokens from Anthropic message_start/message_delta/response.completed and OpenAI/Responses usage objects.
+    proof:
+      - endpoint-tests
+      - sse-parser-corpus
+  - text: usage_from_body extracts tokens from response.usage.input_tokens/response.usage.output_tokens and alternate field names.
+    proof:
+      - endpoint-tests
+  - text: compute_cost uses litellm.cost_per_token and returns 0.0 for unknown models without raising.
+    proof:
+      - endpoint-tests
+  - text: extract_token reads "Bearer " prefix and x-api-key headers; both are case-insensitive for the scheme.
+    proof:
+      - endpoint-tests
+  - text: gateway_headers filters hop-by-hop, authorization and x-litellm-* headers, adds bearer token and tags, and includes metadata JSON.
+    proof:
+      - endpoint-tests
+  - text: response_headers keeps all headers except hop-by-hop and content-encoding.
+    proof:
+      - endpoint-tests
+  - text: sanitize replaces secrets with *** using constant-time comparison where the token is involved.
+    proof:
+      - endpoint-tests
+  - text: >-
+      encode_anthropic_chunk uses event type or "message", encode_chat_chunk adds
+      "data: " prefix, encode_responses_chunk includes type like Anthropic.
+    proof:
+      - endpoint-tests
+  - text: route_of strips leading slashes and v1/ prefix, so all four POST paths map to their route (messages, chat/completions, responses).
+    proof:
+      - endpoint-tests
+  - text: ModelEndpoint.__init__ generates a session token using secrets.token_urlsafe with 32 bytes; stores harness/model/gateway/credentials/metadata.
+    proof:
+      - endpoint-tests
+  - text: ModelEndpoint._authorized checks the bearer token against self.token in constant time; _unauthorized returns 401 with type authentication_error.
+    proof:
+      - endpoint-tests
+  - text: ModelEndpoint._error and _secrets redact gateway/API/session credentials from exception strings using sanitize.
+    proof:
+      - endpoint-tests
+  - text: >-
+      error_status clamps exception status_code to 500 when missing or outside 400–599;
+      error_body builds {"error": {"type": <ExceptionClassName>, "message": ...}}.
+    proof:
+      - endpoint-tests
+  - text: ModelEndpoint._record calls compute_cost when cost is None and increments the usage tracker.
+    proof:
+      - endpoint-tests
+  - text: The SSE parser corpus exercises message_start, message_delta, response.completed events and tests [DONE] trailer rejection.
+    proof:
+      - sse-parser-corpus
+checks:
+  optional: []
+  commands:
+    - id: endpoint-tests
+      why: Token extraction, SSE parsing, cost computation or credential filtering fails or is absent.
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^endpoint::/)'
+    - id: sse-parser-corpus
+      why: SSE parser or its corpus is missing or replay fails.
+      run: test -f crates/betterlite-harness/fuzz/fuzz_targets/sse_parser.rs && test -n "$(ls -A crates/betterlite-harness/fuzz/corpus/sse_parser)" && cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(replays_the_sse_parser_corpus)'
+oracle_cases: []
+deviations:
+  - what: The SSE parser accumulates tokens cumulatively (message_delta output_tokens is the running total for the message), matching LiteLLM's behavior exactly.
+    why: This is the source behavior; partial streaming requires tracking cumulative values to avoid double-counting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L212-L214
+  - what: Tokens with value 0 do not overwrite accumulated values in the SSE parser; only positive values advance the count.
+    why: The source preserves the last nonzero token count to handle events that omit fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L221-L225
+  - what: Hop-by-hop headers include content-length; the session endpoint drops it from both requests and responses.
+    why: The source treats content-length as a hop-by-hop header and does not forward it through the endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L61-L83
+out_of_scope:
+  - Server startup, shutdown, route registration and actual endpoint lifecycle (B4843).
+  - Gateway and SDK relay logic (B4842).
+pitfalls:
+  - UsageTracker.add increments calls every time it is called; add(0, 0, 0.0) still increments calls, so snapshot() does not reflect unique API calls.
+  - SSE parser feeds do not validate JSON structure; malformed events are silently skipped.
+  - cost_per_token lookup can raise any Exception; the endpoint catches Exception and returns 0.0, never re-raises.
+  - Token extraction from event.usage only updates when the value is truthy; this preserves the last nonzero value across multiple events.
+  - The bearer token comparison is done in constant time to prevent timing attacks; use secrets.compare_digest.
+  - sanitize uses str.replace, not a regex, so order matters if one secret is a substring of another.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
