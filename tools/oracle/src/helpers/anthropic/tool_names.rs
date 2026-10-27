@@ -47,7 +47,7 @@ impl crate::helpers::Helper for Op {
                 let encoded = serde_json::to_string(name).map_err(|error| json_error(&error))?;
                 let parsed =
                     serde_json::from_str::<Name>(&encoded).map_err(|error| json_error(&error))?;
-                serde_json::to_value(basic_sanitize_tool_name(&parsed))
+                serde_json::to_value(serde_json::json!({"name": basic_sanitize_tool_name(&parsed)}))
             }
             Input::Map { names } => {
                 let typed_names = names
