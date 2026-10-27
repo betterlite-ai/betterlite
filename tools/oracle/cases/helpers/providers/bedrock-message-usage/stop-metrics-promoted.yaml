@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-message-usage-stop-metrics-promoted
+call:
+  bedrock_message_usage:
+    events:
+      - type: message_delta
+        usage: {keep: 1}
+        amazon-bedrock-invocationMetrics: {inputTokenCount: 2}
+      - type: message_stop
+        usage: {input_tokens: 2}
+env: {}
+compare:
+  ignore: []

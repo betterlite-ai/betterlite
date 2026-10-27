@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-message-usage-cache-creation-details
+call:
+  bedrock_message_usage:
+    events:
+      - type: message_start
+        message: {usage: {cache_creation: {ephemeral_5m_input_tokens: 5}}}
+      - type: message_delta
+        usage: {cache_creation: null}
+      - type: message_stop
+        usage: {cache_creation: {ignored: 1}}
+env: {}
+compare:
+  ignore: []

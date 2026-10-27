@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-message-usage-existing-delta-usage
+call:
+  bedrock_message_usage:
+    events:
+      - type: message_delta
+        usage: {keep: 1}
+      - type: message_delta
+        usage: {cache_read_input_tokens: 2}
+      - type: message_stop
+        usage: {cache_creation_input_tokens: 3, input_tokens: 4}
+env: {}
+compare:
+  ignore: []

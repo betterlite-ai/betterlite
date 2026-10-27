@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-message-usage-event-order-after-promotion
+call:
+  bedrock_message_usage:
+    events:
+      - type: message_stop
+        usage: {input_tokens: 99}
+      - type: message_delta
+        usage: {}
+      - type: message_stop
+        usage: {}
+      - type: other
+        value: 1
+env: {}
+compare:
+  ignore: []
