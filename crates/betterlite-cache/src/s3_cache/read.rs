@@ -56,12 +56,12 @@ fn unexpired(cache: &S3Cache, expires: Option<&str>) -> bool {
     ]
     .into_iter()
     .find_map(|format| DateTime::from_str(text, format).ok());
-    match parsed {
-        Some(expiration) => DateTime::from((cache.clock)()) <= expiration,
-        None => {
+    parsed.map_or_else(
+        || {
             // botocore drops an unparseable Expires, so LiteLLM serves the object as unexpired
             tracing::warn!(expires = text, "S3 cache expiry unparseable, ignoring it");
             true
-        }
-    }
+        },
+        |expiration| DateTime::from((cache.clock)()) <= expiration,
+    )
 }

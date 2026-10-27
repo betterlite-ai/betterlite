@@ -170,38 +170,37 @@ impl S3Cache {
     }
 
     pub async fn async_get_cache(&self, key: &str) -> Option<CachedEntry> {
-        match timeout(self.operation_timeout, self.fetch(key)).await {
+        let fetch = async {
+            let output = match self
+                .client
+                .get_object()
+                .bucket(&self.bucket_name)
+                .key(self.object_key(key))
+                .send()
+                .await
+            {
+                Ok(output) => output,
+                Err(source) => {
+                    if source
+                        .as_service_error()
+                        .is_some_and(GetObjectError::is_no_such_key)
+                    {
+                        tracing::debug!(error = %source, "S3 cache miss");
+                    } else {
+                        tracing::error!(error = %source, "S3 cache read failed");
+                    }
+                    return None;
+                }
+            };
+            read::read_body(self, output).await
+        };
+        match timeout(self.operation_timeout, fetch).await {
             Ok(result) => result,
             Err(source) => {
                 tracing::error!(error = %source, "S3 cache read timed out");
                 None
             }
         }
-    }
-
-    async fn fetch(&self, key: &str) -> Option<CachedEntry> {
-        let output = match self
-            .client
-            .get_object()
-            .bucket(&self.bucket_name)
-            .key(self.object_key(key))
-            .send()
-            .await
-        {
-            Ok(output) => output,
-            Err(source) => {
-                if source
-                    .as_service_error()
-                    .is_some_and(GetObjectError::is_no_such_key)
-                {
-                    tracing::debug!(error = %source, "S3 cache miss");
-                } else {
-                    tracing::error!(error = %source, "S3 cache read failed");
-                }
-                return None;
-            }
-        };
-        read::read_body(self, output).await
     }
 
     fn object_key(&self, key: &str) -> String {
