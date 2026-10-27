@@ -1,0 +1,23 @@
+task: B004
+deviations:
+  - what: betterlite does not send the x-stainless-* headers or the OpenAI SDK user-agent upstream.
+    why: Those headers describe LiteLLM's Python client, not the user's request.
+    link: https://github.com/openai/openai-python
+  - what: x-litellm-version carries betterlite's own version instead of 1.105.1.
+    why: The header names the gateway that answered, and betterlite is not LiteLLM 1.105.1.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1785
+  - what: The user parameter is dropped and reasoning_effort is forwarded for every model, where LiteLLM forwards user and drops reasoning_effort for models in its cost map.
+    why: No task has loaded LiteLLM's model cost map yet, so the OpenAI parameter policy sees an empty catalog.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py
+  - what: A chat request carrying one of LiteLLM's own keys (api_base, api_key, api_version, base_url, caching, context_window_fallback_dict, extra_headers, fallbacks, max_retries, mock_response, num_retries, stream_timeout, timeout) gets a 400 that names the key.
+    why: LiteLLM acts on these keys itself and never forwards them; betterlite does not act on them yet, and forwarding or dropping them would be a silent difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py
+  - what: The /engines/{model}/chat/completions and /openai/deployments/{model}/chat/completions routes match a model name of one path segment, so a model name with a slash does not route there.
+    why: LiteLLM uses a path parameter that spans slashes; axum allows a catch-all only as the last segment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11941-L11951
+  - what: Without model_info.id, x-litellm-model-id hashes the litellm_params in betterlite's field order (model, api_base, api_key, api_version, timeout, stream_timeout, max_retries, rpm, tpm, weight), so it matches LiteLLM only when the config lists the keys in that order and writes whole-number floats without a fraction.
+    why: The config crate keeps typed params, not the YAML key order and number spelling LiteLLM hashes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8768-L8797
+  - what: A provider answer larger than 32 MiB is refused with a 500.
+    why: Rule bounded-inputs requires a cap on every read; LiteLLM reads any size.
+    link: ""

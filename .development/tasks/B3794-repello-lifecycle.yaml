@@ -1,0 +1,289 @@
+id: B3794
+title: Repello scan lifecycle and stream blocking
+description: >-
+  Build Argus scan requests and hook/error behavior, including buffering output before a streamed block.
+  Preserve permanent configuration errors versus transient failures and `ARGUS_API_KEY` precedence over `REPELLOAI_API_KEY`.
+
+  The Repello guardrail sends prompt and response text to the Argus API for scanning. Scan requests POST to either
+  `{api_base}/analyze/prompt` or `{api_base}/analyze/response` with an `asset_id` and the text under `scan_data.prompt`
+  or `scan_data.response`. Configuration is resolved with `ARGUS_API_KEY` taking precedence over `REPELLOAI_API_KEY`,
+  and the default API base is `https://argusapi.repello.ai/sdk/v1`. The `asset_id` is required and raises at initialization
+  if missing.
+
+  A response with status in {400, 401, 403, 404, 422} signals a permanent misconfiguration (bad key, unknown asset,
+  malformed payload), never a transient outage. These status codes always raise an HTTPException with status 500 and
+  error type "repelloai_guardrail_is_misconfigured", regardless of the `unreachable_fallback` setting. Other HTTP
+  errors are treated as transient: when `unreachable_fallback="fail_closed"` they raise an HTTPException with
+  status 500 and error type "repelloai_guardrail_unreachable"; when `"fail_open"` they return None (allow-through).
+
+  The response verdict is one of "blocked", "flagged", or "passed". Unrecognized verdicts cause the guardrail
+  to block and log a warning. A block verdict raises HTTPException with status 400 and detail message built from
+  the `policies_violated` list: each policy includes policy_name (mandatory), action_taken (optional) and
+  details.score (optional). The message format is "Blocked by RepelloAI Argus guardrail. Policies violated:
+  <policy_name> (action: <action>, score: <score>); ...". A flagged verdict is allowed but logged as a warning
+  with the policies list.
+
+  On pre_call, the hook extracts prompt text from the request, calls `_call_analyze` with stage="prompt",
+  raises if blocked, and adds the guardrail name to the applied-guardrails header (U3). On post_call (non-streamed),
+  the hook extracts response text, calls `_call_analyze` with stage="response", raises if blocked, and updates
+  the applied-guardrails header. The event_hook configuration (a Mode or list of GuardrailEventHooks) is coerced
+  in the __init__ file so the guardrail only runs at configured phases.
+
+  On post_call_streaming_iterator_hook, the hook buffers every chunk from the input stream, assembles them with
+  `stream_chunk_builder`, extracts response text, calls `_call_analyze` asynchronously, and raises `StreamingCallbackError`
+  if blocked before yielding any chunk back. If the verdict is flagged, it logs a warning. If text extraction fails
+  (e.g., the assembled response is not a ModelResponse), it logs a warning and yields every buffered chunk as-is.
+
+  The timeout applies to each `_call_analyze` call and is injected at initialization. HTTP exceptions from the
+  analyze call (invalid JSON response, request failures) are caught, logged with status/duration, and re-raised
+  or converted to allow-through based on unreachable_fallback. The response is validated against
+  `RepelloAIAnalyzeResponse` TypedDict; validation errors raise HTTPException with status 500 and
+  error type "repelloai_guardrail_returned_invalid_json".
+
+  The config model exposes api_key, api_base, asset_id, and unreachable_fallback as optional config fields, all
+  resolved at initialization from the LitellmParams. The ui_friendly_name returns "RepelloAI Argus".
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/repello_lifecycle.rs
+    - crates/betterlite-guardrails/src/repello_lifecycle/**
+    - tools/oracle/cases/guardrails/repello-lifecycle-*.yaml
+    - tools/oracle/helpers/b3794.py
+    - tools/oracle/helpers/b3794/**
+    - tools/oracle/src/helpers/guardrails/b3794.rs
+    - tools/oracle/src/helpers/guardrails/b3794/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L142-L182
+    why: "__init__: api_key fallback chain (ARGUS_API_KEY, REPELLOAI_API_KEY), api_base resolution (REPELLOAI_API_BASE env or default), asset_id validation, unreachable_fallback setup, async_handler init, parent __init__ chain."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L183-L249
+    why: "_call_analyze: POST to /analyze/{prompt|response}, status classification (success/guardrail_intervened/guardrail_failed_to_respond), response parsing, exception handling, finally block with add_standard_logging_guardrail_information_to_request_data."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L251-L260
+    why: "_raise_for_config_error: permanent error detection on 400/401/403/404/422 status codes, raises HTTPException 500."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L262-L274
+    why: "_verdict_blocks: checks verdict == 'blocked', returns false for 'passed'/'flagged', logs warning and blocks for unrecognized verdicts."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L276-L283
+    why: "_handle_unreachable: logs HTTPError, raises HTTPException 500 on fail_closed, returns None on fail_open."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L285-L293
+    why: "_raise_if_blocked: calls _verdict_blocks, raises HTTPException 400 with formatted detail, calls _log_flagged_verdict on non-block."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L295-L318
+    why: "_format_blocked_detail: extracts policies_violated, iterates each policy with policy_name, action_taken, score details, formats human-readable message."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L320-L326
+    why: "_log_flagged_verdict: checks verdict == 'flagged', logs warning with policies_violated."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L379-L411
+    why: "async_pre_call_hook: should_run_guardrail check, extracts prompt text via B3793, calls _call_analyze for prompt stage, _raise_if_blocked, add_guardrail_to_applied_guardrails_header, returns data."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L413-L444
+    why: "async_post_call_success_hook: should_run_guardrail check, extracts response text via B3793, calls _call_analyze for response stage, _raise_if_blocked, add_guardrail_to_applied_guardrails_header, returns response."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L446-L496
+    why: "async_post_call_streaming_iterator_hook: should_run_guardrail check, buffers chunks via B2227 stream_chunk_builder, extracts response text, calls _call_analyze if text present, blocks on _verdict_blocks, replays chunks."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L567-L573
+    why: "get_config_model: returns RepelloAIGuardrailConfigModel type reference."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/__init__.py#L15-L40
+    why: "_event_hook_from_mode: converts string/list/Mode into GuardrailEventHooks; initialize_guardrail instantiates RepelloAIGuardrail with litellm_params fields, calls add_litellm_callback."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py#L1-L32
+    why: "RepelloAIGuardrailConfigModel with api_key, api_base, asset_id, unreachable_fallback fields and ui_friendly_name."
+
+dod:
+  - text: >-
+      __init__ accepts api_key, api_base, asset_id, unreachable_fallback (default fail_closed),
+      guardrail_name, event_hook, default_on, and timeout parameters; resolves api_key to
+      ARGUS_API_KEY env, then REPELLOAI_API_KEY env, raises RepelloAIGuardrailMissingSecrets
+      if both are missing; validates asset_id is not empty and raises ValueError if missing.
+    proof: [init-secrets-cases]
+  - text: >-
+      __init__ resolves api_base to api_base parameter, then REPELLOAI_API_BASE env var,
+      then DEFAULT_REPELLOAI_API_BASE (https://argusapi.repello.ai/sdk/v1).
+    proof: [init-api-base-cases]
+  - text: >-
+      __init__ normalizes unreachable_fallback: stores "fail_open" if input is "fail_open",
+      otherwise stores "fail_closed".
+    proof: [init-fallback-cases]
+  - text: >-
+      __init__ calls get_async_httpx_client with GuardrailCallback provider and timeout parameter,
+      chains parent CustomGuardrail.__init__ with guardrail_name, event_hook, default_on,
+      supported_event_hooks from get_supported_event_hooks, and timeout.
+    proof: [init-handler-cases]
+  - text: >-
+      _call_analyze constructs endpoint {api_base}/analyze/{stage} where stage is "prompt" or "response",
+      builds request with asset_id and scan_data: {stage: text}, POSTs with X-API-Key header,
+      calls _raise_for_config_error on response, raises HTTPException 500 on non-200 status.
+    proof: [api-call-cases]
+  - text: >-
+      _call_analyze parses response via TypeAdapter(RepelloAIAnalyzeResponse).validate_json,
+      raises HTTPException 500 if validation fails, returns RepelloAIAnalyzeResponse on success.
+    proof: [api-call-cases]
+  - text: >-
+      _call_analyze initializes status to "success", updates to "guardrail_intervened" if _verdict_blocks returns true;
+      on HTTPException catches update status to "guardrail_failed_to_respond";
+      on HTTPError catches update status to "guardrail_failed_to_respond";
+      on other Exception catches update status to "guardrail_failed_to_respond";
+      calls add_standard_logging_guardrail_information_to_request_data in finally block
+      with guardrail_json_response dict-converted from response if not None, or str() of exception otherwise.
+    proof: [verdict-classification-cases]
+  - text: >-
+      _raise_for_config_error raises HTTPException(500) with error detail if response status_code
+      is in {400, 401, 403, 404, 422}.
+    proof: [config-error-cases]
+  - text: >-
+      _verdict_blocks returns true if verdict == "blocked", false if verdict in ("passed", "flagged"),
+      logs warning and returns true for unrecognized verdicts.
+    proof: [verdict-classification-cases]
+  - text: >-
+      _handle_unreachable logs warning for HTTPError, raises HTTPException(500) if unreachable_fallback
+      is "fail_closed", returns None if "fail_open".
+    proof: [transient-error-cases]
+  - text: >-
+      _raise_if_blocked returns early if response is None, calls _verdict_blocks, raises HTTPException(400)
+      with formatted detail if blocked, calls _log_flagged_verdict if not blocked.
+    proof: [error-format-cases]
+  - text: >-
+      _format_blocked_detail extracts policies_violated list, iterates each policy extracting
+      policy_name (default "unknown_policy"), action_taken (if present), score from details dict (if present),
+      joins all policies with action/score suffix, returns formatted string or default message.
+    proof: [error-format-cases]
+  - text: >-
+      _log_flagged_verdict checks verdict == "flagged" and logs warning with policies_violated if true.
+    proof: [flagged-log-cases]
+  - text: >-
+      async_pre_call_hook calls should_run_guardrail with pre_call event, returns data unchanged
+      if false, extracts prompt text via B3793 _extract_prompt_text, returns data if no text,
+      calls _call_analyze with stage "prompt", calls _raise_if_blocked, calls
+      add_guardrail_to_applied_guardrails_header, returns data.
+    proof: [pre-call-hook-cases]
+  - text: >-
+      async_post_call_success_hook calls should_run_guardrail with post_call event, returns response
+      unchanged if false, extracts response text via B3793 _extract_response_text, returns response if no text,
+      calls _call_analyze with stage "response", calls _raise_if_blocked, calls
+      add_guardrail_to_applied_guardrails_header, returns response.
+    proof: [post-call-hook-cases]
+  - text: >-
+      async_post_call_streaming_iterator_hook calls should_run_guardrail with post_call event,
+      yields all chunks and returns early if false; otherwise buffers all chunks via
+      stream_chunk_builder from B2227, extracts response text if assembled is ModelResponse,
+      calls _call_analyze if text present, raises StreamingCallbackError if _verdict_blocks returns true,
+      calls add_guardrail_to_applied_guardrails_header if text present, yields all buffered chunks.
+    proof: [streaming-hook-cases]
+  - text: >-
+      get_config_model returns RepelloAIGuardrailConfigModel class.
+    proof: [config-model-cases]
+  - text: >-
+      _event_hook_from_mode returns input if already GuardrailEventHooks or Mode,
+      converts list of strings to list of GuardrailEventHooks via GuardrailEventHooks(item),
+      converts single string to GuardrailEventHooks.
+    proof: [event-hook-cases]
+  - text: >-
+      initialize_guardrail instantiates RepelloAIGuardrail with guardrail_name, api_key/api_base/asset_id/
+      unreachable_fallback/timeout from litellm_params, converts mode via _event_hook_from_mode,
+      calls litellm.logging_callback_manager.add_litellm_callback with instance, returns instance.
+    proof: [initialize-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: init-secrets-cases
+      why: __init__ api_key resolution and RepelloAIGuardrailMissingSecrets exception tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::init_secrets/)'
+    - id: init-api-base-cases
+      why: __init__ api_base resolution from parameter, env var, and default tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::init_api_base/)'
+    - id: init-fallback-cases
+      why: __init__ unreachable_fallback normalization tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::init_fallback/)'
+    - id: init-handler-cases
+      why: __init__ async_handler initialization and parent __init__ chain tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::init_handler/)'
+    - id: api-call-cases
+      why: _call_analyze endpoint construction, request payload, HTTP POST, and response parsing tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::api_call/)'
+    - id: config-error-cases
+      why: _raise_for_config_error 400/401/403/404/422 status code detection and HTTPException raising tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::config_error/)'
+    - id: transient-error-cases
+      why: _handle_unreachable HTTPError logging and unreachable_fallback fail_closed/fail_open behavior tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::transient_error/)'
+    - id: verdict-classification-cases
+      why: _verdict_blocks verdict classification and _call_analyze status assignment (success/guardrail_intervened/guardrail_failed_to_respond) tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::verdict_classification/)'
+    - id: error-format-cases
+      why: _raise_if_blocked and _format_blocked_detail error formatting with policy names, actions, scores tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::error_format/)'
+    - id: flagged-log-cases
+      why: _log_flagged_verdict warning log on flagged verdict tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::flagged_log/)'
+    - id: pre-call-hook-cases
+      why: async_pre_call_hook should_run_guardrail coordination, text extraction, _call_analyze dispatch, blocking, and header addition tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::pre_call_hook/)'
+    - id: post-call-hook-cases
+      why: async_post_call_success_hook should_run_guardrail coordination, text extraction, _call_analyze dispatch, blocking, and header addition tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::post_call_hook/)'
+    - id: streaming-hook-cases
+      why: async_post_call_streaming_iterator_hook chunk buffering, stream_chunk_builder integration, response assembly, text extraction, blocking, and chunk replaying tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::streaming_hook/)'
+    - id: config-model-cases
+      why: get_config_model returns RepelloAIGuardrailConfigModel type tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::config_model/)'
+    - id: event-hook-cases
+      why: _event_hook_from_mode and initialize_guardrail event hook conversion tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::event_hook/)'
+    - id: initialize-cases
+      why: initialize_guardrail instantiation and callback registration tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^repello_lifecycle::initialize/)'
+
+oracle_cases:
+  - tools/oracle/cases/guardrails/repello-lifecycle-init.yaml
+  - tools/oracle/cases/guardrails/repello-lifecycle-api-call.yaml
+  - tools/oracle/cases/guardrails/repello-lifecycle-blocked.yaml
+  - tools/oracle/cases/guardrails/repello-lifecycle-flagged.yaml
+
+deviations:
+  - what: >-
+      When ARGUS_API_KEY and REPELLOAI_API_KEY are both missing from environment and api_key parameter is None,
+      betterlite raises RepelloAIGuardrailMissingSecrets, whereas LiteLLM calls get_secret_str("ARGUS_API_KEY")
+      as a final fallback to consult its configured secret manager.
+    why: Full secret-manager dispatch is unresolved (U4); betterlite uses only the env var lookup supplied by B002.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L153
+
+out_of_scope:
+  - Guardrail decorator registration and CustomGuardrail.__init__; owned by B104 (U1).
+  - add_guardrail_to_applied_guardrails_header; owned by B104 (U3).
+  - get_secret_str and full secret-manager dispatch; owned by B129 (U4).
+  - Content extraction helpers _extract_prompt_text, _extract_response_text, and all their nested functions; owned by B3793.
+  - stream_chunk_builder and streaming response assembly; owned by B2227.
+  - Framework method should_run_guardrail on CustomGuardrail; owned by B104 (U1).
+  - Request/response routing and framework dispatch; those come from the guardrail lifecycle in B104.
+
+pitfalls:
+  - >-
+      _call_analyze sets status in a try/except/finally chain; the finally block always runs even on exception.
+      Do not initialize status inside the try, as it may not be defined on some paths. Status must be a local
+      variable visible to the finally block.
+  - >-
+      _verdict_blocks returns true for unrecognized verdicts; do not silently return false or filter out
+      unexpected responses. Log a warning when the verdict is not in the known set (blocked/flagged/passed).
+  - >-
+      HTTPException raised in the try block before repelloai_response assignment will not have repelloai_response
+      converted to dict in the finally block. Check repelloai_response is not None before dict() conversion.
+  - >-
+      CONFIG_ERROR_STATUS_CODES (400/401/403/404/422) must always block regardless of unreachable_fallback setting.
+      _raise_for_config_error raises before the try/except path, so it will not be caught as HTTPException
+      and will not trigger the finally block logging.
+  - >-
+      Streaming hook must call stream_chunk_builder on the entire chunks list to assemble a complete response,
+      not assume the assembled result is a ModelResponse. Check isinstance(assembled, ModelResponse) before
+      calling _extract_response_text.
+  - >-
+      add_guardrail_to_applied_guardrails_header is called only when text is present and not blocked in the
+      streaming hook. Do not call it in the error path or when no text is extracted.
+  - >-
+      The X-API-Key header must match the exact spelling and casing of the key name expected by Argus.
+      Do not use different header names or auth schemes.
+  - >-
+      Argus expects a single text value under scan_data[stage], not a list or nested structure.
+      Do not wrap the text in extra containers.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

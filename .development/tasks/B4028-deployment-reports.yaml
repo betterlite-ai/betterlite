@@ -1,0 +1,79 @@
+id: B4028
+title: Daily deployment metrics and report scheduling
+description: >-
+  Build accumulated failure and latency metrics per deployment, format top-five reports and schedule daily sending with pod-lock coordination.
+  Metrics track failed request count and latency per output token by deployment ID, stored in cache with keys like `{deployment_id}:failed_requests_daily_metrics` and `{deployment_id}:latency_daily_metrics` (from SlackAlertingCacheKeys enum).
+  `async_update_daily_reports` increments these counters on each request success or failure; `send_daily_reports` reads the full metric set, identifies the top five deployments by each metric, formats a Slack message with deployment names and API bases, resets all metrics to zero, and sends the alert.
+  The daily scheduler polls every `alerting_args.report_check_interval` seconds (default 300 with jitter ±3), stamps the report window timestamp on first run, and on subsequent runs acquires a pod-level lock before sending to prevent duplicate reports across instances.
+  Use an injected clock instead of `get_utc_datetime` for success event timestamps, and preserve the source's first-timestamp initialization and jittered polling behavior.
+scope:
+  paths:
+    - crates/betterlite-server/src/alerting/deployment_reports.rs
+    - crates/betterlite-server/src/alerting/deployment_reports/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L309-L346
+    why: async_update_daily_reports increments failed request and latency cache entries
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L348-L479
+    why: send_daily_reports fetches metrics, selects top five by index, formats message, resets cache
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1685-L1718
+    why: async_log_success_event computes latency per output token and calls async_update_daily_reports
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1751-L1799
+    why: _run_scheduler_helper timestamps the report window, acquires lock, sends report, updates timestamp
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1801-L1824
+    why: _run_scheduled_daily_report background task polls and calls _run_scheduler_helper
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L131-L148
+    why: DeploymentMetrics record with id, failed_request, latency_per_output_token, updated_at fields
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L151-L159
+    why: SlackAlertingCacheKeys enum defining failed_requests_daily_metrics and latency_daily_metrics key values
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1778
+    why: SLACK_DAILY_REPORT_LOCK_ID constant for pod lock coordination
+dod:
+  - text: Metrics are incremented per deployment on each request via async_update_daily_reports, which handles both failed request count and latency per output token.
+    proof: [deployment-metrics-tests]
+  - text: send_daily_reports fetches all deployment metrics from cache in one batch call and formats a message listing the top five deployments by failed requests and top five by latency.
+    proof: [daily-report-tests]
+  - text: The formatted message includes deployment names, metric values, and API bases, with separate sections for failed requests and latency metrics.
+    proof: [daily-report-tests]
+  - text: Cache metrics are reset to zero after sending the report.
+    proof: [daily-report-tests]
+  - text: The scheduler stamps a report window on first run and checks interval timing on subsequent runs, acquiring a pod-level lock before sending.
+    proof: [deployment-metrics-tests]
+  - text: The polling interval is jittered ±3 seconds around alerting_args.report_check_interval to prevent collision across instances.
+    proof: [deployment-metrics-tests]
+  - text: Successful request logging invokes async_update_daily_reports with latency per output token computed from completion_tokens when available.
+    proof: [deployment-metrics-tests]
+  - text: Pod lock acquire uses the same SLACK_DAILY_REPORT_LOCK_ID and TTL as the report frequency, with reentrant=false.
+    proof: [deployment-metrics-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: deployment-metrics-tests
+      why: deployment metrics update and top-five selection behavior does not match LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^deployment_metrics::/) or test(/^daily_report_scheduler::/) or test(/^deployment_success_logging::/)'
+    - id: daily-report-tests
+      why: daily report formatting and cache reset behavior does not match LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_report::/)'
+oracle_cases: []
+deviations:
+  - what: Metric timestamps use an injected clock provider instead of litellm.utils.get_utc_datetime.
+    why: Dependency injection allows testing and avoids module-level global state.
+out_of_scope:
+  - Cache async_batch_get_cache operation (B4294 owns that).
+  - Cache async_increment_cache and async_set_cache_pipeline operations (B4293 owns those).
+  - The get_api_base formatting utility (B004 owns that).
+  - Pod-lock implementation (B1690 owns that).
+  - The Router interface (B844/B845 own the model/deployment lookups).
+  - The send_alert entry point (B4024 owns that).
+pitfalls:
+  - "Cache keys match SlackAlertingCacheKeys enum: `{deployment_id}:failed_requests_daily_metrics` and `{deployment_id}:latency_daily_metrics`, not the `daily_metrics:` infix format."
+  - Top-five filtering must preserve order after sorting and filter out zero/None values; an off-by-one error will include the sixth item or drop the fifth.
+  - The first-timestamp initialization happens only when report_sent is None; after that, the same cache key is updated at every interval check.
+  - The jittered interval uses a random integer ±3 around report_check_interval; floating-point jitter or a different range will miss the source behavior.
+  - Latency per output token is computed only when completion_tokens is present and positive; otherwise total elapsed time in seconds is used.
+  - Cache reset values must be set to zero (not deleted or None) to preserve the next interval's all-zero check.
+  - A missing or non-dict deployment when looking up a top-5 failed-request key causes send_daily_reports to return False immediately, aborting the whole send and skipping the cache reset at the async_set_cache_pipeline call, whereas the same condition in the slowest-deployments loop just degrades to an empty deployment name and continues, silently retaining that stale metric forever.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

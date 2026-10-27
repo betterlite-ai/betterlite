@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Report monthly active users, tag totals and per-user analytics
 status: todo
 depends_on: [B052, B700, B722, B723, B726, B3100]
-file: null
+file: tasks/B3101-user-agent-summary.yaml
 covers:
   - "litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py"
 parent: B074

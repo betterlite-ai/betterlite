@@ -1,0 +1,147 @@
+id: B3428
+title: Eval run creation and listing routes
+description: >-
+  Register POST and GET `/v1/evals/{eval_id}/runs` routes in `betterlite-server::api::eval_run_create_list_routes`.
+  The module exports a function that registers these two routes with the server and returns a router factory.
+  For create_run, decode the request body with orjson and apply model selection precedence: header `x-litellm-model`,
+  then query `model`, then body `model`, then `completion.model` (only when completion is a dictionary).
+  Overwrite `eval_id` from the path parameter unconditionally. A present body `custom_llm_provider`, even when null,
+  is not replaced by the query default `openai`; only apply the default when the key is entirely absent from the body.
+  For list_runs, never read a request body. Build request data entirely from path and query parameters, populating
+  `limit`, `after`, `before`, and `order` fields including null values, with `limit` defaulting to 20 when not in the query.
+  Apply model selection precedence: header `x-litellm-model`, then query `model`. Overwrite `eval_id` from the path.
+  Decode request bodies before the try/catch block so malformed JSON is a 400 parse error, not caught by exception handlers.
+  Hand off to authenticated common processing through `ProxyBaseLLMRequestProcessing.base_process_llm_request` on route_type
+  `acreate_run` or `alist_runs`, and catch exceptions through `ProxyBaseLLMRequestProcessing._handle_llm_api_exception`.
+  Response models are `Run` and `ListRunsResponse` from B3420's contracts.
+scope:
+  paths:
+    - crates/betterlite-server/src/api/eval_run_create_list_routes.rs
+    - crates/betterlite-server/src/api/eval_run_create_list_routes/**
+    - tools/oracle/cases/evals/runs/**
+    - Cargo.toml
+    - deny.toml
+    - tools/oracle/helpers/b3428.py
+    - tools/oracle/helpers/b3428/**
+    - tools/oracle/src/helpers/server/b3428.rs
+    - tools/oracle/src/helpers/server/b3428/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L578-L674
+    why: "POST /v1/evals/{eval_id}/runs: the create_run route, model selection precedence (header > query > body > completion.model), path eval_id override, custom_llm_provider handling, delegation to base_process_llm_request and exception handling."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L677-L767
+    why: "GET /v1/evals/{eval_id}/runs: the list_runs route, path parameter and query-only data building (never reads body), pagination defaults including limit=20, model selection (header > query only), custom_llm_provider defaults."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2461-L2524
+    why: "ProxyBaseLLMRequestProcessing.base_process_llm_request and its signature, including route_type, user_api_key_dict and other parameters passed by every route."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3625-L3774
+    why: "ProxyBaseLLMRequestProcessing._handle_llm_api_exception and the error envelope it produces."
+dod:
+  - text: "The two routes POST /v1/evals/{eval_id}/runs (create_run) and GET /v1/evals/{eval_id}/runs (list_runs) are registered with the correct HTTP methods and paths."
+    proof: [http-routes]
+  - text: "For create_run: model selection uses header x-litellm-model first, then query model, then body model, then completion.model (only when completion is a dict), matching every listed oracle case."
+    proof: [create-model-selection]
+  - text: "For list_runs: model selection uses header x-litellm-model first, then query model only; body is never read."
+    proof: [list-model-selection]
+  - text: "For create_run: path eval_id overwrites any eval_id value from the request body unconditionally."
+    proof: [create-path-id-override]
+  - text: "For list_runs: path eval_id is set in the data dict and list_runs never reads a request body."
+    proof: [list-no-body]
+  - text: "For both routes: a present body custom_llm_provider, even null, is not replaced by the query default openai."
+    proof: [provider-null-handling]
+  - text: "For create_run: request body decoding (JSON parse errors) happens before the try/catch block, so malformed bodies return 400 with parse error details."
+    proof: [create-malformed-body]
+  - text: "For create_run: model is resolved only from header, query, body, and completion.model when completion is a dict; other fields in completion are not checked."
+    proof: [completion-dict-check]
+  - text: "For list_runs: pagination fields (limit, after, before, order) are included in the data dict with their values including null, and limit defaults to 20 when absent from the query."
+    proof: [list-pagination]
+  - text: "Every route delegates to ProxyBaseLLMRequestProcessing.base_process_llm_request with route_type acreate_run or alist_runs."
+    proof: [processor-delegation]
+  - text: "Exceptions are caught and passed to ProxyBaseLLMRequestProcessing._handle_llm_api_exception."
+    proof: [error-handling]
+  - text: "Response models use Run and ListRunsResponse from B3420."
+    proof: [response-contracts]
+checks:
+  optional: []
+  commands:
+    - id: http-routes
+      why: the two routes are not registered or use wrong methods/paths
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_create_list_routes::tests::http_routes(::|$)/)'
+    - id: create-model-selection
+      why: create_run model selection precedence (header > query > body > completion.model) is not correct or cases fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_create_list_routes::tests::create_model_selection(::|$)/)'
+    - id: list-model-selection
+      why: list_runs model selection (header > query) is not correct or does not skip body entirely
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_create_list_routes::tests::list_model_selection(::|$)/)'
+    - id: create-path-id-override
+      why: path eval_id does not override body eval_id in create_run
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_create_list_routes::tests::create_path_id_override(::|$)/)'
+    - id: list-no-body
+      why: list_runs reads a request body or does not set path eval_id
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_create_list_routes::tests::list_no_body(::|$)/)'
+    - id: provider-null-handling
+      why: body custom_llm_provider null is incorrectly replaced by default in either route
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_create_list_routes::tests::provider_null_handling(::|$)/)'
+    - id: create-malformed-body
+      why: malformed JSON body in create_run does not return 400 or is caught after the try block
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_create_list_routes::tests::create_malformed_body(::|$)/)'
+    - id: completion-dict-check
+      why: create_run model resolution from completion.model does not check that completion is a dict first
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_create_list_routes::tests::completion_dict_check(::|$)/)'
+    - id: list-pagination
+      why: list_runs does not include all pagination fields or limit does not default to 20
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_create_list_routes::tests::list_pagination(::|$)/)'
+    - id: processor-delegation
+      why: routes do not delegate to base_process_llm_request or use wrong route_type values
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_create_list_routes::tests::processor_delegation(::|$)/)'
+    - id: error-handling
+      why: exceptions are not caught or not passed to _handle_llm_api_exception
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_create_list_routes::tests::error_handling(::|$)/)'
+    - id: response-contracts
+      why: response models do not use Run and ListRunsResponse from B3420
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_create_list_routes::tests::response_contracts(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/evals/runs/create-run-basic.yaml
+  - tools/oracle/cases/evals/runs/create-run-model-header.yaml
+  - tools/oracle/cases/evals/runs/create-run-model-query.yaml
+  - tools/oracle/cases/evals/runs/create-run-model-body.yaml
+  - tools/oracle/cases/evals/runs/create-run-model-completion.yaml
+  - tools/oracle/cases/evals/runs/create-run-completion-not-dict.yaml
+  - tools/oracle/cases/evals/runs/create-run-path-eval-id-override.yaml
+  - tools/oracle/cases/evals/runs/create-run-provider-body.yaml
+  - tools/oracle/cases/evals/runs/create-run-provider-null.yaml
+  - tools/oracle/cases/evals/runs/create-run-malformed-json.yaml
+  - tools/oracle/cases/evals/runs/list-runs-basic.yaml
+  - tools/oracle/cases/evals/runs/list-runs-limit-default.yaml
+  - tools/oracle/cases/evals/runs/list-runs-limit-explicit.yaml
+  - tools/oracle/cases/evals/runs/list-runs-pagination-after.yaml
+  - tools/oracle/cases/evals/runs/list-runs-pagination-before.yaml
+  - tools/oracle/cases/evals/runs/list-runs-pagination-order.yaml
+  - tools/oracle/cases/evals/runs/list-runs-model-header.yaml
+  - tools/oracle/cases/evals/runs/list-runs-model-query.yaml
+  - tools/oracle/cases/evals/runs/list-runs-provider-default.yaml
+  - tools/oracle/cases/evals/runs/list-runs-provider-query.yaml
+  - tools/oracle/cases/evals/runs/list-runs-no-body-support.yaml
+deviations:
+  - what: "For create_run: request body decoding (JSON parse errors) occurs before the try/catch block so malformed bodies return 400 with a parse error, not a 500 from the handler."
+    why: "LiteLLM's FastAPI route handler implicitly parses bodies as part of the request lifecycle; betterlite's explicit decode before try/catch preserves the same error surface (400 on bad JSON) without changing the visible contract."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L629"
+  - what: "For list_runs: request data is built entirely from path and query parameters; the body is never read, even if present."
+    why: "LiteLLM's list_runs GET route in FastAPI does not accept a request body parameter, so no body is available. Betterlite's implementation avoids reading request bytes when the operation does not use them, matching LiteLLM's behavior."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L677-L693"
+out_of_scope:
+  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; B004 owns that in litellm/proxy/common_request_processing.py, and routes only call it."
+  - "ProxyBaseLLMRequestProcessing._handle_llm_api_exception implementation and error envelope construction; B004 owns that in litellm/proxy/common_request_processing.py, and routes only catch and delegate to it."
+  - "Authentication and user_api_key_auth dependency injection; B756 or another auth task owns that."
+  - "The concrete operation implementations (acreate_run, alist_runs) owned by B3424; routes only dispatch to them."
+pitfalls:
+  - "For create_run: model selection must check header (x-litellm-model) first, then query, then body, then completion.model only if completion is a dict. The line order in LiteLLM is the authority."
+  - "For create_run: completion.model is checked only when completion is a dict; if completion is null or not a dict, this fallback does not apply."
+  - "For list_runs: the body must never be read, even if the client sends one. Query parameters alone define the request; all pagination fields (limit, after, before, order) go into the data dict with their actual values including null."
+  - "For list_runs: limit defaults to 20 only when absent from the query; if the query provides any value for limit (including None or 0 if the client sends it), that value is used."
+  - "For both routes: custom_llm_provider must never default to openai when a body value (including null) is present. Only apply the default when the key is entirely absent from the body."
+  - "Path eval_id overwrites body eval_id unconditionally in create_run; this is not a precedence rule, it is always the source of truth."
+  - "Body parsing with orjson must happen outside the try block in create_run so parse errors are visible as 400 responses, not caught by exception handlers."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

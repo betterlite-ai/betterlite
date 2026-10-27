@@ -1,0 +1,212 @@
+id: B4296
+title: Derive exact and tenant-scoped semantic cache keys
+description: >-
+  Implement the semantic cache key derivation pipeline: ordered parameter material collection with excluded
+  prompt content, model/caching group resolution, transcription file identity handling, preset-key bypass,
+  SHA-256 hashing and namespace prefixing. Semantic cache keys omit prompt content (messages/prompt/input
+  parameters) but include all other request material: model, file checksums, temperature, max_tokens, tools
+  and other provider-specific optional parameters. Tenant-scoped keys add server-set identity fields
+  (user_api_key, user_api_key_team_id, user_api_key_org_id) and optionally end-user identity. Caching groups
+  and model_group metadata allow multiple deployments to share cached responses.
+
+  Implement ordered key material by iterating ModelParamHelper._get_all_llm_api_params in the order that
+  LiteLLM's get_cache_key uses, excluding prompt content for semantic caches. Build cache mode (default_on for
+  always cached, default_off for opt-in) as a simple enum. Derive caching groups from metadata when present,
+  falling back to model_group, then the model parameter itself. For file parameters (used in transcription),
+  extract file identity from file_checksum, file.name, file_name or the file_name inside litellm_params,
+  in that order.
+
+  Implement preset cache keys: when a caller provides a cache key inline through litellm_params.preset_cache_key,
+  skip derivation and use it directly. Cache the derived key back into litellm_params.preset_cache_key so
+  repeated calls with the same arguments reuse the key without re-hashing.
+
+  Hash the ordered cache key material with SHA-256 to produce a fixed-width key. When a redis namespace is
+  provided (either through cache.namespace, metadata.redis_namespace, or the Cache.namespace property),
+  prepend it with a colon separator. Use print_verbose for debug logging at key derivation, including source
+  material length; litellm.set_verbose is loaded by B2239's configuration.
+
+  Cache mode determines whether cache is opt-in (no-cache and no-store policies remain separate from the mode).
+  Enable the cache with mode=default_on to always cache, or mode=default_off to require cache.use-cache=true
+  in the request. should_use_cache returns true only if the mode permits it.
+
+  Semantic cache scope fields include the tenant scope (key/team/org) from server-set metadata and optionally
+  end-user identity. Extract them from both kwargs metadata and litellm_params.metadata when one is a dict.
+  When semantic_cache_scope is "end_user", include the user_api_key_end_user_id field; otherwise stop at
+  tenant scope fields. Append each scope value as "field: value" to the cache key only when present and not None.
+  Tenant isolation must be airtight: a similar prompt from another tenant's identity must hash to a different key.
+
+  Consume B212 ModelParamHelper._get_all_llm_api_params and B2228 is_litellm_owned_kwarg to distinguish
+  LiteLLM parameters from provider-specific ones. Consume B4290 DynamicCacheControl, SemanticCacheScope and
+  backend type tags to check cache type. Consume B2239 for the loaded litellm.set_verbose setting used by
+  print_verbose. The feature flag litellm.enable_caching_on_provider_specific_optional_params is accessed as
+  a module-level global (not from config); betterlite respects its value for parameter inclusion. Never sort
+  request parameters or replace Python value formatting with canonical JSON.
+
+scope:
+  paths:
+    - crates/betterlite-cache/src/cache_key.rs
+    - crates/betterlite-cache/src/cache_key/**
+    - crates/betterlite-cache/Cargo.toml
+    - tools/oracle/cases/cache_key/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/helpers/b4296.py
+    - tools/oracle/helpers/b4296/**
+    - tools/oracle/src/helpers/cache/b4296.rs
+    - tools/oracle/src/helpers/cache/b4296/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L62-L68
+    why: print_verbose uses litellm.set_verbose to guard console output after debug logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L71-L73
+    why: CacheMode enum declaration (default_on, default_off).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L323-L356
+    why: Semantic scope constants, cache-scope-field tuple, and tenant-scope field extraction with metadata search.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L358-L407
+    why: get_cache_key pipeline, preset-key short-circuit, parameter iteration, semantic-scope appending, hashing and namespace assignment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L409-L522
+    why: Parameter value extraction helpers (_get_param_value, _get_model_param_value, _get_caching_group, _get_file_param_value, preset-key getters/setters, hashing and namespace functions).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L967-L983
+    why: should_use_cache predicate that guards cache participation based on mode and policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L387
+    why: Feature flag enable_caching_on_provider_specific_optional_params used to include provider-specific params in cache key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/model_param_helper.py
+    why: ModelParamHelper._get_all_llm_api_params lists canonical LiteLLM parameter names for the get_cache_key pipeline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py
+    why: is_litellm_owned_kwarg predicate distinguishes framework parameters from provider-specific ones.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L397
+    why: enable_caching_on_provider_specific_optional_params global flag definition in litellm module.
+
+dod:
+  - text: Semantic cache excludes messages, prompt and input parameters from the key material so similar prompts map to the same tenant/identity bucket.
+    proof: [cache-key-domain-tests]
+
+  - text: get_cache_key returns the exact SHA-256 hash that LiteLLM produces for identical input kwargs, verified by oracle helper cases comparing both implementations with the same request material.
+    proof: [cache-key-oracle-identity]
+
+  - text: Tenant scope fields (user_api_key, user_api_key_team_id, user_api_key_org_id) and optional end-user field (user_api_key_end_user_id) are extracted from kwargs metadata or litellm_params metadata in that order of precedence.
+    proof: [cache-key-domain-tests, cache-key-oracle-tenant-scope]
+
+  - text: Preset cache keys supplied upstream bypass the pipeline and return immediately without re-hashing or namespace assignment.
+    proof: [cache-key-domain-tests]
+
+  - text: Model parameter is resolved via caching_group (if metadata specifies caching_groups), then model_group (if metadata specifies model_group), then the model kwarg itself.
+    proof: [cache-key-domain-tests]
+
+  - text: File parameter identity uses file content hash for transcription requests, preserving identity across different copies of the same file.
+    proof: [cache-key-domain-tests]
+
+  - text: Namespace assignment prepends a user-supplied or backend-inferred prefix to the hashed key, preventing collisions across multiple semantic engines or customer isolation schemes.
+    proof: [cache-key-domain-tests]
+
+  - text: Provider-specific optional parameters are included in the cache key only when litellm.enable_caching_on_provider_specific_optional_params is true; other provider params are excluded to preserve cache hits across compatible model aliases.
+    proof: [cache-key-domain-tests]
+
+  - text: should_use_cache returns true only when the cache is configured, the request mode matches (opt-in or always-on), and no no-cache or no-store policy is active.
+    proof: [cache-key-domain-tests]
+
+  - text: Oracle helper cases feed identical kwargs to both LiteLLM's Cache.get_cache_key and betterlite's implementation, comparing hash strings for exact format match. Cases cover semantic vs non-semantic modes, preset-key reuse, tenant-scope variants and namespace prefixing.
+    proof: [cache-key-oracle-identity, cache-key-oracle-tenant-scope]
+
+checks:
+  optional: []
+  commands:
+    - id: cache-key-domain-tests
+      why: Cache key derivation logic does not match LiteLLM behavior, or tenant isolation fields are wrong.
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^cache_key::/)'
+
+    - id: cache-key-oracle-identity
+      why: get_cache_key does not produce the exact SHA-256 hash LiteLLM produces for matching input, or preset keys are handled incorrectly.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/cache_key/)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^cache_key::oracle::(exact_hash|preset_key)/)'
+
+    - id: cache-key-oracle-tenant-scope
+      why: Tenant scope fields (user_api_key, team_id, org_id, end_user_id) are not extracted correctly or are in wrong order.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/cache_key/)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^cache_key::oracle::tenant_scope/)'
+
+oracle_cases:
+  - tools/oracle/cases/cache_key/print-verbose-guards-console.yaml
+  - tools/oracle/cases/cache_key/cache-mode-default-on-default-off.yaml
+  - tools/oracle/cases/cache_key/semantic-scope-constant-fields.yaml
+  - tools/oracle/cases/cache_key/exact-hash-basic-request.yaml
+  - tools/oracle/cases/cache_key/exact-hash-with-preset-key.yaml
+  - tools/oracle/cases/cache_key/exact-hash-provider-specific-optional-params.yaml
+  - tools/oracle/cases/cache_key/semantic-exclude-prompt-messages-input.yaml
+  - tools/oracle/cases/cache_key/tenant-scope-api-key-only.yaml
+  - tools/oracle/cases/cache_key/tenant-scope-team-and-org.yaml
+  - tools/oracle/cases/cache_key/tenant-scope-end-user-optional.yaml
+  - tools/oracle/cases/cache_key/model-resolution-caching-group.yaml
+  - tools/oracle/cases/cache_key/model-resolution-model-group.yaml
+  - tools/oracle/cases/cache_key/file-identity-transcription.yaml
+  - tools/oracle/cases/cache_key/namespace-prefix-assignment.yaml
+  - tools/oracle/cases/cache_key/should-use-cache-opt-in-mode.yaml
+  - tools/oracle/cases/cache_key/should-use-cache-with-no-cache-policy.yaml
+
+deviations:
+  - what: >-
+      Changing value serialization format (JSON, string representation, parameter ordering, numeric formatting)
+      breaks cache-key compatibility with entries cached using the previous format. A cache key hash mismatch
+      makes old cache entries unretrievable.
+    why: >-
+      The get_cache_key function produces SHA-256 hashes of ordered parameter material; any change to how
+      that material is serialized produces a different hash for identical logical input, silently degrading
+      cache hit rates. Users must decide whether compatibility with old entries is required and whether
+      a cache flush/migration is acceptable before upgrading betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L358-L407
+
+  - what: >-
+      litellm.enable_caching_on_provider_specific_optional_params is accessed as a module-level global flag,
+      not loaded from betterlite's configuration. This task respects the global value when building cache keys.
+    why: >-
+      LiteLLM exposes this as a runtime toggle in __init__.py. Betterlite does not currently expose configuration
+      hooks to change this per-request or per-proxy-instance, so the feature flag remains a global setting.
+      If betterlite's configuration model changes to support per-instance toggles, this behavior should be revisited.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L397
+
+out_of_scope:
+  - B212 owns ModelParamHelper._get_all_llm_api_params; this task calls it to get the canonical param list.
+
+  - B2228 owns is_litellm_owned_kwarg predicate; this task calls it to distinguish owned from provider-specific params.
+
+  - B4290 owns CacheMode, DynamicCacheControl, SemanticCacheScope, backend tag enums and all semantic-cache type
+    declarations; this task references them in enum checks and scope-field handling.
+
+  - B2239 owns litellm_settings.set_verbose configuration loading and the verbose_hooks module; get_cache_key calls
+    print_verbose which uses the loaded setting to guard console output.
+
+  - Cache policy (no-cache, no-store) is owned by higher-level cache orchestration tasks; should_use_cache checks
+    these policies but does not define them.
+
+  - Preset cache-key storage and retrieval in kwargs (preset_cache_key field) is handled by request-scoping tasks
+    (B4300-B4305); this task only reads/writes the field as a pass-through mechanism.
+
+pitfalls:
+  - The _get_semantic_cache_tenant_scope function searches for identity fields across both kwargs and
+    litellm_params.metadata/litellm_metadata, in that nested order. A missing field in all metadata sources
+    silently omits it from the tenant scope string. Never assume a field is present; the tenant-scope string
+    is built from only the non-None fields found.
+
+  - Preset cache keys must be extracted and returned before any parameter iteration happens. If a preset key
+    is supplied, the entire pipeline (scope iteration, hashing, namespace assignment) is bypassed. This is
+    a short-circuit, not a supplementary step.
+
+  - The caching_group is extracted from metadata.caching_groups (a list), which is searched for a group containing
+    the model_group. If a caching_group is found, it is returned as a string; do not concatenate or index into it
+    without understanding LiteLLM's caching-group contract first.
+
+  - File identity for transcription requests hashes the file content, not the file name. A file with the same
+    content as another file (different name) will map to the same cache entry. Different uploads of the same
+    audio file will share a cache hit if content is identical.
+
+  - provider-specific optional parameters are any kwarg outside the canonical ModelParamHelper list that also
+    fails is_litellm_owned_kwarg. These are only included in the cache key when the feature flag is true; do not
+    silently add or remove them based on a different heuristic.
+
+  - Python's value formatting (str() representation of objects, JSON serialization of nested dicts) is not
+    canonical across Python versions or custom types. Match LiteLLM's exact string representation by testing
+    against the oracle cases and the pinned commit; do not apply custom JSON encoding without a deviation entry.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

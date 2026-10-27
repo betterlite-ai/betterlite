@@ -1,0 +1,225 @@
+id: B4681
+title: MCP toolset records and persistence
+description: >-
+  Build the MCP toolset persistence layer in betterlite-config::mcp::toolset with
+  typed toolset records and CRUD operations against the database. Implement types
+  for MCPToolset, MCPToolsetTool, and request models for creation and updates.
+  Store tools as a JSON array in the database and deserialize to typed records on
+  read.
+
+  MCPToolsetTool is a record with server_id and tool_name, both strings.
+  MCPToolset is a record with toolset_id, toolset_name, optional description,
+  tools list (default empty), created_at, created_by, updated_at, and updated_by.
+  The toolset_id is a string (UUID), toolset_name is required, all other fields
+  are optional with None defaults.
+
+  NewMCPToolsetRequest has toolset_name (required string), description (optional),
+  and tools (optional list, default empty). UpdateMCPToolsetRequest has toolset_id
+  (required), toolset_name (optional), description (optional), and tools (optional).
+
+  create_mcp_toolset(prisma_client, data, touched_by) generates a UUID for
+  toolset_id, serializes tools to JSON, sets created_by and updated_by to touched_by,
+  stores the row, and returns the deserialized MCPToolset.
+
+  get_mcp_toolset(prisma_client, toolset_id) returns MCPToolset or None on not found.
+
+  list_mcp_toolsets(prisma_client, toolset_ids=None, use_writer=False) accepts an
+  optional list of toolset_ids to filter (IN query); None means return all toolsets.
+  When use_writer is true, raise any database error. When use_writer is false, catch
+  exceptions, warn, and return empty list.
+
+  get_mcp_toolset_by_name(prisma_client, toolset_name) queries by toolset_name and
+  returns MCPToolset or None on not found.
+
+  update_mcp_toolset(prisma_client, data, touched_by) takes an UpdateMCPToolsetRequest
+  with a toolset_id. Apply a partial update: exclude toolset_id from the update,
+  skip any field that is absent (not set) in the request, and treat null as a no-op
+  for toolset_name and tools (never clear these required fields via null). Explicitly
+  emptying the tool list is an explicit [] in the request, which cannot be mistaken
+  for unset. Serialize tools to JSON if present. Set updated_by to touched_by. Return
+  MCPToolset on success or None if not found (catch RecordNotFoundError).
+
+  delete_mcp_toolset(prisma_client, toolset_id) removes the toolset and returns the
+  deleted MCPToolset, or None if not found.
+
+  The task owns the prisma table adapter and the helper functions to construct it and
+  deserialize rows. Use the MCPToolsetRepository from B726 to access the toolset table.
+
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/mcp_toolset_storage/tests.rs
+    - tools/oracle/cases/helpers/mcp-toolset/**
+    - crates/betterlite-config/src/sections/mcp_toolset_storage.rs
+    - crates/betterlite-config/src/sections/mcp_toolset_storage/**
+    - tools/oracle/helpers/b4681.py
+    - tools/oracle/helpers/b4681/**
+    - tools/oracle/src/helpers/config/b4681.rs
+    - tools/oracle/src/helpers/config/b4681/**
+    - crates/betterlite-config/src/sections/mcp_toolset_storage/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_toolset.py#L7-L9
+    why: MCPToolsetTool TypedDict with server_id and tool_name strings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_toolset.py#L12-L20
+    why: MCPToolset Pydantic model with all fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_toolset.py#L23-L26
+    why: NewMCPToolsetRequest for creation with toolset_name required.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_toolset.py#L29-L33
+    why: UpdateMCPToolsetRequest for updates with all fields optional except toolset_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L20-L31
+    why: MCPToolsetFields TypedDict mapping a row to MCPToolset constructor keywords.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L33-L43
+    why: MCPToolsetRowData TypedDict with tools as JSON string or list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L68-L70
+    why: _toolset_table helper to get the table accessor from prisma_client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L73-L80
+    why: _toolset_from_row deserializes a table row to MCPToolset, parsing tools JSON.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L83-L94
+    why: create_mcp_toolset generates UUID, serializes tools to JSON, sets audit fields, returns MCPToolset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L97-L104
+    why: get_mcp_toolset by toolset_id, returns MCPToolset or None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L107-L121
+    why: list_mcp_toolsets with optional toolset_ids filter, use_writer flag, warns and returns empty on error if not use_writer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L124-L131
+    why: get_mcp_toolset_by_name queries by name, returns MCPToolset or None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L134-L162
+    why: update_mcp_toolset partial update with exclude_unset, null handling for name and tools, JSON serialization, audit field, catches RecordNotFoundError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L165-L177
+    why: delete_mcp_toolset removes row, returns MCPToolset or None, catches RecordNotFoundError.
+
+dod:
+  - text: MCPToolsetTool holds server_id and tool_name as strings.
+    proof: [toolset-types]
+  - text: MCPToolset holds toolset_id, toolset_name, description, tools list, created_at, created_by, updated_at, updated_by with appropriate types and optional defaults.
+    proof: [toolset-types, toolset-tests]
+  - text: NewMCPToolsetRequest has toolset_name (required), description and tools (both optional, tools defaults to empty list).
+    proof: [toolset-types]
+  - text: UpdateMCPToolsetRequest has toolset_id (required), toolset_name, description, tools (all optional).
+    proof: [toolset-types]
+  - text: create_mcp_toolset generates a UUID for toolset_id, serializes tools to JSON, sets created_by and updated_by to touched_by, stores the row, deserializes and returns MCPToolset.
+    proof: [toolset-tests, create-mcp-toolset]
+  - text: get_mcp_toolset returns MCPToolset by toolset_id or None if not found.
+    proof: [toolset-tests]
+  - text: list_mcp_toolsets with toolset_ids=None returns all toolsets; with toolset_ids list filters to those IDs. Returns empty list when use_writer is false and an error occurs.
+    proof: [toolset-tests, list-filter, list-error]
+  - text: list_mcp_toolsets with use_writer=true propagates any database error without catching or returning empty list.
+    proof: [toolset-tests, list-error-writer]
+  - text: get_mcp_toolset_by_name queries by toolset_name and returns MCPToolset or None.
+    proof: [toolset-tests]
+  - text: update_mcp_toolset applies a partial update, excluding unset fields, treating null as no-op for toolset_name and tools, serializing tools to JSON, setting updated_by, returning MCPToolset on success or None on not found.
+    proof: [toolset-tests, update-partial, update-null, update-not-found]
+  - text: delete_mcp_toolset removes the toolset and returns the deleted MCPToolset, or None if not found.
+    proof: [toolset-tests]
+  - text: Table rows deserialize with tools as JSON string parsed to list of MCPToolsetTool records.
+    proof: [toolset-tests, toolset-json]
+  - text: New oracle helper operation for MCP toolset integrates with pinned LiteLLM behavior and replays case corpus.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: toolset-types
+      why: MCPToolsetTool or MCPToolset types are missing or incomplete.
+      run: grep -qE 'struct MCPToolsetTool|pub struct MCPToolsetTool' crates/betterlite-config/src/sections/mcp_toolset_storage.rs && grep -qE 'server_id|tool_name' crates/betterlite-config/src/sections/mcp_toolset_storage.rs && grep -qE 'struct MCPToolset|pub struct MCPToolset' crates/betterlite-config/src/sections/mcp_toolset_storage.rs && grep -qE 'toolset_id|toolset_name|tools' crates/betterlite-config/src/sections/mcp_toolset_storage.rs
+    - id: toolset-tests
+      why: Toolset tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_toolset_storage::tests::/) - test(/replays_the_/)'
+    - id: create-mcp-toolset
+      why: create_mcp_toolset does not generate UUID, serialize tools, set audit fields, or return MCPToolset.
+      run: grep -qE 'fn create_mcp_toolset|async fn create_mcp_toolset' crates/betterlite-config/src/sections/mcp_toolset_storage.rs && grep -qE 'uuid|Uuid' crates/betterlite-config/src/sections/mcp_toolset_storage.rs && grep -qE 'to_json|to_string|serialize' crates/betterlite-config/src/sections/mcp_toolset_storage.rs
+    - id: list-filter
+      why: list_mcp_toolsets does not filter by toolset_ids list.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_toolset_storage::tests::.*list.*filter/)'
+    - id: list-error
+      why: list_mcp_toolsets does not warn and return empty on error when use_writer is false.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_toolset_storage::tests::.*list.*error/)'
+    - id: list-error-writer
+      why: list_mcp_toolsets does not propagate errors when use_writer is true.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_toolset_storage::tests::.*list.*writer/)'
+    - id: update-partial
+      why: update_mcp_toolset does not apply partial updates with exclude_unset.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_toolset_storage::tests::.*update.*partial/)'
+    - id: update-null
+      why: update_mcp_toolset does not treat null as no-op for toolset_name and tools.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_toolset_storage::tests::.*update.*null/)'
+    - id: update-not-found
+      why: update_mcp_toolset does not handle not found or return None.
+      run: grep -qE 'RecordNotFoundError|not.*found|None' crates/betterlite-config/src/sections/mcp_toolset_storage.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_toolset_storage::tests::.*not_found/)'
+    - id: toolset-json
+      why: Tools JSON serialization/deserialization is missing.
+      run: grep -qE 'json|serde_json|parse' crates/betterlite-config/src/sections/mcp_toolset_storage.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_toolset_storage::tests::.*json/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4681.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/mcp-toolset-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-toolset/create-new.yaml
+  - tools/oracle/cases/helpers/mcp-toolset/get-exists.yaml
+  - tools/oracle/cases/helpers/mcp-toolset/get-not-found.yaml
+  - tools/oracle/cases/helpers/mcp-toolset/get-by-name.yaml
+  - tools/oracle/cases/helpers/mcp-toolset/list-all.yaml
+  - tools/oracle/cases/helpers/mcp-toolset/list-filter-ids.yaml
+  - tools/oracle/cases/helpers/mcp-toolset/list-error-use-reader.yaml
+  - tools/oracle/cases/helpers/mcp-toolset/list-error-use-writer.yaml
+  - tools/oracle/cases/helpers/mcp-toolset/update-partial.yaml
+  - tools/oracle/cases/helpers/mcp-toolset/update-null-keeps-field.yaml
+  - tools/oracle/cases/helpers/mcp-toolset/update-not-found.yaml
+  - tools/oracle/cases/helpers/mcp-toolset/delete-exists.yaml
+  - tools/oracle/cases/helpers/mcp-toolset/delete-not-found.yaml
+  - tools/oracle/cases/helpers/mcp-toolset/json-serialization.yaml
+
+deviations:
+  - what: Tools are stored as a JSON string in the database and deserialized to a typed
+      list of MCPToolsetTool on read. The row data type allows tools to be either a JSON
+      string (from database) or a pre-deserialized list.
+    why: Rust does not allow dynamic fields. The database layer serializes the tools
+      array to JSON when storing and parses it back when retrieving. This matches LiteLLM's
+      behavior of storing tools in a JSON column.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L35-L43
+  - what: Partial updates exclude the toolset_id field entirely from the update payload,
+      and null values for toolset_name and tools are treated as no-op (not updated).
+    why: A partial update should only touch fields the caller explicitly set. Excluding
+      unset fields prevents overwriting with defaults. For required fields like toolset_name
+      and tools, null means do not change, which matches LiteLLM's semantic of exclude_unset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L143-L150
+  - what: list_mcp_toolsets with use_writer=false returns an empty list on any database
+      error after logging a warning. With use_writer=true, all errors are raised.
+    why: This matches LiteLLM's behavior of graceful degradation when reading from a
+      replica database. If the replica is unavailable, the system continues with an empty
+      result rather than failing. When use_writer=true (accessing the primary), errors
+      are fatal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L113-L121
+
+out_of_scope:
+  - MCP toolset manager or startup wiring; that comes in B138.
+  - HTTP routes or endpoints for toolset operations; those come in a later management task.
+  - Searching or filtering toolsets by properties beyond name or ID.
+  - Audit log records beyond created_by/updated_by timestamps.
+
+pitfalls:
+  - >-
+    tools is stored as a JSON string in the database. The row model must accept both
+    string and deserialized list types for the tools field, and _toolset_from_row must
+    handle parsing a JSON string back to a list of MCPToolsetTool records.
+  - >-
+    UpdateMCPToolsetRequest has tools as Option. When tools is None (not set), skip
+    the update. When tools is Some([]), serialize an empty list to JSON. These are
+    distinct: None means do not change, Some([]) means empty the list.
+  - >-
+    RecordNotFoundError is a prisma error, not a Result error. Catch it specifically
+    when calling update and delete, and return None on that error type.
+  - >-
+    created_by and updated_by are set by this task, not passed in the request. Use the
+    touched_by parameter for both fields on create and update.
+  - >-
+    UUID generation must use uuid.Uuid.new_v4() or equivalent and serialize to string
+    for storage. The toolset_id field is a string, not a UUID type.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,134 @@
+id: B3942
+title: New Relic agent events and supportability metrics
+description: >-
+  Build the New Relic agent boundary, initialization, and event recording for LiteLLM.
+  Implement optional agent import fallback so missing newrelic module disables integration
+  without crashing. Resolve NEW_RELIC_LICENSE_KEY and NEW_RELIC_APP_NAME environment variables
+  through injected configuration, preferring explicit constructor options (newrelic_params)
+  over global litellm.newrelic_params. Register the agent with register_application(timeout=0)
+  for non-blocking startup, allowing the agent to connect in a background thread without
+  blocking request handling. Disable integration with diagnostic warning when credentials
+  are absent or agent registration fails, marking enabled=False so failed LLM calls skip
+  event emission and health checks return unhealthy. Maintain class-level shared state
+  (_last_metric_emission_time, _metric_lock) for the supportability backoff window of
+  97,200 seconds (27 hours), so only one supportability metric per logger instance emits
+  within that window. Record success events using _process_success core logic, which calls
+  _get_trace_context, _extract_completion_id, _get_vendor, _get_model_names, _extract_usage,
+  _get_finish_reason, _get_duration, _get_request_params, _extract_all_messages (all from
+  B3941), then _record_summary_event and _record_message_events to the application.
+  Record error metrics on failed LLM calls without AI events. Implement log_pre_api_call
+  and log_post_api_call as empty no-op methods because generic CustomLogger dispatch invokes
+  them. Return unhealthy from async_health_check when credentials are missing, agent is
+  not installed, or application is disabled, and emit a LiteLLMConnectionTest custom event
+  when healthy.
+scope:
+  paths:
+    - crates/betterlite-logging/src/newrelic_agent.rs
+    - crates/betterlite-logging/src/newrelic_agent/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L62-L65
+    why: Optional agent import with fallback to None when newrelic package is not installed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L79-L142
+    why: "Shared class-level metric state, __init__ constructor with credential resolution and agent registration, _get_newrelic_params preference logic."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L183-L249
+    why: "_get_litellm_version for version string extraction, _emit_supportability_metric for 27-hour backoff metric emission, _check_and_emit_periodic_metric for double-checked locking."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L593-L784
+    why: "_record_summary_event with LlmChatCompletionSummary event, _record_message_events with LlmChatCompletionMessage events, _record_error_metric for failure path, _process_success core logic orchestrating extraction and recording."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L786-L892
+    why: "async_health_check validation and LiteLLMConnectionTest emission, log_pre_api_call and log_post_api_call empty methods, sync/async success/failure event handlers."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/newrelic.py#L11-L14
+    why: NewRelicInitParams inherits StandardCustomLoggerInitParams with no additional fields.
+  - url: https://docs.newrelic.com/en/docs/apis/agent-rest-api/agent-api/
+    why: New Relic agent API contract for register_application, application(), record_custom_event and record_custom_metric.
+oracle_cases: []
+dod:
+  - text: Missing newrelic module import falls back to None without crashing; integration disables with diagnostic warning.
+    proof: [agent-init-tests]
+  - text: NEW_RELIC_LICENSE_KEY and NEW_RELIC_APP_NAME resolve from environment variables through injected configuration, missing either disables integration with warning.
+    proof: [agent-init-tests]
+  - text: "Constructor newrelic_params (explicit options) override global litellm.newrelic_params via setdefault, so constructor turn_off_message_logging takes priority."
+    proof: [agent-init-tests]
+  - text: register_application(timeout=0) prevents blocking startup; timeout=0 forces non-blocking background registration.
+    proof: [agent-init-tests]
+  - text: Agent registration failure disables integration with diagnostic error; subsequent calls skip event emission.
+    proof: [agent-init-tests]
+  - text: Class-level _last_metric_emission_time and _metric_lock enforce single emission per logger within 97,200-second windows; double-checked locking prevents contention.
+    proof: [agent-init-tests]
+  - text: _get_litellm_version returns version string from importlib.metadata or "unknown" on error.
+    proof: [agent-init-tests]
+  - text: "_emit_supportability_metric records metric name 'Supportability/Python/ML/LiteLLM/{version}' once per 27-hour window; skips silently if app is not enabled."
+    proof: [agent-init-tests]
+  - text: "_check_and_emit_periodic_metric uses double-checked locking; quick check without lock, then lock-protected re-check before emission."
+    proof: [agent-init-tests]
+  - text: "_record_summary_event calls application().record_custom_event('LlmChatCompletionSummary', event_data) with request_id, trace_id, model names, usage, duration and request params; failures call handle_callback_failure."
+    proof: [agent-init-tests, event-tests]
+  - text: "_record_message_events emits one LlmChatCompletionMessage per message with id format '{response_id}-{sequence}', role, content (gated), is_response flag for responses only, timestamps in milliseconds; failures call handle_callback_failure."
+    proof: [agent-init-tests, event-tests]
+  - text: "_record_error_metric calls application().record_custom_metric('LLM/LiteLLM/Error', 1) after _check_and_emit_periodic_metric; failures call handle_callback_failure."
+    proof: [agent-init-tests, error-tests]
+  - text: "_process_success orchestrates extraction and recording, using standard_logging_object from kwargs where available, calling B3941 extraction functions and _record_summary_event/_record_message_events."
+    proof: [agent-init-tests, event-tests]
+  - text: log_success_event and async_log_success_event both call _process_success with the same parameters; both catch exceptions and call handle_callback_failure.
+    proof: [agent-init-tests, event-tests]
+  - text: log_failure_event and async_log_failure_event call _record_error_metric only, skipping AI event emission; both catch exceptions and call handle_callback_failure.
+    proof: [agent-init-tests, error-tests]
+  - text: log_pre_api_call and log_post_api_call are empty no-op methods; generic dispatch calls them regardless.
+    proof: [agent-init-tests]
+  - text: "async_health_check returns unhealthy with diagnostic when enabled=False, when agent is not installed, or when application is not enabled; otherwise emits LiteLLMConnectionTest event and returns healthy."
+    proof: [health-check-tests]
+  - text: Every mutant in agent initialization, state management and event emission is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: agent-init-tests
+      why: agent initialization, credential resolution, registration and backoff state tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent_init_behavior($|::)/)'
+    - id: event-tests
+      why: summary and message event emission tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent_events_behavior($|::)/)'
+    - id: error-tests
+      why: error metric recording tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent_error_behavior($|::)/)'
+    - id: health-check-tests
+      why: health check tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent_health_behavior($|::)/)'
+deviations:
+  - what: "When newrelic Python agent is not installed or cannot be imported, the integration disables silently (enabled=False) without raising ImportError; requests skip event emission."
+    why: LiteLLM gracefully disables New Relic when the agent is absent; betterlite retains the same fallback behavior for compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L62-L127
+  - what: "Agent registration uses timeout=0 to force non-blocking background startup; the agent connects in a thread without blocking request handling."
+    why: LiteLLM uses timeout=0 to prevent startup hangs; betterlite preserves this behavior to avoid gateway latency.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L114-L118
+  - what: "Failed LLM calls emit error metrics only; AI events are not sent for failures."
+    why: New Relic AI Monitoring schema expects events only on success; error paths record a single metric instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L868-L892
+  - what: "Supportability metric uses litellm package version if available, or 'unknown' if version lookup fails."
+    why: Supportability metrics track which versions are in use; unknown fallback prevents crashes during version detection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L183-L196
+  - what: "Empty log_pre_api_call and log_post_api_call methods are retained even though unused; generic CustomLogger dispatch invokes them."
+    why: LiteLLM's callback dispatch unconditionally calls these methods on every logger; implementing them allows NewRelicLogger to be callable through the standard interface.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L836-L840
+out_of_scope:
+  - Extraction of trace_id, completion_id, vendor, model names, usage, finish_reason, duration, request params and message content (B3941 owns _parse_bool_env, record_content, _get_trace_context, _extract_completion_id, _get_vendor, _get_model_names, _extract_usage, _get_finish_reason, _to_epoch_ms, _get_duration, _get_request_params, _extract_message_content, _extract_all_messages).
+  - Orchestration of team-scoped New Relic logger selection and credential routing (B113 owns team handler composition and cache integration).
+  - New Relic metric API logger (B3943 and B3944 own metric payload building and delivery).
+  - Configuration loading and environment variable resolution (B002's loader supplies NEW_RELIC_LICENSE_KEY, NEW_RELIC_APP_NAME and newrelic_params).
+  - Request/response logging callback registration and dispatch (B189 owns logging callback manager and custom logger registry).
+  - HTTP transport and request batching (B173 owns httpx client pooling; B256 owns batch logger queue and periodic flush).
+  - UUID and timestamp generation (B198 supplies clock and UUID inputs).
+pitfalls:
+  - Optional import fallback must assign None when newrelic is not installed; catching ImportError and returning None prevents partial initialization.
+  - Double-checked locking for the 27-hour metric backoff requires a quick check outside the lock, then re-check inside the lock, to avoid lock contention on every request.
+  - application() may return None or an object with enabled=False; both conditions must be checked before calling record_custom_event or record_custom_metric.
+  - register_application(timeout=0) starts agent registration in a background thread; failures are logged but should not propagate to the caller.
+  - Constructor setdefault() preserves explicit newrelic_params options over global litellm.newrelic_params; using update() would clobber constructor kwargs.
+  - _get_litellm_version uses importlib.metadata which may not be available in all Python versions; catch all exceptions and return "unknown" rather than crashing.
+  - _record_summary_event and _record_message_events must call handle_callback_failure on exception; not calling it masks failures that should be counted in the failure metric.
+  - LlmChatCompletionMessage event id format is '{response_id}-{sequence}'; getting the sequence wrong creates duplicate or overlapping message IDs.
+  - Timestamp conversion from seconds to milliseconds is int(value * 1000.0); floating point precision loss accumulates; use the extraction functions from B3941 instead.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

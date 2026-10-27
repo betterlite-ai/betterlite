@@ -1,0 +1,100 @@
+{
+  "type": "object",
+  "properties": {
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "check_id": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "issue",
+              "pattern"
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "execution_id": {
+                  "type": "string"
+                },
+                "span_id": {
+                  "type": "string"
+                },
+                "quote": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "support",
+                    "counterexample"
+                  ]
+                }
+              },
+              "required": [
+                "execution_id",
+                "span_id",
+                "quote"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 6
+          }
+        },
+        "required": [
+          "check_id",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "cannot_assess": {
+      "type": "boolean"
+    },
+    "feedback_page": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "span_id": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "span_id"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 2
+    }
+  },
+  "additionalProperties": false
+}

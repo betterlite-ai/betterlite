@@ -1,0 +1,195 @@
+id: B3905
+title: Langfuse content and trace steering projections
+description: >-
+  Build reusable content, metadata-header, trace-steering, cache-usage and
+  masking projections in betterlite-logging. Extract text from responses in the
+  order chat-completion-choices first, text-completion next, Responses API output,
+  speech-output, images, transcription or rerank results based on response type.
+  Preserve header overwrite behavior and session-header detection without
+  constructing or invoking a logger instance.
+
+  Functions to port:
+
+  - Content extraction via response type: _get_chat_content_for_langfuse,
+    _get_text_completion_content_for_langfuse, _get_responses_api_content_for_langfuse,
+    _get_langfuse_input_output_content (distinguishes error, embedding, speech, image,
+    transcription and rerank responses by explicit isinstance checks)
+
+  - Metadata projection: add_metadata_from_header (injects langfuse_* headers as metadata,
+    overwrites existing keys, logs overwrite warnings)
+
+  - Trace steering and session detection: _is_session_header_trace (checks for
+    explicit langfuse_session_id or x-litellm-session-id headers, searches custom
+    session-id headers by pattern matching, respects codex user-agent), _as_steering_flag
+    (falls back unrecognized strings to truthiness), _as_steering_key_sequence
+    (splits comma-separated values or accepts iterables)
+
+  - ID and tag handling: _logging_id (delegates to litellm.utils.get_logging_id),
+    _lookup_ids (returns generation and response ids), _get_langfuse_tags
+    (extracts request_tags from StandardLoggingPayload), add_default_langfuse_tags
+    (appends cache_hit and cache_key tags when configured), _apply_masking_function
+    (recursively masks dicts, lists and strings, logs failures and returns original)
+
+  - Cache usage projection: _extract_cache_read_input_tokens (checks cache_read_input_tokens
+    at top level and fallback to prompt_tokens_details.cached_tokens for Gemini/OpenAI)
+
+  - Metadata preservation: log_requester_metadata (separates requester_metadata from
+    other metadata fields)
+
+  - Protocol helpers: _object_mapping (typed dict view), _widened_items (header pairs),
+    _optional_str (converts non-string to string or None), _trace_public_flag
+    (converts bool or string steering flag to bool or None), _UsageObject and
+    _ResponseWithId protocol declarations for duck-typed usage and response accessors
+
+  Direct dependencies: B002 for config loader (litellm_settings.langfuse_default_tags);
+  B254 for StandardLoggingPayload response and usage contracts. Unresolved direct
+  calls: str_to_bool (dynamic-validation or secret-manager leaf), get_logging_id
+  (utils leaf), _get_preset_cache_key_from_kwargs (cache leaf). Masking callable
+  is configured Python, injected at logger construction.
+scope:
+  paths:
+    - crates/betterlite-logging/src/langfuse_projections.rs
+    - crates/betterlite-logging/src/langfuse_projections/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L62-L172
+    why: Protocol declarations, mapping helpers, cache extraction, ID helpers, steering helpers
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L225-L234
+    why: Optional string and trace public flag helpers
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L399-L428
+    why: Metadata injection from headers
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L515-L593
+    why: Input/output content dispatch by response type
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L962-L1061
+    why: Content extraction, tag handling, masking application
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L1261-L1270
+    why: Requester metadata preservation
+dod:
+  - text: Content extraction dispatches correctly by response type; ModelResponse
+      returns first choice's message, TextCompletionResponse returns first choice's
+      text, ResponsesAPIResponse returns output list, ImageResponse returns data,
+      TranscriptionResponse returns text, RerankResponse returns results, speech
+      returns "speech-output", embedding returns None.
+    proof: [content-extraction-tests]
+  - text: _get_langfuse_input_output_content returns (prompt, content) tuple or
+      (prompt, status_message) on ERROR level, with input=None for embedding calls.
+    proof: [input-output-dispatch-tests]
+  - text: _get_langfuse_input_output_content handles _arealtime call_type by returning
+      (kwargs.get("input"), response_obj) when response_obj is a list.
+    proof: [realtime-dispatch-tests]
+  - text: _get_langfuse_input_output_content handles pass_through_endpoint call_type
+      by returning (prompt, response_obj.get("response", "")) when response_obj is a dict.
+    proof: [pass-through-dispatch-tests]
+  - text: Metadata projection overwrites existing keys from langfuse_* headers,
+      logs a warning when overwriting, and returns the modified metadata dict.
+    proof: [metadata-header-tests]
+  - text: Session-header detection checks for explicit langfuse_session_id or
+      x-litellm-session-id headers first; falls back to pattern-matching custom
+      session-id headers; respects codex user-agent detection.
+    proof: [session-header-tests]
+  - text: Steering flag conversion falls back unrecognized strings to their truthiness;
+      steering key sequence splits comma-separated strings or accepts iterables.
+    proof: [steering-tests]
+  - text: Cache read token extraction checks both cache_read_input_tokens at top
+      level and prompt_tokens_details.cached_tokens for Gemini/OpenAI format.
+    proof: [cache-tests]
+  - text: Logging ID delegates to litellm.utils.get_logging_id; lookup_ids returns
+      mapping with litellm_call_id and response_id when present.
+    proof: [id-tests]
+  - text: Default Langfuse tags append cache_hit and cache_key when configured in
+      langfuse_default_tags setting, with cache_key falling back to preset cache key.
+    proof: [tag-tests]
+  - text: Masking function application recurses through dicts and lists, logs
+      exceptions and returns original data on failure.
+    proof: [masking-tests]
+  - text: Requester metadata separation preserves non-requester fields alongside
+      the requester_metadata field.
+    proof: [requester-metadata-tests]
+checks:
+  optional: []
+  commands:
+    - id: content-extraction-tests
+      why: response content extraction tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_projections::(chat|text|responses|image|transcription|rerank|speech|embedding)_content/)'
+    - id: input-output-dispatch-tests
+      why: input/output dispatch tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_projections::input_output_(dispatch|error|embedding)/)'
+    - id: realtime-dispatch-tests
+      why: _arealtime call_type dispatch tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_projections::.*_arealtime/)'
+    - id: pass-through-dispatch-tests
+      why: pass_through_endpoint call_type dispatch tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_projections::.*pass_through/)'
+    - id: metadata-header-tests
+      why: metadata header injection tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_projections::(metadata_from_header|header_overwrite|header_warn)/)'
+    - id: session-header-tests
+      why: session header detection tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_projections::(explicit_session|codex_session|pattern_session|x_session)/)'
+    - id: steering-tests
+      why: steering flag and key sequence tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_projections::(steering_flag|steering_key)/)'
+    - id: cache-tests
+      why: cache read token extraction tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_projections::(cache_top_level|cache_gemini|cache_openai|cache_fallback)/)'
+    - id: id-tests
+      why: logging ID and lookup tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_projections::(logging_id|lookup_ids|response_id)/)'
+    - id: tag-tests
+      why: default tag and cache key tag tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_projections::(cache_hit_tag|cache_key_tag|default_tags)/)'
+    - id: masking-tests
+      why: masking function recursion and exception handling tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_projections::(mask_string|mask_dict|mask_list|mask_exception)/)'
+    - id: requester-metadata-tests
+      why: requester metadata separation tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_projections::requester_metadata/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      Unresolved dependencies str_to_bool, get_logging_id, _get_preset_cache_key_from_kwargs
+      and the configured masking callable are injected or resolved externally; str_to_bool
+      is called from _as_steering_flag with None fallback, get_logging_id is delegated
+      directly, cache key lookup uses dynamic introspection with litellm.cache as a guard,
+      and masking callable is optional at logger construction.
+    why: >-
+      These functions are owned by other tasks (dynamic validation, utils, cache, config)
+      not yet assigned leaf ownership. B3905 builds the projections that call them;
+      calling an unavailable function is a configuration error deferred to logger construction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L162-L163
+out_of_scope:
+  - Logger construction and lifecycle, owned by B3907.
+  - Langfuse export channel and tracing setup, owned by B3903 and B3901.
+  - Rest client for prompt fetches, owned by B3904.
+  - Generation assembly and trace ID resolution, owned by B3906.
+  - Child observation creation, owned by B3912.
+pitfalls:
+  - Session-header detection lowercases header keys via isinstance(key, str) filter and
+    dict comprehension in _is_session_header_trace; comparison is case-insensitive to match
+    LiteLLM header lookup behavior.
+  - Metadata injection via add_metadata_from_header does not check isinstance on header keys;
+    it relies on proxy_server_request.headers being a dict and key.startswith checking for
+    langfuse_ prefix without case normalization.
+  - Session-header detection uses re.fullmatch for trace ID validation, not re.match or
+    re.search; the pattern must match the entire ID, not just a prefix.
+  - Steering flag conversion with str_to_bool can return None; the code falls back to
+    bool(value) truthiness only when str_to_bool returns None, not when it returns False.
+  - Cache key lookup uses hasattr/getattr on prompt_tokens_details; accessing a missing
+    attribute returns None, not an AttributeError, so the fallback always succeeds.
+  - _extract_cache_read_input_tokens returns int, but an input with float cached_tokens
+    (from Gemini) is compared as > 0 before conversion, preserving the numeric comparison.
+  - Requester metadata separation preserves all non-requester keys alongside the nested
+    requester_metadata field; no keys are dropped or hidden.
+  - Masking applies recursively to list items; an empty dict or list in the data tree is
+    passed to the masking function unchanged and returned if the function succeeds.
+  - Response ID extraction uses isinstance(response_obj, _ResponseWithId) which is true for
+    dicts; getattr with a default of None returns None when the dict has no "id" key.
+  - Cache key lookup uses hasattr and getattr for optional prompt_tokens_details access
+    when checking Gemini format; a missing attribute is treated as if cached_tokens is None,
+    matching LiteLLM's runtime check order.
+  - Masking function failures are caught, logged as warnings, and the original data is
+    returned unmasked; exceptions do not block logging, preserving lenient behavior.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

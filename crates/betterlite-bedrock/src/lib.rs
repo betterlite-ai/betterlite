@@ -39,6 +39,7 @@ pub mod embedding_jobs;
 pub mod error;
 pub mod event_frames;
 pub mod file_content;
+pub mod guardrail_hooks;
 pub mod image_call;
 pub mod image_edits;
 pub mod image_models;

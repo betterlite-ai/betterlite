@@ -1,5 +1,6 @@
 #![cfg(test)]
 use crate::routes::router;
+use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::Request;
 use betterlite_config::loader::ConfigLoader;
@@ -26,7 +27,12 @@ async fn send(config: &str, uri: &str, header: &str) -> (u16, String) {
         lookup: BTreeMap::<String, String>::new(),
     };
     let model_list = loader.load(config).unwrap().model_list;
-    let application = router(None, Arc::new(AtomicBool::new(false)), &model_list);
+    let application = router(
+        None,
+        Arc::new(AtomicBool::new(false)),
+        &model_list,
+        Router::new(),
+    );
     let request = Request::get(uri).header(header, "2023-06-01");
     let response = application
         .oneshot(request.body(Body::empty()).unwrap())

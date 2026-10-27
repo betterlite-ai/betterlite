@@ -1,0 +1,89 @@
+id: B3423
+title: Eval deletion and cancellation operations
+description: >-
+  Build eval deletion and cancellation orchestration in `betterlite-core::api::eval_lifecycle`. Implement `delete_eval`, `adelete_eval`, `cancel_eval`, and `acancel_eval` with native sync/async semantics, preserving distinct response types and the empty cancellation request body.
+
+  In `delete_eval`: accept `eval_id` (required), `extra_headers`, `extra_query` (accepted but not forwarded), `timeout`, and `custom_llm_provider`. Select provider as in B3421: `custom_llm_provider` becomes `"openai"` if `None`. Validate environment, transform the request, call the logging updater with `eval_id` as an optional param, dispatch to the transport handler with resolved timeout, and return `DeleteEvalResponse` contract validated through B3420's model.
+
+  In `cancel_eval`: accept `eval_id` (required), `extra_headers`, `extra_query` (accepted but not forwarded), `timeout`, and `custom_llm_provider`. Build the request as in delete, obtaining `request_body` from the transform but passing no body argument to the handler (the transport preserves the empty request body). Log with `eval_id`, dispatch with resolved timeout, and return `CancelEvalResponse` contract validated through B3420's model.
+
+  Async wrappers `adelete_eval` and `acancel_eval` run their sync counterparts in a thread pool via `loop.run_in_executor`, copy context with `contextvars.copy_context`, and await the result. If the result is a coroutine, await it; otherwise return it. Both async and sync versions share module-level `DEFAULT_OPENAI_API_BASE` and `BaseLLMHTTPHandler()` from B3421's scope.
+
+  Unsupported providers are rejected with `ValueError`. Exception mapping uses `litellm.exception_type` dispatch: OpenAI errors through B185, other or unmapped errors through B186. Store `local_vars = locals()` before the try block.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/eval_lifecycle.rs
+    - crates/betterlite-core/src/api/eval_lifecycle/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L785-839
+    why: "adelete_eval: async wrapper calling delete_eval via executor and contextvars"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L842-932
+    why: "delete_eval: build request, validate, transform, log, dispatch; error handling"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L935-989
+    why: "acancel_eval: async wrapper for cancel_eval"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L992-1086
+    why: "cancel_eval: request building with distinct transform signature, log, dispatch with empty body"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L562-577
+    why: "request_timeout: default timeout when user does not supply one"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L381-519
+    why: "GenericLiteLLMParams: wrapper over kwargs, resolved to extract litellm_params"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9262-9279
+    why: "ProviderConfigManager.get_provider_evals_api_config: provider factory lookup"
+dod:
+  - text: "delete_eval constructs a request from eval_id, validates environment, transforms through provider, and returns a DeleteEvalResponse contract validated through B3420's model."
+    proof: [eval-lifecycle-tests]
+  - text: "adelete_eval runs delete_eval in a thread pool with context copy and awaits the result, handling both direct returns and coroutines."
+    proof: [eval-lifecycle-tests]
+  - text: "cancel_eval constructs a request from eval_id, validates environment, transforms through provider, and returns a CancelEvalResponse contract validated through B3420's model."
+    proof: [eval-lifecycle-tests]
+  - text: "acancel_eval runs cancel_eval in a thread pool with context copy and awaits the result, handling both direct returns and coroutines."
+    proof: [eval-lifecycle-tests]
+  - text: "cancel_eval obtains request_body from the transform but passes no body argument to the handler, preserving the empty request body boundary."
+    proof: [eval-lifecycle-tests]
+  - text: "Both delete and cancel operations validate environment through provider config and pass resolved headers to the transform."
+    proof: [eval-lifecycle-tests]
+  - text: "Both operations call the logging updater with eval_id as an optional param before dispatch."
+    proof: [eval-lifecycle-tests]
+  - text: "Both operations accept extra_query but do not forward it to the provider."
+    proof: [eval-lifecycle-tests]
+  - text: "custom_llm_provider=None selects openai; missing provider config raises ValueError before transport."
+    proof: [eval-lifecycle-tests]
+  - text: "Timeout resolves to supplied timeout or request_timeout constant."
+    proof: [eval-lifecycle-tests]
+  - text: "Exception mapping uses litellm.exception_type for both operation families; exceptions include local_vars capturing all parameters at entry."
+    proof: [eval-lifecycle-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: eval-lifecycle-tests
+      why: "deletion and cancellation operation tests fail, do not exist, or cannot reach B3420 contracts and B523 provider transforms"
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::eval_lifecycle::/)'
+oracle_cases: []
+deviations:
+  - what: "Async wrappers call sync counterparts via thread pool and contextvars copy, matching the @client decorator in LiteLLM."
+    why: "The pattern (sync function, async wrapper running it in executor with context) is preserved; logging and context types come from betterlite's observability layer."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L785-789
+  - what: "cancel_eval obtains request_body from the transform but does not pass it to the handler, preserving the empty request body that the transport expects."
+    why: "This boundary preservation is intentional and security-sensitive: the handler must receive no body argument so the transport can send an empty body, matching the pinned behavior exactly."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1041-1066
+out_of_scope:
+  - ProviderConfigManager.get_provider_evals_api_config owned by B024.
+  - HTTP handler implementation and transport dispatch (owned by the handler/transport owner identified by B096's external-calls table).
+  - Request/response transformation for OpenAI (owned by B523).
+  - Logging infrastructure and observability (B247).
+  - Exception type mapping from provider errors to OpenAI vs. other/fallback (B185, B186).
+  - Async runtime, context variables and request tracing beyond what local operations require.
+  - Client-wrapper decorator or its side effects on operation selection (betterlite's routing replaces this).
+pitfalls:
+  - "extra_query is a parameter name but the code path does not use it; accepting it preserves the API surface but forwarding it would be incorrect per the LiteLLM behavior. This is intentional; do not add query param forwarding."
+  - "cancel_eval calls transform_cancel_eval_request which returns a tuple with request_body, but the handler is called without passing the body. This boundary is load-bearing: the transport must preserve the empty request body. Do not 'fix' it to pass the body to the handler."
+  - "Async wrappers must handle both direct returns and coroutines; contextvars.copy_context and loop.run_in_executor preserve request context across the thread boundary."
+  - "In delete_eval and cancel_eval, store local_vars = locals() before the try block so that all function parameters (eval_id, extra_headers, extra_query, timeout, custom_llm_provider) and their defaults are captured for error reporting."
+  - "Both functions reuse module-level DEFAULT_OPENAI_API_BASE and BaseLLMHTTPHandler() from B3421's scope."
+  - "ProviderConfigManager returns None for unsupported providers; do not silently fall back to openai on None, raise ValueError with the provider name."
+  - "Timeout resolution uses: supplied timeout if not None, otherwise request_timeout constant. On None inputs, this becomes the module default, not a per-request timeout."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
