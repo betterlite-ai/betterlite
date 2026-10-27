@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeSet;
+use std::fs;
+use std::path::Path;
 use std::str::FromStr as _;
 
 use indexmap::IndexMap;
@@ -529,4 +531,17 @@ const REPORT_JSON: &str = r#"{"report":{"id":null,"mode":"live","start":"2026-01
 )]
 fn identity_map_models(#[case] json: String, #[case] expected: &str) {
     assert_eq!(json, expected);
+}
+
+#[rstest]
+#[case::valid("valid.json", true)]
+#[case::remove("remove.json", true)]
+#[case::invalid_login("invalid-login.json", false)]
+#[case::truncated("truncated.json", false)]
+#[case::unknown_field("unknown-field.json", false)]
+fn replays_the_identity_map_corpus(#[case] file_name: &str, #[case] expected_success: bool) {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/identity_map");
+    let bytes = fs::read(corpus.join(file_name)).unwrap();
+    let result = serde_json::from_slice::<ROIIdentityMapUpdate>(&bytes);
+    assert_eq!(result.is_ok(), expected_success, "{file_name}");
 }
