@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use betterlite_redact::structured::{
     Payload, SensitiveDataMasker, mask_credentials_in_payload, mask_sensitive_structure,
+    parse::parse_payload,
     redact::{mask_sensitive_keys, redact_credentials_in_payload},
 };
 
@@ -9,19 +10,26 @@ use betterlite_redact::structured::{
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     MaskSensitiveStructure {
+        #[serde(default)]
         data: Payload,
     },
     MaskCredentialsInPayload {
+        #[serde(default)]
         data: Payload,
     },
     RedactCredentialsInPayload {
+        #[serde(default)]
         data: Payload,
+        #[serde(default)]
+        data_json: Option<String>,
     },
     MaskSensitiveKeys {
+        #[serde(default)]
         data: Payload,
         sensitive_fields: BTreeSet<String>,
     },
     Mask {
+        #[serde(default)]
         data: Payload,
     },
     MaskValue {
@@ -33,6 +41,7 @@ pub(crate) enum Input {
         excluded_keys: Vec<String>,
     },
     MaskDict {
+        #[serde(default)]
         data: Payload,
         #[serde(default)]
         excluded_keys: Vec<String>,
@@ -49,8 +58,17 @@ impl crate::helpers::Helper for Op {
         let result = match input {
             Input::MaskSensitiveStructure { data } => mask_sensitive_structure(data),
             Input::MaskCredentialsInPayload { data } => mask_credentials_in_payload(data),
-            Input::RedactCredentialsInPayload { data } => {
-                redact_credentials_in_payload(data.as_object().ok_or_else(invalid_mapping)?)
+            Input::RedactCredentialsInPayload { data, data_json } => {
+                if data_json.is_some() && !data.is_null() {
+                    return Err(invalid_mapping());
+                }
+                let decoded = data_json
+                    .as_ref()
+                    .map(|json| parse_payload(json.as_bytes()))
+                    .transpose()
+                    .map_err(|_error| invalid_mapping())?;
+                let payload = decoded.as_ref().unwrap_or(data);
+                redact_credentials_in_payload(payload.as_object().ok_or_else(invalid_mapping)?)
             }
             Input::MaskSensitiveKeys {
                 data,
@@ -75,7 +93,7 @@ impl crate::helpers::Helper for Op {
                 excluded_keys,
             ),
         };
-        Ok(result)
+        Ok(serde_json::json!({"result": result}))
     }
 }
 

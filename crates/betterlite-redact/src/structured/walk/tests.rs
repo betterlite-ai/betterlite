@@ -3,6 +3,7 @@
 use super::{Context, Kind, Walker};
 use crate::structured::{Payload, SensitiveDataMasker};
 use rstest::rstest;
+use std::collections::BTreeSet;
 
 #[rstest]
 #[case::depth(
@@ -55,6 +56,9 @@ use rstest::rstest;
 #[case::byte_exhausted(Kind::Payload, 10, 2, "\"x\"", "\"REDACTED\"")]
 #[case::zero_work(Kind::Payload, 10, 0, "{}", "\"REDACTED\"")]
 #[case::key_bytes(Kind::Payload, 10, 2, r#"{"abc":null}"#, "\"REDACTED\"")]
+#[case::exact(Kind::Exact(&BTreeSet::from(["token".to_owned()])), 10, 100, r#"{"token":"short","other":"short"}"#, r#"{"token":"*****","other":"short"}"#)]
+#[case::exact_nonstring(Kind::Exact(&BTreeSet::from(["token".to_owned()])), 10, 100, r#"{"token":true}"#, r#"{"token":true}"#)]
+#[case::exact_shallow(Kind::Exact(&BTreeSet::from(["token".to_owned()])), 10, 100, r#"{"token":{"token":"secret"}}"#, r#"{"token":{"token":"secret"}}"#)]
 fn structured_redaction_behavior_tests_behavior(
     #[case] kind: Kind<'_>,
     #[case] depth: usize,

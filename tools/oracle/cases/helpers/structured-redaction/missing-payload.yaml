@@ -1,0 +1,5 @@
+kind: helper
+name: structured-missing-payload
+call: {structured_redaction: {function: mask_credentials_in_payload}}
+env: {}
+compare: {ignore: []}

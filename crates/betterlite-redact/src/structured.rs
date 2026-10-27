@@ -87,18 +87,7 @@ impl SensitiveDataMasker {
         if excluded_keys.iter().any(|excluded| excluded == key) {
             return false;
         }
-        let normalized_key = key.to_lowercase().replace('-', "_");
-        let segments = normalized_key.split('_').collect::<BTreeSet<_>>();
-        if self
-            .non_sensitive_overrides
-            .iter()
-            .any(|item| segments.contains(item.as_str()))
-        {
-            return false;
-        }
-        self.sensitive_patterns
-            .iter()
-            .any(|item| segments.contains(item.as_str()))
+        keys::sensitive(self, key)
     }
 
     #[must_use]
@@ -123,6 +112,9 @@ impl SensitiveDataMasker {
 
     #[must_use]
     pub fn mask(&self, data: &Value) -> Value {
+        if let Value::Object(mapping) = data {
+            return self.mask_dict(mapping, 0, DEFAULT_MASK_DEPTH, &[]);
+        }
         let mut walker = walk::Walker {
             masker: self,
             kind: walk::Kind::Config,
@@ -163,6 +155,7 @@ pub fn mask_credentials_in_payload(data: &Value) -> Value {
         .unwrap_or_else(|| Value::String(REDACTED.to_owned()))
 }
 
+mod keys;
 pub mod parse;
 pub mod redact;
 mod tests;

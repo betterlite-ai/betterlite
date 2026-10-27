@@ -46,20 +46,18 @@ fn structured_redaction_behavior_tests_behavior(#[case] input: Value, #[case] ex
 }
 
 #[rstest]
-#[case::payload_depth(10)]
-#[case::redact_depth(100)]
-fn structured_redaction_bounds(#[case] depth: usize) {
+#[case::payload_depth(10, mask_credentials_in_payload)]
+#[case::redact_depth(101, |data: &Value| redact_credentials_in_payload(data.as_object().unwrap()))]
+#[case::hard_depth(100, |data: &Value| SensitiveDataMasker::new().mask_dict(data.as_object().unwrap(), 0, usize::MAX, &[]))]
+fn structured_redaction_bounds(#[case] depth: usize, #[case] mask: fn(&Value) -> Value) {
     let mut input = parse(r#"{"api_key":"secret"}"#);
+    let mut expected = Value::String("REDACTED".to_owned());
     for level in (1..=depth).rev() {
         input = parse(&format!(r#"{{"l{level}":{input}}}"#));
+        expected = parse(&format!(r#"{{"l{level}":{expected}}}"#));
     }
-    let output = if depth == 10 {
-        mask_credentials_in_payload(&input)
-    } else {
-        redact_credentials_in_payload(input.as_object().unwrap())
-    };
-    assert!(!output.to_string().contains("secret"));
-    assert!(output.to_string().contains("REDACTED") || output.to_string().contains("****"));
+    let output = mask(&input);
+    assert_eq!(output, expected);
 }
 
 #[test]
