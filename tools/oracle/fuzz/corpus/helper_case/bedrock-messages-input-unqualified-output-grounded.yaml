@@ -1,0 +1,7 @@
+kind: helper
+name: input-unqualified-output-grounded
+call:
+  b3721:
+    step: {input: {messages: [{role: user, content: [{type: grounding_source, text: source}, query]}]}}
+env: {}
+compare: {ignore: []}

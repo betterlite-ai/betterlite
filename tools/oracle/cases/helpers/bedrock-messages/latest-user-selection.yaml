@@ -1,0 +1,7 @@
+kind: helper
+name: latest-user-selection
+call:
+  b3721:
+    step: {selection: {texts: [old, new], messages: [{role: assistant, content: old}, {role: user, content: new}], latest_only: true}}
+env: {}
+compare: {ignore: []}
