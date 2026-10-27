@@ -49,3 +49,7 @@ compare:
       why: LiteLLM repeats its generated stream id.
     - pointer: /2/created
       why: LiteLLM timestamps stream chunks.
+    - pointer: /0/choices/0/finish_reason
+      why: Provider null is relayed as sent.
+    - pointer: /1/choices/0/finish_reason
+      why: Provider null is relayed as sent.

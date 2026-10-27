@@ -1,4 +1,5 @@
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
+use betterlite_http::proxy::StreamResponse;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatOutcome};
 use std::time::Duration;
@@ -40,6 +41,18 @@ pub(super) fn success_headers(
         ("x-litellm-attempted-fallbacks", "0".to_owned()),
     ];
     insert_all(&mut headers, values);
+    headers
+}
+
+pub(super) fn stream_headers(upstream: &StreamResponse, call_id: &str) -> HeaderMap {
+    let mut headers = provider_headers(upstream.response.headers(), RATE_LIMIT_HEADERS.len());
+    if let Ok(value) = HeaderValue::try_from(call_id) {
+        headers.insert("x-litellm-call-id", value);
+    }
+    headers.insert(
+        "content-type",
+        HeaderValue::from_static("text/event-stream; charset=utf-8"),
+    );
     headers
 }
 

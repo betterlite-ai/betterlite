@@ -3,6 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::proxy::{ProxyPolicy, ProxyRoute};
+use futures_util::StreamExt as _;
+use futures_util::stream::BoxStream;
 use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap};
 use reqwest::{Client, ClientBuilder, Proxy, Request, Response, Url};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -120,6 +122,24 @@ impl ProxiedClient {
             body,
         })
     }
+
+    pub async fn post_stream(&self, post: JsonPost<'_>) -> Result<Response, HttpError> {
+        let mut builder = self
+            .client
+            .post(post.url)
+            .timeout(post.timeout)
+            .bearer_auth(post.bearer.expose_secret())
+            .header(ACCEPT, "text/event-stream")
+            .header(CONTENT_TYPE, "application/json");
+        for (name, value) in post.headers {
+            builder = builder.header(name, value);
+        }
+        let request = builder
+            .body(post.body)
+            .build()
+            .map_err(HttpError::Request)?;
+        self.execute(request).await.map_err(timed_out)
+    }
 }
 
 fn timed_out(error: HttpError) -> HttpError {
@@ -146,6 +166,35 @@ pub struct UpstreamResponse {
     pub status: u16,
     pub headers: HeaderMap,
     pub body: Vec<u8>,
+}
+
+pub struct StreamResponse {
+    pub response: Response,
+}
+
+impl StreamResponse {
+    #[must_use]
+    pub fn body_stream(self) -> BoxStream<'static, Result<Vec<u8>, HttpError>> {
+        let stream = self
+            .response
+            .bytes_stream()
+            .map(|chunk| {
+                chunk
+                    .map(|bytes| bytes.to_vec())
+                    .map_err(HttpError::Request)
+            })
+            .boxed();
+        if stream.size_hint().0 > 0 {
+            return stream;
+        }
+        stream
+    }
+}
+
+impl From<Response> for StreamResponse {
+    fn from(response: Response) -> Self {
+        Self { response }
+    }
 }
 
 mod tests;
