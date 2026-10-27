@@ -76,6 +76,7 @@ roles:
 policy:
   review_by_other_vendor: true
   max_review_rounds: 3
+  max_blocked_reports: 2
   max_hook_blocks: 6
   writable:
     - "{git_common_dir}"

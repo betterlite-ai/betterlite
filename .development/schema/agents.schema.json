@@ -41,6 +41,12 @@
     "Policy": {
       "type": "object",
       "properties": {
+        "max_blocked_reports": {
+          "description": "Blocked reports in a row before a task goes back to the architect instead of climbing to the next rung.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
         "max_hook_blocks": {
           "description": "Times the Stop hook sends an agent back before it lets the run end red.",
           "type": "integer",
@@ -69,6 +75,7 @@
       "required": [
         "review_by_other_vendor",
         "max_review_rounds",
+        "max_blocked_reports",
         "max_hook_blocks",
         "writable"
       ]
