@@ -180,15 +180,16 @@ impl S3Cache {
                 .await
             {
                 Ok(output) => output,
-                Err(source) => {
+                Err(source)
                     if source
                         .as_service_error()
-                        .is_some_and(GetObjectError::is_no_such_key)
-                    {
-                        tracing::debug!(error = %source, "S3 cache miss");
-                    } else {
-                        tracing::error!(error = %source, "S3 cache read failed");
-                    }
+                        .is_some_and(GetObjectError::is_no_such_key) =>
+                {
+                    tracing::debug!(error = %source, "S3 cache miss");
+                    return None;
+                }
+                Err(source) => {
+                    tracing::error!(error = %source, "S3 cache read failed");
                     return None;
                 }
             };
