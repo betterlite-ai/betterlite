@@ -57,6 +57,31 @@ fn rejects_dual_or_missing_payload() {
 }
 
 #[test]
+fn accepts_fixture_payload() {
+    let value: Value =
+        serde_json::from_str(r#"{"parts":[{"name":"payload","fixture":"binary-response.bin"}]}"#)
+            .unwrap();
+    let RequestBody::Raw { bytes, .. } = request_body(&value, BodyKind::Multipart).unwrap() else {
+        panic!("multipart request must use raw bytes");
+    };
+    let (content_type, expected) = encode_parts(&[PartSpec {
+        name: "payload".to_owned(),
+        filename: None,
+        content_type: None,
+        text: None,
+        fixture: Some("binary-response.bin".to_owned()),
+    }])
+    .unwrap();
+    assert_eq!(bytes, expected);
+    assert!(
+        decode_multipart_capture(&content_type, &bytes)
+            .unwrap()
+            .first()
+            .is_some_and(|captured| captured.body == b"\\x00\\xffbinary\\x80\n")
+    );
+}
+
+#[test]
 fn rejects_empty_part_name() {
     assert_eq!(
         encode_parts(&[part("", "x")]).unwrap_err().to_string(),
@@ -121,6 +146,11 @@ fn rejects_duplicate_field() {
 
 #[test]
 fn rejects_limits() {
+    let accepted_parts = (0..MAX_PARTS)
+        .map(|index| part(&index.to_string(), "x"))
+        .collect::<Vec<_>>();
+    assert!(encode_parts(&accepted_parts).is_ok());
+
     let parts = (0..=MAX_PARTS)
         .map(|index| part(&index.to_string(), "x"))
         .collect::<Vec<_>>();
