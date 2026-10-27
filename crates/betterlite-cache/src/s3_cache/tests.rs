@@ -46,7 +46,7 @@ fn cache_from(yaml: &str, limit: usize, operation_timeout: Duration) -> S3Cache 
     .load(yaml)
     .unwrap();
     let transport = aws_smithy_http_client::Builder::new()
-        .tls_provider(Provider::Rustls(CryptoMode::Ring))
+        .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
         .build_https();
     S3Cache::new(
         &config.sections.s3_response_cache.unwrap(),
@@ -345,7 +345,7 @@ async fn absent_credentials_do_not_use_default_chain() {
     .unwrap();
     settings.endpoint_url = Some(format!("http://{}", listener.local_addr().unwrap()));
     let transport = aws_smithy_http_client::Builder::new()
-        .tls_provider(Provider::Rustls(CryptoMode::Ring))
+        .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
         .build_https();
     let cache = S3Cache::new(
         &settings,
