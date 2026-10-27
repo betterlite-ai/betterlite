@@ -1,7 +1,7 @@
 id: B4831
 milestone: M9 agents and mcp
 title: Normalize harness payloads and derive workspace changes
-status: todo
+status: done
 depends_on: [B4830]
 file: tasks/B4831-harness-payloads-and-snapshots.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/harness/sandbox/snapshot.py"
 parent: B143
 split_from: B143
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 233
