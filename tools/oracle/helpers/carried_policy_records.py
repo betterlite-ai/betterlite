@@ -35,11 +35,15 @@ def run(input_value: Input) -> dict[str, object]:
         case "managed_context":
             model = ManagedAgentContext.model_validate(value)
         case "key_snapshot":
-            model = KeyBudgetSnapshot.model_validate(value)
+            snapshot = KeyBudgetSnapshot.from_metadata(value)
+            return {"snapshot": None if snapshot is None else dict(snapshot.metadata_entries())}
         case "team_snapshot":
-            model = TeamBudgetSnapshot.model_validate(value)
+            snapshot = TeamBudgetSnapshot.from_metadata(value)
+            return {"snapshot": None if snapshot is None else dict(snapshot.metadata_entries())}
         case "user_snapshot":
-            model = UserBudgetSnapshot.model_validate(value)
+            snapshot = UserBudgetSnapshot.from_metadata(value)
+            return {"snapshot": None if snapshot is None else dict(snapshot.metadata_entries())}
         case "org_snapshot":
-            model = OrgBudgetSnapshot.model_validate(value)
+            snapshot = OrgBudgetSnapshot.from_metadata(value)
+            return {"snapshot": None if snapshot is None else dict(snapshot.metadata_entries())}
     return cast(dict[str, object], model.model_dump(mode="json", by_alias=True))

@@ -1,41 +1,54 @@
 mod tests;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use rust_decimal::Decimal;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
+use thiserror::Error;
+use url::Url;
 
 pub const CALLER_USER_ID_HEADER: &str = "x-litellm-user-id";
 pub const CALLER_TEAM_ID_HEADER: &str = "x-litellm-team-id";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct ApiKeyHeader(String);
+
+impl Default for ApiKeyHeader {
+    fn default() -> Self {
+        Self(String::from("x-api-key"))
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AgentKillSwitchAuth {
     Bearer {
-        token: SecretValue,
+        #[serde(skip_serializing)]
+        token: SecretString,
     },
     ApiKey {
-        #[serde(default = "default_api_key_header")]
-        header_name: String,
-        api_key: SecretValue,
+        #[serde(default)]
+        header_name: ApiKeyHeader,
+        #[serde(skip_serializing)]
+        api_key: SecretString,
     },
     Basic {
         username: String,
-        password: SecretValue,
+        #[serde(skip_serializing)]
+        password: SecretString,
     },
 }
 
-pub mod secret_value;
-use secret_value::SecretValue;
-
 impl AgentKillSwitchAuth {
     #[must_use]
-    pub const fn secret_value(&self) -> &str {
+    pub fn secret_value(&self) -> &str {
         match self {
-            Self::Bearer { token } => token.expose(),
-            Self::ApiKey { api_key, .. } => api_key.expose(),
-            Self::Basic { password, .. } => password.expose(),
+            Self::Bearer { token } => token.expose_secret(),
+            Self::ApiKey { api_key, .. } => api_key.expose_secret(),
+            Self::Basic { password, .. } => password.expose_secret(),
         }
     }
 }
@@ -56,28 +69,54 @@ pub enum AgentKillSwitchMethod {
     Get,
 }
 
-fn default_api_key_header() -> String {
-    let mut header = String::new();
-    header.push_str("x-api-key");
-    header
-}
-
 fn default_required_scopes() -> Vec<String> {
     let scope = String::from("user_impersonation");
     vec![scope]
 }
 
-const fn default_active() -> bool {
-    match Some(true) {
-        Some(active) => active,
-        None => false,
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(try_from = "String")]
+pub struct KillSwitchUrl(String);
+
+#[derive(Debug, Error)]
+#[error("kill_switch.url must be an absolute http(s) URL")]
+pub struct KillSwitchUrlError;
+
+impl TryFrom<String> for KillSwitchUrl {
+    type Error = KillSwitchUrlError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let candidate = value.trim_start_matches(char::is_whitespace);
+        let parsed_url = Url::parse(candidate);
+        match parsed_url {
+            Ok(valid_url)
+                if matches!(valid_url.scheme(), "http" | "https")
+                    && valid_url.host_str().is_some() => {}
+            Err(url::ParseError::InvalidPort) if has_nonempty_authority(candidate) => {}
+            _ => return Err(KillSwitchUrlError),
+        }
+        Ok(Self(value))
     }
+}
+
+fn has_nonempty_authority(value: &str) -> bool {
+    let Some((scheme, remainder)) = value.split_once("://") else {
+        return false;
+    };
+    if !matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https") {
+        return false;
+    }
+    let authority = remainder.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    !host.is_empty() && !host.starts_with(':') && !host.starts_with('[')
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentKillSwitchConfig {
-    pub url: String,
+    pub url: KillSwitchUrl,
     #[serde(default)]
     pub method: AgentKillSwitchMethod,
     #[serde(default)]
@@ -119,9 +158,9 @@ pub struct AgentKeySummary {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AgentIdentityBinding {
     pub agent_id: String,
-    #[serde(default = "default_active")]
-    pub active: bool,
-    pub provider: String,
+    #[serde(default)]
+    pub active: PolicyFlag,
+    pub provider: IdentityProvider,
     pub tenant_id: String,
     pub client_id: String,
     #[serde(default)]
@@ -133,7 +172,20 @@ pub struct AgentIdentityBinding {
     pub required_scopes: Vec<String>,
     pub revision: String,
     #[serde(default)]
-    pub last_authenticated_at: Option<DateTime<Utc>>,
+    pub last_authenticated_at: Option<PolicyDateTime>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IdentityProvider {
+    MicrosoftEntra,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum PolicyDateTime {
+    Offset(DateTime<FixedOffset>),
+    Naive(NaiveDateTime),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -160,13 +212,13 @@ pub struct AgentResponse {
     #[serde(default)]
     pub identity: Option<AgentIdentityBinding>,
     #[serde(default)]
-    pub identity_managed: PolicyFlag,
+    pub identity_managed: bool,
     #[serde(default)]
     pub enabled: PolicyFlag,
     #[serde(default)]
     pub execution_mode: AgentExecutionMode,
     #[serde(default)]
-    pub jwt_auth_configured: PolicyFlag,
+    pub jwt_auth_configured: bool,
     pub agent_id: String,
     pub agent_name: String,
     #[serde(default)]
@@ -197,9 +249,9 @@ pub struct AgentResponse {
     #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
     pub search_score: Option<Decimal>,
     #[serde(default)]
-    pub created_at: Option<DateTime<Utc>>,
+    pub created_at: Option<PolicyDateTime>,
     #[serde(default)]
-    pub updated_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<PolicyDateTime>,
     #[serde(default)]
     pub created_by: Option<String>,
     #[serde(default)]
