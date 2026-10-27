@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_anthropic::tool_names::{
-    MessageEntry, RequestParams, ToolName, build_tool_name_maps, rewrite_tool_names_in_messages,
+    MessageHead, Record, RequestParams, ToolName, build_tool_name_maps, rewrite_tool_names_in_messages,
     sanitize_tool_names_in_request,
 };
 
@@ -58,7 +58,7 @@ impl crate::helpers::Helper for Op {
             }
             Input::Messages { messages, forward } => serde_json::to_value(serde_json::json!({
                 "messages": rewrite_tool_names_in_messages(
-                    &serde_json::from_str::<Vec<MessageEntry>>(
+                    &serde_json::from_str::<Vec<Record<MessageHead>>>(
                         &serde_json::to_string(messages).map_err(|error| json_error(&error))?,
                     )
                     .map_err(|error| json_error(&error))?,

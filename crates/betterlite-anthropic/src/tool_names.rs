@@ -1,16 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 pub const REVERSE_MAP_KEY: &str = "_anthropic_tool_name_map";
 const MAX_TOOL_NAME_LENGTH: usize = 128;
 
 pub type ToolName = String;
 
-#[expect(
-    clippy::disallowed_types,
-    reason = "serde_json::Value preserves provider fields not modeled by this adapter"
-)]
-pub type AdditionalFields = BTreeMap<String, serde_json::Value>;
+pub type AdditionalFields = BTreeMap<String, Box<RawValue>>;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, Eq, PartialEq)]
 pub struct ToolNameMaps {
@@ -18,80 +16,86 @@ pub struct ToolNameMaps {
     pub reverse: BTreeMap<String, String>,
 }
 
+// a JSON object split into the keys this module reads (head) and every other key kept raw (rest)
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct ToolRecord {
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub tool_type: Option<String>,
+#[serde(
+    try_from = "Box<RawValue>",
+    bound(deserialize = "Head: DeserializeOwned + Serialize")
+)]
+pub struct Record<Head> {
+    #[serde(flatten)]
+    pub head: Head,
+    #[serde(flatten)]
+    pub rest: AdditionalFields,
+}
+
+// a tool entry or a tool_choice
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct NamedHead {
+    #[serde(rename = "type", default, deserialize_with = "lenient")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, deserialize_with = "lenient")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(flatten)]
-    pub additional_fields: AdditionalFields,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct ToolChoiceRecord {
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub choice_type: Option<String>,
+pub struct MessageHead {
+    #[serde(default, deserialize_with = "lenient")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<Record<CallHead>>>,
+    #[serde(default, deserialize_with = "lenient")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function_call: Option<Record<FunctionHead>>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct CallHead {
+    #[serde(default, deserialize_with = "lenient")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function: Option<Record<FunctionHead>>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct FunctionHead {
+    #[serde(default, deserialize_with = "lenient")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(flatten)]
-    pub additional_fields: AdditionalFields,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RequestParams {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<ToolRecord>>,
+    pub tools: Option<Vec<Record<NamedHead>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<ToolChoiceRecord>,
+    pub tool_choice: Option<Record<NamedHead>>,
 }
 
-pub type MessageEntry = MessageRecord;
+// flatten buffers values and RawValue cannot come back out of that buffer, so the object is read twice
+impl<Head> TryFrom<Box<RawValue>> for Record<Head>
+where
+    Head: DeserializeOwned + Serialize,
+{
+    type Error = serde_json::Error;
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct MessageRecord {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<ToolCallEntry>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub function_call: Option<NamedCall>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content: Option<Vec<ContentBlock>>,
+    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
+        let head = serde_json::from_str::<Head>(raw.get())?;
+        let modeled = serde_json::from_str::<AdditionalFields>(&serde_json::to_string(&head)?)?;
+        let mut rest = serde_json::from_str::<AdditionalFields>(raw.get())?;
+        rest.retain(|key, _| !modeled.contains_key(key));
+        Ok(Self { head, rest })
+    }
 }
 
-pub type NamedCall = FunctionRecord;
-
-pub type ToolCallEntry = ToolCallRecord;
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct ToolCallRecord {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub function: Option<FunctionRecord>,
-    #[serde(flatten)]
-    pub additional_fields: AdditionalFields,
-}
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct FunctionRecord {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub arguments: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct ContentBlock {
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub block_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(flatten)]
-    pub additional_fields: AdditionalFields,
+// LiteLLM skips a value of the wrong JSON type, so it reads as absent and stays in rest unchanged
+fn lenient<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let raw = Box::<RawValue>::deserialize(deserializer)?;
+    Ok(serde_json::from_str(raw.get()).ok())
 }
 
 #[must_use]
@@ -163,18 +167,18 @@ pub fn sanitize_tool_names_in_request(params: &mut RequestParams) -> ToolNameMap
         }
     }
     if let Some(choice) = params.tool_choice.as_mut()
-        && choice.choice_type.as_deref() == Some("tool")
+        && choice.head.kind.as_deref() == Some("tool")
     {
-        rewrite_name(&mut choice.name, &maps.forward);
+        rewrite_name(&mut choice.head.name, &maps.forward);
     }
     maps
 }
 
 #[must_use]
 pub fn rewrite_tool_names_in_messages(
-    messages: &[MessageEntry],
+    messages: &[Record<MessageHead>],
     forward: &BTreeMap<String, String>,
-) -> Vec<MessageEntry> {
+) -> Vec<Record<MessageHead>> {
     if forward.is_empty() {
         return messages.to_vec();
     }
@@ -199,11 +203,7 @@ fn sanitize_text(name: &str) -> String {
 }
 
 fn take_chars(value: &str, length: usize) -> String {
-    let mut result = String::new();
-    for character in value.chars().take(length) {
-        result.push(character);
-    }
-    result
+    value.chars().take(length).collect()
 }
 
 const fn text_name(value: &str) -> Option<&str> {
@@ -213,18 +213,18 @@ const fn text_name(value: &str) -> Option<&str> {
     Some(value)
 }
 
-fn custom_name(tool: &ToolRecord) -> Option<&str> {
-    if tool.tool_type.as_deref() == Some("custom") {
-        return tool.name.as_deref().and_then(text_name);
+fn custom_name(tool: &Record<NamedHead>) -> Option<&str> {
+    if tool.head.kind.as_deref() == Some("custom") {
+        return tool.head.name.as_deref().and_then(text_name);
     }
     None
 }
 
-fn rewrite_tool(tool: &mut ToolRecord, forward: &BTreeMap<String, String>) {
-    if tool.tool_type.as_deref() != Some("custom") {
+fn rewrite_tool(tool: &mut Record<NamedHead>, forward: &BTreeMap<String, String>) {
+    if tool.head.kind.as_deref() != Some("custom") {
         return;
     }
-    rewrite_name(&mut tool.name, forward);
+    rewrite_name(&mut tool.head.name, forward);
 }
 
 fn rewrite_name(name: &mut Option<String>, forward: &BTreeMap<String, String>) {
@@ -237,22 +237,25 @@ fn rewrite_name(name: &mut Option<String>, forward: &BTreeMap<String, String>) {
     *name = Some(mapped.clone());
 }
 
-fn rewrite_message(message: &MessageEntry, forward: &BTreeMap<String, String>) -> MessageEntry {
+fn rewrite_message(
+    message: &Record<MessageHead>,
+    forward: &BTreeMap<String, String>,
+) -> Record<MessageHead> {
     let mut rewritten = message.clone();
-    if let Some(calls) = rewritten.tool_calls.as_mut() {
+    if let Some(calls) = rewritten.head.tool_calls.as_mut() {
         for call in calls {
             rewrite_call(call, forward);
         }
     }
-    if let Some(call) = rewritten.function_call.as_mut() {
-        rewrite_name(&mut call.name, forward);
+    if let Some(call) = rewritten.head.function_call.as_mut() {
+        rewrite_name(&mut call.head.name, forward);
     }
     rewritten
 }
 
-fn rewrite_call(call: &mut ToolCallEntry, forward: &BTreeMap<String, String>) {
-    if let Some(function) = call.function.as_mut() {
-        rewrite_name(&mut function.name, forward);
+fn rewrite_call(call: &mut Record<CallHead>, forward: &BTreeMap<String, String>) {
+    if let Some(function) = call.head.function.as_mut() {
+        rewrite_name(&mut function.head.name, forward);
     }
 }
 
