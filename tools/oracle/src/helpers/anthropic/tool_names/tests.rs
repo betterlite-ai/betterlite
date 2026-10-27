@@ -31,7 +31,8 @@ fn helper_seeds_select_anthropic_tool_names() {
 
 #[test]
 fn basic_null_survives_the_oracle_envelope() {
-    let source = include_str!("../../../../fuzz/corpus/helper_case/anthropic_tool_names-basic-null.yaml");
+    let source =
+        include_str!("../../../../fuzz/corpus/helper_case/anthropic_tool_names-basic-null.yaml");
     let case = serde_saphyr::from_str::<HelperCase>(source).unwrap();
     let run = crate::helpers::run_case(&case, false).unwrap();
     assert!(matches!(run, crate::helpers::HelperRun::Match));

@@ -12,7 +12,8 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 def run(input_value: dict[str, Json]) -> Json:
     function = input_value.get("function")
     if function == "basic":
-        return {"name": cast(Json, _basic_sanitize_anthropic_tool_name(cast(str, input_value.get("name"))))}
+        name = _basic_sanitize_anthropic_tool_name(cast(str, input_value.get("name")))
+        return {"name": cast(Json, name)}
     if function == "map":
         names = input_value.get("names")
         if not isinstance(names, list):
