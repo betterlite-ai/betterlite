@@ -20,6 +20,14 @@ fn parse(source: &str) -> Value {
     parse(r#"{"api_key":"sk-1***************", "model":"gpt-4o", "input_cost_per_token":0.1}"#)
 )]
 #[case::short_secret(parse(r#"{"token":"short"}"#), parse(r#"{"token":"shor*"}"#))]
+#[case::tenancy(
+    parse(r#"{"oci_tenancy":"secret"}"#),
+    parse(r#"{"oci_tenancy":"secr**"}"#)
+)]
+#[case::scalar_conversion(
+    parse(r#"{"token":null,"auth":true,"plain":null,"items":[null,true],"key":[null,false,17,"secret"]}"#),
+    parse(r#"{"token":"","auth":"****","plain":"None","items":["None",true],"key":["None",false,17,"secr**"]}"#)
+)]
 #[case::nested_sequence(
     parse(r#"{"headers":[{"authorization":"Bearer abcdefghijk"}, "plain"]}"#),
     parse(r#"{"headers":[{"authorization":"Bear**************"}, "plain"]}"#)
@@ -30,7 +38,7 @@ fn parse(source: &str) -> Value {
 )]
 #[case::nonsecret_shape(
     parse(r#"{"model":"gpt-4o", "max_tokens":17, "nested":{"enabled":true, "empty":null}}"#),
-    parse(r#"{"model":"gpt-4o", "max_tokens":17, "nested":{"enabled":true, "empty":null}}"#)
+    parse(r#"{"model":"gpt-4o", "max_tokens":17, "nested":{"enabled":true, "empty":"None"}}"#)
 )]
 fn structured_redaction_behavior_tests_behavior(#[case] input: Value, #[case] expected: Value) {
     let actual = mask_sensitive_structure(&input);

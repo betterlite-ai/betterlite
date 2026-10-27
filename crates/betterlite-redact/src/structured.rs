@@ -9,7 +9,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use serde_json::{Map, Value};
 
-const DEFAULT_PATTERNS: &str = "password secret key token auth authorization cookie credential credentials access private certificate fingerprint";
+const DEFAULT_PATTERNS: &str = "password secret key token auth authorization cookie credential credentials access private certificate fingerprint tenancy";
 const DEFAULT_MASK_DEPTH: usize = 10;
 const DEFAULT_REDACT_DEPTH: usize = 100;
 const MAX_WORK: usize = 1_000_000;
@@ -136,6 +136,13 @@ impl SensitiveDataMasker {
         let mut masked = Map::new();
         for (key, value) in data {
             let sensitive = self.is_sensitive_key(key, excluded_keys);
+            if sensitive && !value.is_object() && !value.is_array() {
+                masked.insert(
+                    key.clone(),
+                    Value::String(self.mask_value(&scalar_text(value))),
+                );
+                continue;
+            }
             masked.insert(
                 key.clone(),
                 self.mask_nested(
@@ -175,8 +182,9 @@ impl SensitiveDataMasker {
                     })
                     .collect(),
             ),
-            _ if sensitive => Value::String(self.mask_value(&scalar_text(value))),
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.clone(),
+            Value::String(text) if sensitive => Value::String(self.mask_value(text)),
+            Value::Null => Value::String("None".to_owned()),
+            Value::Bool(_) | Value::Number(_) | Value::String(_) => value.clone(),
         }
     }
 
@@ -184,11 +192,8 @@ impl SensitiveDataMasker {
     pub fn mask(&self, data: &Value) -> Value {
         match data {
             Value::Object(object) => self.mask_dict(object, 0, DEFAULT_MASK_DEPTH, &[]),
-            Value::Array(_)
-            | Value::Null
-            | Value::Bool(_)
-            | Value::Number(_)
-            | Value::String(_) => self.mask_nested(data, 0, DEFAULT_MASK_DEPTH, &[], false),
+            Value::Array(_) => self.mask_nested(data, 0, DEFAULT_MASK_DEPTH, &[], false),
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => data.clone(),
         }
     }
 }
@@ -202,7 +207,8 @@ impl Default for SensitiveDataMasker {
 fn scalar_text(value: &Value) -> String {
     match value {
         Value::Null | Value::Array(_) | Value::Object(_) => String::new(),
-        Value::Bool(boolean) => boolean.to_string(),
+        Value::Bool(true) => "True".to_owned(),
+        Value::Bool(false) => "False".to_owned(),
         Value::Number(number) => number.to_string(),
         Value::String(string) => string.clone(),
     }
