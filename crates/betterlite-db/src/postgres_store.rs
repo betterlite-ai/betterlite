@@ -1,6 +1,6 @@
 pub mod errors;
+pub mod repository;
 pub mod rows;
 pub mod session;
 
-#[cfg(test)]
 mod tests;

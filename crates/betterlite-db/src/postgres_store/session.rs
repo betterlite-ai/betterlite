@@ -1,22 +1,32 @@
-use super::errors::{DbError, backend};
+use super::errors::DbError;
 use deadpool_postgres::{Client, Pool};
-use tokio_postgres::Row;
-use tokio_postgres::types::ToSql;
 
 #[derive(Clone)]
 pub struct PostgresStore {
-    pool: Option<Pool>,
+    pub pool: Option<Pool>,
+}
+
+// The driver's transaction guard queues rollback on drop, including cancellation during BEGIN.
+pub struct DbSession {
+    client: Client,
+    in_transaction: bool,
 }
 
 impl PostgresStore {
     #[must_use]
     pub const fn new(pool: Pool) -> Self {
-        Self { pool: Some(pool) }
+        let configured_pool = Some(pool);
+        Self {
+            pool: configured_pool,
+        }
     }
+
     #[must_use]
     pub const fn without_client() -> Self {
-        Self { pool: None }
+        let missing_pool = None;
+        Self { pool: missing_pool }
     }
+
     pub async fn session(&self) -> Result<DbSession, DbError> {
         let pool = self.pool.as_ref().ok_or(DbError::NoDbConnected)?;
         let client = pool
@@ -25,7 +35,7 @@ impl PostgresStore {
             .map_err(|source| DbError::Pool { source })?;
         Ok(DbSession {
             client,
-            transaction: false,
+            in_transaction: false,
         })
     }
 
@@ -35,72 +45,34 @@ impl PostgresStore {
     }
 }
 
-pub struct DbSession {
-    client: Client,
-    transaction: bool,
-}
-
 impl DbSession {
     pub async fn begin(mut self) -> Result<Self, DbError> {
-        self.client.batch_execute("BEGIN").await.map_err(backend)?;
-        self.transaction = true;
+        self.client
+            .batch_execute("BEGIN")
+            .await
+            .map_err(super::errors::backend)?;
+        self.in_transaction = true;
         Ok(self)
     }
-    pub async fn commit(mut self) -> Result<(), DbError> {
-        if self.transaction {
-            self.client.batch_execute("COMMIT").await.map_err(backend)?;
-            self.transaction = false;
-        }
-        Ok(())
+
+    pub async fn commit(self) -> Result<(), DbError> {
+        let operation = self.finish("COMMIT");
+        operation.await
     }
-    pub async fn rollback(mut self) -> Result<(), DbError> {
-        if self.transaction {
+
+    pub async fn rollback(self) -> Result<(), DbError> {
+        let operation = self.finish("ROLLBACK");
+        operation.await
+    }
+
+    async fn finish(mut self, command: &str) -> Result<(), DbError> {
+        if self.in_transaction {
             self.client
-                .batch_execute("ROLLBACK")
+                .batch_execute(command)
                 .await
-                .map_err(backend)?;
-            self.transaction = false;
+                .map_err(super::errors::backend)?;
+            self.in_transaction = false;
         }
         Ok(())
-    }
-    pub async fn execute(
-        &self,
-        statement: &str,
-        parameters: &[&(dyn ToSql + Sync)],
-    ) -> Result<u64, DbError> {
-        self.client
-            .execute(statement, parameters)
-            .await
-            .map_err(backend)
-    }
-    pub async fn query(
-        &self,
-        statement: &str,
-        parameters: &[&(dyn ToSql + Sync)],
-    ) -> Result<Vec<Row>, DbError> {
-        self.client
-            .query(statement, parameters)
-            .await
-            .map_err(backend)
-    }
-    pub async fn query_opt(
-        &self,
-        statement: &str,
-        parameters: &[&(dyn ToSql + Sync)],
-    ) -> Result<Option<Row>, DbError> {
-        self.client
-            .query_opt(statement, parameters)
-            .await
-            .map_err(backend)
-    }
-    pub async fn query_one(
-        &self,
-        statement: &str,
-        parameters: &[&(dyn ToSql + Sync)],
-    ) -> Result<Row, DbError> {
-        self.client
-            .query_one(statement, parameters)
-            .await
-            .map_err(backend)
     }
 }

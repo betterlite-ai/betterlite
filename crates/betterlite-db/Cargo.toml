@@ -13,9 +13,9 @@ chrono.workspace = true
 deadpool-postgres.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tokio-postgres.workspace = true
-thiserror.workspace = true
 
 [dev-dependencies]
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }

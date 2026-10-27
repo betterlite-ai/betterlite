@@ -2,69 +2,73 @@ use std::fmt;
 use thiserror::Error;
 use tokio_postgres::error::SqlState;
 
-#[derive(Debug, Error)]
+#[derive(Error)]
 pub enum DbError {
-    #[error("No DB Connected")]
+    #[error("No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys")]
     NoDbConnected,
-    #[error("database pool error: {source}")]
+    #[error("database pool unavailable")]
     Pool {
         #[source]
         source: deadpool_postgres::PoolError,
     },
-    #[error("database error: {source}")]
+    #[error("database driver error")]
     Backend {
         #[source]
         source: tokio_postgres::Error,
     },
-    #[error("invalid database record: {message}")]
+    #[error("invalid database record")]
     InvalidRecord { message: String },
-    #[error("database invariant violated: {message}")]
-    Invariant { message: String },
-    #[error("unique constraint violation{constraint}")]
-    UniqueViolation { constraint: ConstraintName },
-    #[error("database SQLSTATE {code}{constraint}")]
+    #[error("create returned no model")]
+    CreateNull,
+    #[error("unique constraint violation: {constraint:?}")]
+    UniqueViolation {
+        constraint: Option<String>,
+        #[source]
+        source: tokio_postgres::Error,
+    },
+    #[error("database SQLSTATE {code:?}: {constraint:?}")]
     SqlState {
-        code: String,
-        constraint: ConstraintName,
+        code: SqlState,
+        constraint: Option<String>,
+        #[source]
+        source: tokio_postgres::Error,
     },
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ConstraintName(pub Option<String>);
-
-impl ConstraintName {
-    pub(crate) fn from_error(error: &tokio_postgres::Error) -> Self {
-        error
-            .as_db_error()
-            .and_then(|database| database.constraint())
-            .map(|name| Self(Some(name.to_owned())))
-            .unwrap_or_default()
-    }
-}
-
-impl fmt::Display for ConstraintName {
+// Driver sources retain diagnostics for policy, but may contain SQL parameters in their Debug output.
+impl fmt::Debug for DbError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0
-            .as_ref()
-            .map_or(Ok(()), |name| write!(f, " ({name})"))
+        fmt::Display::fmt(self, f)
     }
 }
 
-pub(crate) fn backend(error: tokio_postgres::Error) -> DbError {
-    let constraint = ConstraintName::from_error(&error);
-    match error.code() {
+pub fn backend(source: tokio_postgres::Error) -> DbError {
+    let constraint = source
+        .as_db_error()
+        .and_then(|error| error.constraint())
+        .map(str::to_owned);
+    match source.code() {
         Some(code) if code == &SqlState::UNIQUE_VIOLATION => {
-            DbError::UniqueViolation { constraint }
+            DbError::UniqueViolation { constraint, source }
         }
         Some(code) => DbError::SqlState {
-            code: code.code().to_owned(),
+            code: code.clone(),
             constraint,
+            source,
         },
-        None => DbError::Backend { source: error },
+        None => DbError::Backend { source },
     }
 }
 
 #[must_use]
 pub const fn is_unique_violation(error: &DbError) -> bool {
-    matches!(error, DbError::UniqueViolation { .. })
+    match error {
+        DbError::UniqueViolation { .. } => true,
+        DbError::NoDbConnected
+        | DbError::Pool { .. }
+        | DbError::Backend { .. }
+        | DbError::InvalidRecord { .. }
+        | DbError::CreateNull
+        | DbError::SqlState { .. } => false,
+    }
 }
