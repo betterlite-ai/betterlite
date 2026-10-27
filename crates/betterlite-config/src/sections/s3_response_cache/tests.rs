@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 
 use crate::loader::{ConfigError, ConfigLoader};

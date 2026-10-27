@@ -32,13 +32,11 @@ pub struct S3Cache {
 impl S3Cache {
     #[must_use]
     pub fn new(settings: &Settings) -> Self {
-        Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_or_else(
-                |_| Self::from_client(settings, Client::from_conf(S3ConfigBuilder::new().build())),
-                |runtime| runtime.block_on(Self::new_async(settings)),
-            )
+        let runtime_result = Builder::new_current_thread().enable_all().build();
+        runtime_result.map_or_else(
+            |_| Self::from_client(settings, Client::from_conf(S3ConfigBuilder::new().build())),
+            |built_runtime| built_runtime.block_on(Self::new_async(settings)),
+        )
     }
 
     pub async fn new_async(settings: &Settings) -> Self {
@@ -88,9 +86,7 @@ impl S3Cache {
         let Ok(serialized) = serde_json::to_vec(value) else {
             return;
         };
-        let client = self.client.clone();
-        let bucket = self.bucket_name.clone();
-        let object_key = self.object_key(key);
+        let (client, bucket, object_key) = self.request_target(key);
         let Ok(runtime) = Builder::new_current_thread().enable_all().build() else {
             return;
         };
@@ -105,9 +101,14 @@ impl S3Cache {
 
     #[must_use]
     pub fn get_cache(&self, key: &str) -> Option<Value> {
-        let client = self.client.clone();
-        let bucket = self.bucket_name.clone();
-        let object_key = self.object_key(key);
+        if self.bucket_name.is_empty() {
+            return None;
+        }
+        self.read_object(key)
+    }
+
+    fn read_object(&self, key: &str) -> Option<Value> {
+        let (client, bucket, object_key) = self.request_target(key);
         let runtime = Builder::new_current_thread().enable_all().build().ok()?;
         runtime.block_on(async move {
             let output = client
@@ -151,11 +152,23 @@ impl S3Cache {
     }
 
     pub async fn disconnect(&self) {
+        if self.bucket_name.is_empty() {
+            yield_now().await;
+            return;
+        }
         yield_now().await;
     }
 
     fn object_key(&self, key: &str) -> String {
-        format!("{}{}", self.key_prefix, key.replace(':', "/"))
+        let normalized_key = key.replace(':', "/");
+        format!("{}{}", self.key_prefix, normalized_key)
+    }
+
+    fn request_target(&self, key: &str) -> (Client, String, String) {
+        let client = self.client.clone();
+        let bucket = self.bucket_name.clone();
+        let object_key = self.object_key(key);
+        (client, bucket, object_key)
     }
 }
 
@@ -217,8 +230,8 @@ fn decode_body(bytes: &[u8]) -> Option<Value> {
 
 #[must_use]
 pub fn decode_for_fuzzing(bytes: &[u8]) -> Option<Value> {
-    decode_body(bytes)
+    let mut decoded = decode_body(bytes);
+    decoded.take()
 }
 
-#[cfg(test)]
 mod tests;

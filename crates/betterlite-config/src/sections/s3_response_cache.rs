@@ -16,7 +16,7 @@ pub struct Raw {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct LiteLlmSettings {
-    cache_params: CacheParams,
+    cache_params: Option<CacheParams>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -68,7 +68,17 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let params = self.litellm_settings.cache_params;
+        let Some(params) = self.litellm_settings.cache_params else {
+            return Ok(Settings::default());
+        };
+        convert_params(params, lookup)
+    }
+}
+
+fn convert_params<L>(params: CacheParams, lookup: &L) -> Result<Settings, ConfigError>
+where
+    L: EnvironmentLookup,
+{
         let bucket_name = params
             .bucket_name
             .ok_or_else(|| ConfigError::MissingEnvironment {
@@ -107,7 +117,6 @@ impl Section for Raw {
             config: params.config,
             path: params.path,
         })
-    }
 }
 
 fn resolve_optional_secret<L>(
@@ -118,23 +127,16 @@ fn resolve_optional_secret<L>(
 where
     L: EnvironmentLookup,
 {
-    value
-        .map(|secret| {
-            resolve_secret(
-                Some(secret.expose_secret().to_owned()),
-                path,
-                lookup,
-            )
-        })
-        .transpose()
-        .map(Option::flatten)
+    let missing = || Ok(None);
+    value.map_or_else(missing, |secret| {
+        resolve_secret(Some(secret.expose_secret().to_owned()), path, lookup)
+    })
 }
 
-fn default_use_ssl() -> bool {
-    let enabled = true;
-    enabled
+const fn default_use_ssl() -> bool {
+    const ENABLED: bool = true;
+    ENABLED
 }
 
-#[cfg(test)]
 #[path = "s3_response_cache/tests.rs"]
 mod tests;

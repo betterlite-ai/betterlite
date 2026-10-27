@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::decode_body;
 
 #[test]
