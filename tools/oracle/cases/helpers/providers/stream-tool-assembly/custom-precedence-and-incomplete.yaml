@@ -1,0 +1,23 @@
+kind: helper
+name: custom-precedence-and-incomplete
+call:
+  stream_tool_assembly:
+    tool:
+      object_form: true
+      chunks:
+        - choices:
+            - delta:
+                tool_calls:
+                  - index: 0
+                    id: custom-id
+                    function: {name: ignored, arguments: x}
+                    custom: {name: custom, input: a}
+        - choices:
+            - delta:
+                tool_calls:
+                  - index: 0
+                    custom: {input: b}
+                  - index: 1
+                    function: {name: missing-id}
+env: {}
+compare: {ignore: []}
