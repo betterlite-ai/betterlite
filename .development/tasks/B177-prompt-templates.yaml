@@ -26,7 +26,6 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - deny.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/prompts/prompt_factory.rs
   - tools/oracle/src/helpers/prompts/prompt_factory/**

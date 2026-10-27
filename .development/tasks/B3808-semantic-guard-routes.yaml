@@ -21,7 +21,6 @@ scope:
     - crates/betterlite-guardrails/src/semantic_guard/**
     - tools/oracle/cases/guardrails/semantic-guard/**
     - Cargo.toml
-    - deny.toml
     - tools/oracle/helpers/b3808.py
     - tools/oracle/helpers/b3808/**
     - tools/oracle/src/helpers/guardrails/b3808.rs

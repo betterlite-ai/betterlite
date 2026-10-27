@@ -48,7 +48,6 @@ scope:
   - tools/oracle/cases/routing/routing-state-store/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/routing-state-store-*
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-router/Cargo.toml
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/routing_state_store.rs

@@ -23,7 +23,6 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-logging/**
   - crates/betterlite-config/**
   - crates/betterlite-openai/**

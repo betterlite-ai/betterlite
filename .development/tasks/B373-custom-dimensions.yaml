@@ -44,7 +44,6 @@ scope:
   - tools/oracle/cases/routing/custom-dimensions/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/custom-dimensions-*
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-router/Cargo.toml
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/fuzz/fuzz_targets/dimension_pattern.rs

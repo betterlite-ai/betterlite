@@ -25,7 +25,6 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-models/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/models/price_fields.rs

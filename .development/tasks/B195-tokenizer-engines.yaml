@@ -30,7 +30,6 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-tokenizer/**
   - crates/betterlite-config/**
   - tools/oracle/Cargo.toml
